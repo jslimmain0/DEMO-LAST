@@ -1,0 +1,77 @@
+spring:
+  application:
+    name: flowlink
+  datasource:
+    url: ${FLOWLINK_DB_URL:jdbc:postgresql://localhost:5432/flowlink}
+    username: ${FLOWLINK_DB_USER:flowlink}
+    password: ${FLOWLINK_DB_PASSWORD:flowlink}
+    hikari:
+      maximum-pool-size: 10
+      pool-name: flowlink-pool
+  jpa:
+    hibernate:
+      ddl-auto: validate        # 스키마 소유권은 Flyway. JPA는 검증만.
+    open-in-view: false
+    properties:
+      hibernate.jdbc.time_zone: UTC
+      hibernate.format_sql: false
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+  mvc:
+    servlet:
+      load-on-startup: 1        # 시작 시 DispatcherServlet 초기화(첫 요청 지연/레이스 방지)
+
+server:
+  port: ${FLOWLINK_PORT:18080}
+  shutdown: graceful           # 실행 중 워크플로 안전 종료 대비
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      probes:
+        enabled: true
+  metrics:
+    tags:
+      application: flowlink
+
+# Flowlink 고유 설정
+flowlink:
+  execution:
+    http:
+      connect-timeout-ms: 5000
+      read-timeout-ms: 30000
+      max-response-bytes: 5242880        # 5MB 초과 응답은 거절
+    ssrf:
+      enabled: true
+      block-private-networks: true       # RFC1918/loopback/link-local 차단
+      blocked-hosts:                     # 클라우드 메타데이터 등 명시 차단
+        - 169.254.169.254
+        - metadata.google.internal
+      allowed-schemes:
+        - http
+        - https
+    capture:
+      request-response-bodies: false     # redaction deny-by-default. true 로 켜면 HTTP req/res 본문 저장(디버그용)
+    max-nodes-per-run: 200               # 폭주 방지
+  # 보안 (IdP 비종속). issuer-uri 미설정 시 dev permitAll 로 동작.
+  security:
+    tenant-claim: tenant                 # JWT 에서 테넌트 식별자를 읽을 클레임 이름
+
+# 운영 전환 시 아래 주석을 풀어 OIDC 리소스 서버 활성화(어떤 OIDC IdP와도 호환):
+# spring:
+#   security:
+#     oauth2:
+#       resourceserver:
+#         jwt:
+#           issuer-uri: https://your-idp.example.com/
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+  api-docs:
+    path: /v3/api-docs

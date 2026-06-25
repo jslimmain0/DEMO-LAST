@@ -1,0 +1,18 @@
+package com.flowlink.definition.dto;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
+
+/**
+ * 새 버전 저장. {@code graph} 는 프로토타입과 동일한 형태의 그래프 객체
+ * ({@code {name?, nodes:[...], edges:[...]}}). 저장 시 불변 새 버전으로 적재된다.
+ */
+public record SaveVersionRequest(
+        @NotNull(message = "graph 는 필수입니다.")
+        JsonNode graph,
+
+        @Size(max = 500)
+        String note
+) {
+}

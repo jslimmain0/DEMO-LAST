@@ -1,0 +1,22 @@
+# 로컬 개발용 인프라. `docker compose up -d` 로 Postgres 기동.
+# (운영 배포는 별도 매니페스트/Helm으로 — 후속 Phase)
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: flowlink-postgres
+    environment:
+      POSTGRES_DB: flowlink
+      POSTGRES_USER: flowlink
+      POSTGRES_PASSWORD: flowlink
+    ports:
+      - "5432:5432"
+    volumes:
+      - flowlink-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U flowlink -d flowlink"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  flowlink-pgdata:

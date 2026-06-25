@@ -1,0 +1,22 @@
+# dev 전용: 인프라(Postgres/Docker) 없이 H2 인메모리로 기동.
+#   실행: java -jar flowlink.jar --spring.profiles.active=h2
+#   또는: scripts/start.ps1 -H2   /   scripts/start.sh --h2
+#
+# Flyway(Postgres 전용 마이그레이션)는 끄고, Hibernate 가 엔티티에서 스키마를 생성한다(create-drop).
+# 데이터는 JVM 종료 시 사라진다. 운영/통합테스트는 Postgres 를 사용할 것.
+spring:
+  datasource:
+    url: jdbc:h2:mem:flowlink;DB_CLOSE_DELAY=-1;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: ""
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    database-platform: org.hibernate.dialect.H2Dialect
+  flyway:
+    enabled: false
+  h2:
+    console:
+      enabled: true
+      path: /h2-console

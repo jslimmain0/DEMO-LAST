@@ -68,6 +68,39 @@ public class SsrfGuard {
         }
     }
 
+    /** TCP 등 스킴 없는 host:port 검증(사설/내부/차단 대역 거부). */
+    public void checkHostPort(String host, int port) {
+        if (!cfg.enabled()) {
+            return;
+        }
+        if (host == null || host.isBlank()) {
+            throw new SsrfBlockedException("호스트가 없습니다.");
+        }
+        if (port < 1 || port > 65535) {
+            throw new SsrfBlockedException("잘못된 포트: " + port);
+        }
+        if (blockedHosts.contains(host.toLowerCase(Locale.ROOT))) {
+            throw new SsrfBlockedException("차단된 호스트: " + host);
+        }
+        if (cfg.blockPrivateNetworks()) {
+            final InetAddress[] addresses;
+            try {
+                addresses = InetAddress.getAllByName(host);
+            } catch (UnknownHostException e) {
+                throw new SsrfBlockedException("호스트 해석 실패: " + host);
+            }
+            for (InetAddress addr : addresses) {
+                if (isBlockedAddress(addr)) {
+                    log.warn("SSRF(TCP) 차단: host={} -> {}", host, addr.getHostAddress());
+                    throw new SsrfBlockedException("사설/내부 대역으로의 TCP 연결은 차단됩니다: " + addr.getHostAddress());
+                }
+                if (blockedHosts.contains(addr.getHostAddress())) {
+                    throw new SsrfBlockedException("차단된 IP: " + addr.getHostAddress());
+                }
+            }
+        }
+    }
+
     private static boolean isBlockedAddress(InetAddress addr) {
         if (addr.isAnyLocalAddress() || addr.isLoopbackAddress()
                 || addr.isLinkLocalAddress() || addr.isSiteLocalAddress()

@@ -5,10 +5,12 @@ import { useCallback } from 'react'
 import type { NodeType } from '../api/types'
 import { useEditorStore } from '../store/editorStore'
 import { BranchNode } from './BranchNode'
+import { DeletableEdge } from './DeletableEdge'
 import { NodeCard } from './NodeCard'
 import { catColor } from './nodeMeta'
 
 const nodeTypes = { flnode: NodeCard, branch: BranchNode }
+const edgeTypes = { deletable: DeletableEdge }
 
 export function FlowCanvas() {
   const nodes = useEditorStore((s) => s.nodes)
@@ -45,6 +47,7 @@ export function FlowCanvas() {
         nodes={nodes}
         edges={edges}
         nodeTypes={nodeTypes}
+        edgeTypes={edgeTypes}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}

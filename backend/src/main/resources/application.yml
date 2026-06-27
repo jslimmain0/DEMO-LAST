@@ -21,6 +21,10 @@ spring:
   mvc:
     servlet:
       load-on-startup: 1        # 시작 시 DispatcherServlet 초기화(첫 요청 지연/레이스 방지)
+  servlet:
+    multipart:
+      max-file-size: 20MB       # 플러그인 JAR 업로드용
+      max-request-size: 20MB
 
 server:
   port: ${FLOWLINK_PORT:18080}

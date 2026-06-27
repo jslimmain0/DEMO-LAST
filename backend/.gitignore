@@ -1,6 +1,7 @@
 .gradle/
 build/
 .run/
+plugins/
 !gradle/wrapper/gradle-wrapper.jar
 *.log
 .idea/

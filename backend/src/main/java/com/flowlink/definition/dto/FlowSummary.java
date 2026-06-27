@@ -11,10 +11,11 @@ public record FlowSummary(
         String name,
         String description,
         int currentVersion,
+        UUID folderId,
         Instant updatedAt
 ) {
     public static FlowSummary from(Flow f) {
         return new FlowSummary(f.getId(), f.getName(), f.getDescription(),
-                f.getCurrentVersion(), f.getUpdatedAt());
+                f.getCurrentVersion(), f.getFolderId(), f.getUpdatedAt());
     }
 }

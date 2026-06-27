@@ -20,7 +20,9 @@ interface EditorState {
   onNodesChange: (changes: NodeChange[]) => void
   onEdgesChange: (changes: EdgeChange[]) => void
   onConnect: (conn: Connection) => void
+  removeEdge: (id: string) => void
   addNode: (type: NodeType, pos: { x: number; y: number }) => string
+  addNodes: (graphNodes: GraphNode[]) => void
   updateNodeData: (id: string, patch: Partial<GraphNode>) => void
   selectNode: (id: string | null) => void
   deleteNode: (id: string) => void
@@ -69,9 +71,12 @@ export const useEditorStore = create<EditorState>()((set, get) => ({
       source: conn.source,
       target: conn.target,
       sourceHandle: conn.sourceHandle ?? 'out',
+      type: 'deletable',
     }
     set({ edges: addEdge(edge, get().edges), dirty: true })
   },
+
+  removeEdge: (id) => set({ edges: get().edges.filter((e) => e.id !== id), dirty: true }),
 
   addNode: (type, pos) => {
     const dn = makeNode(type, pos.x, pos.y)
@@ -88,6 +93,16 @@ export const useEditorStore = create<EditorState>()((set, get) => ({
       dirty: true,
     })
     return dn.id
+  },
+
+  addNodes: (graphNodes) => {
+    const rfNew: Node[] = graphNodes.map((dn) => ({
+      id: dn.id,
+      type: rfNodeType(dn.type),
+      position: { x: dn.x ?? 120, y: dn.y ?? 120 },
+      data: dn as unknown as Record<string, unknown>,
+    }))
+    set({ nodes: [...get().nodes, ...rfNew], dirty: true })
   },
 
   updateNodeData: (id, patch) => {

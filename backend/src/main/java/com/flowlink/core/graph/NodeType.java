@@ -8,6 +8,8 @@ public enum NodeType {
     HTTP,
     IF,
     WAIT,
+    TRANSFORM,
+    TCP,
     UNKNOWN;
 
     public static NodeType from(String raw) {
@@ -21,6 +23,8 @@ public enum NodeType {
             case "http" -> HTTP;
             case "if" -> IF;
             case "wait" -> WAIT;
+            case "transform" -> TRANSFORM;
+            case "tcp" -> TCP;
             default -> UNKNOWN;
         };
     }

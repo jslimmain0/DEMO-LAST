@@ -22,6 +22,23 @@ export function makeNode(type: NodeType, x: number, y: number): GraphNode {
         waitMsg: '휴대폰으로 받은 OTP를 입력하세요',
         waitFields: [{ id: newId(), key: 'otp', label: 'OTP' }],
       }
+    case 'tcp':
+      return {
+        id, name: 'TCP 전문', type: 'tcp', cat: 'tcp', x, y,
+        tcpHost: '127.0.0.1', tcpPort: 9000, tcpEncoding: 'EUC-KR', tcpTimeoutMs: 5000,
+        tcpPrefixLength: 4, tcpPrefixIncludesSelf: false,
+        tcpRequest: [{ id: newId(), name: 'msgType', length: 4, value: '', pad: 'right', padChar: ' ' }],
+        tcpResponse: [{ id: newId(), name: 'result', length: 10 }],
+        outputs: [{ key: 'result', type: 'string' }],
+      }
+    case 'transform':
+      return {
+        id, name: '변환', type: 'transform', cat: 'transform', x, y,
+        transformId: 'split',
+        config: { delimiter: ',', index: '0' },
+        fields: { params: [], headers: [], body: [{ id: newId(), key: 'input', value: '' }] },
+        outputs: [{ key: 'result', type: 'string' }],
+      }
     case 'http':
     default:
       return {
@@ -39,6 +56,8 @@ export const PALETTE: Array<{ type: NodeType; label: string; cat: string }> = [
   { type: 'http', label: 'HTTP 요청', cat: 'generic' },
   { type: 'if', label: 'IF 조건', cat: 'if' },
   { type: 'set', label: '변수', cat: 'set' },
+  { type: 'transform', label: '변환', cat: 'transform' },
+  { type: 'tcp', label: 'TCP 전문', cat: 'tcp' },
   { type: 'wait', label: '입력 대기', cat: 'wait' },
   { type: 'end', label: '끝', cat: 'end' },
 ]

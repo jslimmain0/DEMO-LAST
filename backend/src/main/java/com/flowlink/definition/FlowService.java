@@ -55,8 +55,13 @@ public class FlowService {
 
     @Transactional
     public FlowDetail create(CreateFlowRequest req) {
-        Flow flow = createInternal(req.name(), req.description(), emptyGraph(req.name()), "초기 버전");
+        Flow flow = createInternal(req.name(), req.description(), emptyGraph(req.name()), "초기 버전", req.folderId());
         return toDetail(flow);
+    }
+
+    @Transactional
+    public void moveToFolder(UUID id, UUID folderId) {
+        loadFlow(id).setFolderId(folderId);
     }
 
     @Transactional
@@ -121,7 +126,7 @@ public class FlowService {
         FlowGraph parsed = json.parseGraph(json.toJson(graph));
         validator.validate(parsed);
 
-        Flow flow = createInternal(name, textOr(export, "desc", ""), json.toJson(graph), "가져오기");
+        Flow flow = createInternal(name, textOr(export, "desc", ""), json.toJson(graph), "가져오기", null);
         return toDetail(flow);
     }
 
@@ -139,12 +144,13 @@ public class FlowService {
 
     // --- 내부 ---
 
-    private Flow createInternal(String name, String description, String initialGraphJson, String note) {
+    private Flow createInternal(String name, String description, String initialGraphJson, String note, UUID folderId) {
         Flow flow = Flow.create(tenant(), name, description);
         // 할당식 UUID 엔티티는 save()가 merge로 동작하므로, save 이후의 변경이 누락되지 않도록
         // currentVersion 을 저장 전에 확정한다(항상 v1 을 함께 생성). saveAndFlush 로 INSERT 를 즉시
         // 반영해 @CreationTimestamp/@UpdateTimestamp 가 채워진 관리 인스턴스를 반환한다.
         flow.setCurrentVersion(1);
+        flow.setFolderId(folderId);
         flow = flowRepo.saveAndFlush(flow);
         FlowVersion v1 = FlowVersion.create(flow.getId(), 1, name, initialGraphJson, note, null);
         versionRepo.save(v1);

@@ -9,6 +9,7 @@ import { FlowCanvas } from '../canvas/FlowCanvas'
 import { Palette } from '../canvas/Palette'
 import { PropertyPanel } from '../panels/PropertyPanel'
 import { RunPanel } from '../panels/RunPanel'
+import { OpenApiImportDialog } from '../openapi/OpenApiImportDialog'
 import { useEditorStore } from '../store/editorStore'
 
 export function Editor() {
@@ -20,10 +21,12 @@ export function Editor() {
   const dirty = useEditorStore((s) => s.dirty)
   const getGraph = useEditorStore((s) => s.getGraph)
   const markSaved = useEditorStore((s) => s.markSaved)
+  const addNodes = useEditorStore((s) => s.addNodes)
 
   const [execution, setExecution] = useState<ExecutionDetail | null>(null)
   const [running, setRunning] = useState(false)
   const [showLog, setShowLog] = useState(false)
+  const [showImport, setShowImport] = useState(false)
 
   const flowQuery = useQuery({ queryKey: ['flow', flowId], queryFn: () => flowsApi.get(flowId), enabled: !!flowId })
 
@@ -72,6 +75,7 @@ export function Editor() {
         />
         <span style={{ fontSize: 12, color: dirty ? 'var(--fl-put)' : 'var(--fl-text-muted)' }}>{dirty ? '● 미저장' : '저장됨'}</span>
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+          <button onClick={() => setShowImport(true)} style={ghostBtn}>가져오기</button>
           <a href={flowsApi.exportUrl(flowId)} style={ghostBtn}>내보내기</a>
           <button onClick={() => onRun()} disabled={running} style={runBtn}>{running ? '실행 중…' : '▶ 실행'}</button>
           <button onClick={() => save.mutate()} disabled={save.isPending || !dirty} style={saveBtn}>💾 저장</button>
@@ -88,6 +92,8 @@ export function Editor() {
         </div>
         {showLog && <RunPanel execution={execution} running={running} onClose={() => setShowLog(false)} />}
       </ReactFlowProvider>
+
+      {showImport && <OpenApiImportDialog onClose={() => setShowImport(false)} onImport={(nodes) => addNodes(nodes)} />}
     </div>
   )
 }

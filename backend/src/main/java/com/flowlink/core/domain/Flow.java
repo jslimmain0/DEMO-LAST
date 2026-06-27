@@ -40,6 +40,10 @@ public class Flow {
     @Column(nullable = false)
     private boolean archived;
 
+    /** 소속 폴더(없으면 미분류). */
+    @Column(name = "folder_id")
+    private UUID folderId;
+
     /** 낙관적 잠금 — 동시 편집 lost-update 방지(저장 충돌 시 409로 매핑). */
     @Version
     @Column(nullable = false)
@@ -105,6 +109,14 @@ public class Flow {
 
     public void setArchived(boolean archived) {
         this.archived = archived;
+    }
+
+    public UUID getFolderId() {
+        return folderId;
+    }
+
+    public void setFolderId(UUID folderId) {
+        this.folderId = folderId;
     }
 
     public long getVersion() {

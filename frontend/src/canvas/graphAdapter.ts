@@ -22,6 +22,7 @@ export function toRF(graph: FlowGraph): { nodes: Node[]; edges: Edge[] } {
     source: e.from,
     target: e.to,
     sourceHandle: e.fromPort ?? 'out',
+    type: 'deletable',
   }))
   return { nodes, edges }
 }

@@ -6,7 +6,9 @@ import com.flowlink.core.domain.NodeExecutionStatus;
 import com.flowlink.core.graph.FlowGraph;
 import com.flowlink.core.graph.GraphEdge;
 import com.flowlink.core.graph.GraphNode;
+import com.flowlink.core.graph.NodeField;
 import com.flowlink.core.graph.NodeType;
+import com.flowlink.transform.FlowTransform;
 import com.flowlink.core.graph.NodeVar;
 import org.springframework.stereotype.Component;
 
@@ -33,13 +35,19 @@ public class FlowExecutor {
     private final ExpressionEvaluator evaluator;
     private final HttpNodeExecutor httpExecutor;
     private final JsonService json;
+    private final com.flowlink.transform.TransformRegistry transformRegistry;
+    private final TcpNodeExecutor tcpExecutor;
 
     public FlowExecutor(TokenResolver tokens, ExpressionEvaluator evaluator,
-                        HttpNodeExecutor httpExecutor, JsonService json) {
+                        HttpNodeExecutor httpExecutor, JsonService json,
+                        com.flowlink.transform.TransformRegistry transformRegistry,
+                        TcpNodeExecutor tcpExecutor) {
         this.tokens = tokens;
         this.evaluator = evaluator;
         this.httpExecutor = httpExecutor;
         this.json = json;
+        this.transformRegistry = transformRegistry;
+        this.tcpExecutor = tcpExecutor;
     }
 
     public record Outcome(ExecutionStatus status, String error) {
@@ -115,6 +123,8 @@ public class FlowExecutor {
             case SET -> setNode(node, ctx);
             case IF -> ifNode(node, ctx);
             case HTTP -> httpExecutor.execute(node, ctx);
+            case TRANSFORM -> transformNode(node, ctx);
+            case TCP -> tcpExecutor.execute(node, ctx);
             case WAIT -> waitResult(node); // 정상 흐름에선 execute()에서 선처리됨
             case UNKNOWN -> NodeResult.fail(0, "", "지원하지 않는 노드 타입: " + node.type());
         };
@@ -143,6 +153,38 @@ public class FlowExecutor {
         value.put("branch", branch);
         return NodeResult.ok(null, "if ( " + (node.condition() == null ? "" : node.condition()) + " )",
                 json.toJson(value), value).withBranch(branch);
+    }
+
+    private NodeResult transformNode(GraphNode node, ExecutionContext ctx) {
+        var found = transformRegistry.get(node.transformId() == null ? "" : node.transformId());
+        if (found.isEmpty()) {
+            return NodeResult.fail(0, "transform " + node.transformId(), "알 수 없는 변환: " + node.transformId());
+        }
+        FlowTransform transform = found.get();
+
+        // 선언된 입력 포트별로 fields.body 의 동일 key 행을 찾아 값(바인딩/리터럴)을 해석
+        Map<String, NodeField> byKey = new HashMap<>();
+        for (NodeField f : node.fieldsOrEmpty().bodyOrEmpty()) {
+            if (f.key() != null && !f.key().isBlank()) {
+                byKey.put(f.key(), f);
+            }
+        }
+        Map<String, String> inputs = new LinkedHashMap<>();
+        for (FlowTransform.IoSpec in : transform.inputs()) {
+            NodeField f = byKey.get(in.key());
+            inputs.put(in.key(), f == null ? "" : tokens.stringify(tokens.fieldValue(f, ctx)));
+        }
+
+        Map<String, String> config = node.config() == null ? Map.of() : node.config();
+        Map<String, String> out;
+        try {
+            out = transform.apply(inputs, config);
+        } catch (Exception e) {
+            return NodeResult.fail(0, "transform " + transform.id(),
+                    "변환 실패: " + (e.getMessage() == null ? e.toString() : e.getMessage()));
+        }
+        Map<String, Object> value = new LinkedHashMap<>(out == null ? Map.of() : out);
+        return NodeResult.ok(null, "transform " + transform.id() + " in=" + inputs, json.toJson(value), value);
     }
 
     private NodeResult waitResult(GraphNode node) {

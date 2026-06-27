@@ -3,6 +3,7 @@ package com.flowlink.core.graph;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * 워크플로 그래프의 노드. 프로토타입의 노드 객체와 1:1 대응하며, 실행 엔진이 읽는 타입드 뷰다.
@@ -39,6 +40,20 @@ public record GraphNode(
         // --- wait ---
         String waitMsg,
         List<WaitField> waitFields,
+
+        // --- transform ---
+        String transformId,
+        Map<String, String> config,
+
+        // --- tcp (고정길이 금융 전문) ---
+        String tcpHost,
+        Integer tcpPort,
+        String tcpEncoding,
+        Integer tcpTimeoutMs,
+        Integer tcpPrefixLength,
+        Boolean tcpPrefixIncludesSelf,
+        List<TcpField> tcpRequest,
+        List<TcpRespField> tcpResponse,
 
         // --- canvas 위치(실행과 무관) ---
         Double x,

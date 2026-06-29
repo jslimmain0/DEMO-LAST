@@ -1,14 +1,15 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { CSSProperties } from 'react'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { pluginsApi, transformsApi } from '../api/client'
-import type { Binding, BodyType, GraphNode, HttpMethod, NodeField, NodeOutput, NodeVar, RespType, TcpField, TcpRespField, WaitField } from '../api/types'
+import type { Binding, BodyType, GraphNode, HttpMethod, NodeField, NodeOutput, NodeVar, ReqMode, RespType, TcpField, TcpRespField, WaitField } from '../api/types'
 import { BindingChip } from '../binding/BindingChip'
 import { BindingPicker } from '../binding/BindingPicker'
 import { upstreamSources } from '../binding/upstream'
 import type { BindableSource } from '../binding/upstream'
 import { asGraphNode } from '../canvas/graphAdapter'
 import { catColor, typeIcon, typeLabel } from '../canvas/nodeMeta'
+import { fieldsToRaw, rawToFields } from '../lib/bodyConvert'
 import { bindingToToken } from '../lib/tokenGrammar'
 import { newId } from '../lib/ids'
 import { useEditorStore } from '../store/editorStore'
@@ -21,10 +22,27 @@ const braceBtn: CSSProperties = { width: 32, height: 32, flexShrink: 0, border: 
 
 const METHODS: HttpMethod[] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD']
 const BODY_TYPES: BodyType[] = ['json', 'urlencoded', 'form', 'raw', 'xml']
-const RESP_TYPES: RespType[] = ['json', 'text', 'xml', 'binary']
+// 구조형 바디(키-값 또는 raw 텍스트 둘 다 가능) — jsonRaw 플래그로 [필드|Raw] 전환
+const STRUCTURED_BODY: BodyType[] = ['json', 'urlencoded', 'form']
+function rawBodyPlaceholder(bt: BodyType | undefined): string {
+  if (bt === 'urlencoded' || bt === 'form') return 'a=1&b=2  또는 { } 로 데이터 삽입'
+  if (bt === 'xml') return '<root> ... </root>  또는 { } 로 데이터 삽입'
+  return '{ "key": "value" }  또는 { } 로 데이터 삽입'
+}
+const RESP_TYPES: RespType[] = ['json', 'xml', 'urlencoded', 'form', 'text', 'binary']
+const CHARSETS = ['UTF-8', 'EUC-KR', 'MS949', 'US-ASCII']
 const OUTPUT_TYPES = ['string', 'int', 'number', 'boolean', 'object', 'array', 'secret']
 
-export function PropertyPanel() {
+// 키형(json/xml/urlencoded/form): 응답이 키-값 구조라 "예상 응답 키"가 의미 있음 → 하위 노드가 키로 바인딩.
+// 통짜형(text/binary): 키가 없으므로 응답 본문 전체가 단일 값(body)으로만 제공됨.
+const KEYED_RESP: RespType[] = ['json', 'xml', 'urlencoded', 'form']
+function respOutputLabel(rt: RespType | undefined): string {
+  if (rt === 'xml') return '응답 요소 (XML) — 하위 노드가 바인딩할 항목'
+  if (rt === 'urlencoded' || rt === 'form') return '응답 필드 (urlencoded 키) — 하위 노드가 바인딩할 항목'
+  return '예상 응답 필드 (JSON 키) — 하위 노드가 바인딩할 항목'
+}
+
+export function PropertyPanel({ width = 360 }: { width?: number }) {
   const selectedId = useEditorStore((s) => s.selectedId)
   const nodes = useEditorStore((s) => s.nodes)
   const edges = useEditorStore((s) => s.edges)
@@ -33,6 +51,7 @@ export function PropertyPanel() {
   const deleteNode = useEditorStore((s) => s.deleteNode)
   const [tab, setTab] = useState<'params' | 'headers' | 'body'>('params')
   const [pick, setPick] = useState<string | null>(null) // baseUrl | condition | rawBody | var:<id> | transformInput
+  const [bodyConvNote, setBodyConvNote] = useState<string | null>(null) // 필드↔Raw 변환 안내
   const transforms = useQuery({ queryKey: ['transforms'], queryFn: transformsApi.list })
   const qc = useQueryClient()
 
@@ -46,9 +65,12 @@ export function PropertyPanel() {
     [nodes, edges, selectedId],
   )
 
+  // 다른 노드를 고르면 변환 안내는 초기화
+  useEffect(() => setBodyConvNote(null), [selectedId])
+
   if (!node) {
     return (
-      <aside aria-label="속성" style={shell}>
+      <aside aria-label="속성" style={{ ...shell, width }}>
         <p style={{ color: 'var(--fl-text-muted)', fontSize: 13, padding: 16 }}>노드를 선택하면 속성이 여기에 표시됩니다.</p>
       </aside>
     )
@@ -67,6 +89,73 @@ export function PropertyPanel() {
   const sourceType = (b: Binding) => sources.find((s) => s.id === b.sourceId)?.type
   const selectedTransform = (transforms.data ?? []).find((t) => t.id === node.transformId)
 
+  // [필드 ↔ Raw] 전환 시 현재 내용을 서로 변환(치환). 바인딩은 토큰으로, id 는 새로 부여.
+  const switchBodyMode = (raw: boolean) => {
+    if (raw === !!node.jsonRaw) return // 이미 그 모드
+    const bt = node.bodyType ?? 'json'
+    if (raw) {
+      // 필드 → Raw: 키-값(바인딩은 토큰, 타입 보존)을 본문 텍스트로 직렬화
+      const bodyFields = node.fields?.body ?? []
+      const rows = bodyFields.map((f) => ({ key: f.key ?? '', value: f.bound ? bindingToToken(f.bound) : (f.value ?? ''), type: f.type }))
+      // json 에서 바인딩 값은 따옴표 문자열 토큰으로 직렬화됨 → 숫자/불리언이면 문자열이 됨(안내)
+      setBodyConvNote(bt === 'json' && bodyFields.some((f) => f.bound)
+        ? '바인딩 필드는 Raw(JSON)에서 따옴표 문자열로 직렬화됩니다(숫자/불리언이면 문자열). 필요하면 Raw 에서 따옴표를 직접 제거하세요.'
+        : null)
+      update(id, { jsonRaw: true, rawBody: fieldsToRaw(rows, bt) })
+    } else {
+      // Raw → 필드: 본문 텍스트를 키-값으로 파싱(실패 시 원문 보존 + 안내)
+      const parsed = rawToFields(node.rawBody ?? '', bt)
+      if (parsed === null) {
+        setBodyConvNote('Raw 본문을 필드로 변환하지 못했어요(유효한 JSON/형식 확인). 원문은 Raw 에 그대로 있습니다.')
+        update(id, { jsonRaw: false })
+      } else {
+        setBodyConvNote(null)
+        const body: NodeField[] = parsed.map((kv) => ({ id: newId(), key: kv.key, value: kv.value, type: kv.type }))
+        update(id, { jsonRaw: false, fields: { params: fields.params ?? [], headers: fields.headers ?? [], body } })
+      }
+    }
+  }
+
+  // bodyType 변경 시 모드/내용을 정규화·변환해 "보이는 것과 보내는 것"이 항상 일치하게 한다.
+  const changeBodyType = (next: BodyType) => {
+    setBodyConvNote(null)
+    const old = node.bodyType ?? 'json'
+    if (next === old) {
+      update(id, { bodyType: next })
+      return
+    }
+    const oldStruct = STRUCTURED_BODY.includes(old)
+    const nextStruct = STRUCTURED_BODY.includes(next)
+    if (oldStruct && nextStruct) {
+      // 구조형↔구조형: 필드는 공용이라 그대로. Raw 모드면 rawBody 를 새 포맷으로 변환.
+      if (node.jsonRaw) {
+        const kvs = rawToFields(node.rawBody ?? '', old)
+        update(id, { bodyType: next, rawBody: kvs ? fieldsToRaw(kvs, next) : (node.rawBody ?? '') })
+      } else {
+        update(id, { bodyType: next })
+      }
+    } else if (oldStruct && !nextStruct) {
+      // 구조형 → raw/xml(텍스트 전용): 현재 내용을 텍스트로 보이게 + jsonRaw 정리
+      let raw = node.rawBody ?? ''
+      if (!node.jsonRaw) {
+        const kvs = (node.fields?.body ?? []).map((f) => ({ key: f.key ?? '', value: f.bound ? bindingToToken(f.bound) : (f.value ?? ''), type: f.type }))
+        raw = fieldsToRaw(kvs, old)
+      }
+      update(id, { bodyType: next, rawBody: raw, jsonRaw: false })
+    } else if (!oldStruct && nextStruct) {
+      // raw/xml → 구조형: rawBody 파싱 시도(실패하면 Raw 모드 유지해 원문 보존)
+      const kvs = rawToFields(node.rawBody ?? '', next)
+      if (kvs) {
+        const body: NodeField[] = kvs.map((kv) => ({ id: newId(), key: kv.key, value: kv.value, type: kv.type }))
+        update(id, { bodyType: next, jsonRaw: false, fields: { params: fields.params ?? [], headers: fields.headers ?? [], body } })
+      } else {
+        update(id, { bodyType: next, jsonRaw: true })
+      }
+    } else {
+      update(id, { bodyType: next }) // raw ↔ xml (둘 다 텍스트)
+    }
+  }
+
   const onPick = (b: Binding) => {
     if (pick === 'baseUrl') update(id, { baseUrlBound: b })
     else if (pick === 'condition') update(id, { condition: `${node.condition ?? ''} ${bindingToToken(b)}`.trim() })
@@ -84,7 +173,7 @@ export function PropertyPanel() {
   }
 
   return (
-    <aside aria-label="속성" style={shell}>
+    <aside aria-label="속성" style={{ ...shell, width }}>
       <header style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '14px 16px', borderBottom: '1px solid var(--fl-border)' }}>
         <span aria-hidden style={{ color: catColor(node.cat), fontSize: 16 }}>{typeIcon(node.type)}</span>
         <input aria-label="노드 이름" value={node.name ?? ''} onChange={(e) => update(id, { name: e.target.value })} style={{ ...field, fontWeight: 600, fontFamily: 'var(--fl-font-head)' }} />
@@ -101,6 +190,16 @@ export function PropertyPanel() {
               {METHODS.map((m) => <option key={m} value={m}>{m}</option>)}
             </select>
 
+            <label style={label}>문자셋 (요청 인코딩 · 응답 디코딩)</label>
+            <select style={field} value={node.charset ?? 'UTF-8'} onChange={(e) => update(id, { charset: e.target.value })}>
+              {CHARSETS.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+            {node.reqMode === 'client' && (node.charset ?? 'UTF-8') !== 'UTF-8' && (
+              <p style={{ ...hintP, color: 'var(--fl-put)' }}>
+                ⚠ 클라이언트 모드는 브라우저가 요청을 UTF-8로 보내고 응답 디코딩도 브라우저가 처리합니다. 선택한 문자셋은 <b>서버 모드</b>에서 완전히 적용됩니다. (urlencoded/form 요청은 클라이언트 모드에서도 정상)
+              </p>
+            )}
+
             <label style={label}>Base URL</label>
             {node.baseUrlBound ? (
               <BindingChip binding={node.baseUrlBound} sourceType={sourceType(node.baseUrlBound)} onRemove={() => update(id, { baseUrlBound: null })} onClick={() => setPick('baseUrl')} />
@@ -114,27 +213,48 @@ export function PropertyPanel() {
             <label style={label}>Path</label>
             <input style={mono} value={node.path ?? ''} onChange={(e) => update(id, { path: e.target.value })} placeholder="/resource" />
 
-            <div style={{ display: 'flex', gap: 4, margin: '16px 0 10px', borderBottom: '1px solid var(--fl-border)' }}>
+            <ReqModeToggle mode={node.reqMode} onChange={(m) => update(id, { reqMode: m })} />
+
+            <div style={{ display: 'flex', gap: 4, margin: '16px 0 6px', borderBottom: '1px solid var(--fl-border)' }}>
               {(['params', 'headers', 'body'] as const).map((t) => (
-                <button key={t} onClick={() => setTab(t)} style={tabBtn(tab === t)}>{t === 'params' ? 'Params' : t === 'headers' ? 'Headers' : 'Body'}</button>
+                <button key={t} onClick={() => { setTab(t); setBodyConvNote(null) }} style={tabBtn(tab === t)}>{t === 'params' ? 'Params' : t === 'headers' ? 'Headers' : 'Body'}</button>
               ))}
             </div>
+            <p style={{ ...hintP, marginTop: 0 }}>
+              {tab === 'params'
+                ? 'URL 쿼리스트링 ?key=value — 주소에 붙는 조회 조건 (주로 GET)'
+                : tab === 'headers'
+                  ? 'HTTP 헤더 — 인증 토큰(Authorization) 등 메타데이터'
+                  : '요청 본문(body) — 서버로 보내는 데이터 (주로 POST/PUT/PATCH)'}
+            </p>
 
             {tab === 'body' && (
-              <div style={{ marginBottom: 10 }}>
-                <select style={{ ...field, width: 'auto' }} value={node.bodyType ?? 'json'} onChange={(e) => update(id, { bodyType: e.target.value as BodyType })}>
+              <div style={{ marginBottom: 10, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <select style={{ ...field, width: 'auto' }} value={node.bodyType ?? 'json'} onChange={(e) => changeBodyType(e.target.value as BodyType)}>
                   {BODY_TYPES.map((b) => <option key={b} value={b}>{b}</option>)}
                 </select>
+                {STRUCTURED_BODY.includes(node.bodyType ?? 'json') && (
+                  <div style={miniSeg} role="group" aria-label="바디 입력 방식">
+                    <button type="button" onClick={() => switchBodyMode(false)} style={miniSegBtn(!node.jsonRaw)}>필드</button>
+                    <button type="button" onClick={() => switchBodyMode(true)} style={miniSegBtn(!!node.jsonRaw)}>Raw</button>
+                  </div>
+                )}
               </div>
             )}
 
-            {tab === 'body' && (node.bodyType === 'raw' || node.bodyType === 'xml') ? (
+            {tab === 'body' && bodyConvNote && (
+              <p style={{ ...hintP, color: 'var(--fl-put)', marginTop: 0 }}>⚠ {bodyConvNote}</p>
+            )}
+
+            {tab === 'body'
+              && (node.bodyType === 'raw' || node.bodyType === 'xml'
+                || (STRUCTURED_BODY.includes(node.bodyType ?? 'json') && !!node.jsonRaw)) ? (
               <div>
-                <textarea style={{ ...mono, minHeight: 140, resize: 'vertical' }} value={node.rawBody ?? ''} onChange={(e) => update(id, { rawBody: e.target.value })} placeholder="{ ... } 또는 { } 로 데이터 삽입" />
+                <textarea style={{ ...mono, minHeight: 140, resize: 'vertical' }} value={node.rawBody ?? ''} onChange={(e) => update(id, { rawBody: e.target.value })} placeholder={rawBodyPlaceholder(node.bodyType)} />
                 <button onClick={() => setPick('rawBody')} style={{ ...braceBtn, width: 'auto', padding: '0 10px', marginTop: 4 }}>{'{ } 데이터 삽입'}</button>
               </div>
             ) : (
-              <KeyValueEditor rows={fields[tab] ?? []} onChange={(rows) => setRows(tab, rows)} sources={sources} />
+              <KeyValueEditor rows={fields[tab] ?? []} onChange={(rows) => setRows(tab, rows)} sources={sources} showType={tab === 'body' && (node.bodyType ?? 'json') === 'json'} />
             )}
 
             <label style={label}>응답 타입</label>
@@ -142,8 +262,26 @@ export function PropertyPanel() {
               {RESP_TYPES.map((r) => <option key={r} value={r}>{r}</option>)}
             </select>
 
-            <label style={label}>응답 규격 (출력) — 하위 노드가 바인딩할 항목</label>
-            <OutputsEditor outputs={node.outputs ?? []} onChange={(outputs) => update(id, { outputs })} />
+            {KEYED_RESP.includes(node.respType ?? 'json') ? (
+              <>
+                <label style={label}>{respOutputLabel(node.respType)}</label>
+                <OutputsEditor outputs={node.outputs ?? []} onChange={(outputs) => update(id, { outputs })} />
+                <p style={hintP}>응답이 키 구조가 아니거나 파싱에 실패하면 전체 본문이 body 키로 제공됩니다. (그 경우 raw/조건식에 {'{{ body@이노드 }}'}로 바인딩)</p>
+              </>
+            ) : (
+              <>
+                <p style={hintP}>
+                  {node.respType === 'binary'
+                    ? '이진 응답이라 키를 추출하지 않습니다. 응답 본문 전체가 body 값 하나로 제공됩니다.'
+                    : '텍스트 응답은 키가 없습니다. 응답 본문 전체가 body 값 하나로 제공되며, 하위 노드에서 body로 바인딩하세요.'}
+                </p>
+                {(node.outputs?.length ?? 0) > 0 && (
+                  <p style={{ ...hintP, color: 'var(--fl-put)' }}>
+                    ⚠ 이 응답 타입에서는 기존 출력 키({(node.outputs ?? []).map((o) => o.key).filter(Boolean).join(', ')})가 무시됩니다. 하위 노드가 이 키로 바인딩 중이면 끊어집니다.
+                  </p>
+                )}
+              </>
+            )}
           </>
         )}
 
@@ -286,6 +424,48 @@ export function PropertyPanel() {
   )
 }
 
+function ReqModeToggle({ mode, onChange }: { mode?: ReqMode; onChange: (m: ReqMode) => void }) {
+  const isClient = mode === 'client'
+  return (
+    <>
+      <label style={label}>요청 방식</label>
+      <div style={segWrap}>
+        <button type="button" onClick={() => onChange('server')} style={segBtn(!isClient, 'var(--fl-primary)')}>
+          <ServerIcon /> 서버 → 서버
+        </button>
+        <button type="button" onClick={() => onChange('client')} style={segBtn(isClient, '#0ea5a4')}>
+          <ClientIcon /> 클라이언트 → 서버
+        </button>
+      </div>
+      <p style={{ fontSize: 11.5, color: 'var(--fl-text-muted)', marginTop: 8, lineHeight: 1.5 }}>
+        {isClient
+          ? '브라우저(클라이언트)에서 직접 이 API를 호출합니다. 토큰·세션이 클라이언트에 노출될 수 있습니다.'
+          : '서버가 대신 이 API를 호출합니다. 인증 정보가 외부에 노출되지 않아 민감한 요청에 적합합니다.'}
+      </p>
+    </>
+  )
+}
+
+function ServerIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <rect x="4" y="4" width="16" height="6.5" rx="1.5" stroke="currentColor" strokeWidth="1.7" />
+      <rect x="4" y="13.5" width="16" height="6.5" rx="1.5" stroke="currentColor" strokeWidth="1.7" />
+      <circle cx="7.5" cy="7.2" r="1" fill="currentColor" />
+      <circle cx="7.5" cy="16.7" r="1" fill="currentColor" />
+    </svg>
+  )
+}
+
+function ClientIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <rect x="3" y="5" width="18" height="12" rx="1.8" stroke="currentColor" strokeWidth="1.7" />
+      <path d="M8 21h8M12 17v4" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+    </svg>
+  )
+}
+
 function OutputsEditor({ outputs, onChange }: { outputs: NodeOutput[]; onChange: (o: NodeOutput[]) => void }) {
   const upd = (i: number, patch: Partial<NodeOutput>) => onChange(outputs.map((o, idx) => (idx === i ? { ...o, ...patch } : o)))
   return (
@@ -394,10 +574,30 @@ function TcpRespEditor({ fields, onChange }: { fields: TcpRespField[]; onChange:
   )
 }
 
-const shell: CSSProperties = { width: 360, borderLeft: '1px solid var(--fl-border)', background: 'var(--fl-surface)', display: 'flex', flexDirection: 'column', height: '100%' }
+const shell: CSSProperties = { flexShrink: 0, background: 'var(--fl-surface)', display: 'flex', flexDirection: 'column', height: '100%' }
 const closeBtn: CSSProperties = { width: 30, height: 30, borderRadius: 8, border: 'none', background: 'var(--fl-surface-2)', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 16 }
 const deleteBtn: CSSProperties = { marginTop: 28, width: '100%', padding: '9px', border: '1px solid var(--fl-fail)', borderRadius: 'var(--fl-radius-sm)', background: 'transparent', color: 'var(--fl-fail)', cursor: 'pointer', fontSize: 13, fontWeight: 600 }
 const addDashed: CSSProperties = { marginTop: 2, padding: '6px 10px', border: '1px dashed var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'transparent', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 12.5 }
+const hintP: CSSProperties = { fontSize: 11.5, color: 'var(--fl-text-muted)', marginTop: 12, lineHeight: 1.5 }
 function tabBtn(active: boolean): CSSProperties {
   return { padding: '7px 12px', border: 'none', borderBottom: `2px solid ${active ? 'var(--fl-primary)' : 'transparent'}`, background: 'transparent', color: active ? 'var(--fl-text)' : 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 13, fontWeight: 600 }
+}
+const miniSeg: CSSProperties = { display: 'inline-flex', gap: 2, background: 'var(--fl-surface-2)', borderRadius: 7, padding: 2, flexShrink: 0 }
+function miniSegBtn(active: boolean): CSSProperties {
+  return {
+    padding: '5px 12px', border: 'none', borderRadius: 5, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+    background: active ? 'var(--fl-surface)' : 'transparent',
+    color: active ? 'var(--fl-primary)' : 'var(--fl-text-muted)',
+    boxShadow: active ? 'var(--fl-shadow)' : 'none',
+  }
+}
+const segWrap: CSSProperties = { display: 'flex', gap: 4, background: 'var(--fl-surface-2)', borderRadius: 9, padding: 3 }
+function segBtn(active: boolean, color: string): CSSProperties {
+  return {
+    flex: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+    fontWeight: 600, fontSize: 12, border: 'none', borderRadius: 7, padding: '7px 6px', cursor: 'pointer',
+    background: active ? 'var(--fl-surface)' : 'transparent',
+    color: active ? color : 'var(--fl-text-muted)',
+    boxShadow: active ? 'var(--fl-shadow)' : 'none',
+  }
 }

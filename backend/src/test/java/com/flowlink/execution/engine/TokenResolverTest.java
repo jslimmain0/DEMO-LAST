@@ -43,7 +43,7 @@ class TokenResolverTest {
         ExecutionContext ctx = new ExecutionContext();
         ctx.putOutput("n1", Map.of("id", 42));
         NodeField f = new NodeField("f1", "userId", null,
-                new Binding("사용자조회", "auth", "id", "n1", null));
+                new Binding("사용자조회", "auth", "id", "n1", null), null);
         assertEquals(42, resolver.fieldValue(f, ctx));
     }
 
@@ -52,7 +52,7 @@ class TokenResolverTest {
         ExecutionContext ctx = new ExecutionContext();
         ctx.putRequest("n1", Map.of("amount", "5000"));
         NodeField f = new NodeField("f1", "amt", null,
-                new Binding("결제", "card", "amount", "n1", "req"));
+                new Binding("결제", "card", "amount", "n1", "req"), null);
         assertEquals("5000", resolver.fieldValue(f, ctx));
     }
 }

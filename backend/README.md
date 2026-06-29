@@ -53,7 +53,7 @@ winget install Docker.DockerDesktop                # Docker (또는 로컬 Postg
 
 ## 실행
 
-### 인프라 없이 즉시 실행 (H2 인메모리) ★Postgres/Docker 불필요
+### 인프라 없이 즉시 실행 (H2 파일·영속) ★Postgres/Docker 불필요
 
 ```powershell
 # Windows — backend 디렉토리에서
@@ -63,8 +63,9 @@ powershell -ExecutionPolicy Bypass -File scripts\start.ps1 -H2
 # Git Bash / Linux / macOS
 bash scripts/start.sh --h2
 ```
-JDK 를 `~/.jdks` 에서 자동 감지 → 빌드 → H2 인메모리로 기동(Flyway off, Hibernate 가 스키마 생성).
-`READY ✓` 후 `http://localhost:18080/swagger-ui.html`. 데이터는 종료 시 사라집니다(개발 전용).
+JDK 를 `~/.jdks` 에서 자동 감지 → 빌드 → H2 **파일**로 기동(Flyway off, Hibernate `ddl-auto: update`).
+`READY ✓` 후 `http://localhost:18080/swagger-ui.html`. **데이터는 재시작해도 보존**됩니다
+(기본 `~/flowlink-h2db/flowlink.mv.db`, 변경: `FLOWLINK_H2_FILE`, 초기화: 그 파일 삭제).
 > 검증됨: `GET/POST /api/v1/flows` 라운드트립 성공(워크플로 생성→v1→조회).
 
 ### 가장 쉬운 방법 — 시작/종료 스크립트 (DB + 앱 한 번에)

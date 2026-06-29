@@ -5,13 +5,6 @@ import { MethodTag } from '../components/MethodTag'
 import { asGraphNode } from './graphAdapter'
 import { catColor, typeIcon, typeLabel } from './nodeMeta'
 
-const handleStyle = {
-  width: 10,
-  height: 10,
-  background: 'var(--fl-surface)',
-  border: '2px solid var(--fl-primary)',
-}
-
 export function NodeCard({ data, selected }: NodeProps) {
   const n = asGraphNode(data)
   const accent = catColor(n.cat)
@@ -31,7 +24,7 @@ export function NodeCard({ data, selected }: NodeProps) {
         fontFamily: 'var(--fl-font-ui)',
       }}
     >
-      {!isStart && <Handle type="target" position={Position.Left} style={handleStyle} />}
+      {!isStart && <Handle type="target" position={Position.Left} className="fl-handle" />}
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 12px', borderLeft: `3px solid ${accent}` }}>
         <span aria-hidden style={{ color: accent, fontSize: 14, width: 16, textAlign: 'center' }}>{typeIcon(n.type)}</span>
@@ -48,13 +41,33 @@ export function NodeCard({ data, selected }: NodeProps) {
       {isHttp && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 12px', borderTop: '1px solid var(--fl-border)', background: 'var(--fl-surface-2)' }}>
           <MethodTag method={(n.method ?? 'GET') as HttpMethod} />
-          <span style={{ fontFamily: 'var(--fl-font-mono)', fontSize: 11, color: 'var(--fl-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <span style={{ flex: 1, minWidth: 0, fontFamily: 'var(--fl-font-mono)', fontSize: 11, color: 'var(--fl-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {n.path || '/'}
           </span>
+          {(() => {
+            const client = n.reqMode === 'client'
+            return (
+              <span
+                title={client ? '클라이언트 → 서버 (브라우저에서 직접 호출)' : '서버 → 서버 (서버가 대신 호출)'}
+                style={{
+                  flexShrink: 0,
+                  fontSize: 10,
+                  fontWeight: 700,
+                  fontFamily: 'var(--fl-font-mono)',
+                  padding: '2px 6px',
+                  borderRadius: 'var(--fl-radius-pill)',
+                  color: client ? '#0ea5a4' : 'var(--fl-primary)',
+                  background: client ? 'rgba(14,165,164,.12)' : 'rgba(97,85,245,.12)',
+                }}
+              >
+                {client ? 'C→S' : 'S→S'}
+              </span>
+            )
+          })()}
         </div>
       )}
 
-      {!isEnd && <Handle type="source" id="out" position={Position.Right} style={handleStyle} />}
+      {!isEnd && <Handle type="source" id="out" position={Position.Right} className="fl-handle" />}
     </div>
   )
 }

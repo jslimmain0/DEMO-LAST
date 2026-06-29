@@ -53,6 +53,7 @@ flowlink:
     ssrf:
       enabled: true
       block-private-networks: true       # RFC1918/loopback/link-local 차단
+      allow-loopback: false              # 로컬 배포 시 true → localhost/127.0.0.1/::1 허용(사설망은 여전히 차단). h2 프로파일은 true
       blocked-hosts:                     # 클라우드 메타데이터 등 명시 차단
         - 169.254.169.254
         - metadata.google.internal
@@ -60,7 +61,7 @@ flowlink:
         - http
         - https
     capture:
-      request-response-bodies: false     # redaction deny-by-default. true 로 켜면 HTTP req/res 본문 저장(디버그용)
+      request-response-bodies: false     # redaction deny-by-default. true 로 켜면 HTTP req/res 본문 저장(디버그용). h2 프로파일은 true
     max-nodes-per-run: 200               # 폭주 방지
   # 보안 (IdP 비종속). issuer-uri 미설정 시 dev permitAll 로 동작.
   security:

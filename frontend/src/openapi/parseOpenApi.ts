@@ -1,11 +1,9 @@
 // OpenAPI 3.x / Swagger 2.0 문서를 파싱해 워크플로 HTTP 노드로 변환한다.
-// (refs 1단계 해석, 최상위 properties 기준 — 실무 다수 케이스 커버)
+// 스키마 해석(refs·배열·allOf·다양한 2xx·응답레벨 ref)은 ./schema 의 순수 함수에 위임(단위 테스트 가능).
 import type { GraphNode, HttpMethod, NodeField, NodeOutput } from '../api/types'
 import { newId } from '../lib/ids'
-
-interface AnyObj {
-  [k: string]: unknown
-}
+import { arr, obj, propsOf, responseSchema, str } from './schema'
+import type { AnyObj, RefCtx } from './schema'
 
 const HTTP_METHODS: HttpMethod[] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD']
 
@@ -23,6 +21,15 @@ export interface ParsedDoc {
   operations: ParsedOperation[]
 }
 
+// OpenAPI 스키마 타입 → 우리 NodeField/Output 타입(따옴표 여부 등)
+function fieldType(openapiType: string): string {
+  if (openapiType === 'int' || openapiType === 'number') return 'number'
+  if (openapiType === 'boolean') return 'boolean'
+  if (openapiType === 'array') return 'array'
+  if (openapiType === 'object') return 'json'
+  return 'string'
+}
+
 export function parseOpenApi(raw: string): ParsedDoc {
   let doc: AnyObj
   try {
@@ -30,26 +37,12 @@ export function parseOpenApi(raw: string): ParsedDoc {
   } catch {
     throw new Error('JSON 파싱 실패 — 올바른 OpenAPI/Swagger JSON인지 확인하세요. (YAML은 미지원)')
   }
-  const info = obj(doc.info)
-  const title = str(info.title) || 'OpenAPI'
+  const title = str(obj(doc.info).title) || 'OpenAPI'
   const baseUrl = resolveBaseUrl(doc)
-  const components = obj(obj(doc.components).schemas)
-  const swaggerDefs = obj(doc.definitions) // swagger 2.0
-
-  const resolveRef = (schema: AnyObj | undefined): AnyObj => {
-    if (!schema) return {}
-    const ref = str(schema.$ref)
-    if (ref) {
-      const name = ref.split('/').pop() ?? ''
-      return obj(components[name] ?? swaggerDefs[name])
-    }
-    return schema
-  }
-
-  const propsOf = (schema: AnyObj | undefined): Array<{ key: string; type: string }> => {
-    const s = resolveRef(schema)
-    const properties = obj(s.properties)
-    return Object.keys(properties).map((k) => ({ key: k, type: mapType(obj(properties[k])) }))
+  const ctx: RefCtx = {
+    components: obj(obj(doc.components).schemas),
+    swaggerDefs: obj(doc.definitions),
+    responses: obj(obj(doc.components).responses),
   }
 
   const paths = obj(doc.paths)
@@ -58,9 +51,9 @@ export function parseOpenApi(raw: string): ParsedDoc {
   for (const path of Object.keys(paths)) {
     const item = obj(paths[path])
     for (const method of HTTP_METHODS) {
-      const op = item[method.toLowerCase()]
-      if (!op || typeof op !== 'object') continue
-      const o = op as AnyObj
+      const rawOp = item[method.toLowerCase()]
+      if (!rawOp || typeof rawOp !== 'object') continue
+      const o = obj(rawOp)
       const summary = str(o.summary) || str(o.operationId) || `${method} ${path}`
 
       const params: NodeField[] = []
@@ -75,19 +68,18 @@ export function parseOpenApi(raw: string): ParsedDoc {
         else if (loc === 'header') headers.push({ id: newId(), key: name, value: '' })
       }
 
-      // requestBody (openapi3) 또는 swagger2 body parameter
+      // requestBody(openapi3) 또는 swagger2 body parameter → 바디 필드(+타입)
       const body: NodeField[] = []
       const reqSchema = jsonSchema(obj(o.requestBody))
-      const bodyProps = reqSchema ? propsOf(reqSchema) : swagger2BodyProps(paramList, resolveRef)
-      for (const bp of bodyProps) body.push({ id: newId(), key: bp.key, value: '' })
+      const bodyProps = reqSchema ? propsOf(reqSchema, ctx) : swagger2BodyProps(paramList, ctx)
+      for (const bp of bodyProps) body.push({ id: newId(), key: bp.key, value: '', type: fieldType(bp.type) })
 
-      // 200/default 응답 → outputs
-      const respSchema = responseSchema(obj(o.responses))
-      const outputs: NodeOutput[] = (respSchema ? propsOf(respSchema) : []).map((p) => ({ key: p.key, type: p.type }))
+      // 성공 응답 → outputs(+타입). 배열/ref/allOf/2xx 모두 처리.
+      const respSchema = responseSchema(obj(o.responses), ctx)
+      const outputs: NodeOutput[] = (respSchema ? propsOf(respSchema, ctx) : []).map((p) => ({ key: p.key, type: p.type }))
 
-      const key = `${method} ${path}`
       operations.push({
-        key,
+        key: `${method} ${path}`,
         method,
         path,
         summary,
@@ -101,6 +93,8 @@ export function parseOpenApi(raw: string): ParsedDoc {
           path,
           bodyType: 'json',
           respType: 'json',
+          reqMode: 'server',
+          charset: 'UTF-8',
           x,
           y,
           fields: { params, headers, body },
@@ -131,52 +125,26 @@ function resolveBaseUrl(doc: AnyObj): string {
 
 function jsonSchema(requestBody: AnyObj): AnyObj | undefined {
   const content = obj(requestBody.content)
-  const json = obj(content['application/json'])
+  let json = obj(content['application/json'])
+  if (Object.keys(json).length === 0) {
+    // application/json 이 없으면 *json 미디어타입 사용
+    for (const k of Object.keys(content)) {
+      if (k.includes('json')) {
+        json = obj(content[k])
+        break
+      }
+    }
+  }
   const schema = obj(json.schema)
   return Object.keys(schema).length > 0 ? schema : undefined
 }
 
-function swagger2BodyProps(params: unknown[], resolveRef: (s: AnyObj) => AnyObj): Array<{ key: string; type: string }> {
+function swagger2BodyProps(params: unknown[], ctx: RefCtx): Array<{ key: string; type: string }> {
   for (const p of params) {
     const pp = obj(p)
     if (str(pp.in) === 'body') {
-      const s = resolveRef(obj(pp.schema))
-      const properties = obj(s.properties)
-      return Object.keys(properties).map((k) => ({ key: k, type: mapType(obj(properties[k])) }))
+      return propsOf(obj(pp.schema), ctx)
     }
   }
   return []
-}
-
-function responseSchema(responses: AnyObj): AnyObj | undefined {
-  const r = obj(responses['200'] ?? responses['201'] ?? responses.default)
-  // openapi3
-  const content = obj(r.content)
-  const json = obj(content['application/json'])
-  if (Object.keys(obj(json.schema)).length > 0) return obj(json.schema)
-  // swagger2
-  if (Object.keys(obj(r.schema)).length > 0) return obj(r.schema)
-  return undefined
-}
-
-function mapType(schema: AnyObj): string {
-  const t = str(schema.type)
-  if (t === 'integer') return 'int'
-  if (t === 'number') return 'number'
-  if (t === 'boolean') return 'boolean'
-  if (t === 'array') return 'array'
-  if (t === 'object') return 'object'
-  if (schema.$ref) return 'object'
-  return t || 'string'
-}
-
-// --- 안전 캐스팅 헬퍼 ---
-function obj(v: unknown): AnyObj {
-  return v && typeof v === 'object' && !Array.isArray(v) ? (v as AnyObj) : {}
-}
-function arr(v: unknown): unknown[] {
-  return Array.isArray(v) ? v : []
-}
-function str(v: unknown): string {
-  return typeof v === 'string' ? v : ''
 }

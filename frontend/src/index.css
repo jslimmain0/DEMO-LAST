@@ -95,6 +95,60 @@ button { font-family: inherit; }
   * { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
 }
 
+/* 드래그 중 손 커서(팔레트 노드·템플릿 끌기) */
+[draggable='true'] { cursor: grab; }
+[draggable='true']:active { cursor: grabbing; }
+
+/* 패널 리사이즈 손잡이 — 손잡이는 패널 표면색이고, 분할선(::before)은 캔버스쪽 가장자리에 붙어 평소엔
+   경계선처럼 보인다(거터 없이 flush). 호버 시 선이 굵어지고, 키보드 포커스는 표면 틴트로 호버와 구분. */
+.fl-resize-handle::before {
+  content: '';
+  position: absolute;
+  background: var(--fl-border);
+  transition: background var(--fl-dur-fast) var(--fl-ease), width var(--fl-dur-fast) var(--fl-ease), height var(--fl-dur-fast) var(--fl-ease);
+}
+.fl-resize-handle[data-axis='x']::before { top: 0; bottom: 0; width: 1px; }
+.fl-resize-handle[data-axis='y']::before { left: 0; right: 0; height: 1px; }
+.fl-resize-handle[data-pin='left']::before { left: 0; }
+.fl-resize-handle[data-pin='right']::before { right: 0; }
+.fl-resize-handle[data-pin='top']::before { top: 0; }
+.fl-resize-handle:hover::before { background: var(--fl-primary); }
+.fl-resize-handle[data-axis='x']:hover::before { width: 3px; }
+.fl-resize-handle[data-axis='y']:hover::before { height: 3px; }
+/* 키보드 포커스: 호버(선만 강조)와 달리 손잡이 전체에 옅은 강조색 틴트 */
+.fl-resize-handle:focus-visible { outline: none; background: color-mix(in srgb, var(--fl-primary) 16%, var(--fl-surface)); }
+.fl-resize-handle:focus-visible::before { background: var(--fl-primary); }
+.fl-resize-handle[data-axis='x']:focus-visible::before { width: 3px; }
+.fl-resize-handle[data-axis='y']:focus-visible::before { height: 3px; }
+
+/* 연결 핸들(원) — 잡기 쉽게 키우고, 호버/연결 드래그 중엔 자석 타겟처럼 확대·하이라이트 */
+.react-flow__handle.fl-handle {
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--fl-primary);
+  border-radius: 50%;
+  background: var(--fl-surface);
+  transition: width var(--fl-dur-fast) var(--fl-ease), height var(--fl-dur-fast) var(--fl-ease), box-shadow var(--fl-dur-fast) var(--fl-ease), background var(--fl-dur-fast) var(--fl-ease);
+}
+.react-flow__node:hover .react-flow__handle.fl-handle,
+.react-flow__handle.fl-handle:hover {
+  width: 16px;
+  height: 16px;
+}
+.react-flow__handle.fl-handle:hover {
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--fl-primary) 18%, transparent);
+}
+/* 연결 드래그 중: 모든 핸들을 키워 자석처럼 떨어뜨리기 쉽게(연결 반경 45px 와 함께 동작) */
+.fl-canvas.connecting .react-flow__handle.fl-handle {
+  width: 18px;
+  height: 18px;
+  box-shadow: 0 0 0 5px color-mix(in srgb, var(--fl-primary) 16%, transparent);
+}
+.react-flow__handle.fl-handle.connectingfrom,
+.react-flow__handle.fl-handle.clickconnecting {
+  background: var(--fl-primary);
+}
+
 /* 스크롤바 */
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-thumb { background: #d3d8e2; border-radius: 8px; border: 2px solid transparent; background-clip: padding-box; }

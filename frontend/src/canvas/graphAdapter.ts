@@ -11,13 +11,14 @@ export function asGraphNode(data: unknown): GraphNode {
 }
 
 export function toRF(graph: FlowGraph): { nodes: Node[]; edges: Edge[] } {
-  const nodes: Node[] = (graph.nodes ?? []).map((n) => ({
+  // 가져오기(붙여넣기) 등 신뢰할 수 없는 입력도 안전하게 — 배열이 아니면 빈 배열로 방어
+  const nodes: Node[] = (Array.isArray(graph.nodes) ? graph.nodes : []).map((n) => ({
     id: n.id,
     type: rfNodeType(n.type),
     position: { x: n.x ?? 0, y: n.y ?? 0 },
     data: n as unknown as Record<string, unknown>,
   }))
-  const edges: Edge[] = (graph.edges ?? []).map((e) => ({
+  const edges: Edge[] = (Array.isArray(graph.edges) ? graph.edges : []).map((e) => ({
     id: e.id,
     source: e.from,
     target: e.to,

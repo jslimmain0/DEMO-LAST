@@ -1,18 +1,20 @@
-# dev 전용: 인프라(Postgres/Docker) 없이 H2 인메모리로 기동.
+# dev 전용: 인프라(Postgres/Docker) 없이 H2 로 기동.
 #   실행: java -jar flowlink.jar --spring.profiles.active=h2
 #   또는: scripts/start.ps1 -H2   /   scripts/start.sh --h2
 #
-# Flyway(Postgres 전용 마이그레이션)는 끄고, Hibernate 가 엔티티에서 스키마를 생성한다(create-drop).
-# 데이터는 JVM 종료 시 사라진다. 운영/통합테스트는 Postgres 를 사용할 것.
+# ★ 파일 기반(영속): 데이터가 JVM 종료 후에도 보존된다(기본 위치: 사용자 홈/flowlink-h2db/flowlink.mv.db).
+#   위치 변경: 환경변수 FLOWLINK_H2_FILE (예: FLOWLINK_H2_FILE=./data/flowlink)
+#   초기화하려면 그 .mv.db 파일을 지우면 됨. Flyway(Postgres 전용)는 끄고 Hibernate 가 스키마를 생성/갱신(update).
 spring:
   datasource:
-    url: jdbc:h2:mem:flowlink;DB_CLOSE_DELAY=-1;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE
+    # AUTO_SERVER: 앱 + H2 콘솔 동시 접속 허용. ~ 는 사용자 홈.
+    url: jdbc:h2:file:${FLOWLINK_H2_FILE:~/flowlink-h2db/flowlink};MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;AUTO_SERVER=TRUE
     driver-class-name: org.h2.Driver
     username: sa
     password: ""
   jpa:
     hibernate:
-      ddl-auto: create-drop
+      ddl-auto: update   # 테이블 생성/컬럼 추가만, 데이터는 보존(create-drop 아님)
     database-platform: org.hibernate.dialect.H2Dialect
   flyway:
     enabled: false
@@ -20,3 +22,11 @@ spring:
     console:
       enabled: true
       path: /h2-console
+
+# 로컬(개발) 전용 완화: localhost 호출 허용 + 요청/응답 본문 로그 표시(redaction off)
+flowlink:
+  execution:
+    ssrf:
+      allow-loopback: true               # workflow 가 localhost/127.0.0.1 API 를 호출 가능
+    capture:
+      request-response-bodies: true      # 실행 로그에 HTTP 요청/응답 본문 그대로 표시(디버그)

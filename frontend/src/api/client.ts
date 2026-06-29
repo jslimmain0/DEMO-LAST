@@ -8,6 +8,7 @@ import type {
   FlowSummary,
   FlowVersionSummary,
   FolderSummary,
+  ResumeRequest,
   RunRequest,
   SaveVersionRequest,
   UpdateFlowRequest,
@@ -65,6 +66,8 @@ export const foldersApi = {
 export const runsApi = {
   run: (flowId: string, body?: RunRequest) =>
     http.post<ExecutionDetail>(`/flows/${flowId}/runs`, body ?? {}).then((r) => r.data),
+  resume: (executionId: string, body: ResumeRequest) =>
+    http.post<ExecutionDetail>(`/executions/${executionId}/resume`, body).then((r) => r.data),
   listForFlow: (flowId: string, limit = 50) =>
     http.get<ExecutionSummary[]>(`/flows/${flowId}/runs`, { params: { limit } }).then((r) => r.data),
   get: (id: string) => http.get<ExecutionDetail>(`/executions/${id}`).then((r) => r.data),

@@ -44,7 +44,7 @@ export function makeNode(type: NodeType, x: number, y: number): GraphNode {
       return {
         id, name: 'HTTP 요청', type: 'http', cat: 'generic',
         method: 'GET', baseUrl: 'https://api.example.com', path: '/resource',
-        bodyType: 'json', respType: 'json', x, y,
+        bodyType: 'json', respType: 'json', reqMode: 'server', charset: 'UTF-8', x, y,
         fields: { params: [], headers: [], body: [] },
         outputs: [{ key: 'data', type: 'object' }, { key: 'id', type: 'string' }],
       }

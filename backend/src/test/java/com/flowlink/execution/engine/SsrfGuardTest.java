@@ -13,9 +13,13 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 class SsrfGuardTest {
 
     private SsrfGuard guard() {
+        return guard(false);
+    }
+
+    private SsrfGuard guard(boolean allowLoopback) {
         ExecutionProperties props = new ExecutionProperties(
                 null,
-                new ExecutionProperties.Ssrf(true, true,
+                new ExecutionProperties.Ssrf(true, true, allowLoopback,
                         List.of("169.254.169.254"), List.of("http", "https")),
                 null,
                 200);
@@ -32,6 +36,20 @@ class SsrfGuardTest {
     void blocksLoopback() {
         assertThrows(SsrfBlockedException.class,
                 () -> guard().check(URI.create("http://127.0.0.1:8080/internal")));
+    }
+
+    @Test
+    void allowsLoopbackWhenConfigured() {
+        // allow-loopback=true → localhost/127.0.0.1 허용(로컬 배포)
+        assertDoesNotThrow(() -> guard(true).check(URI.create("http://127.0.0.1:8080/internal")));
+        assertDoesNotThrow(() -> guard(true).check(URI.create("http://localhost:3000/api")));
+    }
+
+    @Test
+    void allowLoopbackStillBlocksPrivateRange() {
+        // allow-loopback 이어도 사설망(192.168/10.x)은 여전히 차단
+        assertThrows(SsrfBlockedException.class,
+                () -> guard(true).check(URI.create("http://192.168.0.10/")));
     }
 
     @Test

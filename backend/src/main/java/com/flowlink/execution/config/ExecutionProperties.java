@@ -17,7 +17,7 @@ public record ExecutionProperties(
             http = new Http(5000, 30000, 5_242_880L);
         }
         if (ssrf == null) {
-            ssrf = new Ssrf(true, true, List.of("169.254.169.254"), List.of("http", "https"));
+            ssrf = new Ssrf(true, true, false, List.of("169.254.169.254"), List.of("http", "https"));
         }
         if (capture == null) {
             capture = new Capture(false);
@@ -51,6 +51,7 @@ public record ExecutionProperties(
     public record Ssrf(
             boolean enabled,
             boolean blockPrivateNetworks,
+            boolean allowLoopback,        // 로컬 배포용: true 면 localhost/127.0.0.1/::1 허용(사설망은 여전히 차단)
             List<String> blockedHosts,
             List<String> allowedSchemes
     ) {

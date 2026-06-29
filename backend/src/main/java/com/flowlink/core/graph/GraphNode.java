@@ -24,10 +24,11 @@ public record GraphNode(
         Binding baseUrlBound,
         String path,
         String bodyType,        // json | urlencoded | form | raw | xml
-        String respType,        // json | text | xml | binary
+        String respType,        // json | xml | urlencoded | form | text | binary
         String rawBody,
         Boolean jsonRaw,
         String reqMode,         // server | client
+        String charset,         // 요청 인코딩·응답 디코딩 문자셋(UTF-8 기본 · EUC-KR/MS949/US-ASCII). server 모드에 적용
         NodeFields fields,
         List<NodeOutput> outputs,
 

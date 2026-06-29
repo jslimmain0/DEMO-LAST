@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import type { CSSProperties } from 'react'
 import type { Binding } from '../api/types'
 import { catColor, typeIcon, typeLabel } from '../canvas/nodeMeta'
+import { useEscapeClose } from '../components/useEscapeClose'
 import type { BindableItem, BindableSource } from './upstream'
 
 // 상위 노드들의 요청/응답 규격을 블록으로 골라 바인딩을 삽입하는 모달 (UI/UX 스펙 §7.3).
@@ -14,6 +15,7 @@ export function BindingPicker({
   onPick: (binding: Binding) => void
   onClose: () => void
 }) {
+  useEscapeClose(onClose)
   const [q, setQ] = useState('')
   const filtered = useMemo(() => {
     const query = q.trim().toLowerCase()

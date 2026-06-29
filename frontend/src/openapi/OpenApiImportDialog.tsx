@@ -1,7 +1,9 @@
 import type { ChangeEvent, CSSProperties } from 'react'
 import { useState } from 'react'
-import type { GraphNode } from '../api/types'
+import type { PaletteGroup } from '../api/types'
 import { MethodTag } from '../components/MethodTag'
+import { useEscapeClose } from '../components/useEscapeClose'
+import { newId } from '../lib/ids'
 import { parseOpenApi } from './parseOpenApi'
 import type { ParsedOperation } from './parseOpenApi'
 
@@ -9,9 +11,10 @@ export function OpenApiImportDialog({
   onImport,
   onClose,
 }: {
-  onImport: (nodes: GraphNode[]) => void
+  onImport: (group: PaletteGroup) => void
   onClose: () => void
 }) {
+  useEscapeClose(onClose)
   const [text, setText] = useState('')
   const [error, setError] = useState('')
   const [ops, setOps] = useState<ParsedOperation[] | null>(null)
@@ -53,8 +56,18 @@ export function OpenApiImportDialog({
   const doImport = () => {
     if (!ops) return
     const picked = ops.filter((o) => selected.has(o.key))
-    const nodes: GraphNode[] = picked.map((o, i) => o.build(140 + (i % 3) * 360, 140 + Math.floor(i / 3) * 200))
-    onImport(nodes)
+    const group: PaletteGroup = {
+      id: newId(),
+      title: title || 'API',
+      items: picked.map((o) => ({
+        id: newId(),
+        label: o.summary || o.key,
+        method: o.method,
+        path: o.path,
+        node: o.build(0, 0), // 위치는 캔버스에 떨어뜨릴 때 결정 — 여기선 템플릿만
+      })),
+    }
+    onImport(group)
     onClose()
   }
 
@@ -101,7 +114,7 @@ export function OpenApiImportDialog({
             </div>
             <footer style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 18px', borderTop: '1px solid var(--fl-border)' }}>
               <button onClick={() => setOps(null)} style={ghost}>← 다시</button>
-              <button onClick={doImport} disabled={selected.size === 0} style={primary}>{selected.size}개 노드 추가</button>
+              <button onClick={doImport} disabled={selected.size === 0} style={primary}>{selected.size}개 팔레트에 추가</button>
             </footer>
           </>
         )}

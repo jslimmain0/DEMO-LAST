@@ -50,70 +50,171 @@ public class FlowExecutor {
         this.tcpExecutor = tcpExecutor;
     }
 
-    public record Outcome(ExecutionStatus status, String error) {
+    public record Outcome(ExecutionStatus status, String error, PendingClient pending) {
+        static Outcome succeeded() {
+            return new Outcome(ExecutionStatus.SUCCEEDED, null, null);
+        }
+
+        static Outcome failed(String error) {
+            return new Outcome(ExecutionStatus.FAILED, error, null);
+        }
+
+        static Outcome waiting() {
+            return new Outcome(ExecutionStatus.WAITING, null, null);
+        }
+
+        static Outcome pendingClient(PendingClient pc) {
+            return new Outcome(ExecutionStatus.WAITING, null, pc);
+        }
     }
 
-    public Outcome execute(FlowGraph graph, ExecutionContext ctx, NodeRecorder recorder) {
+    /** client 모드 HTTP 노드에서 중단할 때, 브라우저가 대신 호출하도록 넘기는 조립된 요청. */
+    public record PendingClient(String nodeId, String nodeName, String method, String url,
+                                Map<String, String> headers, String body, String respType) {
+    }
+
+    /**
+     * 재개 가능한 실행 진행 상태(인메모리). client 노드에서 WAITING 으로 중단했다가
+     * {@link #resume} 으로 이어서 실행한다. (서버 단일 인스턴스/세션 한정 — 내구성 보관은 후속 Phase)
+     */
+    public static final class RunState {
+        private final List<GraphEdge> edges;
+        private final Map<String, GraphNode> byId;
+        private final List<String> order;
+        private final Set<String> active;
+        private final ExecutionContext ctx;
+        private int index;
+        private int seq;
+        private String pendingClientNodeId;
+
+        private RunState(List<GraphEdge> edges, Map<String, GraphNode> byId, List<String> order,
+                         Set<String> active, ExecutionContext ctx) {
+            this.edges = edges;
+            this.byId = byId;
+            this.order = order;
+            this.active = active;
+            this.ctx = ctx;
+        }
+
+        public ExecutionContext context() {
+            return ctx;
+        }
+    }
+
+    public RunState newRun(FlowGraph graph, ExecutionContext ctx) {
         List<GraphNode> nodes = graph.nodesOrEmpty();
         List<GraphEdge> edges = graph.edgesOrEmpty();
         Map<String, GraphNode> byId = new HashMap<>();
         nodes.forEach(n -> byId.put(n.id(), n));
-
         List<String> order = topoOrder(nodes, edges);
         Set<String> active = initialActive(nodes, edges);
+        return new RunState(edges, byId, order, active, ctx);
+    }
 
-        int seq = 0;
-        for (String id : order) {
-            GraphNode node = byId.get(id);
+    /** 처음부터 실행한다(편의 오버로드 — 재개가 필요 없는 호출/테스트용). */
+    public Outcome execute(FlowGraph graph, ExecutionContext ctx, NodeRecorder recorder) {
+        return drive(newRun(graph, ctx), recorder);
+    }
+
+    public Outcome execute(RunState state, NodeRecorder recorder) {
+        return drive(state, recorder);
+    }
+
+    /** 브라우저(client 모드)가 돌려준 결과를 중단 지점 노드에 적재하고 이어서 실행한다. */
+    public Outcome resume(RunState st, String nodeId, int status, String body, String error,
+                          long durationMs, NodeRecorder recorder) {
+        if (st.pendingClientNodeId == null) {
+            return drive(st, recorder); // 중단 상태가 아니면 방어적으로 계속 진행
+        }
+        GraphNode node = st.byId.get(st.pendingClientNodeId);
+        HttpNodeExecutor.BuiltRequest req = httpExecutor.build(node, st.ctx);
+        NodeResult result = httpExecutor.clientResult(node, req, status, body, error);
+
+        st.ctx.putOutput(node.id(), result.value());
+        if (result.reqValues() != null) {
+            st.ctx.putRequest(node.id(), result.reqValues());
+        }
+        recorder.record(node, st.seq++, result,
+                result.ok() ? NodeExecutionStatus.SUCCEEDED : NodeExecutionStatus.FAILED, durationMs);
+        st.pendingClientNodeId = null;
+
+        if (!result.ok()) {
+            return Outcome.failed("노드 실패: " + node.name() + " — " + truncate(result.responseText()));
+        }
+        activateDownstream(st, node, null);
+        st.index++; // 중단을 유발한 노드는 처리 완료 → 다음 노드부터
+        return drive(st, recorder);
+    }
+
+    private Outcome drive(RunState st, NodeRecorder recorder) {
+        for (; st.index < st.order.size(); st.index++) {
+            String id = st.order.get(st.index);
+            GraphNode node = st.byId.get(id);
             if (node == null) {
                 continue;
             }
-            if (!active.contains(id)) {
-                recorder.record(node, seq++, NodeResult.ok(null, "(미실행)", "분기 미선택으로 건너뜀", null),
+            if (!st.active.contains(id)) {
+                recorder.record(node, st.seq++, NodeResult.ok(null, "(미실행)", "분기 미선택으로 건너뜀", null),
                         NodeExecutionStatus.SKIPPED, 0);
                 continue;
             }
 
             if (node.nodeType() == NodeType.WAIT) {
-                recorder.record(node, seq++, waitResult(node), NodeExecutionStatus.WAITING, 0);
-                return new Outcome(ExecutionStatus.WAITING, null);
+                recorder.record(node, st.seq++, waitResult(node), NodeExecutionStatus.WAITING, 0);
+                return Outcome.waiting();
+            }
+
+            // client 모드 HTTP 노드: 서버가 호출하지 않고 브라우저로 위임 → WAITING 으로 중단
+            if (node.nodeType() == NodeType.HTTP && isClientMode(node)) {
+                HttpNodeExecutor.BuiltRequest req = httpExecutor.build(node, st.ctx);
+                st.pendingClientNodeId = id;
+                PendingClient pc = new PendingClient(id, node.name(), req.method(), req.url(),
+                        req.headers(), req.body(), node.respType() == null ? "json" : node.respType());
+                return Outcome.pendingClient(pc);
             }
 
             long t0 = System.nanoTime();
             NodeResult result;
             try {
-                result = processNode(node, ctx);
+                result = processNode(node, st.ctx);
             } catch (Exception e) {
                 result = NodeResult.fail(0, "", "⚠ " + (e.getMessage() == null ? e.toString() : e.getMessage()));
             }
             long durationMs = (System.nanoTime() - t0) / 1_000_000;
 
-            ctx.putOutput(id, result.value());
+            st.ctx.putOutput(id, result.value());
             if (result.reqValues() != null) {
-                ctx.putRequest(id, result.reqValues());
+                st.ctx.putRequest(id, result.reqValues());
             }
 
-            recorder.record(node, seq++, result,
+            recorder.record(node, st.seq++, result,
                     result.ok() ? NodeExecutionStatus.SUCCEEDED : NodeExecutionStatus.FAILED, durationMs);
 
             if (!result.ok()) {
-                return new Outcome(ExecutionStatus.FAILED,
-                        "노드 실패: " + node.name() + " — " + truncate(result.responseText()));
+                return Outcome.failed("노드 실패: " + node.name() + " — " + truncate(result.responseText()));
             }
 
             // 다운스트림 활성화: IF는 선택 분기만
             String taken = node.nodeType() == NodeType.IF ? result.branch() : null;
-            for (GraphEdge e : edges) {
-                if (!id.equals(e.from())) {
-                    continue;
-                }
-                if (taken != null && !taken.equals(e.fromPortOrDefault())) {
-                    continue;
-                }
-                active.add(e.to());
-            }
+            activateDownstream(st, node, taken);
         }
-        return new Outcome(ExecutionStatus.SUCCEEDED, null);
+        return Outcome.succeeded();
+    }
+
+    private void activateDownstream(RunState st, GraphNode node, String takenBranch) {
+        for (GraphEdge e : st.edges) {
+            if (!node.id().equals(e.from())) {
+                continue;
+            }
+            if (takenBranch != null && !takenBranch.equals(e.fromPortOrDefault())) {
+                continue;
+            }
+            st.active.add(e.to());
+        }
+    }
+
+    private static boolean isClientMode(GraphNode node) {
+        return "client".equalsIgnoreCase(node.reqMode());
     }
 
     private NodeResult processNode(GraphNode node, ExecutionContext ctx) {

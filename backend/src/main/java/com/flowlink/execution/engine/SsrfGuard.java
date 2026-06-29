@@ -101,8 +101,12 @@ public class SsrfGuard {
         }
     }
 
-    private static boolean isBlockedAddress(InetAddress addr) {
-        if (addr.isAnyLocalAddress() || addr.isLoopbackAddress()
+    private boolean isBlockedAddress(InetAddress addr) {
+        // 로컬 배포: allow-loopback 이면 localhost/127.0.0.1/::1 은 허용(그 외 사설/내부 대역은 그대로 차단)
+        if (addr.isLoopbackAddress()) {
+            return !cfg.allowLoopback();
+        }
+        if (addr.isAnyLocalAddress()
                 || addr.isLinkLocalAddress() || addr.isSiteLocalAddress()
                 || addr.isMulticastAddress()) {
             return true;

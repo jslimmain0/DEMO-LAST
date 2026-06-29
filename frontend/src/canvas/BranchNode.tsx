@@ -3,13 +3,6 @@ import type { NodeProps } from '@xyflow/react'
 import { asGraphNode } from './graphAdapter'
 import { catColor, typeIcon } from './nodeMeta'
 
-const handleStyle = {
-  width: 10,
-  height: 10,
-  background: 'var(--fl-surface)',
-  border: '2px solid var(--fl-cat-if)',
-}
-
 // IF 분기 노드 — true/false 두 source 핸들. fromPort='true'|'false' 라운드트립.
 export function BranchNode({ data, selected }: NodeProps) {
   const n = asGraphNode(data)
@@ -26,7 +19,7 @@ export function BranchNode({ data, selected }: NodeProps) {
         position: 'relative',
       }}
     >
-      <Handle type="target" position={Position.Left} style={handleStyle} />
+      <Handle type="target" position={Position.Left} className="fl-handle" style={{ borderColor: 'var(--fl-cat-if)' }} />
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 12px', borderLeft: `3px solid ${accent}` }}>
         <span aria-hidden style={{ color: accent, fontSize: 14, width: 16, textAlign: 'center' }}>{typeIcon('if')}</span>
@@ -40,8 +33,8 @@ export function BranchNode({ data, selected }: NodeProps) {
 
       <div style={{ position: 'absolute', right: -6, top: '34%', fontSize: 9, fontWeight: 700, color: 'var(--fl-ok)' }}>T</div>
       <div style={{ position: 'absolute', right: -6, top: '64%', fontSize: 9, fontWeight: 700, color: 'var(--fl-fail)' }}>F</div>
-      <Handle id="true" type="source" position={Position.Right} style={{ ...handleStyle, top: '38%', borderColor: 'var(--fl-ok)' }} />
-      <Handle id="false" type="source" position={Position.Right} style={{ ...handleStyle, top: '68%', borderColor: 'var(--fl-fail)' }} />
+      <Handle id="true" type="source" position={Position.Right} className="fl-handle" style={{ top: '38%', borderColor: 'var(--fl-ok)' }} />
+      <Handle id="false" type="source" position={Position.Right} className="fl-handle" style={{ top: '68%', borderColor: 'var(--fl-fail)' }} />
     </div>
   )
 }

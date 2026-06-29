@@ -4,7 +4,7 @@
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD'
 export type NodeType = 'start' | 'end' | 'set' | 'http' | 'if' | 'wait' | 'transform' | 'tcp'
 export type BodyType = 'json' | 'urlencoded' | 'form' | 'raw' | 'xml'
-export type RespType = 'json' | 'text' | 'xml' | 'binary'
+export type RespType = 'json' | 'xml' | 'urlencoded' | 'form' | 'text' | 'binary'
 export type ReqMode = 'server' | 'client'
 
 export interface Binding {
@@ -20,6 +20,8 @@ export interface NodeField {
   key: string
   value?: string | null
   bound?: Binding | null
+  // JSON 바디 값의 타입(따옴표 여부). 'string'/미지정=기존 동작(문자열/네이티브), number/boolean/json=코어션.
+  type?: string
 }
 
 export interface NodeFields {
@@ -62,6 +64,7 @@ export interface GraphNode {
   rawBody?: string
   jsonRaw?: boolean
   reqMode?: ReqMode
+  charset?: string // 요청 인코딩·응답 디코딩 문자셋(UTF-8 기본 · EUC-KR/MS949/US-ASCII)
   fields?: NodeFields
   outputs?: NodeOutput[]
   // set
@@ -134,11 +137,28 @@ export interface GraphEdge {
   to: string
 }
 
+// 가져온(OpenAPI/Swagger) 오퍼레이션을 왼쪽 팔레트에 묶어두는 그룹.
+// 실행 그래프(nodes/edges)와 무관한 "재사용 템플릿"이며 FlowGraph 에 함께 저장된다.
+export interface PaletteItem {
+  id: string
+  label: string
+  method?: HttpMethod
+  path?: string
+  node: GraphNode // 캔버스에 떨어뜨릴 때 새 id 로 복제되는 노드 템플릿
+}
+
+export interface PaletteGroup {
+  id: string
+  title: string
+  items: PaletteItem[]
+}
+
 export interface FlowGraph {
   version?: number
   name?: string
   nodes: GraphNode[]
   edges: GraphEdge[]
+  palette?: PaletteGroup[]
 }
 
 // --- 정의 DTO ---
@@ -205,6 +225,26 @@ export interface RunRequest {
   versionNo?: number
 }
 
+// client(클라이언트→서버) 모드 노드에서 실행이 중단될 때, 브라우저가 대신 호출할 요청.
+export interface PendingClientRequest {
+  nodeId: string
+  nodeName?: string
+  method: string
+  url: string
+  headers: Record<string, string>
+  body?: string | null
+  respType?: string
+}
+
+// 브라우저가 호출한 결과를 서버로 돌려보내 실행을 재개하는 바디.
+export interface ResumeRequest {
+  nodeId: string
+  status: number
+  body?: string | null
+  error?: string | null
+  durationMs?: number
+}
+
 export interface ExecutionSummary {
   id: string
   flowId: string
@@ -240,6 +280,7 @@ export interface ExecutionDetail {
   finishedAt: string | null
   error?: string | null
   nodes: NodeExecutionView[]
+  pendingClient?: PendingClientRequest | null
 }
 
 export interface ApiError {

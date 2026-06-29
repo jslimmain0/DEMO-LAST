@@ -9,10 +9,12 @@ export function RunPanel({
   execution,
   running,
   onClose,
+  height = 260,
 }: {
   execution: ExecutionDetail | null
   running: boolean
   onClose: () => void
+  height?: number
 }) {
   const [openId, setOpenId] = useState<string | null>(null)
 
@@ -20,8 +22,8 @@ export function RunPanel({
     <section
       aria-label="실행 로그"
       style={{
-        height: 260,
-        borderTop: '1px solid var(--fl-border)',
+        height,
+        flexShrink: 0,
         background: 'var(--fl-surface)',
         display: 'flex',
         flexDirection: 'column',
@@ -37,13 +39,15 @@ export function RunPanel({
       <div style={{ flex: 1, overflowY: 'auto' }}>
         {running && (
           <div role="status" aria-live="polite" style={{ padding: 16, color: 'var(--fl-text-muted)', fontSize: 13 }}>
-            실행 중… (동기 실행 — 완료되면 결과가 표시됩니다)
+            {execution?.pendingClient
+              ? `브라우저(클라이언트)에서 직접 호출 중… — ${execution.pendingClient.method} ${execution.pendingClient.url}`
+              : '실행 중… (완료되면 결과가 표시됩니다)'}
           </div>
         )}
         {!running && !execution && (
           <div style={{ padding: 16, color: 'var(--fl-text-muted)', fontSize: 13 }}>아직 실행하지 않았습니다. ▶ 실행을 눌러보세요.</div>
         )}
-        {!running && execution && execution.nodes.map((nd) => {
+        {execution && execution.nodes.map((nd) => {
           const open = openId === nd.id
           return (
             <div key={nd.id} style={{ borderBottom: '1px solid var(--fl-border)' }}>

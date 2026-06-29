@@ -18,14 +18,18 @@ const input: CSSProperties = {
   fontSize: 12,
 }
 
+const VALUE_TYPES = ['string', 'number', 'boolean', 'json', 'array']
+
 export function KeyValueEditor({
   rows,
   onChange,
   sources,
+  showType = false,
 }: {
   rows: NodeField[]
   onChange: (rows: NodeField[]) => void
   sources: BindableSource[]
+  showType?: boolean // JSON 바디에서만 값 타입(따옴표 여부) 선택 노출
 }) {
   const [pickFor, setPickFor] = useState<string | null>(null)
   const update = (id: string, patch: Partial<NodeField>) => onChange(rows.map((r) => (r.id === id ? { ...r, ...patch } : r)))
@@ -48,6 +52,17 @@ export function KeyValueEditor({
               </>
             )}
           </div>
+          {showType && (
+            <select
+              style={typeSel}
+              title="JSON 값 타입(따옴표 여부)"
+              aria-label="값 타입"
+              value={r.type ?? 'string'}
+              onChange={(e) => update(r.id, { type: e.target.value })}
+            >
+              {VALUE_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+            </select>
+          )}
           <button onClick={() => remove(r.id)} aria-label="행 삭제" style={delBtn}>×</button>
           {pickFor === r.id && (
             <BindingPicker sources={sources} onClose={() => setPickFor(null)} onPick={(b) => update(r.id, { bound: b, value: '' })} />
@@ -61,4 +76,5 @@ export function KeyValueEditor({
 
 const braceBtn: CSSProperties = { width: 32, height: 32, flexShrink: 0, border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-primary)', cursor: 'pointer', fontFamily: 'var(--fl-font-mono)', fontSize: 12 }
 const delBtn: CSSProperties = { width: 30, flexShrink: 0, border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text-muted)', cursor: 'pointer' }
+const typeSel: CSSProperties = { flexShrink: 0, width: 78, padding: '6px 4px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 11.5 }
 const addBtn: CSSProperties = { marginTop: 2, padding: '6px 10px', border: '1px dashed var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'transparent', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 12.5 }

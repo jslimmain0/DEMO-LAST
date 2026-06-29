@@ -2,6 +2,7 @@ package com.flowlink.execution;
 
 import com.flowlink.execution.dto.ExecutionDetail;
 import com.flowlink.execution.dto.ExecutionSummary;
+import com.flowlink.execution.dto.ResumeRequest;
 import com.flowlink.execution.dto.RunRequest;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -36,6 +37,13 @@ public class ExecutionController {
     public List<ExecutionSummary> runsForFlow(@PathVariable UUID flowId,
                                               @RequestParam(defaultValue = "50") int limit) {
         return service.listForFlow(flowId, limit);
+    }
+
+    /** client(클라이언트→서버) 모드 노드에서 중단된 실행을, 브라우저가 호출한 결과로 재개한다. */
+    @PostMapping("/executions/{id}/resume")
+    public ExecutionDetail resume(@PathVariable UUID id,
+                                  @RequestBody(required = false) ResumeRequest req) {
+        return service.resume(id, req);
     }
 
     @GetMapping("/executions/{id}")

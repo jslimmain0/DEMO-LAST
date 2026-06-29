@@ -42,7 +42,14 @@ export function upstreamSources(nodes: Node[], edges: Edge[], targetId: string):
     if (!rf) continue
     const n = asGraphNode(rf.data)
     const items: BindableItem[] = []
-    for (const o of n.outputs ?? []) items.push({ key: o.key, type: o.type, scope: null, group: 'response' })
+    // HTTP 응답이 통짜형(text/binary)이면 키가 없으므로 본문 전체(body) 한 항목만 노출.
+    // 키형(json/xml/form)·기타 노드는 선언된 출력 키를 그대로 노출.
+    const rt = n.type === 'http' ? n.respType ?? 'json' : undefined
+    if (rt === 'text' || rt === 'binary') {
+      items.push({ key: 'body', type: rt === 'binary' ? 'binary' : 'string', scope: null, group: 'response' })
+    } else {
+      for (const o of n.outputs ?? []) items.push({ key: o.key, type: o.type, scope: null, group: 'response' })
+    }
     for (const v of n.vars ?? []) if (v.key) items.push({ key: v.key, scope: null, group: 'response' })
     for (const tab of ['params', 'headers', 'body'] as const) {
       for (const f of n.fields?.[tab] ?? []) if (f.key) items.push({ key: f.key, scope: 'req', group: 'request' })

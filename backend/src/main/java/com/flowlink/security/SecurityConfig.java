@@ -38,7 +38,11 @@ public class SecurityConfig {
 
     private static final String[] PUBLIC_PATHS = {
             "/actuator/health/**", "/actuator/info", "/actuator/prometheus",
-            "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html"
+            "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html",
+            // 게이트웨이/팝업 콜백 수신부 — 외부 게이트웨이/브라우저 리다이렉트는 JWT 를 지니지 않으므로 permitAll.
+            // 테넌트/실행은 recordCallback 이 추측 불가능한 콜백 토큰/상관키(레지스트리)로 되찾는다(JWT 아님).
+            "/api/v1/executions/callback/**",  // 동적(per-run 토큰) 콜백
+            "/api/v1/callbacks"                // 고정(사전등록/서버 노티) 콜백 — 상관키로 실행 매칭
     };
 
     @Bean

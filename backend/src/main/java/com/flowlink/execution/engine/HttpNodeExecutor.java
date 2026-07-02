@@ -84,33 +84,64 @@ public class HttpNodeExecutor {
         String method = node.method() == null ? "GET" : node.method().toUpperCase();
         Charset cs = charsetOf(node.charset()); // 요청 인코딩·응답 디코딩 문자셋(기본 UTF-8)
 
-        // 3) 헤더
+        // 3) 헤더 — 필드 또는 Raw(Key: Value 줄바꿈)
         Map<String, String> headers = new LinkedHashMap<>();
         StringBuilder skipped = new StringBuilder();
-        for (NodeField f : fields.headersOrEmpty()) {
-            String k = f.key() == null ? "" : f.key().trim();
-            if (k.isEmpty()) {
-                continue;
+        if (Boolean.TRUE.equals(node.headersRaw())) {
+            String rawH = node.rawHeaders() == null ? "" : node.rawHeaders();
+            for (String line : rawH.split("\\r?\\n")) {
+                String l = line.trim();
+                if (l.isEmpty()) {
+                    continue;
+                }
+                int i = l.indexOf(':');
+                if (i < 0) {
+                    continue;
+                }
+                String k = l.substring(0, i).trim();
+                if (k.isEmpty()) {
+                    continue;
+                }
+                if (!HEADER_NAME.matcher(k).matches()) {
+                    skipped.append(skipped.isEmpty() ? "" : ", ").append(k);
+                    continue;
+                }
+                String v = tokens.resolveTokens(l.substring(i + 1).trim(), ctx);
+                headers.put(k, v.replaceAll("[\\r\\n]+", " "));
             }
-            if (!HEADER_NAME.matcher(k).matches()) {
-                skipped.append(skipped.isEmpty() ? "" : ", ").append(k);
-                continue;
+        } else {
+            for (NodeField f : fields.headersOrEmpty()) {
+                String k = f.key() == null ? "" : f.key().trim();
+                if (k.isEmpty()) {
+                    continue;
+                }
+                if (!HEADER_NAME.matcher(k).matches()) {
+                    skipped.append(skipped.isEmpty() ? "" : ", ").append(k);
+                    continue;
+                }
+                headers.put(k, tokens.stringify(tokens.fieldValue(f, ctx)).replaceAll("[\\r\\n]+", " "));
             }
-            headers.put(k, tokens.stringify(tokens.fieldValue(f, ctx)).replaceAll("[\\r\\n]+", " "));
         }
 
-        // 4) 쿼리 파라미터
-        StringBuilder qs = new StringBuilder();
-        for (NodeField f : fields.paramsOrEmpty()) {
-            if (notBlank(f.key())) {
-                if (!qs.isEmpty()) {
-                    qs.append('&');
+        // 4) 쿼리 파라미터 — 필드 또는 Raw(a=1&b=2 원문)
+        String qsStr;
+        if (Boolean.TRUE.equals(node.paramsRaw())) {
+            // Raw 모드: 토큰만 치환하고 원문 그대로 사용(인코딩은 사용자 책임 — 바디 urlencoded raw 와 동일 규약)
+            qsStr = tokens.resolveTokens(node.rawParams() == null ? "" : node.rawParams(), ctx).trim();
+        } else {
+            StringBuilder qs = new StringBuilder();
+            for (NodeField f : fields.paramsOrEmpty()) {
+                if (notBlank(f.key())) {
+                    if (!qs.isEmpty()) {
+                        qs.append('&');
+                    }
+                    qs.append(enc(f.key(), cs)).append('=').append(enc(tokens.stringify(tokens.fieldValue(f, ctx)), cs));
                 }
-                qs.append(enc(f.key(), cs)).append('=').append(enc(tokens.stringify(tokens.fieldValue(f, ctx)), cs));
             }
+            qsStr = qs.toString();
         }
-        if (!qs.isEmpty()) {
-            url += (url.indexOf('?') >= 0 ? "&" : "?") + qs;
+        if (!qsStr.isEmpty()) {
+            url += (url.indexOf('?') >= 0 ? "&" : "?") + qsStr;
         }
 
         // 5) 바디(GET/HEAD 제외)

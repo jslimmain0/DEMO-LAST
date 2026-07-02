@@ -81,3 +81,28 @@ export function rawToFields(raw: string, bodyType: BodyType): KV[] | null {
       }
     })
 }
+
+/** 헤더(키-값) → Raw 텍스트: {@code Key: Value} 줄바꿈 목록(curl 붙여넣기 형태). */
+export function headersToRaw(rows: KV[]): string {
+  return (rows ?? [])
+    .filter((r) => r.key && r.key.trim() !== '')
+    .map((r) => `${r.key}: ${r.value ?? ''}`)
+    .join('\n')
+}
+
+/** Raw 텍스트 → 헤더(키-값). 각 줄 첫 {@code :} 로 분리. 콜론 없는 비어있지 않은 줄이 있으면 {@code null}(변환 실패). */
+export function rawToHeaders(raw: string): KV[] | null {
+  const text = (raw ?? '').trim()
+  if (text === '') return []
+  const out: KV[] = []
+  for (const line of text.split(/\r?\n/)) {
+    const l = line.trim()
+    if (l === '') continue
+    const i = l.indexOf(':')
+    if (i < 0) return null
+    const key = l.slice(0, i).trim()
+    if (key === '') return null
+    out.push({ key, value: l.slice(i + 1).trim() })
+  }
+  return out
+}

@@ -63,6 +63,11 @@ export interface GraphNode {
   respType?: RespType
   rawBody?: string
   jsonRaw?: boolean
+  // Params(쿼리)·Headers 의 [필드 ↔ Raw] 전환 — body 의 jsonRaw/rawBody 와 동일 패턴
+  paramsRaw?: boolean
+  rawParams?: string   // paramsRaw=true 일 때 쿼리스트링 원문(a=1&b=2)
+  headersRaw?: boolean
+  rawHeaders?: string  // headersRaw=true 일 때 헤더 원문(Key: Value 줄바꿈)
   reqMode?: ReqMode
   charset?: string // 요청 인코딩·응답 디코딩 문자셋(UTF-8 기본 · EUC-KR/MS949/US-ASCII)
   fields?: NodeFields
@@ -71,9 +76,11 @@ export interface GraphNode {
   vars?: NodeVar[]
   // if
   condition?: string
-  // wait
+  // wait / 폼 전송(팝업)
   waitMsg?: string
   waitFields?: WaitField[]
+  formAction?: string   // 폼을 target 전송할 URL
+  formMethod?: string   // POST | GET
   // transform
   transformId?: string
   config?: Record<string, string>
@@ -236,12 +243,22 @@ export interface PendingClientRequest {
   respType?: string
 }
 
-// 브라우저가 호출한 결과를 서버로 돌려보내 실행을 재개하는 바디.
-export interface ResumeRequest {
+// 폼 전송 노드에서 중단될 때, 브라우저가 새 창(팝업)으로 target 전송할 폼 명세(값 해석 완료).
+export interface PendingFormRequest {
   nodeId: string
-  status: number
+  nodeName?: string
+  action: string
+  method: string
+  fields: Array<{ key: string; value?: string | null }>
+}
+
+// 실행 재개 바디. client HTTP 는 status/body/error 를, WAIT(폼)은 formValues 를 채운다.
+export interface ResumeRequest {
+  nodeId?: string
+  status?: number
   body?: string | null
   error?: string | null
+  formValues?: Record<string, unknown>
   durationMs?: number
 }
 
@@ -281,6 +298,7 @@ export interface ExecutionDetail {
   error?: string | null
   nodes: NodeExecutionView[]
   pendingClient?: PendingClientRequest | null
+  pendingForm?: PendingFormRequest | null
 }
 
 export interface ApiError {

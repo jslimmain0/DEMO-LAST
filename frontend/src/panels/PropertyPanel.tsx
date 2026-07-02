@@ -2,14 +2,14 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { CSSProperties } from 'react'
 import { useEffect, useMemo, useState } from 'react'
 import { pluginsApi, transformsApi } from '../api/client'
-import type { Binding, BodyType, GraphNode, HttpMethod, NodeField, NodeOutput, NodeVar, ReqMode, RespType, TcpField, TcpRespField, WaitField } from '../api/types'
+import type { Binding, BodyType, GraphNode, HttpMethod, NodeField, NodeOutput, NodeVar, ReqMode, RespType, TcpField, TcpRespField } from '../api/types'
 import { BindingChip } from '../binding/BindingChip'
 import { BindingPicker } from '../binding/BindingPicker'
 import { upstreamSources } from '../binding/upstream'
 import type { BindableSource } from '../binding/upstream'
 import { asGraphNode } from '../canvas/graphAdapter'
 import { catColor, typeIcon, typeLabel } from '../canvas/nodeMeta'
-import { fieldsToRaw, rawToFields } from '../lib/bodyConvert'
+import { fieldsToRaw, rawToFields, headersToRaw, rawToHeaders } from '../lib/bodyConvert'
 import { bindingToToken } from '../lib/tokenGrammar'
 import { newId } from '../lib/ids'
 import { useEditorStore } from '../store/editorStore'
@@ -19,6 +19,13 @@ const label: CSSProperties = { display: 'block', fontSize: 11.5, fontWeight: 600
 const field: CSSProperties = { width: '100%', padding: '8px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 13, fontFamily: 'var(--fl-font-ui)' }
 const mono: CSSProperties = { ...field, fontFamily: 'var(--fl-font-mono)', fontSize: 12 }
 const braceBtn: CSSProperties = { width: 32, height: 32, flexShrink: 0, border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-primary)', cursor: 'pointer', fontFamily: 'var(--fl-font-mono)', fontSize: 12 }
+
+// 폼 전송(WAIT) 노드 특수 토큰 — 실행 시 서버가 실제 값으로 치환한다.
+const CALLBACK_TOKEN = '{{ __callbackUrl }}' // 동적: per-run 토큰 URL(브라우저 팝업 복귀)
+const NOTI_TOKEN = '{{ __notiUrl }}'         // 고정: 사전등록용 안정 URL(서버 노티)
+const CORR_TOKEN = '{{ __corrId }}'          // 상관키: 고정 URL 매칭용
+// 고정 콜백 URL(콘솔 등록/노티용). 백엔드 flowlink.execution.callback.base-url 기본값 기준 — override(터널) 시 그 주소로.
+const fixedCallbackUrl = 'http://localhost:18080/api/v1/callbacks'
 
 const METHODS: HttpMethod[] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD']
 const BODY_TYPES: BodyType[] = ['json', 'urlencoded', 'form', 'raw', 'xml']
@@ -116,6 +123,46 @@ export function PropertyPanel({ width = 360 }: { width?: number }) {
     }
   }
 
+  // Params(쿼리, urlencoded)·Headers(Key: Value)의 [필드 ↔ Raw] 전환. body 와 동일하게 내용을 실제 변환한다.
+  const switchKvRaw = (t: 'params' | 'headers', raw: boolean) => {
+    const cur = t === 'params' ? !!node.paramsRaw : !!node.headersRaw
+    if (raw === cur) return
+    setBodyConvNote(null)
+    const rows = (node.fields?.[t] ?? []).map((f) => ({ key: f.key ?? '', value: f.bound ? bindingToToken(f.bound) : (f.value ?? '') }))
+    if (raw) {
+      const text = t === 'params' ? fieldsToRaw(rows, 'urlencoded') : headersToRaw(rows)
+      update(id, t === 'params' ? { paramsRaw: true, rawParams: text } : { headersRaw: true, rawHeaders: text })
+    } else {
+      const rawText = t === 'params' ? (node.rawParams ?? '') : (node.rawHeaders ?? '')
+      const parsed = t === 'params' ? rawToFields(rawText, 'urlencoded') : rawToHeaders(rawText)
+      if (parsed === null) {
+        setBodyConvNote(t === 'headers'
+          ? 'Raw 헤더를 필드로 변환하지 못했어요(각 줄이 "이름: 값" 형식인지 확인). 원문은 Raw 에 그대로 있습니다.'
+          : 'Raw 를 필드로 변환하지 못했어요. 원문은 Raw 에 그대로 있습니다.')
+        update(id, t === 'params' ? { paramsRaw: false } : { headersRaw: false })
+      } else {
+        const next: NodeField[] = parsed.map((kv) => ({ id: newId(), key: kv.key, value: kv.value }))
+        update(id, t === 'params'
+          ? { paramsRaw: false, fields: { ...fields, params: next } }
+          : { headersRaw: false, fields: { ...fields, headers: next } })
+      }
+    }
+  }
+
+  // 폼 전송(WAIT) 폼 데이터의 [필드 ↔ Raw] 전환(urlencoded). body 처럼 jsonRaw/rawBody 슬롯을 재사용.
+  const switchFormRaw = (raw: boolean) => {
+    if (raw === !!node.jsonRaw) return
+    setBodyConvNote(null)
+    if (raw) {
+      const rows = (node.fields?.body ?? []).map((f) => ({ key: f.key ?? '', value: f.bound ? bindingToToken(f.bound) : (f.value ?? '') }))
+      update(id, { jsonRaw: true, rawBody: fieldsToRaw(rows, 'urlencoded') })
+    } else {
+      const parsed = rawToFields(node.rawBody ?? '', 'urlencoded')
+      const body: NodeField[] = (parsed ?? []).map((kv) => ({ id: newId(), key: kv.key, value: kv.value }))
+      update(id, { jsonRaw: false, fields: { params: fields.params ?? [], headers: fields.headers ?? [], body } })
+    }
+  }
+
   // bodyType 변경 시 모드/내용을 정규화·변환해 "보이는 것과 보내는 것"이 항상 일치하게 한다.
   const changeBodyType = (next: BodyType) => {
     setBodyConvNote(null)
@@ -160,6 +207,9 @@ export function PropertyPanel({ width = 360 }: { width?: number }) {
     if (pick === 'baseUrl') update(id, { baseUrlBound: b })
     else if (pick === 'condition') update(id, { condition: `${node.condition ?? ''} ${bindingToToken(b)}`.trim() })
     else if (pick === 'rawBody') update(id, { rawBody: `${node.rawBody ?? ''} ${bindingToToken(b)}`.trim() })
+    else if (pick === 'rawParams') update(id, { rawParams: `${node.rawParams ?? ''} ${bindingToToken(b)}`.trim() })
+    else if (pick === 'rawHeaders') update(id, { rawHeaders: `${node.rawHeaders ?? ''} ${bindingToToken(b)}`.trim() })
+    else if (pick === 'formAction') update(id, { formAction: `${node.formAction ?? ''} ${bindingToToken(b)}`.trim() })
     else if (pick?.startsWith('tinput:')) setInputField(pick.slice(7), { bound: b, value: '' })
     else if (pick?.startsWith('tcpreq:')) {
       const fid = pick.slice(7)
@@ -242,16 +292,31 @@ export function PropertyPanel({ width = 360 }: { width?: number }) {
               </div>
             )}
 
-            {tab === 'body' && bodyConvNote && (
+            {/* Params(쿼리 urlencoded)·Headers(Key: Value)도 [필드 ↔ Raw] 전환 지원 */}
+            {(tab === 'params' || tab === 'headers') && (
+              <div style={{ marginBottom: 10 }}>
+                <div style={miniSeg} role="group" aria-label={tab === 'params' ? '쿼리 입력 방식' : '헤더 입력 방식'}>
+                  <button type="button" onClick={() => switchKvRaw(tab, false)} style={miniSegBtn(!(tab === 'params' ? node.paramsRaw : node.headersRaw))}>필드</button>
+                  <button type="button" onClick={() => switchKvRaw(tab, true)} style={miniSegBtn(!!(tab === 'params' ? node.paramsRaw : node.headersRaw))}>Raw</button>
+                </div>
+              </div>
+            )}
+
+            {bodyConvNote && (
               <p style={{ ...hintP, color: 'var(--fl-put)', marginTop: 0 }}>⚠ {bodyConvNote}</p>
             )}
 
-            {tab === 'body'
-              && (node.bodyType === 'raw' || node.bodyType === 'xml'
-                || (STRUCTURED_BODY.includes(node.bodyType ?? 'json') && !!node.jsonRaw)) ? (
+            {(tab === 'body'
+              ? (node.bodyType === 'raw' || node.bodyType === 'xml' || (STRUCTURED_BODY.includes(node.bodyType ?? 'json') && !!node.jsonRaw))
+              : tab === 'params' ? !!node.paramsRaw : !!node.headersRaw) ? (
               <div>
-                <textarea style={{ ...mono, minHeight: 140, resize: 'vertical' }} value={node.rawBody ?? ''} onChange={(e) => update(id, { rawBody: e.target.value })} placeholder={rawBodyPlaceholder(node.bodyType)} />
-                <button onClick={() => setPick('rawBody')} style={{ ...braceBtn, width: 'auto', padding: '0 10px', marginTop: 4 }}>{'{ } 데이터 삽입'}</button>
+                <textarea
+                  style={{ ...mono, minHeight: tab === 'headers' ? 100 : 140, resize: 'vertical' }}
+                  value={(tab === 'body' ? node.rawBody : tab === 'params' ? node.rawParams : node.rawHeaders) ?? ''}
+                  onChange={(e) => update(id, tab === 'body' ? { rawBody: e.target.value } : tab === 'params' ? { rawParams: e.target.value } : { rawHeaders: e.target.value })}
+                  placeholder={tab === 'body' ? rawBodyPlaceholder(node.bodyType) : tab === 'params' ? 'a=1&b=2  또는 { } 로 데이터 삽입' : 'Authorization: Bearer ...\nContent-Type: application/json'}
+                />
+                <button onClick={() => setPick(tab === 'body' ? 'rawBody' : tab === 'params' ? 'rawParams' : 'rawHeaders')} style={{ ...braceBtn, width: 'auto', padding: '0 10px', marginTop: 4 }}>{'{ } 데이터 삽입'}</button>
               </div>
             ) : (
               <KeyValueEditor rows={fields[tab] ?? []} onChange={(rows) => setRows(tab, rows)} sources={sources} showType={tab === 'body' && (node.bodyType ?? 'json') === 'json'} />
@@ -405,10 +470,73 @@ export function PropertyPanel({ width = 360 }: { width?: number }) {
 
         {node.type === 'wait' && (
           <>
-            <label style={label}>안내 메시지</label>
-            <input style={field} value={node.waitMsg ?? ''} onChange={(e) => update(id, { waitMsg: e.target.value })} />
-            <label style={label}>입력 필드</label>
-            <WaitFieldsEditor fields={node.waitFields ?? []} onChange={(waitFields) => update(id, { waitFields })} />
+            <label style={label}>전송 URL (action)</label>
+            <div style={{ display: 'flex', gap: 4 }}>
+              <input style={mono} value={node.formAction ?? ''} onChange={(e) => update(id, { formAction: e.target.value })} placeholder="https://example.com/submit" />
+              <button onClick={() => setPick('formAction')} title="데이터 삽입" style={braceBtn}>{'{ }'}</button>
+            </div>
+            <label style={label}>메서드</label>
+            <select style={{ ...field, width: 'auto' }} value={node.formMethod ?? 'POST'} onChange={(e) => update(id, { formMethod: e.target.value })}>
+              <option value="POST">POST</option>
+              <option value="GET">GET</option>
+            </select>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '12px 0 5px' }}>
+              <label style={{ ...label, margin: 0 }}>폼 데이터 (바인딩 가능)</label>
+              <div style={miniSeg} role="group" aria-label="폼 데이터 입력 방식">
+                <button type="button" onClick={() => switchFormRaw(false)} style={miniSegBtn(!node.jsonRaw)}>필드</button>
+                <button type="button" onClick={() => switchFormRaw(true)} style={miniSegBtn(!!node.jsonRaw)}>Raw</button>
+              </div>
+            </div>
+            {bodyConvNote && <p style={{ ...hintP, color: 'var(--fl-put)', marginTop: 0 }}>⚠ {bodyConvNote}</p>}
+            {node.jsonRaw ? (
+              <div>
+                <textarea style={{ ...mono, minHeight: 100, resize: 'vertical' }} value={node.rawBody ?? ''} onChange={(e) => update(id, { rawBody: e.target.value })} placeholder="field1=value1&field2=value2  또는 { } 로 데이터 삽입" />
+                <button onClick={() => setPick('rawBody')} style={{ ...braceBtn, width: 'auto', padding: '0 10px', marginTop: 4 }}>{'{ } 데이터 삽입'}</button>
+              </div>
+            ) : (
+              <KeyValueEditor rows={node.fields?.body ?? []} onChange={(rows) => update(id, { fields: { params: fields.params ?? [], headers: fields.headers ?? [], body: rows } })} sources={sources} />
+            )}
+            <p style={{ ...hintP }}>
+              실행 시 <b>새 창(팝업)</b>으로 이 폼을 target 전송합니다. 팝업이 결과를 postMessage 하거나 창이 닫히면 다음 노드로 진행하며, 그 값이 이 노드의 출력이 됩니다.
+            </p>
+
+            <label style={label}>게이트웨이 콜백 URL</label>
+            <div style={{ display: 'flex', gap: 4 }}>
+              <input style={mono} readOnly value={CALLBACK_TOKEN} onFocus={(e) => e.currentTarget.select()} />
+              <button
+                onClick={() => { void navigator.clipboard?.writeText(CALLBACK_TOKEN).catch(() => {}) }}
+                title="복사"
+                style={braceBtn}
+              >⧉</button>
+              <button
+                onClick={() => update(id, { fields: { params: fields.params ?? [], headers: fields.headers ?? [], body: [...(node.fields?.body ?? []), { id: newId(), key: 'returnUrl', value: CALLBACK_TOKEN }] } })}
+                title="콜백 URL 필드 추가"
+                style={braceBtn}
+              >{'{ }'}</button>
+            </div>
+            <p style={{ ...hintP, marginTop: 8 }}>
+              <b>동적(팝업):</b> 게이트웨이가 요구하는 <b>필드명</b>(returnUrl/ret_url/ReturnURL 등)으로 <code>{CALLBACK_TOKEN}</code> 을 폼 데이터에 추가하세요.
+              실행마다 추측 불가능한 수신 URL 로 치환되고, 게이트웨이가 그 URL 로 리다이렉트하면 <b>결과 파라미터가 이 노드의 출력</b>이 됩니다.
+            </p>
+
+            <label style={label}>고정 콜백 URL (사전등록 · 서버 노티)</label>
+            <div style={{ display: 'flex', gap: 4 }}>
+              <input style={mono} readOnly value={fixedCallbackUrl} onFocus={(e) => e.currentTarget.select()} />
+              <button onClick={() => { void navigator.clipboard?.writeText(fixedCallbackUrl).catch(() => {}) }} title="복사(콘솔 등록용)" style={braceBtn}>⧉</button>
+              <button
+                onClick={() => update(id, { fields: { params: fields.params ?? [], headers: fields.headers ?? [], body: [...(node.fields?.body ?? []), { id: newId(), key: 'oid', value: CORR_TOKEN }] } })}
+                title="상관키 필드 추가"
+                style={braceBtn}
+              >{'{ }'}</button>
+            </div>
+            <p style={{ ...hintP, marginTop: 8 }}>
+              <b>고정(사전등록):</b> 실행마다 안 바뀌는 위 URL 을 게이트웨이 콘솔에 미리 등록하거나 노티(웹훅) URL 로 쓰세요.
+              고정 URL 은 실행을 구분 못 하므로, 게이트웨이가 <b>되돌려주는 필드</b>(주문번호 oid/MOID 등)에 상관키 <code>{CORR_TOKEN}</code> 를 넣으세요
+              (필드명은 게이트웨이 규격대로). 콜백이 그 값을 echo 하면 서버가 대기 중인 실행을 찾아 <b>브라우저 없이 재개</b>합니다.
+              폼에 URL 을 실어야 하는 게이트웨이는 <code>{NOTI_TOKEN}</code> 토큰을 필드 값으로 넣으면 됩니다.
+            </p>
+            <label style={label}>응답 규격 (출력) — 게이트웨이 콜백 결과 키 (하위 노드가 바인딩)</label>
+            <OutputsEditor outputs={node.outputs ?? []} onChange={(outputs) => update(id, { outputs })} />
           </>
         )}
 
@@ -511,21 +639,6 @@ function VarsEditor({ vars, onChange, onPickVar, sourceType }: { vars: NodeVar[]
   )
 }
 
-function WaitFieldsEditor({ fields, onChange }: { fields: WaitField[]; onChange: (f: WaitField[]) => void }) {
-  const upd = (fid: string, patch: Partial<WaitField>) => onChange(fields.map((f) => (f.id === fid ? { ...f, ...patch } : f)))
-  return (
-    <>
-      {fields.map((f) => (
-        <div key={f.id} style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
-          <input style={{ ...mono, flex: 1 }} value={f.key} placeholder="key" onChange={(e) => upd(f.id, { key: e.target.value })} />
-          <input style={{ ...field, flex: 1 }} value={f.label ?? ''} placeholder="라벨" onChange={(e) => upd(f.id, { label: e.target.value })} />
-          <button onClick={() => onChange(fields.filter((x) => x.id !== f.id))} aria-label="삭제" style={{ width: 28, border: '1px solid var(--fl-border)', borderRadius: 6, background: 'var(--fl-surface)', cursor: 'pointer' }}>×</button>
-        </div>
-      ))}
-      <button onClick={() => onChange([...fields, { id: newId(), key: '', label: '' }])} style={addDashed}>+ 필드 추가</button>
-    </>
-  )
-}
 
 function TcpReqEditor({ fields, sourceType, onChange, onPick }: { fields: TcpField[]; sourceType: (b: Binding) => string | undefined; onChange: (f: TcpField[]) => void; onPick: (id: string) => void }) {
   const upd = (fid: string, patch: Partial<TcpField>) => onChange(fields.map((f) => (f.id === fid ? { ...f, ...patch } : f)))

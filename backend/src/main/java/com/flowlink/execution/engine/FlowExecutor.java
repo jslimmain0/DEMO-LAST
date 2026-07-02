@@ -8,6 +8,7 @@ import com.flowlink.core.graph.GraphEdge;
 import com.flowlink.core.graph.GraphNode;
 import com.flowlink.core.graph.NodeField;
 import com.flowlink.core.graph.NodeType;
+import com.flowlink.execution.config.ExecutionProperties;
 import com.flowlink.transform.FlowTransform;
 import com.flowlink.core.graph.NodeVar;
 import org.springframework.stereotype.Component;
@@ -21,6 +22,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
+import java.util.regex.Pattern;
 
 /**
  * 워크플로 그래프를 위상정렬 순서로 실행하는 동기 오케스트레이터.
@@ -31,46 +34,72 @@ import java.util.Set;
 @Component
 public class FlowExecutor {
 
+    /** 폼 전송 노드 특수 토큰. 서버가 실행 시 실제 값으로 치환한다. */
+    static final Pattern CALLBACK_TOKEN = Pattern.compile("\\{\\{\\s*__callbackUrl\\s*}}"); // 동적: per-run 토큰 URL
+    static final Pattern NOTI_URL = Pattern.compile("\\{\\{\\s*__notiUrl\\s*}}");            // 고정: 사전등록용 안정 URL
+    static final Pattern CORR_ID = Pattern.compile("\\{\\{\\s*__corrId\\s*}}");              // 상관키: 고정 URL 매칭용
+
     private final TokenResolver tokens;
     private final ExpressionEvaluator evaluator;
     private final HttpNodeExecutor httpExecutor;
     private final JsonService json;
     private final com.flowlink.transform.TransformRegistry transformRegistry;
     private final TcpNodeExecutor tcpExecutor;
+    private final ExecutionProperties props;
 
     public FlowExecutor(TokenResolver tokens, ExpressionEvaluator evaluator,
                         HttpNodeExecutor httpExecutor, JsonService json,
                         com.flowlink.transform.TransformRegistry transformRegistry,
-                        TcpNodeExecutor tcpExecutor) {
+                        TcpNodeExecutor tcpExecutor, ExecutionProperties props) {
         this.tokens = tokens;
         this.evaluator = evaluator;
         this.httpExecutor = httpExecutor;
         this.json = json;
         this.transformRegistry = transformRegistry;
         this.tcpExecutor = tcpExecutor;
+        this.props = props;
     }
 
-    public record Outcome(ExecutionStatus status, String error, PendingClient pending) {
+    public record Outcome(ExecutionStatus status, String error, PendingClient pendingClient, PendingForm pendingForm) {
         static Outcome succeeded() {
-            return new Outcome(ExecutionStatus.SUCCEEDED, null, null);
+            return new Outcome(ExecutionStatus.SUCCEEDED, null, null, null);
         }
 
         static Outcome failed(String error) {
-            return new Outcome(ExecutionStatus.FAILED, error, null);
+            return new Outcome(ExecutionStatus.FAILED, error, null, null);
         }
 
         static Outcome waiting() {
-            return new Outcome(ExecutionStatus.WAITING, null, null);
+            return new Outcome(ExecutionStatus.WAITING, null, null, null);
         }
 
         static Outcome pendingClient(PendingClient pc) {
-            return new Outcome(ExecutionStatus.WAITING, null, pc);
+            return new Outcome(ExecutionStatus.WAITING, null, pc, null);
+        }
+
+        static Outcome pendingForm(PendingForm pf) {
+            return new Outcome(ExecutionStatus.WAITING, null, null, pf);
+        }
+
+        public boolean isPending() {
+            return pendingClient != null || pendingForm != null;
         }
     }
 
     /** client 모드 HTTP 노드에서 중단할 때, 브라우저가 대신 호출하도록 넘기는 조립된 요청. */
     public record PendingClient(String nodeId, String nodeName, String method, String url,
                                 Map<String, String> headers, String body, String respType) {
+    }
+
+    /**
+     * 폼 전송 노드에서 중단할 때, 브라우저가 새 창(팝업)으로 target 전송할 폼 명세(값은 해석 완료).
+     * {@code callbackToken} 은 이 노드가 {@code {{ __callbackUrl }}} 을 쓸 때만 발급된다(아니면 null) —
+     * ExecutionService 가 token→execId 등록에 쓰며 클라이언트 DTO 로는 노출하지 않는다(서버 내부).
+     */
+    public record PendingForm(String nodeId, String nodeName, String action, String method,
+                              List<Field> fields, String callbackToken, String corrId) {
+        public record Field(String key, String value) {
+        }
     }
 
     /**
@@ -85,7 +114,16 @@ public class FlowExecutor {
         private final ExecutionContext ctx;
         private int index;
         private int seq;
-        private String pendingClientNodeId;
+        private String pendingNodeId; // 중단(재개 대기) 중인 노드 — client HTTP 또는 WAIT(폼)
+        // 게이트웨이 콜백: 폼 필드에 {{ __callbackUrl }} 이 있으면 발급되는 수신 토큰/URL 과
+        // 게이트웨이가 콜백 엔드포인트로 되돌려준 파라미터(수신 즉시 저장 → postMessage 유실에도 재개 가능).
+        private String callbackToken;
+        private String callbackUrl;
+        private Map<String, Object> callbackParams;
+        // 고정(사전등록) 콜백: 안정 URL({{ __notiUrl }})과 실행 매칭용 상관키({{ __corrId }}).
+        // 고정 URL 은 실행마다 안 바뀌므로, 게이트웨이가 echo 하는 corrId 값으로 대기 중인 실행을 찾는다.
+        private String corrId;
+        private String notiUrl;
 
         private RunState(List<GraphEdge> edges, Map<String, GraphNode> byId, List<String> order,
                          Set<String> active, ExecutionContext ctx) {
@@ -120,15 +158,43 @@ public class FlowExecutor {
         return drive(state, recorder);
     }
 
-    /** 브라우저(client 모드)가 돌려준 결과를 중단 지점 노드에 적재하고 이어서 실행한다. */
-    public Outcome resume(RunState st, String nodeId, int status, String body, String error,
-                          long durationMs, NodeRecorder recorder) {
-        if (st.pendingClientNodeId == null) {
+    /**
+     * 중단 지점 노드에 재개 입력을 적재하고 이어서 실행한다.
+     * WAIT(폼) → 제출한 값이 노드 출력이 되고, client HTTP → 브라우저가 돌려준 응답이 결과가 된다.
+     */
+    public Outcome resume(RunState st, Integer httpStatus, String httpBody, String httpError,
+                          Map<String, Object> formValues, long durationMs, NodeRecorder recorder) {
+        if (st.pendingNodeId == null) {
             return drive(st, recorder); // 중단 상태가 아니면 방어적으로 계속 진행
         }
-        GraphNode node = st.byId.get(st.pendingClientNodeId);
-        HttpNodeExecutor.BuiltRequest req = httpExecutor.build(node, st.ctx);
-        NodeResult result = httpExecutor.clientResult(node, req, status, body, error);
+        GraphNode node = st.byId.get(st.pendingNodeId);
+        NodeResult result;
+        if (node.nodeType() == NodeType.WAIT) {
+            // 콜백 스레드(recordCallback)가 기록한 파라미터를 happens-before 로 읽는다.
+            Map<String, Object> callbackParams;
+            synchronized (st) {
+                callbackParams = st.callbackParams;
+            }
+            // 실제 폼 입력이 없고(빈 값 또는 팝업 닫힘 신호 {closed:true}) 게이트웨이 콜백이 도착해 있으면
+            // 그 값을 노드 출력으로(방어적 폴백 — postMessage 유실/차단 시에도 authoritative 결과 반영).
+            Map<String, Object> values;
+            if (isNoFormInput(formValues) && callbackParams != null) {
+                values = callbackParams;
+            } else {
+                values = formValues == null ? Map.of() : formValues;
+            }
+            result = NodeResult.ok(null, "(폼 입력)", json.toJson(values), values);
+            synchronized (st) {
+                st.callbackToken = null;
+                st.callbackUrl = null;
+                st.callbackParams = null;
+                st.corrId = null;
+                st.notiUrl = null;
+            }
+        } else {
+            HttpNodeExecutor.BuiltRequest req = httpExecutor.build(node, st.ctx);
+            result = httpExecutor.clientResult(node, req, httpStatus == null ? 0 : httpStatus, httpBody, httpError);
+        }
 
         st.ctx.putOutput(node.id(), result.value());
         if (result.reqValues() != null) {
@@ -136,7 +202,7 @@ public class FlowExecutor {
         }
         recorder.record(node, st.seq++, result,
                 result.ok() ? NodeExecutionStatus.SUCCEEDED : NodeExecutionStatus.FAILED, durationMs);
-        st.pendingClientNodeId = null;
+        st.pendingNodeId = null;
 
         if (!result.ok()) {
             return Outcome.failed("노드 실패: " + node.name() + " — " + truncate(result.responseText()));
@@ -159,15 +225,57 @@ public class FlowExecutor {
                 continue;
             }
 
+            // 폼 전송 노드: 브라우저가 새 창(팝업)으로 폼을 target 전송하도록 WAITING 으로 중단
             if (node.nodeType() == NodeType.WAIT) {
-                recorder.record(node, st.seq++, waitResult(node), NodeExecutionStatus.WAITING, 0);
-                return Outcome.waiting();
+                st.pendingNodeId = id;
+                st.callbackParams = null;
+                // 동적 콜백: {{ __callbackUrl }} 이 있으면 per-run 토큰 URL 을 발급(브라우저 팝업 복귀용).
+                if (referencesToken(node, CALLBACK_TOKEN)) {
+                    st.callbackToken = UUID.randomUUID().toString().replace("-", "");
+                    st.callbackUrl = props.callback().baseUrl() + "/api/v1/executions/callback/" + st.callbackToken;
+                } else {
+                    st.callbackToken = null;
+                    st.callbackUrl = null;
+                }
+                // 고정 콜백: {{ __notiUrl }}/{{ __corrId }} 가 있으면 안정 URL + 상관키를 발급(사전등록·서버 노티용).
+                if (referencesToken(node, NOTI_URL) || referencesToken(node, CORR_ID)) {
+                    st.corrId = UUID.randomUUID().toString().replace("-", "");
+                    st.notiUrl = props.callback().baseUrl() + "/api/v1/callbacks";
+                } else {
+                    st.corrId = null;
+                    st.notiUrl = null;
+                }
+                String action = resolveFormValue(node.formAction() == null ? "" : node.formAction(), st);
+                String method = node.formMethod() == null ? "POST" : node.formMethod().toUpperCase();
+                List<PendingForm.Field> ff = new ArrayList<>();
+                if (Boolean.TRUE.equals(node.jsonRaw())) {
+                    // Raw 모드: 폼 데이터를 a=1&b=2 원문으로 입력 → 필드로 분해(콜백 치환 + 토큰 해석)
+                    String raw = node.rawBody() == null ? "" : node.rawBody();
+                    for (String pair : raw.split("&")) {
+                        if (pair.isBlank()) {
+                            continue;
+                        }
+                        int eq = pair.indexOf('=');
+                        String k = (eq >= 0 ? pair.substring(0, eq) : pair).trim();
+                        if (k.isEmpty()) {
+                            continue;
+                        }
+                        ff.add(new PendingForm.Field(k, resolveFormValue(eq >= 0 ? pair.substring(eq + 1) : "", st)));
+                    }
+                } else {
+                    for (NodeField f : node.fieldsOrEmpty().bodyOrEmpty()) {
+                        if (f.key() != null && !f.key().isBlank()) {
+                            ff.add(new PendingForm.Field(f.key(), resolveFormFieldValue(f, st)));
+                        }
+                    }
+                }
+                return Outcome.pendingForm(new PendingForm(id, node.name(), action, method, ff, st.callbackToken, st.corrId));
             }
 
             // client 모드 HTTP 노드: 서버가 호출하지 않고 브라우저로 위임 → WAITING 으로 중단
             if (node.nodeType() == NodeType.HTTP && isClientMode(node)) {
                 HttpNodeExecutor.BuiltRequest req = httpExecutor.build(node, st.ctx);
-                st.pendingClientNodeId = id;
+                st.pendingNodeId = id;
                 PendingClient pc = new PendingClient(id, node.name(), req.method(), req.url(),
                         req.headers(), req.body(), node.respType() == null ? "json" : node.respType());
                 return Outcome.pendingClient(pc);
@@ -215,6 +323,72 @@ public class FlowExecutor {
 
     private static boolean isClientMode(GraphNode node) {
         return "client".equalsIgnoreCase(node.reqMode());
+    }
+
+    /** 폼 전송 노드의 action/필드/Raw 어디든 주어진 특수 토큰을 참조하는지. */
+    private static boolean referencesToken(GraphNode node, Pattern p) {
+        if (hasRef(node.formAction(), p)) {
+            return true;
+        }
+        if (Boolean.TRUE.equals(node.jsonRaw()) && hasRef(node.rawBody(), p)) {
+            return true; // Raw 폼 데이터 모드
+        }
+        for (NodeField f : node.fieldsOrEmpty().bodyOrEmpty()) {
+            if (f.bound() == null && hasRef(f.value(), p)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean hasRef(String s, Pattern p) {
+        return s != null && p.matcher(s).find();
+    }
+
+    /** 문자열 리터럴에서 특수 토큰(__callbackUrl/__notiUrl/__corrId)을 먼저 치환하고 나머지 토큰을 해석. */
+    private String resolveFormValue(String raw, RunState st) {
+        if (raw == null) {
+            return tokens.resolveTokens("", st.ctx);
+        }
+        raw = substitute(raw, CALLBACK_TOKEN, st.callbackUrl);
+        raw = substitute(raw, NOTI_URL, st.notiUrl);
+        raw = substitute(raw, CORR_ID, st.corrId);
+        return tokens.resolveTokens(raw, st.ctx);
+    }
+
+    private static String substitute(String raw, Pattern p, String value) {
+        if (value == null || !p.matcher(raw).find()) {
+            return raw;
+        }
+        return p.matcher(raw).replaceAll(java.util.regex.Matcher.quoteReplacement(value));
+    }
+
+    /** 폼 필드 값 — 바인딩이면 그 값, 리터럴이면 특수 토큰 치환 + 토큰 해석. */
+    private String resolveFormFieldValue(NodeField f, RunState st) {
+        if (f.bound() != null) {
+            return tokens.stringify(tokens.fieldValue(f, st.ctx));
+        }
+        return resolveFormValue(f.value(), st);
+    }
+
+    /**
+     * 게이트웨이가 콜백 엔드포인트로 되돌려준 파라미터를 재개 상태에 저장한다(수신 즉시, authoritative).
+     * 브라우저의 postMessage/재개가 유실돼도 이 값으로 WAIT 노드를 완료할 수 있다. (ExecutionService 가 호출)
+     *
+     * <p>콜백은 별도 서블릿 스레드에서 도착하므로 {@code resume} 의 읽기와 happens-before 를 맺도록 {@code st} 로 동기화한다.
+     */
+    public void recordCallback(RunState st, Map<String, Object> params) {
+        synchronized (st) {
+            st.callbackParams = params;
+        }
+    }
+
+    /** 실제 폼 입력이 없는가 — 비었거나 팝업 닫힘 신호({closed:true})만 있는 경우(콜백 폴백 트리거). */
+    private static boolean isNoFormInput(Map<String, Object> formValues) {
+        if (formValues == null || formValues.isEmpty()) {
+            return true;
+        }
+        return formValues.size() == 1 && Boolean.TRUE.equals(formValues.get("closed"));
     }
 
     private NodeResult processNode(GraphNode node, ExecutionContext ctx) {

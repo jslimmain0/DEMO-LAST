@@ -1,9 +1,9 @@
 import { ReactFlowProvider } from '@xyflow/react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import type { CSSProperties } from 'react'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import type { ExecutionDetail, PendingClientRequest, ResumeRequest } from '../api/types'
+import type { ExecutionDetail, PendingClientRequest, PendingFormRequest, ResumeRequest } from '../api/types'
 import { flowsApi, runsApi } from '../api/client'
 import { FlowCanvas } from '../canvas/FlowCanvas'
 import { Palette } from '../canvas/Palette'
@@ -11,6 +11,7 @@ import { PropertyPanel } from '../panels/PropertyPanel'
 import { RunPanel } from '../panels/RunPanel'
 import { OpenApiImportDialog } from '../openapi/OpenApiImportDialog'
 import { WorkflowIODialog } from '../openapi/WorkflowIODialog'
+import { FormPopupDialog } from '../components/FormPopupDialog'
 import { ResizeHandle } from '../components/ResizeHandle'
 import { useEditorStore } from '../store/editorStore'
 
@@ -31,6 +32,9 @@ export function Editor() {
   const [showLog, setShowLog] = useState(false)
   const [showApiImport, setShowApiImport] = useState(false)
   const [workflowIO, setWorkflowIO] = useState<'export' | 'import' | null>(null)
+  // 폼 전송 노드 팝업 — 실행 루프가 팝업 결과를 기다리도록 Promise resolver 를 보관
+  const [pendingForm, setPendingForm] = useState<PendingFormRequest | null>(null)
+  const formResolverRef = useRef<((values: Record<string, unknown> | null) => void) | null>(null)
 
   // 패널 크기(좌 팔레트 / 우 속성 / 하 로그) — 드래그로 조절하고 localStorage 에 유지
   const [paletteW, setPaletteW] = useState(() => loadSize('paletteW', 200, 160, 420))
@@ -68,6 +72,17 @@ export function Editor() {
     onSuccess: () => markSaved(),
   })
 
+  // 폼 팝업 결과(값) 또는 취소(null)를 기다린다.
+  const askForm = (form: PendingFormRequest): Promise<Record<string, unknown> | null> => {
+    setPendingForm(form)
+    return new Promise((resolve) => { formResolverRef.current = resolve })
+  }
+  const resolveForm = (values: Record<string, unknown> | null) => {
+    formResolverRef.current?.(values)
+    formResolverRef.current = null
+    setPendingForm(null)
+  }
+
   const onRun = async () => {
     setShowLog(true)
     setRunning(true)
@@ -76,12 +91,19 @@ export function Editor() {
       if (useEditorStore.getState().dirty) await save.mutateAsync()
       let detail = await runsApi.run(flowId)
       setExecution(detail)
-      // client(클라이언트→서버) 모드 노드를 만나면 서버가 WAITING 으로 중단하고 요청을 넘긴다.
-      // 브라우저에서 직접 호출한 뒤 결과를 resume 으로 돌려보내는 과정을 끝까지 반복한다.
+      // 서버가 중단(WAITING)하며 넘기는 지점을 처리하고 resume 으로 이어가길 반복:
+      //  - pendingClient: 브라우저가 직접 API 호출 → 결과 전송
+      //  - pendingForm: 폼 팝업을 띄워 사용자 입력 → 값 전송
       let guard = 0
-      while (detail.pendingClient && guard++ < 100) {
-        const resumeBody = await callClientRequest(detail.pendingClient)
-        detail = await runsApi.resume(detail.id, resumeBody)
+      while ((detail.pendingClient || detail.pendingForm) && guard++ < 100) {
+        if (detail.pendingForm) {
+          const values = await askForm(detail.pendingForm)
+          if (values === null) break // 취소 → 실행은 WAITING 상태로 남김
+          detail = await runsApi.resume(detail.id, { formValues: values })
+        } else if (detail.pendingClient) {
+          const resumeBody = await callClientRequest(detail.pendingClient)
+          detail = await runsApi.resume(detail.id, resumeBody)
+        }
         setExecution(detail)
       }
     } catch {
@@ -141,6 +163,13 @@ export function Editor() {
           initialTab={workflowIO}
           onImport={(g) => importGraph(g)}
           onClose={() => setWorkflowIO(null)}
+        />
+      )}
+      {pendingForm && (
+        <FormPopupDialog
+          form={pendingForm}
+          onResult={(values) => resolveForm(values)}
+          onCancel={() => resolveForm(null)}
         />
       )}
     </div>

@@ -39,9 +39,11 @@ export function RunPanel({
       <div style={{ flex: 1, overflowY: 'auto' }}>
         {running && (
           <div role="status" aria-live="polite" style={{ padding: 16, color: 'var(--fl-text-muted)', fontSize: 13 }}>
-            {execution?.pendingClient
-              ? `브라우저(클라이언트)에서 직접 호출 중… — ${execution.pendingClient.method} ${execution.pendingClient.url}`
-              : '실행 중… (완료되면 결과가 표시됩니다)'}
+            {execution?.pendingForm
+              ? '폼 전송 창 대기 중… (팝업에서 완료하거나 창을 닫으면 진행됩니다)'
+              : execution?.pendingClient
+                ? `브라우저(클라이언트)에서 직접 호출 중… — ${execution.pendingClient.method} ${execution.pendingClient.url}`
+                : '실행 중… (완료되면 결과가 표시됩니다)'}
           </div>
         )}
         {!running && !execution && (

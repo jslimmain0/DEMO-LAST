@@ -19,6 +19,8 @@ public record ExecutionDetail(
         String error,
         List<NodeExecutionView> nodes,
         // client(클라이언트→서버) 모드 노드에서 중단된 경우, 브라우저가 대신 호출할 요청. 아니면 null.
-        PendingClientRequest pendingClient
+        PendingClientRequest pendingClient,
+        // WAIT(입력 폼) 노드에서 중단된 경우, 브라우저가 띄울 폼 명세. 아니면 null.
+        PendingFormRequest pendingForm
 ) {
 }

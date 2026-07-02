@@ -27,6 +27,10 @@ public record GraphNode(
         String respType,        // json | xml | urlencoded | form | text | binary
         String rawBody,
         Boolean jsonRaw,
+        Boolean paramsRaw,      // 쿼리 파라미터 [필드↔Raw] — true 면 rawParams(a=1&b=2) 사용
+        String rawParams,
+        Boolean headersRaw,     // 헤더 [필드↔Raw] — true 면 rawHeaders(Key: Value 줄바꿈) 사용
+        String rawHeaders,
         String reqMode,         // server | client
         String charset,         // 요청 인코딩·응답 디코딩 문자셋(UTF-8 기본 · EUC-KR/MS949/US-ASCII). server 모드에 적용
         NodeFields fields,
@@ -38,9 +42,11 @@ public record GraphNode(
         // --- if ---
         String condition,
 
-        // --- wait ---
+        // --- wait / 폼 전송(팝업) ---
         String waitMsg,
         List<WaitField> waitFields,
+        String formAction,      // 폼을 target 전송할 URL
+        String formMethod,      // POST | GET
 
         // --- transform ---
         String transformId,

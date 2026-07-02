@@ -10,11 +10,16 @@ export function asGraphNode(data: unknown): GraphNode {
   return data as GraphNode
 }
 
-// 하위호환: 폼 전송이 한때 type=wait 로 저장되던 시기의 그래프 — formAction 이 있는 wait 는 form 으로 승격.
-// (신규 wait=콜백 대기 노드는 formAction 을 갖지 않는다. 백엔드 GraphNode.effectiveType() 과 동일 규칙)
+// 하위호환: type=wait 로 저장되던 시기의 그래프 — formAction 이 있으면 폼 전송(form),
+// 콜백 설정 없이 waitFields 만 있으면 구 입력 대기(input)로 승격.
+// (신규 노드는 form/input/wait 타입을 직접 갖는다. 백엔드 GraphNode.effectiveType() 과 동일 규칙)
 function migrateNode(n: GraphNode): GraphNode {
-  if (n.type === 'wait' && n.formAction) {
-    return { ...n, type: 'form', cat: 'form' }
+  if (n.type === 'wait') {
+    if (n.formAction) return { ...n, type: 'form', cat: 'form' }
+    if (n.waitTimeoutSec == null && n.callbackRespType == null && n.callbackRespBody == null
+      && (n.waitFields?.length ?? 0) > 0) {
+      return { ...n, type: 'input', cat: 'input' }
+    }
   }
   return n
 }

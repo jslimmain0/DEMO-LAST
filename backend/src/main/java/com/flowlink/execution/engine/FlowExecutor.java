@@ -55,29 +55,33 @@ public class FlowExecutor {
     }
 
     public record Outcome(ExecutionStatus status, String error, PendingClient pendingClient,
-                          PendingForm pendingForm, PendingWait pendingWait) {
+                          PendingForm pendingForm, PendingWait pendingWait, PendingInput pendingInput) {
         static Outcome succeeded() {
-            return new Outcome(ExecutionStatus.SUCCEEDED, null, null, null, null);
+            return new Outcome(ExecutionStatus.SUCCEEDED, null, null, null, null, null);
         }
 
         static Outcome failed(String error) {
-            return new Outcome(ExecutionStatus.FAILED, error, null, null, null);
+            return new Outcome(ExecutionStatus.FAILED, error, null, null, null, null);
         }
 
         static Outcome pendingClient(PendingClient pc) {
-            return new Outcome(ExecutionStatus.WAITING, null, pc, null, null);
+            return new Outcome(ExecutionStatus.WAITING, null, pc, null, null, null);
         }
 
         static Outcome pendingForm(PendingForm pf) {
-            return new Outcome(ExecutionStatus.WAITING, null, null, pf, null);
+            return new Outcome(ExecutionStatus.WAITING, null, null, pf, null, null);
         }
 
         static Outcome pendingWait(PendingWait pw) {
-            return new Outcome(ExecutionStatus.WAITING, null, null, null, pw);
+            return new Outcome(ExecutionStatus.WAITING, null, null, null, pw, null);
+        }
+
+        static Outcome pendingInput(PendingInput pi) {
+            return new Outcome(ExecutionStatus.WAITING, null, null, null, null, pi);
         }
 
         public boolean isPending() {
-            return pendingClient != null || pendingForm != null || pendingWait != null;
+            return pendingClient != null || pendingForm != null || pendingWait != null || pendingInput != null;
         }
     }
 
@@ -95,6 +99,12 @@ public class FlowExecutor {
 
     /** wait(콜백 대기) 노드에서 중단할 때 넘기는 대기 명세. receiveUrl 은 relay 미연동이면 null. */
     public record PendingWait(String nodeId, String nodeName, int timeoutSec, String receiveUrl) {
+    }
+
+    /** input(사용자 입력) 노드에서 중단할 때, 브라우저가 모달로 띄울 입력 명세. */
+    public record PendingInput(String nodeId, String nodeName, String message, List<Field> fields) {
+        public record Field(String key, String label, String type) {
+        }
     }
 
     /**
@@ -189,6 +199,8 @@ public class FlowExecutor {
             result = formResumeResult(st, in);
         } else if (et == NodeType.WAIT) {
             result = waitResumeResult(node, st, in);
+        } else if (et == NodeType.INPUT) {
+            result = inputResumeResult(node, in);
         } else {
             HttpNodeExecutor.BuiltRequest req = httpExecutor.build(node, st.ctx);
             result = httpExecutor.clientResult(node, req,
@@ -251,6 +263,21 @@ public class FlowExecutor {
                         ? 120 : node.waitTimeoutSec();
                 return Outcome.pendingWait(new PendingWait(id, node.name(), timeout,
                         receiveUrl(st.relayBase, st.relayRunId, id)));
+            }
+
+            // input(사용자 입력) 노드: 브라우저 모달로 값을 받도록 중단 — confirm 값이 노드 출력이 된다
+            if (et == NodeType.INPUT) {
+                st.pendingNodeId = id;
+                String msg = tokens.resolveTokens(
+                        node.waitMsg() == null || node.waitMsg().isBlank() ? "값을 입력하세요" : node.waitMsg(), st.ctx);
+                List<PendingInput.Field> fs = new ArrayList<>();
+                for (com.flowlink.core.graph.WaitField f
+                        : node.waitFields() == null ? List.<com.flowlink.core.graph.WaitField>of() : node.waitFields()) {
+                    if (f.key() != null && !f.key().isBlank()) {
+                        fs.add(new PendingInput.Field(f.key(), f.label(), f.type()));
+                    }
+                }
+                return Outcome.pendingInput(new PendingInput(id, node.name(), msg, fs));
             }
 
             // client 모드 HTTP 노드: 서버가 호출하지 않고 브라우저로 위임 → WAITING 으로 중단
@@ -386,6 +413,17 @@ public class FlowExecutor {
         return NodeResult.fail(0, "(콜백 대기) " + (recvUrl == null ? "" : recvUrl), err);
     }
 
+    /** input 재개 — 모달에서 confirm 한 값(타입 파싱은 브라우저 몫)이 그대로 노드 출력이 된다. */
+    private NodeResult inputResumeResult(GraphNode node, ResumeInput in) {
+        if (in != null && in.error() != null && !in.error().isBlank()) {
+            return NodeResult.fail(0, "(사용자 입력)", in.error());
+        }
+        Map<String, Object> values = (in == null || in.formValues() == null)
+                ? new LinkedHashMap<>() : new LinkedHashMap<>(in.formValues());
+        String msg = node.waitMsg() == null ? "" : node.waitMsg();
+        return NodeResult.ok(null, "(사용자 입력) " + msg, json.toJson(values), values);
+    }
+
     /**
      * 콜백 본문 파싱(tryParse) — JSON({,[," 시작)이면 JSON 으로, 실패 시 a=1&b=2 형태면
      * form-urlencoded 객체로, 둘 다 아니면 원문 문자열을 body 키로 보존한다.
@@ -465,7 +503,7 @@ public class FlowExecutor {
             case TRANSFORM -> transformNode(node, ctx);
             case TCP -> tcpExecutor.execute(node, ctx);
             // 정상 흐름에선 drive()가 선처리 — 방어적 통과
-            case FORM, WAIT -> NodeResult.ok(null, "(대기/폼)", "브라우저 협업 노드 — drive 선처리 경로", Map.of());
+            case FORM, WAIT, INPUT -> NodeResult.ok(null, "(대기/폼/입력)", "브라우저 협업 노드 — drive 선처리 경로", Map.of());
             case UNKNOWN -> NodeResult.fail(0, "", "지원하지 않는 노드 타입: " + node.type());
         };
     }

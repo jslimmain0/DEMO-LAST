@@ -23,6 +23,8 @@ public record ExecutionDetail(
         // form(폼 전송·팝업) 노드에서 중단된 경우, 브라우저가 팝업으로 제출할 폼 명세. 아니면 null.
         PendingFormRequest pendingForm,
         // wait(콜백 대기) 노드에서 중단된 경우, 브라우저가 대기할 콜백 명세. 아니면 null.
-        PendingWaitRequest pendingWait
+        PendingWaitRequest pendingWait,
+        // input(사용자 입력) 노드에서 중단된 경우, 브라우저가 모달로 띄울 입력 명세. 아니면 null.
+        PendingInputRequest pendingInput
 ) {
 }

@@ -25,6 +25,7 @@ import com.flowlink.execution.dto.ExecutionSummary;
 import com.flowlink.execution.dto.NodeExecutionView;
 import com.flowlink.execution.dto.PendingClientRequest;
 import com.flowlink.execution.dto.PendingFormRequest;
+import com.flowlink.execution.dto.PendingInputRequest;
 import com.flowlink.execution.dto.PendingWaitRequest;
 import com.flowlink.execution.dto.ResumeRequest;
 import com.flowlink.execution.dto.RunRequest;
@@ -131,12 +132,12 @@ public class ExecutionService {
         } catch (Exception e) {
             execution.markFailed("실행 중 오류: " + msg(e));
             executionRepo.save(execution);
-            return detail(execution, null, null, null);
+            return detail(execution, null, null, null, null);
         }
         applyStatus(execution, outcome);
         rememberIfPending(execId, outcome, state, tenant);
         executionRepo.save(execution);
-        return detail(execution, outcome.pendingClient(), outcome.pendingForm(), outcome.pendingWait());
+        return detail(execution, outcome.pendingClient(), outcome.pendingForm(), outcome.pendingWait(), outcome.pendingInput());
     }
 
     /**
@@ -150,7 +151,7 @@ public class ExecutionService {
             // 멱등: 이미 재개/완료됐거나 대기 상태가 아니면 에러 대신 현재 상태를 반환.
             Execution existing = executionRepo.findByIdAndTenantId(executionId, tenant)
                     .orElseThrow(() -> NotFoundException.of("Execution", executionId));
-            return detail(existing, null, null, null);
+            return detail(existing, null, null, null, null);
         }
         return doResume(executionId, suspended, req);
     }
@@ -168,7 +169,7 @@ public class ExecutionService {
             suspensions.remove(executionId); // 예외 경로에서도 보관소 정리(누수 방지)
             execution.markFailed("재개 중 오류: " + msg(e));
             executionRepo.save(execution);
-            return detail(execution, null, null, null);
+            return detail(execution, null, null, null, null);
         }
         // 사용자 중단(⏹)은 실패가 아니라 취소로 마감한다.
         if (req != null && Boolean.TRUE.equals(req.aborted()) && outcome.status() == ExecutionStatus.FAILED) {
@@ -178,7 +179,7 @@ public class ExecutionService {
         }
         rememberIfPending(executionId, outcome, suspended.state(), suspended.tenant());
         executionRepo.save(execution);
-        return detail(execution, outcome.pendingClient(), outcome.pendingForm(), outcome.pendingWait());
+        return detail(execution, outcome.pendingClient(), outcome.pendingForm(), outcome.pendingWait(), outcome.pendingInput());
     }
 
     private static FlowExecutor.ResumeInput toResumeInput(ResumeRequest req) {
@@ -217,7 +218,7 @@ public class ExecutionService {
     public ExecutionDetail get(UUID executionId) {
         Execution e = executionRepo.findByIdAndTenantId(executionId, TenantContext.getTenantId())
                 .orElseThrow(() -> NotFoundException.of("Execution", executionId));
-        return detail(e, null, null, null);
+        return detail(e, null, null, null, null);
     }
 
     @Transactional(readOnly = true)
@@ -286,7 +287,8 @@ public class ExecutionService {
     }
 
     private ExecutionDetail detail(Execution e, FlowExecutor.PendingClient pending,
-                                   FlowExecutor.PendingForm form, FlowExecutor.PendingWait wait) {
+                                   FlowExecutor.PendingForm form, FlowExecutor.PendingWait wait,
+                                   FlowExecutor.PendingInput input) {
         List<NodeExecutionView> nodes = nodeExecRepo.findByExecutionIdOrderBySeqAsc(e.getId())
                 .stream().map(this::toView).toList();
         PendingClientRequest pc = pending == null ? null : new PendingClientRequest(
@@ -298,9 +300,13 @@ public class ExecutionService {
                         .map(f -> new PendingFormRequest.FormField(f.key(), f.value())).toList());
         PendingWaitRequest pw = wait == null ? null : new PendingWaitRequest(
                 wait.nodeId(), wait.nodeName(), wait.timeoutSec(), wait.receiveUrl());
+        PendingInputRequest pi = input == null ? null : new PendingInputRequest(
+                input.nodeId(), input.nodeName(), input.message(),
+                (input.fields() == null ? List.<FlowExecutor.PendingInput.Field>of() : input.fields()).stream()
+                        .map(f -> new PendingInputRequest.InputField(f.key(), f.label(), f.type())).toList());
         return new ExecutionDetail(e.getId(), e.getFlowId(), e.getFlowVersionId(), e.getStatus(),
                 e.getTrigger(), e.getTriggeredBy(), e.getStartedAt(), e.getFinishedAt(), e.getError(),
-                nodes, pc, pf, pw);
+                nodes, pc, pf, pw, pi);
     }
 
     private NodeExecutionView toView(NodeExecution n) {

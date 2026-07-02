@@ -59,7 +59,9 @@ export function RunPanel({
             <WaitBanner status={waitStatus} />
           ) : (
             <div role="status" aria-live="polite" style={{ padding: 16, color: 'var(--fl-text-muted)', fontSize: 13 }}>
-              {execution?.pendingForm
+              {execution?.pendingInput
+                ? `사용자 입력 대기 중… — ${execution.pendingInput.nodeName || execution.pendingInput.nodeId} (입력 창에 값을 넣고 확인하면 진행됩니다)`
+                : execution?.pendingForm
                 ? '팝업을 열고 form 을 제출하는 중…'
                 : execution?.pendingClient
                   ? `브라우저(클라이언트)에서 직접 호출 중… — ${execution.pendingClient.method} ${execution.pendingClient.url}`

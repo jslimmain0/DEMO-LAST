@@ -79,10 +79,10 @@ common/      error·json·tenant·openapi
 
 ### 실행 흐름 (`FlowExecutor.execute()`)
 graphJson 파싱 → Kahn 위상정렬 → 노드 순차 처리 → IF는 단일 분기 선택 →
-브라우저 협업 노드(client HTTP / FORM / WAIT)를 만나면 `WAITING`으로 중단하고 pending 명세 반환 →
+브라우저 협업 노드(client HTTP / FORM / WAIT / INPUT)를 만나면 `WAITING`으로 중단하고 pending 명세 반환 →
 브라우저가 처리 후 `POST /executions/{id}/resume` → 첫 실패 시 `FAILED`, 사용자 중단(⏹)은 `CANCELLED`.
 **현재 완전 동기 실행** (외부 HTTP에 호출 스레드 블로킹).
-노드 타입: START/END/SET/IF/HTTP/FORM/WAIT/TRANSFORM/TCP.
+노드 타입: START/END/SET/IF/HTTP/FORM/INPUT/WAIT/TRANSFORM/TCP.
 
 ### 토큰/바인딩 문법 (`TokenResolver`)
 - `{{ key }}` — 최근 상위 노드 출력 (nearest upstream)
@@ -285,6 +285,11 @@ design/   theme(라이트/다크) · index.css(CSS 변수)
 - **프론트**: `lib/relay.ts`(RelaySession — register/SSE/버퍼/take·cancelWait) · `lib/popup.ts`(openFormPopup — DOM 조립이라 이스케이프 불요, 창 이름 고정 재사용) · Editor 실행 루프 확장(pendingForm 즉시 재개·pendingWait 대기·⏹ 중단 버튼·실행 중 beforeunload 경고) · RunPanel(카운트다운 0.3초 갱신·수신 URL 클릭 전체선택/복사·⏹) · 캔버스 wait 펄스(`fl-wait-dot`)+유입 엣지 애니메이션(editorStore.waitingNodeId) · 바인딩 피커가 그래프 내 wait 수신 URL 을 전 노드에서 노출(`upstream.bindableSources`) · FormPopupDialog 삭제.
 - **백엔드 제거**: `{{ __callbackUrl }}`/`{{ __notiUrl }}`/`{{ __corrId }}` 치환, `/executions/callback/{token}`·`/callbacks` 엔드포인트, callbackTokens/corrIds 레지스트리, `ExecutionProperties.Callback`, SecurityConfig PUBLIC_PATHS 콜백 항목.
 - 검증: 단위 3종 PASS + H2 e2e 24 케이스 PASS(정상 흐름·URL 시드·타임아웃·CANCELLED·팝업 차단·빈 URL·하위호환·relay 미연동·JSON 파싱·SSE 재생·시드 오염 회귀) + 프론트 tsc/vite/oxlint 통과.
+- **input(사용자 입력) 노드**: 실행이 도달하면 브라우저 모달(안내 메시지 + 입력 필드)이 뜨고, 값을 입력해 확인(Enter)하면
+  각 키가 노드 출력이 되어 다음 노드에서 `{{ 키@노드ID }}` 바인딩. 필드 타입(string/number/boolean/json) — json 이면
+  객체/배열이 그대로 전달(파싱·검증은 브라우저 confirm 시점, 서버는 `ResumeRequest.formValues` 저장만). 취소(Esc)=CANCELLED.
+  설정은 기존 `waitMsg`/`waitFields`(+`type`) 재사용. 하위호환: `type=wait && waitFields`(콜백 설정 없음) 구 그래프는
+  로드·실행 모두 input 으로 승격(`migrateNode`/`effectiveType`). 백엔드 `pendingInput`, 프론트 [InputPromptDialog](frontend/src/components/InputPromptDialog.tsx).
 - **적대적 멀티에이전트 리뷰(4확정+2보강) 반영**: (1) wait URL 선시드가 bare `{{ url }}` 해석을 오염(input/상류 가림) → `ExecutionContext.putSeed`(별도 저장소, 명시 스코프 `{{ url@id }}`/바인딩에만 raw 폴백으로 보임). (2) 고정 이름 팝업이 교차출처 게이트웨이로 이동한 뒤 재실행하면 `popup.document` 접근이 SecurityError → **opener 문서에서 `target=창이름` 제출**로 변경(인터스티셜은 새 about:blank 창일 때만). (3) relay 정적 서빙의 `decodeURIComponent` 가 malformed percent-encoding 에 throw → 프로세스 사망(전 실행 소실) → try/catch + 핸들러 전체 500 가드. (4) 상한 초과 콜백이 빈 본문 이벤트로 조용히 전달 → 413 거절. (+) ⏹ 중단을 모든 중단 지점(loop-top)에서 존중, relay register fetch 에 5초 타임아웃.
 - ⚠️ 콜백 무인증(사내 테스트망 전제 — relayRunId 가 비밀값), 탭 닫으면 실행 끊김(beforeunload 경고만), relay 메모리 상태 재시작 소실.
 

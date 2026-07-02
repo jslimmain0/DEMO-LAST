@@ -31,6 +31,12 @@ export function makeNode(type: NodeType, x: number, y: number): GraphNode {
         callbackRespBody: 'OK',
         outputs: [],
       }
+    case 'input':
+      return {
+        id, name: '사용자 입력', type: 'input', cat: 'input', x, y,
+        waitMsg: '휴대폰으로 받은 OTP를 입력하세요',
+        waitFields: [{ id: newId(), key: 'otp', label: 'OTP', type: 'string' }],
+      }
     case 'tcp':
       return {
         id, name: 'TCP 전문', type: 'tcp', cat: 'tcp', x, y,
@@ -68,6 +74,7 @@ export const PALETTE: Array<{ type: NodeType; label: string; cat: string }> = [
   { type: 'transform', label: '변환', cat: 'transform' },
   { type: 'tcp', label: 'TCP 전문', cat: 'tcp' },
   { type: 'form', label: '폼 전송(팝업)', cat: 'form' },
+  { type: 'input', label: '사용자 입력', cat: 'input' },
   { type: 'wait', label: '콜백 대기', cat: 'wait' },
   { type: 'end', label: '끝', cat: 'end' },
 ]

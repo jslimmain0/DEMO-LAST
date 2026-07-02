@@ -2,7 +2,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { CSSProperties } from 'react'
 import { useEffect, useMemo, useState } from 'react'
 import { pluginsApi, transformsApi } from '../api/client'
-import type { Binding, BodyType, GraphNode, HttpMethod, NodeField, NodeOutput, NodeVar, ReqMode, RespType, TcpField, TcpRespField } from '../api/types'
+import type { Binding, BodyType, GraphNode, HttpMethod, NodeField, NodeOutput, NodeVar, ReqMode, RespType, TcpField, TcpRespField, WaitField as WaitFieldT } from '../api/types'
 import { BindingChip } from '../binding/BindingChip'
 import { BindingPicker } from '../binding/BindingPicker'
 import { bindableSources } from '../binding/upstream'
@@ -544,6 +544,25 @@ export function PropertyPanel({ width = 360 }: { width?: number }) {
           </>
         )}
 
+        {node.type === 'input' && (
+          <>
+            <label style={label}>안내 메시지 — 입력 창에 표시 ({'{ }'} 토큰 가능)</label>
+            <textarea
+              style={{ ...field, minHeight: 60, resize: 'vertical' }}
+              value={node.waitMsg ?? ''}
+              onChange={(e) => update(id, { waitMsg: e.target.value })}
+              placeholder="휴대폰으로 받은 OTP를 입력하세요"
+            />
+            <label style={label}>입력 필드 (키 · 라벨 · 타입)</label>
+            <WaitFieldsEditor fields={node.waitFields ?? []} onChange={(waitFields) => update(id, { waitFields })} />
+            <p style={hintP}>
+              실행이 이 노드에 도달하면 <b>입력 창</b>이 뜨고, 값을 입력해 확인하면 각 키가 이 노드의 출력이 되어
+              다음 노드에서 <code>{'{{ 키@' + id + ' }}'}</code> 로 바인딩됩니다. 타입이 <code>json</code> 이면
+              객체/배열도 그대로 전달됩니다(예: <code>{'{"a":1}'}</code>). 취소(Esc)는 실행 중단.
+            </p>
+          </>
+        )}
+
         {(node.type === 'start' || node.type === 'end') && (
           <p style={{ fontSize: 13, color: 'var(--fl-text-muted)', marginTop: 14 }}>이 노드는 추가 설정이 없습니다.</p>
         )}
@@ -595,6 +614,26 @@ function ClientIcon() {
       <rect x="3" y="5" width="18" height="12" rx="1.8" stroke="currentColor" strokeWidth="1.7" />
       <path d="M8 21h8M12 17v4" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
     </svg>
+  )
+}
+
+/** input(사용자 입력) 노드의 입력 필드 정의 편집기 — 키가 그대로 출력 키가 된다. */
+function WaitFieldsEditor({ fields, onChange }: { fields: WaitFieldT[]; onChange: (f: WaitFieldT[]) => void }) {
+  const upd = (fid: string, patch: Partial<WaitFieldT>) => onChange(fields.map((f) => (f.id === fid ? { ...f, ...patch } : f)))
+  return (
+    <>
+      {fields.map((f) => (
+        <div key={f.id} style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
+          <input style={{ ...mono, flex: 1 }} value={f.key} placeholder="키(=출력)" onChange={(e) => upd(f.id, { key: e.target.value })} />
+          <input style={{ ...field, flex: 1 }} value={f.label ?? ''} placeholder="라벨(표시)" onChange={(e) => upd(f.id, { label: e.target.value })} />
+          <select style={{ ...field, width: 92 }} value={f.type ?? 'string'} onChange={(e) => upd(f.id, { type: e.target.value })}>
+            {['string', 'number', 'boolean', 'json'].map((t) => <option key={t} value={t}>{t}</option>)}
+          </select>
+          <button onClick={() => onChange(fields.filter((x) => x.id !== f.id))} aria-label="삭제" style={{ width: 28, border: '1px solid var(--fl-border)', borderRadius: 6, background: 'var(--fl-surface)', cursor: 'pointer' }}>×</button>
+        </div>
+      ))}
+      <button onClick={() => onChange([...fields, { id: newId(), key: '', label: '', type: 'string' }])} style={addDashed}>+ 입력 필드</button>
+    </>
   )
 }
 

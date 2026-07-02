@@ -32,6 +32,7 @@
   --fl-cat-set: #d9822b;
   --fl-cat-if: #7c3aed;
   --fl-cat-form: #e0529c;
+  --fl-cat-input: #2563eb;
   --fl-cat-wait: #0891b2;
   --fl-cat-start: #16a34a;
   --fl-cat-end: #64748b;
@@ -72,7 +73,7 @@ html[data-theme='dark'] {
   --fl-focus: #9b90ff;
   --fl-get: #3ecf72; --fl-post: #5b8def; --fl-put: #f0a23b; --fl-patch: #a479f5; --fl-delete: #f15b5b; --fl-head: #8b94a6;
   --fl-cat-auth: #7d72ff; --fl-cat-bank: #2bc4c2; --fl-cat-card: #ed6fb0; --fl-cat-generic: #8b94a6;
-  --fl-cat-set: #ef9b46; --fl-cat-if: #a479f5; --fl-cat-form: #ed6fb0; --fl-cat-wait: #22acd1; --fl-cat-start: #3ecf72; --fl-cat-end: #8b94a6;
+  --fl-cat-set: #ef9b46; --fl-cat-if: #a479f5; --fl-cat-form: #ed6fb0; --fl-cat-input: #5b8def; --fl-cat-wait: #22acd1; --fl-cat-start: #3ecf72; --fl-cat-end: #8b94a6;
   --fl-ok: #3ecf72; --fl-fail: #f15b5b; --fl-running: #5b8def; --fl-waiting: #22acd1; --fl-pending: #9aa0b2;
   --fl-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
   --fl-shadow-lg: 0 12px 30px rgba(0, 0, 0, 0.5);

@@ -11,6 +11,8 @@ public enum NodeType {
     WAIT,
     /** 폼 전송(팝업) — 브라우저가 팝업으로 hidden form 을 자동 submit 하고 즉시 다음 노드로 진행. */
     FORM,
+    /** 사용자 입력 대기 — 브라우저 모달(input box)에 값을 입력·confirm 하면 그 값이 노드 출력이 된다. */
+    INPUT,
     TRANSFORM,
     TCP,
     UNKNOWN;
@@ -27,6 +29,7 @@ public enum NodeType {
             case "if" -> IF;
             case "wait" -> WAIT;
             case "form" -> FORM;
+            case "input" -> INPUT;
             case "transform" -> TRANSFORM;
             case "tcp" -> TCP;
             default -> UNKNOWN;

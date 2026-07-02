@@ -2,7 +2,7 @@
 // (enum 대신 문자열 유니온 — tsconfig erasableSyntaxOnly 준수)
 
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD'
-export type NodeType = 'start' | 'end' | 'set' | 'http' | 'if' | 'form' | 'wait' | 'transform' | 'tcp'
+export type NodeType = 'start' | 'end' | 'set' | 'http' | 'if' | 'form' | 'wait' | 'input' | 'transform' | 'tcp'
 export type BodyType = 'json' | 'urlencoded' | 'form' | 'raw' | 'xml'
 export type RespType = 'json' | 'xml' | 'urlencoded' | 'form' | 'text' | 'binary'
 export type ReqMode = 'server' | 'client'
@@ -42,6 +42,8 @@ export interface WaitField {
   id: string
   key: string
   label?: string
+  // 값 해석 타입(string 기본 · number · boolean · json) — confirm 시점에 브라우저가 파싱해 보낸다
+  type?: string
 }
 
 export interface NodeOutput {
@@ -83,9 +85,9 @@ export interface GraphNode {
   waitTimeoutSec?: number      // 콜백 대기 타임아웃(초, 기본 120)
   callbackRespType?: string    // 콜백에 줄 응답 형식: text | html | json
   callbackRespBody?: string    // 콜백에 줄 응답 본문(relay 에 사전 등록)
-  // (legacy) 구 OTP 모달 대기 노드 잔재 — 라운드트립 보존용
-  waitMsg?: string
-  waitFields?: WaitField[]
+  // input (사용자 입력 대기 — 모달 input box)
+  waitMsg?: string           // 모달 안내 메시지
+  waitFields?: WaitField[]   // 입력 필드 정의(key/label/type)
   // transform
   transformId?: string
   config?: Record<string, string>
@@ -269,6 +271,15 @@ export interface PendingWaitRequest {
   receiveUrl?: string | null
 }
 
+// input(사용자 입력) 노드에서 중단될 때 넘어오는 모달 입력 명세.
+// confirm 값은 ResumeRequest.formValues 로 돌아가 노드 출력이 된다.
+export interface PendingInputRequest {
+  nodeId: string
+  nodeName?: string
+  message?: string
+  fields: Array<{ key: string; label?: string | null; type?: string | null }>
+}
+
 // relay 가 수신해 SSE 로 전달한 콜백 전문 — wait 재개 페이로드.
 export interface CallbackPayload {
   method: string
@@ -329,6 +340,7 @@ export interface ExecutionDetail {
   pendingClient?: PendingClientRequest | null
   pendingForm?: PendingFormRequest | null
   pendingWait?: PendingWaitRequest | null
+  pendingInput?: PendingInputRequest | null
 }
 
 export interface ApiError {

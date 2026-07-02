@@ -3,7 +3,7 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import type { CSSProperties } from 'react'
 import { useEffect, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import type { ExecutionDetail, PendingClientRequest, PendingWaitRequest, ResumeRequest, RunRequest } from '../api/types'
+import type { ExecutionDetail, PendingClientRequest, PendingInputRequest, PendingWaitRequest, ResumeRequest, RunRequest } from '../api/types'
 import { flowsApi, runsApi } from '../api/client'
 import { FlowCanvas } from '../canvas/FlowCanvas'
 import { Palette } from '../canvas/Palette'
@@ -12,6 +12,7 @@ import { RunPanel } from '../panels/RunPanel'
 import type { WaitStatus } from '../panels/RunPanel'
 import { OpenApiImportDialog } from '../openapi/OpenApiImportDialog'
 import { WorkflowIODialog } from '../openapi/WorkflowIODialog'
+import { InputPromptDialog } from '../components/InputPromptDialog'
 import { ResizeHandle } from '../components/ResizeHandle'
 import { openFormPopup } from '../lib/popup'
 import { RelaySession } from '../lib/relay'
@@ -38,6 +39,18 @@ export function Editor() {
   // wait(콜백 대기) 진행 상태 — RunPanel 카운트다운/수신 URL 표시용
   const [waitStatus, setWaitStatus] = useState<WaitStatus | null>(null)
   const stopRef = useRef<AbortController | null>(null)
+  // input(사용자 입력) 노드 모달 — 실행 루프가 confirm 값(취소=null)을 기다리도록 resolver 보관
+  const [pendingInput, setPendingInput] = useState<PendingInputRequest | null>(null)
+  const inputResolverRef = useRef<((values: Record<string, unknown> | null) => void) | null>(null)
+  const askInput = (pi: PendingInputRequest): Promise<Record<string, unknown> | null> => {
+    setPendingInput(pi)
+    return new Promise((resolve) => { inputResolverRef.current = resolve })
+  }
+  const resolveInput = (values: Record<string, unknown> | null) => {
+    inputResolverRef.current?.(values)
+    inputResolverRef.current = null
+    setPendingInput(null)
+  }
 
   // 패널 크기(좌 팔레트 / 우 속성 / 하 로그) — 드래그로 조절하고 localStorage 에 유지
   const [paletteW, setPaletteW] = useState(() => loadSize('paletteW', 200, 160, 420))
@@ -108,15 +121,22 @@ export function Editor() {
       //  - pendingWait: relay 콜백(버퍼/SSE) 소비 또는 타임아웃/중단 → 재개
       //  - pendingClient: 브라우저가 직접 API 호출 → 결과 전송
       let guard = 0
-      while ((detail.pendingClient || detail.pendingForm || detail.pendingWait) && guard++ < 100) {
+      while ((detail.pendingClient || detail.pendingForm || detail.pendingWait || detail.pendingInput) && guard++ < 100) {
         // ⏹ 중단은 wait 대기뿐 아니라 어느 중단 지점에서도 존중 — 대기 중인 노드를 중단 사유로 재개해 CANCELLED 로 마감
         if (stop.signal.aborted) {
-          const nodeId = detail.pendingForm?.nodeId ?? detail.pendingWait?.nodeId ?? detail.pendingClient?.nodeId
+          const nodeId = detail.pendingForm?.nodeId ?? detail.pendingWait?.nodeId ?? detail.pendingInput?.nodeId ?? detail.pendingClient?.nodeId
           detail = await runsApi.resume(detail.id, { nodeId, error: '실행이 중단되었습니다.', aborted: true })
           setExecution(detail)
           break
         }
-        if (detail.pendingForm) {
+        if (detail.pendingInput) {
+          // 사용자 입력 대기: 모달에 값 입력 → confirm 값이 노드 출력. 취소는 실행 중단.
+          const pi = detail.pendingInput
+          const values = await askInput(pi)
+          detail = await runsApi.resume(detail.id, values === null
+            ? { nodeId: pi.nodeId, error: '사용자가 입력을 취소했습니다.', aborted: true }
+            : { nodeId: pi.nodeId, formValues: values })
+        } else if (detail.pendingForm) {
           const pf = detail.pendingForm
           const err = openFormPopup(pf)
           detail = await runsApi.resume(detail.id, err
@@ -149,6 +169,8 @@ export function Editor() {
       stopRef.current = null
       setWaitingNode(null)
       setWaitStatus(null)
+      inputResolverRef.current = null
+      setPendingInput(null)
       setRunning(false)
     }
   }
@@ -199,6 +221,13 @@ export function Editor() {
         )}
       </ReactFlowProvider>
 
+      {pendingInput && (
+        <InputPromptDialog
+          input={pendingInput}
+          onConfirm={(values) => resolveInput(values)}
+          onCancel={() => resolveInput(null)}
+        />
+      )}
       {showApiImport && <OpenApiImportDialog onClose={() => setShowApiImport(false)} onImport={(group) => addPaletteGroup(group)} />}
       {workflowIO && (
         <WorkflowIODialog

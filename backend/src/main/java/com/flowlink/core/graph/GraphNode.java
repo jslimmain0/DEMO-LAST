@@ -50,9 +50,10 @@ public record GraphNode(
         Integer waitTimeoutSec,     // 콜백 대기 타임아웃(초, 기본 120)
         String callbackRespType,    // 콜백에 줄 응답 형식: text | html | json
         String callbackRespBody,    // 콜백에 줄 응답 본문(relay 에 사전 등록)
-        // (legacy) 구 OTP 모달 대기 노드 잔재 — 라운드트립 보존용
-        String waitMsg,
-        List<WaitField> waitFields,
+
+        // --- input(사용자 입력 대기 — 모달 input box) ---
+        String waitMsg,             // 모달 안내 메시지
+        List<WaitField> waitFields, // 입력 필드 정의(key/label/type)
 
         // --- transform ---
         String transformId,
@@ -77,13 +78,20 @@ public record GraphNode(
     }
 
     /**
-     * 실행이 보는 실질 타입. 폼 전송이 한때 type=wait 로 저장되던 시기의 그래프를 위해,
-     * formAction 이 있는 WAIT 는 FORM 으로 간주한다(신규 wait 노드는 formAction 을 갖지 않음).
+     * 실행이 보는 실질 타입 — type=wait 로 저장되던 시기의 그래프 하위호환.
+     * formAction 이 있으면 폼 전송(FORM), 콜백 설정 없이 waitFields 만 있으면 구 입력 대기(INPUT).
+     * (신규 노드는 form/input/wait 타입을 직접 갖는다)
      */
     public NodeType effectiveType() {
         NodeType t = nodeType();
-        if (t == NodeType.WAIT && formAction != null && !formAction.isBlank()) {
-            return NodeType.FORM;
+        if (t == NodeType.WAIT) {
+            if (formAction != null && !formAction.isBlank()) {
+                return NodeType.FORM;
+            }
+            if (waitTimeoutSec == null && callbackRespType == null && callbackRespBody == null
+                    && waitFields != null && !waitFields.isEmpty()) {
+                return NodeType.INPUT;
+            }
         }
         return t;
     }

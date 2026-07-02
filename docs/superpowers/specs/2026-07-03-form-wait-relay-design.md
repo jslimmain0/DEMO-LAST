@@ -15,6 +15,7 @@
 |---|---|---|
 | `form` (신설) | 폼 전송(팝업) | 팝업 열고 hidden form 자동 submit → **기다리지 않고 즉시 다음 노드** |
 | `wait` (재정의) | 콜백 대기 | relay 수신 URL 로 콜백/노티가 올 때까지 대기 (타임아웃 기본 120초) |
+| `input` (추가 요청, 2026-07-03) | 사용자 입력 | 모달 input box 에 값 입력·confirm → 값이 노드 출력(다음 노드 바인딩). 필드 타입 string/number/boolean/json, 취소=중단(CANCELLED). `waitMsg`/`waitFields` 재사용, 구 `wait`+waitFields 그래프 자동 승격 |
 
 - `form` 설정: `formAction`(팝업 URL, 바인딩 가능) · `formMethod`(POST/GET) · Hidden 필드(`fields.body`, 값마다 바인딩, [필드↔Raw] 유지)
 - `wait` 설정(신규 필드): `waitTimeoutSec`(기본 120) · `callbackRespType`(text/html/json) · `callbackRespBody`(콜백에 줄 응답 본문) · `outputs`(콜백 본문 키 선언 — 바인딩 피커 칩용)

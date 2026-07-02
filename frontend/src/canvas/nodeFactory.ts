@@ -16,12 +16,20 @@ export function makeNode(type: NodeType, x: number, y: number): GraphNode {
       }
     case 'if':
       return { id, name: 'IF 조건', type: 'if', cat: 'if', x, y, condition: '{{ id }} != null' }
+    case 'form':
+      return {
+        id, name: '폼 전송(팝업)', type: 'form', cat: 'form', x, y,
+        formAction: '', formMethod: 'POST',
+        fields: { params: [], headers: [], body: [{ id: newId(), key: 'returnUrl', value: '' }] },
+        outputs: [],
+      }
     case 'wait':
       return {
-        id, name: '폼 전송', type: 'wait', cat: 'wait', x, y,
-        formAction: 'https://example.com/submit', formMethod: 'POST',
-        fields: { params: [], headers: [], body: [{ id: newId(), key: 'field1', value: '' }] },
-        outputs: [{ key: 'result', type: 'string' }],
+        id, name: '콜백 대기', type: 'wait', cat: 'wait', x, y,
+        waitTimeoutSec: 120,
+        callbackRespType: 'text',
+        callbackRespBody: 'OK',
+        outputs: [],
       }
     case 'tcp':
       return {
@@ -59,6 +67,7 @@ export const PALETTE: Array<{ type: NodeType; label: string; cat: string }> = [
   { type: 'set', label: '변수', cat: 'set' },
   { type: 'transform', label: '변환', cat: 'transform' },
   { type: 'tcp', label: 'TCP 전문', cat: 'tcp' },
-  { type: 'wait', label: '폼 전송', cat: 'wait' },
+  { type: 'form', label: '폼 전송(팝업)', cat: 'form' },
+  { type: 'wait', label: '콜백 대기', cat: 'wait' },
   { type: 'end', label: '끝', cat: 'end' },
 ]

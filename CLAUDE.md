@@ -35,6 +35,13 @@ npm run build    # tsc -b && vite build
 npm run lint     # oxlint
 ```
 
+### Relay (콜백 수신기, 리포 루트)
+```
+node relay.js [port]   # 기본 8787. wait(콜백 대기) 노드용 — 의존성 0
+```
+- 결제/인증 게이트웨이 콜백을 받아 SSE 로 브라우저에 전달. `frontend/dist` 정적 서빙 겸용.
+- 주소는 프론트 localStorage `fl:relayBase` (wait 노드 속성 패널에서 설정, 기본 `http://localhost:8787`).
+
 ### 테스트
 ```powershell
 $env:JAVA_HOME="C:\Users\jslim\.jdks\corretto-21.0.10"
@@ -72,9 +79,10 @@ common/      error·json·tenant·openapi
 
 ### 실행 흐름 (`FlowExecutor.execute()`)
 graphJson 파싱 → Kahn 위상정렬 → 노드 순차 처리 → IF는 단일 분기 선택 →
-WAIT 노드 만나면 `WAITING`으로 중단 → 첫 실패 시 `FAILED`.
+브라우저 협업 노드(client HTTP / FORM / WAIT)를 만나면 `WAITING`으로 중단하고 pending 명세 반환 →
+브라우저가 처리 후 `POST /executions/{id}/resume` → 첫 실패 시 `FAILED`, 사용자 중단(⏹)은 `CANCELLED`.
 **현재 완전 동기 실행** (외부 HTTP에 호출 스레드 블로킹).
-노드 타입: START/END/SET/IF/HTTP/TRANSFORM/TCP/WAIT.
+노드 타입: START/END/SET/IF/HTTP/FORM/WAIT/TRANSFORM/TCP.
 
 ### 토큰/바인딩 문법 (`TokenResolver`)
 - `{{ key }}` — 최근 상위 노드 출력 (nearest upstream)
@@ -99,6 +107,7 @@ WAIT 노드 만나면 `WAITING`으로 중단 → 첫 실패 시 `FAILED`.
 
 ### 주요 설정 (`application.yml` / `ExecutionProperties`)
 `flowlink.execution.*`: http 타임아웃·max-response-bytes(5MB)·ssrf·capture·max-nodes-per-run(200)
+(콜백 관련 설정은 없음 — 외부 콜백은 relay.js 가 받는다)
 
 ---
 
@@ -134,7 +143,7 @@ design/   theme(라이트/다크) · index.css(CSS 변수)
 코드 주석·README에 명시된 부채. 유지보수/기능 추가 시 우선 검토:
 
 - **동기 실행** → 비동기 큐/워커·내구성 실행 미구현 (가장 큰 아키텍처 부채). Build vs Buy(Temporal/Camunda) 설계 토론 결론 반영 예정
-- **WAIT 노드 재개** 로직 없음 (중단까지만)
+- **재개 상태 인메모리**(`ExecutionService.suspensions`) — 서버 재시작 시 진행 중 실행 소실. API 로 직접 실행(브라우저 없이)하면 wait 에서 WAITING 으로 남음(브라우저가 타임아웃을 구동)
 - **트리거** CRON/WEBHOOK/EVENT는 enum만, MANUAL만 동작
 - **SSRF DNS 리바인딩** 갭 — check-time 해석만, connect-time IP 핀닝 미적용 (`SsrfGuard.java:17`)
 - **플러그인 JAR 샌드박스 없음** — 업로드 JAR가 전체 권한으로 실행, RBAC 게이트 필요(현재 permitAll)
@@ -265,7 +274,25 @@ design/   theme(라이트/다크) · index.css(CSS 변수)
 
 ---
 
-### 폼 전송 노드(WAIT type) — 새 창(팝업)으로 form target 제출
+## 최근 변경 (2026-07-03)
+
+### form/wait 노드 분리 + relay.js — 콜백 경로 전면 재설계
+설계: [docs/superpowers/specs/2026-07-03-form-wait-relay-design.md](docs/superpowers/specs/2026-07-03-form-wait-relay-design.md).
+아래 구(舊) 3개 섹션(폼 전송 WAIT type · `{{ __callbackUrl }}` · `{{ __notiUrl }}`/`{{ __corrId }}`)의 장치는 **전부 제거되고 이 구조로 대체**됐다.
+- **노드 분리**: `form`(폼 전송·팝업 — `window.open('', 'flowlink_pay_{노드ID}', 480x720)` 에 hidden form 자동 submit 후 **기다리지 않고 즉시 진행**, 팝업 차단/URL 공백은 노드 실패) / `wait`(콜백 대기 — 타임아웃 기본 120초, 콜백에 줄 응답(text/html/json+본문) 설정, 수신 URL 표시+`{{ url@노드ID }}` 토큰 복사). 하위호환: `type=wait && formAction` 저장 그래프는 로드(`graphAdapter.migrateNode`)·실행(`GraphNode.effectiveType()`) 양쪽에서 form 으로 간주.
+- **relay.js**(리포 루트, node:http, 의존성 0, :8787): `POST /exec/{실행ID}/register`(노드별 응답 설정) · `GET /events/{실행ID}`(SSE, 기수신분 재생+25초 ping) · `ANY /cb/{실행ID}/{노드ID}`(보관+SSE 전달+등록 응답 반환, GET 은 쿼리스트링=본문) · `/health` · 그 외 `frontend/dist` 정적 서빙. 메모리 상태, 실행ID별 2시간 정리. CORS 오픈.
+- **실행 프로토콜**: 프론트가 실행 직전 crypto 영숫자 16자 `relayRunId` 생성 → relay 등록+SSE 연결(실패는 기억만 — wait 도달 시 그 에러로 실패, form/http/set 만 있으면 relay 없이 동작) → `RunRequest{relayRunId, relayBase}` → 백엔드가 **모든 wait 노드의 url 출력을 실행 시작 시 ctx 에 시드** → `{{ url@노드ID }}` 가 wait 보다 앞 노드(returnUrl/notiUrl)에서도 해석(TokenResolver 무변경). wait 도달 → `pendingWait{nodeId, timeoutSec, receiveUrl}` → 프론트가 콜백(노드ID별 버퍼 큐, SSE)·타임아웃·⏹중단 중 먼저 온 것으로 resume. 콜백 본문은 `tryParseCallbackBody`(JSON→urlencoded→원문 body 키)로 파싱돼 노드 출력(전 키) + url 병합 → 다운스트림 바인딩. 사용자 중단은 `aborted=true` → 실행 `CANCELLED`(신규 `Execution.markCancelled`).
+- **프론트**: `lib/relay.ts`(RelaySession — register/SSE/버퍼/take·cancelWait) · `lib/popup.ts`(openFormPopup — DOM 조립이라 이스케이프 불요, 창 이름 고정 재사용) · Editor 실행 루프 확장(pendingForm 즉시 재개·pendingWait 대기·⏹ 중단 버튼·실행 중 beforeunload 경고) · RunPanel(카운트다운 0.3초 갱신·수신 URL 클릭 전체선택/복사·⏹) · 캔버스 wait 펄스(`fl-wait-dot`)+유입 엣지 애니메이션(editorStore.waitingNodeId) · 바인딩 피커가 그래프 내 wait 수신 URL 을 전 노드에서 노출(`upstream.bindableSources`) · FormPopupDialog 삭제.
+- **백엔드 제거**: `{{ __callbackUrl }}`/`{{ __notiUrl }}`/`{{ __corrId }}` 치환, `/executions/callback/{token}`·`/callbacks` 엔드포인트, callbackTokens/corrIds 레지스트리, `ExecutionProperties.Callback`, SecurityConfig PUBLIC_PATHS 콜백 항목.
+- 검증: 단위 3종 PASS + H2 e2e 24 케이스 PASS(정상 흐름·URL 시드·타임아웃·CANCELLED·팝업 차단·빈 URL·하위호환·relay 미연동·JSON 파싱·SSE 재생·시드 오염 회귀) + 프론트 tsc/vite/oxlint 통과.
+- **적대적 멀티에이전트 리뷰(4확정+2보강) 반영**: (1) wait URL 선시드가 bare `{{ url }}` 해석을 오염(input/상류 가림) → `ExecutionContext.putSeed`(별도 저장소, 명시 스코프 `{{ url@id }}`/바인딩에만 raw 폴백으로 보임). (2) 고정 이름 팝업이 교차출처 게이트웨이로 이동한 뒤 재실행하면 `popup.document` 접근이 SecurityError → **opener 문서에서 `target=창이름` 제출**로 변경(인터스티셜은 새 about:blank 창일 때만). (3) relay 정적 서빙의 `decodeURIComponent` 가 malformed percent-encoding 에 throw → 프로세스 사망(전 실행 소실) → try/catch + 핸들러 전체 500 가드. (4) 상한 초과 콜백이 빈 본문 이벤트로 조용히 전달 → 413 거절. (+) ⏹ 중단을 모든 중단 지점(loop-top)에서 존중, relay register fetch 에 5초 타임아웃.
+- ⚠️ 콜백 무인증(사내 테스트망 전제 — relayRunId 가 비밀값), 탭 닫으면 실행 끊김(beforeunload 경고만), relay 메모리 상태 재시작 소실.
+
+---
+
+## 이전 변경 (2026-06-29) — ⚠ 아래 3개 콜백 섹션은 2026-07-03 재설계로 **대체됨** (역사 기록용)
+
+### (대체됨) 폼 전송 노드(WAIT type) — 새 창(팝업)으로 form target 제출
 - WAIT 노드를 **`폼 전송`으로 재정의**(결제/인증창 패턴): 실행 시 **새 팝업 창**을 열고 `<form action method target=팝업>`을
   그 창으로 제출 → 대상 페이지가 팝업에 렌더. 팝업이 `postMessage`로 결과를 보내거나 **창이 닫히면**(`{closed:true}`) 재개.
   결과값이 노드 출력이 되어 다운스트림 바인딩. ([FormPopupDialog](frontend/src/components/FormPopupDialog.tsx))
@@ -276,7 +303,7 @@ design/   theme(라이트/다크) · index.css(CSS 변수)
 - 검증: H2 e2e — action 토큰 해석(`{{url@s}}/pay`)·필드 바인딩(tok=TOK-9)·결과 재개(ok→APPROVED 다운스트림) PASS, client 모드 회귀 없음.
 - ⚠️ 인메모리 보관(세션 한정). client 모드 charset처럼 팝업 결과는 대상/콜백이 `window.opener.postMessage` 해야 구조화 값 수신(아니면 창 닫힘만 감지).
 
-### 게이트웨이 콜백 URL — 결제/인증 리다이렉트 결과 캡처 (`{{ __callbackUrl }}`)
+### (대체됨) 게이트웨이 콜백 URL — 결제/인증 리다이렉트 결과 캡처 (`{{ __callbackUrl }}`)
 결제/인증 게이트웨이는 폼에 **콜백(리턴) URL**을 받아, 처리 후 그 URL로 **결과 파라미터를 실어 리다이렉트**한다(이니시스/나이스페이/KCP 등은 대개 merchant returnUrl로 **POST 자동전송**). 그 결과를 워크플로로 되먹인다. **널 두세명(프론트-수신/백엔드-엔드포인트/PG-호환)으로 나눠 설계 토론** 후 합성한 결론을 구현.
 - **자동 발급 + 사용자 필드명 매핑**: `{{ __callbackUrl }}`(특수 토큰)을 게이트웨이가 요구하는 **필드명(returnUrl/ret_url/ReturnURL 등)** 의 폼 데이터 값으로 넣으면, 실행 시 서버가 **추측 불가능한 토큰 URL**(`{base}/api/v1/executions/callback/{token}`)로 치환. 필드명은 게이트웨이마다 달라 하드코딩 대신 폼 행으로 매핑(신규 GraphNode 필드 없음). PropertyPanel wait 섹션에 복사/삽입 버튼 + 안내.
 - **수신 엔드포인트(백엔드, 신규)**: [ExecutionController](backend/src/main/java/com/flowlink/execution/ExecutionController.java) `@RequestMapping(GET+POST) /executions/callback/{token}`. `request.getParameterMap()`으로 **쿼리(GET)·폼바디(POST 자동전송) 모두** 병합 수신 → 파라미터를 재개 상태에 저장(authoritative) → **브리지 HTML**(text/html) 반환. 브리지가 `window.opener.postMessage({__flcallback:true, ...params})` + `window.close()`.
@@ -299,7 +326,7 @@ design/   theme(라이트/다크) · index.css(CSS 변수)
 - 검증: bodyConvert 단위(Node 타입스트리핑, 헤더+urlencoded 라운드트립) 13케이스 PASS. H2 e2e — (R1) HTTP raw params→쿼리·raw headers→요청헤더(server 모드), (R2) WAIT raw 폼(`a=1&b=2`)→팝업 필드 분해, (R3) WAIT raw 폼+`{{ __callbackUrl }}`+게이트웨이 콜백 폴백 — 모두 PASS. 콜백/폼 필드모드 무회귀 확인.
 - ⚠️ Raw 모드 req: 스코프는 필드가 비어 파싱값이 안 실림(바디 raw 와 동일 한계). Headers Raw 값 토큰에 개행 포함 시 줄 분해가 먼저라 영향 없음. Params/폼 Raw 는 토큰 해석 결과에 `&`/`=` 가 섞이면 분해가 흐트러질 수 있음(엣지, 바디 raw 와 동일).
 
-### 고정(사전등록) 콜백 + 상관키 + 서버 노티 (`{{ __notiUrl }}` · `{{ __corrId }}`)
+### (대체됨) 고정(사전등록) 콜백 + 상관키 + 서버 노티 (`{{ __notiUrl }}` · `{{ __corrId }}`)
 동적 콜백(`{{ __callbackUrl }}`, per-run 토큰 URL + 브라우저 팝업 복귀)에 더해, **서버가 소유하는 고정 콜백 URL**을 추가. 게이트웨이 콘솔에 미리 등록하거나 **서버 간 노티(웹훅)** 로 쓴다. "URL 전달=둘 다 / 성공·실패=단일 콜백+응답예상값 선언(별도 URL 안 나눔)/때리는 주체=브라우저·노티 둘 다" 설계 토론 결론 반영.
 - **고정 URL은 실행마다 안 바뀜 → 상관키로 매칭**: `{{ __corrId }}`(추측 불가 UUID)를 게이트웨이가 echo 하는 필드(oid/MOID 등)에 넣으면, 콜백이 그 값을 되돌려줄 때 서버가 **파라미터 값 스캔으로 대기 실행을 찾음**(필드명 무관 — `{{ __callbackUrl }}` 필드명 철학과 동일). 안정 URL은 `{{ __notiUrl }}`(= `{base}/api/v1/callbacks`, 폼에 실을 때) 또는 PropertyPanel 복사(콘솔 등록용).
 - **서버 사이드 재개**: 고정 콜백은 브라우저가 없을 수 있어(순수 노티), 수신 엔드포인트 [ExecutionController](backend/src/main/java/com/flowlink/execution/ExecutionController.java) `@RequestMapping(GET+POST) /api/v1/callbacks` 가 `recordFixedCallback` → **서버가 직접 재개**(`doResume`). Accept 에 `text/html`(브라우저 팝업)이면 브리지 HTML, 아니면 게이트웨이용 `OK` 평문 ACK.

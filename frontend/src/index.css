@@ -31,6 +31,7 @@
   --fl-cat-generic: #64748b;
   --fl-cat-set: #d9822b;
   --fl-cat-if: #7c3aed;
+  --fl-cat-form: #e0529c;
   --fl-cat-wait: #0891b2;
   --fl-cat-start: #16a34a;
   --fl-cat-end: #64748b;
@@ -71,7 +72,7 @@ html[data-theme='dark'] {
   --fl-focus: #9b90ff;
   --fl-get: #3ecf72; --fl-post: #5b8def; --fl-put: #f0a23b; --fl-patch: #a479f5; --fl-delete: #f15b5b; --fl-head: #8b94a6;
   --fl-cat-auth: #7d72ff; --fl-cat-bank: #2bc4c2; --fl-cat-card: #ed6fb0; --fl-cat-generic: #8b94a6;
-  --fl-cat-set: #ef9b46; --fl-cat-if: #a479f5; --fl-cat-wait: #22acd1; --fl-cat-start: #3ecf72; --fl-cat-end: #8b94a6;
+  --fl-cat-set: #ef9b46; --fl-cat-if: #a479f5; --fl-cat-form: #ed6fb0; --fl-cat-wait: #22acd1; --fl-cat-start: #3ecf72; --fl-cat-end: #8b94a6;
   --fl-ok: #3ecf72; --fl-fail: #f15b5b; --fl-running: #5b8def; --fl-waiting: #22acd1; --fl-pending: #9aa0b2;
   --fl-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
   --fl-shadow-lg: 0 12px 30px rgba(0, 0, 0, 0.5);
@@ -153,3 +154,18 @@ button { font-family: inherit; }
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-thumb { background: #d3d8e2; border-radius: 8px; border: 2px solid transparent; background-clip: padding-box; }
 html[data-theme='dark'] ::-webkit-scrollbar-thumb { background: #39404f; background-clip: padding-box; }
+
+/* wait(콜백 대기) 노드 — 대기 중 청록 펄스 점 + 유입 엣지 애니메이션 */
+@keyframes fl-wait-pulse {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--fl-waiting) 55%, transparent); }
+  70% { box-shadow: 0 0 0 9px transparent; }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+.fl-wait-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--fl-waiting);
+  animation: fl-wait-pulse 1.4s ease-out infinite;
+  flex-shrink: 0;
+}

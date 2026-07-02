@@ -50,6 +50,11 @@ export function upstreamSources(nodes: Node[], edges: Edge[], targetId: string):
     } else {
       for (const o of n.outputs ?? []) items.push({ key: o.key, type: o.type, scope: null, group: 'response' })
     }
+    if (n.type === 'wait') {
+      // 콜백 대기 노드 고정 제공 항목 — 수신 URL(실행 시 시드)과 콜백 원문(body). 선언 outputs 는 위에서 이미 노출.
+      if (!items.some((it) => it.key === 'url')) items.push({ key: 'url', type: '수신 URL', scope: null, group: 'response' })
+      if (!items.some((it) => it.key === 'body')) items.push({ key: 'body', type: 'string', scope: null, group: 'response' })
+    }
     for (const v of n.vars ?? []) if (v.key) items.push({ key: v.key, scope: null, group: 'response' })
     for (const tab of ['params', 'headers', 'body'] as const) {
       for (const f of n.fields?.[tab] ?? []) if (f.key) items.push({ key: f.key, scope: 'req', group: 'request' })
@@ -58,6 +63,29 @@ export function upstreamSources(nodes: Node[], edges: Edge[], targetId: string):
     if (items.length > 0) {
       sources.push({ id: n.id, name: n.name ?? id, cat: n.cat, type: n.type, items })
     }
+  }
+  return sources
+}
+
+/**
+ * 조상 소스에 더해, 그래프의 <b>모든 wait(콜백 대기) 노드의 수신 URL</b> 을 바인딩 소스로 노출한다.
+ * 수신 URL 은 실행 시작 시점에 확정(컨텍스트 시드)되므로 wait 보다 앞의 노드에서도 꽂을 수 있다
+ * — 결제요청의 returnUrl/notiUrl 에 넣는 표준 패턴.
+ */
+export function bindableSources(nodes: Node[], edges: Edge[], targetId: string): BindableSource[] {
+  const sources = upstreamSources(nodes, edges, targetId)
+  const seen = new Set(sources.map((s) => s.id))
+  for (const rf of nodes) {
+    if (rf.id === targetId || seen.has(rf.id)) continue
+    const n = asGraphNode(rf.data)
+    if (n.type !== 'wait') continue
+    sources.push({
+      id: n.id,
+      name: `${n.name ?? n.id} (수신 URL)`,
+      cat: n.cat,
+      type: n.type,
+      items: [{ key: 'url', type: '수신 URL', scope: null, group: 'response' }],
+    })
   }
   return sources
 }

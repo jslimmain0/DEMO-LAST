@@ -94,6 +94,13 @@ public class Execution {
         this.status = ExecutionStatus.WAITING;
     }
 
+    /** 사용자 중단(⏹) — 실패가 아니라 취소로 마감한다. */
+    public void markCancelled(String reason) {
+        this.status = ExecutionStatus.CANCELLED;
+        this.error = reason;
+        this.finishedAt = Instant.now();
+    }
+
     public UUID getId() {
         return id;
     }

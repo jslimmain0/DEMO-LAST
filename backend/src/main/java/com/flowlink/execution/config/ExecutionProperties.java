@@ -10,7 +10,6 @@ public record ExecutionProperties(
         Http http,
         Ssrf ssrf,
         Capture capture,
-        Callback callback,
         int maxNodesPerRun
 ) {
     public ExecutionProperties {
@@ -23,9 +22,6 @@ public record ExecutionProperties(
         if (capture == null) {
             capture = new Capture(false);
         }
-        if (callback == null) {
-            callback = new Callback(null);
-        }
         if (maxNodesPerRun <= 0) {
             maxNodesPerRun = 200;
         }
@@ -36,22 +32,6 @@ public record ExecutionProperties(
      * (본문엔 Authorization 헤더·토큰 등 시크릿이 섞일 수 있어 기본 미저장)
      */
     public record Capture(boolean requestResponseBodies) {
-    }
-
-    /**
-     * 폼 전송(WAIT) 노드의 게이트웨이 콜백 URL 조립용 베이스. 게이트웨이/팝업이 되돌아올
-     * 절대 URL(예: {@code {base}/api/v1/executions/callback/{token}})을 만든다.
-     * 기본은 백엔드가 서비스되는 로컬 호스트 — 외부 게이트웨이는 override(터널) 필요. (데모 범위)
-     */
-    public record Callback(String baseUrl) {
-        public Callback {
-            if (baseUrl == null || baseUrl.isBlank()) {
-                baseUrl = "http://localhost:18080";
-            }
-            if (baseUrl.endsWith("/")) {
-                baseUrl = baseUrl.substring(0, baseUrl.length() - 1);
-            }
-        }
     }
 
     public record Http(int connectTimeoutMs, int readTimeoutMs, long maxResponseBytes) {

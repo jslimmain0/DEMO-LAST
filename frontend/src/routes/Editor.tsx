@@ -3,16 +3,19 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import type { CSSProperties } from 'react'
 import { useEffect, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import type { ExecutionDetail, PendingClientRequest, PendingFormRequest, ResumeRequest } from '../api/types'
+import type { ExecutionDetail, PendingClientRequest, PendingWaitRequest, ResumeRequest, RunRequest } from '../api/types'
 import { flowsApi, runsApi } from '../api/client'
 import { FlowCanvas } from '../canvas/FlowCanvas'
 import { Palette } from '../canvas/Palette'
 import { PropertyPanel } from '../panels/PropertyPanel'
 import { RunPanel } from '../panels/RunPanel'
+import type { WaitStatus } from '../panels/RunPanel'
 import { OpenApiImportDialog } from '../openapi/OpenApiImportDialog'
 import { WorkflowIODialog } from '../openapi/WorkflowIODialog'
-import { FormPopupDialog } from '../components/FormPopupDialog'
 import { ResizeHandle } from '../components/ResizeHandle'
+import { openFormPopup } from '../lib/popup'
+import { RelaySession } from '../lib/relay'
+import type { RelayEvent } from '../lib/relay'
 import { useEditorStore } from '../store/editorStore'
 
 export function Editor() {
@@ -32,9 +35,9 @@ export function Editor() {
   const [showLog, setShowLog] = useState(false)
   const [showApiImport, setShowApiImport] = useState(false)
   const [workflowIO, setWorkflowIO] = useState<'export' | 'import' | null>(null)
-  // 폼 전송 노드 팝업 — 실행 루프가 팝업 결과를 기다리도록 Promise resolver 를 보관
-  const [pendingForm, setPendingForm] = useState<PendingFormRequest | null>(null)
-  const formResolverRef = useRef<((values: Record<string, unknown> | null) => void) | null>(null)
+  // wait(콜백 대기) 진행 상태 — RunPanel 카운트다운/수신 URL 표시용
+  const [waitStatus, setWaitStatus] = useState<WaitStatus | null>(null)
+  const stopRef = useRef<AbortController | null>(null)
 
   // 패널 크기(좌 팔레트 / 우 속성 / 하 로그) — 드래그로 조절하고 localStorage 에 유지
   const [paletteW, setPaletteW] = useState(() => loadSize('paletteW', 200, 160, 420))
@@ -61,45 +64,78 @@ export function Editor() {
     if (flowQuery.data) loadGraph(flowQuery.data.id, flowQuery.data.name, flowQuery.data.graph)
   }, [flowQuery.data, loadGraph])
 
+  // 이탈 경고 — 미저장 편집 또는 실행 중(탭을 닫으면 실행이 끊긴다)
   useEffect(() => {
-    const handler = (e: BeforeUnloadEvent) => { if (dirty) { e.preventDefault(); e.returnValue = '' } }
+    const handler = (e: BeforeUnloadEvent) => {
+      if (dirty || running) { e.preventDefault(); e.returnValue = '' }
+    }
     window.addEventListener('beforeunload', handler)
     return () => window.removeEventListener('beforeunload', handler)
-  }, [dirty])
+  }, [dirty, running])
 
   const save = useMutation({
     mutationFn: () => flowsApi.saveVersion(flowId, { graph: getGraph() }),
     onSuccess: () => markSaved(),
   })
 
-  // 폼 팝업 결과(값) 또는 취소(null)를 기다린다.
-  const askForm = (form: PendingFormRequest): Promise<Record<string, unknown> | null> => {
-    setPendingForm(form)
-    return new Promise((resolve) => { formResolverRef.current = resolve })
-  }
-  const resolveForm = (values: Record<string, unknown> | null) => {
-    formResolverRef.current?.(values)
-    formResolverRef.current = null
-    setPendingForm(null)
-  }
-
   const onRun = async () => {
     setShowLog(true)
     setRunning(true)
     setExecution(null)
+    setWaitStatus(null)
+    const stop = new AbortController()
+    stopRef.current = stop
+    let relay: RelaySession | null = null
+    const setWaitingNode = useEditorStore.getState().setWaitingNode
     try {
       if (useEditorStore.getState().dirty) await save.mutateAsync()
-      let detail = await runsApi.run(flowId)
+
+      // wait 노드가 하나라도 있으면 실행 시작 시점에 relay 에 응답 설정을 등록하고 SSE 를 연결한다.
+      // 실패는 즉시 실패가 아니라 기억 — wait 노드에 도달했을 때 그 에러로 실패시킨다.
+      const graph = getGraph()
+      const waitNodes = graph.nodes.filter((n) => n.type === 'wait')
+      let runBody: RunRequest = {}
+      if (waitNodes.length > 0) {
+        relay = new RelaySession()
+        await relay.start(waitNodes)
+        if (!relay.error) runBody = { relayRunId: relay.runId, relayBase: relay.base }
+      }
+
+      let detail = await runsApi.run(flowId, runBody)
       setExecution(detail)
       // 서버가 중단(WAITING)하며 넘기는 지점을 처리하고 resume 으로 이어가길 반복:
+      //  - pendingForm: 팝업 열고 form 자동 submit → 즉시 재개(기다리지 않음)
+      //  - pendingWait: relay 콜백(버퍼/SSE) 소비 또는 타임아웃/중단 → 재개
       //  - pendingClient: 브라우저가 직접 API 호출 → 결과 전송
-      //  - pendingForm: 폼 팝업을 띄워 사용자 입력 → 값 전송
       let guard = 0
-      while ((detail.pendingClient || detail.pendingForm) && guard++ < 100) {
+      while ((detail.pendingClient || detail.pendingForm || detail.pendingWait) && guard++ < 100) {
+        // ⏹ 중단은 wait 대기뿐 아니라 어느 중단 지점에서도 존중 — 대기 중인 노드를 중단 사유로 재개해 CANCELLED 로 마감
+        if (stop.signal.aborted) {
+          const nodeId = detail.pendingForm?.nodeId ?? detail.pendingWait?.nodeId ?? detail.pendingClient?.nodeId
+          detail = await runsApi.resume(detail.id, { nodeId, error: '실행이 중단되었습니다.', aborted: true })
+          setExecution(detail)
+          break
+        }
         if (detail.pendingForm) {
-          const values = await askForm(detail.pendingForm)
-          if (values === null) break // 취소 → 실행은 WAITING 상태로 남김
-          detail = await runsApi.resume(detail.id, { formValues: values })
+          const pf = detail.pendingForm
+          const err = openFormPopup(pf)
+          detail = await runsApi.resume(detail.id, err
+            ? { nodeId: pf.nodeId, error: err }
+            : { nodeId: pf.nodeId, popupOpened: true })
+        } else if (detail.pendingWait) {
+          const pw = detail.pendingWait
+          if (!relay || relay.error) {
+            const err = relay?.error ?? 'relay 미연결 — 콜백 대기 노드를 실행할 수 없습니다.'
+            detail = await runsApi.resume(detail.id, { nodeId: pw.nodeId, error: err })
+          } else {
+            setWaitingNode(pw.nodeId)
+            const deadline = Date.now() + pw.timeoutSec * 1000
+            setWaitStatus({ nodeId: pw.nodeId, nodeName: pw.nodeName, receiveUrl: pw.receiveUrl ?? relay.urlFor(pw.nodeId), deadline })
+            const result = await waitForCallback(relay, pw, deadline, stop.signal)
+            setWaitStatus(null)
+            setWaitingNode(null)
+            detail = await runsApi.resume(detail.id, resumeForWait(pw, result))
+          }
         } else if (detail.pendingClient) {
           const resumeBody = await callClientRequest(detail.pendingClient)
           detail = await runsApi.resume(detail.id, resumeBody)
@@ -109,9 +145,16 @@ export function Editor() {
     } catch {
       setExecution(null)
     } finally {
+      relay?.close()
+      stopRef.current = null
+      setWaitingNode(null)
+      setWaitStatus(null)
       setRunning(false)
     }
   }
+
+  // ⏹ 실행 중단 — wait 대기를 즉시 해제하고 실행을 CANCELLED 로 마감한다.
+  const onStop = () => stopRef.current?.abort()
 
   if (flowQuery.isLoading) return <div style={{ padding: 40, color: 'var(--fl-text-muted)' }}>불러오는 중…</div>
   if (flowQuery.isError) return <div style={{ padding: 40, color: 'var(--fl-fail)' }}>워크플로를 불러오지 못했습니다. 백엔드(18080)를 확인하세요.</div>
@@ -132,6 +175,7 @@ export function Editor() {
           <button onClick={() => setShowApiImport(true)} style={ghostBtn} title="OpenAPI/Swagger 가져오기 (팔레트에 추가)">API</button>
           <button onClick={() => setWorkflowIO('import')} style={ghostBtn}>가져오기</button>
           <button onClick={() => setWorkflowIO('export')} style={ghostBtn}>내보내기</button>
+          {running && <button onClick={onStop} style={stopBtn} title="실행 중단 — 대기 중이면 즉시 해제됩니다">⏹ 중단</button>}
           <button onClick={() => onRun()} disabled={running} style={runBtn}>{running ? '실행 중…' : '▶ 실행'}</button>
           <button onClick={() => save.mutate()} disabled={save.isPending || !dirty} style={saveBtn}>💾 저장</button>
         </div>
@@ -140,17 +184,17 @@ export function Editor() {
       <ReactFlowProvider>
         <div style={{ flex: 1, display: 'flex', minHeight: 0, overflow: 'hidden' }}>
           <Palette width={paletteW} />
-          <ResizeHandle axis="x" sign={1} size={paletteW} min={160} max={maxPaletteW} onResize={setPaletteW} onResizeEnd={(n) => saveSize('paletteW', n)} ariaLabel="팔레트 너비 조절" />
+          <ResizeHandle axis="x" sign={1} size={paletteW} min={160} max={maxPaletteW} defaultSize={200} onResize={setPaletteW} onResizeEnd={(n) => saveSize('paletteW', n)} ariaLabel="팔레트 너비 조절" />
           <div style={{ flex: 1, minWidth: 0 }}>
             <FlowCanvas />
           </div>
-          <ResizeHandle axis="x" sign={-1} size={propertyW} min={300} max={maxPropertyW} onResize={setPropertyW} onResizeEnd={(n) => saveSize('propertyW', n)} ariaLabel="속성 패널 너비 조절" />
+          <ResizeHandle axis="x" sign={-1} size={propertyW} min={300} max={maxPropertyW} defaultSize={360} onResize={setPropertyW} onResizeEnd={(n) => saveSize('propertyW', n)} ariaLabel="속성 패널 너비 조절" />
           <PropertyPanel width={propertyW} />
         </div>
         {showLog && (
           <>
-            <ResizeHandle axis="y" sign={-1} size={runH} min={120} max={maxRunH} onResize={setRunH} onResizeEnd={(n) => saveSize('runH', n)} ariaLabel="실행 로그 높이 조절" />
-            <RunPanel execution={execution} running={running} height={runH} onClose={() => setShowLog(false)} />
+            <ResizeHandle axis="y" sign={-1} size={runH} min={120} max={maxRunH} defaultSize={260} onResize={setRunH} onResizeEnd={(n) => saveSize('runH', n)} ariaLabel="실행 로그 높이 조절" />
+            <RunPanel execution={execution} running={running} waitStatus={waitStatus} onStop={onStop} height={runH} onClose={() => setShowLog(false)} />
           </>
         )}
       </ReactFlowProvider>
@@ -165,15 +209,46 @@ export function Editor() {
           onClose={() => setWorkflowIO(null)}
         />
       )}
-      {pendingForm && (
-        <FormPopupDialog
-          form={pendingForm}
-          onResult={(values) => resolveForm(values)}
-          onCancel={() => resolveForm(null)}
-        />
-      )}
     </div>
   )
+}
+
+// --- wait(콜백 대기) 처리 ---
+
+type WaitOutcome = { kind: 'callback'; ev: RelayEvent } | { kind: 'timeout' } | { kind: 'aborted' }
+
+/** relay 콜백(버퍼/SSE) · 타임아웃 · 사용자 중단(⏹) 중 먼저 오는 것 하나로 낙착. */
+function waitForCallback(relay: RelaySession, pw: PendingWaitRequest, deadline: number, signal: AbortSignal): Promise<WaitOutcome> {
+  return new Promise((resolve) => {
+    let done = false
+    const finish = (r: WaitOutcome) => {
+      if (done) return
+      done = true
+      clearTimeout(timer)
+      signal.removeEventListener('abort', onAbort)
+      if (r.kind !== 'callback') relay.cancelWait(pw.nodeId) // 늦은 콜백은 버퍼로
+      resolve(r)
+    }
+    const timer = setTimeout(() => finish({ kind: 'timeout' }), Math.max(0, deadline - Date.now()))
+    const onAbort = () => finish({ kind: 'aborted' })
+    if (signal.aborted) { onAbort(); return }
+    signal.addEventListener('abort', onAbort, { once: true })
+    void relay.take(pw.nodeId).then((ev) => finish({ kind: 'callback', ev }))
+  })
+}
+
+function resumeForWait(pw: PendingWaitRequest, result: WaitOutcome): ResumeRequest {
+  if (result.kind === 'callback') {
+    const ev = result.ev
+    return {
+      nodeId: pw.nodeId,
+      callback: { method: ev.method, url: ev.url, headers: ev.headers, body: ev.body },
+    }
+  }
+  if (result.kind === 'timeout') {
+    return { nodeId: pw.nodeId, error: `타임아웃 — ${pw.timeoutSec}초 동안 콜백이 오지 않았습니다.` }
+  }
+  return { nodeId: pw.nodeId, error: '실행이 중단되었습니다.', aborted: true }
 }
 
 // 패널 크기 지속(localStorage). 잘못된 값/예외는 기본값, 범위 밖이면 min/max 로 클램프.
@@ -219,4 +294,5 @@ async function callClientRequest(p: PendingClientRequest): Promise<ResumeRequest
 
 const ghostBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', padding: '8px 14px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 13, fontWeight: 600, textDecoration: 'none', cursor: 'pointer' }
 const runBtn: CSSProperties = { ...ghostBtn, border: 'none', background: 'var(--fl-ok)', color: '#fff' }
+const stopBtn: CSSProperties = { ...ghostBtn, border: 'none', background: 'var(--fl-fail)', color: '#fff' }
 const saveBtn: CSSProperties = { ...ghostBtn, border: 'none', background: 'var(--fl-primary)', color: '#fff' }

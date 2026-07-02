@@ -2,7 +2,7 @@
 // (enum 대신 문자열 유니온 — tsconfig erasableSyntaxOnly 준수)
 
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD'
-export type NodeType = 'start' | 'end' | 'set' | 'http' | 'if' | 'wait' | 'transform' | 'tcp'
+export type NodeType = 'start' | 'end' | 'set' | 'http' | 'if' | 'form' | 'wait' | 'transform' | 'tcp'
 export type BodyType = 'json' | 'urlencoded' | 'form' | 'raw' | 'xml'
 export type RespType = 'json' | 'xml' | 'urlencoded' | 'form' | 'text' | 'binary'
 export type ReqMode = 'server' | 'client'
@@ -76,11 +76,16 @@ export interface GraphNode {
   vars?: NodeVar[]
   // if
   condition?: string
-  // wait / 폼 전송(팝업)
+  // form (폼 전송 · 팝업)
+  formAction?: string   // 팝업으로 열어 form 을 제출할 URL
+  formMethod?: string   // POST | GET
+  // wait (콜백/노티 수신 대기)
+  waitTimeoutSec?: number      // 콜백 대기 타임아웃(초, 기본 120)
+  callbackRespType?: string    // 콜백에 줄 응답 형식: text | html | json
+  callbackRespBody?: string    // 콜백에 줄 응답 본문(relay 에 사전 등록)
+  // (legacy) 구 OTP 모달 대기 노드 잔재 — 라운드트립 보존용
   waitMsg?: string
   waitFields?: WaitField[]
-  formAction?: string   // 폼을 target 전송할 URL
-  formMethod?: string   // POST | GET
   // transform
   transformId?: string
   config?: Record<string, string>
@@ -230,6 +235,10 @@ export type TriggerType = 'MANUAL' | 'SCHEDULE' | 'WEBHOOK' | 'EVENT'
 export interface RunRequest {
   input?: Record<string, unknown>
   versionNo?: number
+  // wait(콜백 대기) 노드용 — 브라우저가 실행 직전 만든 relay 실행ID(영숫자 16자)와 relay 주소.
+  // 서버가 {relayBase}/cb/{relayRunId}/{노드ID} 수신 URL 을 조립해 {{ url@노드ID }} 로 노출한다.
+  relayRunId?: string
+  relayBase?: string
 }
 
 // client(클라이언트→서버) 모드 노드에서 실행이 중단될 때, 브라우저가 대신 호출할 요청.
@@ -243,7 +252,7 @@ export interface PendingClientRequest {
   respType?: string
 }
 
-// 폼 전송 노드에서 중단될 때, 브라우저가 새 창(팝업)으로 target 전송할 폼 명세(값 해석 완료).
+// form(팝업) 노드에서 중단될 때, 브라우저가 팝업으로 제출할 폼 명세(값 해석 완료).
 export interface PendingFormRequest {
   nodeId: string
   nodeName?: string
@@ -252,13 +261,33 @@ export interface PendingFormRequest {
   fields: Array<{ key: string; value?: string | null }>
 }
 
-// 실행 재개 바디. client HTTP 는 status/body/error 를, WAIT(폼)은 formValues 를 채운다.
+// wait(콜백 대기) 노드에서 중단될 때 넘어오는 대기 명세. receiveUrl 은 relay 미연동이면 null.
+export interface PendingWaitRequest {
+  nodeId: string
+  nodeName?: string
+  timeoutSec: number
+  receiveUrl?: string | null
+}
+
+// relay 가 수신해 SSE 로 전달한 콜백 전문 — wait 재개 페이로드.
+export interface CallbackPayload {
+  method: string
+  url?: string
+  headers?: Record<string, string>
+  body?: string
+}
+
+// 실행 재개 바디. client HTTP 는 status/body/error 를, form 은 popupOpened/error 를,
+// wait 는 callback(수신) 또는 error(타임아웃/중단, aborted=사용자 중단)를 채운다.
 export interface ResumeRequest {
   nodeId?: string
   status?: number
   body?: string | null
   error?: string | null
   formValues?: Record<string, unknown>
+  popupOpened?: boolean
+  callback?: CallbackPayload
+  aborted?: boolean
   durationMs?: number
 }
 
@@ -299,6 +328,7 @@ export interface ExecutionDetail {
   nodes: NodeExecutionView[]
   pendingClient?: PendingClientRequest | null
   pendingForm?: PendingFormRequest | null
+  pendingWait?: PendingWaitRequest | null
 }
 
 export interface ApiError {

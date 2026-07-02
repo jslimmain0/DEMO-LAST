@@ -7,6 +7,7 @@ export const CAT_COLOR: Record<string, string> = {
   generic: 'var(--fl-cat-generic)',
   set: 'var(--fl-cat-set)',
   if: 'var(--fl-cat-if)',
+  form: 'var(--fl-cat-form)',
   wait: 'var(--fl-cat-wait)',
   start: 'var(--fl-cat-start)',
   end: 'var(--fl-cat-end)',
@@ -34,7 +35,8 @@ export function typeIcon(type: string): string {
     case 'end': return '■'
     case 'set': return '𝑥'
     case 'if': return '◇'
-    case 'wait': return '▤'
+    case 'form': return '▤'
+    case 'wait': return '⏸'
     case 'transform': return '⚙'
     case 'tcp': return '⇄'
     default: return '↯'
@@ -47,7 +49,8 @@ export function typeLabel(type: string): string {
     case 'end': return '끝'
     case 'set': return '변수'
     case 'if': return '조건'
-    case 'wait': return '폼 전송'
+    case 'form': return '폼 전송'
+    case 'wait': return '콜백 대기'
     case 'transform': return '변환'
     case 'tcp': return 'TCP'
     case 'http': return 'HTTP'

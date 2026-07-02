@@ -13,6 +13,7 @@ import com.flowlink.core.domain.FlowVersion;
 import com.flowlink.core.domain.NodeExecution;
 import com.flowlink.core.domain.TriggerType;
 import com.flowlink.core.graph.FlowGraph;
+import com.flowlink.core.graph.GraphNode;
 import com.flowlink.core.graph.NodeType;
 import com.flowlink.core.repository.ExecutionRepository;
 import com.flowlink.core.repository.FlowRepository;
@@ -24,6 +25,7 @@ import com.flowlink.execution.dto.ExecutionSummary;
 import com.flowlink.execution.dto.NodeExecutionView;
 import com.flowlink.execution.dto.PendingClientRequest;
 import com.flowlink.execution.dto.PendingFormRequest;
+import com.flowlink.execution.dto.PendingWaitRequest;
 import com.flowlink.execution.dto.ResumeRequest;
 import com.flowlink.execution.dto.RunRequest;
 import com.flowlink.execution.engine.ExecutionContext;
@@ -37,6 +39,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.regex.Pattern;
 
 /**
  * 워크플로 실행의 진입점 + 영속화 경계.
@@ -48,6 +51,9 @@ import java.util.concurrent.ConcurrentHashMap;
 @Service
 public class ExecutionService {
 
+    /** 브라우저가 만든 relay 실행ID — 영숫자 8~64자만 인정(수신 URL 경로에 들어간다). */
+    private static final Pattern RELAY_RUN_ID = Pattern.compile("^[A-Za-z0-9]{8,64}$");
+
     private final FlowRepository flowRepo;
     private final FlowVersionRepository versionRepo;
     private final ExecutionRepository executionRepo;
@@ -58,24 +64,12 @@ public class ExecutionService {
     private final ExecutionProperties props;
 
     /**
-     * client 모드 HTTP 노드/폼 전송(WAIT) 노드에서 WAITING 으로 중단된 실행의 재개 상태(인메모리).
+     * 브라우저 협업 노드(client HTTP / form / wait)에서 WAITING 으로 중단된 실행의 재개 상태(인메모리).
      * 단일 인스턴스/세션 한정 — 서버 재시작 시 소실되며 내구성 보관은 후속 Phase.
      */
     private final Map<UUID, Suspended> suspensions = new ConcurrentHashMap<>();
 
-    /**
-     * 게이트웨이 콜백 토큰 → 실행 id 역방향 인덱스. 폼 전송 노드가 {@code {{ __callbackUrl }}} 을 쓸 때만 채워지며,
-     * 인증 없는(permitAll) 콜백 엔드포인트가 추측 불가능한 UUID 토큰으로 실행/테넌트를 되찾는다.
-     */
-    private final Map<String, UUID> callbackTokens = new ConcurrentHashMap<>();
-
-    /**
-     * 상관키(corrId) → 실행 id 역방향 인덱스. 고정(사전등록) 콜백 URL 은 실행마다 안 바뀌므로,
-     * 게이트웨이가 echo 하는 corrId 값으로 대기 중인 실행을 찾는다({@code {{ __corrId }}} 사용 시에만 채워짐).
-     */
-    private final Map<String, UUID> corrIds = new ConcurrentHashMap<>();
-
-    private record Suspended(FlowExecutor.RunState state, String tenant, String callbackToken, String corrId) {
+    private record Suspended(FlowExecutor.RunState state, String tenant) {
     }
 
     public ExecutionService(FlowRepository flowRepo, FlowVersionRepository versionRepo,
@@ -115,7 +109,21 @@ public class ExecutionService {
 
         ExecutionContext ctx = new ExecutionContext();
         seedInput(ctx, req);
-        FlowExecutor.RunState state = flowExecutor.newRun(graph, ctx);
+
+        // wait(콜백 대기) 노드 수신 URL 시드 — 실행 시작 시점에 모든 wait 노드의 url 출력을 미리 확정해
+        // {{ url@노드ID }} 가 wait 보다 앞의 노드(returnUrl/notiUrl)에서도 해석되게 한다.
+        // putSeed: 명시 스코프/바인딩에만 보임 — bare {{ url }} 의 nearest-upstream 해석을 오염시키지 않는다.
+        String relayRunId = sanitizeRelayRunId(req == null ? null : req.relayRunId());
+        String relayBase = sanitizeRelayBase(req == null ? null : req.relayBase());
+        if (relayRunId != null && relayBase != null) {
+            for (GraphNode n : graph.nodesOrEmpty()) {
+                if (n.effectiveType() == NodeType.WAIT) {
+                    ctx.putSeed(n.id(), Map.of("url", FlowExecutor.receiveUrl(relayBase, relayRunId, n.id())));
+                }
+            }
+        }
+
+        FlowExecutor.RunState state = flowExecutor.newRun(graph, ctx, relayBase, relayRunId);
 
         FlowExecutor.Outcome outcome;
         try {
@@ -123,118 +131,93 @@ public class ExecutionService {
         } catch (Exception e) {
             execution.markFailed("실행 중 오류: " + msg(e));
             executionRepo.save(execution);
-            return detail(execution, null, null);
+            return detail(execution, null, null, null);
         }
         applyStatus(execution, outcome);
         rememberIfPending(execId, outcome, state, tenant);
         executionRepo.save(execution);
-        return detail(execution, outcome.pendingClient(), outcome.pendingForm());
+        return detail(execution, outcome.pendingClient(), outcome.pendingForm(), outcome.pendingWait());
     }
 
     /**
-     * 중단된 실행(client HTTP 또는 WAIT 폼)을, 브라우저가 돌려준 입력으로 이어서 실행한다.
+     * 중단된 실행(client HTTP / form / wait)을, 브라우저가 돌려준 입력으로 이어서 실행한다.
      * 또 다른 중단 지점을 만나면 다시 WAITING + pending 을 돌려준다(루프).
      */
     public ExecutionDetail resume(UUID executionId, ResumeRequest req) {
         String tenant = TenantContext.getTenantId();
         Suspended suspended = suspensions.get(executionId);
         if (suspended == null || !suspended.tenant().equals(tenant)) {
-            // 멱등: 이미 재개/완료됐거나(예: 서버 노티가 먼저 처리) 대기 상태가 아니면 에러 대신 현재 상태를 반환.
+            // 멱등: 이미 재개/완료됐거나 대기 상태가 아니면 에러 대신 현재 상태를 반환.
             Execution existing = executionRepo.findByIdAndTenantId(executionId, tenant)
                     .orElseThrow(() -> NotFoundException.of("Execution", executionId));
-            return detail(existing, null, null);
+            return detail(existing, null, null, null);
         }
         return doResume(executionId, suspended, req);
     }
 
-    /** 재개 실행 + 상태반영 + 영속화 공통 경로. 브라우저 resume 과 서버 노티(고정 콜백) 재개가 공유한다. */
+    /** 재개 실행 + 상태반영 + 영속화 공통 경로. */
     private ExecutionDetail doResume(UUID executionId, Suspended suspended, ResumeRequest req) {
         Execution execution = executionRepo.findByIdAndTenantId(executionId, TenantContext.getTenantId())
                 .orElseThrow(() -> NotFoundException.of("Execution", executionId));
         FlowExecutor.Outcome outcome;
         try {
-            outcome = flowExecutor.resume(suspended.state(),
-                    req == null ? null : req.status(),
-                    req == null ? null : req.body(),
-                    req == null ? null : req.error(),
-                    req == null ? null : req.formValues(),
+            outcome = flowExecutor.resume(suspended.state(), toResumeInput(req),
                     req != null && req.durationMs() != null ? req.durationMs() : 0L,
                     recorder(executionId));
         } catch (Exception e) {
-            cleanupSuspension(executionId, suspended); // 예외 경로에서도 인덱스 정리(누수 방지)
+            suspensions.remove(executionId); // 예외 경로에서도 보관소 정리(누수 방지)
             execution.markFailed("재개 중 오류: " + msg(e));
             executionRepo.save(execution);
-            return detail(execution, null, null);
+            return detail(execution, null, null, null);
         }
-        applyStatus(execution, outcome);
+        // 사용자 중단(⏹)은 실패가 아니라 취소로 마감한다.
+        if (req != null && Boolean.TRUE.equals(req.aborted()) && outcome.status() == ExecutionStatus.FAILED) {
+            execution.markCancelled(outcome.error());
+        } else {
+            applyStatus(execution, outcome);
+        }
         rememberIfPending(executionId, outcome, suspended.state(), suspended.tenant());
         executionRepo.save(execution);
-        return detail(execution, outcome.pendingClient(), outcome.pendingForm());
+        return detail(execution, outcome.pendingClient(), outcome.pendingForm(), outcome.pendingWait());
     }
 
-    /**
-     * 고정(사전등록) 콜백 수신 — 게이트웨이가 안정 URL({@code {{ __notiUrl }}})로 보낸 결과.
-     * 파라미터 값들 중 등록된 상관키(corrId)로 대기 실행을 찾아 <b>서버 사이드로 재개</b>한다(브라우저 불필요).
-     * 브라우저 팝업이 병행 중이어도 재개는 멱등하므로 안전하다.
-     */
-    public Map<String, Object> recordFixedCallback(Map<String, String[]> rawParams) {
-        Map<String, Object> params = flattenParams(rawParams);
-        UUID execId = matchByCorr(params);
-        if (execId == null) {
-            throw new BadRequestException("매칭되는 대기 실행이 없습니다(상관키 미포함/만료).");
+    private static FlowExecutor.ResumeInput toResumeInput(ResumeRequest req) {
+        if (req == null) {
+            return new FlowExecutor.ResumeInput(null, null, null, null, null, null);
         }
-        Suspended suspended = suspensions.get(execId);
-        if (suspended == null) {
-            throw new BadRequestException("대기 중이 아닌 콜백입니다.");
-        }
-        String prev = TenantContext.getTenantId();
-        try {
-            TenantContext.setTenantId(suspended.tenant());
-            doResume(execId, suspended, new ResumeRequest(null, null, null, null, params, null));
-        } finally {
-            if (prev != null) {
-                TenantContext.setTenantId(prev);
-            } else {
-                TenantContext.clear();
-            }
-        }
-        return params;
+        FlowExecutor.ResumeInput.Callback cb = req.callback() == null ? null
+                : new FlowExecutor.ResumeInput.Callback(req.callback().method(), req.callback().url(),
+                        req.callback().headers(), req.callback().body());
+        return new FlowExecutor.ResumeInput(req.status(), req.body(), req.error(),
+                req.popupOpened(), cb, req.formValues());
     }
 
-    /** 파라미터 값들(문자열/리스트) 중 등록된 corrId 가 있으면 그 실행 id. 없으면 null. */
-    private UUID matchByCorr(Map<String, Object> params) {
-        for (Object v : params.values()) {
-            if (v instanceof String s) {
-                UUID id = corrIds.get(s);
-                if (id != null) {
-                    return id;
-                }
-            } else if (v instanceof List<?> list) {
-                for (Object item : list) {
-                    if (item instanceof String s && corrIds.get(s) != null) {
-                        return corrIds.get(s);
-                    }
-                }
-            }
+    private static String sanitizeRelayRunId(String raw) {
+        if (raw == null || !RELAY_RUN_ID.matcher(raw).matches()) {
+            return null;
         }
-        return null;
+        return raw;
     }
 
-    private void cleanupSuspension(UUID execId, Suspended s) {
-        suspensions.remove(execId);
-        if (s.callbackToken() != null) {
-            callbackTokens.remove(s.callbackToken());
+    private static String sanitizeRelayBase(String raw) {
+        if (raw == null || raw.isBlank() || raw.length() > 200) {
+            return null;
         }
-        if (s.corrId() != null) {
-            corrIds.remove(s.corrId());
+        String base = raw.trim();
+        if (!base.startsWith("http://") && !base.startsWith("https://")) {
+            return null;
         }
+        while (base.endsWith("/")) {
+            base = base.substring(0, base.length() - 1);
+        }
+        return base;
     }
 
     @Transactional(readOnly = true)
     public ExecutionDetail get(UUID executionId) {
         Execution e = executionRepo.findByIdAndTenantId(executionId, TenantContext.getTenantId())
                 .orElseThrow(() -> NotFoundException.of("Execution", executionId));
-        return detail(e, null, null);
+        return detail(e, null, null, null);
     }
 
     @Transactional(readOnly = true)
@@ -279,81 +262,14 @@ public class ExecutionService {
         }
     }
 
-    /** 중단(pending)되면 재개 상태를 보관하고, 그 외(완료/실패)면 비운다. 콜백 토큰·상관키 인덱스도 함께 관리. */
+    /** 중단(pending)되면 재개 상태를 보관하고, 그 외(완료/실패)면 비운다. */
     private void rememberIfPending(UUID execId, FlowExecutor.Outcome outcome,
                                    FlowExecutor.RunState state, String tenant) {
-        // 직전 토큰/상관키가 있으면 정리(재개로 상태가 넘어갈 때 스테일 인덱스 제거)
-        Suspended prev = suspensions.get(execId);
-        if (prev != null) {
-            if (prev.callbackToken() != null) {
-                callbackTokens.remove(prev.callbackToken());
-            }
-            if (prev.corrId() != null) {
-                corrIds.remove(prev.corrId());
-            }
-        }
         if (outcome.status() == ExecutionStatus.WAITING && outcome.isPending()) {
-            FlowExecutor.PendingForm pf = outcome.pendingForm();
-            String token = pf != null ? pf.callbackToken() : null;
-            String corr = pf != null ? pf.corrId() : null;
-            suspensions.put(execId, new Suspended(state, tenant, token, corr));
-            if (token != null) {
-                callbackTokens.put(token, execId);
-            }
-            if (corr != null) {
-                corrIds.put(corr, execId);
-            }
+            suspensions.put(execId, new Suspended(state, tenant));
         } else {
             suspensions.remove(execId);
         }
-    }
-
-    /**
-     * 게이트웨이/팝업이 콜백 URL 로 리다이렉트(GET 쿼리 또는 POST 자동전송)했을 때 호출된다.
-     * 토큰으로 실행/테넌트를 되찾아 파라미터를 재개 상태에 저장(authoritative)한다. 재개(resume)는
-     * 브라우저 브리지 페이지의 postMessage 가 몰고 오므로 여기서는 하지 않는다.
-     */
-    public Map<String, Object> recordCallback(String token, Map<String, String[]> rawParams) {
-        UUID execId = callbackTokens.get(token);
-        if (execId == null) {
-            throw new BadRequestException("만료되었거나 알 수 없는 콜백입니다.");
-        }
-        Suspended suspended = suspensions.get(execId);
-        if (suspended == null) {
-            throw new BadRequestException("대기 중이 아닌 콜백입니다.");
-        }
-        Map<String, Object> params = flattenParams(rawParams);
-        String prev = TenantContext.getTenantId();
-        try {
-            TenantContext.setTenantId(suspended.tenant());
-            flowExecutor.recordCallback(suspended.state(), params);
-        } finally {
-            if (prev != null) {
-                TenantContext.setTenantId(prev);
-            } else {
-                TenantContext.clear();
-            }
-        }
-        return params;
-    }
-
-    /** 서블릿 파라미터맵(값 배열)을 단일값/리스트 맵으로 평탄화 — parseForm 의 중복키 규약과 동일. */
-    private static Map<String, Object> flattenParams(Map<String, String[]> raw) {
-        Map<String, Object> out = new java.util.LinkedHashMap<>();
-        if (raw == null) {
-            return out;
-        }
-        for (Map.Entry<String, String[]> e : raw.entrySet()) {
-            String[] vals = e.getValue();
-            if (vals == null || vals.length == 0) {
-                out.put(e.getKey(), "");
-            } else if (vals.length == 1) {
-                out.put(e.getKey(), vals[0]);
-            } else {
-                out.put(e.getKey(), List.of(vals));
-            }
-        }
-        return out;
     }
 
     private static String msg(Exception e) {
@@ -369,7 +285,8 @@ public class ExecutionService {
         ctx.putOutput("input", inputMap);
     }
 
-    private ExecutionDetail detail(Execution e, FlowExecutor.PendingClient pending, FlowExecutor.PendingForm form) {
+    private ExecutionDetail detail(Execution e, FlowExecutor.PendingClient pending,
+                                   FlowExecutor.PendingForm form, FlowExecutor.PendingWait wait) {
         List<NodeExecutionView> nodes = nodeExecRepo.findByExecutionIdOrderBySeqAsc(e.getId())
                 .stream().map(this::toView).toList();
         PendingClientRequest pc = pending == null ? null : new PendingClientRequest(
@@ -379,8 +296,11 @@ public class ExecutionService {
                 form.nodeId(), form.nodeName(), form.action(), form.method(),
                 (form.fields() == null ? List.<FlowExecutor.PendingForm.Field>of() : form.fields()).stream()
                         .map(f -> new PendingFormRequest.FormField(f.key(), f.value())).toList());
+        PendingWaitRequest pw = wait == null ? null : new PendingWaitRequest(
+                wait.nodeId(), wait.nodeName(), wait.timeoutSec(), wait.receiveUrl());
         return new ExecutionDetail(e.getId(), e.getFlowId(), e.getFlowVersionId(), e.getStatus(),
-                e.getTrigger(), e.getTriggeredBy(), e.getStartedAt(), e.getFinishedAt(), e.getError(), nodes, pc, pf);
+                e.getTrigger(), e.getTriggeredBy(), e.getStartedAt(), e.getFinishedAt(), e.getError(),
+                nodes, pc, pf, pw);
     }
 
     private NodeExecutionView toView(NodeExecution n) {

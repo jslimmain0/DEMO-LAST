@@ -22,7 +22,6 @@ class SsrfGuardTest {
                 new ExecutionProperties.Ssrf(true, true, allowLoopback,
                         List.of("169.254.169.254"), List.of("http", "https")),
                 null,
-                null,
                 200);
         return new SsrfGuard(props);
     }

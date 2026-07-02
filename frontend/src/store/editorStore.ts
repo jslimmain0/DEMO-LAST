@@ -15,6 +15,8 @@ interface EditorState {
   selectedId: string | null
   dirty: boolean
   palette: PaletteGroup[]
+  // 실행 중 콜백을 기다리는 wait 노드(캔버스 펄스·유입 엣지 애니메이션용). 실행 상태라 dirty 와 무관.
+  waitingNodeId: string | null
 
   loadGraph: (flowId: string, name: string, graph: FlowGraph) => void
   importGraph: (graph: FlowGraph) => void
@@ -35,6 +37,7 @@ interface EditorState {
   addPaletteGroup: (group: PaletteGroup) => void
   removePaletteGroup: (groupId: string) => void
   removePaletteItem: (groupId: string, itemId: string) => void
+  setWaitingNode: (id: string | null) => void
 }
 
 export const useEditorStore = create<EditorState>()((set, get) => ({
@@ -45,6 +48,7 @@ export const useEditorStore = create<EditorState>()((set, get) => ({
   selectedId: null,
   dirty: false,
   palette: [],
+  waitingNodeId: null,
 
   loadGraph: (flowId, name, graph) => {
     const { nodes, edges } = toRF(graph)
@@ -179,6 +183,8 @@ export const useEditorStore = create<EditorState>()((set, get) => ({
     const n = get().nodes.find((x) => x.id === id)
     return n ? asGraphNode(n.data) : null
   },
+
+  setWaitingNode: (id) => set({ waitingNodeId: id }),
 
   addPaletteGroup: (group) => set({ palette: [...get().palette, group], dirty: true }),
   removePaletteGroup: (groupId) => set({ palette: get().palette.filter((g) => g.id !== groupId), dirty: true }),

@@ -10,6 +10,7 @@ export function ResizeHandle({
   size,
   min,
   max,
+  defaultSize,
   onResize,
   onResizeEnd,
   ariaLabel,
@@ -19,6 +20,7 @@ export function ResizeHandle({
   size: number
   min: number
   max: number
+  defaultSize?: number // 더블클릭 시 되돌아갈 기본 크기
   onResize: (next: number) => void
   onResizeEnd?: (next: number) => void
   ariaLabel?: string
@@ -90,6 +92,14 @@ export function ResizeHandle({
     }
   }
 
+  // 더블클릭 = 기본 크기로 리셋
+  const onDoubleClick = () => {
+    if (defaultSize == null) return
+    const next = clamp(defaultSize)
+    onResize(next)
+    onResizeEnd?.(next)
+  }
+
   // 분할선(::before)을 캔버스쪽 가장자리에 붙여, 손잡이(=패널 표면색)가 패널과 이어져 보이게 한다.
   const pin = axis === 'x' ? (sign === 1 ? 'right' : 'left') : 'top'
 
@@ -105,8 +115,10 @@ export function ResizeHandle({
       aria-valuemin={min}
       aria-valuemax={max}
       tabIndex={0}
+      title={defaultSize != null ? '드래그로 크기 조절 · 더블클릭으로 기본 크기' : undefined}
       onPointerDown={onPointerDown}
       onKeyDown={onKeyDown}
+      onDoubleClick={onDoubleClick}
       style={axis === 'x' ? handleX : handleY}
     />
   )

@@ -1,18 +1,30 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { ExecutionDetail } from '../api/types'
 import { StatusBadge } from '../components/StatusBadge'
 import { MethodTag } from '../components/MethodTag'
 import { duration } from '../lib/format'
 import type { HttpMethod } from '../api/types'
 
+/** wait(콜백 대기) 진행 상태 — Editor 실행 루프가 채운다. */
+export interface WaitStatus {
+  nodeId: string
+  nodeName?: string
+  receiveUrl?: string | null
+  deadline: number // epoch ms — 카운트다운 표시용
+}
+
 export function RunPanel({
   execution,
   running,
+  waitStatus = null,
+  onStop,
   onClose,
   height = 260,
 }: {
   execution: ExecutionDetail | null
   running: boolean
+  waitStatus?: WaitStatus | null
+  onStop?: () => void
   onClose: () => void
   height?: number
 }) {
@@ -33,18 +45,27 @@ export function RunPanel({
         <strong style={{ fontSize: 13 }}>실행 로그</strong>
         {execution && <StatusBadge status={execution.status} />}
         {execution?.error && <span style={{ fontSize: 12, color: 'var(--fl-fail)' }}>{execution.error}</span>}
-        <button onClick={onClose} aria-label="로그 닫기" style={{ marginLeft: 'auto', border: 'none', background: 'transparent', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 16 }}>×</button>
+        {running && onStop && (
+          <button onClick={onStop} title="실행 중단" style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 5, padding: '4px 10px', border: '1px solid var(--fl-fail)', borderRadius: 'var(--fl-radius-pill)', background: 'transparent', color: 'var(--fl-fail)', cursor: 'pointer', fontSize: 12, fontWeight: 700 }}>
+            ⏹ 중단
+          </button>
+        )}
+        <button onClick={onClose} aria-label="로그 닫기" style={{ marginLeft: running && onStop ? 0 : 'auto', border: 'none', background: 'transparent', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 16 }}>×</button>
       </header>
 
       <div style={{ flex: 1, overflowY: 'auto' }}>
         {running && (
-          <div role="status" aria-live="polite" style={{ padding: 16, color: 'var(--fl-text-muted)', fontSize: 13 }}>
-            {execution?.pendingForm
-              ? '폼 전송 창 대기 중… (팝업에서 완료하거나 창을 닫으면 진행됩니다)'
-              : execution?.pendingClient
-                ? `브라우저(클라이언트)에서 직접 호출 중… — ${execution.pendingClient.method} ${execution.pendingClient.url}`
-                : '실행 중… (완료되면 결과가 표시됩니다)'}
-          </div>
+          waitStatus ? (
+            <WaitBanner status={waitStatus} />
+          ) : (
+            <div role="status" aria-live="polite" style={{ padding: 16, color: 'var(--fl-text-muted)', fontSize: 13 }}>
+              {execution?.pendingForm
+                ? '팝업을 열고 form 을 제출하는 중…'
+                : execution?.pendingClient
+                  ? `브라우저(클라이언트)에서 직접 호출 중… — ${execution.pendingClient.method} ${execution.pendingClient.url}`
+                  : '실행 중… (완료되면 결과가 표시됩니다)'}
+            </div>
+          )
         )}
         {!running && !execution && (
           <div style={{ padding: 16, color: 'var(--fl-text-muted)', fontSize: 13 }}>아직 실행하지 않았습니다. ▶ 실행을 눌러보세요.</div>
@@ -79,6 +100,40 @@ export function RunPanel({
         })}
       </div>
     </section>
+  )
+}
+
+/** 콜백 대기 배너 — 실시간 카운트다운(0.3초 갱신) + 수신 URL(클릭 전체선택·복사). */
+function WaitBanner({ status }: { status: WaitStatus }) {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 300)
+    return () => clearInterval(t)
+  }, [])
+  const remain = Math.max(0, Math.ceil((status.deadline - now) / 1000))
+  return (
+    <div role="status" aria-live="polite" style={{ padding: '14px 16px', display: 'grid', gap: 8 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--fl-waiting)', fontWeight: 700 }}>
+        <span className="fl-wait-dot" aria-hidden />
+        {status.nodeName || status.nodeId} — 대기 중 ({remain}초 남음)
+      </div>
+      {status.receiveUrl && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ fontSize: 11.5, color: 'var(--fl-text-muted)', flexShrink: 0 }}>이 URL로 콜백을 보내면 진행됩니다:</span>
+          <input
+            readOnly
+            value={status.receiveUrl}
+            onFocus={(e) => e.currentTarget.select()}
+            style={{ flex: 1, minWidth: 0, padding: '5px 8px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', color: 'var(--fl-text)', fontFamily: 'var(--fl-font-mono)', fontSize: 11.5 }}
+          />
+          <button
+            onClick={() => { void navigator.clipboard?.writeText(status.receiveUrl ?? '').catch(() => {}) }}
+            title="수신 URL 복사"
+            style={{ flexShrink: 0, width: 28, height: 28, border: '1px solid var(--fl-border)', borderRadius: 6, background: 'var(--fl-surface)', color: 'var(--fl-primary)', cursor: 'pointer' }}
+          >⧉</button>
+        </div>
+      )}
+    </div>
   )
 }
 

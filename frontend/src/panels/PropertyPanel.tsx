@@ -5,13 +5,14 @@ import { pluginsApi, transformsApi } from '../api/client'
 import type { Binding, BodyType, GraphNode, HttpMethod, NodeField, NodeOutput, NodeVar, ReqMode, RespType, TcpField, TcpRespField } from '../api/types'
 import { BindingChip } from '../binding/BindingChip'
 import { BindingPicker } from '../binding/BindingPicker'
-import { upstreamSources } from '../binding/upstream'
+import { bindableSources } from '../binding/upstream'
 import type { BindableSource } from '../binding/upstream'
 import { asGraphNode } from '../canvas/graphAdapter'
 import { catColor, typeIcon, typeLabel } from '../canvas/nodeMeta'
 import { fieldsToRaw, rawToFields, headersToRaw, rawToHeaders } from '../lib/bodyConvert'
 import { bindingToToken } from '../lib/tokenGrammar'
 import { newId } from '../lib/ids'
+import { relayBase, saveRelayBase } from '../lib/relay'
 import { useEditorStore } from '../store/editorStore'
 import { KeyValueEditor } from './KeyValueEditor'
 
@@ -20,14 +21,13 @@ const field: CSSProperties = { width: '100%', padding: '8px 10px', border: '1px 
 const mono: CSSProperties = { ...field, fontFamily: 'var(--fl-font-mono)', fontSize: 12 }
 const braceBtn: CSSProperties = { width: 32, height: 32, flexShrink: 0, border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-primary)', cursor: 'pointer', fontFamily: 'var(--fl-font-mono)', fontSize: 12 }
 
-// 폼 전송(WAIT) 노드 특수 토큰 — 실행 시 서버가 실제 값으로 치환한다.
-const CALLBACK_TOKEN = '{{ __callbackUrl }}' // 동적: per-run 토큰 URL(브라우저 팝업 복귀)
-const NOTI_TOKEN = '{{ __notiUrl }}'         // 고정: 사전등록용 안정 URL(서버 노티)
-const CORR_TOKEN = '{{ __corrId }}'          // 상관키: 고정 URL 매칭용
-// 고정 콜백 URL(콘솔 등록/노티용). 백엔드 flowlink.execution.callback.base-url 기본값 기준 — override(터널) 시 그 주소로.
-const fixedCallbackUrl = 'http://localhost:18080/api/v1/callbacks'
-
 const METHODS: HttpMethod[] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD']
+// wait(콜백 대기) 노드 — 콜백에 줄 응답 형식
+const CALLBACK_RESP_TYPES = [
+  { value: 'text', label: '문자열 (text/plain)' },
+  { value: 'html', label: 'HTML (text/html)' },
+  { value: 'json', label: 'JSON (application/json)' },
+]
 const BODY_TYPES: BodyType[] = ['json', 'urlencoded', 'form', 'raw', 'xml']
 // 구조형 바디(키-값 또는 raw 텍스트 둘 다 가능) — jsonRaw 플래그로 [필드|Raw] 전환
 const STRUCTURED_BODY: BodyType[] = ['json', 'urlencoded', 'form']
@@ -67,8 +67,9 @@ export function PropertyPanel({ width = 360 }: { width?: number }) {
     return n ? asGraphNode(n.data) : null
   }, [nodes, selectedId])
 
+  // 조상 소스 + 그래프 내 wait 노드 수신 URL(앞 노드에서 returnUrl/notiUrl 에 꽂는 표준 패턴)
   const sources: BindableSource[] = useMemo(
-    () => (selectedId ? upstreamSources(nodes, edges, selectedId) : []),
+    () => (selectedId ? bindableSources(nodes, edges, selectedId) : []),
     [nodes, edges, selectedId],
   )
 
@@ -468,11 +469,11 @@ export function PropertyPanel({ width = 360 }: { width?: number }) {
           </>
         )}
 
-        {node.type === 'wait' && (
+        {node.type === 'form' && (
           <>
-            <label style={label}>전송 URL (action)</label>
+            <label style={label}>팝업 URL — 팝업으로 열어 form 을 제출할 주소</label>
             <div style={{ display: 'flex', gap: 4 }}>
-              <input style={mono} value={node.formAction ?? ''} onChange={(e) => update(id, { formAction: e.target.value })} placeholder="https://example.com/submit" />
+              <input style={mono} value={node.formAction ?? ''} onChange={(e) => update(id, { formAction: e.target.value })} placeholder="https://pg.example.com/pay  ({ } 바인딩 가능)" />
               <button onClick={() => setPick('formAction')} title="데이터 삽입" style={braceBtn}>{'{ }'}</button>
             </div>
             <label style={label}>메서드</label>
@@ -481,7 +482,7 @@ export function PropertyPanel({ width = 360 }: { width?: number }) {
               <option value="GET">GET</option>
             </select>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '12px 0 5px' }}>
-              <label style={{ ...label, margin: 0 }}>폼 데이터 (바인딩 가능)</label>
+              <label style={{ ...label, margin: 0 }}>Hidden 필드 (값마다 바인딩 가능)</label>
               <div style={miniSeg} role="group" aria-label="폼 데이터 입력 방식">
                 <button type="button" onClick={() => switchFormRaw(false)} style={miniSegBtn(!node.jsonRaw)}>필드</button>
                 <button type="button" onClick={() => switchFormRaw(true)} style={miniSegBtn(!!node.jsonRaw)}>Raw</button>
@@ -496,47 +497,50 @@ export function PropertyPanel({ width = 360 }: { width?: number }) {
             ) : (
               <KeyValueEditor rows={node.fields?.body ?? []} onChange={(rows) => update(id, { fields: { params: fields.params ?? [], headers: fields.headers ?? [], body: rows } })} sources={sources} />
             )}
-            <p style={{ ...hintP }}>
-              실행 시 <b>새 창(팝업)</b>으로 이 폼을 target 전송합니다. 팝업이 결과를 postMessage 하거나 창이 닫히면 다음 노드로 진행하며, 그 값이 이 노드의 출력이 됩니다.
+            <p style={hintP}>
+              실행 시 <b>팝업</b>을 열고 hidden form 을 자동 submit 한 뒤 <b>기다리지 않고 즉시 다음 노드로</b> 진행합니다.
+              사람의 인증/입력 결과는 다음 <b>콜백 대기</b> 노드가 받습니다 — 게이트웨이가 요구하는 필드명(returnUrl 등)의
+              값에 {'{ }'} 로 <b>콜백 대기 노드의 수신 URL</b> 을 꽂는 것이 표준 패턴입니다.
+              팝업이 차단되면 이 노드는 실패합니다(허용 후 재실행).
+            </p>
+          </>
+        )}
+
+        {node.type === 'wait' && (
+          <>
+            <label style={label}>타임아웃 (초)</label>
+            <input
+              style={{ ...field, width: 120 }}
+              type="number"
+              min={1}
+              value={node.waitTimeoutSec ?? 120}
+              onChange={(e) => update(id, { waitTimeoutSec: Math.max(1, Number(e.target.value) || 120) })}
+            />
+            <p style={{ ...hintP, marginTop: 6 }}>시간 안에 콜백이 없으면 노드 실패 → 실행이 중단됩니다.</p>
+
+            <label style={label}>콜백에 줄 응답</label>
+            <select style={{ ...field, width: 'auto' }} value={node.callbackRespType ?? 'text'} onChange={(e) => update(id, { callbackRespType: e.target.value })}>
+              {CALLBACK_RESP_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+            </select>
+            <textarea
+              style={{ ...mono, minHeight: 80, resize: 'vertical', marginTop: 6 }}
+              value={node.callbackRespBody ?? ''}
+              onChange={(e) => update(id, { callbackRespBody: e.target.value })}
+              placeholder={node.callbackRespType === 'html' ? '<b>인증 완료 — 창을 닫으세요</b>' : 'OK'}
+            />
+            <p style={{ ...hintP, marginTop: 6 }}>
+              콜백(리다이렉트/노티)을 보낸 쪽이 받을 응답입니다. 인증 callback 이면 HTML("창을 닫으세요"),
+              승인 노티면 OK 같은 문자열. 실행 시작 시점에 relay 에 등록됩니다.
             </p>
 
-            <label style={label}>게이트웨이 콜백 URL</label>
-            <div style={{ display: 'flex', gap: 4 }}>
-              <input style={mono} readOnly value={CALLBACK_TOKEN} onFocus={(e) => e.currentTarget.select()} />
-              <button
-                onClick={() => { void navigator.clipboard?.writeText(CALLBACK_TOKEN).catch(() => {}) }}
-                title="복사"
-                style={braceBtn}
-              >⧉</button>
-              <button
-                onClick={() => update(id, { fields: { params: fields.params ?? [], headers: fields.headers ?? [], body: [...(node.fields?.body ?? []), { id: newId(), key: 'returnUrl', value: CALLBACK_TOKEN }] } })}
-                title="콜백 URL 필드 추가"
-                style={braceBtn}
-              >{'{ }'}</button>
-            </div>
-            <p style={{ ...hintP, marginTop: 8 }}>
-              <b>동적(팝업):</b> 게이트웨이가 요구하는 <b>필드명</b>(returnUrl/ret_url/ReturnURL 등)으로 <code>{CALLBACK_TOKEN}</code> 을 폼 데이터에 추가하세요.
-              실행마다 추측 불가능한 수신 URL 로 치환되고, 게이트웨이가 그 URL 로 리다이렉트하면 <b>결과 파라미터가 이 노드의 출력</b>이 됩니다.
-            </p>
+            <WaitReceiveUrl nodeId={id} />
 
-            <label style={label}>고정 콜백 URL (사전등록 · 서버 노티)</label>
-            <div style={{ display: 'flex', gap: 4 }}>
-              <input style={mono} readOnly value={fixedCallbackUrl} onFocus={(e) => e.currentTarget.select()} />
-              <button onClick={() => { void navigator.clipboard?.writeText(fixedCallbackUrl).catch(() => {}) }} title="복사(콘솔 등록용)" style={braceBtn}>⧉</button>
-              <button
-                onClick={() => update(id, { fields: { params: fields.params ?? [], headers: fields.headers ?? [], body: [...(node.fields?.body ?? []), { id: newId(), key: 'oid', value: CORR_TOKEN }] } })}
-                title="상관키 필드 추가"
-                style={braceBtn}
-              >{'{ }'}</button>
-            </div>
-            <p style={{ ...hintP, marginTop: 8 }}>
-              <b>고정(사전등록):</b> 실행마다 안 바뀌는 위 URL 을 게이트웨이 콘솔에 미리 등록하거나 노티(웹훅) URL 로 쓰세요.
-              고정 URL 은 실행을 구분 못 하므로, 게이트웨이가 <b>되돌려주는 필드</b>(주문번호 oid/MOID 등)에 상관키 <code>{CORR_TOKEN}</code> 를 넣으세요
-              (필드명은 게이트웨이 규격대로). 콜백이 그 값을 echo 하면 서버가 대기 중인 실행을 찾아 <b>브라우저 없이 재개</b>합니다.
-              폼에 URL 을 실어야 하는 게이트웨이는 <code>{NOTI_TOKEN}</code> 토큰을 필드 값으로 넣으면 됩니다.
-            </p>
-            <label style={label}>응답 규격 (출력) — 게이트웨이 콜백 결과 키 (하위 노드가 바인딩)</label>
+            <label style={label}>응답 규격 (출력) — 콜백 본문 키 (하위 노드가 바인딩)</label>
             <OutputsEditor outputs={node.outputs ?? []} onChange={(outputs) => update(id, { outputs })} />
+            <p style={hintP}>
+              선언은 바인딩 피커 칩용입니다 — 실제로는 콜백 본문(JSON/urlencoded 파싱)의 <b>모든</b> 키가 출력이 되고,
+              키 구조가 아니면 원문이 body 로 제공됩니다. 수신 URL 은 <code>{`{{ url@${id} }}`}</code> 로 어느 노드에서든 바인딩됩니다.
+            </p>
           </>
         )}
 
@@ -591,6 +595,38 @@ function ClientIcon() {
       <rect x="3" y="5" width="18" height="12" rx="1.8" stroke="currentColor" strokeWidth="1.7" />
       <path d="M8 21h8M12 17v4" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
     </svg>
+  )
+}
+
+/** wait 노드 수신 URL 표시 + 바인딩 토큰 복사 + relay 주소 설정(브라우저 전역, localStorage). */
+function WaitReceiveUrl({ nodeId }: { nodeId: string }) {
+  const [base, setBase] = useState(relayBase())
+  const pattern = `${base}/cb/{실행ID}/${nodeId}`
+  const token = `{{ url@${nodeId} }}`
+  return (
+    <>
+      <label style={label}>수신 URL — 이 주소로 콜백을 보내면 진행됩니다</label>
+      <div style={{ display: 'flex', gap: 4 }}>
+        <input style={mono} readOnly value={pattern} onFocus={(e) => e.currentTarget.select()} title="실행ID는 실행마다 새로 생성됩니다(클릭 시 전체선택)" />
+        <button
+          onClick={() => { void navigator.clipboard?.writeText(token).catch(() => {}) }}
+          title={`바인딩 토큰 복사 — ${token}`}
+          style={{ ...braceBtn, width: 'auto', padding: '0 10px', whiteSpace: 'nowrap' }}
+        >바인딩 토큰 복사</button>
+      </div>
+      <p style={{ ...hintP, marginTop: 6 }}>
+        실행 시작 시 실행ID(영숫자 16자)가 생성되어 URL 이 확정됩니다. 앞 노드(결제요청의 returnUrl/notiUrl 등)에서
+        {'{ }'} 피커의 <b>수신 URL</b> 항목 또는 위 토큰으로 꽂아 쓰세요.
+      </p>
+      <label style={label}>relay 주소 (전역 설정)</label>
+      <input
+        style={mono}
+        value={base}
+        onChange={(e) => { setBase(e.target.value); saveRelayBase(e.target.value) }}
+        placeholder="http://localhost:8787"
+      />
+      <p style={{ ...hintP, marginTop: 6 }}>콜백 수신기(relay.js) 주소 — <code>node relay.js</code> 로 실행합니다(기본 8787).</p>
+    </>
   )
 }
 

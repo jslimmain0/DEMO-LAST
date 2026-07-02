@@ -1,7 +1,7 @@
 import { Background, Controls, MiniMap, ReactFlow, useReactFlow } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import type { CSSProperties, DragEvent } from 'react'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { GraphNode, NodeType } from '../api/types'
 import { useEditorStore } from '../store/editorStore'
 import { BranchNode } from './BranchNode'
@@ -16,6 +16,12 @@ const connectionLineStyle: CSSProperties = { stroke: 'var(--fl-primary)', stroke
 export function FlowCanvas() {
   const nodes = useEditorStore((s) => s.nodes)
   const edges = useEditorStore((s) => s.edges)
+  const waitingNodeId = useEditorStore((s) => s.waitingNodeId)
+  // 콜백 대기 중엔 그 노드로 들어오는 엣지에 흐름 애니메이션
+  const displayEdges = useMemo(
+    () => (waitingNodeId ? edges.map((e) => (e.target === waitingNodeId ? { ...e, animated: true } : e)) : edges),
+    [edges, waitingNodeId],
+  )
   const onNodesChange = useEditorStore((s) => s.onNodesChange)
   const onEdgesChange = useEditorStore((s) => s.onEdgesChange)
   const onConnect = useEditorStore((s) => s.onConnect)
@@ -66,7 +72,7 @@ export function FlowCanvas() {
     >
       <ReactFlow
         nodes={nodes}
-        edges={edges}
+        edges={displayEdges}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         onNodesChange={onNodesChange}

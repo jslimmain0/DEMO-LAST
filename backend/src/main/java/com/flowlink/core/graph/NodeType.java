@@ -7,7 +7,10 @@ public enum NodeType {
     SET,
     HTTP,
     IF,
+    /** 콜백/노티 수신 대기 — relay 수신 URL 로 외부 콜백이 올 때까지 실행을 중단한다. */
     WAIT,
+    /** 폼 전송(팝업) — 브라우저가 팝업으로 hidden form 을 자동 submit 하고 즉시 다음 노드로 진행. */
+    FORM,
     TRANSFORM,
     TCP,
     UNKNOWN;
@@ -23,6 +26,7 @@ public enum NodeType {
             case "http" -> HTTP;
             case "if" -> IF;
             case "wait" -> WAIT;
+            case "form" -> FORM;
             case "transform" -> TRANSFORM;
             case "tcp" -> TCP;
             default -> UNKNOWN;

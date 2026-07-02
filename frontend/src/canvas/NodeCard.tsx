@@ -2,11 +2,13 @@ import { Handle, Position } from '@xyflow/react'
 import type { NodeProps } from '@xyflow/react'
 import type { HttpMethod } from '../api/types'
 import { MethodTag } from '../components/MethodTag'
+import { useEditorStore } from '../store/editorStore'
 import { asGraphNode } from './graphAdapter'
 import { catColor, typeIcon, typeLabel } from './nodeMeta'
 
 export function NodeCard({ data, selected }: NodeProps) {
   const n = asGraphNode(data)
+  const waiting = useEditorStore((s) => s.waitingNodeId) === n.id
   const accent = catColor(n.cat)
   const isStart = n.type === 'start'
   const isEnd = n.type === 'end'
@@ -17,7 +19,7 @@ export function NodeCard({ data, selected }: NodeProps) {
       style={{
         minWidth: 200,
         background: 'var(--fl-surface)',
-        border: `1px solid ${selected ? 'var(--fl-primary)' : 'var(--fl-border)'}`,
+        border: `1px solid ${waiting ? 'var(--fl-waiting)' : selected ? 'var(--fl-primary)' : 'var(--fl-border)'}`,
         borderRadius: 'var(--fl-radius)',
         boxShadow: selected ? 'var(--fl-shadow-lg)' : 'var(--fl-shadow)',
         overflow: 'hidden',
@@ -33,9 +35,10 @@ export function NodeCard({ data, selected }: NodeProps) {
             {n.name ?? typeLabel(n.type)}
           </div>
           <div style={{ fontSize: 10.5, color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)' }}>
-            {typeLabel(n.type)}
+            {waiting ? '콜백 대기 중…' : typeLabel(n.type)}
           </div>
         </div>
+        {waiting && <span className="fl-wait-dot" title="콜백 대기 중" aria-label="콜백 대기 중" />}
       </div>
 
       {isHttp && (

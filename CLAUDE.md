@@ -334,8 +334,11 @@ design/   theme(라이트/다크) · index.css(CSS 변수)
   콜백 편집·보내보기, PG 프리셋 엔드포인트 안내·secret). `routes/MockServers.tsx`·`MockServerEditor.tsx`.
 - **demos/pg/pg-01~14**: 내장 `/mock/pg-demo` 대상 결제 시나리오(사용자 제시 30개 중 정상계) — 결제 풀코스·전체/부분취소·
   빌키·가상계좌·승인/취소노티·EUC-KR·MS949·xml/urlenc/raw·해시서명·Basic인증·텍스트추출. 전부 assert 로 판정.
-- 검증: 백엔드 단위 4종(mock 7 포함) PASS + 라이브 e2e — PG server체인 23·브라우저루프 20·커스텀 라우트 7 단언 PASS,
+- 검증: 백엔드 단위 4종(mock 8 포함) PASS + 라이브 e2e — PG server체인 23·브라우저루프 20·커스텀 라우트 7 단언 PASS,
   기존 demos(47)·form-wait(31) 무회귀. 프론트 tsc/vite/oxlint 통과.
+- **적대적 멀티에이전트 리뷰(38 에이전트, 4차원×2표 반박) 반영**: (1) 게이트웨이 경로에 `URLDecoder.decode`(form 디코더) 사용 →
+  경로의 `+`가 공백으로 변질(경로 파라미터·조건 오염) → 세그먼트별 percent-only `decodePath`로 교체. (2) PUT/PATCH/DELETE +
+  urlencoded 본문이 Spring FormContentFilter 에 소진돼 `getInputStream()` 이 빈 값 → 파라미터 맵에서 `recoverFormBody` 로 복원.
 - ⚠️ mock 서빙 무인증(테스트 도구 전제, slug 는 비밀값 아님)·상태 인메모리·콜백 SsrfGuard 적용(운영 프로파일은 사설망 발사 차단).
 
 ### mock 대상 시스템(mock-server.js) + 데모 워크플로 스위트(demos/)

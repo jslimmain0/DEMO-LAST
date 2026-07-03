@@ -42,15 +42,20 @@ node relay.js [port]   # 기본 8787. wait(콜백 대기) 노드용 — 의존�
 - 결제/인증 게이트웨이 콜백을 받아 SSE 로 브라우저에 전달. `frontend/dist` 정적 서빙 겸용.
 - 주소는 프론트 localStorage `fl:relayBase` (wait 노드 속성 패널에서 설정, 기본 `http://localhost:8787`).
 
-### Mock 대상 시스템 + 데모 (리포 루트 · `demos/`)
+### Mock 서버 기능 (백엔드 내장 · UI 상단 "Mock 서버" 탭)
+FlowLink 안에서 **가짜 대상 시스템을 만들고 켜는 1급 기능**. 저장 즉시 `http://localhost:18080/mock/{slug}/**` 로 서빙(별도 프로세스 없음).
+- **CUSTOM**: method+경로(`/users/{id}`)마다 규칙(조건·응답 템플릿·charset·지연·콜백 발사)을 UI 에서 정의.
+- **PG 프리셋**: 상태(TID 원장·부분취소 잔액·빌키·가상계좌·노티) 있는 "가짜 결제 게이트웨이".
+- 워크플로 HTTP/폼 노드의 baseUrl 에 mock base URL 을 넣어 호출. 미완성 시스템을 mock 으로 세워 전체 흐름을 먼저 검증.
+- 상세: [docs/superpowers/specs/2026-07-04-mock-server-builder-design.md](docs/superpowers/specs/2026-07-04-mock-server-builder-design.md), 시나리오 데모 [demos/pg/README.md](demos/pg/README.md).
+
+### Mock 대상 시스템(단일 스크립트) + 데모 (리포 루트 · `demos/`)
 ```
 node mock-server.js [httpPort] [tcpPort]   # 기본 HTTP 9090 + TCP 9091 — 의존성 0
 ```
-- 데모 워크플로가 때릴 가짜 시스템: 결제 게이트웨이(인터랙티브 결제창→returnUrl POST 브리지),
-  REST API(login/OTP=111111/products/orders/echo/slow), 레거시 EUC-KR(urlencoded·XML),
-  TCP 고정길이 전문(BAL1 잔액조회), `/openapi.json`([API] 임포트용). 안내 페이지 `/`.
-- `demos/demo-01~06-*.json` — 전 노드 타입을 쓰는 완성 플로우. 에디터 [가져오기]로 로드.
-  사용법·트러블슈팅은 [demos/README.md](demos/README.md).
+- 위 내장 Mock 기능과 **별개**인 손수 작성 단일 파일(초기 데모용). 결제 게이트웨이·REST API·레거시 EUC-KR·
+  TCP 고정길이 전문(BAL1)·`/openapi.json`. `demos/demo-01~06-*.json` 이 이걸 대상으로 함.
+  (신규 데모는 내장 Mock 기능 `/mock/pg-demo` 를 쓰는 `demos/pg/*.json` 을 권장)
 
 ### 테스트
 ```powershell
@@ -76,6 +81,9 @@ execution/   실행 엔진 + 실행 API  (ExecutionController/ExecutionService)
  │           HttpNodeExecutor·TcpNodeExecutor·SsrfGuard·NodeRecorder
  └─ config   ExecutionProperties·HttpClientConfig
 folder/      폴더 관리
+mock/        Mock 서버 기능 — 워크플로가 호출할 가짜 대상 시스템을 정의·서빙(1급 리소스)
+ │           MockServerController(관리 CRUD)·MockGatewayController(/mock/{slug}/** 서빙)
+ │           MockRuntime(라우트 매칭·조건·템플릿)·MockPgSimulator(가짜 PG 프리셋)·MockCallbackDispatcher
 security/    OIDC 리소스서버 골격 + TenantClaimFilter·TenantContext (멀티테넌시)
 transform/   변환 SPI + JAR 플러그인 (TransformRegistry·PluginController·BuiltinTransforms)
 common/      error·json·tenant·openapi
@@ -92,7 +100,9 @@ graphJson 파싱 → Kahn 위상정렬 → 노드 순차 처리 → IF는 단일
 브라우저 협업 노드(client HTTP / FORM / WAIT / INPUT)를 만나면 `WAITING`으로 중단하고 pending 명세 반환 →
 브라우저가 처리 후 `POST /executions/{id}/resume` → 첫 실패 시 `FAILED`, 사용자 중단(⏹)은 `CANCELLED`.
 **현재 완전 동기 실행** (외부 HTTP에 호출 스레드 블로킹).
-노드 타입: START/END/SET/IF/HTTP/FORM/INPUT/WAIT/TRANSFORM/TCP.
+노드 타입: START/END/SET/IF/ASSERT/HTTP/FORM/INPUT/WAIT/TRANSFORM/TCP.
+- **ASSERT(검증)**: IF 와 같은 SpEL 조건이지만 분기 대신 **거짓이면 노드 실패**(=실행 FAILED). 테스트 시나리오 판정용.
+  SimpleEvaluationContext(읽기전용)라 비교·논리·산술·문자열 연결(`+`)만 되고 `.contains()`·`.startsWith()` 메서드 호출은 차단.
 
 ### 토큰/바인딩 문법 (`TokenResolver`)
 - `{{ key }}` — 최근 상위 노드 출력 (nearest upstream)
@@ -124,7 +134,7 @@ graphJson 파싱 → Kahn 위상정렬 → 노드 순차 처리 → IF는 단일
 ## 프론트엔드 구조 (`frontend/src/`)
 
 ```
-routes/   Dashboard(목록·검색·폴더) · Editor(에디터) · Executions(이력)
+routes/   Dashboard(목록·검색·폴더) · Editor(에디터) · Executions(이력) · MockServers·MockServerEditor(Mock 서버)
 store/    editorStore.ts — Zustand. 캔버스 상태(nodes/edges/selectedId/dirty)가 source of truth
 api/      client.ts(axios, baseURL /api/v1) · types.ts(백엔드 DTO 미러)
 canvas/   FlowCanvas(ReactFlow 래퍼) · NodeCard(generic) · BranchNode(IF, T/F 핸들 2개)
@@ -306,6 +316,27 @@ design/   theme(라이트/다크) · index.css(CSS 변수)
 ---
 
 ## 최근 변경 (2026-07-04)
+
+### Mock 서버 기능(백엔드 내장) + 검증(assert) 노드 + PG 시나리오 데모 14종
+설계: [docs/superpowers/specs/2026-07-04-mock-server-builder-design.md](docs/superpowers/specs/2026-07-04-mock-server-builder-design.md).
+"워크플로 기능과 Mock 서버 기능이 둘 다 있어서, 미완성 부분은 mock 으로 세워 테스트한다"는 요구를 1급 기능으로 구현.
+- **백엔드 `mock/` 모듈**: `MockServer` 도메인(V4 마이그레이션, slug 전역 유니크) + 관리 CRUD(`/api/v1/mock-servers`,
+  테넌트 스코프) + **게이트웨이 `/mock/{slug}/**`**(무인증 permitAll·CORS 오픈·전체 예외 가드로 500 JSON).
+  - `MockRuntime`(순수): 라우트 매칭(`/users/{id}` 파라미터·ANY·정의순서 첫매칭)·조건 규칙(AND, eq/ne/exists/contains)·
+    응답 템플릿(`{{path.x}}`·`{{query.x}}`·`{{body.x}}`·`{{header.x}}`·`{{body}}`·`{{uuid}}`·`{{seq}}`·`{{now}}`)·
+    charset(EUC-KR/MS949→windows-949)·지연 cap·콜백 발사 명세. 단위테스트 7종.
+  - `MockCallbackDispatcher`: 지연 발사 + "OK" 미수신 시 2초 간격 3회 재발송(노티 규약), SsrfGuard 적용.
+  - `MockPgSimulator`(kind=PG): 상태 있는 가짜 결제 게이트웨이 — 결제창(HTML)·인증콜백 브리지·승인(authToken 단일사용·
+    금액 검증)·keyin(sha256 서명)·빌키·**부분취소 잔액 원장**·거래조회·가상계좌 자동입금·승인/취소/입금 노티·
+    레거시(EUC-KR·MS949 CT에코·XML·urlencoded·raw 고정전문·text)·Basic 인증. 서버ID별 인메모리(재시작 소실).
+- **ASSERT 노드**: 위 노드 타입 설명 참조. SpEL 조건 거짓 → 노드 실패 → 실행 FAILED.
+- **프론트**: 상단 "Mock 서버" 탭 — 목록(생성·enabled 토글·base URL 복사·삭제) + 편집기(커스텀 라우트/규칙/템플릿/
+  콜백 편집·보내보기, PG 프리셋 엔드포인트 안내·secret). `routes/MockServers.tsx`·`MockServerEditor.tsx`.
+- **demos/pg/pg-01~14**: 내장 `/mock/pg-demo` 대상 결제 시나리오(사용자 제시 30개 중 정상계) — 결제 풀코스·전체/부분취소·
+  빌키·가상계좌·승인/취소노티·EUC-KR·MS949·xml/urlenc/raw·해시서명·Basic인증·텍스트추출. 전부 assert 로 판정.
+- 검증: 백엔드 단위 4종(mock 7 포함) PASS + 라이브 e2e — PG server체인 23·브라우저루프 20·커스텀 라우트 7 단언 PASS,
+  기존 demos(47)·form-wait(31) 무회귀. 프론트 tsc/vite/oxlint 통과.
+- ⚠️ mock 서빙 무인증(테스트 도구 전제, slug 는 비밀값 아님)·상태 인메모리·콜백 SsrfGuard 적용(운영 프로파일은 사설망 발사 차단).
 
 ### mock 대상 시스템(mock-server.js) + 데모 워크플로 스위트(demos/)
 설계: [docs/superpowers/specs/2026-07-04-mock-demo-suite-design.md](docs/superpowers/specs/2026-07-04-mock-demo-suite-design.md).

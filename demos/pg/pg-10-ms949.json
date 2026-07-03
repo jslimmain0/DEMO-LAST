@@ -1,0 +1,89 @@
+{
+  "name": "PG 10 — MS949 레거시 전문 (검증)",
+  "nodes": [
+    {
+      "id": "start001",
+      "name": "시작",
+      "type": "start",
+      "cat": "start",
+      "x": 0,
+      "y": 0
+    },
+    {
+      "id": "ms900001",
+      "name": "MS949 전송",
+      "type": "http",
+      "cat": "generic",
+      "x": 220,
+      "y": 0,
+      "method": "POST",
+      "baseUrl": "http://localhost:18080/mock/pg-demo",
+      "path": "/legacy/949",
+      "bodyType": "urlencoded",
+      "respType": "urlencoded",
+      "reqMode": "server",
+      "charset": "MS949",
+      "fields": {
+        "params": [],
+        "headers": [],
+        "body": [
+          {
+            "id": "qvdjnerc",
+            "key": "data",
+            "value": "테스트"
+          },
+          {
+            "id": "nsscrzx9",
+            "key": "amount",
+            "value": "1000"
+          }
+        ]
+      },
+      "outputs": [
+        {
+          "key": "resultCode"
+        },
+        {
+          "key": "recvCharset"
+        },
+        {
+          "key": "recvContentType"
+        }
+      ]
+    },
+    {
+      "id": "as000001",
+      "name": "검증",
+      "type": "assert",
+      "cat": "assert",
+      "x": 460,
+      "y": 0,
+      "condition": "{{ recvCharset@ms900001 }} == 'windows-949'"
+    },
+    {
+      "id": "end00001",
+      "name": "끝",
+      "type": "end",
+      "cat": "end",
+      "x": 0,
+      "y": 0
+    }
+  ],
+  "edges": [
+    {
+      "id": "e0",
+      "from": "start001",
+      "to": "ms900001"
+    },
+    {
+      "id": "e1",
+      "from": "ms900001",
+      "to": "as000001"
+    },
+    {
+      "id": "e2",
+      "from": "as000001",
+      "to": "end00001"
+    }
+  ]
+}

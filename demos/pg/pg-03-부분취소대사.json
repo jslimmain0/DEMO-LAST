@@ -1,0 +1,202 @@
+{
+  "name": "PG 03 — 부분취소→거래조회 대사 (검증)",
+  "nodes": [
+    {
+      "id": "start001",
+      "name": "시작",
+      "type": "start",
+      "cat": "start",
+      "x": 0,
+      "y": 0
+    },
+    {
+      "id": "keyin001",
+      "name": "수기승인(10000)",
+      "type": "http",
+      "cat": "generic",
+      "x": 200,
+      "y": 0,
+      "method": "POST",
+      "baseUrl": "http://localhost:18080/mock/pg-demo",
+      "path": "/keyin",
+      "bodyType": "json",
+      "respType": "json",
+      "reqMode": "server",
+      "charset": "UTF-8",
+      "fields": {
+        "params": [],
+        "headers": [],
+        "body": [
+          {
+            "id": "es6fu0c3",
+            "key": "mid",
+            "value": "M1"
+          },
+          {
+            "id": "siba7rkm",
+            "key": "cardNo",
+            "value": "1111222233334444"
+          },
+          {
+            "id": "q3if8d41",
+            "key": "amount",
+            "value": "10000"
+          },
+          {
+            "id": "6djma076",
+            "key": "orderId",
+            "value": "ORD-3"
+          }
+        ]
+      },
+      "outputs": [
+        {
+          "key": "tid"
+        },
+        {
+          "key": "resultCode"
+        }
+      ]
+    },
+    {
+      "id": "cancel01",
+      "name": "부분취소(3000)",
+      "type": "http",
+      "cat": "generic",
+      "x": 420,
+      "y": 0,
+      "method": "POST",
+      "baseUrl": "http://localhost:18080/mock/pg-demo",
+      "path": "/cancel",
+      "bodyType": "json",
+      "respType": "json",
+      "reqMode": "server",
+      "charset": "UTF-8",
+      "fields": {
+        "params": [],
+        "headers": [],
+        "body": [
+          {
+            "id": "z3uj6n6i",
+            "key": "tid",
+            "bound": {
+              "key": "tid",
+              "sourceId": "keyin001"
+            }
+          },
+          {
+            "id": "e055rrfl",
+            "key": "amount",
+            "value": "3000"
+          }
+        ]
+      },
+      "outputs": [
+        {
+          "key": "cancelAmt"
+        },
+        {
+          "key": "remainAmt"
+        }
+      ]
+    },
+    {
+      "id": "as000001",
+      "name": "검증",
+      "type": "assert",
+      "cat": "assert",
+      "x": 640,
+      "y": 0,
+      "condition": "{{ remainAmt@cancel01 }} == '7000'"
+    },
+    {
+      "id": "tx000001",
+      "name": "거래조회",
+      "type": "http",
+      "cat": "generic",
+      "x": 860,
+      "y": 0,
+      "method": "GET",
+      "baseUrl": "http://localhost:18080/mock/pg-demo",
+      "path": "/tx",
+      "bodyType": "json",
+      "respType": "json",
+      "reqMode": "server",
+      "charset": "UTF-8",
+      "fields": {
+        "params": [
+          {
+            "id": "fykrady5",
+            "key": "tid",
+            "bound": {
+              "key": "tid",
+              "sourceId": "keyin001"
+            }
+          }
+        ],
+        "headers": [],
+        "body": []
+      },
+      "outputs": [
+        {
+          "key": "remainAmt"
+        },
+        {
+          "key": "status"
+        },
+        {
+          "key": "amount"
+        }
+      ]
+    },
+    {
+      "id": "as000002",
+      "name": "검증",
+      "type": "assert",
+      "cat": "assert",
+      "x": 1080,
+      "y": 0,
+      "condition": "{{ remainAmt@tx000001 }} == '7000' and {{ status@tx000001 }} == 'PARTIAL'"
+    },
+    {
+      "id": "end00001",
+      "name": "끝",
+      "type": "end",
+      "cat": "end",
+      "x": 0,
+      "y": 0
+    }
+  ],
+  "edges": [
+    {
+      "id": "e0",
+      "from": "start001",
+      "to": "keyin001"
+    },
+    {
+      "id": "e1",
+      "from": "keyin001",
+      "to": "cancel01"
+    },
+    {
+      "id": "e2",
+      "from": "cancel01",
+      "to": "as000001"
+    },
+    {
+      "id": "e3",
+      "from": "as000001",
+      "to": "tx000001"
+    },
+    {
+      "id": "e4",
+      "from": "tx000001",
+      "to": "as000002"
+    },
+    {
+      "id": "e5",
+      "from": "as000002",
+      "to": "end00001"
+    }
+  ]
+}

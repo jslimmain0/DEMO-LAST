@@ -1,0 +1,218 @@
+{
+  "name": "PG 05 — 빌키 발급→승인→취소 (검증)",
+  "nodes": [
+    {
+      "id": "start001",
+      "name": "시작",
+      "type": "start",
+      "cat": "start",
+      "x": 0,
+      "y": 0
+    },
+    {
+      "id": "bk000001",
+      "name": "빌키발급",
+      "type": "http",
+      "cat": "generic",
+      "x": 180,
+      "y": 0,
+      "method": "POST",
+      "baseUrl": "http://localhost:18080/mock/pg-demo",
+      "path": "/billkey",
+      "bodyType": "json",
+      "respType": "json",
+      "reqMode": "server",
+      "charset": "UTF-8",
+      "fields": {
+        "params": [],
+        "headers": [],
+        "body": [
+          {
+            "id": "rtilsf0e",
+            "key": "mid",
+            "value": "M1"
+          },
+          {
+            "id": "guzrzjfi",
+            "key": "cardNo",
+            "value": "4321432143214321"
+          },
+          {
+            "id": "rf1qmikk",
+            "key": "expiry",
+            "value": "2812"
+          }
+        ]
+      },
+      "outputs": [
+        {
+          "key": "billKey"
+        },
+        {
+          "key": "resultCode"
+        }
+      ]
+    },
+    {
+      "id": "as000001",
+      "name": "검증",
+      "type": "assert",
+      "cat": "assert",
+      "x": 400,
+      "y": 0,
+      "condition": "{{ billKey@bk000001 }} != null"
+    },
+    {
+      "id": "bka00001",
+      "name": "빌키승인",
+      "type": "http",
+      "cat": "generic",
+      "x": 620,
+      "y": 0,
+      "method": "POST",
+      "baseUrl": "http://localhost:18080/mock/pg-demo",
+      "path": "/billkey/approve",
+      "bodyType": "json",
+      "respType": "json",
+      "reqMode": "server",
+      "charset": "UTF-8",
+      "fields": {
+        "params": [],
+        "headers": [],
+        "body": [
+          {
+            "id": "33z1dwtn",
+            "key": "mid",
+            "value": "M1"
+          },
+          {
+            "id": "a3ih8b05",
+            "key": "billKey",
+            "bound": {
+              "key": "billKey",
+              "sourceId": "bk000001"
+            }
+          },
+          {
+            "id": "89bv81i1",
+            "key": "amount",
+            "value": "30000"
+          },
+          {
+            "id": "vsq5pkh8",
+            "key": "orderId",
+            "value": "ORD-5"
+          }
+        ]
+      },
+      "outputs": [
+        {
+          "key": "resultCode"
+        },
+        {
+          "key": "tid"
+        }
+      ]
+    },
+    {
+      "id": "as000002",
+      "name": "검증",
+      "type": "assert",
+      "cat": "assert",
+      "x": 840,
+      "y": 0,
+      "condition": "{{ resultCode@bka00001 }} == '0000'"
+    },
+    {
+      "id": "cancel01",
+      "name": "빌키취소",
+      "type": "http",
+      "cat": "generic",
+      "x": 1060,
+      "y": 0,
+      "method": "POST",
+      "baseUrl": "http://localhost:18080/mock/pg-demo",
+      "path": "/cancel",
+      "bodyType": "json",
+      "respType": "json",
+      "reqMode": "server",
+      "charset": "UTF-8",
+      "fields": {
+        "params": [],
+        "headers": [],
+        "body": [
+          {
+            "id": "k0v4sgm3",
+            "key": "tid",
+            "bound": {
+              "key": "tid",
+              "sourceId": "bka00001"
+            }
+          }
+        ]
+      },
+      "outputs": [
+        {
+          "key": "resultCode"
+        },
+        {
+          "key": "remainAmt"
+        }
+      ]
+    },
+    {
+      "id": "as000003",
+      "name": "검증",
+      "type": "assert",
+      "cat": "assert",
+      "x": 1280,
+      "y": 0,
+      "condition": "{{ remainAmt@cancel01 }} == '0'"
+    },
+    {
+      "id": "end00001",
+      "name": "끝",
+      "type": "end",
+      "cat": "end",
+      "x": 0,
+      "y": 0
+    }
+  ],
+  "edges": [
+    {
+      "id": "e0",
+      "from": "start001",
+      "to": "bk000001"
+    },
+    {
+      "id": "e1",
+      "from": "bk000001",
+      "to": "as000001"
+    },
+    {
+      "id": "e2",
+      "from": "as000001",
+      "to": "bka00001"
+    },
+    {
+      "id": "e3",
+      "from": "bka00001",
+      "to": "as000002"
+    },
+    {
+      "id": "e4",
+      "from": "as000002",
+      "to": "cancel01"
+    },
+    {
+      "id": "e5",
+      "from": "cancel01",
+      "to": "as000003"
+    },
+    {
+      "id": "e6",
+      "from": "as000003",
+      "to": "end00001"
+    }
+  ]
+}

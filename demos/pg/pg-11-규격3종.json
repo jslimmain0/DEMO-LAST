@@ -1,0 +1,174 @@
+{
+  "name": "PG 11 — 규격 3종(xml·urlencoded·raw 고정전문) (검증)",
+  "nodes": [
+    {
+      "id": "start001",
+      "name": "시작",
+      "type": "start",
+      "cat": "start",
+      "x": 0,
+      "y": 0
+    },
+    {
+      "id": "xml00001",
+      "name": "XML 응답",
+      "type": "http",
+      "cat": "generic",
+      "x": 200,
+      "y": 0,
+      "method": "GET",
+      "baseUrl": "http://localhost:18080/mock/pg-demo",
+      "path": "/legacy/xml",
+      "bodyType": "json",
+      "respType": "xml",
+      "reqMode": "server",
+      "charset": "UTF-8",
+      "fields": {
+        "params": [],
+        "headers": [],
+        "body": []
+      },
+      "outputs": [
+        {
+          "key": "resultCode"
+        },
+        {
+          "key": "tid"
+        }
+      ]
+    },
+    {
+      "id": "as000001",
+      "name": "검증",
+      "type": "assert",
+      "cat": "assert",
+      "x": 420,
+      "y": 0,
+      "condition": "{{ resultCode@xml00001 }} == '0000'"
+    },
+    {
+      "id": "url00001",
+      "name": "urlencoded 응답",
+      "type": "http",
+      "cat": "generic",
+      "x": 640,
+      "y": 0,
+      "method": "POST",
+      "baseUrl": "http://localhost:18080/mock/pg-demo",
+      "path": "/legacy/urlenc",
+      "bodyType": "urlencoded",
+      "respType": "urlencoded",
+      "reqMode": "server",
+      "charset": "UTF-8",
+      "fields": {
+        "params": [],
+        "headers": [],
+        "body": [
+          {
+            "id": "ueunnyrr",
+            "key": "amount",
+            "value": "2000"
+          }
+        ]
+      },
+      "outputs": [
+        {
+          "key": "tid"
+        },
+        {
+          "key": "amount"
+        }
+      ]
+    },
+    {
+      "id": "as000002",
+      "name": "검증",
+      "type": "assert",
+      "cat": "assert",
+      "x": 860,
+      "y": 0,
+      "condition": "{{ tid@url00001 }} != null"
+    },
+    {
+      "id": "raw00001",
+      "name": "raw 고정전문 취소",
+      "type": "http",
+      "cat": "generic",
+      "x": 1080,
+      "y": 0,
+      "method": "POST",
+      "baseUrl": "http://localhost:18080/mock/pg-demo",
+      "path": "/legacy/raw",
+      "bodyType": "raw",
+      "respType": "text",
+      "reqMode": "server",
+      "charset": "UTF-8",
+      "rawBody": "CANCEL|{{ tid@url00001 }}|2000",
+      "jsonRaw": true,
+      "fields": {
+        "params": [],
+        "headers": [],
+        "body": []
+      },
+      "outputs": [
+        {
+          "key": "body"
+        }
+      ]
+    },
+    {
+      "id": "as000003",
+      "name": "검증",
+      "type": "assert",
+      "cat": "assert",
+      "x": 1300,
+      "y": 0,
+      "condition": "{{ body@raw00001 }} == 'OK|' + {{ tid@url00001 }} + '|CANCELLED'"
+    },
+    {
+      "id": "end00001",
+      "name": "끝",
+      "type": "end",
+      "cat": "end",
+      "x": 0,
+      "y": 0
+    }
+  ],
+  "edges": [
+    {
+      "id": "e0",
+      "from": "start001",
+      "to": "xml00001"
+    },
+    {
+      "id": "e1",
+      "from": "xml00001",
+      "to": "as000001"
+    },
+    {
+      "id": "e2",
+      "from": "as000001",
+      "to": "url00001"
+    },
+    {
+      "id": "e3",
+      "from": "url00001",
+      "to": "as000002"
+    },
+    {
+      "id": "e4",
+      "from": "as000002",
+      "to": "raw00001"
+    },
+    {
+      "id": "e5",
+      "from": "raw00001",
+      "to": "as000003"
+    },
+    {
+      "id": "e6",
+      "from": "as000003",
+      "to": "end00001"
+    }
+  ]
+}

@@ -14,6 +14,7 @@ import java.security.MessageDigest;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -407,8 +408,21 @@ public class MockPgSimulator {
     /** 수신 Content-Type 에코 — MS949 요청의 windows-949 charset 부착 확인용. */
     private MockResponse legacy949(MockRequest req) {
         String ct = req.header("content-type");
+        String charset = "";
+        if (ct != null) {
+            int i = ct.toLowerCase(Locale.ROOT).indexOf("charset=");
+            if (i >= 0) {
+                charset = ct.substring(i + "charset=".length()).replace("\"", "").trim();
+                int semi = charset.indexOf(';');
+                if (semi >= 0) {
+                    charset = charset.substring(0, semi).trim();
+                }
+            }
+        }
+        // recvCharset 은 assert 가 == 로 정확 비교할 수 있게 charset 만 분리(메서드 호출 없는 SpEL)
         String body = MockHttp.toUrlEncoded(List.of(
                 Map.entry("resultCode", "0000"),
+                Map.entry("recvCharset", charset),
                 Map.entry("recvContentType", ct == null ? "" : ct)));
         return MockResponse.of(200, "application/x-www-form-urlencoded; charset=UTF-8",
                 body.getBytes(StandardCharsets.UTF_8));

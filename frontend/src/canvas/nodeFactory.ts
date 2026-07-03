@@ -16,6 +16,8 @@ export function makeNode(type: NodeType, x: number, y: number): GraphNode {
       }
     case 'if':
       return { id, name: 'IF 조건', type: 'if', cat: 'if', x, y, condition: '{{ id }} != null' }
+    case 'assert':
+      return { id, name: '검증', type: 'assert', cat: 'assert', x, y, condition: "{{ resultCode }} == '0000'" }
     case 'form':
       return {
         id, name: '폼 전송(팝업)', type: 'form', cat: 'form', x, y,
@@ -70,6 +72,7 @@ export const PALETTE: Array<{ type: NodeType; label: string; cat: string }> = [
   { type: 'start', label: '시작', cat: 'start' },
   { type: 'http', label: 'HTTP 요청', cat: 'generic' },
   { type: 'if', label: 'IF 조건', cat: 'if' },
+  { type: 'assert', label: '검증', cat: 'assert' },
   { type: 'set', label: '변수', cat: 'set' },
   { type: 'transform', label: '변환', cat: 'transform' },
   { type: 'tcp', label: 'TCP 전문', cat: 'tcp' },

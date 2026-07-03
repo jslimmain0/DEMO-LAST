@@ -2,7 +2,7 @@
 // (enum 대신 문자열 유니온 — tsconfig erasableSyntaxOnly 준수)
 
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD'
-export type NodeType = 'start' | 'end' | 'set' | 'http' | 'if' | 'form' | 'wait' | 'input' | 'transform' | 'tcp'
+export type NodeType = 'start' | 'end' | 'set' | 'http' | 'if' | 'assert' | 'form' | 'wait' | 'input' | 'transform' | 'tcp'
 export type BodyType = 'json' | 'urlencoded' | 'form' | 'raw' | 'xml'
 export type RespType = 'json' | 'xml' | 'urlencoded' | 'form' | 'text' | 'binary'
 export type ReqMode = 'server' | 'client'
@@ -76,7 +76,7 @@ export interface GraphNode {
   outputs?: NodeOutput[]
   // set
   vars?: NodeVar[]
-  // if
+  // if · assert(검증 — 거짓이면 실행 실패)
   condition?: string
   // form (폼 전송 · 팝업)
   formAction?: string   // 팝업으로 열어 form 을 제출할 URL
@@ -341,6 +341,65 @@ export interface ExecutionDetail {
   pendingForm?: PendingFormRequest | null
   pendingWait?: PendingWaitRequest | null
   pendingInput?: PendingInputRequest | null
+}
+
+// --- Mock 서버 (내장 mock 기능 — /mock/{slug}/** 로 서빙) ---
+
+export interface MockCond {
+  source: 'query' | 'header' | 'body' | 'path'
+  key: string
+  op: 'eq' | 'ne' | 'exists' | 'contains'
+  value?: string
+}
+
+// 응답 후 웹훅 발사(승인노티/입금노티 패턴). url 이 비면 미발사.
+export interface MockCallbackSpec {
+  afterMs?: number
+  url?: string
+  method?: string
+  contentType?: string
+  body?: string
+  retryUntilOk?: boolean
+}
+
+export interface MockRuleSpec {
+  id: string
+  when?: MockCond[] // 모두 만족(AND). 없으면 항상 매칭(기본 규칙)
+  status?: number
+  contentType?: string // json|text|html|xml|urlencoded 또는 mime
+  charset?: string     // UTF-8(기본)|EUC-KR|MS949
+  headers?: Array<{ key: string; value: string }>
+  body?: string        // 템플릿: {{path.x}} {{query.x}} {{body.x}} {{header.x}} {{uuid}} {{seq}} {{now}}
+  delayMs?: number
+  callback?: MockCallbackSpec | null
+}
+
+export interface MockRouteSpec {
+  id: string
+  method: string // GET/POST/…/ANY
+  path: string   // /users/{id}
+  rules: MockRuleSpec[]
+}
+
+export interface MockServerSpec {
+  routes?: MockRouteSpec[]
+  secret?: string // PG 프리셋 서명 검증 키
+}
+
+export type MockKind = 'CUSTOM' | 'PG'
+
+export interface MockServerSummary {
+  id: string
+  name: string
+  slug: string
+  kind: MockKind
+  enabled: boolean
+  updatedAt: string | null
+}
+
+export interface MockServerDetail extends MockServerSummary {
+  spec: MockServerSpec
+  createdAt: string | null
 }
 
 export interface ApiError {

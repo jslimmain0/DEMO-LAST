@@ -362,6 +362,20 @@ export function PropertyPanel({ width = 360 }: { width?: number }) {
           </>
         )}
 
+        {node.type === 'assert' && (
+          <>
+            <label style={label}>검증 조건식</label>
+            <div style={{ display: 'flex', gap: 4 }}>
+              <input style={mono} value={node.condition ?? ''} onChange={(e) => update(id, { condition: e.target.value })} placeholder="{{ resultCode }} == '0000'" />
+              <button onClick={() => setPick('condition')} title="데이터 삽입" style={braceBtn}>{'{ }'}</button>
+            </div>
+            <p style={{ fontSize: 11.5, color: 'var(--fl-text-muted)', marginTop: 8 }}>
+              조건이 <b>거짓이면 이 노드가 실패</b>하고 실행이 FAILED 로 끝납니다(테스트 시나리오의 assert).
+              두 값 비교도 가능: <code style={{ fontFamily: 'var(--fl-font-mono)', fontSize: 11 }}>{'{{ tid@노티 }} == {{ tid@승인 }}'}</code>
+            </p>
+          </>
+        )}
+
         {node.type === 'set' && (
           <VarsEditor vars={node.vars ?? []} onChange={(vars) => update(id, { vars })} onPickVar={(vid) => setPick(`var:${vid}`)} sourceType={sourceType} />
         )}

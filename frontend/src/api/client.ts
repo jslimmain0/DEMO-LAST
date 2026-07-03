@@ -63,6 +63,24 @@ export const foldersApi = {
   remove: (id: string) => http.delete(`/folders/${id}`).then(() => undefined),
 }
 
+export const mocksApi = {
+  list: () => http.get<import('./types').MockServerSummary[]>('/mock-servers').then((r) => r.data),
+  get: (id: string) => http.get<import('./types').MockServerDetail>(`/mock-servers/${id}`).then((r) => r.data),
+  create: (body: { name: string; slug: string; kind: string }) =>
+    http.post<import('./types').MockServerDetail>('/mock-servers', body).then((r) => r.data),
+  update: (id: string, body: { name?: string; enabled?: boolean }) =>
+    http.patch<import('./types').MockServerDetail>(`/mock-servers/${id}`, body).then((r) => r.data),
+  updateSpec: (id: string, spec: import('./types').MockServerSpec) =>
+    http.put<import('./types').MockServerDetail>(`/mock-servers/${id}/spec`, { spec }).then((r) => r.data),
+  remove: (id: string) => http.delete(`/mock-servers/${id}`).then(() => undefined),
+}
+
+/** mock 서빙 base URL — 게이트웨이는 백엔드(18080)가 직접 서빙한다(Vite 프록시는 /api 만). */
+export function mockBaseUrl(slug: string): string {
+  const host = window.location.hostname || 'localhost'
+  return `http://${host}:18080/mock/${slug}`
+}
+
 export const runsApi = {
   run: (flowId: string, body?: RunRequest) =>
     http.post<ExecutionDetail>(`/flows/${flowId}/runs`, body ?? {}).then((r) => r.data),

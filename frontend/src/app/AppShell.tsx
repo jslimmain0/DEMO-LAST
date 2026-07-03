@@ -26,6 +26,7 @@ export function AppShellTier1({ children }: { children: ReactNode }) {
         </Link>
         <nav aria-label="주요" style={{ display: 'flex', gap: 4 }}>
           <Link to="/flows" style={navItem('/flows')}>대시보드</Link>
+          <Link to="/mocks" style={navItem('/mocks')}>Mock 서버</Link>
           <Link to="/executions" style={navItem('/executions')}>실행 이력</Link>
         </nav>
         <button

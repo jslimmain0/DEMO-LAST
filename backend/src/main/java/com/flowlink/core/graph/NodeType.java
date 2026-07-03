@@ -13,6 +13,8 @@ public enum NodeType {
     FORM,
     /** 사용자 입력 대기 — 브라우저 모달(input box)에 값을 입력·confirm 하면 그 값이 노드 출력이 된다. */
     INPUT,
+    /** 검증 — IF 와 같은 SpEL 조건이 거짓이면 노드 실패(=실행 FAILED). 테스트 시나리오의 assert 용. */
+    ASSERT,
     TRANSFORM,
     TCP,
     UNKNOWN;
@@ -30,6 +32,7 @@ public enum NodeType {
             case "wait" -> WAIT;
             case "form" -> FORM;
             case "input" -> INPUT;
+            case "assert" -> ASSERT;
             case "transform" -> TRANSFORM;
             case "tcp" -> TCP;
             default -> UNKNOWN;

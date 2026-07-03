@@ -499,6 +499,7 @@ public class FlowExecutor {
             case END -> NodeResult.ok(null, "(끝)", "플로우 종료", Map.of());
             case SET -> setNode(node, ctx);
             case IF -> ifNode(node, ctx);
+            case ASSERT -> assertNode(node, ctx);
             case HTTP -> httpExecutor.execute(node, ctx);
             case TRANSFORM -> transformNode(node, ctx);
             case TCP -> tcpExecutor.execute(node, ctx);
@@ -531,6 +532,24 @@ public class FlowExecutor {
         value.put("branch", branch);
         return NodeResult.ok(null, "if ( " + (node.condition() == null ? "" : node.condition()) + " )",
                 json.toJson(value), value).withBranch(branch);
+    }
+
+    /**
+     * 검증(assert) 노드 — IF 와 같은 조건 문법이지만 분기 대신 <b>거짓이면 노드 실패</b>(=실행 FAILED).
+     * 테스트 시나리오의 assert 판정용. 빈 조건은 실수로 항상 통과하는 것을 막기 위해 실패 처리한다.
+     */
+    private NodeResult assertNode(GraphNode node, ExecutionContext ctx) {
+        String cond = node.condition() == null ? "" : node.condition().trim();
+        String reqText = "assert ( " + cond + " )";
+        if (cond.isEmpty()) {
+            return NodeResult.fail(0, reqText, "⚠ 검증 실패: 조건이 비어 있습니다.");
+        }
+        boolean passed = evaluator.evaluateBoolean(cond, ctx);
+        if (!passed) {
+            return NodeResult.fail(0, reqText, "⚠ 검증 실패: 조건이 거짓입니다 — " + cond);
+        }
+        Map<String, Object> value = Map.of("result", true);
+        return NodeResult.ok(null, reqText, "검증 통과", value);
     }
 
     private NodeResult transformNode(GraphNode node, ExecutionContext ctx) {

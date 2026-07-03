@@ -1,0 +1,73 @@
+{
+  "name": "데모 01 — 결제 게이트웨이 (SET·FORM 팝업·WAIT 콜백·IF·HTTP)",
+  "nodes": [
+    { "id": "start001", "name": "시작", "type": "start", "cat": "start", "x": 40, "y": 200 },
+    {
+      "id": "set00001", "name": "주문 정보", "type": "set", "cat": "set", "x": 260, "y": 200,
+      "vars": [
+        { "id": "v1", "key": "orderId", "value": "ORD-1001", "secret": false },
+        { "id": "v2", "key": "productName", "value": "프리미엄 요금제", "secret": false },
+        { "id": "v3", "key": "amount", "value": "48000", "secret": false }
+      ]
+    },
+    {
+      "id": "form0001", "name": "결제창 열기", "type": "form", "cat": "form", "x": 480, "y": 200,
+      "formAction": "http://localhost:9090/pay/checkout", "formMethod": "POST",
+      "fields": {
+        "params": [], "headers": [],
+        "body": [
+          { "id": "f1", "key": "productName", "bound": { "key": "productName", "sourceId": "set00001", "nodeName": "주문 정보" } },
+          { "id": "f2", "key": "amount", "bound": { "key": "amount", "sourceId": "set00001", "nodeName": "주문 정보" } },
+          { "id": "f3", "key": "orderId", "bound": { "key": "orderId", "sourceId": "set00001", "nodeName": "주문 정보" } },
+          { "id": "f4", "key": "returnUrl", "value": "{{ url@wait0001 }}" }
+        ]
+      },
+      "outputs": []
+    },
+    {
+      "id": "wait0001", "name": "결제 콜백 대기", "type": "wait", "cat": "wait", "x": 700, "y": 200,
+      "waitTimeoutSec": 180,
+      "callbackRespType": "html",
+      "callbackRespBody": "<div style=\"font-family:sans-serif;text-align:center;padding-top:60px\"><h2>✅ 결제가 완료되었습니다</h2><p>이 창은 닫아도 됩니다.</p></div>",
+      "outputs": [
+        { "key": "resultCode", "type": "string" },
+        { "key": "resultMsg", "type": "string" },
+        { "key": "tid", "type": "string" },
+        { "key": "amount", "type": "string" }
+      ]
+    },
+    {
+      "id": "if000001", "name": "승인 여부", "type": "if", "cat": "if", "x": 920, "y": 200,
+      "condition": "{{ resultCode@wait0001 }} == '0000'"
+    },
+    {
+      "id": "httpstat", "name": "승인 내역 조회", "type": "http", "cat": "generic", "x": 1140, "y": 110,
+      "method": "GET", "baseUrl": "http://localhost:9090", "path": "/pay/status",
+      "bodyType": "json", "respType": "json", "reqMode": "server", "charset": "UTF-8",
+      "fields": {
+        "params": [ { "id": "p1", "key": "tid", "bound": { "key": "tid", "sourceId": "wait0001", "nodeName": "결제 콜백 대기" } } ],
+        "headers": [], "body": []
+      },
+      "outputs": [
+        { "key": "status", "type": "string" },
+        { "key": "resultMsg", "type": "string" },
+        { "key": "approvedAt", "type": "string" }
+      ]
+    },
+    {
+      "id": "setfail1", "name": "실패 처리", "type": "set", "cat": "set", "x": 1140, "y": 300,
+      "vars": [ { "id": "v1", "key": "failMsg", "value": "결제가 거절되었거나 시간 내 완료되지 않았습니다", "secret": false } ]
+    },
+    { "id": "end00001", "name": "끝", "type": "end", "cat": "end", "x": 1360, "y": 200 }
+  ],
+  "edges": [
+    { "id": "e1", "from": "start001", "to": "set00001" },
+    { "id": "e2", "from": "set00001", "to": "form0001" },
+    { "id": "e3", "from": "form0001", "to": "wait0001" },
+    { "id": "e4", "from": "wait0001", "to": "if000001" },
+    { "id": "e5", "from": "if000001", "fromPort": "true", "to": "httpstat" },
+    { "id": "e6", "from": "if000001", "fromPort": "false", "to": "setfail1" },
+    { "id": "e7", "from": "httpstat", "to": "end00001" },
+    { "id": "e8", "from": "setfail1", "to": "end00001" }
+  ]
+}

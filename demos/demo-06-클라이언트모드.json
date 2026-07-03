@@ -1,0 +1,29 @@
+{
+  "name": "데모 06 — 클라이언트 모드 (브라우저가 직접 호출하는 HTTP C→S)",
+  "nodes": [
+    { "id": "start001", "name": "시작", "type": "start", "cat": "start", "x": 40, "y": 160 },
+    {
+      "id": "httpecho", "name": "브라우저 직접 호출", "type": "http", "cat": "generic", "x": 260, "y": 160,
+      "method": "GET", "baseUrl": "http://localhost:9090", "path": "/api/echo",
+      "bodyType": "json", "respType": "json", "reqMode": "client", "charset": "UTF-8",
+      "fields": {
+        "params": [ { "id": "p1", "key": "from", "value": "browser" } ],
+        "headers": [], "body": []
+      },
+      "outputs": [ { "key": "method", "type": "string" }, { "key": "path", "type": "string" }, { "key": "query", "type": "object" } ]
+    },
+    {
+      "id": "setecho1", "name": "에코 결과", "type": "set", "cat": "set", "x": 480, "y": 160,
+      "vars": [
+        { "id": "v1", "key": "호출방식", "bound": { "key": "method", "sourceId": "httpecho", "nodeName": "브라우저 직접 호출" }, "secret": false },
+        { "id": "v2", "key": "경로", "bound": { "key": "path", "sourceId": "httpecho", "nodeName": "브라우저 직접 호출" }, "secret": false }
+      ]
+    },
+    { "id": "end00001", "name": "끝", "type": "end", "cat": "end", "x": 700, "y": 160 }
+  ],
+  "edges": [
+    { "id": "e1", "from": "start001", "to": "httpecho" },
+    { "id": "e2", "from": "httpecho", "to": "setecho1" },
+    { "id": "e3", "from": "setecho1", "to": "end00001" }
+  ]
+}

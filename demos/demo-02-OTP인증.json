@@ -1,0 +1,51 @@
+{
+  "name": "데모 02 — OTP 인증 (HTTP·INPUT 사용자 입력·IF)",
+  "nodes": [
+    { "id": "start001", "name": "시작", "type": "start", "cat": "start", "x": 40, "y": 200 },
+    {
+      "id": "httpsend", "name": "OTP 발송", "type": "http", "cat": "generic", "x": 260, "y": 200,
+      "method": "POST", "baseUrl": "http://localhost:9090", "path": "/api/otp/send",
+      "bodyType": "json", "respType": "json", "reqMode": "server", "charset": "UTF-8",
+      "fields": { "params": [], "headers": [], "body": [ { "id": "f1", "key": "phone", "value": "010-1234-5678" } ] },
+      "outputs": [ { "key": "sent", "type": "boolean" }, { "key": "hint", "type": "string" } ]
+    },
+    {
+      "id": "input001", "name": "OTP 입력", "type": "input", "cat": "input", "x": 480, "y": 200,
+      "waitMsg": "휴대폰으로 전송된 OTP 6자리를 입력하세요. (모의 서버 힌트: {{ hint@httpsend }})",
+      "waitFields": [ { "id": "w1", "key": "otp", "label": "OTP 6자리", "type": "string" } ]
+    },
+    {
+      "id": "httpverf", "name": "OTP 검증", "type": "http", "cat": "generic", "x": 700, "y": 200,
+      "method": "POST", "baseUrl": "http://localhost:9090", "path": "/api/otp/verify",
+      "bodyType": "json", "respType": "json", "reqMode": "server", "charset": "UTF-8",
+      "fields": {
+        "params": [], "headers": [],
+        "body": [ { "id": "f1", "key": "otp", "bound": { "key": "otp", "sourceId": "input001", "nodeName": "OTP 입력" } } ]
+      },
+      "outputs": [ { "key": "verified", "type": "boolean" } ]
+    },
+    {
+      "id": "if000001", "name": "인증 성공?", "type": "if", "cat": "if", "x": 920, "y": 200,
+      "condition": "{{ verified@httpverf }} == true"
+    },
+    {
+      "id": "setok001", "name": "인증 성공", "type": "set", "cat": "set", "x": 1140, "y": 110,
+      "vars": [ { "id": "v1", "key": "authResult", "value": "본인인증 완료", "secret": false } ]
+    },
+    {
+      "id": "setfail1", "name": "인증 실패", "type": "set", "cat": "set", "x": 1140, "y": 300,
+      "vars": [ { "id": "v1", "key": "authResult", "value": "OTP 불일치 — 인증 실패", "secret": false } ]
+    },
+    { "id": "end00001", "name": "끝", "type": "end", "cat": "end", "x": 1360, "y": 200 }
+  ],
+  "edges": [
+    { "id": "e1", "from": "start001", "to": "httpsend" },
+    { "id": "e2", "from": "httpsend", "to": "input001" },
+    { "id": "e3", "from": "input001", "to": "httpverf" },
+    { "id": "e4", "from": "httpverf", "to": "if000001" },
+    { "id": "e5", "from": "if000001", "fromPort": "true", "to": "setok001" },
+    { "id": "e6", "from": "if000001", "fromPort": "false", "to": "setfail1" },
+    { "id": "e7", "from": "setok001", "to": "end00001" },
+    { "id": "e8", "from": "setfail1", "to": "end00001" }
+  ]
+}

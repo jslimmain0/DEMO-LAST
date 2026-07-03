@@ -42,6 +42,16 @@ node relay.js [port]   # 기본 8787. wait(콜백 대기) 노드용 — 의존�
 - 결제/인증 게이트웨이 콜백을 받아 SSE 로 브라우저에 전달. `frontend/dist` 정적 서빙 겸용.
 - 주소는 프론트 localStorage `fl:relayBase` (wait 노드 속성 패널에서 설정, 기본 `http://localhost:8787`).
 
+### Mock 대상 시스템 + 데모 (리포 루트 · `demos/`)
+```
+node mock-server.js [httpPort] [tcpPort]   # 기본 HTTP 9090 + TCP 9091 — 의존성 0
+```
+- 데모 워크플로가 때릴 가짜 시스템: 결제 게이트웨이(인터랙티브 결제창→returnUrl POST 브리지),
+  REST API(login/OTP=111111/products/orders/echo/slow), 레거시 EUC-KR(urlencoded·XML),
+  TCP 고정길이 전문(BAL1 잔액조회), `/openapi.json`([API] 임포트용). 안내 페이지 `/`.
+- `demos/demo-01~06-*.json` — 전 노드 타입을 쓰는 완성 플로우. 에디터 [가져오기]로 로드.
+  사용법·트러블슈팅은 [demos/README.md](demos/README.md).
+
 ### 테스트
 ```powershell
 $env:JAVA_HOME="C:\Users\jslim\.jdks\corretto-21.0.10"
@@ -294,6 +304,25 @@ design/   theme(라이트/다크) · index.css(CSS 변수)
 - ⚠️ 콜백 무인증(사내 테스트망 전제 — relayRunId 가 비밀값), 탭 닫으면 실행 끊김(beforeunload 경고만), relay 메모리 상태 재시작 소실.
 
 ---
+
+## 최근 변경 (2026-07-04)
+
+### mock 대상 시스템(mock-server.js) + 데모 워크플로 스위트(demos/)
+설계: [docs/superpowers/specs/2026-07-04-mock-demo-suite-design.md](docs/superpowers/specs/2026-07-04-mock-demo-suite-design.md).
+"모든 기능을 실제로 테스트"하기 위한 가짜 대상 시스템 + 완성 데모 6종. **백엔드/프론트 코드 무변경**(기존 기능만 사용).
+- **mock-server.js**(리포 루트, node:http+node:net, 의존성 0, HTTP :9090 · TCP :9091): 위 실행 방법 섹션 참조.
+  결제 게이트웨이는 결제창(승인/거절 버튼)→`/pay/approve`→returnUrl 자동 POST 브리지(실 PG merchant-return 패턴),
+  notiUrl 서버 노티(파이어&포겟)도 지원. EUC-KR 응답은 Node 가 인코딩 불가(TextEncoder=UTF-8 전용)라
+  고정 문자열("홍길동")의 EUC-KR 바이트를 하드코딩, 요청 디코딩은 `TextDecoder('euc-kr')`.
+  TCP 는 TcpNodeExecutor 규약(4자리 ASCII 길이 프리픽스·자기 미포함) 그대로 구현.
+- **demos/*.json 6종**: 01 결제(SET·FORM·WAIT·IF·HTTP — 타임아웃/거절 분기 포함), 02 OTP(INPUT, waitMsg 에
+  `{{ hint@… }}` 토큰), 03 주문 API(Bearer 헤더 바인딩·qty number 타입·경로 바인딩·concat TRANSFORM),
+  04 레거시 EUC-KR(charset·urlencoded/xml respType), 05 TCP 전문(EUC-KR 고객명 슬라이싱), 06 클라이언트 모드(C→S).
+  IF 분기 엣지는 `fromPort:"true"/"false"`, 일반 엣지는 생략(기본 `out`).
+- 검증: 라이브 스택(H2 백엔드+relay+mock) e2e **47/47 PASS**(승인/거절·OTP 정답/오답·EUC-KR 복원·TCP 슬라이싱·
+  클라이언트 모드 재개) + mock `/openapi.json` 을 프론트 `parseOpenApi` 로 파싱 **7/7 PASS**(배열 언랩·allOf 병합·
+  응답레벨 $ref·qty=number 필드 타입).
+- ⚠️ mock 상태(주문/tid) 인메모리 — 재시작 시 소실. OpenAPI 임포트는 붙여넣기 전용(다이얼로그가 URL 페치 미지원).
 
 ## 이전 변경 (2026-06-29) — ⚠ 아래 3개 콜백 섹션은 2026-07-03 재설계로 **대체됨** (역사 기록용)
 

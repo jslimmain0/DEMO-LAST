@@ -13,9 +13,9 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.net.URLDecoder;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -124,12 +124,10 @@ public class MockGatewayController {
     private MockRequest parse(String slug, HttpServletRequest request) throws java.io.IOException {
         String raw = request.getRequestURI();
         String prefix = "/mock/" + slug;
-        String path = raw.length() > prefix.length() ? raw.substring(prefix.length()) : "/";
-        try {
-            path = URLDecoder.decode(path, StandardCharsets.UTF_8);
-        } catch (Exception ignored) {
-            // malformed percent-encoding — 원문 그대로 매칭
-        }
+        String rawPath = raw.length() > prefix.length() ? raw.substring(prefix.length()) : "/";
+        // URL 경로는 form 이 아니다 — URLDecoder.decode 는 '+'를 공백으로 바꿔 경로 파라미터를 오염시킨다.
+        // 세그먼트별로 %XX 만 UTF-8 디코딩하고 '+'는 리터럴로 유지한다.
+        String path = decodePath(rawPath);
         if (path.isEmpty()) {
             path = "/";
         }
@@ -149,7 +147,75 @@ public class MockGatewayController {
         String bodyText = bytes.length == 0 ? "" : new String(bytes, cs);
         Map<String, String> bodyFields = parseBodyFields(bodyText, ct, cs);
 
+        // Spring FormContentFilter 는 PUT/PATCH/DELETE + urlencoded 본문을 미리 읽어 파라미터로 노출한다
+        // → getInputStream() 이 빈 값이 된다. 그 경우 파라미터 맵에서 쿼리 유래를 뺀 나머지를 본문 필드로 복원.
+        if (bytes.length == 0 && ct.toLowerCase(Locale.ROOT).contains("urlencoded")) {
+            Map<String, String> recovered = recoverFormBody(request, query);
+            if (!recovered.isEmpty()) {
+                bodyFields = recovered;
+                bodyText = MockHttp.toUrlEncoded(new ArrayList<>(recovered.entrySet()));
+            }
+        }
+
         return new MockRequest(request.getMethod().toUpperCase(Locale.ROOT), path, query, headers, bodyText, bodyFields);
+    }
+
+    /** URL 경로 세그먼트별 percent-디코딩('+'는 리터럴). 인코딩된 슬래시(%2F)는 세그먼트 내부 값으로 보존. */
+    static String decodePath(String rawPath) {
+        if (rawPath == null || rawPath.isEmpty()) {
+            return "/";
+        }
+        String[] segs = rawPath.split("/", -1);
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < segs.length; i++) {
+            if (i > 0) {
+                sb.append('/');
+            }
+            sb.append(percentDecodeKeepPlus(segs[i]));
+        }
+        return sb.toString();
+    }
+
+    /** %XX 를 UTF-8 바이트로 디코딩하되 '+'와 그 외 문자는 그대로 둔다(URLDecoder 와 달리 '+'≠공백). */
+    private static String percentDecodeKeepPlus(String s) {
+        if (s.indexOf('%') < 0) {
+            return s;
+        }
+        java.io.ByteArrayOutputStream buf = new java.io.ByteArrayOutputStream(s.length());
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (c == '%' && i + 2 < s.length()) {
+                int hi = Character.digit(s.charAt(i + 1), 16);
+                int lo = Character.digit(s.charAt(i + 2), 16);
+                if (hi >= 0 && lo >= 0) {
+                    buf.write((hi << 4) + lo);
+                    i += 2;
+                    continue;
+                }
+            }
+            byte[] cb = String.valueOf(c).getBytes(StandardCharsets.UTF_8);
+            buf.write(cb, 0, cb.length);
+        }
+        return new String(buf.toByteArray(), StandardCharsets.UTF_8);
+    }
+
+    /** FormContentFilter 가 소진한 urlencoded 본문을 파라미터 맵에서 복원(쿼리 유래 키/값은 제외). */
+    private static Map<String, String> recoverFormBody(HttpServletRequest request, Map<String, String> query) {
+        Map<String, String> form = new LinkedHashMap<>();
+        Map<String, String[]> params = request.getParameterMap();
+        if (params == null) {
+            return form;
+        }
+        for (Map.Entry<String, String[]> e : params.entrySet()) {
+            String k = e.getKey();
+            String v = e.getValue() != null && e.getValue().length > 0 ? e.getValue()[0] : "";
+            // 쿼리스트링에 같은 값으로 이미 있으면 쿼리 유래로 보고 제외(본문 값만 남긴다)
+            if (query.containsKey(k) && query.get(k).equals(v)) {
+                continue;
+            }
+            form.put(k, v);
+        }
+        return form;
     }
 
     private Map<String, String> parseBodyFields(String bodyText, String contentType, Charset cs) {

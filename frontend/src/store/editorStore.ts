@@ -15,6 +15,8 @@ interface EditorState {
   selectedId: string | null
   dirty: boolean
   palette: PaletteGroup[]
+  // 실행이 대기(콜백/입력/폼) 중인 노드 — 캔버스 펄스·유입 엣지 애니메이션용(실행 UI 상태, 저장 안 됨)
+  waitingNodeId: string | null
 
   loadGraph: (flowId: string, name: string, graph: FlowGraph) => void
   importGraph: (graph: FlowGraph) => void
@@ -35,6 +37,7 @@ interface EditorState {
   addPaletteGroup: (group: PaletteGroup) => void
   removePaletteGroup: (groupId: string) => void
   removePaletteItem: (groupId: string, itemId: string) => void
+  setWaitingNode: (id: string | null) => void
 }
 
 export const useEditorStore = create<EditorState>()((set, get) => ({
@@ -45,6 +48,7 @@ export const useEditorStore = create<EditorState>()((set, get) => ({
   selectedId: null,
   dirty: false,
   palette: [],
+  waitingNodeId: null,
 
   loadGraph: (flowId, name, graph) => {
     const { nodes, edges } = toRF(graph)
@@ -189,4 +193,6 @@ export const useEditorStore = create<EditorState>()((set, get) => ({
         .filter((g) => g.items.length > 0),
       dirty: true,
     }),
+
+  setWaitingNode: (id) => set({ waitingNodeId: id }),
 }))

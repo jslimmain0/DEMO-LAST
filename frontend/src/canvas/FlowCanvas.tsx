@@ -14,8 +14,16 @@ const edgeTypes = { deletable: DeletableEdge }
 const connectionLineStyle: CSSProperties = { stroke: 'var(--fl-primary)', strokeWidth: 2 }
 
 export function FlowCanvas() {
-  const nodes = useEditorStore((s) => s.nodes)
-  const edges = useEditorStore((s) => s.edges)
+  const rawNodes = useEditorStore((s) => s.nodes)
+  const rawEdges = useEditorStore((s) => s.edges)
+  const waitingNodeId = useEditorStore((s) => s.waitingNodeId)
+  // 대기 중인 노드에 펄스 클래스, 그 노드로 들어오는 엣지에 흐름 애니메이션(실행 관전 피드백)
+  const nodes = waitingNodeId
+    ? rawNodes.map((n) => (n.id === waitingNodeId ? { ...n, className: 'fl-node-waiting' } : n))
+    : rawNodes
+  const edges = waitingNodeId
+    ? rawEdges.map((e) => (e.target === waitingNodeId ? { ...e, animated: true } : e))
+    : rawEdges
   const onNodesChange = useEditorStore((s) => s.onNodesChange)
   const onEdgesChange = useEditorStore((s) => s.onEdgesChange)
   const onConnect = useEditorStore((s) => s.onConnect)

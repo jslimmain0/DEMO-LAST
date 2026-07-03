@@ -94,6 +94,12 @@ public class Execution {
         this.status = ExecutionStatus.WAITING;
     }
 
+    /** 사용자가 대기 중 실행을 중단(⏹)한 경우. */
+    public void markCancelled() {
+        this.status = ExecutionStatus.CANCELLED;
+        this.finishedAt = Instant.now();
+    }
+
     public UUID getId() {
         return id;
     }

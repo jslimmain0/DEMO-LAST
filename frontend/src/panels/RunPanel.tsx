@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import type { CSSProperties } from 'react'
 import type { ExecutionDetail } from '../api/types'
 import { StatusBadge } from '../components/StatusBadge'
 import { MethodTag } from '../components/MethodTag'
@@ -9,14 +10,41 @@ export function RunPanel({
   execution,
   running,
   onClose,
+  onStop,
   height = 260,
 }: {
   execution: ExecutionDetail | null
   running: boolean
   onClose: () => void
+  onStop?: () => void
   height?: number
 }) {
   const [openId, setOpenId] = useState<string | null>(null)
+
+  // 콜백 대기 카운트다운 — 같은 (실행, 노드) 대기가 유지되는 동안 0.3초 간격 갱신.
+  // 폴링으로 pendingWait 객체가 매번 새로 와도 (실행ID:노드ID) 키가 같으면 시작 시각을 유지한다.
+  const pw = execution?.pendingWait ?? null
+  const [remaining, setRemaining] = useState<number | null>(null)
+  const startRef = useRef<{ key: string; at: number } | null>(null)
+  const pwKey = pw && execution ? execution.id + ':' + pw.nodeId : null
+  const pwTimeout = pw?.timeoutSec ?? null
+  useEffect(() => {
+    if (!pwKey || pwTimeout == null) {
+      setRemaining(null)
+      startRef.current = null
+      return
+    }
+    if (!startRef.current || startRef.current.key !== pwKey) {
+      startRef.current = { key: pwKey, at: Date.now() }
+    }
+    const tick = () => {
+      const elapsed = (Date.now() - startRef.current!.at) / 1000
+      setRemaining(Math.max(0, Math.ceil(pwTimeout - elapsed)))
+    }
+    tick()
+    const t = window.setInterval(tick, 300)
+    return () => window.clearInterval(t)
+  }, [pwKey, pwTimeout])
 
   return (
     <section
@@ -33,17 +61,30 @@ export function RunPanel({
         <strong style={{ fontSize: 13 }}>실행 로그</strong>
         {execution && <StatusBadge status={execution.status} />}
         {execution?.error && <span style={{ fontSize: 12, color: 'var(--fl-fail)' }}>{execution.error}</span>}
-        <button onClick={onClose} aria-label="로그 닫기" style={{ marginLeft: 'auto', border: 'none', background: 'transparent', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 16 }}>×</button>
+        {running && onStop && (
+          <button onClick={onStop} aria-label="실행 중단" title="실행 중단 — 대기를 즉시 해제합니다" style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-fail)', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>⏹ 중단</button>
+        )}
+        <button onClick={onClose} aria-label="로그 닫기" style={{ marginLeft: running && onStop ? 0 : 'auto', border: 'none', background: 'transparent', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 16 }}>×</button>
       </header>
 
       <div style={{ flex: 1, overflowY: 'auto' }}>
         {running && (
-          <div role="status" aria-live="polite" style={{ padding: 16, color: 'var(--fl-text-muted)', fontSize: 13 }}>
-            {execution?.pendingForm
-              ? '폼 전송 창 대기 중… (팝업에서 완료하거나 창을 닫으면 진행됩니다)'
-              : execution?.pendingClient
-                ? `브라우저(클라이언트)에서 직접 호출 중… — ${execution.pendingClient.method} ${execution.pendingClient.url}`
-                : '실행 중… (완료되면 결과가 표시됩니다)'}
+          <div role="status" aria-live="polite" style={{ padding: 16, color: 'var(--fl-text-muted)', fontSize: 13, display: 'grid', gap: 8 }}>
+            {pw ? (
+              <>
+                <span style={{ color: 'var(--fl-waiting)', fontWeight: 600 }}>
+                  ⧖ 대기 중{remaining != null ? ` (${remaining}초 남음)` : ''} — {pw.nodeName || pw.nodeId}
+                </span>
+                <span>이 URL로 콜백을 보내면 진행됩니다:</span>
+                <input readOnly value={pw.url} aria-label="콜백 수신 URL" onFocus={(e) => e.currentTarget.select()} style={urlBox} />
+              </>
+            ) : execution?.pendingInput
+              ? '입력 대기 중… (입력 창에서 값을 제출하면 진행됩니다)'
+              : execution?.pendingForm
+                ? '폼 전송 창 대기 중… (팝업을 열어 전송하면 다음 노드로 진행됩니다)'
+                : execution?.pendingClient
+                  ? `브라우저(클라이언트)에서 직접 호출 중… — ${execution.pendingClient.method} ${execution.pendingClient.url}`
+                  : '실행 중… (완료되면 결과가 표시됩니다)'}
           </div>
         )}
         {!running && !execution && (
@@ -81,6 +122,8 @@ export function RunPanel({
     </section>
   )
 }
+
+const urlBox: CSSProperties = { fontFamily: 'var(--fl-font-mono)', fontSize: 11.5, padding: '7px 9px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', color: 'var(--fl-text)', width: '100%', maxWidth: 560 }
 
 function LogBlock({ title, text }: { title: string; text: string | null | undefined }) {
   if (!text) return null

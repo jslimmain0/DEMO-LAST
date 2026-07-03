@@ -72,9 +72,9 @@ common/      error·json·tenant·openapi
 
 ### 실행 흐름 (`FlowExecutor.execute()`)
 graphJson 파싱 → Kahn 위상정렬 → 노드 순차 처리 → IF는 단일 분기 선택 →
-WAIT 노드 만나면 `WAITING`으로 중단 → 첫 실패 시 `FAILED`.
+대기형 노드(FORM/WAIT/INPUT, client HTTP)에서 `WAITING`으로 중단 → 첫 실패 시 `FAILED`.
 **현재 완전 동기 실행** (외부 HTTP에 호출 스레드 블로킹).
-노드 타입: START/END/SET/IF/HTTP/TRANSFORM/TCP/WAIT.
+노드 타입: START/END/SET/IF/HTTP/TRANSFORM/TCP/FORM/WAIT/INPUT.
 
 ### 토큰/바인딩 문법 (`TokenResolver`)
 - `{{ key }}` — 최근 상위 노드 출력 (nearest upstream)
@@ -307,6 +307,21 @@ design/   theme(라이트/다크) · index.css(CSS 변수)
 - 백엔드: `FlowExecutor`(RunState `corrId/notiUrl` + `{{ __notiUrl }}`/`{{ __corrId }}` 치환 + `referencesToken` 일반화, `PendingForm.corrId`), `ExecutionService`(`corrIds` 역인덱스 + `recordFixedCallback`(값 스캔 매칭) + `doResume`/멱등 `resume` + `cleanupSuspension`), `SecurityConfig` `PUBLIC_PATHS` 에 `/api/v1/callbacks` 추가.
 - 검증: H2 e2e — (F1) 서버 노티(브라우저 없이) 고정URL+corrId 매칭→서버 재개, 모든 파라미터→출력, `OK` ACK, (F2) 노티 완료 후 늦은 브라우저 resume 멱등(에러 없음), (F3) 브라우저가 고정URL 히트→브리지 HTML+재개, (F4) 미매칭 corrId→400 — 모두 PASS. 동적 콜백(A~D)·raw(R1~R3) 무회귀.
 - ⚠️ **데모 한계 상속**: 인메모리 레지스트리(재시작 시 소실)·서명 위변조 미검증·상관키 단일 매칭(게이트웨이가 corrId 를 echo 안 하면 매칭 불가 — 대부분 merchant 파라미터 echo). 노티 ACK 는 평문 `OK`(PG 별 규격 상이 — 실연동 시 조정). base-url 은 `flowlink.execution.callback.base-url`(기본 localhost) override 필요.
+
+### 폼/콜백 전면 개편 — form·wait·input 노드 3분리 + 백엔드 relay (2026-07-03)
+⚠ **이 섹션이 위의 "폼 전송 노드(WAIT type)" / "게이트웨이 콜백 URL" / "고정(사전등록) 콜백" 3개 섹션을 대체한다.**
+해당 기계(특수 토큰 `__callbackUrl`/`__notiUrl`/`__corrId`, 콜백 토큰·corrId 레지스트리, `/executions/callback/{token}`·`/callbacks` 엔드포인트, 브리지 HTML/postMessage 재개)는 **제거**됐다. 옛 그래프는 호환 시프트로 동작(아래).
+
+- **노드 3분리** (팔레트: 폼 전송/콜백 대기/입력 대기 — 전부 cat `wait`):
+  - **form(폼 전송, ▤)**: 팝업(`flowlink_pay_{노드ID}` 창 재사용)을 열어 "이동 중…"+hidden form(HTML 이스케이프)을 써넣고 자동 submit → **기다리지 않고 즉시 다음 노드로**(fire-and-forget). 팝업 차단=노드 실패("팝업 차단됨…"), action 비면 그 자리 실패. 로그에 method·URL·필드 전체. 설정: `formAction`(바인딩)·`formMethod`·`fields.body`(+`jsonRaw`/`rawBody` raw 토글).
+  - **wait(콜백 대기, ⧖)**: 수신 URL `{base}/api/v1/cb/{실행ID}/{노드ID}` (실행마다 고유, permitAll — 실행ID=사실상 비밀값). `newRun` 시 모든 wait 노드 URL을 ctx에 `{url}`로 시드 → **앞쪽 노드에서도 `{{ url@노드ID }}` 바인딩**(픽커가 비조상 wait도 노출) — 결제요청 returnUrl/notiUrl에 꽂는 표준 패턴. 설정: `waitTimeoutSec`(기본 120, 초과 시 노드 FAILED "타임아웃 — n초…"), **콜백에 줄 응답** `cbRespType`(text/html/json)+`cbRespBody`(실행 시작 시점 토큰 치환, 미설정 "OK") — 수신부가 그대로 반환(인증창엔 "창을 닫으세요" HTML, 노티엔 OK).
+  - **input(입력 대기, ✎)**: 프로토타입 사용자입력대기 복원 — `waitMsg`+`waitFields`(라벨/키, `WaitFieldsEditor`) → 실행 중 [InputPromptDialog](frontend/src/components/InputPromptDialog.tsx) → 입력 값이 키별 출력. 취소=WAITING 유지.
+- **백엔드가 relay**: `ANY /api/v1/cb/{execId}/{nodeId}`([ExecutionController](backend/src/main/java/com/flowlink/execution/ExecutionController.java)) — GET은 쿼리=본문, urlencoded POST는 서블릿 파라미터 병합, 그 외 본문은 JSON→`a=1&b=2`→`{body:원문}` 순 파싱(`parseCallback`). 수신 즉시 **서버가 직접 재개**(`doResume`, 브라우저 불필요). 이른 콜백은 [CallbackRegistry](backend/src/main/java/com/flowlink/execution/engine/CallbackRegistry.java) 버퍼(FIFO, 노드당 20)에 쌓였다가 wait 도달/서스펜션 등록 직후 소비(`drainBuffered` 갭 방어). 콜백/브라우저/타임아웃의 서스펜션 클레임은 `synchronized(lock)` 원자화. 타임아웃은 `ScheduledExecutorService`(데몬 스레드) 예약, 재개·취소 시 해제.
+- **브라우저는 폴링 관전자**: [Editor](frontend/src/routes/Editor.tsx) `onRun` 루프 — pendingForm(팝업 submit→즉시 resume)/pendingInput(입력 창)/pendingClient(기존)/`WAITING`이면 `GET /executions/{id}` 0.8s 폴링. [RunPanel](frontend/src/panels/RunPanel.tsx)에 **카운트다운("n초 남음", 0.3s)**+수신 URL(클릭 전체선택)+**⏹ 중단**(`POST /executions/{id}/cancel` → CANCELLED, 멱등). 캔버스 대기 노드 **청록 펄스**(`.fl-node-waiting`)+유입 엣지 애니메이션(editorStore `waitingNodeId`).
+- wait 대기는 **브라우저 resume 불가**(콜백/타임아웃/취소만 — resume은 멱등하게 현재 상태 반환). `GET /executions/{id}`가 서스펜션에서 pending 정보를 복원(폴링/새로고침 시 카운트다운·입력창 유지).
+- **레거시 호환 시프트**: type=`wait`+`formAction`→FORM, `waitFields`만→INPUT — 백엔드 `GraphNode.effectiveType()` + 프론트 `graphAdapter.toRF` 마이그레이션 동일 규칙.
+- 검증: **백엔드 e2e 38건**(정상/버퍼/타임아웃/취소/GET쿼리/JSON본문/중복키 리스트/레거시/멱등/url 바인딩) + **Playwright UI e2e 15건**(카운트다운·수신URL·펄스·⏹·입력창·팝업→cb POST→응답 HTML이 팝업에 표시→wait 재개 풀루프·팔레트 3종) 전부 PASS.
+- ⚠ 한계: 인메모리 상속(재시작 시 대기 실행 소실), 콜백 발신자 인증/서명 검증 없음(사내 테스트망 전제 — 실행ID가 비밀값), 실행 중 탭을 닫으면 폴링만 끊김(실행 자체는 서버에서 콜백/타임아웃으로 종료됨), wait 로그의 콜백 헤더는 미기록(method·URL·본문만).
 
 ## 참고 문서
 - `backend/README.md` — Phase 1 구현 범위 표, API 요약, 실행 가이드

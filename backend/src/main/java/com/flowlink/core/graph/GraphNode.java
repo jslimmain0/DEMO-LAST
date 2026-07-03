@@ -42,11 +42,16 @@ public record GraphNode(
         // --- if ---
         String condition,
 
-        // --- wait / 폼 전송(팝업) ---
+        // --- input(사용자 입력 대기) ---
         String waitMsg,
         List<WaitField> waitFields,
-        String formAction,      // 폼을 target 전송할 URL
+        // --- form(폼 전송 팝업) ---
+        String formAction,      // 팝업으로 열어 폼을 target 전송할 URL
         String formMethod,      // POST | GET
+        // --- wait(콜백 대기) ---
+        Integer waitTimeoutSec, // 콜백 타임아웃(초, 기본 120)
+        String cbRespType,      // 콜백에 줄 응답 형식: text | html | json
+        String cbRespBody,      // 콜백에 줄 응답 본문(실행 시작 시점 토큰 치환)
 
         // --- transform ---
         String transformId,
@@ -68,6 +73,26 @@ public record GraphNode(
 ) {
     public NodeType nodeType() {
         return NodeType.from(type);
+    }
+
+    /**
+     * 실행 시 적용할 실질 타입 — 레거시 그래프 호환 시프트 포함.
+     * 과거에는 type="wait" 하나가 폼 전송(formAction)·입력 대기(waitFields)를 겸했으므로,
+     * wait 인데 formAction 이 있으면 FORM, waitFields 만 있으면(신규 wait 설정 없이) INPUT 으로 본다.
+     */
+    public NodeType effectiveType() {
+        NodeType t = nodeType();
+        if (t != NodeType.WAIT) {
+            return t;
+        }
+        if (formAction != null && !formAction.isBlank()) {
+            return NodeType.FORM;
+        }
+        boolean hasNewWaitConfig = waitTimeoutSec != null || cbRespType != null || cbRespBody != null;
+        if (!hasNewWaitConfig && waitFields != null && !waitFields.isEmpty()) {
+            return NodeType.INPUT;
+        }
+        return NodeType.WAIT;
     }
 
     public NodeFields fieldsOrEmpty() {

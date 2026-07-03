@@ -55,9 +55,21 @@ export function upstreamSources(nodes: Node[], edges: Edge[], targetId: string):
       for (const f of n.fields?.[tab] ?? []) if (f.key) items.push({ key: f.key, scope: 'req', group: 'request' })
     }
     if (n.waitFields) for (const wf of n.waitFields) if (wf.key) items.push({ key: wf.key, scope: null, group: 'response' })
+    if (n.type === 'wait') items.push({ key: 'url', type: 'url', scope: null, group: 'response' })
     if (items.length > 0) {
       sources.push({ id: n.id, name: n.name ?? id, cat: n.cat, type: n.type, items })
     }
+  }
+
+  // 콜백 대기(wait) 노드의 수신 URL 은 실행 시작 시점에 확정되므로, 조상이 아니어도(뒤쪽 노드여도)
+  // 앞쪽 노드에서 {{ url@노드ID }} 로 바인딩할 수 있다 — 결제요청의 returnUrl/notiUrl 에 꽂는 용도.
+  for (const rf of nodes) {
+    const n = asGraphNode(rf.data)
+    if (n.type !== 'wait' || n.id === targetId || seen.has(n.id)) continue
+    sources.push({
+      id: n.id, name: n.name ?? n.id, cat: n.cat, type: n.type,
+      items: [{ key: 'url', type: 'url', scope: null, group: 'response' }],
+    })
   }
   return sources
 }

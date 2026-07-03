@@ -7,7 +7,9 @@ public enum NodeType {
     SET,
     HTTP,
     IF,
-    WAIT,
+    FORM,   // 폼 전송(팝업) — 열고 submit 후 즉시 진행(fire-and-forget)
+    WAIT,   // 콜백 대기 — /cb/{실행ID}/{노드ID} 수신까지 대기(타임아웃)
+    INPUT,  // 사용자 입력 대기 — 입력 창을 띄우고 값을 출력으로
     TRANSFORM,
     TCP,
     UNKNOWN;
@@ -22,7 +24,9 @@ public enum NodeType {
             case "set" -> SET;
             case "http" -> HTTP;
             case "if" -> IF;
+            case "form" -> FORM;
             case "wait" -> WAIT;
+            case "input" -> INPUT;
             case "transform" -> TRANSFORM;
             case "tcp" -> TCP;
             default -> UNKNOWN;

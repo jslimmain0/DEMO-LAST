@@ -149,6 +149,18 @@ button { font-family: inherit; }
   background: var(--fl-primary);
 }
 
+/* 실행 대기 중 노드(콜백/입력/폼 대기) — 청록 펄스. reduced-motion 에선 애니메이션이 죽어도
+   정적 글로우·테두리는 남아 상태가 보인다. 유입 엣지는 React Flow animated 대시로 함께 표시. */
+.react-flow__node.fl-node-waiting > div {
+  border-color: var(--fl-waiting) !important;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--fl-waiting) 35%, transparent);
+  animation: fl-wait-pulse 1.6s var(--fl-ease) infinite;
+}
+@keyframes fl-wait-pulse {
+  0%, 100% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--fl-waiting) 35%, transparent); }
+  50% { box-shadow: 0 0 0 9px color-mix(in srgb, var(--fl-waiting) 10%, transparent); }
+}
+
 /* 스크롤바 */
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-thumb { background: #d3d8e2; border-radius: 8px; border: 2px solid transparent; background-clip: padding-box; }

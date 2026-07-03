@@ -2,7 +2,7 @@
 // (enum 대신 문자열 유니온 — tsconfig erasableSyntaxOnly 준수)
 
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD'
-export type NodeType = 'start' | 'end' | 'set' | 'http' | 'if' | 'wait' | 'transform' | 'tcp'
+export type NodeType = 'start' | 'end' | 'set' | 'http' | 'if' | 'form' | 'wait' | 'input' | 'transform' | 'tcp'
 export type BodyType = 'json' | 'urlencoded' | 'form' | 'raw' | 'xml'
 export type RespType = 'json' | 'xml' | 'urlencoded' | 'form' | 'text' | 'binary'
 export type ReqMode = 'server' | 'client'
@@ -76,11 +76,16 @@ export interface GraphNode {
   vars?: NodeVar[]
   // if
   condition?: string
-  // wait / 폼 전송(팝업)
+  // input(사용자 입력 대기)
   waitMsg?: string
   waitFields?: WaitField[]
-  formAction?: string   // 폼을 target 전송할 URL
+  // form(폼 전송 팝업)
+  formAction?: string   // 팝업으로 열어 폼을 target 전송할 URL
   formMethod?: string   // POST | GET
+  // wait(콜백 대기)
+  waitTimeoutSec?: number // 콜백 타임아웃(초, 기본 120)
+  cbRespType?: string     // 콜백에 줄 응답 형식: text | html | json
+  cbRespBody?: string     // 콜백에 줄 응답 본문(실행 시작 시점 토큰 치환)
   // transform
   transformId?: string
   config?: Record<string, string>
@@ -243,13 +248,30 @@ export interface PendingClientRequest {
   respType?: string
 }
 
-// 폼 전송 노드에서 중단될 때, 브라우저가 새 창(팝업)으로 target 전송할 폼 명세(값 해석 완료).
+// 폼 전송(form) 노드에서 중단될 때, 브라우저가 새 창(팝업)으로 target 전송할 폼 명세(값 해석 완료).
 export interface PendingFormRequest {
   nodeId: string
   nodeName?: string
   action: string
   method: string
   fields: Array<{ key: string; value?: string | null }>
+}
+
+// 사용자 입력 대기(input) 노드에서 중단될 때, 브라우저가 띄울 입력 창 명세.
+export interface PendingInputRequest {
+  nodeId: string
+  nodeName?: string
+  msg?: string | null
+  fields: Array<{ key: string; label?: string | null }>
+}
+
+// 콜백 대기(wait) 노드에서 중단될 때의 대기 정보 — 서버가 콜백으로 직접 재개하므로
+// 브라우저는 폴링으로 관전하며 카운트다운/수신 URL 을 표시한다.
+export interface PendingWaitRequest {
+  nodeId: string
+  nodeName?: string
+  url: string
+  timeoutSec: number
 }
 
 // 실행 재개 바디. client HTTP 는 status/body/error 를, WAIT(폼)은 formValues 를 채운다.
@@ -299,6 +321,8 @@ export interface ExecutionDetail {
   nodes: NodeExecutionView[]
   pendingClient?: PendingClientRequest | null
   pendingForm?: PendingFormRequest | null
+  pendingInput?: PendingInputRequest | null
+  pendingWait?: PendingWaitRequest | null
 }
 
 export interface ApiError {

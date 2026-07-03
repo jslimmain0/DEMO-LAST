@@ -1,87 +1,50 @@
 import type { CSSProperties } from 'react'
-import { useEffect, useRef, useState } from 'react'
 import type { PendingFormRequest } from '../api/types'
 import { useEscapeClose } from './useEscapeClose'
 
-// 실행 중 '폼 전송' 노드에서 뜨는 안내. 버튼(사용자 제스처)으로 새 창(팝업)을 열고 폼을 target 전송한 뒤,
-// 팝업이 postMessage 로 결과를 보내거나 창이 닫히면 그 값으로 실행을 재개한다.
+/**
+ * 실행 중 '폼 전송' 노드에서 뜨는 안내 — fire-and-forget.
+ * 버튼(사용자 제스처)으로 새 팝업을 열고, 팝업 안에 "이동 중…" 화면과 hidden form 을 써넣어 자동 submit 한다.
+ * 결제창/인증창이 팝업 안에 로드되면 이 노드는 끝 — 기다리는 것은 다음 '콜백 대기' 노드의 몫.
+ * 창 이름이 노드별로 고정(flowlink_pay_{노드ID})이라 재실행 시 같은 창을 재사용한다.
+ */
 export function FormPopupDialog({
   form,
-  onResult,
+  onDone,
   onCancel,
 }: {
   form: PendingFormRequest
-  onResult: (values: Record<string, unknown>) => void
+  onDone: (error: string | null) => void // null=submit 완료, 문자열=실패(팝업 차단 등 → 노드 실패)
   onCancel: () => void
 }) {
-  const [opened, setOpened] = useState(false)
-  const [blocked, setBlocked] = useState(false)
-  const cleanupRef = useRef<(() => void) | null>(null)
   useEscapeClose(onCancel)
-  useEffect(() => () => cleanupRef.current?.(), []) // 언마운트 시 리스너/타이머 정리
 
   const openPopup = () => {
-    cleanupRef.current?.() // 재열기('다시 열기') 시 이전 리스너/타이머 정리(누수 방지)
-    cleanupRef.current = null
-    const name = 'flowlink_form_' + form.nodeId
-    const popup = window.open('', name, 'width=480,height=640,resizable=yes,scrollbars=yes')
+    const popup = window.open('', 'flowlink_pay_' + form.nodeId, 'width=480,height=720')
     if (!popup) {
-      setBlocked(true)
+      onDone('팝업 차단됨 — 브라우저의 팝업 허용이 필요합니다')
       return
     }
-    // 폼을 조립해 팝업 창으로 target 전송
-    const f = document.createElement('form')
-    f.method = (form.method || 'POST').toUpperCase()
-    f.action = form.action
-    f.target = name
-    for (const fd of form.fields ?? []) {
-      const input = document.createElement('input')
-      input.type = 'hidden'
-      input.name = fd.key
-      input.value = fd.value ?? ''
-      f.appendChild(input)
+    const method = (form.method || 'POST').toUpperCase() === 'GET' ? 'GET' : 'POST'
+    const inputs = (form.fields ?? [])
+      .map((f) => `<input type="hidden" name="${esc(f.key)}" value="${esc(f.value ?? '')}">`)
+      .join('')
+    popup.document.open()
+    popup.document.write(
+      '<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>이동 중…</title></head>'
+      + '<body style="font-family:system-ui,-apple-system,sans-serif;padding:28px;color:#333">'
+      + '<p>이동 중…</p>'
+      + `<form id="f" method="${method}" action="${esc(form.action)}">${inputs}</form>`
+      + '</body></html>',
+    )
+    popup.document.close()
+    const f = popup.document.getElementById('f') as HTMLFormElement | null
+    if (!f) {
+      onDone('팝업 폼 조립에 실패했습니다')
+      return
     }
-    document.body.appendChild(f)
     f.submit()
-    document.body.removeChild(f)
-    setOpened(true)
-    setBlocked(false)
-
-    // 결과 대기: 팝업의 postMessage(구조화 결과) 또는 창 닫힘
-    let done = false
-    const finish = (data: Record<string, unknown>) => {
-      if (done) return
-      done = true
-      cleanupRef.current?.()
-      cleanupRef.current = null
-      onResult(data)
-    }
-    const onMsg = (e: MessageEvent) => {
-      if (e.source !== popup) return
-      const d = e.data
-      // 팝업이 게이트웨이로 교차출처 이동한 뒤에도 e.source===popup 은 유지되므로, 게이트웨이 페이지의
-      // SDK/애널리틱스 등이 보내는 임의 postMessage 로 조기 재개되지 않도록 필터:
-      //  - 콜백 브리지 마커(__flcallback) 가 있거나
-      //  - 동일 출처(우리 오리진의 커스텀 폼 target)인 경우만 결과로 인정
-      const isBridge = !!d && typeof d === 'object' && (d as Record<string, unknown>).__flcallback === true
-      const sameOrigin = e.origin === window.location.origin
-      if (!isBridge && !sameOrigin) return
-      if (d && typeof d === 'object') {
-        const obj = { ...(d as Record<string, unknown>) }
-        delete obj.__flcallback // 마커는 제거하고 결과 값만 전달
-        finish(obj)
-      } else {
-        finish({ result: d })
-      }
-    }
-    window.addEventListener('message', onMsg)
-    const timer = window.setInterval(() => {
-      if (popup.closed) finish({ closed: true })
-    }, 500)
-    cleanupRef.current = () => {
-      window.removeEventListener('message', onMsg)
-      window.clearInterval(timer)
-    }
+    onDone(null) // submit 직후 성공 처리 → 실행은 다음 노드로 진행
   }
 
   return (
@@ -94,22 +57,26 @@ export function FormPopupDialog({
         </header>
 
         <div style={{ padding: 18 }}>
-          <p style={{ fontSize: 13, color: 'var(--fl-text)', margin: '0 0 10px', lineHeight: 1.5 }}>새 창(팝업)으로 아래 주소에 폼을 전송합니다.</p>
+          <p style={{ fontSize: 13, color: 'var(--fl-text)', margin: '0 0 10px', lineHeight: 1.5 }}>
+            새 창(팝업)으로 아래 주소에 폼을 전송합니다. 전송 후 실행은 바로 다음 노드로 진행됩니다.
+          </p>
           <div style={{ fontFamily: 'var(--fl-font-mono)', fontSize: 12, padding: '8px 10px', background: 'var(--fl-surface-2)', borderRadius: 'var(--fl-radius-sm)', wordBreak: 'break-all' }}>
             <b>{form.method}</b> {form.action || '(URL 미설정)'}
           </div>
           <p style={{ fontSize: 11.5, color: 'var(--fl-text-muted)', marginTop: 8 }}>{(form.fields ?? []).length}개 필드 전송</p>
-          {blocked && <p style={{ fontSize: 12.5, color: 'var(--fl-fail)', marginTop: 8 }}>⚠ 팝업이 차단되었습니다. 브라우저에서 이 사이트의 팝업을 허용한 뒤 다시 눌러주세요.</p>}
-          {opened && <p style={{ fontSize: 12.5, color: 'var(--fl-running)', marginTop: 8 }} role="status">창에서 완료를 기다리는 중… (팝업이 결과를 보내거나 닫히면 자동 진행됩니다)</p>}
         </div>
 
         <footer style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, padding: '12px 18px', borderTop: '1px solid var(--fl-border)' }}>
           <button onClick={onCancel} style={ghost}>취소</button>
-          <button onClick={openPopup} style={primary}>{opened ? '다시 열기' : '폼 창 열기'}</button>
+          <button onClick={openPopup} style={primary}>폼 창 열기</button>
         </footer>
       </div>
     </div>
   )
+}
+
+function esc(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 }
 
 const overlay: CSSProperties = { position: 'fixed', inset: 0, background: 'rgba(26,29,39,.45)', zIndex: 210, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }

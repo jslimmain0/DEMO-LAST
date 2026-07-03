@@ -68,6 +68,8 @@ export const runsApi = {
     http.post<ExecutionDetail>(`/flows/${flowId}/runs`, body ?? {}).then((r) => r.data),
   resume: (executionId: string, body: ResumeRequest) =>
     http.post<ExecutionDetail>(`/executions/${executionId}/resume`, body).then((r) => r.data),
+  cancel: (executionId: string) =>
+    http.post<ExecutionDetail>(`/executions/${executionId}/cancel`).then((r) => r.data),
   listForFlow: (flowId: string, limit = 50) =>
     http.get<ExecutionSummary[]>(`/flows/${flowId}/runs`, { params: { limit } }).then((r) => r.data),
   get: (id: string) => http.get<ExecutionDetail>(`/executions/${id}`).then((r) => r.data),

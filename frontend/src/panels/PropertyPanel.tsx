@@ -2,7 +2,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { CSSProperties } from 'react'
 import { useEffect, useMemo, useState } from 'react'
 import { pluginsApi, transformsApi } from '../api/client'
-import type { Binding, BodyType, GraphNode, HttpMethod, NodeField, NodeOutput, NodeVar, ReqMode, RespType, TcpField, TcpRespField } from '../api/types'
+import type { Binding, BodyType, GraphNode, HttpMethod, NodeField, NodeOutput, NodeVar, ReqMode, RespType, TcpField, TcpRespField, WaitField } from '../api/types'
 import { BindingChip } from '../binding/BindingChip'
 import { BindingPicker } from '../binding/BindingPicker'
 import { upstreamSources } from '../binding/upstream'
@@ -20,12 +20,9 @@ const field: CSSProperties = { width: '100%', padding: '8px 10px', border: '1px 
 const mono: CSSProperties = { ...field, fontFamily: 'var(--fl-font-mono)', fontSize: 12 }
 const braceBtn: CSSProperties = { width: 32, height: 32, flexShrink: 0, border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-primary)', cursor: 'pointer', fontFamily: 'var(--fl-font-mono)', fontSize: 12 }
 
-// 폼 전송(WAIT) 노드 특수 토큰 — 실행 시 서버가 실제 값으로 치환한다.
-const CALLBACK_TOKEN = '{{ __callbackUrl }}' // 동적: per-run 토큰 URL(브라우저 팝업 복귀)
-const NOTI_TOKEN = '{{ __notiUrl }}'         // 고정: 사전등록용 안정 URL(서버 노티)
-const CORR_TOKEN = '{{ __corrId }}'          // 상관키: 고정 URL 매칭용
-// 고정 콜백 URL(콘솔 등록/노티용). 백엔드 flowlink.execution.callback.base-url 기본값 기준 — override(터널) 시 그 주소로.
-const fixedCallbackUrl = 'http://localhost:18080/api/v1/callbacks'
+// 콜백 대기(wait) 노드 수신 URL 의 서버 베이스.
+// 백엔드 flowlink.execution.callback.base-url 기본값 기준 — override(터널) 시 그 주소로 발급된다.
+const callbackBase = 'http://localhost:18080'
 
 const METHODS: HttpMethod[] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD']
 const BODY_TYPES: BodyType[] = ['json', 'urlencoded', 'form', 'raw', 'xml']
@@ -468,11 +465,11 @@ export function PropertyPanel({ width = 360 }: { width?: number }) {
           </>
         )}
 
-        {node.type === 'wait' && (
+        {node.type === 'form' && (
           <>
-            <label style={label}>전송 URL (action)</label>
+            <label style={label}>팝업 URL (action)</label>
             <div style={{ display: 'flex', gap: 4 }}>
-              <input style={mono} value={node.formAction ?? ''} onChange={(e) => update(id, { formAction: e.target.value })} placeholder="https://example.com/submit" />
+              <input style={mono} value={node.formAction ?? ''} onChange={(e) => update(id, { formAction: e.target.value })} placeholder="https://pg.example.com/pay" />
               <button onClick={() => setPick('formAction')} title="데이터 삽입" style={braceBtn}>{'{ }'}</button>
             </div>
             <label style={label}>메서드</label>
@@ -481,7 +478,7 @@ export function PropertyPanel({ width = 360 }: { width?: number }) {
               <option value="GET">GET</option>
             </select>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '12px 0 5px' }}>
-              <label style={{ ...label, margin: 0 }}>폼 데이터 (바인딩 가능)</label>
+              <label style={{ ...label, margin: 0 }}>Hidden 필드 (바인딩 가능)</label>
               <div style={miniSeg} role="group" aria-label="폼 데이터 입력 방식">
                 <button type="button" onClick={() => switchFormRaw(false)} style={miniSegBtn(!node.jsonRaw)}>필드</button>
                 <button type="button" onClick={() => switchFormRaw(true)} style={miniSegBtn(!!node.jsonRaw)}>Raw</button>
@@ -497,46 +494,70 @@ export function PropertyPanel({ width = 360 }: { width?: number }) {
               <KeyValueEditor rows={node.fields?.body ?? []} onChange={(rows) => update(id, { fields: { params: fields.params ?? [], headers: fields.headers ?? [], body: rows } })} sources={sources} />
             )}
             <p style={{ ...hintP }}>
-              실행 시 <b>새 창(팝업)</b>으로 이 폼을 target 전송합니다. 팝업이 결과를 postMessage 하거나 창이 닫히면 다음 노드로 진행하며, 그 값이 이 노드의 출력이 됩니다.
+              실행 시 <b>새 팝업 창</b>을 열어 이 폼을 자동 submit 하고 <b>바로 다음 노드로 진행</b>합니다(기다리지 않음 — 기다림은 다음
+              ‘콜백 대기’ 노드의 몫). 결제/인증창의 <b>returnUrl 류 필드</b>에는 {'{ }'} 픽커에서 <b>콜백 대기 노드의 url</b> 을
+              바인딩하는 것이 표준 패턴입니다.
+            </p>
+          </>
+        )}
+
+        {node.type === 'wait' && (
+          <>
+            <label style={label}>타임아웃 (초)</label>
+            <input
+              type="number" min={1} style={{ ...field, width: 120 }}
+              value={node.waitTimeoutSec ?? 120}
+              onChange={(e) => { const v = Number(e.target.value); update(id, { waitTimeoutSec: Number.isFinite(v) && v > 0 ? Math.round(v) : 120 }) }}
+            />
+            <label style={label}>콜백에 줄 응답</label>
+            <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
+              <select style={{ ...field, width: 130 }} value={node.cbRespType ?? 'text'} onChange={(e) => update(id, { cbRespType: e.target.value })}>
+                <option value="text">문자열</option>
+                <option value="html">HTML</option>
+                <option value="json">JSON</option>
+              </select>
+            </div>
+            <textarea
+              style={{ ...mono, minHeight: 90, resize: 'vertical' }}
+              value={node.cbRespBody ?? ''}
+              onChange={(e) => update(id, { cbRespBody: e.target.value })}
+              placeholder={node.cbRespType === 'html' ? '<h1>인증 완료 — 창을 닫으세요</h1>' : 'OK'}
+            />
+            <p style={{ ...hintP, marginTop: 6 }}>
+              콜백을 보낸 쪽(게이트웨이/팝업)이 그대로 받는 응답입니다. 인증 callback 이면 <b>HTML</b>(“창을 닫으세요”), 승인
+              노티면 <code>OK</code> 같은 <b>문자열</b>이 일반적입니다. 본문의 토큰은 실행 시작 시점에 치환됩니다.
             </p>
 
-            <label style={label}>게이트웨이 콜백 URL</label>
+            <label style={label}>수신 URL (실행마다 고유)</label>
             <div style={{ display: 'flex', gap: 4 }}>
-              <input style={mono} readOnly value={CALLBACK_TOKEN} onFocus={(e) => e.currentTarget.select()} />
+              <input style={mono} readOnly value={`${callbackBase}/api/v1/cb/{실행ID}/${id}`} onFocus={(e) => e.currentTarget.select()} />
               <button
-                onClick={() => { void navigator.clipboard?.writeText(CALLBACK_TOKEN).catch(() => {}) }}
-                title="복사"
-                style={braceBtn}
-              >⧉</button>
-              <button
-                onClick={() => update(id, { fields: { params: fields.params ?? [], headers: fields.headers ?? [], body: [...(node.fields?.body ?? []), { id: newId(), key: 'returnUrl', value: CALLBACK_TOKEN }] } })}
-                title="콜백 URL 필드 추가"
-                style={braceBtn}
-              >{'{ }'}</button>
+                onClick={() => { void navigator.clipboard?.writeText(`{{ url@${id} }}`).catch(() => {}) }}
+                title={`바인딩 토큰 복사 — {{ url@${id} }}`}
+                style={{ ...braceBtn, width: 'auto', padding: '0 10px' }}
+              >토큰 ⧉</button>
             </div>
             <p style={{ ...hintP, marginTop: 8 }}>
-              <b>동적(팝업):</b> 게이트웨이가 요구하는 <b>필드명</b>(returnUrl/ret_url/ReturnURL 등)으로 <code>{CALLBACK_TOKEN}</code> 을 폼 데이터에 추가하세요.
-              실행마다 추측 불가능한 수신 URL 로 치환되고, 게이트웨이가 그 URL 로 리다이렉트하면 <b>결과 파라미터가 이 노드의 출력</b>이 됩니다.
+              실행이 시작되면 <code>{'{실행ID}'}</code> 가 확정된 실제 URL 이 됩니다. 이 URL 은 <b>앞쪽 노드에서도</b> {'{ }'} 픽커의
+              <b> {node.name || '이 노드'} → url</b> 로 바인딩할 수 있어, 결제요청의 returnUrl/notiUrl 필드에 꽂는 용도로 씁니다.
+              콜백이 도착하면 <b>서버가 즉시 실행을 재개</b>하고, 타임아웃까지 오지 않으면 이 노드는 실패합니다.
             </p>
 
-            <label style={label}>고정 콜백 URL (사전등록 · 서버 노티)</label>
-            <div style={{ display: 'flex', gap: 4 }}>
-              <input style={mono} readOnly value={fixedCallbackUrl} onFocus={(e) => e.currentTarget.select()} />
-              <button onClick={() => { void navigator.clipboard?.writeText(fixedCallbackUrl).catch(() => {}) }} title="복사(콘솔 등록용)" style={braceBtn}>⧉</button>
-              <button
-                onClick={() => update(id, { fields: { params: fields.params ?? [], headers: fields.headers ?? [], body: [...(node.fields?.body ?? []), { id: newId(), key: 'oid', value: CORR_TOKEN }] } })}
-                title="상관키 필드 추가"
-                style={braceBtn}
-              >{'{ }'}</button>
-            </div>
-            <p style={{ ...hintP, marginTop: 8 }}>
-              <b>고정(사전등록):</b> 실행마다 안 바뀌는 위 URL 을 게이트웨이 콘솔에 미리 등록하거나 노티(웹훅) URL 로 쓰세요.
-              고정 URL 은 실행을 구분 못 하므로, 게이트웨이가 <b>되돌려주는 필드</b>(주문번호 oid/MOID 등)에 상관키 <code>{CORR_TOKEN}</code> 를 넣으세요
-              (필드명은 게이트웨이 규격대로). 콜백이 그 값을 echo 하면 서버가 대기 중인 실행을 찾아 <b>브라우저 없이 재개</b>합니다.
-              폼에 URL 을 실어야 하는 게이트웨이는 <code>{NOTI_TOKEN}</code> 토큰을 필드 값으로 넣으면 됩니다.
-            </p>
-            <label style={label}>응답 규격 (출력) — 게이트웨이 콜백 결과 키 (하위 노드가 바인딩)</label>
+            <label style={label}>예상 결과 키 — 바인딩 픽커 칩용 (선언 없어도 모든 콜백 파라미터가 출력됨)</label>
             <OutputsEditor outputs={node.outputs ?? []} onChange={(outputs) => update(id, { outputs })} />
+          </>
+        )}
+
+        {node.type === 'input' && (
+          <>
+            <label style={label}>안내 문구</label>
+            <input style={field} value={node.waitMsg ?? ''} onChange={(e) => update(id, { waitMsg: e.target.value })} placeholder="휴대폰으로 받은 OTP를 입력하세요" />
+            <label style={label}>입력 필드 — 각 키가 이 노드의 출력이 됩니다</label>
+            <WaitFieldsEditor fields={node.waitFields ?? []} onChange={(waitFields) => update(id, { waitFields })} />
+            <p style={{ ...hintP }}>
+              실행이 이 노드에 도달하면 멈추고 <b>입력 창</b>을 띄웁니다. 입력한 값들이 각 키로 저장되어 하위 노드에서
+              바인딩됩니다(예: 휴대폰 OTP). 취소하면 실행은 대기 상태로 남습니다.
+            </p>
           </>
         )}
 
@@ -635,6 +656,23 @@ function VarsEditor({ vars, onChange, onPickVar, sourceType }: { vars: NodeVar[]
         </div>
       ))}
       <button onClick={() => onChange([...vars, { id: newId(), key: '', value: '', secret: false }])} style={addDashed}>+ 변수 추가</button>
+    </>
+  )
+}
+
+// 입력 대기(input) 노드의 입력 필드 편집 — 프로토타입 WaitFieldsEditor 복원(라벨 + 키).
+function WaitFieldsEditor({ fields, onChange }: { fields: WaitField[]; onChange: (f: WaitField[]) => void }) {
+  const upd = (fid: string, patch: Partial<WaitField>) => onChange(fields.map((f) => (f.id === fid ? { ...f, ...patch } : f)))
+  return (
+    <>
+      {fields.map((f) => (
+        <div key={f.id} style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
+          <input style={{ ...field, flex: 1 }} value={f.label ?? ''} placeholder="라벨 (예: OTP)" onChange={(e) => upd(f.id, { label: e.target.value })} />
+          <input style={{ ...mono, flex: 1 }} value={f.key} placeholder="키 (예: otp)" onChange={(e) => upd(f.id, { key: e.target.value })} />
+          <button onClick={() => onChange(fields.filter((x) => x.id !== f.id))} aria-label="삭제" style={{ width: 28, border: '1px solid var(--fl-border)', borderRadius: 6, background: 'var(--fl-surface)', cursor: 'pointer' }}>×</button>
+        </div>
+      ))}
+      <button onClick={() => onChange([...fields, { id: newId(), key: '', label: '' }])} style={addDashed}>+ 입력 필드 추가</button>
     </>
   )
 }

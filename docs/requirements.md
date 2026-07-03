@@ -5,10 +5,10 @@
 
 | 항목 | 내용 |
 |---|---|
-| 문서 버전 | v1.0 (SRS-2026-07) |
-| 작성일 | 2026-07-02 |
+| 문서 버전 | v1.1 (SRS-2026-07) — 폼/콜백 개편(form·wait·input 3분리) 반영 |
+| 작성일 | 2026-07-03 |
 | 대상 시스템 | FlowLink (Frontend 5173 · Backend 18080) |
-| 기준 소스 | main — Phase 1 + 2026-06-29 변경 반영 |
+| 기준 소스 | main — Phase 1 + 2026-07-03 변경 반영 |
 
 **상태 표기**: ✅ 구현(동작 검증됨) · 🔶 부분(일부만 동작/제약 있음) · ❌ 미구현(스키마·enum·유틸만 존재 또는 부재)
 
@@ -39,7 +39,7 @@
 | 용어 | 정의 |
 |---|---|
 | **워크플로(Flow)** | 노드와 엣지로 구성된 실행 단위의 논리 컨테이너. 버전(FlowVersion)의 부모 |
-| **노드 / 엣지** | 그래프의 실행 단계(START·HTTP·IF 등 8종) / 노드 간 연결(분기 포트 포함) |
+| **노드 / 엣지** | 그래프의 실행 단계(START·HTTP·IF·FORM·WAIT·INPUT 등 10종) / 노드 간 연결(분기 포트 포함) |
 | **바인딩 / 토큰** | 상위 노드 출력값 참조. `{{ key }}` 문법(3형식 + 특수 토큰 3종) |
 | **실행(Execution)** | 워크플로 1회 실행 인스턴스. 노드별 결과(NodeExecution)를 가짐 |
 | **재개(resume)** | WAITING으로 중단된 실행을 브라우저 결과·폼 값·콜백으로 이어가는 동작 |
@@ -132,7 +132,9 @@
 | FR-NOD-04 | **HTTP 요청** | §3.6 참조 (server/client 이원 실행) | ✅ |
 | FR-NOD-05 | **TRANSFORM (변환)** | 레지스트리의 변환(빌트인 15종 + JAR 플러그인)을 선언된 입출력 포트로 적용. 미등록 id는 실패 | ✅ |
 | FR-NOD-06 | **TCP (고정길이 전문)** | 필드별 고정 바이트 길이·패딩(방향/문자/인코딩, 기본 EUC-KR)·초과분 절단으로 전문 조립, 길이 프리픽스(자기포함 옵션) 부착. 응답은 프리픽스 해석 후 필드별 바이트 슬라이싱→이름별 출력. SSRF 가드 적용 | ✅ |
-| FR-NOD-07 | **WAIT (폼 전송)** | 실행을 WAITING으로 중단하고 폼 명세(`PendingForm`) 반환 → 프론트가 팝업으로 form target 제출 → postMessage/창닫힘/콜백으로 재개. §3.8 참조<br>_서버 재시작 시 진행 중 실행 소실(인메모리)_ | 🔶 |
+| FR-NOD-07 | **FORM (폼 전송)** | 브라우저가 팝업(`flowlink_pay_{노드ID}` 창 재사용)에 "이동 중…"+hidden form(HTML 이스케이프)을 써넣고 자동 submit → **기다리지 않고 즉시 다음 노드로**(fire-and-forget). 팝업 차단·URL 공백=노드 실패. 로그에 method·URL·필드 전체 | ✅ |
+| FR-NOD-08 | **WAIT (콜백 대기)** | 실행별 수신 URL(`/api/v1/cb/{실행ID}/{노드ID}`)로 콜백이 올 때까지 대기. 타임아웃(기본 120초) 시 노드 FAILED, 이른 콜백은 버퍼에서 즉시 소비, "콜백에 줄 응답"(text/html/json+본문) 등록·반환<br>_인메모리(재시작 시 대기 실행 소실)_ | ✅ |
+| FR-NOD-09 | **INPUT (사용자 입력 대기)** | 실행 중 입력 창(안내 문구 waitMsg + 입력 필드 waitFields)을 띄우고, 입력 값이 각 키로 노드 출력이 됨(프로토타입 복원). 취소 시 WAITING 유지 | ✅ |
 
 ### 3.6 HTTP 노드 상세 (FR-HTT)
 
@@ -153,7 +155,7 @@
 | FR-BND-01 | **토큰 문법 3형식** | `{{ key }}`(최근 상위 출력) · `{{ key@nodeId }}`(명시 노드) · `{{ key@req:nodeId }}`(요청 스코프). 실행 input은 `input` 키로 시드. 배열은 첫 요소, 미해석 토큰은 빈 문자열. 프론트 `tokenGrammar`가 동일 문법 미러 | ✅ |
 | FR-BND-02 | **바인딩 픽커** | 선택 노드의 조상을 역방향 BFS로 수집, 노드별 그룹·응답/요청 태그·타입 뱃지·키 검색(autoFocus) 제공. respType 반영(text/binary는 `body`만). 연결 없으면 안내 문구 | ✅ |
 | FR-BND-03 | **바인딩 칩·토큰 삽입** | 내부 id·문법을 숨긴 칩(노드명·키·카테고리 색·hover 전체 토큰·×제거·클릭 재선택). 조건식·raw 본문·formAction 등 텍스트 필드에 `{ }` 버튼으로 토큰 삽입 | ✅ |
-| FR-BND-04 | **특수 토큰** | `{{ __callbackUrl }}` / `{{ __notiUrl }}` / `{{ __corrId }}` — WAIT 노드 한정, 일반 토큰 해석 전에 치환. §3.8 참조 | ✅ |
+| FR-BND-04 | **수신 URL 바인딩** | wait(콜백 대기) 노드의 수신 URL이 실행 시작 시점에 `{url}` 출력으로 시드되어 `{{ url@노드ID }}`로 바인딩 — **뒤쪽 wait 노드를 앞쪽 노드에서도** 픽커로 선택 가능(결제요청 returnUrl/notiUrl 패턴) | ✅ |
 
 ### 3.8 실행 엔진 · 재개 · 콜백 (FR-EXE)
 
@@ -163,10 +165,10 @@
 | FR-EXE-02 | **노드별 기록** | NodeExecution(seq·상태·httpStatus·소요시간·요청/응답 텍스트·출력 JSON) 기록. capture 비활성 시 HTTP 본문은 "(redacted)" 처리, 시크릿 마스킹 | ✅ |
 | FR-EXE-03 | **실행 전 자동 저장** | 프론트가 미저장 변경이 있으면 저장 후 실행 | ✅ |
 | FR-EXE-04 | **클라이언트 모드 루프** | WAITING마다 브라우저가 직접 fetch(소요시간 측정, 실패도 status 0+에러로 재개) → `resume` 반복. 무한루프 가드(<100). 진행 상황을 로그 패널에 실시간 표시 | ✅ |
-| FR-EXE-05 | **폼 전송 팝업** | 사용자 제스처(버튼)로 팝업 열기(차단 시 안내) → 폼 자동 조립·target 제출 → postMessage 또는 창닫힘(500ms 폴링)으로 재개. 교차출처 잡음 필터(`__flcallback` 마커/동일출처만), 재열기·언마운트 시 리스너 정리, 취소 시 WAITING 유지 | ✅ |
-| FR-EXE-06 | **동적 콜백 URL** | `{{ __callbackUrl }}`을 폼 필드 값에 넣으면 실행마다 추측 불가 토큰 URL로 치환. 게이트웨이가 GET/POST로 콜백 시 파라미터를 저장(authoritative)하고 브리지 HTML(postMessage+자동닫힘) 반환. postMessage 유실·팝업 닫힘 시에도 저장된 콜백 파라미터로 폴백 재개. 선언하지 않은 파라미터도 전부 노드 출력 | ✅ |
-| FR-EXE-07 | **고정 콜백 · 서버 노티** | 사전등록용 고정 URL(`{{ __notiUrl }}`)과 상관키(`{{ __corrId }}`, 필드명 무관 값 스캔 매칭)로 브라우저 없이 서버가 직접 재개. Accept에 따라 브리지 HTML/평문 `OK` ACK 분기. resume은 멱등(팝업·노티 경합 안전) | ✅ |
-| FR-EXE-08 | **재개 내구성** | 중단 상태·콜백 토큰·상관키 레지스트리가 인메모리(ConcurrentHashMap) — 단일 인스턴스·세션 한정, 재시작 시 소실 | ❌ |
+| FR-EXE-05 | **콜백 수신 relay** | `ANY /api/v1/cb/{실행ID}/{노드ID}`(permitAll) — GET은 쿼리스트링=본문, urlencoded POST는 서블릿 파라미터 병합, 그 외 본문은 JSON→`a=1&b=2`→`{body:원문}` 순 파싱. 수신 즉시 **서버가 직접 재개**(브라우저 불필요), 응답은 그 wait 노드에 등록된 것(미등록 `OK`)을 그대로 반환. 선언하지 않은 파라미터도 전부 노드 출력(중복 키=리스트) | ✅ |
+| FR-EXE-06 | **이른 콜백 버퍼링** | wait 도달 전에 도착한 콜백은 (실행ID,노드ID) 버퍼(FIFO, 노드당 20)에 보관 → 도달/서스펜션 등록 직후 소비. 여러 건이면 첫 건만 소비(나머지 무해). 서스펜션 클레임(콜백/브라우저/타임아웃 경쟁)은 락으로 원자화 | ✅ |
+| FR-EXE-07 | **타임아웃 · 실행 중단(⏹)** | wait 타임아웃(초, 기본 120) 초과 시 노드 FAILED("타임아웃 — n초…")+실행 FAILED. `POST /executions/{id}/cancel`로 대기 즉시 해제 → CANCELLED(멱등). 브라우저는 폴링(GET, 0.8s)으로 관전하며 카운트다운(0.3s 갱신)·수신 URL·⏹ 버튼 표시, 대기 노드 캔버스 펄스+유입 엣지 애니메이션 | ✅ |
+| FR-EXE-08 | **재개 내구성** | 중단 상태·콜백 버퍼·응답 레지스트리가 인메모리(ConcurrentHashMap) — 단일 인스턴스·세션 한정, 재시작 시 소실 | ❌ |
 
 ### 3.9 실행 이력 · 로그 (FR-LOG)
 
@@ -216,9 +218,10 @@
 | | `POST /flows/import` · `GET /flows/{id}/export` | 프로토타입 JSON 가져오기 — 201 / 내보내기 |
 | 실행 | `POST /flows/{flowId}/runs` | 동기 실행(input·versionNo 옵션) |
 | | `GET /flows/{flowId}/runs?limit=` | 플로우 실행 이력(1–200 클램프) |
-| | `POST /executions/{id}/resume` | 재개(client HTTP 결과 / 폼 값) — 멱등 |
-| | `GET /executions/{id}` · `GET /executions?limit=` | 실행 상세(+노드 로그, pending 정보) / 테넌트 최근 실행 |
-| | `GET·POST /executions/callback/{token}` · `GET·POST /callbacks` | 동적/고정 게이트웨이 콜백 수신 — **인증 예외(permitAll)**, 브리지 HTML 또는 `OK` |
+| | `POST /executions/{id}/resume` | 재개(form 팝업 결과 / input 값 / client HTTP 응답) — 멱등, wait는 브라우저 재개 불가 |
+| | `POST /executions/{id}/cancel` | 실행 중단(⏹) — 대기 해제 + CANCELLED, 멱등 |
+| | `GET /executions/{id}` · `GET /executions?limit=` | 실행 상세(+노드 로그, pending 정보 복원) / 테넌트 최근 실행 |
+| | `ANY /cb/{실행ID}/{노드ID}` | wait(콜백 대기) 수신부 — **인증 예외(permitAll)**, 등록된 응답(text/html/json) 반환 |
 | 폴더 | `GET·POST /folders` | 목록(flowCount 포함) / 생성 — 201 |
 | | `PATCH·DELETE /folders/{id}` | 이름변경 / 삭제(소속 플로우 미분류화) — 204 |
 | 변환·플러그인 | `GET /transforms` · `POST /transforms/reload` | 변환 목록(UI 구동) / 레지스트리 리로드 |
@@ -297,9 +300,7 @@
 | `{{ key }}` | 가장 가까운 상위 노드 출력 | req 스코프 제외, 최근 우선 |
 | `{{ key@nodeId }}` | 지정 노드의 출력 | `{{ key@input }}` = 실행 입력 |
 | `{{ key@req:nodeId }}` | 지정 노드의 요청 값 | params/headers/body 필드 |
-| `{{ __callbackUrl }}` | 실행별 동적 콜백 URL로 치환 | WAIT 노드 한정 특수 토큰, 일반 해석 전에 치환 |
-| `{{ __notiUrl }}` | 고정 콜백(노티) URL로 치환 | 〃 |
-| `{{ __corrId }}` | 실행별 상관키(UUID)로 치환 | 〃 |
+| `{{ url@노드ID }}` | wait(콜백 대기) 노드의 실행별 수신 URL | 실행 시작 시 시드 — 앞쪽 노드에서도 바인딩 가능 |
 
 ### 7.2 실행 상태 코드
 

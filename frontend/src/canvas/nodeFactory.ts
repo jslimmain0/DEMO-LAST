@@ -21,7 +21,7 @@ export function makeNode(type: NodeType, x: number, y: number): GraphNode {
     case 'form':
       return {
         id, name: '폼 전송(팝업)', type: 'form', cat: 'form', x, y,
-        formAction: '', formMethod: 'POST',
+        formAction: '', formMethod: 'POST', formDisplay: 'popup',
         fields: { params: [], headers: [], body: [{ id: newId(), key: 'returnUrl', value: '' }] },
         outputs: [],
       }

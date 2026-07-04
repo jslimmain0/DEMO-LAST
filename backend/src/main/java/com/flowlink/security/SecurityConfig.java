@@ -50,7 +50,9 @@ public class SecurityConfig {
                                                    SecurityProperties props) throws Exception {
         http
                 .csrf(csrf -> csrf.disable())          // 상태 비저장 토큰 인증
-                .cors(Customizer.withDefaults());
+                .cors(Customizer.withDefaults())
+                // form 노드가 mock 게이트웨이 결제창을 iframe 으로 임베드하므로 X-Frame-Options(기본 DENY) 해제(내부망 도구)
+                .headers(h -> h.frameOptions(frame -> frame.disable()));
 
         if (jwtDecoder.getIfAvailable() != null) {
             // 운영: OIDC 리소스 서버

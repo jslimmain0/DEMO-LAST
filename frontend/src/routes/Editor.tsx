@@ -14,7 +14,7 @@ import { OpenApiImportDialog } from '../openapi/OpenApiImportDialog'
 import { WorkflowIODialog } from '../openapi/WorkflowIODialog'
 import { InputPromptDialog } from '../components/InputPromptDialog'
 import { ResizeHandle } from '../components/ResizeHandle'
-import { openFormPopup } from '../lib/popup'
+import { openFormIframe, openFormPopup } from '../lib/popup'
 import { RelaySession } from '../lib/relay'
 import type { RelayEvent } from '../lib/relay'
 import { useEditorStore } from '../store/editorStore'
@@ -138,7 +138,10 @@ export function Editor() {
             : { nodeId: pi.nodeId, formValues: values })
         } else if (detail.pendingForm) {
           const pf = detail.pendingForm
-          const err = openFormPopup(pf)
+          // 노드의 표시 모드에 따라 팝업 창 또는 페이지 내 iframe 모달로 결제창을 연다.
+          const fnode = useEditorStore.getState().nodes.find((n) => n.id === pf.nodeId)
+          const display = (fnode?.data as { formDisplay?: string } | undefined)?.formDisplay
+          const err = display === 'iframe' ? openFormIframe(pf) : openFormPopup(pf)
           detail = await runsApi.resume(detail.id, err
             ? { nodeId: pf.nodeId, error: err }
             : { nodeId: pf.nodeId, popupOpened: true })

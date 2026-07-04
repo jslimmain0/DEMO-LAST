@@ -78,9 +78,10 @@ export interface GraphNode {
   vars?: NodeVar[]
   // if · assert(검증 — 거짓이면 실행 실패)
   condition?: string
-  // form (폼 전송 · 팝업)
-  formAction?: string   // 팝업으로 열어 form 을 제출할 URL
-  formMethod?: string   // POST | GET
+  // form (폼 전송 · 팝업/iframe)
+  formAction?: string        // 열어서 form 을 제출할 URL
+  formMethod?: string        // POST | GET
+  formDisplay?: 'popup' | 'iframe'  // 표시 방식: 팝업 창(기본) or 페이지 내 iframe 모달
   // wait (콜백/노티 수신 대기)
   waitTimeoutSec?: number      // 콜백 대기 타임아웃(초, 기본 120)
   callbackRespType?: string    // 콜백에 줄 응답 형식: text | html | json

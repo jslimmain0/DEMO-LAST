@@ -493,7 +493,7 @@ export function PropertyPanel({ width = 360 }: { width?: number }) {
 
         {node.type === 'form' && (
           <>
-            <label style={label}>팝업 URL — 팝업으로 열어 form 을 제출할 주소</label>
+            <label style={label}>열기 URL — 팝업/iframe 으로 열어 form 을 제출할 주소</label>
             <div style={{ display: 'flex', gap: 4 }}>
               <input style={mono} value={node.formAction ?? ''} onChange={(e) => update(id, { formAction: e.target.value })} placeholder="https://pg.example.com/pay  ({ } 바인딩 가능)" />
               <button onClick={() => setPick('formAction')} title="데이터 삽입" style={braceBtn}>{'{ }'}</button>
@@ -503,6 +503,11 @@ export function PropertyPanel({ width = 360 }: { width?: number }) {
               <option value="POST">POST</option>
               <option value="GET">GET</option>
             </select>
+            <label style={label}>표시 방식</label>
+            <div style={miniSeg} role="group" aria-label="표시 방식">
+              <button type="button" onClick={() => update(id, { formDisplay: 'popup' })} style={miniSegBtn((node.formDisplay ?? 'popup') === 'popup')}>팝업 창</button>
+              <button type="button" onClick={() => update(id, { formDisplay: 'iframe' })} style={miniSegBtn(node.formDisplay === 'iframe')}>iframe 모달</button>
+            </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '12px 0 5px' }}>
               <label style={{ ...label, margin: 0 }}>Hidden 필드 (값마다 바인딩 가능)</label>
               <div style={miniSeg} role="group" aria-label="폼 데이터 입력 방식">
@@ -520,10 +525,11 @@ export function PropertyPanel({ width = 360 }: { width?: number }) {
               <KeyValueEditor rows={node.fields?.body ?? []} onChange={(rows) => update(id, { fields: { params: fields.params ?? [], headers: fields.headers ?? [], body: rows } })} sources={sources} />
             )}
             <p style={hintP}>
-              실행 시 <b>팝업</b>을 열고 숨김 폼을 자동 제출한 뒤 <b>기다리지 않고 즉시 다음 노드로</b> 진행합니다.
+              실행 시 선택한 방식(<b>팝업 창</b> 또는 <b>페이지 내 iframe 모달</b>)으로 결제창을 열고 숨김 폼을 자동 제출한 뒤
+              <b>기다리지 않고 즉시 다음 노드로</b> 진행합니다.
               사람의 인증/입력 결과는 다음 <b>콜백 대기</b> 노드가 받습니다 — 게이트웨이가 요구하는 필드명(returnUrl 등)의
               값에 {'{ }'} 로 <b>콜백 대기 노드의 수신 URL</b> 을 꽂는 것이 표준 패턴입니다.
-              팝업이 차단되면 이 노드는 실패합니다(허용 후 재실행).
+              <b>iframe</b> 모드는 팝업 차단이 없고 같은 페이지에 뜹니다(✕·바깥 클릭으로 닫기). <b>팝업</b> 모드는 차단 시 실패합니다.
             </p>
           </>
         )}

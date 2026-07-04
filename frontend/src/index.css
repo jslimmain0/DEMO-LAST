@@ -152,6 +152,36 @@ button { font-family: inherit; }
   background: var(--fl-primary);
 }
 
+/* 에디터 워크플로 이름 입력 — 평소엔 제목처럼 보이고, 가리키거나 포커스하면 편집 가능함이 드러난다. */
+.fl-name-input:hover,
+.fl-name-input:focus {
+  background: var(--fl-surface-2) !important;
+  border-color: var(--fl-border) !important;
+}
+
+/* 미니맵·줌 컨트롤 — @xyflow 기본은 라이트라 다크에서 튄다. 테마 변수로 통일. */
+.react-flow__minimap {
+  background: var(--fl-surface);
+  border: 1px solid var(--fl-border);
+  border-radius: var(--fl-radius-sm);
+}
+.react-flow__controls {
+  box-shadow: var(--fl-shadow);
+  border-radius: var(--fl-radius-sm);
+  overflow: hidden;
+}
+.react-flow__controls-button {
+  background: var(--fl-surface);
+  color: var(--fl-text);
+  border-bottom: 1px solid var(--fl-border);
+}
+.react-flow__controls-button:hover {
+  background: var(--fl-surface-2);
+}
+.react-flow__controls-button svg {
+  fill: currentColor;
+}
+
 /* 스크롤바 */
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-thumb { background: #d3d8e2; border-radius: 8px; border: 2px solid transparent; background-clip: padding-box; }

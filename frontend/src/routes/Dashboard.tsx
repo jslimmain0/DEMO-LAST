@@ -33,7 +33,7 @@ export function Dashboard() {
   const duplicateFlow = useMutation({
     mutationFn: async (f: FlowSummary) => {
       const detail = await flowsApi.get(f.id)
-      return flowsApi.importFlow({ name: `${f.name} 복사`, nodes: detail.graph.nodes, edges: detail.graph.edges })
+      return flowsApi.importFlow({ name: `${f.name} 복제본`, nodes: detail.graph.nodes, edges: detail.graph.edges })
     },
     onSuccess: invalidate,
   })
@@ -74,7 +74,7 @@ export function Dashboard() {
               onClick={() => setSel(f.id)}
               icon="📁"
               onRename={() => { const n = prompt('폴더 이름', f.name); if (n && n.trim()) renameFolder.mutate({ id: f.id, name: n.trim() }) }}
-              onDelete={() => { if (confirm(`폴더 '${f.name}' 삭제? (안의 워크플로는 미분류로 이동)`)) removeFolder.mutate(f.id) }}
+              onDelete={() => { if (confirm(`'${f.name}' 폴더를 삭제할까요? 안의 워크플로는 미분류로 옮겨집니다.`)) removeFolder.mutate(f.id) }}
             />
           ))}
           <button onClick={() => { const n = prompt('새 폴더 이름'); if (n && n.trim()) createFolder.mutate(n.trim()) }} style={newFolderBtn}>+ 새 폴더</button>
@@ -83,7 +83,7 @@ export function Dashboard() {
         {/* 본문 */}
         <div style={{ flex: 1, minWidth: 0, padding: '32px 40px 80px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 22, flexWrap: 'wrap' }}>
-            <h1 style={{ fontFamily: 'var(--fl-font-head)', fontSize: 26, letterSpacing: '-.02em', margin: 0 }}>
+            <h1 style={{ fontFamily: 'var(--fl-font-head)', fontSize: 'var(--fl-fs-2xl)', letterSpacing: '-.02em', margin: 0 }}>
               {sel === 'all' ? '전체 워크플로' : sel === 'none' ? '미분류' : folderList.find((f) => f.id === sel)?.name ?? '워크플로'}
             </h1>
             <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="🔍 검색…" style={searchBox} />
@@ -114,7 +114,7 @@ export function Dashboard() {
                     </div>
                     <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
                       <button onClick={() => duplicateFlow.mutate(f)} title="복제" aria-label={`${f.name} 복제`} style={iconBtn}>⧉</button>
-                      <button onClick={() => { if (confirm(`'${f.name}' 삭제?`)) removeFlow.mutate(f.id) }} title="삭제" aria-label={`${f.name} 삭제`} style={iconBtn}>🗑</button>
+                      <button onClick={() => { if (confirm(`'${f.name}' 워크플로를 삭제할까요? 되돌릴 수 없습니다.`)) removeFlow.mutate(f.id) }} title="삭제" aria-label={`${f.name} 삭제`} style={iconBtn}>🗑</button>
                     </div>
                   </div>
                   {f.description && <p style={{ margin: '12px 0 0', fontSize: 13, color: 'var(--fl-text-muted)', lineHeight: 1.5, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>{f.description}</p>}
@@ -155,7 +155,7 @@ function FolderItem({ label, count, active, onClick, icon, onRename, onDelete }:
 }
 
 function Grid({ children }: { children: ReactNode }) {
-  return <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 16 }}>{children}</div>
+  return <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 380px))', justifyContent: 'start', gap: 16 }}>{children}</div>
 }
 
 function isFolderId(s: Sel): s is string {

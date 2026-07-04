@@ -1,7 +1,7 @@
 import { Background, Controls, MiniMap, ReactFlow, useReactFlow } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import type { CSSProperties, DragEvent } from 'react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { GraphNode, NodeType } from '../api/types'
 import { useEditorStore } from '../store/editorStore'
 import { BranchNode } from './BranchNode'
@@ -28,7 +28,31 @@ export function FlowCanvas() {
   const selectNode = useEditorStore((s) => s.selectNode)
   const addNode = useEditorStore((s) => s.addNode)
   const addNodeFromTemplate = useEditorStore((s) => s.addNodeFromTemplate)
-  const { screenToFlowPosition } = useReactFlow()
+  const flowId = useEditorStore((s) => s.flowId)
+  const { screenToFlowPosition, fitBounds } = useReactFlow()
+
+  // 정적 fitView prop 은 노드 로드 전(빈 store)에 맞춰져 노드가 좌하단에 몰리는 버그가 있고,
+  // fitView 는 측정 완료된 노드만 bounds 에 넣어 초기 로드 시 일부만 맞춘다. 그래서 노드 위치로
+  // bounds 를 직접 계산해 fitBounds 로 맞춘다(측정에 비의존 — 로드 즉시 전체 그래프가 정확히 잡힌다).
+  const didFit = useRef<string | null>(null)
+  const reducedMotion = useRef(false)
+  useEffect(() => {
+    reducedMotion.current = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  }, [])
+  useEffect(() => {
+    if (nodes.length === 0 || didFit.current === flowId) return
+    didFit.current = flowId // 플로우 전환 시(이전 노드 잔여 → 새 노드)마다 정확히 1회
+    const xs = nodes.map((n) => n.position.x)
+    const ys = nodes.map((n) => n.position.y)
+    const minX = Math.min(...xs)
+    const minY = Math.min(...ys)
+    const maxX = Math.max(...xs)
+    const maxY = Math.max(...ys)
+    const NODE_W = 230 // 노드 대략 크기(여유 포함) — 측정값 없이 bounds 를 잡기 위한 상수
+    const NODE_H = 96
+    const rect = { x: minX, y: minY, width: maxX - minX + NODE_W, height: maxY - minY + NODE_H }
+    fitBounds(rect, { padding: 0.22, duration: reducedMotion.current ? 0 : 220 })
+  }, [nodes, flowId, fitBounds])
   // 연결 중에는 핸들을 키워(자석 타겟) 잡기 쉽게 — CSS .fl-canvas.connecting 으로 제어
   const [connecting, setConnecting] = useState(false)
   // 창 밖에서 포인터를 떼거나 포커스를 잃어 onConnectEnd 가 누락돼도 확대 상태가 고착되지 않도록 복구
@@ -87,11 +111,17 @@ export function FlowCanvas() {
         onNodeClick={(_, n) => selectNode(n.id)}
         onPaneClick={() => selectNode(null)}
         deleteKeyCode={['Delete', 'Backspace']}
-        fitView
         proOptions={{ hideAttribution: true }}
       >
         <Background gap={22} color="var(--fl-border)" />
-        <MiniMap pannable zoomable nodeColor={(n) => catColor((n.data as { cat?: string }).cat)} />
+        <MiniMap
+          pannable
+          zoomable
+          nodeColor={(n) => catColor((n.data as { cat?: string }).cat)}
+          nodeStrokeColor="var(--fl-border)"
+          maskColor="color-mix(in srgb, var(--fl-bg) 72%, transparent)"
+          bgColor="var(--fl-surface)"
+        />
         <Controls />
       </ReactFlow>
     </div>

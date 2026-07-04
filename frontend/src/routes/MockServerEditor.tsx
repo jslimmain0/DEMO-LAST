@@ -275,7 +275,7 @@ function RuleCard({ rule, index, total, onChange, onRemove }: {
               if (!e.target.checked) onChange({ ...rule, callback: null })
             }}
           />
-          응답 후 콜백(웹훅) 발사 — 승인노티/입금노티 패턴
+          응답 후 콜백(웹훅) 발사 — 승인·입금 알림 콜백 패턴
         </label>
         {showCb && (
           <div style={{ display: 'grid', gap: 6, marginTop: 6, paddingLeft: 4 }}>

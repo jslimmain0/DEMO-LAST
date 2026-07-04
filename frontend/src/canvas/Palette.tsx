@@ -67,9 +67,17 @@ export function Palette({ width = 200 }: { width?: number }) {
           {group.items.map((item) => (
             <div
               key={item.id}
+              role="button"
+              tabIndex={0}
               draggable
               onDragStart={(e) => onDragStartTemplate(e, item.node)}
               onClick={() => addNodeFromTemplate(item.node, center())}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault()
+                  addNodeFromTemplate(item.node, center())
+                }
+              }}
               title={`${item.label} 추가 (클릭 또는 드래그)`}
               style={templateRow}
             >

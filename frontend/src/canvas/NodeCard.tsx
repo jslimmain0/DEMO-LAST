@@ -34,7 +34,7 @@ export function NodeCard({ data, selected }: NodeProps) {
           <div style={{ fontSize: 13.5, fontWeight: 600, letterSpacing: '-.01em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {n.name ?? typeLabel(n.type)}
           </div>
-          <div style={{ fontSize: 10.5, color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)' }}>
+          <div style={{ fontSize: 11.5, color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)' }}>
             {waiting ? '콜백 대기 중…' : typeLabel(n.type)}
           </div>
         </div>
@@ -44,7 +44,7 @@ export function NodeCard({ data, selected }: NodeProps) {
       {isHttp && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 12px', borderTop: '1px solid var(--fl-border)', background: 'var(--fl-surface-2)' }}>
           <MethodTag method={(n.method ?? 'GET') as HttpMethod} />
-          <span style={{ flex: 1, minWidth: 0, fontFamily: 'var(--fl-font-mono)', fontSize: 11, color: 'var(--fl-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <span style={{ flex: 1, minWidth: 0, fontFamily: 'var(--fl-font-mono)', fontSize: 11.5, color: 'var(--fl-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {n.path || '/'}
           </span>
           {(() => {

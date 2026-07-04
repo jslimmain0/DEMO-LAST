@@ -95,14 +95,14 @@ export function MockServers() {
                 </button>
                 <button
                   style={{ ...miniBtn, color: 'var(--fl-fail)' }}
-                  onClick={() => { if (window.confirm(`'${s.name}' mock 서버를 삭제할까요?`)) remove.mutate(s.id) }}
+                  onClick={() => { if (window.confirm(`'${s.name}' Mock 서버를 삭제할까요? 되돌릴 수 없습니다.`)) remove.mutate(s.id) }}
                 >삭제</button>
               </div>
             </div>
           ))}
           {servers.isSuccess && (servers.data?.length ?? 0) === 0 && (
             <div style={{ padding: '40px 0', textAlign: 'center', color: 'var(--fl-text-muted)', fontSize: 13.5 }}>
-              아직 mock 서버가 없습니다. 위에서 slug 를 정하고 만들어 보세요 —
+              아직 Mock 서버가 없습니다. 위에서 slug 를 정하고 만들어 보세요 —
               경로마다 응답(JSON·HTML·XML 등)·조건 분기·콜백 발사를 정의해 미완성 API 를 흉내 낼 수 있습니다.
             </div>
           )}

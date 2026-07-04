@@ -22,7 +22,7 @@ export function AppShellTier1({ children }: { children: ReactNode }) {
       <header role="banner" style={{ display: 'flex', alignItems: 'center', gap: 18, padding: '12px 24px', borderBottom: '1px solid var(--fl-border)', background: 'var(--fl-surface)', position: 'sticky', top: 0, zIndex: 10 }}>
         <Link to="/flows" style={{ display: 'flex', alignItems: 'center', gap: 11, textDecoration: 'none', color: 'var(--fl-text)' }}>
           <span aria-hidden style={{ width: 30, height: 30, borderRadius: 8, background: 'linear-gradient(135deg,var(--fl-primary),var(--fl-primary-2))', boxShadow: '0 4px 12px rgba(97,85,245,.32)' }} />
-          <span style={{ fontFamily: 'var(--fl-font-head)', fontWeight: 700, fontSize: 18, letterSpacing: '-.01em' }}>Flowlink</span>
+          <span style={{ fontFamily: 'var(--fl-font-head)', fontWeight: 700, fontSize: 18, letterSpacing: '-.01em' }}>FlowLink</span>
         </Link>
         <nav aria-label="주요" style={{ display: 'flex', gap: 4 }}>
           <Link to="/flows" style={navItem('/flows')}>대시보드</Link>

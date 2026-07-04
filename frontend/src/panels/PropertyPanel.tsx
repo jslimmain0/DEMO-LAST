@@ -79,7 +79,15 @@ export function PropertyPanel({ width = 360 }: { width?: number }) {
   if (!node) {
     return (
       <aside aria-label="속성" style={{ ...shell, width }}>
-        <p style={{ color: 'var(--fl-text-muted)', fontSize: 13, padding: 16 }}>노드를 선택하면 속성이 여기에 표시됩니다.</p>
+        <div style={{ padding: '18px 16px', display: 'grid', gap: 14 }}>
+          <p style={{ color: 'var(--fl-text)', fontSize: 13.5, fontWeight: 600, margin: 0 }}>노드를 클릭하면 여기서 설정합니다.</p>
+          <ol style={{ margin: 0, paddingLeft: 18, display: 'grid', gap: 7, color: 'var(--fl-text-muted)', fontSize: 12.5, lineHeight: 1.5 }}>
+            <li>왼쪽 팔레트에서 노드를 캔버스로 끌어다 놓으세요.</li>
+            <li>노드의 핸들(●)을 드래그해 다음 노드와 연결하세요.</li>
+            <li>노드를 클릭하면 이 패널에서 편집합니다.</li>
+          </ol>
+          <p style={{ margin: 0, color: 'var(--fl-text-muted)', fontSize: 12 }}>선택한 노드는 <kbd style={{ fontFamily: 'var(--fl-font-mono)', fontSize: 11, padding: '1px 5px', background: 'var(--fl-surface-2)', border: '1px solid var(--fl-border)', borderRadius: 4 }}>Delete</kbd> 로 삭제합니다.</p>
+        </div>
       </aside>
     )
   }
@@ -512,7 +520,7 @@ export function PropertyPanel({ width = 360 }: { width?: number }) {
               <KeyValueEditor rows={node.fields?.body ?? []} onChange={(rows) => update(id, { fields: { params: fields.params ?? [], headers: fields.headers ?? [], body: rows } })} sources={sources} />
             )}
             <p style={hintP}>
-              실행 시 <b>팝업</b>을 열고 hidden form 을 자동 submit 한 뒤 <b>기다리지 않고 즉시 다음 노드로</b> 진행합니다.
+              실행 시 <b>팝업</b>을 열고 숨김 폼을 자동 제출한 뒤 <b>기다리지 않고 즉시 다음 노드로</b> 진행합니다.
               사람의 인증/입력 결과는 다음 <b>콜백 대기</b> 노드가 받습니다 — 게이트웨이가 요구하는 필드명(returnUrl 등)의
               값에 {'{ }'} 로 <b>콜백 대기 노드의 수신 URL</b> 을 꽂는 것이 표준 패턴입니다.
               팝업이 차단되면 이 노드는 실패합니다(허용 후 재실행).
@@ -544,7 +552,7 @@ export function PropertyPanel({ width = 360 }: { width?: number }) {
             />
             <p style={{ ...hintP, marginTop: 6 }}>
               콜백(리다이렉트/노티)을 보낸 쪽이 받을 응답입니다. 인증 callback 이면 HTML("창을 닫으세요"),
-              승인 노티면 OK 같은 문자열. 실행 시작 시점에 relay 에 등록됩니다.
+              승인 알림 콜백이면 OK 같은 문자열. 실행 시작 시점에 relay 에 등록됩니다.
             </p>
 
             <WaitReceiveUrl nodeId={id} />

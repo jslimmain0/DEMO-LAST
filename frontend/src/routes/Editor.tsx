@@ -54,7 +54,7 @@ export function Editor() {
 
   // 패널 크기(좌 팔레트 / 우 속성 / 하 로그) — 드래그로 조절하고 localStorage 에 유지
   const [paletteW, setPaletteW] = useState(() => loadSize('paletteW', 200, 160, 420))
-  const [propertyW, setPropertyW] = useState(() => loadSize('propertyW', 360, 300, 560))
+  const [propertyW, setPropertyW] = useState(() => loadSize('propertyW', 330, 300, 560))
   const [runH, setRunH] = useState(() => loadSize('runH', 260, 120, 600))
 
   // 뷰포트에 맞춘 동적 상한 — 패널이 화면을 넘어 캔버스를 0으로 만들지 않도록 창 크기 변화에 재클램프
@@ -188,13 +188,15 @@ export function Editor() {
         <Link to="/flows" aria-label="워크플로 목록" style={{ textDecoration: 'none', color: 'var(--fl-text-muted)', fontSize: 18 }}>←</Link>
         <input
           aria-label="워크플로 이름"
+          className="fl-name-input"
           value={flowName}
           onChange={(e) => setName(e.target.value)}
+          title="워크플로 이름 — 눌러서 편집"
           style={{ fontFamily: 'var(--fl-font-head)', fontWeight: 600, fontSize: 15, border: '1px solid transparent', borderRadius: 8, padding: '6px 8px', background: 'transparent', color: 'var(--fl-text)', minWidth: 220 }}
         />
         <span style={{ fontSize: 12, color: dirty ? 'var(--fl-put)' : 'var(--fl-text-muted)' }}>{dirty ? '● 미저장' : '저장됨'}</span>
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
-          <button onClick={() => setShowApiImport(true)} style={ghostBtn} title="OpenAPI/Swagger 가져오기 (팔레트에 추가)">API</button>
+          <button onClick={() => setShowApiImport(true)} style={ghostBtn} title="OpenAPI/Swagger 스펙에서 노드 가져오기 (팔레트에 추가)">API 가져오기</button>
           <button onClick={() => setWorkflowIO('import')} style={ghostBtn}>가져오기</button>
           <button onClick={() => setWorkflowIO('export')} style={ghostBtn}>내보내기</button>
           {running && <button onClick={onStop} style={stopBtn} title="실행 중단 — 대기 중이면 즉시 해제됩니다">⏹ 중단</button>}
@@ -210,7 +212,7 @@ export function Editor() {
           <div style={{ flex: 1, minWidth: 0 }}>
             <FlowCanvas />
           </div>
-          <ResizeHandle axis="x" sign={-1} size={propertyW} min={300} max={maxPropertyW} defaultSize={360} onResize={setPropertyW} onResizeEnd={(n) => saveSize('propertyW', n)} ariaLabel="속성 패널 너비 조절" />
+          <ResizeHandle axis="x" sign={-1} size={propertyW} min={300} max={maxPropertyW} defaultSize={330} onResize={setPropertyW} onResizeEnd={(n) => saveSize('propertyW', n)} ariaLabel="속성 패널 너비 조절" />
           <PropertyPanel width={propertyW} />
         </div>
         {showLog && (

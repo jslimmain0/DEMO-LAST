@@ -72,13 +72,12 @@ export function Dashboard() {
     ? [...allFlows].sort((a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? ''))[0]
     : undefined
 
-  return (
-    <AppShellTier1>
-      <div style={{ display: 'flex', minHeight: 'calc(100dvh - 65px)' }}>
-        <aside aria-label="폴더" style={sidebar}>
-          <SidebarItem label="전체 워크플로" count={allFlows.length} active={sel === 'all'} onClick={() => setSel('all')} glyph="▤" />
-          <SidebarItem label="미분류" count={noneCount} active={sel === 'none'} onClick={() => setSel('none')} glyph="◇" />
-          <div style={sidebarLabel}>폴더</div>
+  const folderNav = (
+    <>
+      <div style={sidebarLabel}>워크플로</div>
+      <SidebarItem label="전체 워크플로" count={allFlows.length} active={sel === 'all'} onClick={() => setSel('all')} glyph="▤" />
+      <SidebarItem label="미분류" count={noneCount} active={sel === 'none'} onClick={() => setSel('none')} glyph="◇" />
+      <div style={sidebarLabel}>폴더</div>
           {folderList.map((f) => (
             <SidebarItem
               key={f.id}
@@ -92,10 +91,13 @@ export function Dashboard() {
               onDelete={() => { if (confirm(`'${f.name}' 폴더를 삭제할까요? 안의 워크플로는 미분류로 옮겨집니다.`)) removeFolder.mutate(f.id) }}
             />
           ))}
-          <button onClick={() => { const n = prompt('새 폴더 이름'); if (n && n.trim()) createFolder.mutate(n.trim()) }} style={newFolderBtn}>+ 새 폴더</button>
-        </aside>
+      <button onClick={() => { const n = prompt('새 폴더 이름'); if (n && n.trim()) createFolder.mutate(n.trim()) }} style={newFolderBtn}>+ 새 폴더</button>
+    </>
+  )
 
-        <div style={{ flex: 1, minWidth: 0, padding: '28px 40px 80px', display: 'flex', flexDirection: 'column', gap: 'var(--fl-sp-7)' }}>
+  return (
+    <AppShellTier1 sidebarExtra={folderNav}>
+      <div style={{ minWidth: 0, padding: '28px 40px 80px', display: 'flex', flexDirection: 'column', gap: 'var(--fl-sp-7)' }}>
           {/* hero 밴드 — 최근 워크플로를 실제 노드 흐름으로 연다 */}
           {heroFlow && <Hero flow={heroFlow} lastRun={lastRunByFlow.get(heroFlow.id)} />}
 
@@ -150,7 +152,6 @@ export function Dashboard() {
             </Grid>
           )}
         </div>
-      </div>
     </AppShellTier1>
   )
 }
@@ -323,7 +324,6 @@ function varCat(cat: string): string {
   return 'var(--fl-cat-generic)'
 }
 
-const sidebar: CSSProperties = { width: 232, flexShrink: 0, borderRight: '1px solid var(--fl-border)', background: 'var(--fl-surface)', padding: 14, overflowY: 'auto' }
 const sidebarLabel: CSSProperties = { fontSize: 11, fontWeight: 700, color: 'var(--fl-text-muted)', textTransform: 'uppercase', letterSpacing: '.06em', margin: '16px 8px 6px' }
 const newFolderBtn: CSSProperties = { width: '100%', marginTop: 8, padding: '8px', border: '1px dashed var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'transparent', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 13 }
 const heroBand: CSSProperties = { padding: '24px 28px', borderRadius: 'var(--fl-radius-lg)', background: 'var(--fl-surface)', border: '1px solid var(--fl-border)' }

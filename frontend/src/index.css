@@ -46,7 +46,7 @@
   --fl-pending: #73798a;
 
   /* 타입스케일 / 간격 / 반경 / 그림자 */
-  --fl-fs-xs: 12px; --fl-fs-sm: 13px; --fl-fs-md: 14px; --fl-fs-lg: 16px; --fl-fs-xl: 20px; --fl-fs-2xl: 28px;
+  --fl-fs-xs: 12px; --fl-fs-sm: 13px; --fl-fs-md: 14px; --fl-fs-lg: 16px; --fl-fs-xl: 20px; --fl-fs-2xl: 28px; --fl-fs-3xl: clamp(30px, 4vw, 40px);
   --fl-sp-1: 4px; --fl-sp-2: 8px; --fl-sp-3: 12px; --fl-sp-4: 16px; --fl-sp-5: 20px; --fl-sp-6: 24px; --fl-sp-7: 32px; --fl-sp-8: 48px;
   --fl-radius-sm: 8px; --fl-radius: 12px; --fl-radius-lg: 16px; --fl-radius-pill: 9999px;
   --fl-shadow: 0 4px 14px rgba(26, 29, 39, 0.08);
@@ -150,6 +150,24 @@ button { font-family: inherit; }
 .react-flow__handle.fl-handle.connectingfrom,
 .react-flow__handle.fl-handle.clickconnecting {
   background: var(--fl-primary);
+}
+
+/* 대시보드 워크플로 카드 — 호버 시 살짝 떠오르고 그림자가 깊어진다(캔버스와 같은 상호작용 어휘). */
+.fl-flow-card {
+  transition: transform var(--fl-dur-base) var(--fl-ease), box-shadow var(--fl-dur-base) var(--fl-ease), border-color var(--fl-dur-base) var(--fl-ease);
+}
+.fl-flow-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--fl-shadow-lg);
+}
+/* 카드 액션(⋯)은 평소 숨고, 호버·포커스 시 드러난다 — 카드를 폼이 아닌 콘텐츠로. */
+.fl-flow-card .fl-card-actions {
+  opacity: 0;
+  transition: opacity var(--fl-dur-fast) var(--fl-ease);
+}
+.fl-flow-card:hover .fl-card-actions,
+.fl-flow-card:focus-within .fl-card-actions {
+  opacity: 1;
 }
 
 /* 에디터 워크플로 이름 입력 — 평소엔 제목처럼 보이고, 가리키거나 포커스하면 편집 가능함이 드러난다. */

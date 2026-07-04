@@ -7,13 +7,13 @@
   --fl-primary-2: #8b7bff;
   --fl-primary-hover: #5246e8;
 
-  /* 표면 (라이트) */
-  --fl-bg: #f6f7f9;
+  /* 표면 (라이트) — 뉴트럴 그레이(AI Studio 톤), 파랑 틴트 제거 */
+  --fl-bg: #f8f8f9;
   --fl-surface: #ffffff;
-  --fl-surface-2: #f0f2f6;
-  --fl-text: #1a1d27;
-  --fl-text-muted: #73798a;
-  --fl-border: #e9ebf1;
+  --fl-surface-2: #f0f0f2;
+  --fl-text: #1c1c1f;
+  --fl-text-muted: #6e6e77;
+  --fl-border: #e6e6ea;
   --fl-focus: #6155f5;
 
   /* HTTP 메서드 6종 */
@@ -49,8 +49,9 @@
   --fl-fs-xs: 12px; --fl-fs-sm: 13px; --fl-fs-md: 14px; --fl-fs-lg: 16px; --fl-fs-xl: 20px; --fl-fs-2xl: 28px; --fl-fs-3xl: clamp(30px, 4vw, 40px);
   --fl-sp-1: 4px; --fl-sp-2: 8px; --fl-sp-3: 12px; --fl-sp-4: 16px; --fl-sp-5: 20px; --fl-sp-6: 24px; --fl-sp-7: 32px; --fl-sp-8: 48px;
   --fl-radius-sm: 8px; --fl-radius: 12px; --fl-radius-lg: 16px; --fl-radius-pill: 9999px;
-  --fl-shadow: 0 4px 14px rgba(26, 29, 39, 0.08);
-  --fl-shadow-lg: 0 12px 30px rgba(26, 29, 39, 0.12);
+  /* 그림자 — AI Studio 톤: 카드는 거의 평평하게, 경계는 border 가 담당 */
+  --fl-shadow: 0 1px 2px rgba(20, 20, 25, 0.05);
+  --fl-shadow-lg: 0 6px 20px rgba(20, 20, 25, 0.10);
 
   /* 모션 */
   --fl-ease: cubic-bezier(.2, .8, .2, 1);
@@ -65,19 +66,21 @@ html[data-theme='dark'] {
   --fl-primary: #7d72ff;
   --fl-primary-2: #a99bff;
   --fl-primary-hover: #6c61f0;
-  --fl-bg: #0f1117;
-  --fl-surface: #171a22;
-  --fl-surface-2: #1e222c;
-  --fl-text: #e8eaf0;
-  --fl-text-muted: #9aa0b2;
-  --fl-border: #2a2e3a;
+  /* 표면 (다크) — 무채색 뉴트럴 그레이(AI Studio 톤), 파랑 틴트 제거 */
+  --fl-bg: #141416;
+  --fl-surface: #1d1d20;
+  --fl-surface-2: #292930;
+  --fl-text: #e6e6ea;
+  --fl-text-muted: #9a9aa4;
+  --fl-border: #2c2c32;
   --fl-focus: #9b90ff;
   --fl-get: #3ecf72; --fl-post: #5b8def; --fl-put: #f0a23b; --fl-patch: #a479f5; --fl-delete: #f15b5b; --fl-head: #8b94a6;
   --fl-cat-auth: #7d72ff; --fl-cat-bank: #2bc4c2; --fl-cat-card: #ed6fb0; --fl-cat-generic: #8b94a6;
   --fl-cat-set: #ef9b46; --fl-cat-if: #a479f5; --fl-cat-assert: #34c26b; --fl-cat-form: #ed6fb0; --fl-cat-input: #5b8def; --fl-cat-wait: #22acd1; --fl-cat-start: #3ecf72; --fl-cat-end: #8b94a6;
   --fl-ok: #3ecf72; --fl-fail: #f15b5b; --fl-running: #5b8def; --fl-waiting: #22acd1; --fl-pending: #9aa0b2;
-  --fl-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
-  --fl-shadow-lg: 0 12px 30px rgba(0, 0, 0, 0.5);
+  /* 그림자 — 다크에선 거의 안 보이게(평평), 경계는 border */
+  --fl-shadow: 0 1px 2px rgba(0, 0, 0, 0.24);
+  --fl-shadow-lg: 0 6px 20px rgba(0, 0, 0, 0.36);
 }
 
 * { box-sizing: border-box; }

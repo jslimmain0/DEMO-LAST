@@ -166,7 +166,7 @@ function Hero({ flow, lastRun }: { flow: FlowSummary; lastRun?: ExecutionSummary
       <div style={{ fontSize: 'var(--fl-fs-xs)', fontFamily: 'var(--fl-font-mono)', color: 'var(--fl-text-muted)', letterSpacing: '.04em', textTransform: 'uppercase' }}>최근 작업</div>
       <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 24, flexWrap: 'wrap', marginTop: 10 }}>
         <div style={{ minWidth: 0 }}>
-          <Link to={`/flows/${flow.id}`} style={{ display: 'block', fontFamily: 'var(--fl-font-head)', fontSize: 'var(--fl-fs-3xl)', fontWeight: 700, letterSpacing: '-.03em', color: 'var(--fl-text)', textDecoration: 'none', lineHeight: 1.05 }}>{flow.name}</Link>
+          <Link to={`/flows/${flow.id}`} style={{ display: 'block', fontFamily: 'var(--fl-font-head)', fontSize: 'var(--fl-fs-3xl)', fontWeight: 500, letterSpacing: '-.02em', color: 'var(--fl-text)', textDecoration: 'none', lineHeight: 1.05 }}>{flow.name}</Link>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 12, flexWrap: 'wrap' }}>
             {miniNodes.length > 0 ? <FlowStrip nodes={miniNodes} /> : <div style={{ height: 30 }} />}
           </div>
@@ -326,7 +326,7 @@ function varCat(cat: string): string {
 const sidebar: CSSProperties = { width: 232, flexShrink: 0, borderRight: '1px solid var(--fl-border)', background: 'var(--fl-surface)', padding: 14, overflowY: 'auto' }
 const sidebarLabel: CSSProperties = { fontSize: 11, fontWeight: 700, color: 'var(--fl-text-muted)', textTransform: 'uppercase', letterSpacing: '.06em', margin: '16px 8px 6px' }
 const newFolderBtn: CSSProperties = { width: '100%', marginTop: 8, padding: '8px', border: '1px dashed var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'transparent', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 13 }
-const heroBand: CSSProperties = { padding: '20px 24px', borderRadius: 'var(--fl-radius-lg)', background: 'color-mix(in srgb, var(--fl-primary) 5%, var(--fl-surface))', border: '1px solid var(--fl-border)' }
+const heroBand: CSSProperties = { padding: '24px 28px', borderRadius: 'var(--fl-radius-lg)', background: 'var(--fl-surface)', border: '1px solid var(--fl-border)' }
 const heroOpenBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: 'var(--fl-primary)', color: '#fff', border: 'none', padding: '9px 16px', borderRadius: 10, fontWeight: 600, fontSize: 13.5, textDecoration: 'none' }
 const primaryBtn: CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, background: 'var(--fl-primary)', color: '#fff', border: 'none', padding: '9px 16px', borderRadius: 10, fontWeight: 600, fontSize: 13.5, cursor: 'pointer', height: 38 }
 const ghostBtn: CSSProperties = { border: '1px solid var(--fl-border)', background: 'var(--fl-surface)', color: 'var(--fl-text)', padding: '8px 14px', borderRadius: 'var(--fl-radius-sm)', fontSize: 13, cursor: 'pointer' }

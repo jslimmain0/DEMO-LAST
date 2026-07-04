@@ -24,8 +24,7 @@ public final class MockDtos {
 
     public record CreateMockServerRequest(
             @NotBlank String name,
-            @NotBlank @Pattern(regexp = "[a-z0-9-]{3,40}", message = "slug 는 소문자·숫자·하이픈 3~40자") String slug,
-            String kind // CUSTOM(기본) | PG
+            @NotBlank @Pattern(regexp = "[a-z0-9-]{3,40}", message = "slug 는 소문자·숫자·하이픈 3~40자") String slug
     ) {
     }
 

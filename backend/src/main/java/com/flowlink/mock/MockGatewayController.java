@@ -42,6 +42,8 @@ public class MockGatewayController {
     private final JsonService json;
     /** 템플릿 {{seq}} 용 서버별 카운터(인메모리 — 재시작 시 리셋). */
     private final Map<UUID, AtomicLong> seqs = new ConcurrentHashMap<>();
+    /** 서버별 파싱된 spec 캐시(raw JSON 이 그대로면 재파싱 생략 — mock 은 반복 호출되는 경로). */
+    private final Map<UUID, Map.Entry<String, MockSpec>> specCache = new ConcurrentHashMap<>();
 
     public MockGatewayController(MockServerService service, MockRuntime runtime,
                                  MockCallbackDispatcher dispatcher, JsonService json) {
@@ -88,7 +90,7 @@ public class MockGatewayController {
     }
 
     private MockResponse handleCustom(MockServer server, MockRequest req) {
-        MockSpec spec = service.parseSpec(server.getSpecJson());
+        MockSpec spec = cachedSpec(server);
         if ("/__routes".equals(req.path())) {
             List<Map<String, Object>> routes = spec.routesOrEmpty().stream()
                     .<Map<String, Object>>map(r -> Map.of(
@@ -109,18 +111,25 @@ public class MockGatewayController {
         return runtime.render(match.get().rule(), req, match.get().pathParams(), seq);
     }
 
+    /** raw spec JSON 이 캐시된 것과 같으면 파싱 결과 재사용, 아니면 재파싱(저장 즉시 반영 유지). */
+    private MockSpec cachedSpec(MockServer server) {
+        String raw = server.getSpecJson() == null ? "" : server.getSpecJson();
+        Map.Entry<String, MockSpec> hit = specCache.get(server.getId());
+        if (hit != null && hit.getKey().equals(raw)) {
+            return hit.getValue();
+        }
+        MockSpec spec = service.parseSpec(raw);
+        specCache.put(server.getId(), Map.entry(raw, spec));
+        return spec;
+    }
+
     // ---------- 요청 파싱 ----------
 
     private MockRequest parse(String slug, HttpServletRequest request) throws java.io.IOException {
         String raw = request.getRequestURI();
         String prefix = "/mock/" + slug;
         String rawPath = raw.length() > prefix.length() ? raw.substring(prefix.length()) : "/";
-        // URL 경로는 form 이 아니다 — URLDecoder.decode 는 '+'를 공백으로 바꿔 경로 파라미터를 오염시킨다.
-        // 세그먼트별로 %XX 만 UTF-8 디코딩하고 '+'는 리터럴로 유지한다.
-        String path = decodePath(rawPath);
-        if (path.isEmpty()) {
-            path = "/";
-        }
+        String path = MockHttp.decodePath(rawPath);
 
         Map<String, String> query = MockHttp.parseUrlEncoded(request.getQueryString(), StandardCharsets.UTF_8);
 
@@ -133,7 +142,7 @@ public class MockGatewayController {
 
         byte[] bytes = request.getInputStream().readAllBytes();
         String ct = headers.getOrDefault("content-type", "");
-        Charset cs = charsetFromContentType(ct);
+        Charset cs = MockHttp.charsetFromContentType(ct);
         String bodyText = bytes.length == 0 ? "" : new String(bytes, cs);
         Map<String, String> bodyFields = parseBodyFields(bodyText, ct, cs);
 
@@ -148,45 +157,6 @@ public class MockGatewayController {
         }
 
         return new MockRequest(request.getMethod().toUpperCase(Locale.ROOT), path, query, headers, bodyText, bodyFields);
-    }
-
-    /** URL 경로 세그먼트별 percent-디코딩('+'는 리터럴). 인코딩된 슬래시(%2F)는 세그먼트 내부 값으로 보존. */
-    static String decodePath(String rawPath) {
-        if (rawPath == null || rawPath.isEmpty()) {
-            return "/";
-        }
-        String[] segs = rawPath.split("/", -1);
-        StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < segs.length; i++) {
-            if (i > 0) {
-                sb.append('/');
-            }
-            sb.append(percentDecodeKeepPlus(segs[i]));
-        }
-        return sb.toString();
-    }
-
-    /** %XX 를 UTF-8 바이트로 디코딩하되 '+'와 그 외 문자는 그대로 둔다(URLDecoder 와 달리 '+'≠공백). */
-    private static String percentDecodeKeepPlus(String s) {
-        if (s.indexOf('%') < 0) {
-            return s;
-        }
-        java.io.ByteArrayOutputStream buf = new java.io.ByteArrayOutputStream(s.length());
-        for (int i = 0; i < s.length(); i++) {
-            char c = s.charAt(i);
-            if (c == '%' && i + 2 < s.length()) {
-                int hi = Character.digit(s.charAt(i + 1), 16);
-                int lo = Character.digit(s.charAt(i + 2), 16);
-                if (hi >= 0 && lo >= 0) {
-                    buf.write((hi << 4) + lo);
-                    i += 2;
-                    continue;
-                }
-            }
-            byte[] cb = String.valueOf(c).getBytes(StandardCharsets.UTF_8);
-            buf.write(cb, 0, cb.length);
-        }
-        return new String(buf.toByteArray(), StandardCharsets.UTF_8);
     }
 
     /** FormContentFilter 가 소진한 urlencoded 본문을 파라미터 맵에서 복원(쿼리 유래 키/값은 제외). */
@@ -230,27 +200,6 @@ public class MockGatewayController {
             return MockHttp.parseUrlEncoded(bodyText, cs);
         }
         return Map.of();
-    }
-
-    static Charset charsetFromContentType(String contentType) {
-        if (contentType == null) {
-            return StandardCharsets.UTF_8;
-        }
-        int i = contentType.toLowerCase(Locale.ROOT).indexOf("charset=");
-        if (i < 0) {
-            return StandardCharsets.UTF_8;
-        }
-        String name = contentType.substring(i + "charset=".length()).trim();
-        int semi = name.indexOf(';');
-        if (semi >= 0) {
-            name = name.substring(0, semi);
-        }
-        name = name.replace("\"", "").trim();
-        // 레거시 별칭 보정 — HttpNodeExecutor.wireCharset 의 역방향
-        if (name.equalsIgnoreCase("windows-949")) {
-            name = "x-windows-949";
-        }
-        return MockHttp.charsetOf(name);
     }
 
     private ResponseEntity.BodyBuilder withCors(ResponseEntity.HeadersBuilder<?> b) {

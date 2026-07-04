@@ -50,7 +50,7 @@ public class MockServer {
     @Column(nullable = false)
     private boolean enabled;
 
-    /** CUSTOM: { routes: [...] } · PG: { secret?: "..." } */
+    /** { routes: [...] } — 사용자 정의 라우트 규칙(JSON). */
     @Column(name = "spec_json", columnDefinition = "text")
     private String specJson;
 

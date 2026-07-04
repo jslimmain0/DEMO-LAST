@@ -5,13 +5,12 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import java.util.List;
 
 /**
- * CUSTOM mock 서버의 정의(spec_json). 프론트 편집기와 1:1 대응.
+ * mock 서버의 정의(spec_json) — 사용자 정의 라우트 목록. 프론트 편집기와 1:1 대응.
  * 모든 record 는 ignoreUnknown — 프론트가 편의 필드를 붙여도 파싱이 깨지지 않는다.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record MockSpec(
-        List<MockRoute> routes,
-        String secret // PG 프리셋 전용(서명 검증 키). CUSTOM 에선 무시.
+        List<MockRoute> routes
 ) {
     public List<MockRoute> routesOrEmpty() {
         return routes == null ? List.of() : routes;

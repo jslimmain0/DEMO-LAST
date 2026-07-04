@@ -5,6 +5,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import type { MockServerSummary } from '../api/types'
 import { mockBaseUrl, mocksApi } from '../api/client'
 import { AppShellTier1 } from '../app/AppShell'
+import { apiErrorMessage } from '../lib/apiError'
 import { relTime } from '../lib/format'
 
 /**
@@ -22,13 +23,13 @@ export function MockServers() {
   const invalidate = () => qc.invalidateQueries({ queryKey: ['mock-servers'] })
 
   const create = useMutation({
-    mutationFn: () => mocksApi.create({ name: name.trim() || slug.trim(), slug: slug.trim(), kind: 'CUSTOM' }),
+    mutationFn: () => mocksApi.create({ name: name.trim() || slug.trim(), slug: slug.trim() }),
     onSuccess: (d) => {
       setName(''); setSlug(''); setError(null)
       void invalidate()
       navigate(`/mocks/${d.id}`)
     },
-    onError: (e) => setError(errMsg(e)),
+    onError: (e) => setError(apiErrorMessage(e)),
   })
   const toggle = useMutation({
     mutationFn: (s: MockServerSummary) => mocksApi.update(s.id, { enabled: !s.enabled }),
@@ -109,11 +110,6 @@ export function MockServers() {
       </div>
     </AppShellTier1>
   )
-}
-
-function errMsg(e: unknown): string {
-  const anyE = e as { response?: { data?: { message?: string } }; message?: string }
-  return anyE?.response?.data?.message ?? anyE?.message ?? '요청 실패'
 }
 
 const input: CSSProperties = {

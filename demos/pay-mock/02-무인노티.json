@@ -28,17 +28,17 @@
         "headers": [],
         "body": [
           {
-            "id": "cea7eefn",
+            "id": "eplsvztu",
             "key": "orderId",
             "value": "ORD-888"
           },
           {
-            "id": "ck23ngbn",
+            "id": "2uspvqtz",
             "key": "amount",
             "value": "15000"
           },
           {
-            "id": "cp15fmig",
+            "id": "evc9vviy",
             "key": "notiUrl",
             "value": "{{ url@wait0001 }}"
           }

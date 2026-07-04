@@ -18,13 +18,13 @@
       "y": 200,
       "vars": [
         {
-          "id": "k8z7x6uj",
+          "id": "9yzwbv0w",
           "key": "orderId",
           "value": "ORD-777",
           "secret": false
         },
         {
-          "id": "nwfq5qrt",
+          "id": "mf5kq7nj",
           "key": "amount",
           "value": "48000",
           "secret": false
@@ -45,7 +45,7 @@
         "headers": [],
         "body": [
           {
-            "id": "b120pogz",
+            "id": "qqjsvwlx",
             "key": "orderId",
             "bound": {
               "key": "orderId",
@@ -53,7 +53,7 @@
             }
           },
           {
-            "id": "t2wm193w",
+            "id": "camc1jpq",
             "key": "amount",
             "bound": {
               "key": "amount",
@@ -61,7 +61,7 @@
             }
           },
           {
-            "id": "yqol9dyj",
+            "id": "3zl1tu6m",
             "key": "returnUrl",
             "value": "{{ url@wait0001 }}"
           }

@@ -129,12 +129,12 @@ class MockRuntimeTest {
     @Test
     void 경로_디코딩_plus_리터럴_유지() {
         // URLDecoder 와 달리 '+'는 공백으로 바뀌지 않는다(경로 파라미터 오염 방지)
-        assertThat(MockGatewayController.decodePath("/items/A+B")).isEqualTo("/items/A+B");
-        assertThat(MockGatewayController.decodePath("/items/A%20B")).isEqualTo("/items/A B");
-        assertThat(MockGatewayController.decodePath("/user/%ED%99%8D%EA%B8%B8%EB%8F%99")).isEqualTo("/user/홍길동");
-        assertThat(MockGatewayController.decodePath("/a/b/c")).isEqualTo("/a/b/c");
+        assertThat(MockHttp.decodePath("/items/A+B")).isEqualTo("/items/A+B");
+        assertThat(MockHttp.decodePath("/items/A%20B")).isEqualTo("/items/A B");
+        assertThat(MockHttp.decodePath("/user/%ED%99%8D%EA%B8%B8%EB%8F%99")).isEqualTo("/user/홍길동");
+        assertThat(MockHttp.decodePath("/a/b/c")).isEqualTo("/a/b/c");
         // 잘못된 percent-encoding 은 원문 유지(예외 없이)
-        assertThat(MockGatewayController.decodePath("/x/%zz")).isEqualTo("/x/%zz");
+        assertThat(MockHttp.decodePath("/x/%zz")).isEqualTo("/x/%zz");
     }
 
     @Test

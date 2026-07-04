@@ -98,11 +98,11 @@ public class MockServerService {
 
     public MockSpec parseSpec(String specJson) {
         if (specJson == null || specJson.isBlank()) {
-            return new MockSpec(List.of(), null);
+            return new MockSpec(List.of());
         }
         try {
             MockSpec spec = json.mapper().readValue(specJson, MockSpec.class);
-            return spec == null ? new MockSpec(List.of(), null) : spec;
+            return spec == null ? new MockSpec(List.of()) : spec;
         } catch (Exception e) {
             throw new BadRequestException("mock spec JSON 파싱 실패: " + e.getMessage());
         }

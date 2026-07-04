@@ -5,6 +5,7 @@ import { Link, useParams } from 'react-router-dom'
 import type { MockCond, MockRouteSpec, MockRuleSpec, MockServerSpec } from '../api/types'
 import { mockBaseUrl, mocksApi } from '../api/client'
 import { AppShellTier1 } from '../app/AppShell'
+import { apiErrorMessage } from '../lib/apiError'
 import { newId } from '../lib/ids'
 
 const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'ANY']
@@ -24,6 +25,11 @@ export function MockServerEditor() {
   const [dirty, setDirty] = useState(false)
   const [note, setNote] = useState<string | null>(null)
 
+  const invalidate = () => {
+    void qc.invalidateQueries({ queryKey: ['mock-server', id] })
+    void qc.invalidateQueries({ queryKey: ['mock-servers'] })
+  }
+
   useEffect(() => {
     if (detail.data) {
       setSpec(detail.data.spec ?? { routes: [] })
@@ -42,17 +48,13 @@ export function MockServerEditor() {
     onSuccess: () => {
       setDirty(false)
       setNote('저장됨 — 즉시 서빙에 반영됩니다.')
-      void qc.invalidateQueries({ queryKey: ['mock-server', id] })
-      void qc.invalidateQueries({ queryKey: ['mock-servers'] })
+      invalidate()
     },
-    onError: (e) => setNote(errMsg(e)),
+    onError: (e) => setNote(apiErrorMessage(e, '저장에 실패했습니다')),
   })
   const toggle = useMutation({
     mutationFn: () => mocksApi.update(id, { enabled: !detail.data?.enabled }),
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ['mock-server', id] })
-      void qc.invalidateQueries({ queryKey: ['mock-servers'] })
-    },
+    onSuccess: invalidate,
   })
 
   const mutate = (fn: (s: MockServerSpec) => MockServerSpec) => {
@@ -352,11 +354,6 @@ function TestPanel({ base }: { base: string }) {
 }
 
 // ---------- 스타일 ----------
-
-function errMsg(e: unknown): string {
-  const anyE = e as { response?: { data?: { message?: string } }; message?: string }
-  return anyE?.response?.data?.message ?? anyE?.message ?? '저장 실패'
-}
 
 const panel: CSSProperties = {
   marginTop: 22,

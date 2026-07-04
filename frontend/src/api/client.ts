@@ -66,7 +66,7 @@ export const foldersApi = {
 export const mocksApi = {
   list: () => http.get<import('./types').MockServerSummary[]>('/mock-servers').then((r) => r.data),
   get: (id: string) => http.get<import('./types').MockServerDetail>(`/mock-servers/${id}`).then((r) => r.data),
-  create: (body: { name: string; slug: string; kind: string }) =>
+  create: (body: { name: string; slug: string }) =>
     http.post<import('./types').MockServerDetail>('/mock-servers', body).then((r) => r.data),
   update: (id: string, body: { name?: string; enabled?: boolean }) =>
     http.patch<import('./types').MockServerDetail>(`/mock-servers/${id}`, body).then((r) => r.data),

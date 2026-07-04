@@ -2,13 +2,16 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { CSSProperties } from 'react'
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import type { MockCond, MockRouteSpec, MockRuleSpec, MockServerSpec } from '../api/types'
+import type { HttpMethod, MockCond, MockRouteSpec, MockRuleSpec, MockServerSpec } from '../api/types'
 import { mockBaseUrl, mocksApi } from '../api/client'
 import { AppShellTier1 } from '../app/AppShell'
+import { METHOD_COLOR } from '../canvas/nodeMeta'
 import { apiErrorMessage } from '../lib/apiError'
 import { newId } from '../lib/ids'
 
 const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'ANY']
+// 라우트 카드 좌측 스파인 색 — 캔버스 MethodTag 와 같은 어휘. ANY 등 미지원 메서드는 중립색.
+const methodColor = (m: string): string => METHOD_COLOR[m as HttpMethod] ?? 'var(--fl-cat-generic)'
 const CONTENT_TYPES = ['json', 'text', 'html', 'xml', 'urlencoded']
 const CHARSETS = ['UTF-8', 'EUC-KR', 'MS949']
 const COND_SOURCES = ['body', 'query', 'header', 'path'] as const
@@ -164,7 +167,7 @@ function RouteCard({ route, onChange, onRemove, onUp, onDown }: {
 }) {
   const setRule = (i: number, u: MockRuleSpec) => onChange({ ...route, rules: route.rules.map((x, xi) => (xi === i ? u : x)) })
   return (
-    <div style={{ border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius)', padding: 14, background: 'var(--fl-surface)' }}>
+    <div style={{ border: '1px solid var(--fl-border)', borderLeft: `3px solid ${methodColor(route.method)}`, borderRadius: 'var(--fl-radius)', padding: 14, background: 'var(--fl-surface)' }}>
       <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
         <select style={{ ...input, minWidth: 90 }} value={route.method} onChange={(e) => onChange({ ...route, method: e.target.value })}>
           {METHODS.map((m) => <option key={m}>{m}</option>)}

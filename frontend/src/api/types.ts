@@ -218,11 +218,6 @@ export interface CreateFlowRequest {
   folderId?: string | null
 }
 
-export interface UpdateFlowRequest {
-  name?: string
-  description?: string
-}
-
 export interface SaveVersionRequest {
   graph: FlowGraph
   note?: string
@@ -403,11 +398,3 @@ export interface MockServerDetail extends MockServerSummary {
   createdAt: string | null
 }
 
-export interface ApiError {
-  timestamp: string
-  status: number
-  error: string
-  message: string
-  path: string
-  details: string[]
-}

@@ -36,8 +36,4 @@ public record NodeResult(
     public NodeResult withBranch(String branch) {
         return new NodeResult(ok, httpStatus, requestText, responseText, value, storedValue, reqValues, branch);
     }
-
-    public NodeResult withStored(Object stored) {
-        return new NodeResult(ok, httpStatus, requestText, responseText, value, stored, reqValues, branch);
-    }
 }

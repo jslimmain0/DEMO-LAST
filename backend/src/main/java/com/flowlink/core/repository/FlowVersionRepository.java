@@ -12,6 +12,4 @@ public interface FlowVersionRepository extends JpaRepository<FlowVersion, UUID> 
     List<FlowVersion> findByFlowIdOrderByVersionNoDesc(UUID flowId);
 
     Optional<FlowVersion> findByFlowIdAndVersionNo(UUID flowId, int versionNo);
-
-    Optional<FlowVersion> findTopByFlowIdOrderByVersionNoDesc(UUID flowId);
 }

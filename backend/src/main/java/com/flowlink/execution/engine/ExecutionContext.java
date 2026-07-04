@@ -3,7 +3,6 @@ package com.flowlink.execution.engine;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 
 /**
  * 실행 중 노드 출력/요청값을 누적하는 컨텍스트. 삽입 순서를 보존(LinkedHashMap)해
@@ -45,9 +44,5 @@ public class ExecutionContext {
         List<String> keys = new ArrayList<>(values.keySet());
         java.util.Collections.reverse(keys);
         return keys;
-    }
-
-    public Map<String, Object> snapshot() {
-        return new LinkedHashMap<>(values);
     }
 }

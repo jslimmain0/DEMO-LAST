@@ -252,7 +252,7 @@ public class HttpNodeExecutor {
         String text = body == null ? "" : body;
         // client 모드는 브라우저가 이미 디코딩한 문자열을 받으므로 form 퍼센트 디코딩은 UTF-8 기준
         Object value = parseResponse(node.respType(),
-                new RawResponse(status, text, false, text.getBytes(StandardCharsets.UTF_8).length), StandardCharsets.UTF_8);
+                new RawResponse(status, text, text.getBytes(StandardCharsets.UTF_8).length), StandardCharsets.UTF_8);
         return NodeResult.okHttp(status, req.requestText(), text, value, req.reqValues());
     }
 
@@ -265,7 +265,7 @@ public class HttpNodeExecutor {
             if (truncated) {
                 bytes = Arrays.copyOf(bytes, (int) maxResponseBytes);
             }
-            return new RawResponse(status, new String(bytes, cs), truncated, bytes.length);
+            return new RawResponse(status, new String(bytes, cs), bytes.length);
         }
     }
 
@@ -494,7 +494,7 @@ public class HttpNodeExecutor {
         return n.equalsIgnoreCase("x-windows-949") ? "windows-949" : n;
     }
 
-    private record RawResponse(int status, String text, boolean truncated, int byteLength) {
+    private record RawResponse(int status, String text, int byteLength) {
     }
 
     /** 전송 전 조립된 HTTP 요청. client 모드에서 브라우저로 넘기는 페이로드의 원천이기도 하다. */

@@ -11,14 +11,3 @@ export function newId(len = 8): string {
   }
   return out
 }
-
-/** 토큰 sourceId 로 안전한 id 인지(영숫자만). */
-export function isTokenSafeId(id: string): boolean {
-  return /^[A-Za-z0-9]+$/.test(id)
-}
-
-/** 토큰에 안전하지 않은 id(import 등)를 영숫자로 정규화. */
-export function normalizeId(id: string): string {
-  const cleaned = id.replace(/[^A-Za-z0-9]/g, '')
-  return cleaned.length > 0 ? cleaned : newId()
-}

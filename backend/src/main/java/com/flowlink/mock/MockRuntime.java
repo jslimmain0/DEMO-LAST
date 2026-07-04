@@ -33,8 +33,8 @@ public class MockRuntime {
     public static final int MAX_DELAY_MS = 10_000;
     public static final int MAX_CALLBACK_DELAY_MS = 60_000;
 
-    /** 매칭 결과 — 라우트·규칙·경로 파라미터. */
-    public record Match(MockRoute route, MockRule rule, Map<String, String> pathParams) {
+    /** 매칭 결과 — 규칙·경로 파라미터. */
+    public record Match(MockRule rule, Map<String, String> pathParams) {
     }
 
     /** 정의 순서대로 method+경로 첫 매칭 라우트, 그 안에서 조건 만족 첫 규칙. */
@@ -50,7 +50,7 @@ public class MockRuntime {
             }
             for (MockRule rule : route.rulesOrEmpty()) {
                 if (conditionsPass(rule.whenOrEmpty(), req, params)) {
-                    return Optional.of(new Match(route, rule, params));
+                    return Optional.of(new Match(rule, params));
                 }
             }
             // 경로는 맞지만 규칙 무매칭 — 다음 라우트로 넘기지 않고 404 (같은 경로 중복 정의 혼란 방지)

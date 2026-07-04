@@ -14,8 +14,3 @@ export function duration(ms: number | null | undefined): string {
   if (ms < 1000) return `${ms}ms`
   return `${(ms / 1000).toFixed(2)}s`
 }
-
-export function initial(name: string | null | undefined): string {
-  const c = (name ?? '').trim().charAt(0)
-  return c ? c.toUpperCase() : '·'
-}

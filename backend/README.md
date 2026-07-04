@@ -1,6 +1,6 @@
 # Flowlink Backend (Spring Boot)
 
-프로토타입 `FlowBuilder.dc.html`(클라이언트사이드 워크플로 빌더)을 **Spring Boot 기반 엔터프라이즈 워크플로
+프로토타입 `legacy/FlowBuilder.dc.html`(클라이언트사이드 워크플로 빌더)을 **Spring Boot 기반 엔터프라이즈 워크플로
 오케스트레이션 플랫폼**으로 고도화하는 백엔드입니다. 1단계(Phase 1)는 **모듈러 모놀리스(단일 배포)**로
 시작하며, 패키지 경계로 향후 물리 모듈/워커 분리를 대비합니다.
 

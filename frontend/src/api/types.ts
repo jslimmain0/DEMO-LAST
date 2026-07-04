@@ -305,6 +305,7 @@ export interface ResumeRequest {
 export interface ExecutionSummary {
   id: string
   flowId: string
+  flowName?: string | null
   status: ExecutionStatus
   trigger: TriggerType
   startedAt: string | null

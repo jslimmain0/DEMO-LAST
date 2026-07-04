@@ -223,14 +223,22 @@ public class ExecutionService {
 
     @Transactional(readOnly = true)
     public List<ExecutionSummary> listForFlow(UUID flowId, int limit) {
-        return executionRepo.findByFlowIdOrderByStartedAtDesc(flowId, PageRequest.of(0, clamp(limit)))
-                .stream().map(ExecutionSummary::from).toList();
+        var execs = executionRepo.findByFlowIdOrderByStartedAtDesc(flowId, PageRequest.of(0, clamp(limit)));
+        return withFlowNames(execs);
     }
 
     @Transactional(readOnly = true)
     public List<ExecutionSummary> listRecent(int limit) {
-        return executionRepo.findByTenantIdOrderByStartedAtDesc(TenantContext.getTenantId(), PageRequest.of(0, clamp(limit)))
-                .stream().map(ExecutionSummary::from).toList();
+        var execs = executionRepo.findByTenantIdOrderByStartedAtDesc(TenantContext.getTenantId(), PageRequest.of(0, clamp(limit)));
+        return withFlowNames(execs);
+    }
+
+    /** 실행 목록에 워크플로 이름을 채운다(삭제/보관된 플로우도 이름 조회 — UUID 노출 방지). */
+    private List<ExecutionSummary> withFlowNames(List<com.flowlink.core.domain.Execution> execs) {
+        var ids = execs.stream().map(com.flowlink.core.domain.Execution::getFlowId).collect(java.util.stream.Collectors.toSet());
+        var names = new java.util.HashMap<UUID, String>();
+        flowRepo.findAllById(ids).forEach(f -> names.put(f.getId(), f.getName()));
+        return execs.stream().map(e -> ExecutionSummary.from(e, names.get(e.getFlowId()))).toList();
     }
 
     // --- 내부 ---

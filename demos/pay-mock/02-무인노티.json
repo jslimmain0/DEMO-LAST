@@ -1,0 +1,118 @@
+{
+  "name": "무인 노티 — http(주문) → wait(노티 자동수신) → 검증",
+  "nodes": [
+    {
+      "id": "start001",
+      "name": "시작",
+      "type": "start",
+      "cat": "start",
+      "x": 40,
+      "y": 200
+    },
+    {
+      "id": "http0001",
+      "name": "주문 요청",
+      "type": "http",
+      "cat": "generic",
+      "x": 260,
+      "y": 200,
+      "method": "POST",
+      "baseUrl": "http://localhost:18080/mock/pay-mock",
+      "path": "/order",
+      "bodyType": "json",
+      "respType": "json",
+      "reqMode": "server",
+      "charset": "UTF-8",
+      "fields": {
+        "params": [],
+        "headers": [],
+        "body": [
+          {
+            "id": "cea7eefn",
+            "key": "orderId",
+            "value": "ORD-888"
+          },
+          {
+            "id": "ck23ngbn",
+            "key": "amount",
+            "value": "15000"
+          },
+          {
+            "id": "cp15fmig",
+            "key": "notiUrl",
+            "value": "{{ url@wait0001 }}"
+          }
+        ]
+      },
+      "outputs": [
+        {
+          "key": "orderId"
+        },
+        {
+          "key": "accepted"
+        }
+      ]
+    },
+    {
+      "id": "wait0001",
+      "name": "결제 노티 대기",
+      "type": "wait",
+      "cat": "wait",
+      "x": 520,
+      "y": 200,
+      "waitTimeoutSec": 30,
+      "callbackRespType": "text",
+      "callbackRespBody": "OK",
+      "outputs": [
+        {
+          "key": "resultCode"
+        },
+        {
+          "key": "tid"
+        },
+        {
+          "key": "amount"
+        }
+      ]
+    },
+    {
+      "id": "as000001",
+      "name": "검증",
+      "type": "assert",
+      "cat": "assert",
+      "x": 780,
+      "y": 200,
+      "condition": "{{ resultCode@wait0001 }} == '0000'"
+    },
+    {
+      "id": "end00001",
+      "name": "끝",
+      "type": "end",
+      "cat": "end",
+      "x": 1200,
+      "y": 200
+    }
+  ],
+  "edges": [
+    {
+      "id": "e0",
+      "from": "start001",
+      "to": "http0001"
+    },
+    {
+      "id": "e1",
+      "from": "http0001",
+      "to": "wait0001"
+    },
+    {
+      "id": "e2",
+      "from": "wait0001",
+      "to": "as000001"
+    },
+    {
+      "id": "e3",
+      "from": "as000001",
+      "to": "end00001"
+    }
+  ]
+}

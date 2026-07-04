@@ -1,0 +1,38 @@
+{
+  "routes": [
+    {
+      "id": "r-checkout",
+      "method": "POST",
+      "path": "/checkout",
+      "rules": [
+        {
+          "id": "u1",
+          "status": 200,
+          "contentType": "html",
+          "body": "<!doctype html><meta charset=\"utf-8\"><title>MockPay 결제창</title>\n<body style=\"font-family:sans-serif;background:#f3f4f8;text-align:center;padding-top:48px;margin:0\">\n<div style=\"max-width:360px;margin:0 auto;background:#fff;border-radius:14px;padding:26px;box-shadow:0 8px 30px rgba(30,40,80,.12)\">\n<h2 style=\"margin:0 0 6px;color:#2a3fd4\">MockPay 결제창</h2>\n<p style=\"color:#5a6072;font-size:14px\">주문 {{body.orderId}} · <b>{{body.amount}}원</b></p>\n<form method=\"POST\" action=\"{{body.returnUrl}}\">\n<input type=\"hidden\" name=\"resultCode\" value=\"0000\">\n<input type=\"hidden\" name=\"tid\" value=\"PAYMOCK-{{seq}}\">\n<input type=\"hidden\" name=\"orderId\" value=\"{{body.orderId}}\">\n<input type=\"hidden\" name=\"amount\" value=\"{{body.amount}}\">\n<button style=\"width:100%;padding:13px;margin-top:10px;border:0;border-radius:9px;background:#2a3fd4;color:#fff;font-size:15px;font-weight:700;cursor:pointer\">결제 승인</button>\n</form>\n<form method=\"POST\" action=\"{{body.returnUrl}}\">\n<input type=\"hidden\" name=\"resultCode\" value=\"9999\">\n<input type=\"hidden\" name=\"orderId\" value=\"{{body.orderId}}\">\n<button style=\"width:100%;padding:11px;margin-top:8px;border:0;border-radius:9px;background:#eef0f5;color:#5a6072;font-size:14px;cursor:pointer\">취소</button>\n</form>\n<p style=\"color:#9aa1b2;font-size:11px;margin-top:14px\">모의 결제창입니다 — 버튼을 누르면 가맹점으로 결과가 전송됩니다.</p>\n</div></body>"
+        }
+      ]
+    },
+    {
+      "id": "r-order",
+      "method": "POST",
+      "path": "/order",
+      "rules": [
+        {
+          "id": "u2",
+          "status": 200,
+          "contentType": "json",
+          "body": "{\"orderId\":\"{{body.orderId}}\",\"accepted\":true}",
+          "callback": {
+            "afterMs": 1200,
+            "url": "{{body.notiUrl}}",
+            "method": "POST",
+            "contentType": "urlencoded",
+            "body": "resultCode=0000&orderId={{body.orderId}}&tid=NOTI-{{seq}}&amount={{body.amount}}",
+            "retryUntilOk": true
+          }
+        }
+      ]
+    }
+  ]
+}

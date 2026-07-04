@@ -383,10 +383,9 @@ export interface MockRouteSpec {
 
 export interface MockServerSpec {
   routes?: MockRouteSpec[]
-  secret?: string // PG 프리셋 서명 검증 키
 }
 
-export type MockKind = 'CUSTOM' | 'PG'
+export type MockKind = 'CUSTOM'
 
 export interface MockServerSummary {
   id: string

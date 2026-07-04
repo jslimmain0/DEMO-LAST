@@ -28,7 +28,7 @@ import java.util.concurrent.atomic.AtomicLong;
 /**
  * Mock 서빙 게이트웨이 — {@code /mock/{slug}/**} 전 메서드 캐치올.
  * 무인증(외부 시스템 흉내) + CORS 전면 오픈(클라이언트 모드 노드가 브라우저에서 직접 호출).
- * CUSTOM 은 {@link MockRuntime}, PG 프리셋은 {@link MockPgSimulator}가 처리한다.
+ * 사용자 정의 라우트는 {@link MockRuntime}가 매칭·렌더한다.
  * 어떤 요청도 이 게이트웨이에서 예외로 새 나가지 않는다(전체 try/catch → 500 JSON).
  */
 @RestController
@@ -38,17 +38,15 @@ public class MockGatewayController {
 
     private final MockServerService service;
     private final MockRuntime runtime;
-    private final MockPgSimulator pg;
     private final MockCallbackDispatcher dispatcher;
     private final JsonService json;
-    /** CUSTOM 템플릿 {{seq}} 용 서버별 카운터(인메모리 — 재시작 시 리셋). */
+    /** 템플릿 {{seq}} 용 서버별 카운터(인메모리 — 재시작 시 리셋). */
     private final Map<UUID, AtomicLong> seqs = new ConcurrentHashMap<>();
 
     public MockGatewayController(MockServerService service, MockRuntime runtime,
-                                 MockPgSimulator pg, MockCallbackDispatcher dispatcher, JsonService json) {
+                                 MockCallbackDispatcher dispatcher, JsonService json) {
         this.service = service;
         this.runtime = runtime;
-        this.pg = pg;
         this.dispatcher = dispatcher;
         this.json = json;
     }
@@ -67,15 +65,7 @@ public class MockGatewayController {
             MockRequest req = parse(slug, request);
             log.info("[mock:{}] {} {}", slug, req.method(), req.path());
 
-            MockResponse res;
-            if (server.getKind() == MockServer.Kind.PG) {
-                MockSpec spec = service.parseSpec(server.getSpecJson());
-                String secret = spec.secret() == null || spec.secret().isBlank()
-                        ? MockPgSimulator.DEFAULT_SECRET : spec.secret();
-                res = pg.handle(server.getId(), slug, req, secret);
-            } else {
-                res = handleCustom(server, req);
-            }
+            MockResponse res = handleCustom(server, req);
 
             if (res.delayMs() > 0) {
                 try {

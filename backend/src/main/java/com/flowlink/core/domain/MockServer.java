@@ -17,19 +17,17 @@ import java.util.UUID;
  * Mock 서버 — 워크플로가 호출할 가짜 대상 시스템을 사용자가 정의·서빙하는 1급 리소스.
  * 저장하면 즉시 {@code /mock/{slug}/**} 로 서빙된다(별도 프로세스 없음).
  *
- * <ul>
- *   <li><b>CUSTOM</b>: 라우트/규칙/응답 템플릿을 spec_json 으로 정의</li>
- *   <li><b>PG</b>: 상태(TID 원장·빌키·가상계좌) 있는 "가짜 결제 게이트웨이" 프리셋 — 라우트 편집 불가</li>
- * </ul>
- *
+ * <p>라우트/규칙/응답 템플릿을 spec_json 으로 정의한다(전부 사용자 정의 커스텀 목).
  * slug 는 서빙 URL 경로라서 <b>전역 유니크</b>(테넌트 무관). 서빙은 무인증(외부 시스템 흉내),
  * 관리 API 만 테넌트 스코프.
+ *
+ * <p>{@code kind} 는 향후 프리셋 확장 여지를 위해 남긴 컬럼으로, 현재는 CUSTOM 하나뿐이다.
  */
 @Entity
 @Table(name = "mock_server")
 public class MockServer {
 
-    public enum Kind { CUSTOM, PG }
+    public enum Kind { CUSTOM }
 
     @Id
     @Column(nullable = false, updatable = false)

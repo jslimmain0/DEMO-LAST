@@ -44,10 +44,11 @@ node relay.js [port]   # 기본 8787. wait(콜백 대기) 노드용 — 의존�
 
 ### Mock 서버 기능 (백엔드 내장 · UI 상단 "Mock 서버" 탭)
 FlowLink 안에서 **가짜 대상 시스템을 만들고 켜는 1급 기능**. 저장 즉시 `http://localhost:18080/mock/{slug}/**` 로 서빙(별도 프로세스 없음).
-- **CUSTOM**: method+경로(`/users/{id}`)마다 규칙(조건·응답 템플릿·charset·지연·콜백 발사)을 UI 에서 정의.
-- **PG 프리셋**: 상태(TID 원장·부분취소 잔액·빌키·가상계좌·노티) 있는 "가짜 결제 게이트웨이".
+- method+경로(`/users/{id}`)마다 규칙(조건·응답 템플릿·charset·지연·**콜백 발사**)을 UI 에서 정의(전부 사용자 정의 커스텀 목).
+- 응답 `contentType: html` + `{{body.returnUrl}}` 템플릿으로 **결제창 같은 웹페이지가 뜨고 콜백하는** 흐름도 만든다.
 - 워크플로 HTTP/폼 노드의 baseUrl 에 mock base URL 을 넣어 호출. 미완성 시스템을 mock 으로 세워 전체 흐름을 먼저 검증.
-- 상세: [docs/superpowers/specs/2026-07-04-mock-server-builder-design.md](docs/superpowers/specs/2026-07-04-mock-server-builder-design.md), 시나리오 데모 [demos/pg/README.md](demos/pg/README.md).
+- 상세: [docs/superpowers/specs/2026-07-04-mock-server-builder-design.md](docs/superpowers/specs/2026-07-04-mock-server-builder-design.md), 결제창+콜백 데모 [demos/pay-mock/README.md](demos/pay-mock/README.md).
+- ⚠️ 상태 관리(부분취소 잔액 원장 등)는 범위 밖 — 그런 시뮬레이터가 필요하면 리포 루트 `mock-server.js` 같은 별도 프로세스로.
 
 ### Mock 대상 시스템(단일 스크립트) + 데모 (리포 루트 · `demos/`)
 ```
@@ -83,7 +84,7 @@ execution/   실행 엔진 + 실행 API  (ExecutionController/ExecutionService)
 folder/      폴더 관리
 mock/        Mock 서버 기능 — 워크플로가 호출할 가짜 대상 시스템을 정의·서빙(1급 리소스)
  │           MockServerController(관리 CRUD)·MockGatewayController(/mock/{slug}/** 서빙)
- │           MockRuntime(라우트 매칭·조건·템플릿)·MockPgSimulator(가짜 PG 프리셋)·MockCallbackDispatcher
+ │           MockRuntime(라우트 매칭·조건·템플릿)·MockCallbackDispatcher(콜백 발사)
 security/    OIDC 리소스서버 골격 + TenantClaimFilter·TenantContext (멀티테넌시)
 transform/   변환 SPI + JAR 플러그인 (TransformRegistry·PluginController·BuiltinTransforms)
 common/      error·json·tenant·openapi
@@ -326,20 +327,18 @@ design/   theme(라이트/다크) · index.css(CSS 변수)
     응답 템플릿(`{{path.x}}`·`{{query.x}}`·`{{body.x}}`·`{{header.x}}`·`{{body}}`·`{{uuid}}`·`{{seq}}`·`{{now}}`)·
     charset(EUC-KR/MS949→windows-949)·지연 cap·콜백 발사 명세. 단위테스트 7종.
   - `MockCallbackDispatcher`: 지연 발사 + "OK" 미수신 시 2초 간격 3회 재발송(노티 규약), SsrfGuard 적용.
-  - `MockPgSimulator`(kind=PG): 상태 있는 가짜 결제 게이트웨이 — 결제창(HTML)·인증콜백 브리지·승인(authToken 단일사용·
-    금액 검증)·keyin(sha256 서명)·빌키·**부분취소 잔액 원장**·거래조회·가상계좌 자동입금·승인/취소/입금 노티·
-    레거시(EUC-KR·MS949 CT에코·XML·urlencoded·raw 고정전문·text)·Basic 인증. 서버ID별 인메모리(재시작 소실).
 - **ASSERT 노드**: 위 노드 타입 설명 참조. SpEL 조건 거짓 → 노드 실패 → 실행 FAILED.
-- **프론트**: 상단 "Mock 서버" 탭 — 목록(생성·enabled 토글·base URL 복사·삭제) + 편집기(커스텀 라우트/규칙/템플릿/
-  콜백 편집·보내보기, PG 프리셋 엔드포인트 안내·secret). `routes/MockServers.tsx`·`MockServerEditor.tsx`.
-- **demos/pg/pg-01~14**: 내장 `/mock/pg-demo` 대상 결제 시나리오(사용자 제시 30개 중 정상계) — 결제 풀코스·전체/부분취소·
-  빌키·가상계좌·승인/취소노티·EUC-KR·MS949·xml/urlenc/raw·해시서명·Basic인증·텍스트추출. 전부 assert 로 판정.
-- 검증: 백엔드 단위 4종(mock 8 포함) PASS + 라이브 e2e — PG server체인 23·브라우저루프 20·커스텀 라우트 7 단언 PASS,
+- **프론트**: 상단 "Mock 서버" 탭 — 목록(생성·enabled 토글·base URL 복사·삭제) + 편집기(라우트/규칙/템플릿/콜백 편집·보내보기).
+  `routes/MockServers.tsx`·`MockServerEditor.tsx`.
+- **demos/pay-mock**: 커스텀 mock 으로 "결제창(HTML 팝업)→승인→콜백"(01) · "무인 노티 자동 발사"(02) 재현. assert 로 판정.
+- 검증: 백엔드 단위 4종(mock 8 포함) PASS + 라이브 e2e — 결제창+콜백/무인노티 14 단언, 커스텀 라우트 7 단언 PASS,
   기존 demos(47)·form-wait(31) 무회귀. 프론트 tsc/vite/oxlint 통과.
 - **적대적 멀티에이전트 리뷰(38 에이전트, 4차원×2표 반박) 반영**: (1) 게이트웨이 경로에 `URLDecoder.decode`(form 디코더) 사용 →
   경로의 `+`가 공백으로 변질(경로 파라미터·조건 오염) → 세그먼트별 percent-only `decodePath`로 교체. (2) PUT/PATCH/DELETE +
   urlencoded 본문이 Spring FormContentFilter 에 소진돼 `getInputStream()` 이 빈 값 → 파라미터 맵에서 `recoverFormBody` 로 복원.
-- ⚠️ mock 서빙 무인증(테스트 도구 전제, slug 는 비밀값 아님)·상태 인메모리·콜백 SsrfGuard 적용(운영 프로파일은 사설망 발사 차단).
+- **PG 프리셋 제거(사용자 피드백)**: 상태 있는 가짜 결제 게이트웨이(`MockPgSimulator`)는 범용 mock 도구에 특정 도메인을 하드코딩한
+  것이라 걷어냄. "결제창 뜨고 콜백"은 커스텀 라우트(HTML 응답+콜백 발사)로 충분. `MockServer.Kind` 는 CUSTOM 하나만.
+- ⚠️ mock 서빙 무인증(테스트 도구 전제, slug 는 비밀값 아님)·상태 없음(범용 목)·콜백 SsrfGuard 적용(운영 프로파일은 사설망 발사 차단).
 
 ### mock 대상 시스템(mock-server.js) + 데모 워크플로 스위트(demos/)
 설계: [docs/superpowers/specs/2026-07-04-mock-demo-suite-design.md](docs/superpowers/specs/2026-07-04-mock-demo-suite-design.md).

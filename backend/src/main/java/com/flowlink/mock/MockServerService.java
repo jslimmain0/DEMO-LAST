@@ -50,11 +50,8 @@ public class MockServerService {
         if (repository.existsBySlug(slug)) {
             throw new BadRequestException("이미 사용 중인 slug 입니다: " + slug);
         }
-        MockServer.Kind kind = "PG".equalsIgnoreCase(req.kind()) ? MockServer.Kind.PG : MockServer.Kind.CUSTOM;
-        String spec = kind == MockServer.Kind.PG
-                ? "{\"secret\":\"" + MockPgSimulator.DEFAULT_SECRET + "\"}"
-                : defaultCustomSpec();
-        MockServer saved = repository.save(MockServer.create(tenant(), req.name(), slug, kind, spec));
+        MockServer saved = repository.save(
+                MockServer.create(tenant(), req.name(), slug, MockServer.Kind.CUSTOM, defaultCustomSpec()));
         return toDetail(saved);
     }
 

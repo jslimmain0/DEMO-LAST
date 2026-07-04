@@ -13,7 +13,7 @@ const CHARSETS = ['UTF-8', 'EUC-KR', 'MS949']
 const COND_SOURCES = ['body', 'query', 'header', 'path'] as const
 const COND_OPS = ['eq', 'ne', 'exists', 'contains'] as const
 
-/** Mock 서버 편집기 — CUSTOM 은 라우트/규칙, PG 프리셋은 엔드포인트 안내 + secret. */
+/** Mock 서버 편집기 — 경로별 라우트/규칙(응답 템플릿·조건·콜백)을 정의하고 바로 보내본다. */
 export function MockServerEditor() {
   const { id = '' } = useParams()
   const qc = useQueryClient()
@@ -79,9 +79,7 @@ export function MockServerEditor() {
                 style={{ ...input, fontSize: 17, fontWeight: 700, minWidth: 240 }}
                 aria-label="이름"
               />
-              <span style={{ ...badge, background: d.kind === 'PG' ? 'var(--fl-cat-wait)' : 'var(--fl-cat-generic)' }}>
-                {d.kind === 'PG' ? 'PG 프리셋' : '커스텀'}
-              </span>
+              <span style={{ ...badge, background: 'var(--fl-cat-generic)' }}>Mock</span>
               <button
                 style={{ ...miniBtn, color: d.enabled ? 'var(--fl-ok)' : 'var(--fl-text-muted)' }}
                 onClick={() => toggle.mutate()}
@@ -100,64 +98,16 @@ export function MockServerEditor() {
             </div>
             {note && <p style={{ fontSize: 12.5, marginTop: 8, color: note.startsWith('저장됨') ? 'var(--fl-ok)' : 'var(--fl-fail)' }}>{note}</p>}
 
-            {d.kind === 'PG' ? (
-              <PgGuide base={base} secret={spec.secret ?? ''} onSecret={(v) => mutate((s) => ({ ...s, secret: v }))} />
-            ) : (
-              <RoutesEditor
-                routes={spec.routes ?? []}
-                onChange={(routes) => mutate((s) => ({ ...s, routes }))}
-              />
-            )}
+            <RoutesEditor
+              routes={spec.routes ?? []}
+              onChange={(routes) => mutate((s) => ({ ...s, routes }))}
+            />
 
             <TestPanel base={base} />
           </>
         )}
       </div>
     </AppShellTier1>
-  )
-}
-
-// ---------- PG 프리셋 안내 ----------
-
-function PgGuide({ base, secret, onSecret }: { base: string; secret: string; onSecret: (v: string) => void }) {
-  const rows: Array<[string, string]> = [
-    ['GET/POST /auth', '결제창(인증) — form 노드의 팝업 URL 로 지정. 필드: mid·orderId·productName·amount·returnUrl(={{ url@wait노드 }})'],
-    ['POST /approve', '인증결제 승인 — {mid, authToken, amount, notiUrl?} (authToken 은 인증 콜백에서 바인딩)'],
-    ['POST /keyin', '수기(키인) 승인 — {mid, cardNo, expiry, amount, sign?, notiUrl?} · sign=sha256(mid+amount+secret)'],
-    ['POST /billkey · /billkey/approve · /billkey/delete', '빌키 발급/승인/삭제'],
-    ['POST /cancel', '취소 — {tid, amount?(생략=전액), notiUrl?} → cancelAmt·remainAmt'],
-    ['GET /tx?tid=', '거래조회(노티 대사)'],
-    ['POST /va · GET /va/status?acctNo=', '가상계좌 채번(자동입금 autoDepositSec) / 입금 조회'],
-    ['POST /legacy/euckr · /legacy/949 · GET /legacy/xml · POST /legacy/urlenc · /legacy/raw · GET /legacy/text', '레거시 규격(EUC-KR·MS949 CT 에코·XML·urlencoded·고정 전문·텍스트)'],
-    ['GET /secure', 'Basic 인증(demo:demo1234) 필요 자원'],
-  ]
-  return (
-    <section style={panel}>
-      <h2 style={h2}>가짜 결제 게이트웨이 — 엔드포인트</h2>
-      <p style={hint}>
-        상태(TID 원장·부분취소 잔액·빌키·가상계좌)를 기억하는 프리셋입니다. 워크플로 HTTP/폼 노드에서 아래 경로를 호출하세요.
-        노티(승인/취소/입금)는 요청의 <code style={code}>notiUrl</code> 로 발사되며 "OK" 응답이 아니면 2초 간격 3회 재발송합니다.
-        모든 금액은 문자열로 응답합니다(검증 노드 비교가 쉬움). 상태는 메모리 — 서버 재시작 시 초기화.
-      </p>
-      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5, marginTop: 10 }}>
-        <tbody>
-          {rows.map(([ep, desc]) => (
-            <tr key={ep}>
-              <td style={td}><code style={code}>{ep}</code></td>
-              <td style={{ ...td, color: 'var(--fl-text-muted)' }}>{desc}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 14 }}>
-        <label style={{ fontSize: 12.5, fontWeight: 600, flexShrink: 0 }}>서명 secret</label>
-        <input style={{ ...input, fontFamily: 'var(--fl-font-mono)', maxWidth: 260 }} value={secret} onChange={(e) => onSecret(e.target.value)} placeholder="demo-secret" />
-        <span style={hint}>keyin 의 sign 검증 키 — sha256(mid+amount+secret)</span>
-      </div>
-      <p style={{ ...hint, marginTop: 10 }}>
-        예: 결제창은 <code style={code}>{base}/auth</code>, 승인은 <code style={code}>{base}/approve</code>
-      </p>
-    </section>
   )
 }
 
@@ -427,8 +377,6 @@ const code: CSSProperties = {
   padding: '1px 5px',
   borderRadius: 4,
 }
-
-const td: CSSProperties = { borderBottom: '1px solid var(--fl-border)', padding: '7px 8px', verticalAlign: 'top' }
 
 const input: CSSProperties = {
   padding: '7px 10px',

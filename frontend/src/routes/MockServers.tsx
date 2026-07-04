@@ -17,13 +17,12 @@ export function MockServers() {
   const servers = useQuery({ queryKey: ['mock-servers'], queryFn: mocksApi.list })
   const [name, setName] = useState('')
   const [slug, setSlug] = useState('')
-  const [kind, setKind] = useState<'CUSTOM' | 'PG'>('CUSTOM')
   const [error, setError] = useState<string | null>(null)
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ['mock-servers'] })
 
   const create = useMutation({
-    mutationFn: () => mocksApi.create({ name: name.trim() || slug.trim(), slug: slug.trim(), kind }),
+    mutationFn: () => mocksApi.create({ name: name.trim() || slug.trim(), slug: slug.trim(), kind: 'CUSTOM' }),
     onSuccess: (d) => {
       setName(''); setSlug(''); setError(null)
       void invalidate()
@@ -52,14 +51,10 @@ export function MockServers() {
           <input style={input} placeholder="이름 (예: 결제 게이트웨이)" value={name} onChange={(e) => setName(e.target.value)} />
           <input
             style={{ ...input, fontFamily: 'var(--fl-font-mono)' }}
-            placeholder="slug (소문자·숫자·하이픈, 예: pg-demo)"
+            placeholder="slug (소문자·숫자·하이픈, 예: pay-mock)"
             value={slug}
             onChange={(e) => setSlug(e.target.value.toLowerCase())}
           />
-          <select style={input} value={kind} onChange={(e) => setKind(e.target.value as 'CUSTOM' | 'PG')}>
-            <option value="CUSTOM">커스텀 (라우트 직접 정의)</option>
-            <option value="PG">프리셋: 가짜 결제 게이트웨이</option>
-          </select>
           <button
             style={primaryBtn}
             disabled={!/^[a-z0-9-]{3,40}$/.test(slug.trim()) || create.isPending}
@@ -75,9 +70,7 @@ export function MockServers() {
           {(servers.data ?? []).map((s) => (
             <div key={s.id} style={card}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
-                <span style={{ ...kindBadge, background: s.kind === 'PG' ? 'var(--fl-cat-wait)' : 'var(--fl-cat-generic)' }}>
-                  {s.kind === 'PG' ? 'PG 프리셋' : '커스텀'}
-                </span>
+                <span style={{ ...kindBadge, background: 'var(--fl-cat-generic)' }}>Mock</span>
                 <div style={{ minWidth: 0 }}>
                   <Link to={`/mocks/${s.id}`} style={{ fontWeight: 600, fontSize: 15, color: 'var(--fl-text)', textDecoration: 'none' }}>{s.name}</Link>
                   <div style={{ fontSize: 12, color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -109,7 +102,7 @@ export function MockServers() {
           {servers.isSuccess && (servers.data?.length ?? 0) === 0 && (
             <div style={{ padding: '40px 0', textAlign: 'center', color: 'var(--fl-text-muted)', fontSize: 13.5 }}>
               아직 mock 서버가 없습니다. 위에서 slug 를 정하고 만들어 보세요 —
-              <b> 프리셋: 가짜 결제 게이트웨이</b>를 고르면 승인/취소/빌키/가상계좌까지 되는 PG 가 바로 생깁니다.
+              경로마다 응답(JSON·HTML·XML 등)·조건 분기·콜백 발사를 정의해 미완성 API 를 흉내 낼 수 있습니다.
             </div>
           )}
         </div>

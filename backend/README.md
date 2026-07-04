@@ -155,6 +155,7 @@ com.flowlink
 ├─ execution/     # 실행 엔진 + 실행 API
 │  ├─ engine      # FlowExecutor, HttpNodeExecutor, TokenResolver, ExpressionEvaluator, SsrfGuard
 │  └─ config      # ExecutionProperties, HttpClientConfig
+├─ mock/          # 내장 Mock 서버 — /mock/{slug}/** 게이트웨이 + 라우트 런타임 + 콜백 디스패처 (V4)
 ├─ security/      # SecurityConfig (Phase 1: permitAll)
 └─ common/        # error, json, tenant, openapi
 ```

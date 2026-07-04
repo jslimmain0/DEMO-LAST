@@ -1,5 +1,7 @@
 # form/wait 노드 분리 + relay.js — 설계 (2026-07-03, 사용자 승인)
 
+> **status: as-built** — form/wait/input 노드·relay.js 는 현행. 현행 진실원은 [CLAUDE.md](../../../CLAUDE.md).
+
 ## 배경 · 결정
 
 - origin/main 에서 WAIT 노드가 "폼 전송"으로 재용도되면서 사용자입력대기 노드가 사라짐 → **둘을 분리해 복원**한다.

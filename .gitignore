@@ -1,0 +1,10 @@
+# 루트 레벨 가드 (backend/·frontend/ 는 각자 .gitignore 로 산출물 커버)
+node_modules/
+*.log
+
+# 개발 중 생기는 아티팩트 (재유입 차단)
+.thumbnail
+uploads/
+
+# 루트에 npm 프로젝트 없음 — stray lockfile 재유입 차단
+/package-lock.json

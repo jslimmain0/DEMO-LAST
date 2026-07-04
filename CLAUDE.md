@@ -56,12 +56,12 @@ node mock-server.js [httpPort] [tcpPort]   # 기본 HTTP 9090 + TCP 9091 — 의
 ```
 - 위 내장 Mock 기능과 **별개**인 손수 작성 단일 파일(초기 데모용). 결제 게이트웨이·REST API·레거시 EUC-KR·
   TCP 고정길이 전문(BAL1)·`/openapi.json`. `demos/demo-01~06-*.json` 이 이걸 대상으로 함.
-  (신규 데모는 내장 Mock 기능 `/mock/pg-demo` 를 쓰는 `demos/pg/*.json` 을 권장)
+  (내장 Mock 기능을 쓰는 데모는 `demos/pay-mock/*.json`, slug `pay-mock`)
 
 ### 테스트
 ```powershell
 $env:JAVA_HOME="C:\Users\jslim\.jdks\corretto-21.0.10"
-./gradlew test   # 단위 테스트 3개 (DB 불필요)
+./gradlew test   # 단위 테스트 4개 (DB 불필요)
 ```
 ⚠️ **Gradle 포크 테스트 워커가 한글/비ASCII 경로를 cp949로 잘못 디코딩하는 알려진 이슈**가 있음.
 `build.gradle.kts`에 `-Dfile.encoding=UTF-8 -Dsun.jnu.encoding=UTF-8` 회피책 적용됨.
@@ -179,7 +179,7 @@ design/   theme(라이트/다크) · index.css(CSS 변수)
 - OpenAPI 파서: ref 1단계만, YAML 미지원, `allOf/oneOf/anyOf` 미처리
 
 ### 테스트 현황
-- 백엔드 단위 테스트 3개: `ExpressionEvaluatorTest`·`SsrfGuardTest`·`TokenResolverTest` (DB 불필요)
+- 백엔드 단위 테스트 4개: `ExpressionEvaluatorTest`·`SsrfGuardTest`·`TokenResolverTest`·`MockRuntimeTest` (DB 불필요)
 - E2E/통합 테스트 없음, 프론트 테스트 없음
 
 ---
@@ -318,7 +318,7 @@ design/   theme(라이트/다크) · index.css(CSS 변수)
 
 ## 최근 변경 (2026-07-04)
 
-### Mock 서버 기능(백엔드 내장) + 검증(assert) 노드 + PG 시나리오 데모 14종
+### Mock 서버 기능(백엔드 내장) + 검증(assert) 노드 + pay-mock 데모 2종
 설계: [docs/superpowers/specs/2026-07-04-mock-server-builder-design.md](docs/superpowers/specs/2026-07-04-mock-server-builder-design.md).
 "워크플로 기능과 Mock 서버 기능이 둘 다 있어서, 미완성 부분은 mock 으로 세워 테스트한다"는 요구를 1급 기능으로 구현.
 - **백엔드 `mock/` 모듈**: `MockServer` 도메인(V4 마이그레이션, slug 전역 유니크) + 관리 CRUD(`/api/v1/mock-servers`,

@@ -1,4 +1,7 @@
-# Mock 서버 기능(내장) + 검증(assert) 노드 + PG 시나리오 — 설계 (2026-07-04)
+# Mock 서버 기능(내장) + 검증(assert) 노드 — 설계 (2026-07-04)
+
+> **status: 일부 폐기(partially-retracted)** · 현행 진실원은 [CLAUDE.md](../../../CLAUDE.md).
+> 커스텀 빌더(§1~3)·검증 노드(§6)·게이트웨이는 as-built. **§4(PG 프리셋)·§7(demos/pg 시나리오)·§1의 `kind(CUSTOM|PG)`·§8~9의 PG 문구는 폐기**(아래 개정 노트 참조) — 이력 보존용으로 남긴다.
 
 > **개정 (2026-07-04, 같은 날 오후)**: 사용자 피드백으로 **PG 프리셋(상태 있는 가짜 결제 게이트웨이)을 제거**했다.
 > "Mock 서버는 상태 관리까지 원한 게 아니라 웹페이지가 뜨고 콜백하는 작업의 mock 이 필요했던 것"이라는 지적 반영.
@@ -59,7 +62,7 @@ MockCond  { source: 'query'|'header'|'body'|'path', key, op: 'eq'|'ne'|'exists'|
   응답 본문이 `OK` 가 아니면 2초 간격 최대 3회 재발송(`retryUntilOk`) — 시나리오 14 규약.
   발사 대상 URL 은 **SsrfGuard 검사**(로컬 프로파일은 loopback 허용 — relay 콜백 가능).
 
-## 4. PG 프리셋 (`MockPgSimulator` — 서버 ID 별 인메모리 상태)
+## 4. PG 프리셋 (`MockPgSimulator` — 서버 ID 별 인메모리 상태) — ⚠ 폐기됨(retracted)
 
 `kind=PG` 서버는 라우트 편집 대신 고정 엔드포인트 세트(아래)를 서빙. 상태(원장·빌키·가상계좌)는
 ConcurrentHashMap — 재시작 시 소실(문서화). 금액은 **문자열**로 응답(assert 비교 단순화).
@@ -105,7 +108,7 @@ ConcurrentHashMap — 재시작 시 소실(문서화). 금액은 **문자열**�
   (기존 first-failure 규약). IF 처럼 분기하지 않고 단일 out.
 - 프론트: 팔레트 "검증"(✔), PropertyPanel 조건 편집(IF 섹션 패턴 재사용), cat 색 토큰.
 
-## 7. demos/pg 시나리오 (정상계만 — 대상: PG 프리셋 slug `pg-demo`)
+## 7. demos/pg 시나리오 (정상계만 — 대상: PG 프리셋 slug `pg-demo`) — ⚠ 폐기됨(retracted)
 
 base URL `http://localhost:18080/mock/pg-demo`. 사용자 목록 매핑(음성 5·9·13·16~20·22 제외,
 21 망취소는 "오류 응답 허용 판정" 노드 규칙이 없어 후속):

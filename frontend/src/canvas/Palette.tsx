@@ -1,5 +1,6 @@
 import { useReactFlow } from '@xyflow/react'
 import type { CSSProperties, DragEvent } from 'react'
+import { useState } from 'react'
 import type { GraphNode, HttpMethod, NodeType } from '../api/types'
 import { MethodTag } from '../components/MethodTag'
 import { useEditorStore } from '../store/editorStore'
@@ -13,6 +14,14 @@ export function Palette({ width = 200 }: { width?: number }) {
   const removePaletteGroup = useEditorStore((s) => s.removePaletteGroup)
   const removePaletteItem = useEditorStore((s) => s.removePaletteItem)
   const { screenToFlowPosition } = useReactFlow()
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
+  const toggleGroup = (id: string) =>
+    setCollapsed((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
 
   const center = () => screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 })
 
@@ -56,15 +65,26 @@ export function Palette({ width = 200 }: { width?: number }) {
         </button>
       ))}
 
-      {palette.map((group) => (
+      {palette.map((group) => {
+        const isCollapsed = collapsed.has(group.id)
+        return (
         <section key={group.id} aria-label={`가져온 API: ${group.title}`} style={{ marginTop: 8 }}>
-          <div style={{ ...groupTitle, display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={group.title}>
-              {group.title}
-            </span>
+          <div style={{ ...groupTitle, display: 'flex', alignItems: 'center', gap: 4, padding: '4px 2px 6px' }}>
+            <button
+              onClick={() => toggleGroup(group.id)}
+              aria-expanded={!isCollapsed}
+              title={isCollapsed ? '펼치기' : '접기'}
+              style={groupToggle}
+            >
+              <span aria-hidden style={{ width: 12, flexShrink: 0, fontSize: 10 }}>{isCollapsed ? '▸' : '▾'}</span>
+              <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'left' }} title={group.title}>
+                {group.title}
+              </span>
+              <span style={{ flexShrink: 0, fontFamily: 'var(--fl-font-mono)', color: 'var(--fl-text-muted)', fontWeight: 500 }}>{group.items.length}</span>
+            </button>
             <button onClick={() => removePaletteGroup(group.id)} aria-label="그룹 제거" title="그룹 제거" style={xBtn}>×</button>
           </div>
-          {group.items.map((item) => (
+          {!isCollapsed && group.items.map((item) => (
             <div
               key={item.id}
               role="button"
@@ -99,7 +119,8 @@ export function Palette({ width = 200 }: { width?: number }) {
             </div>
           ))}
         </section>
-      ))}
+        )
+      })}
 
       <p style={{ fontSize: 11, color: 'var(--fl-text-muted)', marginTop: 'auto', lineHeight: 1.5 }}>
         클릭 또는 Enter로 중앙에 추가, 캔버스로 드래그도 가능합니다.
@@ -153,4 +174,21 @@ const xBtn: CSSProperties = {
   cursor: 'pointer',
   fontSize: 14,
   lineHeight: 1,
+}
+const groupToggle: CSSProperties = {
+  flex: 1,
+  minWidth: 0,
+  display: 'flex',
+  alignItems: 'center',
+  gap: 5,
+  border: 'none',
+  background: 'transparent',
+  color: 'var(--fl-text-muted)',
+  cursor: 'pointer',
+  fontSize: 11,
+  fontWeight: 700,
+  textTransform: 'uppercase',
+  letterSpacing: '.06em',
+  fontFamily: 'inherit',
+  padding: '2px 2px',
 }

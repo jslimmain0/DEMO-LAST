@@ -144,7 +144,7 @@ function LogBlock({ title, text }: { title: string; text: string | null | undefi
   return (
     <div>
       <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--fl-text-muted)', marginBottom: 4 }}>{title}</div>
-      <pre style={{ margin: 0, padding: 10, background: 'var(--fl-surface-2)', borderRadius: 'var(--fl-radius-sm)', fontFamily: 'var(--fl-font-mono)', fontSize: 11.5, whiteSpace: 'pre-wrap', wordBreak: 'break-all', maxHeight: 160, overflow: 'auto' }}>{text}</pre>
+      <pre style={{ margin: 0, padding: 10, background: 'var(--fl-surface-2)', color: 'var(--fl-text)', borderRadius: 'var(--fl-radius-sm)', fontFamily: 'var(--fl-font-mono)', fontSize: 11.5, whiteSpace: 'pre-wrap', wordBreak: 'break-all', maxHeight: 160, overflow: 'auto' }}>{text}</pre>
     </div>
   )
 }

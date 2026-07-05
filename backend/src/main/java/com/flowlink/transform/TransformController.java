@@ -3,7 +3,6 @@ package com.flowlink.transform;
 import com.flowlink.transform.FlowTransform.IoSpec;
 import com.flowlink.transform.FlowTransform.TransformParam;
 import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -29,12 +28,5 @@ public class TransformController {
     @GetMapping
     public List<TransformInfo> list() {
         return registry.list().stream().map(TransformInfo::from).toList();
-    }
-
-    /** JAR 업로드 후 재스캔(관리용). */
-    @PostMapping("/reload")
-    public List<TransformInfo> reload() {
-        registry.reload();
-        return list();
     }
 }

@@ -17,8 +17,8 @@ export interface BindableSource {
   items: BindableItem[]
 }
 
-/** targetId 의 모든 조상(상위) 노드를 역방향 BFS 로 수집해 바인딩 항목 목록을 만든다. */
-export function upstreamSources(nodes: Node[], edges: Edge[], targetId: string): BindableSource[] {
+/** targetId 의 모든 조상(상위) 노드를 역방향 BFS 로 수집해 바인딩 항목 목록을 만든다. (모듈 내부 전용) */
+function upstreamSources(nodes: Node[], edges: Edge[], targetId: string): BindableSource[] {
   const incoming = new Map<string, string[]>()
   for (const e of edges) {
     if (!incoming.has(e.target)) incoming.set(e.target, [])

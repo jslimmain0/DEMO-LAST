@@ -23,7 +23,7 @@ export function str(v: unknown): string {
   return typeof v === 'string' ? v : ''
 }
 
-export function mapType(schema: AnyObj): string {
+function mapType(schema: AnyObj): string {
   const t = str(schema.type)
   if (t === 'integer') return 'int'
   if (t === 'number') return 'number'
@@ -34,8 +34,8 @@ export function mapType(schema: AnyObj): string {
   return t || 'string'
 }
 
-/** $ref 해석(중첩 포함). schemas/definitions/responses 어디든 이름으로 찾는다. */
-export function resolveRef(schema: AnyObj | undefined, ctx: RefCtx, depth = 0): AnyObj {
+/** $ref 해석(중첩 포함). schemas/definitions/responses 어디든 이름으로 찾는다. (모듈 내부 전용) */
+function resolveRef(schema: AnyObj | undefined, ctx: RefCtx, depth = 0): AnyObj {
   if (!schema || depth > 6) return schema ?? {}
   const ref = str(schema.$ref)
   if (!ref) return schema

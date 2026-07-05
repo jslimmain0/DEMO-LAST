@@ -27,7 +27,6 @@ interface EditorState {
   removeEdge: (id: string) => void
   addNode: (type: NodeType, pos: { x: number; y: number }) => string
   addNodeFromTemplate: (template: GraphNode, pos: { x: number; y: number }) => string
-  addNodes: (graphNodes: GraphNode[]) => void
   updateNodeData: (id: string, patch: Partial<GraphNode>) => void
   selectNode: (id: string | null) => void
   deleteNode: (id: string) => void
@@ -138,16 +137,6 @@ export const useEditorStore = create<EditorState>()((set, get) => ({
       dirty: true,
     })
     return id
-  },
-
-  addNodes: (graphNodes) => {
-    const rfNew: Node[] = graphNodes.map((dn) => ({
-      id: dn.id,
-      type: rfNodeType(dn.type),
-      position: { x: dn.x ?? 120, y: dn.y ?? 120 },
-      data: dn as unknown as Record<string, unknown>,
-    }))
-    set({ nodes: [...get().nodes, ...rfNew], dirty: true })
   },
 
   updateNodeData: (id, patch) => {

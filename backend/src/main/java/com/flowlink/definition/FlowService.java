@@ -16,7 +16,6 @@ import com.flowlink.definition.dto.CreateFlowRequest;
 import com.flowlink.definition.dto.FlowDetail;
 import com.flowlink.definition.dto.FlowSummary;
 import com.flowlink.definition.dto.FlowVersionSummary;
-import com.flowlink.definition.dto.UpdateFlowRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -65,18 +64,6 @@ public class FlowService {
     }
 
     @Transactional
-    public FlowDetail updateMeta(UUID id, UpdateFlowRequest req) {
-        Flow flow = loadFlow(id);
-        if (req.name() != null && !req.name().isBlank()) {
-            flow.setName(req.name());
-        }
-        if (req.description() != null) {
-            flow.setDescription(req.description());
-        }
-        return toDetail(flow);
-    }
-
-    @Transactional
     public void archive(UUID id) {
         loadFlow(id).setArchived(true);
     }
@@ -99,21 +86,6 @@ public class FlowService {
         return FlowVersionSummary.from(version);
     }
 
-    @Transactional(readOnly = true)
-    public List<FlowVersionSummary> listVersions(UUID id) {
-        loadFlow(id); // 권한/존재 확인
-        return versionRepo.findByFlowIdOrderByVersionNoDesc(id)
-                .stream().map(FlowVersionSummary::from).toList();
-    }
-
-    @Transactional(readOnly = true)
-    public JsonNode getVersionGraph(UUID id, int versionNo) {
-        loadFlow(id);
-        FlowVersion v = versionRepo.findByFlowIdAndVersionNo(id, versionNo)
-                .orElseThrow(() -> NotFoundException.of("FlowVersion", id + "/v" + versionNo));
-        return json.readTree(v.getGraphJson());
-    }
-
     @Transactional
     public FlowDetail importFlow(JsonNode export) {
         String name = textOr(export, "name", "가져온 플로우");
@@ -128,18 +100,6 @@ public class FlowService {
 
         Flow flow = createInternal(name, textOr(export, "desc", ""), json.toJson(graph), "가져오기", null);
         return toDetail(flow);
-    }
-
-    @Transactional(readOnly = true)
-    public JsonNode exportFlow(UUID id) {
-        Flow flow = loadFlow(id);
-        JsonNode graph = currentGraph(flow);
-        ObjectNode out = mapper.createObjectNode();
-        out.put("version", 1);
-        out.put("name", flow.getName());
-        out.set("nodes", graph.has("nodes") ? graph.get("nodes") : mapper.createArrayNode());
-        out.set("edges", graph.has("edges") ? graph.get("edges") : mapper.createArrayNode());
-        return out;
     }
 
     // --- 내부 ---

@@ -6,7 +6,7 @@ REST API 워크플로 오케스트레이션 플랫폼. 클라이언트 전용 �
 
 | | 스택 | 포트 |
 |---|---|---|
-| **Backend** | Spring Boot 3.3.5 / Java 21 / JPA + Flyway / PostgreSQL(H2 dev) / SpEL | 18080 |
+| **Backend** | Spring Boot 3.3.5 / **Kotlin 1.9**(Java 21 toolchain) / JPA + Flyway / PostgreSQL(H2 dev) / SpEL | 18080 |
 | **Frontend** | React 19 / Vite 8 / @xyflow/react / Zustand / React Query / axios | 5173 |
 
 ---
@@ -70,6 +70,8 @@ $env:JAVA_HOME="C:\Users\jslim\.jdks\corretto-21.0.10"
 ---
 
 ## 백엔드 구조 (`com.flowlink`)
+
+> **2026-07-05 전체 Kotlin 이관 완료** — `src/main/kotlin`·`src/test/kotlin`만 존재(Java 0). 패키지/모듈 경계·동작은 동일, 언어만 Kotlin(record→data class, static→companion `@JvmStatic`, JPA 엔티티는 일반 class + `plugin.jpa` no-arg / `plugin.spring` all-open). ⚠️ **Jackson 역직렬화 대상(DTO·값 record)에는 `@get:JvmName` 금지** — jackson-module-kotlin 이 오인식해 컬렉션/Map 역직렬화가 깨진다(MockSpec 회귀로 확인). Java 호출부가 없어져 accessor 대신 프로퍼티 접근(`node.id`)이 기본.
 
 ```
 core/        도메인·그래프·리포지토리 (코어, 다른 모듈이 의존)

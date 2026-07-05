@@ -39,7 +39,9 @@ class MockServerService(
         if (repository.existsBySlug(slug)) {
             throw BadRequestException("이미 사용 중인 slug 입니다: $slug")
         }
-        val saved = repository.save(
+        // saveAndFlush: 신규 엔티티라 @CreationTimestamp lateinit createdAt/updatedAt 가 flush 후 채워진다
+        // (toDetail 이 이를 읽으므로 flush 전 접근하면 UninitializedPropertyAccessException). FlowService.createInternal 과 동일.
+        val saved = repository.saveAndFlush(
             MockServer.create(tenant(), req.name, slug, MockServer.Kind.CUSTOM, defaultCustomSpec())
         )
         return toDetail(saved)

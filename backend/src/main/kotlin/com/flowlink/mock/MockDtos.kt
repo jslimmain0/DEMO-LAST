@@ -29,10 +29,10 @@ object MockDtos {
         val updatedAt: Instant
     )
 
+    // 요청 DTO: @get:JvmName 금지 — jackson-module-kotlin 이 오인식해 역직렬화가 깨진다(spec JsonNode 바인딩 등).
+    // 호출부(MockServerService)가 Kotlin 이라 프로퍼티(.name/.spec)로 접근하므로 accessor 별칭도 불필요.
     data class CreateMockServerRequest(
-        @get:JvmName("name")
         @field:NotBlank val name: String,
-        @get:JvmName("slug")
         @field:NotBlank @field:Pattern(
             regexp = "[a-z0-9-]{3,40}",
             message = "slug 는 소문자·숫자·하이픈 3~40자"
@@ -40,14 +40,11 @@ object MockDtos {
     )
 
     data class UpdateMockServerRequest(
-        @get:JvmName("name")
         val name: String?,
-        @get:JvmName("enabled")
         val enabled: Boolean?
     )
 
     data class UpdateMockSpecRequest(
-        @get:JvmName("spec")
         val spec: JsonNode?
     )
 }

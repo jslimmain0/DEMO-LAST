@@ -65,11 +65,14 @@ class FlowService(
         val nextNo = flow.currentVersion + 1
 
         val version = FlowVersion.create(flow.id, nextNo, name, graphJson, note, null)
-        versionRepo.save(version)
+        // 할당식 UUID 엔티티는 save 가 merge 로 동작 → @CreationTimestamp lateinit createdAt 은
+        // **반환된 관리 인스턴스**에만 채워진다(원본 version 은 merge 소스라 미초기화). from 이 createdAt
+        // 을 읽으므로 반환값(saved)을 써야 한다. createInternal 의 `flow = saveAndFlush(flow)` 와 동일 이유.
+        val saved = versionRepo.saveAndFlush(version)
 
         flow.name = name
         flow.currentVersion = nextNo
-        return FlowVersionSummary.from(version)
+        return FlowVersionSummary.from(saved)
     }
 
     @Transactional

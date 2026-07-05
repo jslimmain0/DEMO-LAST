@@ -55,7 +55,7 @@ class MockRuntimeTest {
         MockRoute getRoute = new MockRoute("r2", "GET", "/x", List.of(rule("u2", null, "get")));
         Optional<MockRuntime.Match> m = runtime.match(List.of(anyRoute, getRoute), req("GET", "/x"));
         assertThat(m).isPresent();
-        assertThat(m.get().rule().id()).isEqualTo("u1"); // 정의 순서 우선
+        assertThat(m.get().rule().getId()).isEqualTo("u1"); // 정의 순서 우선
         assertThat(runtime.match(List.of(getRoute), req("POST", "/x"))).isEmpty(); // 메서드 불일치
     }
 
@@ -85,8 +85,8 @@ class MockRuntimeTest {
                 rule("no", null, "{\"verified\":false}")));
         var ok = runtime.match(List.of(route), req("POST", "/otp", Map.of(), Map.of(), "", Map.of("otp", "111111")));
         var no = runtime.match(List.of(route), req("POST", "/otp", Map.of(), Map.of(), "", Map.of("otp", "000")));
-        assertThat(ok.get().rule().id()).isEqualTo("ok");
-        assertThat(no.get().rule().id()).isEqualTo("no");
+        assertThat(ok.get().rule().getId()).isEqualTo("ok");
+        assertThat(no.get().rule().getId()).isEqualTo("no");
     }
 
     // ---------- 템플릿 ----------

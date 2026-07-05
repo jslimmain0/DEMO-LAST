@@ -40,11 +40,11 @@ public class MockRuntime {
     /** 정의 순서대로 method+경로 첫 매칭 라우트, 그 안에서 조건 만족 첫 규칙. */
     public Optional<Match> match(List<MockRoute> routes, MockRequest req) {
         for (MockRoute route : routes) {
-            Map<String, String> params = matchPath(route.path(), req.path());
+            Map<String, String> params = matchPath(route.getPath(), req.path());
             if (params == null) {
                 continue;
             }
-            String m = route.method() == null ? "ANY" : route.method().toUpperCase(Locale.ROOT);
+            String m = route.getMethod() == null ? "ANY" : route.getMethod().toUpperCase(Locale.ROOT);
             if (!m.equals("ANY") && !m.equals(req.method())) {
                 continue;
             }
@@ -61,33 +61,33 @@ public class MockRuntime {
 
     /** 규칙 → 실제 응답(바이트) + 지연 + 콜백 명세. seq 는 서버별 증가 카운터 공급자에서 받은 값. */
     public MockResponse render(MockRule rule, MockRequest req, Map<String, String> pathParams, long seq) {
-        Charset cs = MockHttp.charsetOf(rule.charset());
-        String body = template(rule.body() == null ? "" : rule.body(), req, pathParams, seq);
+        Charset cs = MockHttp.charsetOf(rule.getCharset());
+        String body = template(rule.getBody() == null ? "" : rule.getBody(), req, pathParams, seq);
         Map<String, String> headers = new LinkedHashMap<>();
-        for (MockSpec.KV kv : rule.headers() == null ? List.<MockSpec.KV>of() : rule.headers()) {
-            if (kv.key() != null && !kv.key().isBlank()) {
-                headers.put(kv.key(), template(kv.value() == null ? "" : kv.value(), req, pathParams, seq));
+        for (MockSpec.KV kv : rule.getHeaders() == null ? List.<MockSpec.KV>of() : rule.getHeaders()) {
+            if (kv.getKey() != null && !kv.getKey().isBlank()) {
+                headers.put(kv.getKey(), template(kv.getValue() == null ? "" : kv.getValue(), req, pathParams, seq));
             }
         }
-        int delay = rule.delayMs() == null ? 0 : Math.max(0, Math.min(rule.delayMs(), MAX_DELAY_MS));
+        int delay = rule.getDelayMs() == null ? 0 : Math.max(0, Math.min(rule.getDelayMs(), MAX_DELAY_MS));
         FiredCallback cb = null;
-        MockSpec.MockCallback c = rule.callback();
+        MockSpec.MockCallback c = rule.getCallback();
         if (c != null) {
-            String url = template(c.url() == null ? "" : c.url(), req, pathParams, seq).trim();
+            String url = template(c.getUrl() == null ? "" : c.getUrl(), req, pathParams, seq).trim();
             if (!url.isEmpty()) {
                 cb = new FiredCallback(
-                        c.afterMs() == null ? 0 : Math.max(0, Math.min(c.afterMs(), MAX_CALLBACK_DELAY_MS)),
+                        c.getAfterMs() == null ? 0 : Math.max(0, Math.min(c.getAfterMs(), MAX_CALLBACK_DELAY_MS)),
                         url,
-                        c.method() == null || c.method().isBlank() ? "POST" : c.method().toUpperCase(Locale.ROOT),
+                        c.getMethod() == null || c.getMethod().isBlank() ? "POST" : c.getMethod().toUpperCase(Locale.ROOT),
                         MockHttp.contentTypeHeader(
-                                c.contentType() == null || c.contentType().isBlank() ? "urlencoded" : c.contentType(),
+                                c.getContentType() == null || c.getContentType().isBlank() ? "urlencoded" : c.getContentType(),
                                 java.nio.charset.StandardCharsets.UTF_8),
-                        template(c.body() == null ? "" : c.body(), req, pathParams, seq),
-                        Boolean.TRUE.equals(c.retryUntilOk()));
+                        template(c.getBody() == null ? "" : c.getBody(), req, pathParams, seq),
+                        Boolean.TRUE.equals(c.getRetryUntilOk()));
             }
         }
-        int status = rule.status() == null ? 200 : rule.status();
-        return new MockResponse(status, MockHttp.contentTypeHeader(rule.contentType(), cs), headers,
+        int status = rule.getStatus() == null ? 200 : rule.getStatus();
+        return new MockResponse(status, MockHttp.contentTypeHeader(rule.getContentType(), cs), headers,
                 body.getBytes(cs), delay, cb);
     }
 
@@ -133,13 +133,13 @@ public class MockRuntime {
 
     static boolean conditionsPass(List<MockCond> conds, MockRequest req, Map<String, String> pathParams) {
         for (MockCond c : conds) {
-            String actual = valueOf(c.source(), c.key(), req, pathParams);
-            String op = c.op() == null ? "eq" : c.op().toLowerCase(Locale.ROOT);
+            String actual = valueOf(c.getSource(), c.getKey(), req, pathParams);
+            String op = c.getOp() == null ? "eq" : c.getOp().toLowerCase(Locale.ROOT);
             boolean pass = switch (op) {
-                case "eq" -> actual != null && actual.equals(c.value() == null ? "" : c.value());
-                case "ne" -> actual == null || !actual.equals(c.value() == null ? "" : c.value());
+                case "eq" -> actual != null && actual.equals(c.getValue() == null ? "" : c.getValue());
+                case "ne" -> actual == null || !actual.equals(c.getValue() == null ? "" : c.getValue());
                 case "exists" -> actual != null && !actual.isEmpty();
-                case "contains" -> actual != null && actual.contains(c.value() == null ? "" : c.value());
+                case "contains" -> actual != null && actual.contains(c.getValue() == null ? "" : c.getValue());
                 default -> false;
             };
             if (!pass) {

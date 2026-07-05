@@ -94,8 +94,8 @@ public class MockGatewayController {
         if ("/__routes".equals(req.path())) {
             List<Map<String, Object>> routes = spec.routesOrEmpty().stream()
                     .<Map<String, Object>>map(r -> Map.of(
-                            "method", r.method() == null ? "ANY" : r.method(),
-                            "path", r.path() == null ? "" : r.path(),
+                            "method", r.getMethod() == null ? "ANY" : r.getMethod(),
+                            "path", r.getPath() == null ? "" : r.getPath(),
                             "rules", r.rulesOrEmpty().size()))
                     .toList();
             return MockResponse.of(200, "application/json; charset=UTF-8",

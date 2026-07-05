@@ -456,27 +456,35 @@ class HttpNodeExecutor(
         private val HEADER_NAME: Pattern = Pattern.compile("^[!#$%&'*+.^_`|~0-9A-Za-z-]+$")
 
         /**
-         * respType=query 용 쿼리스트링 추출. {@code ?} 가 있으면 그 뒤(프래그먼트 {@code #…} 는 제거),
-         * 없으면 본문이 {@code a=1&b=2} 형태(= 포함)일 때만 본문 자체를 쿼리로 본다. 아니면 null.
+         * respType=query 용 쿼리스트링 추출. URL/쿼리스트링은 <b>한 줄</b>이라는 전제 — 여러 줄 본문
+         * (텍스트/HTML 에 '?' 가 섞인 경우)은 쿼리로 오인하지 않고 null(→ body 보존 폴백).
+         * 한 줄이면: {@code ?} 가 있으면 그 뒤(프래그먼트 {@code #…} 는 제거), 없으면
+         * {@code a=1&b=2} 형태(= 포함)일 때만 본문 자체를 쿼리로 본다.
          */
         internal fun extractQueryString(body: String?): String? {
             if (body == null) {
                 return null
             }
             var t = body.trim()
-            if (t.isEmpty()) {
+            if (t.isEmpty() || t.contains('\n')) {
                 return null
+            }
+            // '?' 를 먼저 찾고, 프래그먼트는 '?' 뒤에 오는 것만 제거 — 해시 라우팅 URL(https://x/#/cb?code=1)의
+            // 파라미터가 프래그먼트 선제거로 유실되지 않게 한다.
+            val q = t.indexOf('?')
+            if (q >= 0) {
+                var qs = t.substring(q + 1)
+                val h = qs.indexOf('#')
+                if (h >= 0) {
+                    qs = qs.substring(0, h)
+                }
+                return qs
             }
             val hash = t.indexOf('#')
             if (hash >= 0) {
                 t = t.substring(0, hash)
             }
-            val q = t.indexOf('?')
-            if (q >= 0) {
-                return t.substring(q + 1)
-            }
-            // '?' 없는 본문은 한 줄짜리 a=1&b=2 형태만 쿼리로 인정(여러 줄 텍스트 오인 방지 — tryParseCallbackBody 규약과 동일)
-            return if (t.contains('=') && !t.contains('\n')) t else null
+            return if (t.contains('=')) t else null
         }
 
         @Suppress("UNCHECKED_CAST")

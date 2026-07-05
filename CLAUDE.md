@@ -442,8 +442,12 @@ design/   theme(라이트/다크) · index.css(CSS 변수)
     ⚠ JSON 바디에서 bound 는 네이티브 값(객체 등)이었는데 토큰 문자열은 문자열화 — 타입 유지가 필요하면 값 타입(select)로 코어션.
     SET 시크릿 행은 마스킹 유지를 위해 기존 [password + { } 바인딩 칩] 방식 유지.
   - **백엔드 보강**: [FlowExecutor](backend/src/main/kotlin/com/flowlink/execution/engine/FlowExecutor.kt) `setNode` 가 리터럴
-    변수값도 `{{토큰}}` 치환(토큰 없으면 원문 그대로 — 무회귀). Raw 텍스트영역(rawBody/rawParams/rawHeaders)은 "원문 보기"가
+    변수값도 `{{토큰}}` 해석. **값이 정확히 토큰 하나면 원형(숫자/불리언/객체) 보존**(`TokenResolver.resolveLiteral` —
+    구 bound 와 동일 의미라 이관해도 다운스트림 조건식/JSON 타입 무변화), 텍스트 혼합이면 문자열 치환, 토큰 없으면 원문 그대로.
+    HTTP 필드 리터럴(`fieldValue`)도 같은 규칙. Raw 텍스트영역(rawBody/rawParams/rawHeaders)은 "원문 보기"가
     목적이라 칩 없이 기존 [{ } 데이터 삽입] 버튼 유지.
+  - 토큰 sourceId 클래스 `[A-Za-z0-9]` → **`[\w-]`** 로 확장(백엔드 TOKEN·프론트 tokenGrammar 미러) — 가져온/손편집
+    그래프의 kebab/snake 노드 id(`node-1`)도 bound→토큰 이관 후 바인딩이 끊기지 않는다.
 - **데이터 삽입 피커 칩 레이아웃**: [BindingPicker](frontend/src/binding/BindingPicker.tsx) 항목을 세로 목록 → **flex-wrap 칩 블럭**
   (응답=녹색점/요청=파란점 + 키 + 타입 배지, 노드 그룹핑 유지). 카드 폭 460→520.
 - **콜백 대기(wait) 프론트 대기 유지 버그 수정**: relay 백엔드 통합(SSE→폴링 전환) 때부터 `GET /executions/{id}` 가 대기 중에도
@@ -456,8 +460,17 @@ design/   theme(라이트/다크) · index.css(CSS 변수)
   브라우저(Playwright) e2e 12(칩 삽입·텍스트+칩+텍스트 직렬화·× 삭제·피커 칩·실행 중 점선/스피너·완료 배지·정지)
   + wait e2e 10(배너 3초+ 유지·펄스·유입 점선·수신 URL·콜백 자동 완료 표시·타임아웃 실패 표기·✕ 배지) PASS.
   프론트 tsc/vite/oxlint 통과. 적대적 멀티에이전트 리뷰 반영.
+- **적대적 멀티에이전트 리뷰(4관점 파인더 23건 발견 → 3인 반박 투표) 반영**: 전체-토큰 원형 보존(위) ·
+  extractQueryString 여러 줄 오파싱 가드 + 해시 라우팅 URL(`#/cb?code=1`) 파라미터 보존 · TokenInput 복사/잘라내기가
+  칩 라벨이 아닌 토큰 원문을 클립보드에 싣게(onCopy/onCut) · 드롭 삽입 차단 · 피커 복귀 시 입력 포커스 복원 ·
+  ZWSP 패드 자동 복구(ensurePads) · sourceId 클래스 확장 · reduced-motion 에서 무한 애니메이션 완전 정지
+  (`animation-iteration-count:1`) · 피커 칩 응답/요청 텍스트 태그(색 단독 금지 1.4.1) · RunBadge role=img ·
+  플로우 전환 시 이전 실행 상태 정리(가짜 running 방지) · wait 폴링 유지(위 버그 수정).
 - ⚠️ 실행 애니메이션은 폴링 기반(SSE/WebSocket 아님) — 초당 2~3회 GET. 같은 플로우를 다른 탭이 동시 실행하면 baseline 비교가
   다른 실행을 잡을 수 있음(단일 사용자 도구 전제). waitMsg·Raw 텍스트영역은 토큰이 평문으로 보임(의도).
+  기존 그래프의 SET 리터럴에 문자 그대로 보관하던 `{{ ascii키 }}` 텍스트는 이제 치환됨(토큰 기능의 본질적 트레이드오프 —
+  한글 키 등 비매치 텍스트는 원문 유지). 비시크릿 SET 변수 토큰이 상류 시크릿을 참조하면 평문으로 로그/DB 에 실림
+  (bound 시절부터 동일 — 시크릿 전파 마스킹은 시크릿 볼트 과제와 함께 후속).
 
 ## 참고 문서
 - `backend/README.md` — Phase 1 구현 범위 표, API 요약, 실행 가이드

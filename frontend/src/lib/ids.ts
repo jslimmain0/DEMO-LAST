@@ -1,5 +1,5 @@
-// 노드/엣지 id 발급기. (D5) sourceId 토큰 클래스가 [A-Za-z0-9]+ 이므로
-// '-'/'_' 가 섞이는 nanoid 기본값을 쓰면 토큰 파싱이 silent fail 한다 → 영숫자만 사용.
+// 노드/엣지 id 발급기. (D5) 신규 id 는 영숫자만 사용(토큰 문법과 가장 안전한 교집합).
+// 토큰 sourceId 클래스는 [\w-]+ 로 넓혀 가져온 그래프의 kebab/snake id 도 바인딩된다(tokenGrammar 참조).
 const ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
 
 export function newId(len = 8): string {

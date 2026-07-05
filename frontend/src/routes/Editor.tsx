@@ -78,6 +78,16 @@ export function Editor() {
     st.setRunView(computeRunView(execution, running, st.nodes, st.edges))
   }, [execution, running])
 
+  // 플로우 전환(뒤로가기/다른 플로우 열기) — 이전 플로우의 실행 상태가 새 캔버스에 비치지 않게 정리.
+  // 진행 중이던 실행 루프/폴러는 중단 신호로 마감한다(백엔드 실행은 wait 타임아웃/자체 완료로 정리됨).
+  useEffect(() => {
+    return () => {
+      stopRef.current?.abort()
+      setExecution(null)
+      setWaitStatus(null)
+    }
+  }, [flowId])
+
   useEffect(() => {
     if (flowQuery.data) loadGraph(flowQuery.data.id, flowQuery.data.name, flowQuery.data.graph)
   }, [flowQuery.data, loadGraph])

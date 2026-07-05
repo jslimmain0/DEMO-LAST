@@ -94,6 +94,23 @@ export function TokenInput({
     insertAtCaret(text)
   }
 
+  // 복사/잘라내기 — 칩은 라벨 텍스트가 아니라 토큰 원문({{ key@노드 }})으로 클립보드에 실린다
+  const onCopyOrCut = (e: ClipboardEvent<HTMLDivElement>, cut: boolean) => {
+    const root = rootRef.current
+    const sel = window.getSelection()
+    if (!root || !sel || sel.rangeCount === 0 || sel.isCollapsed) return
+    const range = sel.getRangeAt(0)
+    if (!root.contains(range.commonAncestorContainer)) return
+    e.preventDefault()
+    const holder = document.createElement('div')
+    holder.appendChild(range.cloneContents())
+    e.clipboardData.setData('text/plain', serializeDom(holder))
+    if (cut) {
+      range.deleteContents()
+      emit()
+    }
+  }
+
   const insertAtCaret = (text: string) => {
     const root = rootRef.current
     if (!root) return
@@ -126,6 +143,7 @@ export function TokenInput({
   const insertBinding = (b: Binding) => {
     const root = rootRef.current
     if (!root) return
+    root.focus() // 피커(모달)에서 돌아온 포커스를 입력으로 복귀 — 바로 이어서 타이핑 가능
     const token = bindingToToken(b)
     const chip = makeChip(token, emit)
     // 칩 뒤에 제로폭 공백을 둬서 칩이 맨 끝이어도 그 뒤에 캐럿을 놓고 이어서 타이핑할 수 있게 한다
@@ -182,6 +200,9 @@ export function TokenInput({
           onMouseUp={saveRange}
           onClick={ensurePads}
           onPaste={onPaste}
+          onCopy={(e) => onCopyOrCut(e, false)}
+          onCut={(e) => onCopyOrCut(e, true)}
+          onDrop={(e) => e.preventDefault()} // 드롭 삽입 차단 — 표시 DOM/저장값 불일치·리스너 없는 칩 복제 방지
           onBlur={onBlur}
         />
       </div>

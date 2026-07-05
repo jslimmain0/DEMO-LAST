@@ -62,7 +62,10 @@ export function BindingPicker({
                     title={`${it.group === 'response' ? '응답' : '요청'} · ${it.key}${it.type ? ` (${it.type})` : ''}`}
                     style={chipBtn(it.group === 'response')}
                   >
-                    <span aria-hidden style={{ width: 6, height: 6, borderRadius: '50%', flexShrink: 0, background: it.group === 'response' ? 'var(--fl-ok)' : 'var(--fl-running)' }} />
+                    {/* 색 단독 금지(1.4.1) — 응답/요청 구분은 텍스트 태그로 */}
+                    <span style={{ fontSize: 9.5, fontWeight: 700, flexShrink: 0, color: it.group === 'response' ? 'var(--fl-ok)' : 'var(--fl-running)' }}>
+                      {it.group === 'response' ? '응답' : '요청'}
+                    </span>
                     <span style={{ fontFamily: 'var(--fl-font-mono)', fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 180 }}>{it.key}</span>
                     {it.type && <span style={typeBadge}>{it.type}</span>}
                   </button>

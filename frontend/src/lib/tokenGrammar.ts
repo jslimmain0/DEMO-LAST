@@ -2,7 +2,7 @@
 //   {{ key }}            bare (가장 가까운 상위 노드 출력)
 //   {{ key@id }}         명시 소스
 //   {{ key@req:id }}     요청값 스코프
-// key 클래스 [\w.-]+, sourceId 클래스 [A-Za-z0-9]+
+// key 클래스 [\w.-]+, sourceId 클래스 [\w-]+ (가져온 그래프의 kebab/snake id 호환)
 import type { Binding } from '../api/types'
 
 /** 바인딩 → 토큰 문자열(백엔드 chipToken 과 동일 형식). */
@@ -12,7 +12,7 @@ export function bindingToToken(b: Pick<Binding, 'key' | 'sourceId' | 'scope'>): 
 }
 
 // 백엔드 TokenResolver.TOKEN 패턴과 동일(그룹: key / req: / sourceId)
-const TOKEN_SRC = String.raw`\{\{\s*([\w.-]+)(?:@(req:)?([A-Za-z0-9]+))?\s*\}\}`
+const TOKEN_SRC = String.raw`\{\{\s*([\w.-]+)(?:@(req:)?([\w-]+))?\s*\}\}`
 
 /** 토큰 매칭용 정규식(호출마다 새 인스턴스 — lastIndex 공유 버그 방지). */
 export function tokenRegex(): RegExp {

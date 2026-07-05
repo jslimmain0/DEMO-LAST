@@ -36,6 +36,12 @@ class HttpQueryResponseTest {
     }
 
     @Test
+    fun hashRoutingUrlKeepsParams() {
+        // SPA 해시 라우팅 리다이렉트 — '#' 가 '?' 보다 앞이면 프래그먼트 안의 쿼리를 살린다
+        assertEquals("code=1&tid=T", HttpNodeExecutor.extractQueryString("https://x/app/#/return?code=1&tid=T"))
+    }
+
+    @Test
     fun nonQueryBodiesReturnNull() {
         assertNull(HttpNodeExecutor.extractQueryString(null))
         assertNull(HttpNodeExecutor.extractQueryString(""))
@@ -43,6 +49,9 @@ class HttpQueryResponseTest {
         assertNull(HttpNodeExecutor.extractQueryString("hello world")) // '=' 없음
         assertNull(HttpNodeExecutor.extractQueryString("https://x/path")) // '?' 도 '=' 도 없음
         assertNull(HttpNodeExecutor.extractQueryString("line1=1\nline2=2")) // 여러 줄 텍스트는 쿼리로 오인하지 않음
+        // '?' 가 있어도 여러 줄이면 쿼리 아님 — 텍스트/HTML 본문 오파싱 방지(body 보존 폴백)
+        assertNull(HttpNodeExecutor.extractQueryString("결제 됐어?\n그럼 코드=0000 확인해"))
+        assertNull(HttpNodeExecutor.extractQueryString("<html>\n<a href=\"/x?a=1\">link</a>\n</html>"))
     }
 
     @Test

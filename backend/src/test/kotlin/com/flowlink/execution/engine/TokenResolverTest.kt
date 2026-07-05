@@ -56,4 +56,19 @@ class TokenResolverTest {
         )
         assertEquals("5000", resolver.fieldValue(f, ctx))
     }
+
+    /** 리터럴이 정확히 토큰 하나면 원형(숫자/불리언/객체) 보존 — 구 bound 의 토큰 문자열 이관과 의미 동일. */
+    @Test
+    fun wholeTokenLiteralPreservesType() {
+        val ctx = ExecutionContext()
+        ctx.putOutput("n1", mapOf("cnt" to 30L, "ok" to true, "obj" to mapOf("a" to 1)))
+        assertEquals(30L, resolver.resolveLiteral("{{ cnt@n1 }}", ctx))
+        assertEquals(true, resolver.resolveLiteral(" {{ ok@n1 }} ", ctx)) // 앞뒤 공백 허용
+        assertEquals(mapOf("a" to 1), resolver.resolveLiteral("{{ obj@n1 }}", ctx))
+        // 텍스트가 섞이면 문자열 치환
+        assertEquals("총 30건", resolver.resolveLiteral("총 {{ cnt@n1 }}건", ctx))
+        // 필드 경로도 동일 규칙
+        val f = NodeField("f1", "qty", "{{ cnt@n1 }}", null, null)
+        assertEquals(30L, resolver.fieldValue(f, ctx))
+    }
 }

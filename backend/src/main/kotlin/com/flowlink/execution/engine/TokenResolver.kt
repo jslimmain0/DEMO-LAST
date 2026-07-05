@@ -31,13 +31,29 @@ class TokenResolver(private val json: JsonService) {
         return null
     }
 
-    /** 필드 값 — 바인딩이면 그 값, 아니면 {{토큰}} 치환된 리터럴. */
+    /**
+     * 필드 값 — 바인딩이면 그 값, 아니면 {{토큰}} 치환된 리터럴.
+     * 리터럴이 <b>정확히 토큰 하나</b>면 원형(숫자/불리언/객체)으로 해석한다 — 구(舊) bound 바인딩이
+     * 토큰 문자열로 이관돼도 타입이 보존되도록(bound 와 동일 의미). 텍스트가 섞이면 문자열 치환.
+     */
     fun fieldValue(f: NodeField, ctx: ExecutionContext): Any? {
         if (f.bound != null) {
             return resolveBinding(f.bound, ctx)
         }
-        val v = f.value
-        return if (v != null && v.contains("{{")) resolveTokens(v, ctx) else v
+        val v = f.value ?: return null
+        if (!v.contains("{{")) {
+            return v
+        }
+        return resolveLiteral(v, ctx)
+    }
+
+    /** 리터럴 해석 — 전체가 토큰 하나면 원형 객체, 아니면 문자열 치환. (SET 변수·필드 값 공용) */
+    fun resolveLiteral(value: String, ctx: ExecutionContext): Any? {
+        val m = TOKEN.matcher(value.trim())
+        if (m.matches()) {
+            return resolveTokenObject(m.group(1), m.group(2) != null, m.group(3), ctx)
+        }
+        return resolveTokens(value, ctx)
     }
 
     /** 문자열 내 {{토큰}}을 모두 치환. 해석 실패 토큰은 빈 문자열로. */
@@ -124,8 +140,10 @@ class TokenResolver(private val json: JsonService) {
     }
 
     companion object {
+        // sourceId 클래스 [\w-]: newId() 는 영숫자만 쓰지만, 가져온/손편집 그래프의 kebab/snake id(node-1, my_node)도
+        // 바인딩이 끊기지 않게 허용한다. 프론트 lib/tokenGrammar.ts 와 1:1 미러 — 같이 바꿀 것.
         private val TOKEN: Pattern =
-            Pattern.compile("\\{\\{\\s*([\\w.-]+)(?:@(req:)?([A-Za-z0-9]+))?\\s*}}")
+            Pattern.compile("\\{\\{\\s*([\\w.-]+)(?:@(req:)?([\\w-]+))?\\s*}}")
 
         @JvmStatic
         fun tokenPattern(): Pattern = TOKEN

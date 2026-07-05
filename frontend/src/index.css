@@ -98,7 +98,8 @@ button { font-family: inherit; }
 :focus-visible { outline: 2px solid var(--fl-focus); outline-offset: 2px; border-radius: 4px; }
 
 @media (prefers-reduced-motion: reduce) {
-  * { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
+  /* iteration-count 1: 무한 애니메이션(펄스/스피너/점선)이 0.001ms 로 초고속 반복(스트로브)되지 않게 완전 정지 */
+  * { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; }
 }
 
 /* 드래그 중 손 커서(팔레트 노드·템플릿 끌기) */

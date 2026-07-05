@@ -92,12 +92,12 @@ export function NodeCard({ data, selected }: NodeProps) {
   )
 }
 
-/** 실행 경과 배지 — 진행 중 스피너 / 성공 ✓ / 실패 ✕ / 건너뜀 ⊘ / 대기 펄스. */
+/** 실행 경과 배지 — 진행 중 스피너 / 성공 ✓ / 실패 ✕ / 건너뜀 ⊘ / 대기 펄스. (role=img 로 보조기기 노출) */
 export function RunBadge({ state }: { state?: string }) {
-  if (state === 'waiting') return <span className="fl-wait-dot" title="콜백 대기 중" aria-label="콜백 대기 중" />
-  if (state === 'running') return <span className="fl-run-spinner" title="실행 중" aria-label="실행 중" />
-  if (state === 'success') return <span className="fl-run-badge" style={{ color: 'var(--fl-ok)' }} title="성공" aria-label="성공">✓</span>
-  if (state === 'failed') return <span className="fl-run-badge" style={{ color: 'var(--fl-fail)' }} title="실패" aria-label="실패">✕</span>
-  if (state === 'skipped') return <span className="fl-run-badge" style={{ color: 'var(--fl-text-muted)' }} title="건너뜀" aria-label="건너뜀">⊘</span>
+  if (state === 'waiting') return <span role="img" className="fl-wait-dot" title="콜백 대기 중" aria-label="콜백 대기 중" />
+  if (state === 'running') return <span role="img" className="fl-run-spinner" title="실행 중" aria-label="실행 중" />
+  if (state === 'success') return <span role="img" className="fl-run-badge" style={{ color: 'var(--fl-ok)' }} title="성공" aria-label="성공">✓</span>
+  if (state === 'failed') return <span role="img" className="fl-run-badge" style={{ color: 'var(--fl-fail)' }} title="실패" aria-label="실패">✕</span>
+  if (state === 'skipped') return <span role="img" className="fl-run-badge" style={{ color: 'var(--fl-text-muted)' }} title="건너뜀" aria-label="건너뜀">⊘</span>
   return null
 }

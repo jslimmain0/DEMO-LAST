@@ -442,12 +442,13 @@ class FlowExecutor(
             if (v.key == null || v.key.isBlank()) {
                 continue
             }
-            // 리터럴 값도 {{토큰}} 치환 — 인라인 데이터 삽입(텍스트+토큰 혼합)을 SET 에서도 지원.
+            // 리터럴 값도 {{토큰}} 해석 — 인라인 데이터 삽입(텍스트+토큰 혼합)을 SET 에서도 지원.
+            // 정확히 토큰 하나면 원형(숫자/불리언/객체) 보존(구 bound 와 동일 의미), 혼합이면 문자열 치환,
             // 토큰이 없으면 원문 그대로(무회귀).
             val resolved: Any? = if (v.bound != null) {
                 tokens.resolveBinding(v.bound, ctx)
             } else if (v.value != null && v.value.contains("{{")) {
-                tokens.resolveTokens(v.value, ctx)
+                tokens.resolveLiteral(v.value, ctx)
             } else {
                 v.value
             }

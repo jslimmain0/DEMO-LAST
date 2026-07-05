@@ -9,7 +9,7 @@ import java.util.UUID
 data class ExecutionSummary(
     val id: UUID,
     val flowId: UUID,
-    val flowName: String,
+    val flowName: String?,
     val status: ExecutionStatus,
     val trigger: TriggerType,
     val startedAt: Instant,
@@ -17,7 +17,7 @@ data class ExecutionSummary(
 ) {
     companion object {
         @JvmStatic
-        fun from(e: Execution, flowName: String): ExecutionSummary {
+        fun from(e: Execution, flowName: String?): ExecutionSummary {
             return ExecutionSummary(
                 e.id, e.flowId, flowName, e.status, e.trigger,
                 e.startedAt, e.finishedAt

@@ -5,8 +5,8 @@ package com.flowlink.execution.dto
  * 넘기는 조립된 요청. 프론트는 이 정보로 `fetch` 한 뒤 결과를 resume 으로 돌려준다.
  */
 data class PendingClientRequest(
-    val nodeId: String,
-    val nodeName: String,
+    val nodeId: String?,
+    val nodeName: String?,
     val method: String,
     val url: String,
     val headers: Map<String, String>,

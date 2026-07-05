@@ -6,10 +6,10 @@ package com.flowlink.execution.dto
  * [InputField.type] 은 값 파싱 힌트(string 기본 · number · boolean · json) — 브라우저가 파싱해 보낸다.
  */
 data class PendingInputRequest(
-    val nodeId: String,
-    val nodeName: String,
+    val nodeId: String?,
+    val nodeName: String?,
     val message: String?,
     val fields: List<InputField>
 ) {
-    data class InputField(val key: String, val label: String?, val type: String?)
+    data class InputField(val key: String?, val label: String?, val type: String?)
 }

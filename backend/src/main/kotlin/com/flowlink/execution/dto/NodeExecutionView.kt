@@ -7,8 +7,8 @@ import java.util.UUID
 data class NodeExecutionView(
     val id: UUID,
     val nodeId: String,
-    val nodeName: String,
-    val nodeType: String,
+    val nodeName: String?,
+    val nodeType: String?,
     val seq: Int,
     val status: NodeExecutionStatus,
     val httpStatus: Int?,

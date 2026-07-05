@@ -8,8 +8,8 @@ package com.flowlink.execution.dto
  * [receiveUrl] 은 이 노드의 콜백 수신 URL({relayBase}/cb/{relayRunId}/{nodeId}). relay 미연동 실행이면 null.
  */
 data class PendingWaitRequest(
-    val nodeId: String,
-    val nodeName: String,
+    val nodeId: String?,
+    val nodeName: String?,
     val timeoutSec: Int,
     val receiveUrl: String?
 )

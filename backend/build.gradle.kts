@@ -1,5 +1,8 @@
 plugins {
     java
+    kotlin("jvm") version "1.9.25"
+    kotlin("plugin.spring") version "1.9.25"   // all-open: @Component/@Transactional 등 자동 open
+    kotlin("plugin.jpa") version "1.9.25"       // no-arg: JPA 엔티티 기본 생성자
     id("org.springframework.boot") version "3.3.5"
     id("io.spring.dependency-management") version "1.1.6"
 }
@@ -11,6 +14,13 @@ description = "Flowlink — REST API 워크플로 오케스트레이션 플랫�
 java {
     toolchain {
         languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+
+kotlin {
+    jvmToolchain(21)
+    compilerOptions {
+        freeCompilerArgs.add("-Xjsr305=strict")   // Spring 널 안전 애노테이션 엄격 적용
     }
 }
 
@@ -42,6 +52,10 @@ dependencies {
 
     // --- 표현식 샌드박스(IF 노드) ---
     implementation("org.springframework:spring-expression")
+
+    // --- Kotlin ---
+    implementation("com.fasterxml.jackson.module:jackson-module-kotlin")
+    implementation("org.jetbrains.kotlin:kotlin-reflect")
 
     // --- dev only ---
     developmentOnly("org.springframework.boot:spring-boot-devtools")

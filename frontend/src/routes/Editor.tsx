@@ -288,7 +288,8 @@ async function watchRunProgress(
       if (signal.aborted) return
       onDetail(d)
       if (d.status !== 'RUNNING' && d.status !== 'WAITING') return // 종료 상태 — 더 폴링할 것 없음
-      await sleep(400, signal)
+      // WAITING(콜백/입력/팝업 대기)엔 실행 루프가 이미 1초 폴링을 담당 — 진행 폴러는 백오프(부하 중복 완화)
+      await sleep(d.status === 'WAITING' ? 1500 : 400, signal)
     }
   } catch {
     /* 폴링 실패 무시 — 실행 루프의 결과 반영이 항상 우선한다 */

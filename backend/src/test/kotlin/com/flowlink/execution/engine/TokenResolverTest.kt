@@ -57,6 +57,16 @@ class TokenResolverTest {
         assertEquals("5000", resolver.fieldValue(f, ctx))
     }
 
+    /** 한글 응답 키·kebab/snake 노드 id 토큰 — bound→토큰 이관 호환(문법 확장 회귀 방지). */
+    @Test
+    fun hangulKeyAndKebabSourceId() {
+        val ctx = ExecutionContext()
+        ctx.putOutput("http-1", mapOf("승인코드" to "0000", "amount" to 500))
+        assertEquals("0000", resolver.resolveTokens("{{ 승인코드@http-1 }}", ctx))
+        assertEquals("500", resolver.resolveTokens("{{ amount@http-1 }}", ctx))
+        assertEquals("0000", resolver.resolveLiteral("{{ 승인코드@http-1 }}", ctx))
+    }
+
     /** 리터럴이 정확히 토큰 하나면 원형(숫자/불리언/객체) 보존 — 구 bound 의 토큰 문자열 이관과 의미 동일. */
     @Test
     fun wholeTokenLiteralPreservesType() {

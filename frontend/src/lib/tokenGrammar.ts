@@ -11,8 +11,8 @@ export function bindingToToken(b: Pick<Binding, 'key' | 'sourceId' | 'scope'>): 
   return `{{ ${b.key}@${scope}${b.sourceId} }}`
 }
 
-// 백엔드 TokenResolver.TOKEN 패턴과 동일(그룹: key / req: / sourceId)
-const TOKEN_SRC = String.raw`\{\{\s*([\w.-]+)(?:@(req:)?([\w-]+))?\s*\}\}`
+// 백엔드 TokenResolver.TOKEN 패턴과 동일(그룹: key / req: / sourceId). key 클래스에 한글 포함(응답 키가 한글인 API).
+const TOKEN_SRC = String.raw`\{\{\s*([\w.가-힣-]+)(?:@(req:)?([\w-]+))?\s*\}\}`
 
 /** 토큰 매칭용 정규식(호출마다 새 인스턴스 — lastIndex 공유 버그 방지). */
 export function tokenRegex(): RegExp {
@@ -30,6 +30,14 @@ export function parseToken(raw: string): ParsedToken | null {
   const m = new RegExp(`^${TOKEN_SRC}$`).exec(raw.trim())
   if (!m) return null
   return { key: m[1], scope: m[2] ? 'req' : null, sourceId: m[3] ?? null }
+}
+
+/**
+ * 바인딩이 토큰 문자열로 <b>왕복 가능한지</b> — 공백/대괄호 등 문법 밖 키나 특수문자 id 는
+ * 토큰으로 표현이 안 되므로 구조적 bound 를 유지해야 한다(이관하면 해석 불능 리터럴로 조용히 깨짐).
+ */
+export function isTokenizable(b: Pick<Binding, 'key' | 'sourceId' | 'scope'>): boolean {
+  return parseToken(bindingToToken(b)) !== null
 }
 
 export type ValueSegment = { type: 'text'; text: string } | { type: 'token'; raw: string }

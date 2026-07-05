@@ -140,10 +140,10 @@ class TokenResolver(private val json: JsonService) {
     }
 
     companion object {
-        // sourceId 클래스 [\w-]: newId() 는 영숫자만 쓰지만, 가져온/손편집 그래프의 kebab/snake id(node-1, my_node)도
-        // 바인딩이 끊기지 않게 허용한다. 프론트 lib/tokenGrammar.ts 와 1:1 미러 — 같이 바꿀 것.
+        // key 클래스에 한글 포함(응답 키가 한글인 API) · sourceId 클래스 [\w-](가져온 그래프의 kebab/snake id 호환).
+        // 프론트 lib/tokenGrammar.ts 와 1:1 미러 — 같이 바꿀 것.
         private val TOKEN: Pattern =
-            Pattern.compile("\\{\\{\\s*([\\w.-]+)(?:@(req:)?([\\w-]+))?\\s*}}")
+            Pattern.compile("\\{\\{\\s*([\\w.가-힣-]+)(?:@(req:)?([\\w-]+))?\\s*}}")
 
         @JvmStatic
         fun tokenPattern(): Pattern = TOKEN

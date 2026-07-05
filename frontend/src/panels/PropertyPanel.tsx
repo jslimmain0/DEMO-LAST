@@ -11,7 +11,7 @@ import type { BindableSource } from '../binding/upstream'
 import { asGraphNode } from '../canvas/graphAdapter'
 import { catColor, typeIcon, typeLabel } from '../canvas/nodeMeta'
 import { fieldsToRaw, rawToFields, headersToRaw, rawToHeaders } from '../lib/bodyConvert'
-import { bindingToToken } from '../lib/tokenGrammar'
+import { bindingToToken, isTokenizable } from '../lib/tokenGrammar'
 import { newId } from '../lib/ids'
 import { useEditorStore } from '../store/editorStore'
 import { KeyValueEditor } from './KeyValueEditor'
@@ -253,13 +253,18 @@ export function PropertyPanel({ width = 360 }: { width?: number }) {
             )}
 
             <label style={label}>Base URL</label>
-            <TokenInput
-              ariaLabel="Base URL"
-              value={node.baseUrlBound ? bindingToToken(node.baseUrlBound) : (node.baseUrl ?? '')}
-              onChange={(v) => update(id, { baseUrl: v, baseUrlBound: null })}
-              sources={sources}
-              placeholder="https://api.example.com — { } 로 데이터 삽입"
-            />
+            {node.baseUrlBound && !isTokenizable(node.baseUrlBound) ? (
+              // 토큰 문법 밖 키/id 의 구(舊) bound — 이관하면 조용히 깨지므로 구조적 바인딩 칩 유지
+              <BindingChip binding={node.baseUrlBound} sourceType={sourceType(node.baseUrlBound)} onRemove={() => update(id, { baseUrlBound: null })} />
+            ) : (
+              <TokenInput
+                ariaLabel="Base URL"
+                value={node.baseUrlBound ? bindingToToken(node.baseUrlBound) : (node.baseUrl ?? '')}
+                onChange={(v) => update(id, { baseUrl: v, baseUrlBound: null })}
+                sources={sources}
+                placeholder="https://api.example.com — { } 로 데이터 삽입"
+              />
+            )}
 
             <label style={label}>Path</label>
             <TokenInput
@@ -444,13 +449,17 @@ export function PropertyPanel({ width = 360 }: { width?: number }) {
               return (
                 <div key={io.key}>
                   <label style={label}>입력 · {io.label}</label>
-                  <TokenInput
-                    ariaLabel={`입력 ${io.label}`}
-                    value={f?.bound ? bindingToToken(f.bound) : (f?.value ?? '')}
-                    onChange={(v) => setInputField(io.key, { value: v, bound: null })}
-                    sources={sources}
-                    placeholder="값 또는 { } 로 데이터 삽입"
-                  />
+                  {f?.bound && !isTokenizable(f.bound) ? (
+                    <BindingChip binding={f.bound} sourceType={sourceType(f.bound)} onRemove={() => setInputField(io.key, { bound: null })} />
+                  ) : (
+                    <TokenInput
+                      ariaLabel={`입력 ${io.label}`}
+                      value={f?.bound ? bindingToToken(f.bound) : (f?.value ?? '')}
+                      onChange={(v) => setInputField(io.key, { value: v, bound: null })}
+                      sources={sources}
+                      placeholder="값 또는 { } 로 데이터 삽입"
+                    />
+                  )}
                 </div>
               )
             })}
@@ -707,6 +716,8 @@ function VarsEditor({ vars, onChange, sources, sourceType }: { vars: NodeVar[]; 
                 <button onClick={() => setPickVar(v.id)} title="데이터 삽입" style={braceBtn}>{'{ }'}</button>
               </>
             )
+          ) : v.bound && !isTokenizable(v.bound) ? (
+            <div style={{ flex: 1 }}><BindingChip binding={v.bound} sourceType={sourceType(v.bound)} onRemove={() => upd(v.id, { bound: null })} /></div>
           ) : (
             <div style={{ flex: 1, minWidth: 0, display: 'flex' }}>
               <TokenInput

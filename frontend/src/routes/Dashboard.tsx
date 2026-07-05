@@ -22,6 +22,9 @@ export function Dashboard() {
   const [sel, setSel] = useState<Sel>('all')
   const [search, setSearch] = useState('')
   const [sort, setSort] = useState<Sort>('recent')
+  const [selectMode, setSelectMode] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const selectAllRef = useRef<HTMLInputElement>(null)
 
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ['flows'] })
@@ -64,6 +67,41 @@ export function Dashboard() {
     list = [...list].sort((a, b) => (sort === 'name' ? a.name.localeCompare(b.name) : (b.updatedAt ?? '').localeCompare(a.updatedAt ?? '')))
     return list
   }, [allFlows, sel, search, sort])
+
+  // ---- 다중 선택 + 일괄 삭제 ----
+  const visibleIds = visible.map((f) => f.id)
+  const allSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedIds.has(id))
+  const someSelected = visibleIds.some((id) => selectedIds.has(id))
+  useEffect(() => {
+    if (selectAllRef.current) selectAllRef.current.indeterminate = someSelected && !allSelected
+  }, [someSelected, allSelected])
+
+  const exitSelect = () => { setSelectMode(false); setSelectedIds(new Set()) }
+  const toggleSelectMode = () => { if (selectMode) exitSelect(); else setSelectMode(true) }
+  const toggleOne = (id: string) => setSelectedIds((prev) => {
+    const next = new Set(prev)
+    if (next.has(id)) next.delete(id)
+    else next.add(id)
+    return next
+  })
+  const toggleAll = () => setSelectedIds((prev) => {
+    const next = new Set(prev)
+    if (allSelected) visibleIds.forEach((id) => next.delete(id))
+    else visibleIds.forEach((id) => next.add(id))
+    return next
+  })
+  const bulkDelete = async () => {
+    const ids = [...selectedIds]
+    if (ids.length === 0) return
+    if (!confirm(`선택한 ${ids.length}개 워크플로를 삭제할까요? 되돌릴 수 없습니다.`)) return
+    try {
+      await Promise.all(ids.map((id) => flowsApi.remove(id)))
+    } catch (e) {
+      console.warn('일괄 삭제 중 일부 실패', e)
+    }
+    invalidate()
+    exitSelect()
+  }
 
   const noneCount = allFlows.filter((f) => !f.folderId).length
   const scopeName = sel === 'all' ? '전체 워크플로' : sel === 'none' ? '미분류' : folderList.find((f) => f.id === sel)?.name ?? '워크플로'
@@ -116,9 +154,24 @@ export function Dashboard() {
                 <button onClick={() => setSort('recent')} style={segBtn(sort === 'recent')}>최근</button>
                 <button onClick={() => setSort('name')} style={segBtn(sort === 'name')}>이름</button>
               </div>
+              {(visible.length > 0 || selectMode) && (
+                <button onClick={toggleSelectMode} aria-pressed={selectMode} style={selectToggleBtn(selectMode)}>{selectMode ? '선택 완료' : '☑ 선택'}</button>
+              )}
               <button onClick={() => createFlow.mutate()} disabled={createFlow.isPending} style={primaryBtn}>+ 새 워크플로</button>
             </div>
           </div>
+
+          {/* 선택 액션 바 */}
+          {selectMode && (
+            <div style={selectBar}>
+              <label style={selectAllLabel}>
+                <input ref={selectAllRef} type="checkbox" checked={allSelected} onChange={toggleAll} style={{ width: 16, height: 16, accentColor: 'var(--fl-primary)', cursor: 'pointer' }} />
+                전체 선택
+              </label>
+              <span style={{ fontSize: 12.5, color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)' }}>{selectedIds.size}개 선택됨</span>
+              <button onClick={bulkDelete} disabled={selectedIds.size === 0} style={{ ...dangerBtn(selectedIds.size === 0), marginLeft: 'auto' }}>🗑 선택 삭제 ({selectedIds.size})</button>
+            </div>
+          )}
 
           {/* 그리드 */}
           {flows.isLoading && <Grid>{[0, 1, 2, 3].map((i) => <CardSkeleton key={i} />)}</Grid>}
@@ -144,6 +197,9 @@ export function Dashboard() {
                   flow={f}
                   lastRun={lastRunByFlow.get(f.id)}
                   folderList={folderList}
+                  selectMode={selectMode}
+                  selected={selectedIds.has(f.id)}
+                  onToggleSelect={() => toggleOne(f.id)}
                   onDuplicate={() => duplicateFlow.mutate(f)}
                   onDelete={() => { if (confirm(`'${f.name}' 워크플로를 삭제할까요? 되돌릴 수 없습니다.`)) removeFlow.mutate(f.id) }}
                   onMove={(folderId) => moveFlow.mutate({ id: f.id, folderId })}
@@ -190,10 +246,13 @@ function Hero({ flow, lastRun }: { flow: FlowSummary; lastRun?: ExecutionSummary
 
 // ---------- 카드 ----------
 
-function FlowCard({ flow, lastRun, folderList, onDuplicate, onDelete, onMove }: {
+function FlowCard({ flow, lastRun, folderList, selectMode, selected, onToggleSelect, onDuplicate, onDelete, onMove }: {
   flow: FlowSummary
   lastRun?: ExecutionSummary
   folderList: FolderSummary[]
+  selectMode: boolean
+  selected: boolean
+  onToggleSelect: () => void
   onDuplicate: () => void
   onDelete: () => void
   onMove: (folderId: string | null) => void
@@ -215,29 +274,47 @@ function FlowCard({ flow, lastRun, folderList, onDuplicate, onDelete, onMove }: 
   }, [menu])
 
   return (
-    <article className="fl-flow-card" style={{ ...card, borderLeft: `3px solid ${varCat(spine)}` }}>
+    <article
+      className="fl-flow-card"
+      onClick={selectMode ? onToggleSelect : undefined}
+      style={{ ...card, borderLeft: `3px solid ${varCat(spine)}`, cursor: selectMode ? 'pointer' : 'default', ...(selected ? selectedCard : null) }}
+    >
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
+        {selectMode && (
+          <input
+            type="checkbox"
+            checked={selected}
+            onChange={onToggleSelect}
+            onClick={(e) => e.stopPropagation()}
+            aria-label={`${flow.name} 선택`}
+            style={cardCheckbox}
+          />
+        )}
         <div style={{ minWidth: 0, flex: 1 }}>
-          <Link to={`/flows/${flow.id}`} style={{ fontFamily: 'var(--fl-font-head)', fontWeight: 600, fontSize: 15.5, color: 'var(--fl-text)', textDecoration: 'none', display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{flow.name}</Link>
+          {selectMode
+            ? <span style={cardTitle}>{flow.name}</span>
+            : <Link to={`/flows/${flow.id}`} style={cardTitle}>{flow.name}</Link>}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, minHeight: 12 }}>
             {cats ? <FlowMini cats={cats} /> : <FlowMini cats={fallbackCats(flow.id, 4)} />}
             {nodeCount != null && <span style={metaMono}>노드 {nodeCount}</span>}
           </div>
         </div>
-        <div ref={menuRef} className="fl-card-actions" style={{ position: 'relative', flexShrink: 0 }}>
-          <button onClick={() => setMenu((v) => !v)} aria-label={`${flow.name} 작업 메뉴`} aria-haspopup="menu" aria-expanded={menu} title="작업" style={iconBtn}>⋯</button>
-          {menu && (
-            <div role="menu" style={menuBox}>
-              <button role="menuitem" onClick={() => { onDuplicate(); setMenu(false) }} style={menuItem}>⧉ 복제</button>
-              <div style={{ padding: '6px 10px 4px', fontSize: 11, color: 'var(--fl-text-muted)' }}>폴더로 이동</div>
-              <select aria-label="폴더 이동" value={flow.folderId ?? ''} onChange={(e) => { onMove(e.target.value || null); setMenu(false) }} style={menuSelect}>
-                <option value="">미분류</option>
-                {folderList.map((fo) => <option key={fo.id} value={fo.id}>{fo.name}</option>)}
-              </select>
-              <button role="menuitem" onClick={() => { onDelete(); setMenu(false) }} style={{ ...menuItem, color: 'var(--fl-fail)' }}>🗑 삭제</button>
-            </div>
-          )}
-        </div>
+        {!selectMode && (
+          <div ref={menuRef} className="fl-card-actions" style={{ position: 'relative', flexShrink: 0 }}>
+            <button onClick={() => setMenu((v) => !v)} aria-label={`${flow.name} 작업 메뉴`} aria-haspopup="menu" aria-expanded={menu} title="작업" style={iconBtn}>⋯</button>
+            {menu && (
+              <div role="menu" style={menuBox}>
+                <button role="menuitem" onClick={() => { onDuplicate(); setMenu(false) }} style={menuItem}>⧉ 복제</button>
+                <div style={{ padding: '6px 10px 4px', fontSize: 11, color: 'var(--fl-text-muted)' }}>폴더로 이동</div>
+                <select aria-label="폴더 이동" value={flow.folderId ?? ''} onChange={(e) => { onMove(e.target.value || null); setMenu(false) }} style={menuSelect}>
+                  <option value="">미분류</option>
+                  {folderList.map((fo) => <option key={fo.id} value={fo.id}>{fo.name}</option>)}
+                </select>
+                <button role="menuitem" onClick={() => { onDelete(); setMenu(false) }} style={{ ...menuItem, color: 'var(--fl-fail)' }}>🗑 삭제</button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 14, flexWrap: 'wrap' }}>
@@ -333,6 +410,13 @@ const searchBox: CSSProperties = { padding: '0 12px 0 30px', height: 38, border:
 const seg: CSSProperties = { display: 'flex', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', overflow: 'hidden', height: 38 }
 const segBtn = (on: boolean): CSSProperties => ({ padding: '0 12px', border: 'none', background: on ? 'var(--fl-surface-2)' : 'transparent', color: on ? 'var(--fl-text)' : 'var(--fl-text-muted)', fontSize: 12.5, fontWeight: on ? 600 : 500, cursor: 'pointer' })
 const card: CSSProperties = { background: 'var(--fl-surface)', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-lg)', padding: '16px 18px', boxShadow: 'var(--fl-shadow)' }
+const cardTitle: CSSProperties = { fontFamily: 'var(--fl-font-head)', fontWeight: 600, fontSize: 15.5, color: 'var(--fl-text)', textDecoration: 'none', display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }
+const selectedCard: CSSProperties = { boxShadow: '0 0 0 2px var(--fl-primary), var(--fl-shadow)', background: 'var(--fl-surface-2)' }
+const cardCheckbox: CSSProperties = { width: 18, height: 18, marginTop: 2, cursor: 'pointer', accentColor: 'var(--fl-primary)', flexShrink: 0 }
+const selectToggleBtn = (on: boolean): CSSProperties => ({ display: 'flex', alignItems: 'center', gap: 6, height: 38, padding: '0 14px', borderRadius: 'var(--fl-radius-sm)', border: `1px solid ${on ? 'var(--fl-primary)' : 'var(--fl-border)'}`, background: on ? 'var(--fl-surface-2)' : 'var(--fl-surface)', color: on ? 'var(--fl-text)' : 'var(--fl-text-muted)', fontSize: 13, fontWeight: on ? 600 : 500, cursor: 'pointer' })
+const selectBar: CSSProperties = { display: 'flex', alignItems: 'center', gap: 14, padding: '10px 14px', borderRadius: 'var(--fl-radius-sm)', border: '1px solid var(--fl-border)', background: 'var(--fl-surface)' }
+const selectAllLabel: CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--fl-text)', cursor: 'pointer', userSelect: 'none' }
+const dangerBtn = (disabled: boolean): CSSProperties => ({ display: 'flex', alignItems: 'center', gap: 6, background: 'var(--fl-fail)', color: '#fff', border: 'none', padding: '8px 14px', borderRadius: 10, fontWeight: 600, fontSize: 13, cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.5 : 1, height: 36 })
 const metaMono: CSSProperties = { fontSize: 11.5, color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)' }
 const iconBtn: CSSProperties = { width: 30, height: 30, borderRadius: 8, border: '1px solid var(--fl-border)', background: 'var(--fl-surface)', cursor: 'pointer', color: 'var(--fl-text-muted)', fontSize: 15 }
 const miniBtn: CSSProperties = { width: 24, height: 28, border: 'none', background: 'transparent', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 12 }

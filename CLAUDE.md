@@ -212,11 +212,12 @@ design/   theme(라이트/다크) · index.css(CSS 변수)
 | `json` | 키형 | 예상 키 입력 | JSON 파싱. 스칼라(42/"hi"/true)는 파싱값을 `body`로, null은 원문 | 선언된 `outputs` |
 | `xml` | 키형 | 응답 요소 입력 | 루트 자식 요소 재귀 → 맵(중첩=맵, 잎=텍스트 trim, 중복=리스트). 스칼라 루트(`<amt>1</amt>`)는 **요소명**으로 키잉 | 선언된 `outputs` |
 | `form` | 키형 | 응답 필드 입력 | `a=1&b=2` urlencoded → 맵(중복키=리스트) | 선언된 `outputs` |
+| `query` | 키형 | 응답 필드 입력 | 본문이 URL(`…?a=1&b=2`)/쿼리스트링이면 `?` 뒤(프래그먼트 제거) → `parseForm` 맵. `?` 없으면 한 줄 `a=1&b=2` 만 인정 | 선언된 `outputs` |
 | `text` | 통짜형 | 키 입력 **숨김** | `{body: 원문}` | `body` 하나만 |
 | `binary` | 통짜형 | 키 입력 **숨김** | `{body:"(binary · N bytes)"}` (실제 바이트 길이) | `body` 하나만 |
 
 - 어떤 타입이든 파싱 실패 시 본문을 `body` 키로 보존(유실 방지). 키형에서 `body`는 picker에 없으므로 raw/조건식에 `{{ body@노드 }}`로 수동 바인딩(PropertyPanel 안내 문구 있음).
-- `KEYED_RESP = ['json','xml','form']`(PropertyPanel). respType 전환은 비파괴적(`node.outputs` 유지).
+- `KEYED_RESP = ['json','xml','urlencoded','form','query']`(PropertyPanel). respType 전환은 비파괴적(`node.outputs` 유지).
 - ⚠️ keyed→text/binary 전환 시 기존 출력 키는 무시되고 그 키 바인딩은 끊김 — PropertyPanel이 무시되는 키를 경고로 표시(의도된 비파괴 동작).
 - 검증: H2 end-to-end로 json객체/json스칼라(42·"hi"·true·null)/form/form중복키/xml요소/xml스칼라루트/xml중첩/text 바인딩 전부 PASS.
 - 적대적 멀티에이전트 리뷰(9건 확정) 반영 완료: 스칼라 정규화, XML 재귀·trim·스칼라루트 키잉, binary 바이트수, UX 경고/안내.
@@ -415,6 +416,41 @@ design/   theme(라이트/다크) · index.css(CSS 변수)
 - **relay.js → 백엔드 통합**: 구 relay.js(:8787) 프로세스 폐기. `wait` 노드 콜백을 백엔드가 `/relay/{execId}/cb/{nodeId}`([RelayController](backend/src/main/kotlin/com/flowlink/execution/RelayController.kt))로 직접 받아 자동 재개하고, 타임아웃도 백엔드 스케줄러가 구동 → **브라우저 없이 wait 완결**. 별도 프로세스·:8787 없음.
 - **mock-server.js → 내장 Mock 흡수**: 구 mock-server.js(:9090/:9091) 폐기. `demos/*.json` 은 내장 Mock(base `http://localhost:18080/mock/demo`)을 쓰고 `node demos/seed-mock.mjs` 로 라우트를 시드. demo-05(TCP)·`/openapi.json` 데모는 제외.
 - **띄우는 프로세스 2개**: 백엔드(:18080) + 프론트(:5173). 콜백 데모만 `node demos/seed-mock.mjs` 1회로 mock 을 시드한다.
+
+### 실행 경과 애니메이션 · respType=query · 인라인 토큰 칩 · 피커 칩 레이아웃
+- **실행 경과 애니메이션(캔버스)**: 백엔드가 노드별 결과를 **노드 단위 짧은 트랜잭션으로 즉시 저장**하는 성질을 이용,
+  실행 중 `GET /flows/{id}/runs?limit=1`(baseline id 비교로 방금 시작된 실행 발견) + `GET /executions/{id}` 폴링
+  ([Editor.tsx](frontend/src/routes/Editor.tsx) `watchRunProgress`, 0.3~0.4초)으로 진행 상태를 받아
+  [runProgress.ts](frontend/src/lib/runProgress.ts) `computeRunView` 가 노드/엣지 상태를 계산(editorStore.runView).
+  - 표시: 지나간 엣지=녹색, 진행 중 노드 유입 엣지=**움직이는 점선**(RF `animated`), 노드 배지 ✓/✕/⊘/스피너+파란 펄스,
+    실패 엣지=빨강, 건너뜀 노드 반투명. 결과 표시는 다음 실행/그래프 로드까지 유지.
+  - "현재 실행 중" 노드는 서버가 pending 을 안 주는 동기 구간에선 **Kahn 위상정렬 미러**로 추정(성공한 상위에서 활성화됐지만
+    기록이 없는 첫 노드). IF 분기는 기록된 `output.branch` 와 `fromPort` 매칭. pending(client/form/wait/input)은 서버 값 그대로.
+  - 폴링 실패는 애니메이션 저하일 뿐(실행 루프 결과 반영이 항상 우선). 늦은 스냅샷은 `finishedAt` 가드로 무시,
+    watcher 의 setExecution 은 pending 필드를 보존 병합.
+- **respType=`query`**: 응답 본문이 URL(`…?code=0000&tid=T1`)/쿼리스트링일 때 `?` 뒤 파라미터를 키-값으로
+  ([HttpNodeExecutor](backend/src/main/kotlin/com/flowlink/execution/engine/HttpNodeExecutor.kt) `parseQuery`/`extractQueryString`).
+  프래그먼트(`#…`) 제거, `?` 없으면 **한 줄** `a=1&b=2` 형태만 인정(여러 줄 텍스트 오인 방지), 파라미터 없으면 `body` 보존.
+  퍼센트 디코딩·중복키 리스트는 `parseForm` 규약. 위 respType 표 참조. 단위테스트 `HttpQueryResponseTest`.
+- **인라인 토큰 칩([TokenInput](frontend/src/binding/TokenInput.tsx))**: `{{ key@노드 }}` 토큰이 입력창 **안에서 블럭(칩)**으로
+  보이고 텍스트와 자유롭게 혼합(`/orders/` + [칩] + `/detail`). 저장 포맷은 토큰 포함 **순수 문자열**(칩=렌더링) → 백엔드 무변경.
+  적용: HTTP baseUrl/Path·if/assert 조건식·form 열기 URL·transform 입력·SET 변수(비시크릿)·KeyValueEditor 값.
+  - contentEditable **비제어**: 부모 value 가 밖에서 바뀔 때만 DOM 재구성(IME 한글 조합 보존), onChange 는 ref 로 최신 참조(stale closure 방지).
+  - Chromium 이 trailing non-editable 뒤에 캐럿을 못 두는 문제 → 칩 앞뒤 **제로폭 공백(U+200B)** 패딩(직렬화 시 제거) +
+    칩 몸통 클릭=캐럿을 칩 뒤로. 붙여넣기는 평문 강제+토큰 즉시 칩화, 손으로 친 `{{…}}` 는 blur 시 칩으로 정돈.
+  - 구(舊) `bound` 저장 그래프: 칩으로 **표시**되고, 수정하는 순간 `{value: 토큰문자열, bound: null}` 로 이관(표시만으론 미변경).
+    ⚠ JSON 바디에서 bound 는 네이티브 값(객체 등)이었는데 토큰 문자열은 문자열화 — 타입 유지가 필요하면 값 타입(select)로 코어션.
+    SET 시크릿 행은 마스킹 유지를 위해 기존 [password + { } 바인딩 칩] 방식 유지.
+  - **백엔드 보강**: [FlowExecutor](backend/src/main/kotlin/com/flowlink/execution/engine/FlowExecutor.kt) `setNode` 가 리터럴
+    변수값도 `{{토큰}}` 치환(토큰 없으면 원문 그대로 — 무회귀). Raw 텍스트영역(rawBody/rawParams/rawHeaders)은 "원문 보기"가
+    목적이라 칩 없이 기존 [{ } 데이터 삽입] 버튼 유지.
+- **데이터 삽입 피커 칩 레이아웃**: [BindingPicker](frontend/src/binding/BindingPicker.tsx) 항목을 세로 목록 → **flex-wrap 칩 블럭**
+  (응답=녹색점/요청=파란점 + 키 + 타입 배지, 노드 그룹핑 유지). 카드 폭 460→520.
+- 검증: 백엔드 단위 5종 PASS + H2 API e2e 14(쿼리 파싱·퍼센트 디코딩·중복키·body 폴백·SET 토큰 치환·무회귀·실행 중 점진 기록) +
+  브라우저(Playwright) e2e 12(칩 삽입·텍스트+칩+텍스트 직렬화·× 삭제·피커 칩·실행 중 점선/스피너·완료 배지·정지) PASS.
+  프론트 tsc/vite/oxlint 통과. 적대적 멀티에이전트 리뷰 반영.
+- ⚠️ 실행 애니메이션은 폴링 기반(SSE/WebSocket 아님) — 초당 2~3회 GET. 같은 플로우를 다른 탭이 동시 실행하면 baseline 비교가
+  다른 실행을 잡을 수 있음(단일 사용자 도구 전제). waitMsg·Raw 텍스트영역은 토큰이 평문으로 보임(의도).
 
 ## 참고 문서
 - `backend/README.md` — Phase 1 구현 범위 표, API 요약, 실행 가이드

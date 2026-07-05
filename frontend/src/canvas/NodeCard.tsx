@@ -8,22 +8,39 @@ import { catColor, typeIcon, typeLabel } from './nodeMeta'
 
 export function NodeCard({ data, selected }: NodeProps) {
   const n = asGraphNode(data)
-  const waiting = useEditorStore((s) => s.waitingNodeId) === n.id
+  const waitingId = useEditorStore((s) => s.waitingNodeId)
+  const runState = useEditorStore((s) => s.runView?.nodeStates[n.id])
+  const waiting = waitingId === n.id || runState === 'waiting'
+  const running = runState === 'running'
   const accent = catColor(n.cat)
   const isStart = n.type === 'start'
   const isEnd = n.type === 'end'
   const isHttp = n.type === 'http'
 
+  const borderColor = waiting
+    ? 'var(--fl-waiting)'
+    : running
+      ? 'var(--fl-running)'
+      : runState === 'failed'
+        ? 'var(--fl-fail)'
+        : selected
+          ? 'var(--fl-primary)'
+          : runState === 'success'
+            ? 'var(--fl-ok)'
+            : 'var(--fl-border)'
+
   return (
     <div
+      className={running ? 'fl-node-running' : undefined}
       style={{
         minWidth: 200,
         background: 'var(--fl-surface)',
-        border: `1px solid ${waiting ? 'var(--fl-waiting)' : selected ? 'var(--fl-primary)' : 'var(--fl-border)'}`,
+        border: `1px solid ${borderColor}`,
         borderRadius: 'var(--fl-radius)',
         boxShadow: selected ? 'var(--fl-shadow-lg)' : 'var(--fl-shadow)',
         overflow: 'hidden',
         fontFamily: 'var(--fl-font-ui)',
+        opacity: runState === 'skipped' ? 0.55 : 1,
       }}
     >
       {!isStart && <Handle type="target" position={Position.Left} className="fl-handle" />}
@@ -35,10 +52,10 @@ export function NodeCard({ data, selected }: NodeProps) {
             {n.name ?? typeLabel(n.type)}
           </div>
           <div style={{ fontSize: 11.5, color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)' }}>
-            {waiting ? '콜백 대기 중…' : typeLabel(n.type)}
+            {waiting ? '콜백 대기 중…' : running ? '실행 중…' : runState === 'skipped' ? '건너뜀' : typeLabel(n.type)}
           </div>
         </div>
-        {waiting && <span className="fl-wait-dot" title="콜백 대기 중" aria-label="콜백 대기 중" />}
+        <RunBadge state={waiting ? 'waiting' : runState} />
       </div>
 
       {isHttp && (
@@ -73,4 +90,14 @@ export function NodeCard({ data, selected }: NodeProps) {
       {!isEnd && <Handle type="source" id="out" position={Position.Right} className="fl-handle" />}
     </div>
   )
+}
+
+/** 실행 경과 배지 — 진행 중 스피너 / 성공 ✓ / 실패 ✕ / 건너뜀 ⊘ / 대기 펄스. */
+export function RunBadge({ state }: { state?: string }) {
+  if (state === 'waiting') return <span className="fl-wait-dot" title="콜백 대기 중" aria-label="콜백 대기 중" />
+  if (state === 'running') return <span className="fl-run-spinner" title="실행 중" aria-label="실행 중" />
+  if (state === 'success') return <span className="fl-run-badge" style={{ color: 'var(--fl-ok)' }} title="성공" aria-label="성공">✓</span>
+  if (state === 'failed') return <span className="fl-run-badge" style={{ color: 'var(--fl-fail)' }} title="실패" aria-label="실패">✕</span>
+  if (state === 'skipped') return <span className="fl-run-badge" style={{ color: 'var(--fl-text-muted)' }} title="건너뜀" aria-label="건너뜀">⊘</span>
+  return null
 }

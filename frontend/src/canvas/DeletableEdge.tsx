@@ -9,7 +9,8 @@ export function DeletableEdge({ id, sourceX, sourceY, targetX, targetY, sourcePo
 
   return (
     <>
-      <BaseEdge id={id} path={edgePath} markerEnd={markerEnd} style={{ ...style, strokeWidth: selected ? 2.5 : 1.5 }} />
+      {/* 실행 경과 표시(FlowCanvas)가 넘긴 strokeWidth 는 존중 — 지나간/진행 중 경로가 굵게 보인다 */}
+      <BaseEdge id={id} path={edgePath} markerEnd={markerEnd} style={{ ...style, strokeWidth: selected ? 2.5 : (style?.strokeWidth ?? 1.5) }} />
       <EdgeLabelRenderer>
         <button
           className="nodrag nopan"

@@ -15,6 +15,7 @@ import { WorkflowIODialog } from '../openapi/WorkflowIODialog'
 import { InputPromptDialog } from '../components/InputPromptDialog'
 import { ResizeHandle } from '../components/ResizeHandle'
 import { openFormIframe, openFormPopup } from '../lib/popup'
+import { computeRunView } from '../lib/runProgress'
 import { useEditorStore } from '../store/editorStore'
 
 export function Editor() {
@@ -71,6 +72,12 @@ export function Editor() {
 
   const flowQuery = useQuery({ queryKey: ['flow', flowId], queryFn: () => flowsApi.get(flowId), enabled: !!flowId })
 
+  // 실행 경과 → 캔버스 표시(노드 배지·엣지 애니메이션). 실행 결과는 다음 실행/그래프 로드까지 유지된다.
+  useEffect(() => {
+    const st = useEditorStore.getState()
+    st.setRunView(computeRunView(execution, running, st.nodes, st.edges))
+  }, [execution, running])
+
   useEffect(() => {
     if (flowQuery.data) loadGraph(flowQuery.data.id, flowQuery.data.name, flowQuery.data.graph)
   }, [flowQuery.data, loadGraph])
@@ -96,9 +103,23 @@ export function Editor() {
     setWaitStatus(null)
     const stop = new AbortController()
     stopRef.current = stop
+    // 진행 상태 폴러 전용 시그널 — ⏹(stop)과 별개로, 실행 루프가 끝나면 반드시 중단한다.
+    const watch = new AbortController()
     const setWaitingNode = useEditorStore.getState().setWaitingNode
     try {
       if (useEditorStore.getState().dirty) await save.mutateAsync()
+
+      // 실행 경과 애니메이션: 백엔드가 노드별 결과를 즉시 저장하므로, 방금 시작된 실행을 찾아
+      // 폴링하면 동기 실행 구간에서도 "어디까지 왔는지"가 실시간으로 보인다.
+      const baselineId = await runsApi.listForFlow(flowId, 1).then((l) => l[0]?.id ?? null).catch(() => null)
+      void watchRunProgress(flowId, baselineId, watch.signal, (d) => {
+        setExecution((prev) => {
+          if (prev && prev.finishedAt && !d.finishedAt) return prev // 종료 이후의 늦은 스냅샷은 무시
+          return prev && prev.id === d.id
+            ? { ...d, pendingClient: prev.pendingClient, pendingForm: prev.pendingForm, pendingWait: prev.pendingWait, pendingInput: prev.pendingInput }
+            : d
+        })
+      })
 
       let detail = await runsApi.run(flowId)
       setExecution(detail)
@@ -159,6 +180,7 @@ export function Editor() {
     } catch {
       setExecution(null)
     } finally {
+      watch.abort()
       stopRef.current = null
       setWaitingNode(null)
       setWaitStatus(null)
@@ -235,6 +257,36 @@ export function Editor() {
       )}
     </div>
   )
+}
+
+/**
+ * 실행 경과 폴러 — 방금 시작된 실행(baseline 과 다른 최신 실행)을 찾아 완료될 때까지
+ * ExecutionDetail 을 폴링한다. 실패는 애니메이션 저하일 뿐이라 조용히 무시(실행 자체 무영향).
+ */
+async function watchRunProgress(
+  flowId: string,
+  baselineId: string | null,
+  signal: AbortSignal,
+  onDetail: (d: ExecutionDetail) => void,
+) {
+  try {
+    let execId: string | null = null
+    for (let i = 0; i < 40 && !execId; i++) { // 최대 ~12초 탐색(그 안에 못 찾으면 애니메이션 없이 진행)
+      await sleep(300, signal)
+      if (signal.aborted) return
+      const latest = (await runsApi.listForFlow(flowId, 1))[0]
+      if (latest && latest.id !== baselineId) execId = latest.id
+    }
+    while (execId && !signal.aborted) {
+      const d = await runsApi.get(execId)
+      if (signal.aborted) return
+      onDetail(d)
+      if (d.status !== 'RUNNING' && d.status !== 'WAITING') return // 종료 상태 — 더 폴링할 것 없음
+      await sleep(400, signal)
+    }
+  } catch {
+    /* 폴링 실패 무시 — 실행 루프의 결과 반영이 항상 우선한다 */
+  }
 }
 
 // wait(콜백 대기) 폴링 간격용 sleep — 중단 시그널이 오면 즉시 깨어난다(⏹ 반응성).

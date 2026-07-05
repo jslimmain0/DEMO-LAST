@@ -4,7 +4,7 @@
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD'
 export type NodeType = 'start' | 'end' | 'set' | 'http' | 'if' | 'assert' | 'form' | 'wait' | 'input' | 'transform'
 export type BodyType = 'json' | 'urlencoded' | 'form' | 'raw' | 'xml'
-export type RespType = 'json' | 'xml' | 'urlencoded' | 'form' | 'text' | 'binary'
+export type RespType = 'json' | 'xml' | 'urlencoded' | 'form' | 'query' | 'text' | 'binary'
 export type ReqMode = 'server' | 'client'
 
 export interface Binding {

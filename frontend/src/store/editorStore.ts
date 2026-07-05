@@ -5,6 +5,7 @@ import type { FlowGraph, GraphNode, NodeType, PaletteGroup } from '../api/types'
 import { asGraphNode, fromRF, rfNodeType, toRF } from '../canvas/graphAdapter'
 import { makeNode } from '../canvas/nodeFactory'
 import { newId } from '../lib/ids'
+import type { RunView } from '../lib/runProgress'
 
 // D2: 고빈도 캔버스 상태(nodes/edges/selection)는 zustand 단일 진실원. react-query 서버상태와 분리.
 interface EditorState {
@@ -17,6 +18,8 @@ interface EditorState {
   palette: PaletteGroup[]
   // 실행 중 콜백을 기다리는 wait 노드(캔버스 펄스·유입 엣지 애니메이션용). 실행 상태라 dirty 와 무관.
   waitingNodeId: string | null
+  // 실행 경과 표시(노드 상태·엣지 진행 애니메이션) — 폴링된 ExecutionDetail 로 계산. dirty 와 무관.
+  runView: RunView | null
 
   loadGraph: (flowId: string, name: string, graph: FlowGraph) => void
   importGraph: (graph: FlowGraph) => void
@@ -37,6 +40,7 @@ interface EditorState {
   removePaletteGroup: (groupId: string) => void
   removePaletteItem: (groupId: string, itemId: string) => void
   setWaitingNode: (id: string | null) => void
+  setRunView: (view: RunView | null) => void
 }
 
 export const useEditorStore = create<EditorState>()((set, get) => ({
@@ -48,10 +52,11 @@ export const useEditorStore = create<EditorState>()((set, get) => ({
   dirty: false,
   palette: [],
   waitingNodeId: null,
+  runView: null,
 
   loadGraph: (flowId, name, graph) => {
     const { nodes, edges } = toRF(graph)
-    set({ flowId, flowName: name, nodes, edges, selectedId: null, dirty: false, palette: graph.palette ?? [] })
+    set({ flowId, flowName: name, nodes, edges, selectedId: null, dirty: false, palette: graph.palette ?? [], runView: null })
   },
 
   // 현재 플로우(flowId 유지)의 캔버스를 가져온 그래프로 교체. 저장 가능하도록 dirty=true.
@@ -67,6 +72,7 @@ export const useEditorStore = create<EditorState>()((set, get) => ({
       dirty: true,
       flowName: graph.name && graph.name.trim() ? graph.name : get().flowName,
       palette: graph.palette ?? get().palette,
+      runView: null,
     })
   },
 
@@ -174,6 +180,7 @@ export const useEditorStore = create<EditorState>()((set, get) => ({
   },
 
   setWaitingNode: (id) => set({ waitingNodeId: id }),
+  setRunView: (view) => set({ runView: view }),
 
   addPaletteGroup: (group) => set({ palette: [...get().palette, group], dirty: true }),
   removePaletteGroup: (groupId) => set({ palette: get().palette.filter((g) => g.id !== groupId), dirty: true }),

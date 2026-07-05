@@ -76,6 +76,9 @@ export const runsApi = {
     http.post<ExecutionDetail>(`/flows/${flowId}/runs`, body ?? {}).then((r) => r.data),
   get: (executionId: string) =>
     http.get<ExecutionDetail>(`/executions/${executionId}`).then((r) => r.data),
+  // 실행 경과 애니메이션용 — 방금 시작된 실행의 id 를 찾기 위해 이 플로우의 최근 실행을 조회
+  listForFlow: (flowId: string, limit = 1) =>
+    http.get<ExecutionSummary[]>(`/flows/${flowId}/runs`, { params: { limit } }).then((r) => r.data),
   resume: (executionId: string, body: ResumeRequest) =>
     http.post<ExecutionDetail>(`/executions/${executionId}/resume`, body).then((r) => r.data),
   recent: (limit = 50) =>

@@ -5,6 +5,7 @@ import { pluginsApi, transformsApi } from '../api/client'
 import type { Binding, BodyType, GraphNode, HttpMethod, NodeField, NodeOutput, NodeVar, ReqMode, RespType, WaitField as WaitFieldT } from '../api/types'
 import { BindingChip } from '../binding/BindingChip'
 import { BindingPicker } from '../binding/BindingPicker'
+import { TokenInput } from '../binding/TokenInput'
 import { bindableSources } from '../binding/upstream'
 import type { BindableSource } from '../binding/upstream'
 import { asGraphNode } from '../canvas/graphAdapter'
@@ -35,16 +36,20 @@ function rawBodyPlaceholder(bt: BodyType | undefined): string {
   if (bt === 'xml') return '<root> ... </root>  또는 { } 로 데이터 삽입'
   return '{ "key": "value" }  또는 { } 로 데이터 삽입'
 }
-const RESP_TYPES: RespType[] = ['json', 'xml', 'urlencoded', 'form', 'text', 'binary']
+const RESP_TYPES: RespType[] = ['json', 'xml', 'urlencoded', 'form', 'query', 'text', 'binary']
 const CHARSETS = ['UTF-8', 'EUC-KR', 'MS949', 'US-ASCII']
 const OUTPUT_TYPES = ['string', 'int', 'number', 'boolean', 'object', 'array', 'secret']
 
-// 키형(json/xml/urlencoded/form): 응답이 키-값 구조라 "예상 응답 키"가 의미 있음 → 하위 노드가 키로 바인딩.
+// 키형(json/xml/urlencoded/form/query): 응답이 키-값 구조라 "예상 응답 키"가 의미 있음 → 하위 노드가 키로 바인딩.
 // 통짜형(text/binary): 키가 없으므로 응답 본문 전체가 단일 값(body)으로만 제공됨.
-const KEYED_RESP: RespType[] = ['json', 'xml', 'urlencoded', 'form']
+const KEYED_RESP: RespType[] = ['json', 'xml', 'urlencoded', 'form', 'query']
+function respTypeLabel(rt: RespType): string {
+  return rt === 'query' ? 'query (URL/쿼리 파라미터)' : rt
+}
 function respOutputLabel(rt: RespType | undefined): string {
   if (rt === 'xml') return '응답 요소 (XML) — 하위 노드가 바인딩할 항목'
   if (rt === 'urlencoded' || rt === 'form') return '응답 필드 (urlencoded 키) — 하위 노드가 바인딩할 항목'
+  if (rt === 'query') return '응답 필드 (쿼리 파라미터) — 하위 노드가 바인딩할 항목'
   return '예상 응답 필드 (JSON 키) — 하위 노드가 바인딩할 항목'
 }
 
@@ -56,7 +61,7 @@ export function PropertyPanel({ width = 360 }: { width?: number }) {
   const selectNode = useEditorStore((s) => s.selectNode)
   const deleteNode = useEditorStore((s) => s.deleteNode)
   const [tab, setTab] = useState<'params' | 'headers' | 'body'>('params')
-  const [pick, setPick] = useState<string | null>(null) // baseUrl | condition | rawBody | var:<id> | transformInput
+  const [pick, setPick] = useState<string | null>(null) // rawBody | rawParams | rawHeaders (Raw 텍스트영역 전용)
   const [bodyConvNote, setBodyConvNote] = useState<string | null>(null) // 필드↔Raw 변환 안내
   const transforms = useQuery({ queryKey: ['transforms'], queryFn: transformsApi.list })
   const qc = useQueryClient()
@@ -211,18 +216,11 @@ export function PropertyPanel({ width = 360 }: { width?: number }) {
     }
   }
 
+  // Raw 텍스트영역(rawBody/rawParams/rawHeaders)용 삽입 — 한 줄 입력은 TokenInput 이 인라인 칩으로 처리한다.
   const onPick = (b: Binding) => {
-    if (pick === 'baseUrl') update(id, { baseUrlBound: b })
-    else if (pick === 'condition') update(id, { condition: `${node.condition ?? ''} ${bindingToToken(b)}`.trim() })
-    else if (pick === 'rawBody') update(id, { rawBody: `${node.rawBody ?? ''} ${bindingToToken(b)}`.trim() })
+    if (pick === 'rawBody') update(id, { rawBody: `${node.rawBody ?? ''} ${bindingToToken(b)}`.trim() })
     else if (pick === 'rawParams') update(id, { rawParams: `${node.rawParams ?? ''} ${bindingToToken(b)}`.trim() })
     else if (pick === 'rawHeaders') update(id, { rawHeaders: `${node.rawHeaders ?? ''} ${bindingToToken(b)}`.trim() })
-    else if (pick === 'formAction') update(id, { formAction: `${node.formAction ?? ''} ${bindingToToken(b)}`.trim() })
-    else if (pick?.startsWith('tinput:')) setInputField(pick.slice(7), { bound: b, value: '' })
-    else if (pick?.startsWith('var:')) {
-      const vid = pick.slice(4)
-      update(id, { vars: (node.vars ?? []).map((v) => (v.id === vid ? { ...v, bound: b, value: '' } : v)) })
-    }
     setPick(null)
   }
 
@@ -255,17 +253,22 @@ export function PropertyPanel({ width = 360 }: { width?: number }) {
             )}
 
             <label style={label}>Base URL</label>
-            {node.baseUrlBound ? (
-              <BindingChip binding={node.baseUrlBound} sourceType={sourceType(node.baseUrlBound)} onRemove={() => update(id, { baseUrlBound: null })} onClick={() => setPick('baseUrl')} />
-            ) : (
-              <div style={{ display: 'flex', gap: 4 }}>
-                <input style={mono} value={node.baseUrl ?? ''} onChange={(e) => update(id, { baseUrl: e.target.value })} placeholder="https://api.example.com" />
-                <button onClick={() => setPick('baseUrl')} title="데이터 삽입" style={braceBtn}>{'{ }'}</button>
-              </div>
-            )}
+            <TokenInput
+              ariaLabel="Base URL"
+              value={node.baseUrlBound ? bindingToToken(node.baseUrlBound) : (node.baseUrl ?? '')}
+              onChange={(v) => update(id, { baseUrl: v, baseUrlBound: null })}
+              sources={sources}
+              placeholder="https://api.example.com — { } 로 데이터 삽입"
+            />
 
             <label style={label}>Path</label>
-            <input style={mono} value={node.path ?? ''} onChange={(e) => update(id, { path: e.target.value })} placeholder="/resource" />
+            <TokenInput
+              ariaLabel="Path"
+              value={node.path ?? ''}
+              onChange={(v) => update(id, { path: v })}
+              sources={sources}
+              placeholder="/resource — { } 로 데이터 삽입"
+            />
 
             <ReqModeToggle mode={node.reqMode} onChange={(m) => update(id, { reqMode: m })} />
 
@@ -328,8 +331,15 @@ export function PropertyPanel({ width = 360 }: { width?: number }) {
 
             <label style={label}>응답 타입</label>
             <select style={field} value={node.respType ?? 'json'} onChange={(e) => update(id, { respType: e.target.value as RespType })}>
-              {RESP_TYPES.map((r) => <option key={r} value={r}>{r}</option>)}
+              {RESP_TYPES.map((r) => <option key={r} value={r}>{respTypeLabel(r)}</option>)}
             </select>
+
+            {node.respType === 'query' && (
+              <p style={{ ...hintP, marginTop: 6 }}>
+                응답 본문이 URL(<code style={{ fontFamily: 'var(--fl-font-mono)', fontSize: 11 }}>…?code=0000&tid=T1</code>)
+                또는 쿼리스트링이면 <b>? 뒤 파라미터</b>가 키-값으로 제공됩니다 — 리다이렉트/리턴 URL 응답용.
+              </p>
+            )}
 
             {KEYED_RESP.includes(node.respType ?? 'json') ? (
               <>
@@ -357,10 +367,13 @@ export function PropertyPanel({ width = 360 }: { width?: number }) {
         {node.type === 'if' && (
           <>
             <label style={label}>조건식</label>
-            <div style={{ display: 'flex', gap: 4 }}>
-              <input style={mono} value={node.condition ?? ''} onChange={(e) => update(id, { condition: e.target.value })} placeholder="{{ id }} != null" />
-              <button onClick={() => setPick('condition')} title="데이터 삽입" style={braceBtn}>{'{ }'}</button>
-            </div>
+            <TokenInput
+              ariaLabel="조건식"
+              value={node.condition ?? ''}
+              onChange={(v) => update(id, { condition: v })}
+              sources={sources}
+              placeholder="{{ id }} != null — { } 로 데이터 삽입"
+            />
             <p style={{ fontSize: 11.5, color: 'var(--fl-text-muted)', marginTop: 8 }}>참이면 T 분기, 거짓이면 F 분기로 진행합니다. (SpEL 안전 평가)</p>
           </>
         )}
@@ -368,10 +381,13 @@ export function PropertyPanel({ width = 360 }: { width?: number }) {
         {node.type === 'assert' && (
           <>
             <label style={label}>검증 조건식</label>
-            <div style={{ display: 'flex', gap: 4 }}>
-              <input style={mono} value={node.condition ?? ''} onChange={(e) => update(id, { condition: e.target.value })} placeholder="{{ resultCode }} == '0000'" />
-              <button onClick={() => setPick('condition')} title="데이터 삽입" style={braceBtn}>{'{ }'}</button>
-            </div>
+            <TokenInput
+              ariaLabel="검증 조건식"
+              value={node.condition ?? ''}
+              onChange={(v) => update(id, { condition: v })}
+              sources={sources}
+              placeholder="{{ resultCode }} == '0000' — { } 로 데이터 삽입"
+            />
             <p style={{ fontSize: 11.5, color: 'var(--fl-text-muted)', marginTop: 8 }}>
               조건이 <b>거짓이면 이 노드가 실패</b>하고 실행이 FAILED 로 끝납니다(테스트 시나리오의 assert).
               두 값 비교도 가능: <code style={{ fontFamily: 'var(--fl-font-mono)', fontSize: 11 }}>{'{{ tid@노티 }} == {{ tid@승인 }}'}</code>
@@ -380,7 +396,7 @@ export function PropertyPanel({ width = 360 }: { width?: number }) {
         )}
 
         {node.type === 'set' && (
-          <VarsEditor vars={node.vars ?? []} onChange={(vars) => update(id, { vars })} onPickVar={(vid) => setPick(`var:${vid}`)} sourceType={sourceType} />
+          <VarsEditor vars={node.vars ?? []} onChange={(vars) => update(id, { vars })} sources={sources} sourceType={sourceType} />
         )}
 
         {node.type === 'transform' && (
@@ -428,14 +444,13 @@ export function PropertyPanel({ width = 360 }: { width?: number }) {
               return (
                 <div key={io.key}>
                   <label style={label}>입력 · {io.label}</label>
-                  {f?.bound ? (
-                    <BindingChip binding={f.bound} sourceType={sourceType(f.bound)} onRemove={() => setInputField(io.key, { bound: null })} onClick={() => setPick(`tinput:${io.key}`)} />
-                  ) : (
-                    <div style={{ display: 'flex', gap: 4 }}>
-                      <input style={mono} value={f?.value ?? ''} onChange={(e) => setInputField(io.key, { value: e.target.value })} placeholder="값 또는 { } 삽입" />
-                      <button onClick={() => setPick(`tinput:${io.key}`)} title="데이터 삽입" style={braceBtn}>{'{ }'}</button>
-                    </div>
-                  )}
+                  <TokenInput
+                    ariaLabel={`입력 ${io.label}`}
+                    value={f?.bound ? bindingToToken(f.bound) : (f?.value ?? '')}
+                    onChange={(v) => setInputField(io.key, { value: v, bound: null })}
+                    sources={sources}
+                    placeholder="값 또는 { } 로 데이터 삽입"
+                  />
                 </div>
               )
             })}
@@ -458,10 +473,13 @@ export function PropertyPanel({ width = 360 }: { width?: number }) {
         {node.type === 'form' && (
           <>
             <label style={label}>열기 URL — 팝업/iframe 으로 열어 form 을 제출할 주소</label>
-            <div style={{ display: 'flex', gap: 4 }}>
-              <input style={mono} value={node.formAction ?? ''} onChange={(e) => update(id, { formAction: e.target.value })} placeholder="https://pg.example.com/pay  ({ } 바인딩 가능)" />
-              <button onClick={() => setPick('formAction')} title="데이터 삽입" style={braceBtn}>{'{ }'}</button>
-            </div>
+            <TokenInput
+              ariaLabel="열기 URL"
+              value={node.formAction ?? ''}
+              onChange={(v) => update(id, { formAction: v })}
+              sources={sources}
+              placeholder="https://pg.example.com/pay — { } 로 데이터 삽입"
+            />
             <label style={label}>메서드</label>
             <select style={{ ...field, width: 'auto' }} value={node.formMethod ?? 'POST'} onChange={(e) => update(id, { formMethod: e.target.value })}>
               <option value="POST">POST</option>
@@ -670,7 +688,9 @@ function OutputsEditor({ outputs, onChange }: { outputs: NodeOutput[]; onChange:
   )
 }
 
-function VarsEditor({ vars, onChange, onPickVar, sourceType }: { vars: NodeVar[]; onChange: (v: NodeVar[]) => void; onPickVar: (id: string) => void; sourceType: (b: Binding) => string | undefined }) {
+function VarsEditor({ vars, onChange, sources, sourceType }: { vars: NodeVar[]; onChange: (v: NodeVar[]) => void; sources: BindableSource[]; sourceType: (b: Binding) => string | undefined }) {
+  // 시크릿 행은 마스킹(password) 유지가 우선이라 인라인 칩 대신 기존 [값|칩 + { }] 방식을 유지한다.
+  const [pickVar, setPickVar] = useState<string | null>(null)
   const upd = (vid: string, patch: Partial<NodeVar>) => onChange(vars.map((v) => (v.id === vid ? { ...v, ...patch } : v)))
   return (
     <>
@@ -678,18 +698,33 @@ function VarsEditor({ vars, onChange, onPickVar, sourceType }: { vars: NodeVar[]
       {vars.map((v) => (
         <div key={v.id} style={{ display: 'flex', gap: 6, marginBottom: 6, alignItems: 'center' }}>
           <input style={{ ...mono, flex: 1 }} value={v.key} placeholder="key" onChange={(e) => upd(v.id, { key: e.target.value })} />
-          {v.bound ? (
-            <div style={{ flex: 1 }}><BindingChip binding={v.bound} sourceType={sourceType(v.bound)} onRemove={() => upd(v.id, { bound: null })} onClick={() => onPickVar(v.id)} /></div>
+          {v.secret ? (
+            v.bound ? (
+              <div style={{ flex: 1 }}><BindingChip binding={v.bound} sourceType={sourceType(v.bound)} onRemove={() => upd(v.id, { bound: null })} onClick={() => setPickVar(v.id)} /></div>
+            ) : (
+              <>
+                <input style={{ ...mono, flex: 1 }} type="password" value={v.value ?? ''} placeholder="value" onChange={(e) => upd(v.id, { value: e.target.value })} />
+                <button onClick={() => setPickVar(v.id)} title="데이터 삽입" style={braceBtn}>{'{ }'}</button>
+              </>
+            )
           ) : (
-            <>
-              <input style={{ ...mono, flex: 1 }} type={v.secret ? 'password' : 'text'} value={v.value ?? ''} placeholder="value" onChange={(e) => upd(v.id, { value: e.target.value })} />
-              <button onClick={() => onPickVar(v.id)} title="데이터 삽입" style={braceBtn}>{'{ }'}</button>
-            </>
+            <div style={{ flex: 1, minWidth: 0, display: 'flex' }}>
+              <TokenInput
+                ariaLabel={`변수 ${v.key || 'value'}`}
+                value={v.bound ? bindingToToken(v.bound) : (v.value ?? '')}
+                onChange={(val) => upd(v.id, { value: val, bound: null })}
+                sources={sources}
+                placeholder="value 또는 { } 로 삽입"
+              />
+            </div>
           )}
           <label title="시크릿(마스킹)" style={{ fontSize: 11, color: 'var(--fl-text-muted)', display: 'flex', alignItems: 'center', gap: 3 }}>
             <input type="checkbox" checked={!!v.secret} onChange={(e) => upd(v.id, { secret: e.target.checked })} />🔒
           </label>
           <button onClick={() => onChange(vars.filter((x) => x.id !== v.id))} aria-label="삭제" style={{ width: 28, border: '1px solid var(--fl-border)', borderRadius: 6, background: 'var(--fl-surface)', cursor: 'pointer' }}>×</button>
+          {pickVar === v.id && (
+            <BindingPicker sources={sources} onClose={() => setPickVar(null)} onPick={(b) => { upd(v.id, { bound: b, value: '' }); setPickVar(null) }} />
+          )}
         </div>
       ))}
       <button onClick={() => onChange([...vars, { id: newId(), key: '', value: '', secret: false }])} style={addDashed}>+ 변수 추가</button>

@@ -1,22 +1,37 @@
 import { Handle, Position } from '@xyflow/react'
 import type { NodeProps } from '@xyflow/react'
+import { useEditorStore } from '../store/editorStore'
 import { asGraphNode } from './graphAdapter'
 import { catColor, typeIcon } from './nodeMeta'
+import { RunBadge } from './NodeCard'
 
 // IF 분기 노드 — true/false 두 source 핸들. fromPort='true'|'false' 라운드트립.
 export function BranchNode({ data, selected }: NodeProps) {
   const n = asGraphNode(data)
+  const runState = useEditorStore((s) => s.runView?.nodeStates[n.id])
+  const running = runState === 'running'
   const accent = catColor('if')
+  const borderColor = running
+    ? 'var(--fl-running)'
+    : runState === 'failed'
+      ? 'var(--fl-fail)'
+      : selected
+        ? 'var(--fl-cat-if)'
+        : runState === 'success'
+          ? 'var(--fl-ok)'
+          : 'var(--fl-border)'
   return (
     <div
+      className={running ? 'fl-node-running' : undefined}
       style={{
         minWidth: 200,
         background: 'var(--fl-surface)',
-        border: `1px solid ${selected ? 'var(--fl-cat-if)' : 'var(--fl-border)'}`,
+        border: `1px solid ${borderColor}`,
         borderRadius: 'var(--fl-radius)',
         boxShadow: selected ? 'var(--fl-shadow-lg)' : 'var(--fl-shadow)',
         fontFamily: 'var(--fl-font-ui)',
         position: 'relative',
+        opacity: runState === 'skipped' ? 0.55 : 1,
       }}
     >
       <Handle type="target" position={Position.Left} className="fl-handle" style={{ borderColor: 'var(--fl-cat-if)' }} />
@@ -29,6 +44,7 @@ export function BranchNode({ data, selected }: NodeProps) {
             {n.condition || '조건 없음'}
           </div>
         </div>
+        <RunBadge state={runState} />
       </div>
 
       <div style={{ position: 'absolute', right: -6, top: '34%', fontSize: 9, fontWeight: 700, color: 'var(--fl-ok)' }}>T</div>

@@ -222,3 +222,81 @@ html[data-theme='dark'] ::-webkit-scrollbar-thumb { background: #39404f; backgro
   animation: fl-wait-pulse 1.4s ease-out infinite;
   flex-shrink: 0;
 }
+
+/* --- 실행 경과 표시 (노드 배지 · 진행 펄스) --- */
+/* 진행 중 노드 — 파란 펄스(콜백 대기 펄스와 같은 어휘, 색만 running) */
+@keyframes fl-run-pulse {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--fl-running) 45%, transparent); }
+  70% { box-shadow: 0 0 0 8px transparent; }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+.fl-node-running {
+  animation: fl-run-pulse 1.2s ease-out infinite;
+}
+@keyframes fl-spin {
+  to { transform: rotate(360deg); }
+}
+.fl-run-spinner {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+  border: 2px solid color-mix(in srgb, var(--fl-running) 25%, transparent);
+  border-top-color: var(--fl-running);
+  border-radius: 50%;
+  animation: fl-spin 0.7s linear infinite;
+}
+.fl-run-badge {
+  flex-shrink: 0;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+/* --- 데이터 삽입: 인라인 토큰 칩 입력 --- */
+.fl-token-input:focus-visible {
+  outline: 2px solid var(--fl-focus);
+  outline-offset: 0;
+}
+.fl-token-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 4px 1px 7px;
+  margin: 0 1px;
+  border: 1px solid var(--fl-primary);
+  border-radius: var(--fl-radius-pill);
+  background: color-mix(in srgb, var(--fl-surface-2) 70%, transparent);
+  font-size: 11px;
+  line-height: 1.5;
+  vertical-align: middle;
+  white-space: nowrap;
+  max-width: 240px;
+}
+.fl-token-chip .fl-token-chip-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fl-token-chip .fl-token-chip-name {
+  color: var(--fl-text-muted);
+}
+.fl-token-chip .fl-token-chip-x {
+  cursor: pointer;
+  color: var(--fl-text-muted);
+  font-size: 13px;
+  line-height: 1;
+  padding: 0 3px;
+  border-radius: 50%;
+}
+.fl-token-chip .fl-token-chip-x:hover {
+  color: var(--fl-fail);
+}
+
+/* 데이터 삽입 피커 — 칩 블럭 호버 */
+.fl-bind-chip {
+  transition: border-color var(--fl-dur-fast) var(--fl-ease), background var(--fl-dur-fast) var(--fl-ease);
+}
+.fl-bind-chip:hover {
+  border-color: var(--fl-primary) !important;
+  background: var(--fl-surface-2) !important;
+}

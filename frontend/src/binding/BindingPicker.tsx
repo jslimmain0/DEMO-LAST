@@ -46,21 +46,28 @@ export function BindingPicker({
             </p>
           )}
           {filtered.map((s) => (
-            <section key={s.id} style={{ marginBottom: 6 }}>
+            <section key={s.id} style={{ marginBottom: 8 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '6px 8px', fontSize: 12, fontWeight: 700, color: 'var(--fl-text-muted)' }}>
                 <span aria-hidden style={{ color: catColor(s.cat) }}>{typeIcon(s.type)}</span>
                 {s.name}
                 <span style={{ fontWeight: 400, fontFamily: 'var(--fl-font-mono)', fontSize: 10.5, opacity: 0.7 }}>{typeLabel(s.type)} · #{s.id}</span>
               </div>
-              {s.items.map((it, i) => (
-                <button key={`${it.group}-${it.key}-${i}`} onClick={() => pick(s, it)} style={itemBtn}>
-                  <span style={{ ...tag, color: it.group === 'response' ? 'var(--fl-ok)' : 'var(--fl-running)' }}>
-                    {it.group === 'response' ? '응답' : '요청'}
-                  </span>
-                  <span style={{ fontFamily: 'var(--fl-font-mono)', fontSize: 12.5 }}>{it.key}</span>
-                  {it.type && <span style={typeBadge}>{it.type}</span>}
-                </button>
-              ))}
+              {/* 파라미터는 세로 목록 대신 블럭(칩)으로 나열 — 한눈에 훑고 바로 집는다 */}
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: '0 8px 4px 27px' }}>
+                {s.items.map((it, i) => (
+                  <button
+                    key={`${it.group}-${it.key}-${i}`}
+                    onClick={() => pick(s, it)}
+                    className="fl-bind-chip"
+                    title={`${it.group === 'response' ? '응답' : '요청'} · ${it.key}${it.type ? ` (${it.type})` : ''}`}
+                    style={chipBtn(it.group === 'response')}
+                  >
+                    <span aria-hidden style={{ width: 6, height: 6, borderRadius: '50%', flexShrink: 0, background: it.group === 'response' ? 'var(--fl-ok)' : 'var(--fl-running)' }} />
+                    <span style={{ fontFamily: 'var(--fl-font-mono)', fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 180 }}>{it.key}</span>
+                    {it.type && <span style={typeBadge}>{it.type}</span>}
+                  </button>
+                ))}
+              </div>
             </section>
           ))}
         </div>
@@ -70,8 +77,20 @@ export function BindingPicker({
 }
 
 const overlay: CSSProperties = { position: 'fixed', inset: 0, background: 'rgba(26,29,39,.34)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }
-const card: CSSProperties = { width: 460, maxWidth: '100%', maxHeight: '70vh', background: 'var(--fl-surface)', borderRadius: 'var(--fl-radius-lg)', boxShadow: 'var(--fl-shadow-lg)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }
+const card: CSSProperties = { width: 520, maxWidth: '100%', maxHeight: '70vh', background: 'var(--fl-surface)', borderRadius: 'var(--fl-radius-lg)', boxShadow: 'var(--fl-shadow-lg)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }
 const search: CSSProperties = { flex: 1, padding: '7px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', color: 'var(--fl-text)', fontSize: 13 }
-const itemBtn: CSSProperties = { display: 'flex', alignItems: 'center', gap: 9, width: '100%', padding: '8px 12px 8px 26px', border: 'none', borderRadius: 'var(--fl-radius-sm)', background: 'transparent', cursor: 'pointer', textAlign: 'left', color: 'var(--fl-text)' }
-const tag: CSSProperties = { fontSize: 10, fontWeight: 700, width: 28 }
-const typeBadge: CSSProperties = { marginLeft: 'auto', fontSize: 10.5, color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)', background: 'var(--fl-surface-2)', padding: '1px 6px', borderRadius: 5 }
+function chipBtn(isResponse: boolean): CSSProperties {
+  return {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 6,
+    padding: '5px 10px',
+    border: `1px solid color-mix(in srgb, ${isResponse ? 'var(--fl-ok)' : 'var(--fl-running)'} 45%, var(--fl-border))`,
+    borderRadius: 'var(--fl-radius-pill)',
+    background: 'var(--fl-surface)',
+    cursor: 'pointer',
+    color: 'var(--fl-text)',
+    maxWidth: '100%',
+  }
+}
+const typeBadge: CSSProperties = { fontSize: 10, color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)', background: 'var(--fl-surface-2)', padding: '1px 5px', borderRadius: 5, flexShrink: 0 }

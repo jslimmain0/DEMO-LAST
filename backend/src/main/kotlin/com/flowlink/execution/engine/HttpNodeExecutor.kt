@@ -255,6 +255,7 @@ class HttpNodeExecutor(
      * <ul>
      *   <li><b>json</b>: JSON 파싱(객체/배열)</li>
      *   <li><b>form</b>: {@code a=1&b=2} urlencoded → 키-값(중복 키는 리스트)</li>
+     *   <li><b>query</b>: 본문이 URL({@code …?a=1&b=2}) 또는 쿼리스트링일 때 {@code ?} 뒤 파라미터 → 키-값</li>
      *   <li><b>xml</b>: 루트의 최상위 자식 엘리먼트명 → 텍스트(중복은 리스트). 평면 XML(코드/메시지 등)에 적합</li>
      *   <li><b>text/binary</b>: 키가 없으므로 본문 전체를 {@code body} 한 키로 제공</li>
      * </ul>
@@ -278,10 +279,22 @@ class HttpNodeExecutor(
                 }
             }
             "form", "urlencoded" -> parseForm(raw.text, cs)
+            "query" -> parseQuery(raw.text, cs)
             "xml" -> parseXml(raw.text)
             "binary" -> mapOf<String, Any?>("body" to "(binary · " + raw.byteLength + " bytes)")
             else -> mapOf<String, Any?>("body" to raw.text) // text — 본문 전체를 body 로
         }
+    }
+
+    /**
+     * 쿼리 파라미터 응답 — 리다이렉트 URL 이나 next-url 처럼 응답 본문이 URL({@code https://x/cb?a=1&b=2})
+     * 또는 쿼리스트링({@code ?a=1&b=2} / {@code a=1&b=2})일 때, 파라미터를 키-값 맵으로 해석한다.
+     * 쿼리로 볼 수 없는 본문(파라미터 없음)은 body 로 보존한다.
+     */
+    private fun parseQuery(body: String?, cs: Charset): Map<String, Any?> {
+        val qs = extractQueryString(body) ?: return mapOf("body" to (body ?: ""))
+        val parsed = parseForm(qs, cs)
+        return if (parsed.isEmpty()) mapOf("body" to (body ?: "")) else parsed
     }
 
     /** application/x-www-form-urlencoded 응답을 키-값 맵으로 파싱(중복 키는 리스트로 누적). 퍼센트 디코딩은 cs 문자셋. */
@@ -441,6 +454,30 @@ class HttpNodeExecutor(
     companion object {
         /** RFC 7230 토큰 — 유효한 HTTP 헤더 이름만 허용(나머지는 무시). */
         private val HEADER_NAME: Pattern = Pattern.compile("^[!#$%&'*+.^_`|~0-9A-Za-z-]+$")
+
+        /**
+         * respType=query 용 쿼리스트링 추출. {@code ?} 가 있으면 그 뒤(프래그먼트 {@code #…} 는 제거),
+         * 없으면 본문이 {@code a=1&b=2} 형태(= 포함)일 때만 본문 자체를 쿼리로 본다. 아니면 null.
+         */
+        internal fun extractQueryString(body: String?): String? {
+            if (body == null) {
+                return null
+            }
+            var t = body.trim()
+            if (t.isEmpty()) {
+                return null
+            }
+            val hash = t.indexOf('#')
+            if (hash >= 0) {
+                t = t.substring(0, hash)
+            }
+            val q = t.indexOf('?')
+            if (q >= 0) {
+                return t.substring(q + 1)
+            }
+            // '?' 없는 본문은 한 줄짜리 a=1&b=2 형태만 쿼리로 인정(여러 줄 텍스트 오인 방지 — tryParseCallbackBody 규약과 동일)
+            return if (t.contains('=') && !t.contains('\n')) t else null
+        }
 
         @Suppress("UNCHECKED_CAST")
         private fun putMulti(map: MutableMap<String, Any?>, key: String, value: Any?) {

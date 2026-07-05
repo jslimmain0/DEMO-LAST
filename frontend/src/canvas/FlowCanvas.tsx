@@ -17,11 +17,20 @@ export function FlowCanvas() {
   const nodes = useEditorStore((s) => s.nodes)
   const edges = useEditorStore((s) => s.edges)
   const waitingNodeId = useEditorStore((s) => s.waitingNodeId)
-  // 콜백 대기 중엔 그 노드로 들어오는 엣지에 흐름 애니메이션
-  const displayEdges = useMemo(
-    () => (waitingNodeId ? edges.map((e) => (e.target === waitingNodeId ? { ...e, animated: true } : e)) : edges),
-    [edges, waitingNodeId],
-  )
+  const runView = useEditorStore((s) => s.runView)
+  // 실행 경과 표시 — 지나간 엣지는 색으로, 진행 중인 엣지는 움직이는 점선으로.
+  // (콜백 대기 노드 유입 엣지 애니메이션은 runView 가 없어도 waitingNodeId 폴백으로 유지)
+  const displayEdges = useMemo(() => {
+    if (!runView && !waitingNodeId) return edges
+    return edges.map((e) => {
+      const st = runView?.edgeStates[e.id]
+      if (st === 'active') return { ...e, animated: true, style: { ...e.style, stroke: 'var(--fl-running)', strokeWidth: 2 } }
+      if (st === 'done') return { ...e, style: { ...e.style, stroke: 'var(--fl-ok)', strokeWidth: 2 } }
+      if (st === 'fail') return { ...e, style: { ...e.style, stroke: 'var(--fl-fail)', strokeWidth: 2 } }
+      if (waitingNodeId && e.target === waitingNodeId) return { ...e, animated: true }
+      return e
+    })
+  }, [edges, runView, waitingNodeId])
   const onNodesChange = useEditorStore((s) => s.onNodesChange)
   const onEdgesChange = useEditorStore((s) => s.onEdgesChange)
   const onConnect = useEditorStore((s) => s.onConnect)

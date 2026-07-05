@@ -21,7 +21,7 @@ data class GraphNode(
     val baseUrlBound: Binding?,
     val path: String?,
     val bodyType: String?,        // json | urlencoded | form | raw | xml
-    val respType: String?,        // json | xml | urlencoded | form | text | binary
+    val respType: String?,        // json | xml | urlencoded | form | query | text | binary
     val rawBody: String?,
     val jsonRaw: Boolean?,
     val paramsRaw: Boolean?,      // 쿼리 파라미터 [필드↔Raw] — true 면 rawParams(a=1&b=2) 사용

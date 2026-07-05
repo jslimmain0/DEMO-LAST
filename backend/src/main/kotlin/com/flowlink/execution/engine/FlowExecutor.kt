@@ -442,7 +442,15 @@ class FlowExecutor(
             if (v.key == null || v.key.isBlank()) {
                 continue
             }
-            val resolved = if (v.bound != null) tokens.resolveBinding(v.bound, ctx) else v.value
+            // 리터럴 값도 {{토큰}} 치환 — 인라인 데이터 삽입(텍스트+토큰 혼합)을 SET 에서도 지원.
+            // 토큰이 없으면 원문 그대로(무회귀).
+            val resolved: Any? = if (v.bound != null) {
+                tokens.resolveBinding(v.bound, ctx)
+            } else if (v.value != null && v.value.contains("{{")) {
+                tokens.resolveTokens(v.value, ctx)
+            } else {
+                v.value
+            }
             value[v.key] = resolved
             masked[v.key] = if (v.secret) "••••••" else resolved
         }

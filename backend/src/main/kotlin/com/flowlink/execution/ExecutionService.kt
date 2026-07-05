@@ -74,8 +74,14 @@ class ExecutionService(
     /**
      * 중단된 실행의 재개 상태. [future] 는 wait 노드의 타임아웃 자동 재개 예약(콜백 수신/재개 시 취소).
      * future 를 통해 접근하는 스레드(콜백/타임아웃)와 suspensions 접근은 execId 단위로 원자 교체·조건 제거로 직렬화한다.
+     * [outcome] 은 중단 시점의 pending 명세 — [get] 폴링이 대기 중에도 pending 을 돌려줘
+     * 프론트 대기 루프(카운트다운/수신 URL/재개 감지)가 유지되게 한다.
      */
-    private class Suspended(val state: FlowExecutor.RunState, val tenant: String) {
+    private class Suspended(
+        val state: FlowExecutor.RunState,
+        val tenant: String,
+        val outcome: FlowExecutor.Outcome
+    ) {
         @Volatile
         var future: ScheduledFuture<*>? = null
     }
@@ -183,6 +189,13 @@ class ExecutionService(
     fun get(executionId: UUID): ExecutionDetail {
         val e = executionRepo.findByIdAndTenantId(executionId, TenantContext.getTenantId())
             .orElseThrow { NotFoundException.of("Execution", executionId) }
+        // 아직 중단(대기) 중이면 pending 명세를 함께 반환 — 프론트가 폴링만으로 대기 상태를 유지/재개 감지.
+        // (이게 없으면 wait 대기 루프가 첫 재조회에서 pending=null 을 보고 바로 끝나 "콜백 대기가 안 되는" 증상)
+        val s = suspensions[executionId]
+        if (s != null && s.tenant == TenantContext.getTenantId() && e.status == ExecutionStatus.WAITING) {
+            val o = s.outcome
+            return detail(e, o.pendingClient, o.pendingForm, o.pendingWait, o.pendingInput)
+        }
         return detail(e, null, null, null, null)
     }
 
@@ -249,7 +262,7 @@ class ExecutionService(
         // 이전 wait 타임아웃 예약이 남아 있으면 취소(재개/교체로 무효화).
         suspensions[execId]?.future?.cancel(false)
         if (outcome.status == ExecutionStatus.WAITING && outcome.isPending()) {
-            val suspended = Suspended(state, tenant)
+            val suspended = Suspended(state, tenant, outcome)
             suspensions[execId] = suspended
             val pw = outcome.pendingWait
             if (pw != null && pw.nodeId != null) {

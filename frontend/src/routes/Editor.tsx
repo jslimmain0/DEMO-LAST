@@ -112,13 +112,9 @@ export function Editor() {
       // 실행 경과 애니메이션: 백엔드가 노드별 결과를 즉시 저장하므로, 방금 시작된 실행을 찾아
       // 폴링하면 동기 실행 구간에서도 "어디까지 왔는지"가 실시간으로 보인다.
       const baselineId = await runsApi.listForFlow(flowId, 1).then((l) => l[0]?.id ?? null).catch(() => null)
+      // GET /executions/{id} 는 대기(suspension) 중이면 pending 명세도 포함하므로 스냅샷을 그대로 쓴다.
       void watchRunProgress(flowId, baselineId, watch.signal, (d) => {
-        setExecution((prev) => {
-          if (prev && prev.finishedAt && !d.finishedAt) return prev // 종료 이후의 늦은 스냅샷은 무시
-          return prev && prev.id === d.id
-            ? { ...d, pendingClient: prev.pendingClient, pendingForm: prev.pendingForm, pendingWait: prev.pendingWait, pendingInput: prev.pendingInput }
-            : d
-        })
+        setExecution((prev) => (prev && prev.finishedAt && !d.finishedAt ? prev : d)) // 종료 후 늦은 스냅샷만 무시
       })
 
       let detail = await runsApi.run(flowId)

@@ -446,8 +446,15 @@ design/   theme(라이트/다크) · index.css(CSS 변수)
     목적이라 칩 없이 기존 [{ } 데이터 삽입] 버튼 유지.
 - **데이터 삽입 피커 칩 레이아웃**: [BindingPicker](frontend/src/binding/BindingPicker.tsx) 항목을 세로 목록 → **flex-wrap 칩 블럭**
   (응답=녹색점/요청=파란점 + 키 + 타입 배지, 노드 그룹핑 유지). 카드 폭 460→520.
+- **콜백 대기(wait) 프론트 대기 유지 버그 수정**: relay 백엔드 통합(SSE→폴링 전환) 때부터 `GET /executions/{id}` 가 대기 중에도
+  `pending* = null` 을 반환 → 에디터 대기 루프가 **첫 재조회(1초) 만에 종료**돼 배너/카운트다운/펄스가 사라지고, 콜백이 와서
+  백엔드가 완료시켜도 UI 에 안 보이던 문제("콜백 대기가 안 됨" 증상).
+  [ExecutionService](backend/src/main/kotlin/com/flowlink/execution/ExecutionService.kt) `Suspended` 에 중단 시점 `Outcome`(pending 명세)을
+  보관하고 `get()` 이 WAITING + 동일 테넌트면 pending 을 함께 반환 → 폴링만으로 대기 유지·재개 감지(연속 wait/client/input 체인 포함).
+  부수 효과: 실행 경과 폴러 스냅샷에도 pending 이 실려 프론트 병합 로직 불필요(단순화).
 - 검증: 백엔드 단위 5종 PASS + H2 API e2e 14(쿼리 파싱·퍼센트 디코딩·중복키·body 폴백·SET 토큰 치환·무회귀·실행 중 점진 기록) +
-  브라우저(Playwright) e2e 12(칩 삽입·텍스트+칩+텍스트 직렬화·× 삭제·피커 칩·실행 중 점선/스피너·완료 배지·정지) PASS.
+  브라우저(Playwright) e2e 12(칩 삽입·텍스트+칩+텍스트 직렬화·× 삭제·피커 칩·실행 중 점선/스피너·완료 배지·정지)
+  + wait e2e 10(배너 3초+ 유지·펄스·유입 점선·수신 URL·콜백 자동 완료 표시·타임아웃 실패 표기·✕ 배지) PASS.
   프론트 tsc/vite/oxlint 통과. 적대적 멀티에이전트 리뷰 반영.
 - ⚠️ 실행 애니메이션은 폴링 기반(SSE/WebSocket 아님) — 초당 2~3회 GET. 같은 플로우를 다른 탭이 동시 실행하면 baseline 비교가
   다른 실행을 잡을 수 있음(단일 사용자 도구 전제). waitMsg·Raw 텍스트영역은 토큰이 평문으로 보임(의도).

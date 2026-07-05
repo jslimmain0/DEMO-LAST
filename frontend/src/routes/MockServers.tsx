@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { CSSProperties } from 'react'
 import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import type { MockServerSummary } from '../api/types'
 import { mockBaseUrl, mocksApi } from '../api/client'
 import { AppShellTier1 } from '../app/AppShell'
@@ -80,17 +80,26 @@ export function MockServers() {
 }
 
 function MockCard({ server: s, onToggle, onRemove }: { server: MockServerSummary; onToggle: () => void; onRemove: () => void }) {
+  const navigate = useNavigate()
   const detail = useQuery({ queryKey: ['mock-server', s.id], queryFn: () => mocksApi.get(s.id) })
   const routeCount = detail.data?.spec?.routes?.length
   const spine = s.enabled ? 'var(--fl-cat-wait)' : 'var(--fl-border)'
+  const open = () => navigate(`/mocks/${s.id}`)
   return (
-    <div className="fl-flow-card" style={{ ...card, borderLeft: `3px solid ${spine}` }}>
+    <div
+      className="fl-flow-card"
+      role="button"
+      tabIndex={0}
+      onClick={open}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open() } }}
+      style={{ ...card, borderLeft: `3px solid ${spine}`, cursor: 'pointer' }}
+    >
       <div style={{ minWidth: 0, flex: 1 }}>
-        <Link to={`/mocks/${s.id}`} style={{ fontFamily: 'var(--fl-font-head)', fontWeight: 600, fontSize: 15, color: 'var(--fl-text)', textDecoration: 'none' }}>{s.name}</Link>
+        <span style={{ fontFamily: 'var(--fl-font-head)', fontWeight: 600, fontSize: 15, color: 'var(--fl-text)', textDecoration: 'none' }}>{s.name}</span>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 5, minWidth: 0 }}>
           <button
             title="base URL 복사"
-            onClick={() => { void navigator.clipboard?.writeText(mockBaseUrl(s.slug)).catch(() => {}) }}
+            onClick={(e) => { e.stopPropagation(); void navigator.clipboard?.writeText(mockBaseUrl(s.slug)).catch(() => {}) }}
             style={{ ...metaMono, display: 'inline-flex', alignItems: 'center', gap: 5, border: 'none', background: 'transparent', cursor: 'pointer', padding: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 360 }}
           >
             {mockBaseUrl(s.slug)} <span aria-hidden style={{ color: 'var(--fl-primary)' }}>⧉</span>
@@ -100,10 +109,10 @@ function MockCard({ server: s, onToggle, onRemove }: { server: MockServerSummary
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
         <span style={metaMono}>{relTime(s.updatedAt ?? '') || ''}</span>
-        <button onClick={onToggle} title={s.enabled ? '서빙 중 — 클릭하면 끔' : '꺼짐 — 클릭하면 켬'} style={{ ...pill, color: s.enabled ? 'var(--fl-ok)' : 'var(--fl-text-muted)', borderColor: s.enabled ? 'color-mix(in srgb, var(--fl-ok) 40%, var(--fl-border))' : 'var(--fl-border)' }}>
+        <button onClick={(e) => { e.stopPropagation(); onToggle() }} title={s.enabled ? '서빙 중 — 클릭하면 끔' : '꺼짐 — 클릭하면 켬'} style={{ ...pill, color: s.enabled ? 'var(--fl-ok)' : 'var(--fl-text-muted)', borderColor: s.enabled ? 'color-mix(in srgb, var(--fl-ok) 40%, var(--fl-border))' : 'var(--fl-border)' }}>
           {s.enabled ? '● 켜짐' : '○ 꺼짐'}
         </button>
-        <button className="fl-card-actions" onClick={onRemove} title="삭제" aria-label={`${s.name} 삭제`} style={{ ...pill, color: 'var(--fl-fail)', borderColor: 'var(--fl-border)' }}>삭제</button>
+        <button className="fl-card-actions" onClick={(e) => { e.stopPropagation(); onRemove() }} title="삭제" aria-label={`${s.name} 삭제`} style={{ ...pill, color: 'var(--fl-fail)', borderColor: 'var(--fl-border)' }}>삭제</button>
       </div>
     </div>
   )

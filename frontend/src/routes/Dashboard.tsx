@@ -257,12 +257,14 @@ function FlowCard({ flow, lastRun, folderList, selectMode, selected, onToggleSel
   onDelete: () => void
   onMove: (folderId: string | null) => void
 }) {
+  const navigate = useNavigate()
   const detail = useQuery({ queryKey: ['flow', flow.id], queryFn: () => flowsApi.get(flow.id) })
   const nodes = detail.data?.graph.nodes
   const cats = nodes?.map((n) => n.cat ?? n.type)
   const spine = dominantCat(cats, flow.id)
   const nodeCount = nodes?.length
   const [menu, setMenu] = useState(false)
+  const openCard = selectMode ? onToggleSelect : () => navigate(`/flows/${flow.id}`)
   const menuRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
     if (!menu) return
@@ -276,8 +278,11 @@ function FlowCard({ flow, lastRun, folderList, selectMode, selected, onToggleSel
   return (
     <article
       className="fl-flow-card"
-      onClick={selectMode ? onToggleSelect : undefined}
-      style={{ ...card, borderLeft: `3px solid ${varCat(spine)}`, cursor: selectMode ? 'pointer' : 'default', ...(selected ? selectedCard : null) }}
+      role="button"
+      tabIndex={0}
+      onClick={openCard}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openCard() } }}
+      style={{ ...card, borderLeft: `3px solid ${varCat(spine)}`, cursor: 'pointer', ...(selected ? selectedCard : null) }}
     >
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
         {selectMode && (
@@ -291,16 +296,14 @@ function FlowCard({ flow, lastRun, folderList, selectMode, selected, onToggleSel
           />
         )}
         <div style={{ minWidth: 0, flex: 1 }}>
-          {selectMode
-            ? <span style={cardTitle}>{flow.name}</span>
-            : <Link to={`/flows/${flow.id}`} style={cardTitle}>{flow.name}</Link>}
+          <span style={cardTitle}>{flow.name}</span>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, minHeight: 12 }}>
             {cats ? <FlowMini cats={cats} /> : <FlowMini cats={fallbackCats(flow.id, 4)} />}
             {nodeCount != null && <span style={metaMono}>노드 {nodeCount}</span>}
           </div>
         </div>
         {!selectMode && (
-          <div ref={menuRef} className="fl-card-actions" style={{ position: 'relative', flexShrink: 0 }}>
+          <div ref={menuRef} className="fl-card-actions" onClick={(e) => e.stopPropagation()} style={{ position: 'relative', flexShrink: 0 }}>
             <button onClick={() => setMenu((v) => !v)} aria-label={`${flow.name} 작업 메뉴`} aria-haspopup="menu" aria-expanded={menu} title="작업" style={iconBtn}>⋯</button>
             {menu && (
               <div role="menu" style={menuBox}>

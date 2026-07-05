@@ -3,11 +3,10 @@
 "결제창 같은 웹페이지가 뜨고 → 콜백이 돌아오는" 흐름을 **커스텀 Mock 서버**로 흉내 낸다.
 상태(잔액·원장) 없이, 응답 템플릿(HTML)과 콜백 발사만으로 만든다 — Mock 서버 기능의 본래 용도.
 
-## 1. 기동 (터미널 3개 + 브라우저)
+## 1. 기동 (터미널 2개 + 브라우저)
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File backend\scripts\start.ps1 -H2   # 백엔드
-node relay.js                                                             # relay :8787 (콜백 수신)
+powershell -ExecutionPolicy Bypass -File backend\scripts\start.ps1 -H2   # 백엔드 (wait 콜백 수신 내장)
 cd frontend; npm run dev                                                  # 프론트 :5173
 ```
 
@@ -44,7 +43,7 @@ cd frontend; npm run dev                                                  # 프�
 ## 4. 이게 보여주는 것
 
 - **웹페이지가 뜬다**: 커스텀 라우트가 `contentType: html` 로 결제창을 응답. `{{body.returnUrl}}` 템플릿으로 콜백 주소를 폼 action 에 심는다.
-- **콜백이 온다**: (a) 사용자가 결제창 버튼을 눌러 returnUrl 로 보내거나(01), (b) mock 규칙의 `callback` 이 응답 후 자동 발사(02). 둘 다 wait 노드가 relay 로 받는다.
+- **콜백이 온다**: (a) 사용자가 결제창 버튼을 눌러 returnUrl 로 보내거나(01), (b) mock 규칙의 `callback` 이 응답 후 자동 발사(02). 둘 다 wait 노드가 백엔드(`/relay/{execId}/cb/{nodeId}`)로 받아 자동 재개한다.
 - 상태 관리·서명 검증 같은 건 없다 — 필요했던 건 "창 뜨고 콜백"이지 결제 시뮬레이터가 아니었으므로.
 
-> 참고: 상태가 필요한 시나리오(부분취소 잔액 등)는 이 도구의 범위가 아니다. 그런 게 필요하면 별도 시뮬레이터(리포 루트 `mock-server.js` 같은)를 쓰면 된다.
+> 참고: 상태가 필요한 시나리오(부분취소 잔액 등)는 이 도구의 범위가 아니다. 그런 게 필요하면 별도 시뮬레이터(직접 작성한 Node 프로세스 등)를 쓰면 된다.

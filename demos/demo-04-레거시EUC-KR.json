@@ -4,7 +4,7 @@
     { "id": "start001", "name": "시작", "type": "start", "cat": "start", "x": 40, "y": 160 },
     {
       "id": "httpinqr", "name": "잔액조회(EUC-KR)", "type": "http", "cat": "generic", "x": 260, "y": 160,
-      "method": "POST", "baseUrl": "http://localhost:9090", "path": "/legacy/inquiry",
+      "method": "POST", "baseUrl": "http://localhost:18080/mock/demo", "path": "/legacy/inquiry",
       "bodyType": "urlencoded", "respType": "urlencoded", "reqMode": "server", "charset": "EUC-KR",
       "fields": {
         "params": [], "headers": [],
@@ -19,7 +19,7 @@
     },
     {
       "id": "httpxml1", "name": "고객정보 XML(EUC-KR)", "type": "http", "cat": "generic", "x": 480, "y": 160,
-      "method": "GET", "baseUrl": "http://localhost:9090", "path": "/legacy/user.xml",
+      "method": "GET", "baseUrl": "http://localhost:18080/mock/demo", "path": "/legacy/user.xml",
       "bodyType": "json", "respType": "xml", "reqMode": "server", "charset": "EUC-KR",
       "fields": { "params": [], "headers": [], "body": [] },
       "outputs": [

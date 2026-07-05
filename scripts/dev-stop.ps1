@@ -4,7 +4,7 @@
 .DESCRIPTION
   dev-all.ps1 이 띄운 서비스들을 정리한다:
     - backend 는 backend\scripts\stop.ps1 로 깔끔히 종료
-    - relay/mock/vite 는 포트(8787·9090·9091·5173) 점유 프로세스를 종료
+    - vite 는 포트(5173) 점유 프로세스를 종료
   포트 기반 정리라 창을 수동으로 닫지 않아도 되고, 옛 프로세스가 포트를 선점한 경우도 함께 회수한다.
 .EXAMPLE
   powershell -ExecutionPolicy Bypass -File scripts\dev-stop.ps1
@@ -24,8 +24,8 @@ if (Test-Path $stop) {
   }
 }
 
-# 2) relay/mock/vite — 포트 점유 프로세스 종료 (backend 18080 도 안전망으로 포함)
-$ports = 18080, 8787, 9090, 9091, 5173
+# 2) vite — 포트 점유 프로세스 종료 (backend 18080 도 안전망으로 포함)
+$ports = 18080, 5173
 foreach ($port in $ports) {
   try {
     $conns = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue

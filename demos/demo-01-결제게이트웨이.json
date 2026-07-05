@@ -12,7 +12,7 @@
     },
     {
       "id": "form0001", "name": "결제창 열기", "type": "form", "cat": "form", "x": 480, "y": 200,
-      "formAction": "http://localhost:9090/pay/checkout", "formMethod": "POST",
+      "formAction": "http://localhost:18080/mock/demo/pay/checkout", "formMethod": "POST",
       "fields": {
         "params": [], "headers": [],
         "body": [
@@ -42,7 +42,7 @@
     },
     {
       "id": "httpstat", "name": "승인 내역 조회", "type": "http", "cat": "generic", "x": 1140, "y": 110,
-      "method": "GET", "baseUrl": "http://localhost:9090", "path": "/pay/status",
+      "method": "GET", "baseUrl": "http://localhost:18080/mock/demo", "path": "/pay/status",
       "bodyType": "json", "respType": "json", "reqMode": "server", "charset": "UTF-8",
       "fields": {
         "params": [ { "id": "p1", "key": "tid", "bound": { "key": "tid", "sourceId": "wait0001", "nodeName": "결제 콜백 대기" } } ],

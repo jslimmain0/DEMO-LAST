@@ -4,7 +4,7 @@
     { "id": "start001", "name": "시작", "type": "start", "cat": "start", "x": 40, "y": 160 },
     {
       "id": "httpecho", "name": "브라우저 직접 호출", "type": "http", "cat": "generic", "x": 260, "y": 160,
-      "method": "GET", "baseUrl": "http://localhost:9090", "path": "/api/echo",
+      "method": "GET", "baseUrl": "http://localhost:18080/mock/demo", "path": "/api/echo",
       "bodyType": "json", "respType": "json", "reqMode": "client", "charset": "UTF-8",
       "fields": {
         "params": [ { "id": "p1", "key": "from", "value": "browser" } ],

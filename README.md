@@ -66,8 +66,11 @@ claude --plugin-dir ./flowlink-workflow      # 플러그인 로드
 
 ### GitHub Copilot
 
-- `.github/copilot-instructions.md` — 리포에서 작업할 때 Copilot Chat 이 **자동으로** 읽는 지침(워크플로 생성 규칙 포함).
-- `.github/prompts/make-workflow.prompt.md` — Copilot Chat 에서 **`/make-workflow`** 로 호출(VS Code 설정 `chat.promptFiles: true`).
+Claude 와 **같은 `make-workflow` 스킬**을 Copilot 에서도 쓴다(SKILL.md 는 Claude·Copilot 공통 표준이라 본문이 공유된다). 세 방식:
+
+- **Agent Skill** (권장): [`.github/skills/make-workflow/`](.github/skills/make-workflow/SKILL.md) — **Copilot CLI · VS Code/JetBrains 에이전트 모드 · 클라우드 에이전트 · 코드 검토**가 워크플로 생성 요청을 감지하면 `SKILL.md`(+ `reference/`·`scripts/`)를 컨텍스트에 자동 로드한다([Agent Skills](https://docs.github.com/en/copilot/concepts/agents/about-agent-skills), 2025-12+). `gh skill` 로 관리·공유도 가능.
+- **자동 지침**: [`.github/copilot-instructions.md`](.github/copilot-instructions.md) — 리포에서 작업할 때 Copilot Chat 이 자동으로 읽는 지침(워크플로 생성 규칙 요약).
+- **슬래시 명령**: [`.github/prompts/make-workflow.prompt.md`](.github/prompts/make-workflow.prompt.md) — Copilot Chat 에서 `/make-workflow`(VS Code 설정 `chat.promptFiles: true`).
 
 ### 등록 헬퍼 단독 사용
 

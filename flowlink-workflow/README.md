@@ -49,6 +49,10 @@ node skills/make-workflow/scripts/register-flow.mjs graph.json --run     # 저�
 node skills/make-workflow/scripts/register-flow.mjs graph.json --base http://다른호스트:18080
 ```
 
+## GitHub Copilot 에서도
+
+같은 스킬을 GitHub Copilot 이 [Agent Skill](https://docs.github.com/en/copilot/concepts/agents/about-agent-skills)(2025-12+)로 자동 발견하도록 리포에 미러해 뒀다 — [`.github/skills/make-workflow/`](../.github/skills/make-workflow/SKILL.md). `SKILL.md` 는 Claude·Copilot 공통 형식이라 스킬 본문(절차·규칙)이 그대로 공유된다. Copilot CLI · VS Code/JetBrains 에이전트 모드 · 클라우드 에이전트가 "워크플로 만들어줘" 요청 시 로드한다. (보조로 Copilot Chat 슬래시 `/make-workflow`(`.github/prompts/`)·자동 지침 `.github/copilot-instructions.md` 도 있다.)
+
 ## 참고
 
 - 노드 타입: start / end / set / if / assert / http / form / wait / input / transform

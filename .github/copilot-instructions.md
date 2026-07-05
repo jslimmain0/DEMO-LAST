@@ -10,7 +10,7 @@ REST API 워크플로 오케스트레이션 플랫폼. Backend: Spring Boot 3.3.
 
 사용자가 **"~하는 워크플로 만들어줘"**(예: "결제창 띄우고 콜백 받아 승인 검증하는 플로우", "로그인해서 주문 넣는 워크플로", "OTP 발송하고 입력받아 검증")라고 하면, FlowLink **노드 그래프(JSON)**를 만들어 REST API로 등록한다.
 
-전용 프롬프트: `.github/prompts/make-workflow.prompt.md` (Copilot Chat에서 `/make-workflow`).
+전용 **Agent Skill**: `.github/skills/make-workflow/` — Copilot CLI·VS Code/JetBrains 에이전트 모드·클라우드 에이전트가 관련 요청 시 `SKILL.md`를 자동 로드한다(2025-12+ [Agent Skills](https://docs.github.com/en/copilot/concepts/agents/about-agent-skills)). Copilot Chat 슬래시 명령이 편하면 `/make-workflow`(`.github/prompts/make-workflow.prompt.md`)도 그대로 쓸 수 있다.
 
 ### 참조 스키마 (코드에서 추출된 정확한 스펙)
 - 노드 타입별 필드: `flowlink-workflow/skills/make-workflow/reference/nodes.md`

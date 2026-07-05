@@ -85,7 +85,7 @@ export interface GraphNode {
   // wait (콜백/노티 수신 대기)
   waitTimeoutSec?: number      // 콜백 대기 타임아웃(초, 기본 120)
   callbackRespType?: string    // 콜백에 줄 응답 형식: text | html | json
-  callbackRespBody?: string    // 콜백에 줄 응답 본문(relay 에 사전 등록)
+  callbackRespBody?: string    // 콜백에 줄 응답 본문(백엔드가 콜백 수신 시 돌려줌)
   // input (사용자 입력 대기 — 모달 input box)
   waitMsg?: string           // 모달 안내 메시지
   waitFields?: WaitField[]   // 입력 필드 정의(key/label/type)
@@ -206,10 +206,6 @@ export type TriggerType = 'MANUAL' | 'SCHEDULE' | 'WEBHOOK' | 'EVENT'
 export interface RunRequest {
   input?: Record<string, unknown>
   versionNo?: number
-  // wait(콜백 대기) 노드용 — 브라우저가 실행 직전 만든 relay 실행ID(영숫자 16자)와 relay 주소.
-  // 서버가 {relayBase}/cb/{relayRunId}/{노드ID} 수신 URL 을 조립해 {{ url@노드ID }} 로 노출한다.
-  relayRunId?: string
-  relayBase?: string
 }
 
 // client(클라이언트→서버) 모드 노드에서 실행이 중단될 때, 브라우저가 대신 호출할 요청.
@@ -232,7 +228,8 @@ export interface PendingFormRequest {
   fields: Array<{ key: string; value?: string | null }>
 }
 
-// wait(콜백 대기) 노드에서 중단될 때 넘어오는 대기 명세. receiveUrl 은 relay 미연동이면 null.
+// wait(콜백 대기) 노드에서 중단될 때 넘어오는 대기 명세.
+// receiveUrl 은 백엔드가 조립한 콜백 수신 주소({백엔드}/relay/{실행ID}/cb/{노드ID}) — 백엔드가 직접 받아 재개한다.
 export interface PendingWaitRequest {
   nodeId: string
   nodeName?: string
@@ -249,7 +246,7 @@ export interface PendingInputRequest {
   fields: Array<{ key: string; label?: string | null; type?: string | null }>
 }
 
-// relay 가 수신해 SSE 로 전달한 콜백 전문 — wait 재개 페이로드.
+// 백엔드가 수신한 콜백 전문 — wait 재개 페이로드(백엔드가 직접 채워 재개).
 export interface CallbackPayload {
   method: string
   url?: string

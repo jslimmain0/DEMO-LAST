@@ -16,9 +16,9 @@ import java.util.UUID
 /**
  * 워크플로 실행 트리거 및 실행 이력/로그 조회.
  *
- * 외부 콜백(결제/인증 게이트웨이 노티)은 백엔드가 직접 받지 않는다 — 별도 relay(relay.js)가
- * {relay}/cb/{실행ID}/{노드ID} 로 수신해 SSE 로 브라우저에 전달하고, 브라우저가 [resume] 으로
- * 실행을 이어간다. (설계: docs/superpowers/specs/2026-07-03-form-wait-relay-design.md)
+ * wait(콜백 대기) 노드의 외부 콜백(결제/인증 게이트웨이 노티)은 백엔드가 직접 받아 재개한다
+ * ([com.flowlink.execution.RelayController] 의 {baseUrl}/relay/{실행ID}/cb/{노드ID}) — 별도 relay.js 불필요.
+ * [resume] 은 브라우저 협업 노드(client HTTP / form / input)의 재개 전용이다.
  */
 @RestController
 @RequestMapping("/api/v1")

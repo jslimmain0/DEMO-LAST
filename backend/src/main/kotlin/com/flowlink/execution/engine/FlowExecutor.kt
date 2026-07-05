@@ -570,14 +570,18 @@ class FlowExecutor(
     }
 
     companion object {
-        /** wait 노드의 콜백 수신 URL — {relayBase}/cb/{relayRunId}/{nodeId}. relay 미연동이면 null. */
+        /**
+         * wait 노드의 콜백 수신 URL — {relayBase}/relay/{execId}/cb/{nodeId}.
+         * 백엔드가 이 경로로 콜백을 직접 받아 실행을 재개한다(RelayController). base 미설정이면 null.
+         * (relayRunId 파라미터의 값은 실행ID 문자열 — 실행 시작 시 확정된다)
+         */
         @JvmStatic
         fun receiveUrl(relayBase: String?, relayRunId: String?, nodeId: String?): String? {
             if (relayBase == null || relayBase.isBlank() || relayRunId == null || relayRunId.isBlank()) {
                 return null
             }
             val base = if (relayBase.endsWith("/")) relayBase.substring(0, relayBase.length - 1) else relayBase
-            return base + "/cb/" + relayRunId + "/" + nodeId
+            return base + "/relay/" + relayRunId + "/cb/" + nodeId
         }
 
         private fun isClientMode(node: GraphNode): Boolean = "client".equals(node.reqMode, ignoreCase = true)

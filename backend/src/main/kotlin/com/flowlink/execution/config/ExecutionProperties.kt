@@ -8,11 +8,13 @@ class ExecutionProperties(
     http: Http?,
     ssrf: Ssrf?,
     capture: Capture?,
+    relay: Relay?,
     maxNodesPerRun: Int = 0,
 ) {
     val http: Http = http ?: Http(5000, 30000, 5_242_880L)
     val ssrf: Ssrf = ssrf ?: Ssrf(true, true, false, listOf("169.254.169.254"), listOf("http", "https"))
     val capture: Capture = capture ?: Capture(false)
+    val relay: Relay = relay ?: Relay(null)
     val maxNodesPerRun: Int = if (maxNodesPerRun <= 0) 200 else maxNodesPerRun
 
     /**
@@ -20,6 +22,16 @@ class ExecutionProperties(
      * (본문엔 Authorization 헤더·토큰 등 시크릿이 섞일 수 있어 기본 미저장)
      */
     data class Capture(val requestResponseBodies: Boolean = false)
+
+    /**
+     * wait(콜백 대기) 노드의 콜백 수신 URL 조립용 base — {baseUrl}/relay/{execId}/cb/{nodeId}.
+     * 백엔드가 콜백을 직접 받아 재개하므로 relay.js 없이 백엔드+프론트 2프로세스로 동작한다.
+     * 외부 게이트웨이가 콜백해야 하면 이 값을 도달 가능한 주소(터널 등)로 override 한다.
+     */
+    class Relay(baseUrl: String?) {
+        val baseUrl: String =
+            if (baseUrl.isNullOrBlank()) "http://localhost:18080" else baseUrl.trim().trimEnd('/')
+    }
 
     class Http(
         connectTimeoutMs: Int = 0,

@@ -18,6 +18,7 @@ class SsrfGuardTest {
                 listOf("169.254.169.254"), listOf("http", "https")
             ),
             null,
+            null,
             200
         )
         return SsrfGuard(props)

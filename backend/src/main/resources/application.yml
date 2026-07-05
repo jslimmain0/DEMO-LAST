@@ -63,6 +63,8 @@ flowlink:
     capture:
       request-response-bodies: false     # redaction deny-by-default. true 로 켜면 HTTP req/res 본문 저장(디버그용). h2 프로파일은 true
     max-nodes-per-run: 200               # 폭주 방지
+    relay:
+      base-url: http://localhost:18080   # wait 콜백 수신 URL base — {base}/relay/{execId}/cb/{nodeId} (백엔드가 직접 수신·재개). 외부 게이트웨이 도달 필요 시 터널 주소로 override
   # 보안 (IdP 비종속). issuer-uri 미설정 시 dev permitAll 로 동작.
   security:
     tenant-claim: tenant                 # JWT 에서 테넌트 식별자를 읽을 클레임 이름

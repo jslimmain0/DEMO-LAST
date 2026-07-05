@@ -74,6 +74,8 @@ export function mockBaseUrl(slug: string): string {
 export const runsApi = {
   run: (flowId: string, body?: RunRequest) =>
     http.post<ExecutionDetail>(`/flows/${flowId}/runs`, body ?? {}).then((r) => r.data),
+  get: (executionId: string) =>
+    http.get<ExecutionDetail>(`/executions/${executionId}`).then((r) => r.data),
   resume: (executionId: string, body: ResumeRequest) =>
     http.post<ExecutionDetail>(`/executions/${executionId}/resume`, body).then((r) => r.data),
   recent: (limit = 50) =>

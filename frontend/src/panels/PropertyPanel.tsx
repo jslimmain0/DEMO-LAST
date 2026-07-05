@@ -12,7 +12,6 @@ import { catColor, typeIcon, typeLabel } from '../canvas/nodeMeta'
 import { fieldsToRaw, rawToFields, headersToRaw, rawToHeaders } from '../lib/bodyConvert'
 import { bindingToToken } from '../lib/tokenGrammar'
 import { newId } from '../lib/ids'
-import { relayBase, saveRelayBase } from '../lib/relay'
 import { useEditorStore } from '../store/editorStore'
 import { KeyValueEditor } from './KeyValueEditor'
 
@@ -523,7 +522,7 @@ export function PropertyPanel({ width = 360 }: { width?: number }) {
             />
             <p style={{ ...hintP, marginTop: 6 }}>
               콜백(리다이렉트/노티)을 보낸 쪽이 받을 응답입니다. 인증 callback 이면 HTML("창을 닫으세요"),
-              승인 알림 콜백이면 OK 같은 문자열. 실행 시작 시점에 relay 에 등록됩니다.
+              승인 알림 콜백이면 OK 같은 문자열. 콜백 수신 시 백엔드가 이 응답을 돌려줍니다.
             </p>
 
             <WaitReceiveUrl nodeId={id} />
@@ -630,16 +629,15 @@ function WaitFieldsEditor({ fields, onChange }: { fields: WaitFieldT[]; onChange
   )
 }
 
-/** wait 노드 수신 URL 표시 + 바인딩 토큰 복사 + relay 주소 설정(브라우저 전역, localStorage). */
+/** wait 노드 수신 URL 표시 + 바인딩 토큰 복사. 콜백은 백엔드가 직접 받아 재개한다. */
 function WaitReceiveUrl({ nodeId }: { nodeId: string }) {
-  const [base, setBase] = useState(relayBase())
-  const pattern = `${base}/cb/{실행ID}/${nodeId}`
+  const pattern = `{백엔드}/relay/{실행ID}/cb/${nodeId}`
   const token = `{{ url@${nodeId} }}`
   return (
     <>
       <label style={label}>수신 URL — 이 주소로 콜백을 보내면 진행됩니다</label>
       <div style={{ display: 'flex', gap: 4 }}>
-        <input style={mono} readOnly value={pattern} onFocus={(e) => e.currentTarget.select()} title="실행ID는 실행마다 새로 생성됩니다(클릭 시 전체선택)" />
+        <input style={mono} readOnly value={pattern} onFocus={(e) => e.currentTarget.select()} title="실행ID는 실행마다 새로 생성됩니다 — 정확한 주소는 실행 로그에 표시됩니다" />
         <button
           onClick={() => { void navigator.clipboard?.writeText(token).catch(() => {}) }}
           title={`바인딩 토큰 복사 — ${token}`}
@@ -647,17 +645,9 @@ function WaitReceiveUrl({ nodeId }: { nodeId: string }) {
         >바인딩 토큰 복사</button>
       </div>
       <p style={{ ...hintP, marginTop: 6 }}>
-        실행 시작 시 실행ID(영숫자 16자)가 생성되어 URL 이 확정됩니다. 앞 노드(결제요청의 returnUrl/notiUrl 등)에서
-        {'{ }'} 피커의 <b>수신 URL</b> 항목 또는 위 토큰으로 꽂아 쓰세요.
+        실행 시작 시 실행ID가 생성되어 URL 이 확정됩니다(정확한 주소는 실행 로그에 표시). 앞 노드(결제요청의 returnUrl/notiUrl 등)에서
+        {'{ }'} 피커의 <b>수신 URL</b> 항목 또는 위 토큰으로 꽂아 쓰세요. 콜백은 <b>백엔드가 직접 받아</b> 실행을 재개합니다.
       </p>
-      <label style={label}>relay 주소 (전역 설정)</label>
-      <input
-        style={mono}
-        value={base}
-        onChange={(e) => { setBase(e.target.value); saveRelayBase(e.target.value) }}
-        placeholder="http://localhost:8787"
-      />
-      <p style={{ ...hintP, marginTop: 6 }}>콜백 수신기(relay.js) 주소 — <code>node relay.js</code> 로 실행합니다(기본 8787).</p>
     </>
   )
 }

@@ -25,15 +25,20 @@ import com.flowlink.execution.dto.PendingInputRequest
 import com.flowlink.execution.dto.PendingWaitRequest
 import com.flowlink.execution.dto.ResumeRequest
 import com.flowlink.execution.dto.RunRequest
+import com.flowlink.execution.dto.ResumeRequest.CallbackPayload
 import com.flowlink.execution.engine.ExecutionContext
 import com.flowlink.execution.engine.FlowExecutor
 import com.flowlink.execution.engine.NodeRecorder
+import org.slf4j.LoggerFactory
 import org.springframework.data.domain.PageRequest
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
-import java.util.regex.Pattern
+import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledExecutorService
+import java.util.concurrent.ScheduledFuture
+import java.util.concurrent.TimeUnit
 
 /**
  * 워크플로 실행의 진입점 + 영속화 경계.
@@ -55,12 +60,25 @@ class ExecutionService(
     private val mapper: ObjectMapper = json.mapper()
 
     /**
-     * 브라우저 협업 노드(client HTTP / form / wait)에서 WAITING 으로 중단된 실행의 재개 상태(인메모리).
-     * 단일 인스턴스/세션 한정 — 서버 재시작 시 소실되며 내구성 보관은 후속 Phase.
+     * 브라우저 협업 노드(client HTTP / form / input)와 wait(콜백 대기)에서 WAITING 으로 중단된 실행의
+     * 재개 상태(인메모리). 단일 인스턴스/세션 한정 — 서버 재시작 시 소실되며 내구성 보관은 후속 Phase.
      */
     private val suspensions: MutableMap<UUID, Suspended> = ConcurrentHashMap()
 
-    private data class Suspended(val state: FlowExecutor.RunState, val tenant: String)
+    /** wait 타임아웃 자동 재개용 스케줄러(데몬). 콜백이 먼저 오면 예약은 취소된다. */
+    private val scheduler: ScheduledExecutorService =
+        Executors.newScheduledThreadPool(1) { r ->
+            Thread(r, "wait-timeout").apply { isDaemon = true }
+        }
+
+    /**
+     * 중단된 실행의 재개 상태. [future] 는 wait 노드의 타임아웃 자동 재개 예약(콜백 수신/재개 시 취소).
+     * future 를 통해 접근하는 스레드(콜백/타임아웃)와 suspensions 접근은 execId 단위로 원자 교체·조건 제거로 직렬화한다.
+     */
+    private class Suspended(val state: FlowExecutor.RunState, val tenant: String) {
+        @Volatile
+        var future: ScheduledFuture<*>? = null
+    }
 
     fun run(flowId: UUID, req: RunRequest?): ExecutionDetail {
         val tenant = TenantContext.getTenantId()
@@ -90,13 +108,14 @@ class ExecutionService(
         // wait(콜백 대기) 노드 수신 URL 시드 — 실행 시작 시점에 모든 wait 노드의 url 출력을 미리 확정해
         // {{ url@노드ID }} 가 wait 보다 앞의 노드(returnUrl/notiUrl)에서도 해석되게 한다.
         // putSeed: 명시 스코프/바인딩에만 보임 — bare {{ url }} 의 nearest-upstream 해석을 오염시키지 않는다.
-        val relayRunId = sanitizeRelayRunId(req?.relayRunId)
-        val relayBase = sanitizeRelayBase(req?.relayBase)
-        if (relayRunId != null && relayBase != null) {
-            for (n in graph.nodesOrEmpty()) {
-                if (n.effectiveType() == NodeType.WAIT) {
-                    ctx.putSeed(n.id!!, mapOf("url" to FlowExecutor.receiveUrl(relayBase, relayRunId, n.id)))
-                }
+        //
+        // 콜백은 백엔드(RelayController)가 직접 받아 재개한다(relay.js 불필요). 수신 URL 은 이 실행ID 기반으로 확정.
+        // RunRequest.relayRunId/relayBase(구 프론트가 아직 보냄)는 하위호환 위해 무시한다.
+        val relayBase = props.relay.baseUrl
+        val relayRunId = execId.toString()
+        for (n in graph.nodesOrEmpty()) {
+            if (n.effectiveType() == NodeType.WAIT) {
+                ctx.putSeed(n.id!!, mapOf("url" to FlowExecutor.receiveUrl(relayBase, relayRunId, n.id)))
             }
         }
 
@@ -219,16 +238,101 @@ class ExecutionService(
         }
     }
 
-    /** 중단(pending)되면 재개 상태를 보관하고, 그 외(완료/실패)면 비운다. */
+    /**
+     * 중단(pending)되면 재개 상태를 보관하고, 그 외(완료/실패)면 비운다.
+     * wait 로 중단되면 타임아웃 자동 재개를 예약한다(이전 예약은 취소). form/input/client 는 예약 없음.
+     */
     private fun rememberIfPending(
         execId: UUID, outcome: FlowExecutor.Outcome,
         state: FlowExecutor.RunState, tenant: String
     ) {
+        // 이전 wait 타임아웃 예약이 남아 있으면 취소(재개/교체로 무효화).
+        suspensions[execId]?.future?.cancel(false)
         if (outcome.status == ExecutionStatus.WAITING && outcome.isPending()) {
-            suspensions[execId] = Suspended(state, tenant)
+            val suspended = Suspended(state, tenant)
+            suspensions[execId] = suspended
+            val pw = outcome.pendingWait
+            if (pw != null && pw.nodeId != null) {
+                scheduleWaitTimeout(execId, pw.nodeId, pw.timeoutSec, suspended)
+            }
         } else {
             suspensions.remove(execId)
         }
+    }
+
+    /** wait 노드 중단 시 timeoutSec 후 자동 타임아웃 재개를 예약한다(콜백이 먼저 오면 취소). */
+    private fun scheduleWaitTimeout(execId: UUID, nodeId: String, timeoutSec: Int, suspended: Suspended) {
+        val secs = if (timeoutSec <= 0) 120L else timeoutSec.toLong()
+        try {
+            suspended.future = scheduler.schedule(
+                { onWaitTimeout(execId, nodeId, secs, suspended) }, secs, TimeUnit.SECONDS
+            )
+        } catch (e: Exception) {
+            log.warn("wait 타임아웃 예약 실패(exec={}, node={}): {}", execId, nodeId, msg(e))
+        }
+    }
+
+    /**
+     * wait 타임아웃 발화 — 해당 wait 노드를 error 로 재개(실행 FAILED).
+     * [expected] 로 조건부 원자 제거해, 이미 콜백/완료됐거나 다른 wait 로 교체된 경우는 멱등하게 무시한다.
+     * 콜백 스레드가 아니므로 TenantContext 를 수동 set/clear 한다.
+     */
+    private fun onWaitTimeout(execId: UUID, nodeId: String, secs: Long, expected: Suspended) {
+        if (!suspensions.remove(execId, expected)) {
+            return // 이미 콜백 수신/완료 또는 다른 대기로 교체됨 — 멱등
+        }
+        TenantContext.setTenantId(expected.tenant)
+        try {
+            val req = ResumeRequest(
+                nodeId, null, null,
+                "콜백 대기 타임아웃 — ${secs}초 동안 콜백이 오지 않았습니다.",
+                null, null, null, null, null
+            )
+            doResume(execId, expected, req)
+        } catch (e: Exception) {
+            log.warn("wait 타임아웃 재개 오류(exec={}): {}", execId, msg(e))
+        } finally {
+            TenantContext.clear()
+        }
+    }
+
+    /**
+     * wait 콜백 수신(RelayController → 이 메서드). 대기 중인 그 wait 노드면 타임아웃 예약을 취소하고
+     * 콜백을 기존 resume 계약(ResumeRequest.callback)으로 변환해 백엔드가 직접 재개한다.
+     * 이미 완료/타임아웃됐거나 늦은/불일치 콜백은 멱등하게(상태 변경 없이) 응답만 반환한다.
+     *
+     * @return 그 wait 노드에 설정된 콜백 응답(callbackRespType/Body). 미설정/멱등이면 text "OK".
+     */
+    fun recordWaitCallback(
+        execId: UUID, nodeId: String, method: String,
+        headers: Map<String, String>, bodyText: String?
+    ): RelayResponse {
+        val current = suspensions[execId]
+        // 대기 중인 노드가 이 콜백의 노드와 일치할 때만 원자적으로 claim(교체/완료면 값 불일치 → 실패).
+        if (current == null || current.state.pendingNodeId != nodeId || !suspensions.remove(execId, current)) {
+            return RelayResponse.plainOk()
+        }
+        current.future?.cancel(false)
+        val resp = waitResponseFor(current.state, nodeId) // 재개 전(state 접근 가능) 응답 산출
+        TenantContext.setTenantId(current.tenant)
+        try {
+            val cb = CallbackPayload(
+                method, FlowExecutor.receiveUrl(props.relay.baseUrl, execId.toString(), nodeId), headers, bodyText
+            )
+            val req = ResumeRequest(nodeId, null, null, null, null, null, cb, null, null)
+            doResume(execId, current, req)
+        } catch (e: Exception) {
+            log.warn("wait 콜백 재개 오류(exec={}, node={}): {}", execId, nodeId, msg(e))
+        } finally {
+            TenantContext.clear()
+        }
+        return resp
+    }
+
+    /** wait 노드에 설정된 콜백 응답을 산출한다 — 콜백 발신자(게이트웨이/노티)에게 돌려줄 ACK. */
+    private fun waitResponseFor(state: FlowExecutor.RunState, nodeId: String): RelayResponse {
+        val node = state.byId[nodeId]
+        return RelayResponse.of(node?.callbackRespType, node?.callbackRespBody)
     }
 
     private fun seedInput(ctx: ExecutionContext, req: RunRequest?) {
@@ -286,9 +390,30 @@ class ExecutionService(
         return null
     }
 
+    /**
+     * wait 콜백에 돌려줄 응답(콜백 발신자용 ACK) — RelayController 가 그대로 내보낸다.
+     * 노드에 설정된 callbackRespType(text|html|json)/callbackRespBody 로부터 산출한다.
+     */
+    data class RelayResponse(val contentType: String, val body: String) {
+        companion object {
+            fun of(type: String?, body: String?): RelayResponse {
+                if (type == null && body.isNullOrEmpty()) {
+                    return plainOk()
+                }
+                val ct = when (type?.lowercase()) {
+                    "html" -> "text/html; charset=UTF-8"
+                    "json" -> "application/json; charset=UTF-8"
+                    else -> "text/plain; charset=UTF-8"
+                }
+                return RelayResponse(ct, body ?: "")
+            }
+
+            fun plainOk(): RelayResponse = RelayResponse("text/plain; charset=UTF-8", "OK")
+        }
+    }
+
     companion object {
-        /** 브라우저가 만든 relay 실행ID — 영숫자 8~64자만 인정(수신 URL 경로에 들어간다). */
-        private val RELAY_RUN_ID: Pattern = Pattern.compile("^[A-Za-z0-9]{8,64}$")
+        private val log = LoggerFactory.getLogger(ExecutionService::class.java)
 
         private fun toResumeInput(req: ResumeRequest?): FlowExecutor.ResumeInput {
             if (req == null) {
@@ -301,27 +426,6 @@ class ExecutionService(
             return FlowExecutor.ResumeInput(
                 req.status, req.body, req.error, req.popupOpened, cb, req.formValues
             )
-        }
-
-        private fun sanitizeRelayRunId(raw: String?): String? {
-            if (raw == null || !RELAY_RUN_ID.matcher(raw).matches()) {
-                return null
-            }
-            return raw
-        }
-
-        private fun sanitizeRelayBase(raw: String?): String? {
-            if (raw == null || raw.isBlank() || raw.length > 200) {
-                return null
-            }
-            var base = raw.trim()
-            if (!base.startsWith("http://") && !base.startsWith("https://")) {
-                return null
-            }
-            while (base.endsWith("/")) {
-                base = base.substring(0, base.length - 1)
-            }
-            return base
         }
 
         private fun msg(e: Exception): String = e.message ?: e.toString()

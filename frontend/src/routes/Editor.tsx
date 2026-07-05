@@ -3,7 +3,7 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import type { CSSProperties } from 'react'
 import { useEffect, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import type { ExecutionDetail, PendingClientRequest, PendingInputRequest, PendingWaitRequest, ResumeRequest, RunRequest } from '../api/types'
+import type { ExecutionDetail, PendingClientRequest, PendingInputRequest, ResumeRequest } from '../api/types'
 import { flowsApi, runsApi } from '../api/client'
 import { FlowCanvas } from '../canvas/FlowCanvas'
 import { Palette } from '../canvas/Palette'
@@ -15,8 +15,6 @@ import { WorkflowIODialog } from '../openapi/WorkflowIODialog'
 import { InputPromptDialog } from '../components/InputPromptDialog'
 import { ResizeHandle } from '../components/ResizeHandle'
 import { openFormIframe, openFormPopup } from '../lib/popup'
-import { RelaySession } from '../lib/relay'
-import type { RelayEvent } from '../lib/relay'
 import { useEditorStore } from '../store/editorStore'
 
 export function Editor() {
@@ -98,27 +96,15 @@ export function Editor() {
     setWaitStatus(null)
     const stop = new AbortController()
     stopRef.current = stop
-    let relay: RelaySession | null = null
     const setWaitingNode = useEditorStore.getState().setWaitingNode
     try {
       if (useEditorStore.getState().dirty) await save.mutateAsync()
 
-      // wait 노드가 하나라도 있으면 실행 시작 시점에 relay 에 응답 설정을 등록하고 SSE 를 연결한다.
-      // 실패는 즉시 실패가 아니라 기억 — wait 노드에 도달했을 때 그 에러로 실패시킨다.
-      const graph = getGraph()
-      const waitNodes = graph.nodes.filter((n) => n.type === 'wait')
-      let runBody: RunRequest = {}
-      if (waitNodes.length > 0) {
-        relay = new RelaySession()
-        await relay.start(waitNodes)
-        if (!relay.error) runBody = { relayRunId: relay.runId, relayBase: relay.base }
-      }
-
-      let detail = await runsApi.run(flowId, runBody)
+      let detail = await runsApi.run(flowId)
       setExecution(detail)
       // 서버가 중단(WAITING)하며 넘기는 지점을 처리하고 resume 으로 이어가길 반복:
       //  - pendingForm: 팝업 열고 form 자동 submit → 즉시 재개(기다리지 않음)
-      //  - pendingWait: relay 콜백(버퍼/SSE) 소비 또는 타임아웃/중단 → 재개
+      //  - pendingWait: 백엔드가 콜백/타임아웃을 직접 받아 자동 재개 → 폴링으로 완료(또는 다음 pending)를 감지
       //  - pendingClient: 브라우저가 직접 API 호출 → 결과 전송
       let guard = 0
       while ((detail.pendingClient || detail.pendingForm || detail.pendingWait || detail.pendingInput) && guard++ < 100) {
@@ -146,19 +132,24 @@ export function Editor() {
             ? { nodeId: pf.nodeId, error: err }
             : { nodeId: pf.nodeId, popupOpened: true })
         } else if (detail.pendingWait) {
+          // 콜백/타임아웃은 백엔드가 직접 받아 자동 재개한다 — 프론트는 폴링으로 완료(또는 다음 pending)를 감지.
           const pw = detail.pendingWait
-          if (!relay || relay.error) {
-            const err = relay?.error ?? 'relay 미연결 — 콜백 대기 노드를 실행할 수 없습니다.'
-            detail = await runsApi.resume(detail.id, { nodeId: pw.nodeId, error: err })
-          } else {
-            setWaitingNode(pw.nodeId)
-            const deadline = Date.now() + pw.timeoutSec * 1000
-            setWaitStatus({ nodeId: pw.nodeId, nodeName: pw.nodeName, receiveUrl: pw.receiveUrl ?? relay.urlFor(pw.nodeId), deadline })
-            const result = await waitForCallback(relay, pw, deadline, stop.signal)
-            setWaitStatus(null)
-            setWaitingNode(null)
-            detail = await runsApi.resume(detail.id, resumeForWait(pw, result))
+          setWaitingNode(pw.nodeId)
+          setWaitStatus({
+            nodeId: pw.nodeId,
+            nodeName: pw.nodeName,
+            receiveUrl: pw.receiveUrl ?? null,
+            deadline: Date.now() + pw.timeoutSec * 1000,
+          })
+          // 같은 wait 노드가 대기 중인 동안 1초 간격 폴링. ⏹ 중단 시 즉시 빠져나가 루프 상단이 취소 처리(resume aborted).
+          while (detail.pendingWait?.nodeId === pw.nodeId && !stop.signal.aborted) {
+            await sleep(1000, stop.signal)
+            if (stop.signal.aborted) break
+            detail = await runsApi.get(detail.id)
+            setExecution(detail)
           }
+          setWaitStatus(null)
+          setWaitingNode(null)
         } else if (detail.pendingClient) {
           const resumeBody = await callClientRequest(detail.pendingClient)
           detail = await runsApi.resume(detail.id, resumeBody)
@@ -168,7 +159,6 @@ export function Editor() {
     } catch {
       setExecution(null)
     } finally {
-      relay?.close()
       stopRef.current = null
       setWaitingNode(null)
       setWaitStatus(null)
@@ -247,42 +237,14 @@ export function Editor() {
   )
 }
 
-// --- wait(콜백 대기) 처리 ---
-
-type WaitOutcome = { kind: 'callback'; ev: RelayEvent } | { kind: 'timeout' } | { kind: 'aborted' }
-
-/** relay 콜백(버퍼/SSE) · 타임아웃 · 사용자 중단(⏹) 중 먼저 오는 것 하나로 낙착. */
-function waitForCallback(relay: RelaySession, pw: PendingWaitRequest, deadline: number, signal: AbortSignal): Promise<WaitOutcome> {
+// wait(콜백 대기) 폴링 간격용 sleep — 중단 시그널이 오면 즉시 깨어난다(⏹ 반응성).
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve) => {
-    let done = false
-    const finish = (r: WaitOutcome) => {
-      if (done) return
-      done = true
-      clearTimeout(timer)
-      signal.removeEventListener('abort', onAbort)
-      if (r.kind !== 'callback') relay.cancelWait(pw.nodeId) // 늦은 콜백은 버퍼로
-      resolve(r)
-    }
-    const timer = setTimeout(() => finish({ kind: 'timeout' }), Math.max(0, deadline - Date.now()))
-    const onAbort = () => finish({ kind: 'aborted' })
-    if (signal.aborted) { onAbort(); return }
-    signal.addEventListener('abort', onAbort, { once: true })
-    void relay.take(pw.nodeId).then((ev) => finish({ kind: 'callback', ev }))
+    if (signal?.aborted) return resolve()
+    const done = () => { clearTimeout(timer); signal?.removeEventListener('abort', done); resolve() }
+    const timer = setTimeout(done, ms)
+    signal?.addEventListener('abort', done, { once: true })
   })
-}
-
-function resumeForWait(pw: PendingWaitRequest, result: WaitOutcome): ResumeRequest {
-  if (result.kind === 'callback') {
-    const ev = result.ev
-    return {
-      nodeId: pw.nodeId,
-      callback: { method: ev.method, url: ev.url, headers: ev.headers, body: ev.body },
-    }
-  }
-  if (result.kind === 'timeout') {
-    return { nodeId: pw.nodeId, error: `타임아웃 — ${pw.timeoutSec}초 동안 콜백이 오지 않았습니다.` }
-  }
-  return { nodeId: pw.nodeId, error: '실행이 중단되었습니다.', aborted: true }
 }
 
 // 패널 크기 지속(localStorage). 잘못된 값/예외는 기본값, 범위 밖이면 min/max 로 클램프.

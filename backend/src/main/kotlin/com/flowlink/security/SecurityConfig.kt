@@ -83,7 +83,9 @@ class SecurityConfig {
         private val PUBLIC_PATHS = arrayOf(
             "/actuator/health/**", "/actuator/info", "/actuator/prometheus",
             "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html",
-            // 외부 콜백(결제/인증 노티)은 백엔드가 받지 않는다 — relay.js 가 수신해 SSE 로 브라우저에 전달
+            // wait(콜백 대기) 노드의 콜백을 백엔드가 직접 받아 재개한다(RelayController). 외부 시스템(게이트웨이/노티)이
+            // 부르는 무인증 엔드포인트 — execId 는 추측 불가한 UUID(테스트 도구 전제, 사내망).
+            "/relay/**",
             // mock 서빙은 외부 시스템 흉내라 무인증(slug 는 비밀값 아님 — 테스트 도구 전제)
             "/mock/**",
         )

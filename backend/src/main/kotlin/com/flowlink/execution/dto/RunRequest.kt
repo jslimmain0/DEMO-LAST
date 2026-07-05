@@ -6,9 +6,9 @@ import com.fasterxml.jackson.databind.JsonNode
  * 실행 요청. [input] 은 실행 시작 시 주입할 초기 변수(선택), [versionNo] 가 null 이면 현재 버전 실행.
  * input 의 키는 `{{ key@input }}` 또는 bare `{{ key }}` 로 참조 가능.
  *
- * [relayRunId]/[relayBase] 는 wait(콜백 대기) 노드용 — 브라우저가 실행 시작 직전
- * crypto 영숫자 16자 실행ID를 만들어 relay 에 등록/SSE 연결한 뒤 함께 보낸다. 서버는 이것으로
- * 각 wait 노드의 수신 URL({relayBase}/cb/{relayRunId}/{nodeId})을 조립해 `{{ url@노드ID }}` 로 노출한다.
+ * [relayRunId]/[relayBase] 는 (구) relay.js 연동용 필드 — 하위호환 위해 남겨두되 **무시**한다.
+ * wait 콜백은 이제 백엔드가 직접 받아 재개하며, 수신 URL 은 실행ID 기반으로 서버가 확정한다
+ * ({baseUrl}/relay/{execId}/cb/{nodeId}, baseUrl = flowlink.execution.relay.base-url).
  */
 data class RunRequest(
     val input: JsonNode?,

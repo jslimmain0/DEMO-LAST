@@ -9,11 +9,9 @@ import jakarta.validation.constraints.Size
  * (`{name?, nodes:[...], edges:[...]}`). 저장 시 불변 새 버전으로 적재된다.
  */
 data class SaveVersionRequest(
-    @get:JvmName("graph")
     @field:NotNull(message = "graph 는 필수입니다.")
     val graph: JsonNode,
 
-    @get:JvmName("note")
     @field:Size(max = 500)
     val note: String?
 )

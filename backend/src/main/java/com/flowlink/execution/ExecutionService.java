@@ -91,7 +91,7 @@ public class ExecutionService {
         Flow flow = flowRepo.findByIdAndTenantId(flowId, tenant)
                 .orElseThrow(() -> NotFoundException.of("Flow", flowId));
 
-        int versionNo = (req != null && req.versionNo() != null) ? req.versionNo() : flow.getCurrentVersion();
+        int versionNo = (req != null && req.getVersionNo() != null) ? req.getVersionNo() : flow.getCurrentVersion();
         FlowVersion version = versionRepo.findByFlowIdAndVersionNo(flowId, versionNo)
                 .orElseThrow(() -> NotFoundException.of("FlowVersion", flowId + "/v" + versionNo));
 
@@ -100,8 +100,8 @@ public class ExecutionService {
             throw new BadRequestException("노드 수가 상한을 초과했습니다.");
         }
 
-        String inputJson = (req != null && req.input() != null && !req.input().isNull())
-                ? json.toJson(req.input()) : null;
+        String inputJson = (req != null && req.getInput() != null && !req.getInput().isNull())
+                ? json.toJson(req.getInput()) : null;
 
         Execution execution = Execution.start(tenant, flowId, version.getId(),
                 TriggerType.MANUAL, currentUser(), inputJson);
@@ -114,8 +114,8 @@ public class ExecutionService {
         // wait(콜백 대기) 노드 수신 URL 시드 — 실행 시작 시점에 모든 wait 노드의 url 출력을 미리 확정해
         // {{ url@노드ID }} 가 wait 보다 앞의 노드(returnUrl/notiUrl)에서도 해석되게 한다.
         // putSeed: 명시 스코프/바인딩에만 보임 — bare {{ url }} 의 nearest-upstream 해석을 오염시키지 않는다.
-        String relayRunId = sanitizeRelayRunId(req == null ? null : req.relayRunId());
-        String relayBase = sanitizeRelayBase(req == null ? null : req.relayBase());
+        String relayRunId = sanitizeRelayRunId(req == null ? null : req.getRelayRunId());
+        String relayBase = sanitizeRelayBase(req == null ? null : req.getRelayBase());
         if (relayRunId != null && relayBase != null) {
             for (GraphNode n : graph.nodesOrEmpty()) {
                 if (n.effectiveType() == NodeType.WAIT) {
@@ -163,7 +163,7 @@ public class ExecutionService {
         FlowExecutor.Outcome outcome;
         try {
             outcome = flowExecutor.resume(suspended.state(), toResumeInput(req),
-                    req != null && req.durationMs() != null ? req.durationMs() : 0L,
+                    req != null && req.getDurationMs() != null ? req.getDurationMs() : 0L,
                     recorder(executionId));
         } catch (Exception e) {
             suspensions.remove(executionId); // 예외 경로에서도 보관소 정리(누수 방지)
@@ -172,7 +172,7 @@ public class ExecutionService {
             return detail(execution, null, null, null, null);
         }
         // 사용자 중단(⏹)은 실패가 아니라 취소로 마감한다.
-        if (req != null && Boolean.TRUE.equals(req.aborted()) && outcome.status() == ExecutionStatus.FAILED) {
+        if (req != null && Boolean.TRUE.equals(req.getAborted()) && outcome.status() == ExecutionStatus.FAILED) {
             execution.markCancelled(outcome.error());
         } else {
             applyStatus(execution, outcome);
@@ -186,11 +186,11 @@ public class ExecutionService {
         if (req == null) {
             return new FlowExecutor.ResumeInput(null, null, null, null, null, null);
         }
-        FlowExecutor.ResumeInput.Callback cb = req.callback() == null ? null
-                : new FlowExecutor.ResumeInput.Callback(req.callback().method(), req.callback().url(),
-                        req.callback().headers(), req.callback().body());
-        return new FlowExecutor.ResumeInput(req.status(), req.body(), req.error(),
-                req.popupOpened(), cb, req.formValues());
+        FlowExecutor.ResumeInput.Callback cb = req.getCallback() == null ? null
+                : new FlowExecutor.ResumeInput.Callback(req.getCallback().getMethod(), req.getCallback().getUrl(),
+                        req.getCallback().getHeaders(), req.getCallback().getBody());
+        return new FlowExecutor.ResumeInput(req.getStatus(), req.getBody(), req.getError(),
+                req.getPopupOpened(), cb, req.getFormValues());
     }
 
     private static String sanitizeRelayRunId(String raw) {
@@ -286,11 +286,11 @@ public class ExecutionService {
     }
 
     private void seedInput(ExecutionContext ctx, RunRequest req) {
-        if (req == null || req.input() == null || !req.input().isObject()) {
+        if (req == null || req.getInput() == null || !req.getInput().isObject()) {
             return;
         }
         @SuppressWarnings("unchecked")
-        Map<String, Object> inputMap = mapper.convertValue(req.input(), Map.class);
+        Map<String, Object> inputMap = mapper.convertValue(req.getInput(), Map.class);
         ctx.putOutput("input", inputMap);
     }
 

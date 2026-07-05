@@ -11,12 +11,8 @@ import com.fasterxml.jackson.databind.JsonNode
  * 각 wait 노드의 수신 URL({relayBase}/cb/{relayRunId}/{nodeId})을 조립해 `{{ url@노드ID }}` 로 노출한다.
  */
 data class RunRequest(
-    @get:JvmName("input")
     val input: JsonNode?,
-    @get:JvmName("versionNo")
     val versionNo: Int?,
-    @get:JvmName("relayRunId")
     val relayRunId: String?,
-    @get:JvmName("relayBase")
     val relayBase: String?
 )

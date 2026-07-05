@@ -54,7 +54,7 @@ public class FlowService {
 
     @Transactional
     public FlowDetail create(CreateFlowRequest req) {
-        Flow flow = createInternal(req.name(), req.description(), emptyGraph(req.name()), "초기 버전", req.folderId());
+        Flow flow = createInternal(req.getName(), req.getDescription(), emptyGraph(req.getName()), "초기 버전", req.getFolderId());
         return toDetail(flow);
     }
 

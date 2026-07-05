@@ -64,7 +64,7 @@ public class FlowController {
     @PostMapping("/{id}/versions")
     @ResponseStatus(HttpStatus.CREATED)
     public FlowVersionSummary saveVersion(@PathVariable UUID id, @Valid @RequestBody SaveVersionRequest req) {
-        return service.saveVersion(id, req.graph(), req.note());
+        return service.saveVersion(id, req.getGraph(), req.getNote());
     }
 
     @PostMapping("/import")

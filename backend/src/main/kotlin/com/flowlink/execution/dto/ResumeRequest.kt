@@ -16,34 +16,21 @@ package com.flowlink.execution.dto
  * @property durationMs  소요 시간(ms, 선택)
  */
 data class ResumeRequest(
-    @get:JvmName("nodeId")
     val nodeId: String?,
-    @get:JvmName("status")
     val status: Int?,
-    @get:JvmName("body")
     val body: String?,
-    @get:JvmName("error")
     val error: String?,
-    @get:JvmName("formValues")
     val formValues: Map<String, Any?>?,
-    @get:JvmName("popupOpened")
     val popupOpened: Boolean?,
-    @get:JvmName("callback")
     val callback: CallbackPayload?,
-    @get:JvmName("aborted")
     val aborted: Boolean?,
-    @get:JvmName("durationMs")
     val durationMs: Long?
 ) {
     /** relay 가 수신해 SSE 로 전달한 콜백 전문(method·URL·헤더·본문). */
     data class CallbackPayload(
-        @get:JvmName("method")
         val method: String?,
-        @get:JvmName("url")
         val url: String?,
-        @get:JvmName("headers")
         val headers: Map<String, String>?,
-        @get:JvmName("body")
         val body: String?
     )
 }

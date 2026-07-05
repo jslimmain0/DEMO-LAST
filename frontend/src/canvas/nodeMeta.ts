@@ -14,7 +14,6 @@ export const CAT_COLOR: Record<string, string> = {
   start: 'var(--fl-cat-start)',
   end: 'var(--fl-cat-end)',
   transform: 'var(--fl-patch)',
-  tcp: 'var(--fl-post)',
 }
 
 export const METHOD_COLOR: Record<HttpMethod, string> = {
@@ -42,7 +41,6 @@ export function typeIcon(type: string): string {
     case 'input': return '⌨'
     case 'wait': return '⏸'
     case 'transform': return '⚙'
-    case 'tcp': return '⇄'
     default: return '↯'
   }
 }
@@ -58,7 +56,6 @@ export function typeLabel(type: string): string {
     case 'input': return '사용자 입력'
     case 'wait': return '콜백 대기'
     case 'transform': return '변환'
-    case 'tcp': return 'TCP'
     case 'http': return 'HTTP'
     default: return type
   }

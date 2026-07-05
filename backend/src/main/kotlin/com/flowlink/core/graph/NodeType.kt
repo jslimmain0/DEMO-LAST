@@ -20,7 +20,6 @@ enum class NodeType {
     /** 검증 — IF 와 같은 SpEL 조건이 거짓이면 노드 실패(=실행 FAILED). 테스트 시나리오의 assert 용. */
     ASSERT,
     TRANSFORM,
-    TCP,
     UNKNOWN,
     ;
 
@@ -37,7 +36,6 @@ enum class NodeType {
             "input" -> INPUT
             "assert" -> ASSERT
             "transform" -> TRANSFORM
-            "tcp" -> TCP
             else -> UNKNOWN
         }
     }

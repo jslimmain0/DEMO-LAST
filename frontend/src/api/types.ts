@@ -2,7 +2,7 @@
 // (enum 대신 문자열 유니온 — tsconfig erasableSyntaxOnly 준수)
 
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD'
-export type NodeType = 'start' | 'end' | 'set' | 'http' | 'if' | 'assert' | 'form' | 'wait' | 'input' | 'transform' | 'tcp'
+export type NodeType = 'start' | 'end' | 'set' | 'http' | 'if' | 'assert' | 'form' | 'wait' | 'input' | 'transform'
 export type BodyType = 'json' | 'urlencoded' | 'form' | 'raw' | 'xml'
 export type RespType = 'json' | 'xml' | 'urlencoded' | 'form' | 'text' | 'binary'
 export type ReqMode = 'server' | 'client'
@@ -92,36 +92,9 @@ export interface GraphNode {
   // transform
   transformId?: string
   config?: Record<string, string>
-  // tcp (고정길이 금융 전문)
-  tcpHost?: string
-  tcpPort?: number
-  tcpEncoding?: string
-  tcpTimeoutMs?: number
-  tcpPrefixLength?: number
-  tcpPrefixIncludesSelf?: boolean
-  tcpRequest?: TcpField[]
-  tcpResponse?: TcpRespField[]
   // canvas
   x?: number
   y?: number
-}
-
-export interface TcpField {
-  id: string
-  name?: string
-  length?: number
-  value?: string | null
-  bound?: Binding | null
-  pad?: 'left' | 'right'
-  padChar?: string
-  encoding?: string
-}
-
-export interface TcpRespField {
-  id: string
-  name?: string
-  length?: number
-  encoding?: string
 }
 
 export interface TransformParam {

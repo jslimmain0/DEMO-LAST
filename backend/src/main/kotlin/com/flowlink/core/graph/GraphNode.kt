@@ -56,16 +56,6 @@ data class GraphNode(
     val transformId: String?,
     val config: Map<String, String>?,
 
-    // --- tcp (고정길이 금융 전문) ---
-    val tcpHost: String?,
-    val tcpPort: Int?,
-    val tcpEncoding: String?,
-    val tcpTimeoutMs: Int?,
-    val tcpPrefixLength: Int?,
-    val tcpPrefixIncludesSelf: Boolean?,
-    val tcpRequest: List<TcpField>?,
-    val tcpResponse: List<TcpRespField>?,
-
     // --- canvas 위치(실행과 무관) ---
     val x: Double?,
     val y: Double?

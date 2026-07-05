@@ -320,7 +320,6 @@ function varCat(cat: string): string {
   const known = ['auth', 'bank', 'card', 'generic', 'set', 'if', 'assert', 'form', 'input', 'wait', 'start', 'end']
   if (known.includes(cat)) return `var(--fl-cat-${cat})`
   if (cat === 'transform') return 'var(--fl-patch)'
-  if (cat === 'tcp') return 'var(--fl-post)'
   return 'var(--fl-cat-generic)'
 }
 

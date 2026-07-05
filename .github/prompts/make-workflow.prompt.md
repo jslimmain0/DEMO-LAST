@@ -8,7 +8,7 @@ description: 자연어 설명을 FlowLink 워크플로(노드 그래프)로 만�
 사용자가 말로 설명한 흐름을 FlowLink 노드 그래프(JSON)로 만들고 API로 등록한다.
 
 ## 참조 (정확한 스키마 — 반드시 근거로 삼을 것)
-- #file:../../flowlink-workflow/skills/make-workflow/reference/nodes.md — 11개 노드 타입별 필드
+- #file:../../flowlink-workflow/skills/make-workflow/reference/nodes.md — 10개 노드 타입별 필드
 - #file:../../flowlink-workflow/skills/make-workflow/reference/graph-and-tokens.md — 그래프 구조·엣지·토큰·패턴
 - #file:../../flowlink-workflow/skills/make-workflow/reference/api.md — 등록/실행 API
 

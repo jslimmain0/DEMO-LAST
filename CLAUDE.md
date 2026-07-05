@@ -35,12 +35,12 @@ npm run build    # tsc -b && vite build
 npm run lint     # oxlint
 ```
 
-### Relay (콜백 수신기, 리포 루트)
-```
-node relay.js [port]   # 기본 8787. wait(콜백 대기) 노드용 — 의존성 0
-```
-- 결제/인증 게이트웨이 콜백을 받아 SSE 로 브라우저에 전달. `frontend/dist` 정적 서빙 겸용.
-- 주소는 프론트 localStorage `fl:relayBase` (wait 노드 속성 패널에서 설정, 기본 `http://localhost:8787`).
+### wait(콜백 대기) 콜백 — 백엔드 통합 (별도 프로세스 없음)
+`wait` 노드의 콜백은 **백엔드가 직접** `/relay/{execId}/cb/{nodeId}` 로 받아 실행을 자동 재개한다
+([RelayController](backend/src/main/kotlin/com/flowlink/execution/RelayController.kt)). 타임아웃도 백엔드
+스케줄러가 구동 → **브라우저 없이 wait 가 완결**된다(구 relay.js:8787 프로세스는 폐기).
+- 무인증(외부 시스템이 부르는 엔드포인트, `execId` 는 추측 불가한 UUID) + CORS 오픈, 전체 예외 가드로 500 JSON.
+- GET/HEAD 는 쿼리스트링을, 그 외는 요청 본문(소진된 urlencoded 는 파라미터 맵에서 복원)을 콜백 본문으로 사용.
 
 ### Mock 서버 기능 (백엔드 내장 · UI 상단 "Mock 서버" 탭)
 FlowLink 안에서 **가짜 대상 시스템을 만들고 켜는 1급 기능**. 저장 즉시 `http://localhost:18080/mock/{slug}/**` 로 서빙(별도 프로세스 없음).
@@ -48,15 +48,15 @@ FlowLink 안에서 **가짜 대상 시스템을 만들고 켜는 1급 기능**. 
 - 응답 `contentType: html` + `{{body.returnUrl}}` 템플릿으로 **결제창 같은 웹페이지가 뜨고 콜백하는** 흐름도 만든다.
 - 워크플로 HTTP/폼 노드의 baseUrl 에 mock base URL 을 넣어 호출. 미완성 시스템을 mock 으로 세워 전체 흐름을 먼저 검증.
 - 상세: [docs/superpowers/specs/2026-07-04-mock-server-builder-design.md](docs/superpowers/specs/2026-07-04-mock-server-builder-design.md), 결제창+콜백 데모 [demos/pay-mock/README.md](demos/pay-mock/README.md).
-- ⚠️ 상태 관리(부분취소 잔액 원장 등)는 범위 밖 — 그런 시뮬레이터가 필요하면 리포 루트 `mock-server.js` 같은 별도 프로세스로.
+- ⚠️ 상태 관리(부분취소 잔액 원장 등)는 범위 밖(범용 무상태 목) — 상태 있는 시뮬레이터가 필요하면 별도 프로세스로 세워 baseUrl 로 호출.
 
-### Mock 대상 시스템(단일 스크립트) + 데모 (리포 루트 · `demos/`)
+### 데모 워크플로 (리포 루트 · `demos/`)
 ```
-node mock-server.js [httpPort] [tcpPort]   # 기본 HTTP 9090 + TCP 9091 — 의존성 0
+node demos/seed-mock.mjs   # 백엔드(:18080)에 slug `demo` mock 을 생성/갱신(1회) — 의존성 0
 ```
-- 위 내장 Mock 기능과 **별개**인 손수 작성 단일 파일(초기 데모용). 결제 게이트웨이·REST API·레거시 EUC-KR·
-  TCP 고정길이 전문(BAL1)·`/openapi.json`. `demos/demo-01~06-*.json` 이 이걸 대상으로 함.
-  (내장 Mock 기능을 쓰는 데모는 `demos/pay-mock/*.json`, slug `pay-mock`)
+- `demos/demo-01~04·06-*.json` 은 위 **내장 Mock**(base `http://localhost:18080/mock/demo`)을 대상으로 한다.
+  seed 스크립트가 결제 게이트웨이·REST API·레거시 EUC-KR 라우트를 백엔드에 심는다(별도 mock 프로세스 불필요).
+  내장 Mock 서버 편집기로 세우는 데모는 `demos/pay-mock/*.json`(slug `pay-mock`). 상세: [demos/README.md](demos/README.md).
 
 ### 테스트
 ```powershell
@@ -81,7 +81,8 @@ core/        도메인·그래프·리포지토리 (코어, 다른 모듈이 의
 definition/  플로우 CRUD·버전·import/export  (FlowController/FlowService)
 execution/   실행 엔진 + 실행 API  (ExecutionController/ExecutionService)
  ├─ engine   FlowExecutor·ExecutionContext·ExpressionEvaluator·TokenResolver
- │           HttpNodeExecutor·TcpNodeExecutor·SsrfGuard·NodeRecorder
+ │           HttpNodeExecutor·SsrfGuard·NodeRecorder
+ │           RelayController(wait 콜백 수신 → 자동 재개)
  └─ config   ExecutionProperties·HttpClientConfig
 folder/      폴더 관리
 mock/        Mock 서버 기능 — 워크플로가 호출할 가짜 대상 시스템을 정의·서빙(1급 리소스)
@@ -103,7 +104,7 @@ graphJson 파싱 → Kahn 위상정렬 → 노드 순차 처리 → IF는 단일
 브라우저 협업 노드(client HTTP / FORM / WAIT / INPUT)를 만나면 `WAITING`으로 중단하고 pending 명세 반환 →
 브라우저가 처리 후 `POST /executions/{id}/resume` → 첫 실패 시 `FAILED`, 사용자 중단(⏹)은 `CANCELLED`.
 **현재 완전 동기 실행** (외부 HTTP에 호출 스레드 블로킹).
-노드 타입: START/END/SET/IF/ASSERT/HTTP/FORM/INPUT/WAIT/TRANSFORM/TCP.
+노드 타입: START/END/SET/IF/ASSERT/HTTP/FORM/INPUT/WAIT/TRANSFORM.
 - **ASSERT(검증)**: IF 와 같은 SpEL 조건이지만 분기 대신 **거짓이면 노드 실패**(=실행 FAILED). 테스트 시나리오 판정용.
   SimpleEvaluationContext(읽기전용)라 비교·논리·산술·문자열 연결(`+`)만 되고 `.contains()`·`.startsWith()` 메서드 호출은 차단.
 
@@ -122,7 +123,7 @@ graphJson 파싱 → Kahn 위상정렬 → 노드 순차 처리 → IF는 단일
 ### 보안
 - OIDC: `issuer-uri` 설정 시 자동 활성, 미설정 시 dev permitAll
 - 멀티테넌시: JWT claim(기본 "tenant") → `TenantContext`(ThreadLocal) → 쿼리 `tenant_id` 필터
-- SSRF 가드: 사설/루프백/링크로컬/메타데이터 대역 차단 + 스킴 allowlist (HTTP·TCP 모두).
+- SSRF 가드: 사설/루프백/링크로컬/메타데이터 대역 차단 + 스킴 allowlist (HTTP 아웃바운드 + mock 콜백 발사).
   **`flowlink.execution.ssrf.allow-loopback`**: true면 localhost/127.0.0.1/::1 허용(사설망은 여전히 차단) — **h2(로컬) 프로파일 기본 true**.
 - redaction deny-by-default: HTTP req/res 본문 기본 미저장 (`flowlink.execution.capture.request-response-bodies`로 옵트인).
   **h2(로컬) 프로파일은 true** — 실행 로그에 요청/응답 본문 그대로 표시(디버그).
@@ -130,7 +131,7 @@ graphJson 파싱 → Kahn 위상정렬 → 노드 순차 처리 → IF는 단일
 
 ### 주요 설정 (`application.yml` / `ExecutionProperties`)
 `flowlink.execution.*`: http 타임아웃·max-response-bytes(5MB)·ssrf·capture·max-nodes-per-run(200)
-(콜백 관련 설정은 없음 — 외부 콜백은 relay.js 가 받는다)
+(외부 콜백은 백엔드가 `/relay/{execId}/cb/{nodeId}` 로 직접 수신 → 자동 재개. 별도 relay 프로세스·설정 없음)
 
 ---
 
@@ -168,7 +169,7 @@ design/   theme(라이트/다크) · index.css(CSS 변수)
 - **동기 실행** → 비동기 큐/워커·내구성 실행 미구현 (가장 큰 아키텍처 부채). Build vs Buy(Temporal/Camunda) 설계 토론 결론 반영 예정
 - **재개 상태 인메모리**(`ExecutionService.suspensions`) — 서버 재시작 시 진행 중 실행 소실. API 로 직접 실행(브라우저 없이)하면 wait 에서 WAITING 으로 남음(브라우저가 타임아웃을 구동)
 - **트리거** CRON/WEBHOOK/EVENT는 enum만, MANUAL만 동작
-- **SSRF DNS 리바인딩** 갭 — check-time 해석만, connect-time IP 핀닝 미적용 (`SsrfGuard.java:17`)
+- **SSRF DNS 리바인딩** 갭 — check-time 해석만, connect-time IP 핀닝 미적용 (`SsrfGuard.kt`)
 - **플러그인 JAR 샌드박스 없음** — 업로드 JAR가 전체 권한으로 실행, RBAC 게이트 필요(현재 permitAll)
 - **RBAC/RLS·시크릿 볼트** 미구현 — 멀티테넌시는 `tenant_id` 컬럼 필터링만
 - **SET 노드 시크릿** UI 마스킹만, 실제 KMS 연동 없음
@@ -403,6 +404,17 @@ design/   theme(라이트/다크) · index.css(CSS 변수)
 - 백엔드: `FlowExecutor`(RunState `corrId/notiUrl` + `{{ __notiUrl }}`/`{{ __corrId }}` 치환 + `referencesToken` 일반화, `PendingForm.corrId`), `ExecutionService`(`corrIds` 역인덱스 + `recordFixedCallback`(값 스캔 매칭) + `doResume`/멱등 `resume` + `cleanupSuspension`), `SecurityConfig` `PUBLIC_PATHS` 에 `/api/v1/callbacks` 추가.
 - 검증: H2 e2e — (F1) 서버 노티(브라우저 없이) 고정URL+corrId 매칭→서버 재개, 모든 파라미터→출력, `OK` ACK, (F2) 노티 완료 후 늦은 브라우저 resume 멱등(에러 없음), (F3) 브라우저가 고정URL 히트→브리지 HTML+재개, (F4) 미매칭 corrId→400 — 모두 PASS. 동적 콜백(A~D)·raw(R1~R3) 무회귀.
 - ⚠️ **데모 한계 상속**: 인메모리 레지스트리(재시작 시 소실)·서명 위변조 미검증·상관키 단일 매칭(게이트웨이가 corrId 를 echo 안 하면 매칭 불가 — 대부분 merchant 파라미터 echo). 노티 ACK 는 평문 `OK`(PG 별 규격 상이 — 실연동 시 조정). base-url 은 `flowlink.execution.callback.base-url`(기본 localhost) override 필요.
+
+---
+
+## 최근 변경 (2026-07-05)
+
+### 전체 Kotlin 이관 · TCP 노드 제거 · relay/mock 프로세스 백엔드 통합
+- **백엔드 전체 Kotlin 이관**(Java 0): `src/main/kotlin`·`src/test/kotlin`만 존재. 스택 = Kotlin 1.9(Java 21 toolchain). 상세는 위 "백엔드 구조" 노트 + [docs/코틀린-이관-검토.md](docs/코틀린-이관-검토.md).
+- **TCP 노드 완전 제거**: `TcpNodeExecutor`·`TcpField`/`TcpRespField`·고정길이 금융 전문(BAL1) 삭제. 노드 타입 = start/end/set/if/assert/http/form/wait/input/transform (TCP 없음). SSRF 가드도 HTTP 전용.
+- **relay.js → 백엔드 통합**: 구 relay.js(:8787) 프로세스 폐기. `wait` 노드 콜백을 백엔드가 `/relay/{execId}/cb/{nodeId}`([RelayController](backend/src/main/kotlin/com/flowlink/execution/RelayController.kt))로 직접 받아 자동 재개하고, 타임아웃도 백엔드 스케줄러가 구동 → **브라우저 없이 wait 완결**. 별도 프로세스·:8787 없음.
+- **mock-server.js → 내장 Mock 흡수**: 구 mock-server.js(:9090/:9091) 폐기. `demos/*.json` 은 내장 Mock(base `http://localhost:18080/mock/demo`)을 쓰고 `node demos/seed-mock.mjs` 로 라우트를 시드. demo-05(TCP)·`/openapi.json` 데모는 제외.
+- **띄우는 프로세스 2개**: 백엔드(:18080) + 프론트(:5173). 콜백 데모만 `node demos/seed-mock.mjs` 1회로 mock 을 시드한다.
 
 ## 참고 문서
 - `backend/README.md` — Phase 1 구현 범위 표, API 요약, 실행 가이드

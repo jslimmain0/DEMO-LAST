@@ -1,8 +1,11 @@
-# Flowlink Backend (Spring Boot)
+# Flowlink Backend (Spring Boot · Kotlin)
 
 프로토타입 `legacy/FlowBuilder.dc.html`(클라이언트사이드 워크플로 빌더)을 **Spring Boot 기반 엔터프라이즈 워크플로
 오케스트레이션 플랫폼**으로 고도화하는 백엔드입니다. 1단계(Phase 1)는 **모듈러 모놀리스(단일 배포)**로
 시작하며, 패키지 경계로 향후 물리 모듈/워커 분리를 대비합니다.
+
+> **언어: Kotlin** (2026-07-05 전체 이관 — Java 0). `src/main/kotlin`·`src/test/kotlin`만 존재하며 Java 21
+> toolchain 으로 빌드합니다. 패키지 경계·동작은 동일하고 언어만 Kotlin입니다.
 
 > 이 코드는 A/B/C/D 멀티에이전트 설계 토론과 병행해 작성된 **저후회(low-regret) 기반**입니다.
 > 토론이 끝나면 그 합의 결론(특히 Build vs Buy, 비동기/내구성 실행)을 다음 Phase에 반영합니다.

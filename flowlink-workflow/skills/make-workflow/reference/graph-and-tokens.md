@@ -64,7 +64,6 @@
 | input | 사용자 입력 |
 | wait | 콜백 대기 |
 | transform | 변환 |
-| tcp | TCP 전문 |
 
 ## 대표 패턴 (데모에서 추출)
 

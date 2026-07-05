@@ -34,7 +34,7 @@ flowlink-workflow/
 └── skills/make-workflow/
     ├── SKILL.md                      # 스킬 지침(절차·규칙)
     ├── reference/
-    │   ├── nodes.md                  # 11개 노드 타입별 필드
+    │   ├── nodes.md                  # 10개 노드 타입별 필드
     │   ├── graph-and-tokens.md       # 그래프 구조·엣지·토큰 문법·패턴
     │   └── api.md                    # 등록/실행 REST API
     └── scripts/register-flow.mjs     # 그래프 → API 등록 헬퍼(Node 18+)
@@ -51,7 +51,7 @@ node skills/make-workflow/scripts/register-flow.mjs graph.json --base http://다
 
 ## 참고
 
-- 노드 타입: start / end / set / if / assert / http / form / wait / input / transform / tcp
+- 노드 타입: start / end / set / if / assert / http / form / wait / input / transform
 - 토큰: `{{ key@노드id }}` (`@` 뒤는 노드 이름이 아니라 `id`)
 - form→wait 콜백 패턴: 결제창 form의 콜백필드 값에 `{{ url@wait노드id }}`
 - 브라우저 협업 노드(form/wait/input)는 API 단독 실행 시 WAITING에서 멈춤 → 에디터에서 ▶ 실행로 완결

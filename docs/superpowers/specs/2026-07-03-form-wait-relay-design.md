@@ -1,6 +1,6 @@
 # form/wait 노드 분리 + relay.js — 설계 (2026-07-03, 사용자 승인)
 
-> **status: as-built** — form/wait/input 노드·relay.js 는 현행. 현행 진실원은 [CLAUDE.md](../../../CLAUDE.md).
+> **status: as-built (relay 부분 대체됨)** — form/wait/input 노드는 현행. ⚠️ **이후 변경됨 (2026-07-05)**: 별도 relay.js(:8787) 프로세스는 폐기되고 **백엔드로 통합**됐다 — wait 콜백을 백엔드가 `/relay/{execId}/cb/{nodeId}` 로 직접 받아 자동 재개한다(아래 §3 relay.js 서술은 역사 기록). 현행 진실원은 [CLAUDE.md](../../../CLAUDE.md).
 
 ## 배경 · 결정
 

@@ -55,7 +55,7 @@ server(백엔드 호출, 기본) 또는 client(브라우저 fetch) 모드. `resp
   - `outputs: [{ key, type? }]` — 예상 응답 키 선언(파싱 실패 시 전체 본문이 `body` 키)
 ```json
 {"id":"httpordr","name":"주문 생성","type":"http","cat":"generic","method":"POST",
- "baseUrl":"http://localhost:9090","path":"/api/orders","reqMode":"server","bodyType":"json","respType":"json",
+ "baseUrl":"http://localhost:18080/mock/demo","path":"/api/orders","reqMode":"server","bodyType":"json","respType":"json",
  "fields":{"params":[],"headers":[{"id":"f1","key":"Authorization","value":"Bearer {{ token@httplogn }}"}],
    "body":[{"id":"f2","key":"qty","value":"2","type":"number"}]},
  "outputs":[{"key":"orderId","type":"string"}]}
@@ -107,18 +107,4 @@ relay 수신 URL로 콜백이 올 때까지 WAITING. 콜백 본문(JSON/urlencod
    {"id":"b1","key":"a","value":"주문 완료: "},
    {"id":"b2","key":"b","value":"{{ productName@httpgeto }}"}]},
  "outputs":[{"key":"result","type":"string"}]}
-```
-
-## tcp — 고정길이 금융 전문
-요청 필드를 바이트 고정길이로 조립해 길이-프리픽스 전문 송신, 응답을 길이대로 슬라이싱.
-- **필수**: `tcpHost`, `tcpPort`, `tcpRequest`, `tcpResponse`
-- **선택**: `tcpEncoding`(EUC-KR 기본/MS949/UTF-8/US-ASCII), `tcpTimeoutMs`, `tcpPrefixLength`(기본 4, 0=없음), `tcpPrefixIncludesSelf`, `outputs`
-  - `tcpRequest`: `{ id, name, length, value?|bound?, pad(left|right), padChar, encoding? }`
-  - `tcpResponse`: `{ id, name(=출력 키), length, encoding? }` (위→아래 순서로 응답 슬라이싱)
-```json
-{"id":"tcp00001","name":"잔액조회 전문","type":"tcp","cat":"tcp","tcpHost":"127.0.0.1","tcpPort":9091,
- "tcpEncoding":"EUC-KR","tcpPrefixLength":4,"tcpPrefixIncludesSelf":false,
- "tcpRequest":[{"id":"r1","name":"msgType","length":4,"value":"BAL1","pad":"right","padChar":" "}],
- "tcpResponse":[{"id":"p1","name":"custName","length":20}],
- "outputs":[{"key":"custName","type":"string"}]}
 ```

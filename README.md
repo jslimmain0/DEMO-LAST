@@ -1,6 +1,6 @@
 # FlowLink
 
-REST API 워크플로 오케스트레이션 플랫폼. HTTP·폼·콜백·변환·TCP 노드로 워크플로를 그려 실행하고,
+REST API 워크플로 오케스트레이션 플랫폼. HTTP·폼·콜백·변환 노드로 워크플로를 그려 실행하고,
 미완성 API 는 내장 **Mock 서버**로 세워 전체 흐름을 먼저 테스트한다. UI 는 전부 한국어.
 
 ## 빠른 시작 (Windows / PowerShell)
@@ -14,21 +14,20 @@ powershell -ExecutionPolicy Bypass -File scripts\dev-stop.ps1   # 종료
 
 준비되면 **http://localhost:5173** 를 연다.
 
-## 서버가 다 필요한가? — 아니오
+## 띄우는 프로세스는 2개
 
-`dev-all.ps1` 은 4개를 다 띄워주지만, **실제로 필요한 건 상황에 따라 다르다.**
+**backend + frontend** 둘이면 모든 기능이 돈다. 콜백 수신(구 relay)과 Mock 대상 시스템은 **백엔드에 통합**돼
+별도 프로세스가 없다.
 
 | 서비스 | 주소 | 필요 시점 |
 |---|---|---|
-| **backend** | http://localhost:18080 | **항상 필수** — API + 실행 엔진 (H2 파일 DB, Postgres/Docker 불필요) |
+| **backend** | http://localhost:18080 | **항상 필수** — API + 실행 엔진 + wait 콜백 수신 + 내장 Mock (H2 파일 DB, Postgres/Docker 불필요) |
 | **vite** | http://localhost:5173 | **항상 필수** — 프론트 UI (`/api` → :18080 프록시) |
-| relay | http://localhost:8787 | **`wait`(콜백 대기) 노드를 쓸 때만** — 결제/인증 콜백 수신 + SSE. 없으면 wait 노드에서만 실패(다른 노드는 정상) |
-| mock | http://localhost:9090 · :9091(TCP) | **번들 데모(`mock-server.js` 대상)를 돌릴 때만** — 내장 Mock 서버나 직접 만든 대상을 쓰면 불필요 |
 
-- **워크플로를 만들고 HTTP/SET/IF/검증/변환을 실행**하기만 하면 → **backend + vite** 둘이면 충분.
-- **결제창 → 콜백 → 재개** 같은 흐름을 테스트 → **relay** 추가.
-- **`demos/*.json` 번들 데모** 재현 → **mock** 추가.
-- 미완성 API 흉내는 UI 상단 **"Mock 서버"** 탭(백엔드 내장, `/mock/{slug}/**`)으로 별도 프로세스 없이 만들 수 있다.
+- **워크플로를 만들고 HTTP/SET/IF/검증/변환을 실행** → backend + vite 면 끝.
+- **결제창 → 콜백 → 재개** 흐름도 그대로 → `wait` 노드 콜백은 **백엔드가 `/relay/{execId}/cb/{nodeId}` 로 직접 받아** 자동 재개한다(별도 relay 프로세스 불필요).
+- **`demos/*.json` 데모**를 재현하려면 → 한 번 `node demos/seed-mock.mjs` 로 내장 Mock(slug `demo`)에 대상 라우트를 심는다.
+- 미완성 API 흉내는 UI 상단 **"Mock 서버"** 탭(백엔드 내장, `/mock/{slug}/**`)으로 별도 프로세스 없이 만든다.
 
 ### 개별 실행
 
@@ -39,11 +38,8 @@ powershell -ExecutionPolicy Bypass -File scripts\start.ps1 -H2
 # 프론트 (frontend/)
 npm install; npm run dev            # http://localhost:5173
 
-# relay (리포 루트, 의존성 0) — 콜백 대기 노드용
-node relay.js                       # http://localhost:8787
-
-# mock 대상 시스템 (리포 루트, 의존성 0) — 번들 데모용
-node mock-server.js                 # HTTP :9090 + TCP :9091
+# (데모만) 내장 Mock 에 대상 라우트 시드 — 1회, 의존성 0
+node demos/seed-mock.mjs            # 백엔드(:18080)에 slug `demo` mock 생성/갱신
 ```
 
 ## 말로 워크플로 만들기 (AI 스킬)

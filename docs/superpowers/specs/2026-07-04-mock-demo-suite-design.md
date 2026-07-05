@@ -1,6 +1,6 @@
 # mock 대상 시스템 + 데모 워크플로 스위트 — 설계 (2026-07-04)
 
-> **status: as-built** — `mock-server.js`·`demos/demo-01~06` 은 현행. 현행 진실원은 [CLAUDE.md](../../../CLAUDE.md).
+> **status: 대체됨(superseded)** — ⚠️ **이후 변경됨 (2026-07-05)**: `mock-server.js`(:9090/:9091) 는 폐기되고 데모 대상은 **백엔드 내장 Mock**(`/mock/{slug}/**`, `node demos/seed-mock.mjs` 로 시드)으로 옮겼다. **TCP 노드 제거**로 demo-05(TCP)·`/openapi.json` 데모는 빠졌다(아래 §1·§4·demo-05 서술은 역사 기록). 현행 진실원은 [CLAUDE.md](../../../CLAUDE.md).
 
 ## 배경 · 결정
 

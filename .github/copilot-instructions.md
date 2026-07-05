@@ -1,6 +1,6 @@
 # FlowLink — GitHub Copilot 지침
 
-REST API 워크플로 오케스트레이션 플랫폼. Backend: Spring Boot 3.3.5 / Java 21 (`:18080`). Frontend: React 19 + Vite (`:5173`). UI 텍스트는 한국어.
+REST API 워크플로 오케스트레이션 플랫폼. Backend: Spring Boot 3.3.5 / Kotlin (Java 21 toolchain) (`:18080`). Frontend: React 19 + Vite (`:5173`). UI 텍스트는 한국어.
 
 프로젝트 전반 가이드는 [CLAUDE.md](../CLAUDE.md), [backend/README.md](../backend/README.md) 참조.
 
@@ -19,7 +19,7 @@ REST API 워크플로 오케스트레이션 플랫폼. Backend: Spring Boot 3.3.
 - 등록 헬퍼: `flowlink-workflow/skills/make-workflow/scripts/register-flow.mjs`
 
 ### 핵심 규칙
-- 노드 타입: `start / end / set / if / assert / http / form / wait / input / transform / tcp`
+- 노드 타입: `start / end / set / if / assert / http / form / wait / input / transform`
 - 모든 노드에 고유 `id`(영숫자 8자 권장). 토큰 `{{ key@id }}`의 `@` 뒤는 **노드 이름이 아니라 `id`**.
 - **http의 `cat`은 `"generic"`**, 나머지는 `type`과 같은 값.
 - **IF 분기 엣지에만** `fromPort:"true"`/`"false"`. 나머지 엣지는 생략(기본 `out`).

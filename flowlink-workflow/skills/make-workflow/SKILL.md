@@ -37,5 +37,5 @@ when_to_use: "트리거: 'FlowLink 워크플로 만들어줘', '~하는 플로�
 ## 주의
 
 - SpEL 조건(if/assert)은 읽기전용 샌드박스 — 비교·논리·산술·문자열 `+`만. `.contains()`/`.startsWith()` 불가.
-- wait 콜백을 실제로 받으려면 relay.js(:8787)가 떠 있어야 한다. Mock 대상이 필요하면 내장 Mock 서버(`/mock/{slug}/**`) 또는 `mock-server.js`(:9090)를 활용.
+- wait 콜백은 백엔드가 `/relay/{execId}/cb/{nodeId}` 로 직접 받아 자동 재개한다(별도 relay 프로세스 불필요). Mock 대상이 필요하면 내장 Mock 서버(`/mock/{slug}/**`, 상단 "Mock 서버" 탭)를 활용.
 - 그래프 검증 실패(중복 id, 없는 노드 참조 등)는 saveVersion이 400으로 거절 — 에러 메시지를 보고 그래프를 고친다.

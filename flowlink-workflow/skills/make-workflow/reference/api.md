@@ -24,7 +24,7 @@
 - **`POST /api/v1/flows/{flowId}/runs`** — 수동 실행(동기).
   - body(선택): `{ "input"?: {...}, "versionNo"?: int, "relayRunId"?, "relayBase"? }`. 바디 없으면 `{}`.
   - 응답 `200` ExecutionDetail: `{ id, status(RUNNING|SUCCEEDED|FAILED|WAITING|CANCELLED), nodes:[...], pendingForm, pendingWait, pendingInput, pendingClient }`
-  - **순수 서버 노드**(start/end/set/http server/if/assert/transform/tcp)만이면 한 번에 SUCCEEDED/FAILED 완결.
+  - **순수 서버 노드**(start/end/set/http server/if/assert/transform)만이면 한 번에 SUCCEEDED/FAILED 완결.
   - **브라우저 협업 노드**(form/wait/input/client http)가 있으면 `status=WAITING` + `pending*`을 반환 → 에디터에서 ▶ 실행해야 콜백/팝업/입력을 거쳐 완결된다. (API 단독으로는 wait에서 멈춤)
 
 ## 조회

@@ -1,5 +1,6 @@
 package com.flowlink.folder
 
+import com.flowlink.common.error.BadRequestException
 import com.flowlink.common.error.NotFoundException
 import com.flowlink.common.tenant.TenantContext
 import com.flowlink.core.domain.Folder
@@ -35,6 +36,34 @@ class FolderService(
     fun rename(id: UUID, name: String): FolderSummary {
         val f = load(id)
         f.name = name
+        return FolderSummary.from(f, flowRepo.countByTenantIdAndFolderIdAndArchivedFalse(tenant(), id))
+    }
+
+    /**
+     * 폴더 재배치(드래그 이동) — parentId=null 이면 루트로.
+     * 사이클 방지: 자기 자신·자기 하위 폴더 아래로는 이동 불가.
+     */
+    @Transactional
+    fun move(id: UUID, parentId: UUID?): FolderSummary {
+        val f = load(id)
+        if (parentId == null) {
+            f.parentId = null
+        } else {
+            if (parentId == id) {
+                throw BadRequestException("폴더를 자기 자신 아래로 옮길 수 없습니다.")
+            }
+            val byId = folderRepo.findByTenantIdOrderByNameAsc(tenant()).associateBy { it.id }
+            val parent = byId[parentId] ?: throw NotFoundException.of("Folder", parentId)
+            var cur: Folder? = parent
+            var guard = 0
+            while (cur != null && guard++ < 100) {
+                if (cur.id == id) {
+                    throw BadRequestException("폴더를 자기 하위 폴더 아래로 옮길 수 없습니다.")
+                }
+                cur = cur.parentId?.let { byId[it] }
+            }
+            f.parentId = parent.id
+        }
         return FolderSummary.from(f, flowRepo.countByTenantIdAndFolderIdAndArchivedFalse(tenant(), id))
     }
 

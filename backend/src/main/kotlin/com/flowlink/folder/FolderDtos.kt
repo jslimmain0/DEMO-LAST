@@ -38,4 +38,9 @@ object FolderDtos {
     data class MoveFlowRequest(
         val folderId: UUID?
     )
+
+    /** 폴더 재배치 — 새 상위 폴더(null = 루트). */
+    data class MoveFolderRequest(
+        val parentId: UUID?
+    )
 }

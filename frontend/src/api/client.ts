@@ -50,6 +50,9 @@ export const foldersApi = {
   list: () => http.get<FolderSummary[]>('/folders').then((r) => r.data),
   create: (name: string, parentId: string | null = null) =>
     http.post<FolderSummary>('/folders', { name, parentId }).then((r) => r.data),
+  // 폴더 재배치(드래그 이동) — parentId=null 은 루트로. 자기/하위 아래로는 400.
+  move: (id: string, parentId: string | null) =>
+    http.put<FolderSummary>(`/folders/${id}/parent`, { parentId }).then((r) => r.data),
   rename: (id: string, name: string) => http.patch<FolderSummary>(`/folders/${id}`, { name }).then((r) => r.data),
   remove: (id: string) => http.delete(`/folders/${id}`).then(() => undefined),
 }

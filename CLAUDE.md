@@ -450,6 +450,10 @@ design/   theme(라이트/다크) · index.css(CSS 변수)
     그래프의 kebab/snake 노드 id(`node-1`)도 bound→토큰 이관 후 바인딩이 끊기지 않는다.
 - **데이터 삽입 피커 칩 레이아웃**: [BindingPicker](frontend/src/binding/BindingPicker.tsx) 항목을 세로 목록 → **flex-wrap 칩 블럭**
   (응답=녹색점/요청=파란점 + 키 + 타입 배지, 노드 그룹핑 유지). 카드 폭 460→520.
+- **폴더 기능 코틀린 이관 회귀 수정**: [FolderDtos](backend/src/main/kotlin/com/flowlink/folder/FolderDtos.kt) 의 요청 DTO
+  (`FolderRequest`·`MoveFlowRequest`)에 남아 있던 `@get:JvmName` 이 jackson-module-kotlin 의 Creator 인식을 깨서
+  **폴더 생성/이름변경/워크플로 폴더 이동이 전부 500**(HttpMessageNotReadableException) 이었음 — 어노테이션 제거로 복구.
+  (위 "Jackson 역직렬화 대상에 @get:JvmName 금지" 규칙의 잔존 사례. 대시보드는 에러 토스트가 없어 조용히 실패로 보였음)
 - **콜백 대기(wait) 프론트 대기 유지 버그 수정**: relay 백엔드 통합(SSE→폴링 전환) 때부터 `GET /executions/{id}` 가 대기 중에도
   `pending* = null` 을 반환 → 에디터 대기 루프가 **첫 재조회(1초) 만에 종료**돼 배너/카운트다운/펄스가 사라지고, 콜백이 와서
   백엔드가 완료시켜도 UI 에 안 보이던 문제("콜백 대기가 안 됨" 증상).

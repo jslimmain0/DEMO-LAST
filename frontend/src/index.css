@@ -258,6 +258,13 @@ html[data-theme='dark'] ::-webkit-scrollbar-thumb { background: #39404f; backgro
   outline: 2px solid var(--fl-focus);
   outline-offset: 0;
 }
+/* 한 줄 고정 입력의 가로 스크롤바는 가늘게 */
+.fl-token-input {
+  scrollbar-width: thin;
+}
+.fl-token-input::-webkit-scrollbar {
+  height: 5px;
+}
 .fl-token-chip {
   display: inline-flex;
   align-items: center;

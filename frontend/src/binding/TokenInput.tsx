@@ -1,4 +1,4 @@
-import type { CSSProperties, ClipboardEvent, KeyboardEvent } from 'react'
+import type { CSSProperties, ClipboardEvent, KeyboardEvent, ReactNode } from 'react'
 import { useEffect, useRef, useState } from 'react'
 import { asGraphNode } from '../canvas/graphAdapter'
 import { catColor, typeIcon } from '../canvas/nodeMeta'
@@ -15,6 +15,9 @@ import type { BindableSource } from './upstream'
  * 저장 포맷은 순수 문자열(토큰 포함) 그대로라 백엔드 resolveTokens 와 1:1 — 칩은 렌더링일 뿐이다.
  * contentEditable 은 비제어(uncontrolled)로 두고, 부모 value 가 밖에서 바뀔 때만 DOM 을 다시 그린다
  * (IME 조합 중 재렌더로 한글 입력이 깨지는 것 방지).
+ *
+ * 기본(inline)은 <b>한 줄 고정</b> — 값이 길어도 줄로 늘어나지 않고 가로 스크롤되며,
+ * 넘치면 ⤢(자세히 보기) 버튼이 나타나 크게 편집하는 다이얼로그를 연다(variant="large").
  */
 export function TokenInput({
   value,
@@ -23,6 +26,7 @@ export function TokenInput({
   placeholder,
   ariaLabel,
   autoFocus = false,
+  variant = 'inline',
 }: {
   value: string
   onChange: (v: string) => void
@@ -30,16 +34,26 @@ export function TokenInput({
   placeholder?: string
   ariaLabel?: string
   autoFocus?: boolean
+  variant?: 'inline' | 'large' // large = 자세히 보기 다이얼로그 안의 큰 편집(줄바꿈 표시 허용)
 }) {
   const rootRef = useRef<HTMLDivElement | null>(null)
   const lastValueRef = useRef<string | null>(null) // 마지막으로 emit/rebuild 한 값 — echo 재렌더 방지
   const savedRangeRef = useRef<Range | null>(null) // 피커 열기 직전 캐럿 위치(칩 삽입 지점)
   const [picking, setPicking] = useState(false)
   const [empty, setEmpty] = useState(value === '')
+  const [overflow, setOverflow] = useState(false) // inline: 내용이 한 줄을 넘는가 → ⤢ 자세히 보기 노출
+  const [expanded, setExpanded] = useState(false)
+  const isLarge = variant === 'large'
 
   // 칩 × 삭제 콜백은 DOM 에 남아 오래 살므로, 항상 최신 onChange 를 보도록 ref 로 우회(stale closure 방지)
   const onChangeRef = useRef(onChange)
   onChangeRef.current = onChange
+
+  const updateOverflow = () => {
+    const root = rootRef.current
+    if (!root || isLarge) return
+    setOverflow(root.scrollWidth > root.clientWidth + 1)
+  }
 
   const emit = () => {
     const root = rootRef.current
@@ -48,21 +62,47 @@ export function TokenInput({
     lastValueRef.current = s
     setEmpty(s === '')
     onChangeRef.current(s)
+    updateOverflow()
   }
 
   // 밖에서 value 가 바뀐 경우에만 DOM 재구성(자기 echo 는 건너뜀 — 캐럿/IME 보존)
   useEffect(() => {
-    if (value === lastValueRef.current) return
+    if (value === lastValueRef.current) {
+      updateOverflow()
+      return
+    }
     lastValueRef.current = value
     setEmpty(value === '')
     const root = rootRef.current
     if (root) rebuildDom(root, value, emit)
+    updateOverflow()
     // emit 은 칩 × 삭제 콜백용 — rebuild 자체는 onChange 를 부르지 않는다
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value])
 
+  // 패널 리사이즈 등 컨테이너 폭 변화에도 넘침 여부 재계산
   useEffect(() => {
-    if (autoFocus) rootRef.current?.focus()
+    const root = rootRef.current
+    if (!root || isLarge) return
+    const ro = new ResizeObserver(() => updateOverflow())
+    ro.observe(root)
+    return () => ro.disconnect()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLarge])
+
+  useEffect(() => {
+    const root = rootRef.current
+    if (!autoFocus || !root) return
+    root.focus()
+    // 캐럿을 내용 끝으로 — 자세히 보기로 열었을 때 바로 이어서 편집
+    const sel = window.getSelection()
+    if (sel) {
+      const r = document.createRange()
+      r.selectNodeContents(root)
+      r.collapse(false)
+      sel.removeAllRanges()
+      sel.addRange(r)
+    }
   }, [autoFocus])
 
   const saveRange = () => {
@@ -193,7 +233,7 @@ export function TokenInput({
           role="textbox"
           aria-label={ariaLabel}
           spellCheck={false}
-          style={editorStyle}
+          style={isLarge ? editorLargeStyle : editorStyle}
           onInput={emit}
           onKeyDown={onKeyDown}
           onKeyUp={() => { ensurePads(); saveRange() }}
@@ -205,6 +245,16 @@ export function TokenInput({
           onDrop={(e) => e.preventDefault()} // 드롭 삽입 차단 — 표시 DOM/저장값 불일치·리스너 없는 칩 복제 방지
           onBlur={onBlur}
         />
+        {!isLarge && overflow && <span aria-hidden style={fadeStyle} />}
+        {!isLarge && overflow && (
+          <button
+            type="button"
+            onClick={() => setExpanded(true)}
+            title="자세히 보기 — 크게 편집"
+            aria-label="자세히 보기"
+            style={expandBtn}
+          >⤢</button>
+        )}
       </div>
       <button
         type="button"
@@ -220,6 +270,45 @@ export function TokenInput({
           onPick={(b) => insertBinding(b)}
         />
       )}
+      {expanded && (
+        <ExpandDialog label={ariaLabel ?? '값'} onClose={() => setExpanded(false)}>
+          <TokenInput
+            variant="large"
+            value={value}
+            onChange={onChange}
+            sources={sources}
+            placeholder={placeholder}
+            ariaLabel={`${ariaLabel ?? '값'} 자세히 보기`}
+            autoFocus
+          />
+        </ExpandDialog>
+      )}
+    </div>
+  )
+}
+
+/** 자세히 보기 다이얼로그 — 긴 값을 줄바꿈 표시로 크게 편집(저장 값은 그대로 한 줄). */
+function ExpandDialog({ label, onClose, children }: { label: string; onClose: () => void; children: ReactNode }) {
+  // Esc: 위에 데이터 삽입 피커가 떠 있으면 그쪽이 닫히도록 양보(이중 닫힘 방지)
+  useEffect(() => {
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.key === 'Escape' && !document.querySelector('[aria-label="데이터 삽입"][role="dialog"]')) onClose()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+  return (
+    <div role="dialog" aria-modal="true" aria-label={`${label} 자세히 보기`} style={dlgOverlay} onClick={onClose}>
+      <div style={dlgCard} onClick={(e) => e.stopPropagation()}>
+        <header style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '13px 16px', borderBottom: '1px solid var(--fl-border)' }}>
+          <strong style={{ fontFamily: 'var(--fl-font-head)', fontSize: 14.5, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label} — 자세히 보기</strong>
+          <button onClick={onClose} aria-label="닫기" style={{ border: 'none', background: 'transparent', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 18 }}>×</button>
+        </header>
+        <div style={{ padding: 16, display: 'flex' }}>{children}</div>
+        <footer style={{ display: 'flex', justifyContent: 'flex-end', padding: '0 16px 14px' }}>
+          <button onClick={onClose} style={dlgDoneBtn}>완료</button>
+        </footer>
+      </div>
     </div>
   )
 }
@@ -366,8 +455,7 @@ function makeChip(tokenRaw: string, onMutate: () => void): HTMLSpanElement {
   return chip
 }
 
-const editorStyle: CSSProperties = {
-  minHeight: 34,
+const editorBase: CSSProperties = {
   padding: '6px 9px',
   border: '1px solid var(--fl-border)',
   borderRadius: 'var(--fl-radius-sm)',
@@ -376,10 +464,92 @@ const editorStyle: CSSProperties = {
   fontFamily: 'var(--fl-font-mono)',
   fontSize: 12,
   lineHeight: '20px',
-  whiteSpace: 'pre-wrap',
-  overflowWrap: 'anywhere',
   cursor: 'text',
   outlineOffset: 0,
+}
+
+// inline: 한 줄 고정 — 값이 길어도 줄로 늘어나지 않고 가로 스크롤(넘치면 ⤢ 자세히 보기)
+const editorStyle: CSSProperties = {
+  ...editorBase,
+  minHeight: 34,
+  whiteSpace: 'pre',
+  overflowX: 'auto',
+  overflowY: 'hidden',
+}
+
+// large(자세히 보기): 줄바꿈 "표시"를 허용해 전체 값을 한눈에 — 저장 값은 여전히 한 줄
+const editorLargeStyle: CSSProperties = {
+  ...editorBase,
+  flex: 1,
+  minWidth: 0,
+  minHeight: 140,
+  maxHeight: '50vh',
+  overflowY: 'auto',
+  whiteSpace: 'pre-wrap',
+  overflowWrap: 'anywhere',
+  fontSize: 13,
+  lineHeight: '24px',
+}
+
+const fadeStyle: CSSProperties = {
+  position: 'absolute',
+  top: 1,
+  bottom: 1,
+  right: 1,
+  width: 46,
+  borderRadius: '0 var(--fl-radius-sm) var(--fl-radius-sm) 0',
+  background: 'linear-gradient(to right, transparent, var(--fl-surface) 65%)',
+  pointerEvents: 'none',
+}
+
+const expandBtn: CSSProperties = {
+  position: 'absolute',
+  top: '50%',
+  right: 5,
+  transform: 'translateY(-50%)',
+  width: 24,
+  height: 24,
+  border: '1px solid var(--fl-border)',
+  borderRadius: 6,
+  background: 'var(--fl-surface)',
+  color: 'var(--fl-text-muted)',
+  cursor: 'pointer',
+  fontSize: 12,
+  lineHeight: 1,
+  padding: 0,
+}
+
+const dlgOverlay: CSSProperties = {
+  position: 'fixed',
+  inset: 0,
+  background: 'rgba(26,29,39,.34)',
+  zIndex: 180, // 데이터 삽입 피커(200)보다 아래 — 큰 편집 위에서 피커가 뜬다
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  padding: 24,
+}
+
+const dlgCard: CSSProperties = {
+  width: 640,
+  maxWidth: '100%',
+  background: 'var(--fl-surface)',
+  borderRadius: 'var(--fl-radius-lg)',
+  boxShadow: 'var(--fl-shadow-lg)',
+  display: 'flex',
+  flexDirection: 'column',
+  overflow: 'hidden',
+}
+
+const dlgDoneBtn: CSSProperties = {
+  border: 'none',
+  background: 'var(--fl-primary)',
+  color: '#fff',
+  padding: '8px 18px',
+  borderRadius: 'var(--fl-radius-sm)',
+  fontWeight: 600,
+  fontSize: 13,
+  cursor: 'pointer',
 }
 
 const placeholderStyle: CSSProperties = {

@@ -16,7 +16,8 @@ interface FlowRepository : JpaRepository<Flow, UUID> {
 
     fun countByTenantIdAndFolderIdAndArchivedFalse(tenantId: String, folderId: UUID): Long
 
+    /** 폴더 삭제 시 안의 워크플로를 상위 폴더로(루트 폴더 삭제면 toId=null → 미분류). */
     @Modifying
-    @Query("update Flow f set f.folderId = null where f.folderId = :folderId")
-    fun clearFolder(@Param("folderId") folderId: UUID): Int
+    @Query("update Flow f set f.folderId = :toId where f.folderId = :fromId")
+    fun reassignFolder(@Param("fromId") fromId: UUID, @Param("toId") toId: UUID?): Int
 }

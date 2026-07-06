@@ -48,7 +48,8 @@ export const pluginsApi = {
 
 export const foldersApi = {
   list: () => http.get<FolderSummary[]>('/folders').then((r) => r.data),
-  create: (name: string) => http.post<FolderSummary>('/folders', { name }).then((r) => r.data),
+  create: (name: string, parentId: string | null = null) =>
+    http.post<FolderSummary>('/folders', { name, parentId }).then((r) => r.data),
   rename: (id: string, name: string) => http.patch<FolderSummary>(`/folders/${id}`, { name }).then((r) => r.data),
   remove: (id: string) => http.delete(`/folders/${id}`).then(() => undefined),
 }

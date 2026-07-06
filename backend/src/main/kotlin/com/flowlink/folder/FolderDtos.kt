@@ -13,20 +13,23 @@ import java.util.UUID
  */
 object FolderDtos {
 
+    /** 생성/이름변경 공용 — parentId 는 생성 시 상위 폴더 지정(중첩), 이름변경에선 무시. */
     data class FolderRequest(
-        @field:NotBlank @field:Size(max = 255) val name: String
+        @field:NotBlank @field:Size(max = 255) val name: String,
+        val parentId: UUID? = null
     )
 
     data class FolderSummary(
         val id: UUID,
         val name: String,
+        val parentId: UUID?,
         val flowCount: Long,
         val createdAt: Instant
     ) {
         companion object {
             @JvmStatic
             fun from(f: Folder, flowCount: Long): FolderSummary {
-                return FolderSummary(f.id, f.name, flowCount, f.createdAt)
+                return FolderSummary(f.id, f.name, f.parentId, flowCount, f.createdAt)
             }
         }
     }

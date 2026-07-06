@@ -162,6 +162,7 @@ export interface FlowSummary {
 export interface FolderSummary {
   id: string
   name: string
+  parentId?: string | null // 상위 폴더(null = 루트) — 중첩(트리) 지원
   flowCount: number
   createdAt: string
 }

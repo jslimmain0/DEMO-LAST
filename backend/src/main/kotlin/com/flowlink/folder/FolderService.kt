@@ -24,8 +24,10 @@ class FolderService(
     }
 
     @Transactional
-    fun create(name: String): FolderSummary {
-        val f = folderRepo.saveAndFlush(Folder.create(tenant(), name))
+    fun create(name: String, parentId: UUID?): FolderSummary {
+        // 상위 폴더는 존재+테넌트 검증(다른 테넌트/삭제된 폴더 아래 생성 방지). null = 루트.
+        val parent = parentId?.let { load(it) }
+        val f = folderRepo.saveAndFlush(Folder.create(tenant(), name, parent?.id))
         return FolderSummary.from(f, 0L)
     }
 
@@ -39,7 +41,11 @@ class FolderService(
     @Transactional
     fun delete(id: UUID) {
         val f = load(id)
-        flowRepo.clearFolder(id) // 폴더 내 워크플로는 미분류로
+        // 하위 폴더는 한 단계 위로 승격, 안의 워크플로도 상위 폴더로(루트 폴더 삭제면 미분류)
+        folderRepo.findByTenantIdOrderByNameAsc(tenant())
+            .filter { it.parentId == id }
+            .forEach { it.parentId = f.parentId }
+        flowRepo.reassignFolder(id, f.parentId)
         folderRepo.delete(f)
     }
 

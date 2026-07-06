@@ -24,7 +24,7 @@ class FolderController(private val service: FolderService) {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    fun create(@Valid @RequestBody req: FolderRequest): FolderSummary = service.create(req.name)
+    fun create(@Valid @RequestBody req: FolderRequest): FolderSummary = service.create(req.name, req.parentId)
 
     @PatchMapping("/{id}")
     fun rename(@PathVariable id: UUID, @Valid @RequestBody req: FolderRequest): FolderSummary =

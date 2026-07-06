@@ -10,7 +10,7 @@ import java.time.Instant
 import java.util.Objects
 import java.util.UUID
 
-/** 워크플로 그룹핑 폴더(플랫). */
+/** 워크플로 그룹핑 폴더 — parent_id 로 중첩(트리) 가능(null = 루트). */
 @Entity
 @Table(name = "folder")
 class Folder {
@@ -27,6 +27,10 @@ class Folder {
     @Column(nullable = false)
     lateinit var name: String
 
+    /** 상위 폴더(null = 루트). 생성 시에만 지정 — 이동 API 는 후속(사이클 생성 불가 보장). */
+    @Column(name = "parent_id")
+    var parentId: UUID? = null
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     lateinit var createdAt: Instant
@@ -39,11 +43,13 @@ class Folder {
 
     companion object {
         @JvmStatic
-        fun create(tenantId: String, name: String): Folder {
+        @JvmOverloads
+        fun create(tenantId: String, name: String, parentId: UUID? = null): Folder {
             val f = Folder()
             f.id = UUID.randomUUID()
             f.tenantId = tenantId
             f.name = name
+            f.parentId = parentId
             return f
         }
     }

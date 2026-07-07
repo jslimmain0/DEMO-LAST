@@ -31,7 +31,8 @@ class FlowExecutor(
     private val evaluator: ExpressionEvaluator,
     private val httpExecutor: HttpNodeExecutor,
     private val json: JsonService,
-    private val transformRegistry: TransformRegistry
+    private val transformRegistry: TransformRegistry,
+    private val tcpExecutor: TcpNodeExecutor
 ) {
 
     data class Outcome(
@@ -428,6 +429,7 @@ class FlowExecutor(
             NodeType.ASSERT -> assertNode(node, ctx)
             NodeType.HTTP -> httpExecutor.execute(node, ctx)
             NodeType.TRANSFORM -> transformNode(node, ctx)
+            NodeType.TCP -> tcpExecutor.execute(node, ctx)
             // 정상 흐름에선 drive()가 선처리 — 방어적 통과
             NodeType.FORM, NodeType.WAIT, NodeType.INPUT ->
                 NodeResult.ok(null, "(대기/폼/입력)", "브라우저 협업 노드 — drive 선처리 경로", emptyMap<String, Any?>())

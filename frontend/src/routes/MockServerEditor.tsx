@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { CSSProperties } from 'react'
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import type { HttpMethod, MockCond, MockRouteSpec, MockRuleSpec, MockServerSpec } from '../api/types'
+import type { HttpMethod, MockCond, MockRouteSpec, MockRuleSpec, MockServerSpec, MockTcpRuleSpec, MockTcpSpec } from '../api/types'
 import { mockBaseUrl, mocksApi } from '../api/client'
 import { AppShellTier1 } from '../app/AppShell'
 import { METHOD_COLOR } from '../canvas/nodeMeta'
@@ -106,6 +106,11 @@ export function MockServerEditor() {
             <RoutesEditor
               routes={spec.routes ?? []}
               onChange={(routes) => mutate((s) => ({ ...s, routes }))}
+            />
+
+            <TcpEditor
+              tcp={spec.tcp ?? null}
+              onChange={(tcp) => mutate((s) => ({ ...s, tcp }))}
             />
 
             <TestPanel base={base} />
@@ -301,6 +306,76 @@ function RuleCard({ rule, index, total, onChange, onRemove }: {
         )}
       </div>
     </div>
+  )
+}
+
+// ---------- TCP mock (고정길이 전문) ----------
+
+function TcpEditor({ tcp, onChange }: { tcp: MockTcpSpec | null; onChange: (t: MockTcpSpec | null) => void }) {
+  const on = !!tcp
+  const t = tcp ?? {}
+  const set = (patch: Partial<MockTcpSpec>) => onChange({ ...t, ...patch })
+  const rules = t.rules ?? []
+  const setRule = (i: number, patch: Partial<MockTcpRuleSpec>) =>
+    set({ rules: rules.map((r, ri) => (ri === i ? { ...r, ...patch } : r)) })
+  return (
+    <section style={panel}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <h2 style={h2}>TCP 전문 mock</h2>
+        <label style={{ fontSize: 12.5, display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+          <input
+            type="checkbox"
+            checked={on}
+            onChange={(e) => onChange(e.target.checked
+              ? { enabled: true, port: t.port ?? 9091, charset: t.charset ?? 'EUC-KR', prefixLength: t.prefixLength ?? 4, prefixIncludesSelf: t.prefixIncludesSelf ?? false, rules: rules.length ? rules : [{ id: newId(), contains: '', response: '00{{req:4:12}}' }] }
+              : null)}
+          />
+          사용 — 저장하면 지정 포트에 TCP 리스너가 열립니다
+        </label>
+      </div>
+      <p style={hint}>
+        고정길이 전문(길이 프리픽스) 대상 시스템을 흉내냅니다 — 워크플로의 <b>TCP 전문</b> 노드가 여기로 붙습니다.
+        응답 템플릿: <code style={code}>{'{{req}}'}</code> 요청 전문 전체 · <code style={code}>{'{{req:오프셋:길이}}'}</code> 요청 바이트 슬라이스.
+      </p>
+      {on && (
+        <div style={{ marginTop: 10 }}>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 12 }}>포트</span>
+            <input style={{ ...input, width: 90, fontFamily: 'var(--fl-font-mono)' }} value={t.port ?? 9091} onChange={(e) => set({ port: Number(e.target.value) || 0 })} />
+            <span style={{ fontSize: 12 }}>인코딩</span>
+            <select style={{ ...input, minWidth: 96 }} value={t.charset ?? 'EUC-KR'} onChange={(e) => set({ charset: e.target.value })}>
+              {['EUC-KR', 'MS949', 'UTF-8', 'US-ASCII'].map((c) => <option key={c}>{c}</option>)}
+            </select>
+            <span style={{ fontSize: 12 }}>길이 프리픽스</span>
+            <input style={{ ...input, width: 60, fontFamily: 'var(--fl-font-mono)' }} value={t.prefixLength ?? 4} onChange={(e) => set({ prefixLength: Number(e.target.value) || 0 })} />
+            <label style={{ fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+              <input type="checkbox" checked={!!t.prefixIncludesSelf} onChange={(e) => set({ prefixIncludesSelf: e.target.checked })} />
+              프리픽스 포함 길이
+            </label>
+            <span style={{ ...code, marginLeft: 'auto' }}>{`${window.location.hostname || 'localhost'}:${t.port ?? 9091}`}</span>
+          </div>
+          <div style={{ display: 'grid', gap: 8, marginTop: 10 }}>
+            {rules.map((r, i) => (
+              <div key={r.id} style={{ border: '1px dashed var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', padding: 10 }}>
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                  <span style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--fl-text-muted)', flexShrink: 0 }}>규칙 {i + 1}</span>
+                  <span style={{ fontSize: 12, flexShrink: 0 }}>요청에 포함:</span>
+                  <input style={{ ...input, flex: 1, fontFamily: 'var(--fl-font-mono)' }} value={r.contains ?? ''} placeholder="비우면 항상 매칭(기본 규칙) — 예: BAL1" onChange={(e) => setRule(i, { contains: e.target.value })} />
+                  <button style={{ ...miniBtn, color: 'var(--fl-fail)' }} onClick={() => set({ rules: rules.filter((_, ri) => ri !== i) })}>×</button>
+                </div>
+                <textarea
+                  style={{ ...input, width: '100%', minHeight: 46, marginTop: 6, fontFamily: 'var(--fl-font-mono)', fontSize: 12, resize: 'vertical', boxSizing: 'border-box' }}
+                  value={r.response ?? ''}
+                  placeholder={'응답 전문 — 예: 00{{req:4:12}}홍길동    '}
+                  onChange={(e) => setRule(i, { response: e.target.value })}
+                />
+              </div>
+            ))}
+            <button style={{ ...miniBtn, justifySelf: 'start' }} onClick={() => set({ rules: [...rules, { id: newId(), contains: '', response: '' }] })}>+ TCP 규칙</button>
+          </div>
+        </div>
+      )}
+    </section>
   )
 }
 

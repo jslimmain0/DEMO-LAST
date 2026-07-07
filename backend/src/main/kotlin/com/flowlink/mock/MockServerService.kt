@@ -22,7 +22,8 @@ import java.util.regex.Pattern
 @Service
 class MockServerService(
     private val repository: MockServerRepository,
-    private val json: JsonService
+    private val json: JsonService,
+    private val tcpRegistry: TcpMockRegistry
 ) {
 
     @Transactional(readOnly = true)
@@ -44,6 +45,7 @@ class MockServerService(
         val saved = repository.saveAndFlush(
             MockServer.create(tenant(), req.name, slug, MockServer.Kind.CUSTOM, defaultCustomSpec())
         )
+        tcpRegistry.sync(saved)
         return toDetail(saved)
     }
 
@@ -59,7 +61,9 @@ class MockServerService(
         if (req.enabled != null) {
             m.isEnabled = req.enabled
         }
-        return toDetail(repository.save(m))
+        val saved = repository.save(m)
+        tcpRegistry.sync(saved) // enabled 토글에 맞춰 TCP 리스너 열기/닫기
+        return toDetail(saved)
     }
 
     @Transactional
@@ -72,12 +76,16 @@ class MockServerService(
         // 저장 전 파싱 검증 — 깨진 spec 이 게이트웨이에서 500 을 만들지 않게 한다
         parseSpec(raw)
         m.specJson = raw
-        return toDetail(repository.save(m))
+        val saved = repository.save(m)
+        tcpRegistry.sync(saved) // 포트 바인딩 실패/충돌은 BadRequest → 저장 롤백
+        return toDetail(saved)
     }
 
     @Transactional
     fun delete(id: UUID) {
-        repository.delete(find(id))
+        val m = find(id)
+        repository.delete(m)
+        tcpRegistry.stop(m.id)
     }
 
     /** 게이트웨이 서빙용 — 무인증·테넌트 무관(slug 전역 유니크). */

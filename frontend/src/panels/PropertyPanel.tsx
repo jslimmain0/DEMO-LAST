@@ -2,7 +2,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { CSSProperties } from 'react'
 import { useEffect, useMemo, useState } from 'react'
 import { pluginsApi, transformsApi } from '../api/client'
-import type { Binding, BodyType, GraphNode, HttpMethod, NodeField, NodeOutput, NodeVar, ReqMode, RespType, WaitField as WaitFieldT } from '../api/types'
+import type { Binding, BodyType, GraphNode, HttpMethod, NodeField, NodeOutput, NodeVar, ReqMode, RespType, TcpField, TcpRespField, WaitField as WaitFieldT } from '../api/types'
 import { BindingChip } from '../binding/BindingChip'
 import { BindingPicker } from '../binding/BindingPicker'
 import { TokenInput } from '../binding/TokenInput'
@@ -479,6 +479,44 @@ export function PropertyPanel({ width = 360 }: { width?: number }) {
           </>
         )}
 
+        {node.type === 'tcp' && (
+          <>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <div style={{ flex: 2 }}><label style={label}>호스트</label><input style={mono} value={node.tcpHost ?? ''} onChange={(e) => update(id, { tcpHost: e.target.value })} /></div>
+              <div style={{ flex: 1 }}><label style={label}>포트</label><input style={mono} type="number" value={node.tcpPort ?? 0} onChange={(e) => update(id, { tcpPort: Number(e.target.value) })} /></div>
+            </div>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <div style={{ flex: 1 }}>
+                <label style={label}>인코딩</label>
+                <select style={field} value={node.tcpEncoding ?? 'EUC-KR'} onChange={(e) => update(id, { tcpEncoding: e.target.value })}>
+                  {['EUC-KR', 'MS949', 'UTF-8', 'US-ASCII'].map((c) => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
+              <div style={{ flex: 1 }}><label style={label}>타임아웃(ms)</label><input style={field} type="number" value={node.tcpTimeoutMs ?? 5000} onChange={(e) => update(id, { tcpTimeoutMs: Number(e.target.value) })} /></div>
+            </div>
+            <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end' }}>
+              <div><label style={label}>길이 프리픽스(바이트)</label><input style={{ ...field, width: 100 }} type="number" value={node.tcpPrefixLength ?? 0} onChange={(e) => update(id, { tcpPrefixLength: Number(e.target.value) })} /></div>
+              <label style={{ fontSize: 12, color: 'var(--fl-text-muted)', display: 'flex', alignItems: 'center', gap: 5, paddingBottom: 9 }}>
+                <input type="checkbox" checked={!!node.tcpPrefixIncludesSelf} onChange={(e) => update(id, { tcpPrefixIncludesSelf: e.target.checked })} /> 프리픽스 포함 길이
+              </label>
+            </div>
+
+            <label style={label}>요청 필드 (고정길이 · 위→아래 순서로 연결)</label>
+            <TcpReqEditor fields={node.tcpRequest ?? []} sources={sources} sourceType={sourceType} onChange={(r) => update(id, { tcpRequest: r })} />
+
+            <label style={label}>응답 필드 (고정길이 → 출력)</label>
+            <TcpRespEditor
+              fields={node.tcpResponse ?? []}
+              onChange={(r) => update(id, {
+                tcpResponse: r,
+                // 응답 필드 이름 = 출력 키 — 바인딩 피커 칩과 자동 동기화
+                outputs: r.filter((f) => f.name && f.name.trim()).map((f) => ({ key: f.name!, type: 'string' })),
+              })}
+            />
+            <p style={{ fontSize: 11.5, color: 'var(--fl-text-muted)', marginTop: 8 }}>응답 필드 이름이 그대로 출력 키가 되어 하위 노드에서 바인딩됩니다. 내장 Mock 서버의 TCP 탭으로 가짜 대상 시스템을 세울 수 있습니다.</p>
+          </>
+        )}
+
         {node.type === 'form' && (
           <>
             <label style={label}>열기 URL — 팝업/iframe 으로 열어 form 을 제출할 주소</label>
@@ -743,6 +781,57 @@ function VarsEditor({ vars, onChange, sources, sourceType }: { vars: NodeVar[]; 
   )
 }
 
+
+/** TCP 요청 필드 편집기 — 값은 텍스트+토큰 칩 혼합(TokenInput), 토큰화 불가 bound 는 구조적 칩 유지. */
+function TcpReqEditor({ fields, sources, sourceType, onChange }: { fields: TcpField[]; sources: BindableSource[]; sourceType: (b: Binding) => string | undefined; onChange: (f: TcpField[]) => void }) {
+  const upd = (fid: string, patch: Partial<TcpField>) => onChange(fields.map((f) => (f.id === fid ? { ...f, ...patch } : f)))
+  return (
+    <>
+      {fields.map((f) => (
+        <div key={f.id} style={{ border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', padding: 8, marginBottom: 6 }}>
+          <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
+            <input style={{ ...mono, flex: 2 }} value={f.name ?? ''} placeholder="이름" onChange={(e) => upd(f.id, { name: e.target.value })} />
+            <input style={{ ...mono, width: 60 }} type="number" value={f.length ?? 0} title="바이트 길이" onChange={(e) => upd(f.id, { length: Number(e.target.value) })} />
+            <select style={{ ...field, width: 56 }} value={f.pad ?? 'right'} title="패딩 방향" onChange={(e) => upd(f.id, { pad: e.target.value as 'left' | 'right' })}>
+              <option value="right">→</option>
+              <option value="left">←</option>
+            </select>
+            <input style={{ ...mono, width: 38 }} maxLength={1} value={f.padChar ?? ' '} title="패딩 문자" onChange={(e) => upd(f.id, { padChar: e.target.value })} />
+            <button onClick={() => onChange(fields.filter((x) => x.id !== f.id))} aria-label="삭제" style={{ width: 28, border: '1px solid var(--fl-border)', borderRadius: 6, background: 'var(--fl-surface)', cursor: 'pointer' }}>×</button>
+          </div>
+          {f.bound && !isTokenizable(f.bound) ? (
+            <BindingChip binding={f.bound} sourceType={sourceType(f.bound)} onRemove={() => upd(f.id, { bound: null })} />
+          ) : (
+            <TokenInput
+              ariaLabel={`TCP 필드 ${f.name || ''}`}
+              value={f.bound ? bindingToToken(f.bound) : (f.value ?? '')}
+              onChange={(v) => upd(f.id, { value: v, bound: null })}
+              sources={sources}
+              placeholder="값 또는 { } 로 데이터 삽입"
+            />
+          )}
+        </div>
+      ))}
+      <button onClick={() => onChange([...fields, { id: newId(), name: '', length: 10, value: '', pad: 'right', padChar: ' ' }])} style={addDashed}>+ 요청 필드</button>
+    </>
+  )
+}
+
+function TcpRespEditor({ fields, onChange }: { fields: TcpRespField[]; onChange: (f: TcpRespField[]) => void }) {
+  const upd = (fid: string, patch: Partial<TcpRespField>) => onChange(fields.map((f) => (f.id === fid ? { ...f, ...patch } : f)))
+  return (
+    <>
+      {fields.map((f) => (
+        <div key={f.id} style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
+          <input style={{ ...mono, flex: 2 }} value={f.name ?? ''} placeholder="이름(=출력 키)" onChange={(e) => upd(f.id, { name: e.target.value })} />
+          <input style={{ ...mono, width: 70 }} type="number" value={f.length ?? 0} title="바이트 길이" onChange={(e) => upd(f.id, { length: Number(e.target.value) })} />
+          <button onClick={() => onChange(fields.filter((x) => x.id !== f.id))} aria-label="삭제" style={{ width: 28, border: '1px solid var(--fl-border)', borderRadius: 6, background: 'var(--fl-surface)', cursor: 'pointer' }}>×</button>
+        </div>
+      ))}
+      <button onClick={() => onChange([...fields, { id: newId(), name: '', length: 10 }])} style={addDashed}>+ 응답 필드</button>
+    </>
+  )
+}
 
 const shell: CSSProperties = { flexShrink: 0, background: 'var(--fl-surface)', display: 'flex', flexDirection: 'column', height: '100%' }
 const closeBtn: CSSProperties = { width: 30, height: 30, borderRadius: 8, border: 'none', background: 'var(--fl-surface-2)', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 16 }

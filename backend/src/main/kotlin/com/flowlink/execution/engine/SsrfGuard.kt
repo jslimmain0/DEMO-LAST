@@ -57,6 +57,38 @@ class SsrfGuard(props: ExecutionProperties) {
         }
     }
 
+    /** TCP 등 스킴 없는 host:port 검증(사설/내부/차단 대역 거부). */
+    fun checkHostPort(host: String?, port: Int) {
+        if (!cfg.enabled) {
+            return
+        }
+        if (host == null || host.isBlank()) {
+            throw SsrfBlockedException("호스트가 없습니다.")
+        }
+        if (port < 1 || port > 65535) {
+            throw SsrfBlockedException("잘못된 포트: $port")
+        }
+        if (blockedHosts.contains(host.lowercase(Locale.ROOT))) {
+            throw SsrfBlockedException("차단된 호스트: $host")
+        }
+        if (cfg.blockPrivateNetworks) {
+            val addresses: Array<InetAddress> = try {
+                InetAddress.getAllByName(host)
+            } catch (e: UnknownHostException) {
+                throw SsrfBlockedException("호스트 해석 실패: $host")
+            }
+            for (addr in addresses) {
+                if (isBlockedAddress(addr)) {
+                    log.warn("SSRF(TCP) 차단: host={} -> {}", host, addr.hostAddress)
+                    throw SsrfBlockedException("사설/내부 대역으로의 TCP 연결은 차단됩니다: " + addr.hostAddress)
+                }
+                if (blockedHosts.contains(addr.hostAddress)) {
+                    throw SsrfBlockedException("차단된 IP: " + addr.hostAddress)
+                }
+            }
+        }
+    }
+
     private fun isBlockedAddress(addr: InetAddress): Boolean {
         // 로컬 배포: allow-loopback 이면 localhost/127.0.0.1/::1 은 허용(그 외 사설/내부 대역은 그대로 차단)
         if (addr.isLoopbackAddress) {

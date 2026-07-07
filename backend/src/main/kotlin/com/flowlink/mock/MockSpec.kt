@@ -8,9 +8,36 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 data class MockSpec(
-    val routes: List<MockRoute>?
+    val routes: List<MockRoute>?,
+    /** TCP mock(고정길이 전문) — 있으면 백엔드가 지정 포트에 TCP 리스너를 연다. */
+    val tcp: MockTcp? = null
 ) {
     fun routesOrEmpty(): List<MockRoute> = routes ?: emptyList()
+
+    /**
+     * TCP mock 정의 — 길이 프리픽스(기본 4바이트 ASCII, 자기 미포함) 전문을 받아
+     * 규칙(contains 매칭) 첫 일치의 응답 템플릿을 같은 규약으로 돌려준다.
+     * 템플릿: {{req}} = 요청 전문 전체, {{req:오프셋:길이}} = 바이트 슬라이스(디코딩 후 삽입).
+     */
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    data class MockTcp(
+        val enabled: Boolean?,           // 기본 true(서버 enabled 와 AND)
+        val port: Int?,                  // 1024~65535
+        val charset: String?,            // 기본 EUC-KR(금융 전문 관례)
+        val prefixLength: Int?,          // 기본 4. 0 = 프리픽스 없음(연결당 1전문, EOF 까지 읽음)
+        val prefixIncludesSelf: Boolean?,
+        val rules: List<MockTcpRule>?
+    ) {
+        fun rulesOrEmpty(): List<MockTcpRule> = rules ?: emptyList()
+    }
+
+    /** TCP 규칙 — 디코딩된 요청 전문에 contains 가 포함되면 매칭(비면 항상 = 기본 규칙). */
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    data class MockTcpRule(
+        val id: String?,
+        val contains: String?,
+        val response: String?
+    )
 
     /** 라우트 하나 — method+경로 패턴(/users/{id})과 규칙 목록. */
     @JsonIgnoreProperties(ignoreUnknown = true)

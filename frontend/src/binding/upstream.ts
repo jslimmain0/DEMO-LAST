@@ -60,6 +60,12 @@ function upstreamSources(nodes: Node[], edges: Edge[], targetId: string): Bindab
       for (const f of n.fields?.[tab] ?? []) if (f.key) items.push({ key: f.key, scope: 'req', group: 'request' })
     }
     if (n.waitFields) for (const wf of n.waitFields) if (wf.key) items.push({ key: wf.key, scope: null, group: 'response' })
+    // TCP 응답 필드 이름 = 출력 키(outputs 미선언이어도 바인딩 가능하게)
+    if (n.type === 'tcp') {
+      for (const rf of n.tcpResponse ?? []) {
+        if (rf.name && !items.some((it) => it.key === rf.name)) items.push({ key: rf.name, type: 'string', scope: null, group: 'response' })
+      }
+    }
     if (items.length > 0) {
       sources.push({ id: n.id, name: n.name ?? id, cat: n.cat, type: n.type, items })
     }

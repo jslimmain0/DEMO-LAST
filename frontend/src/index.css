@@ -278,9 +278,11 @@ html[data-theme='dark'] ::-webkit-scrollbar-thumb { background: #39404f; backgro
   line-height: 1.5;
   vertical-align: middle;
   white-space: nowrap;
-  max-width: 240px;
+  width: 150px; /* 고정 폭 — 내용(노드명·키) 길이만큼 늘어나지 않는다. 전체 내용은 title 툴팁으로 */
 }
 .fl-token-chip .fl-token-chip-label {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

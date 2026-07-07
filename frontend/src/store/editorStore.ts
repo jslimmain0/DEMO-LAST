@@ -41,6 +41,29 @@ interface EditorState {
   removePaletteItem: (groupId: string, itemId: string) => void
   setWaitingNode: (id: string | null) => void
   setRunView: (view: RunView | null) => void
+  // 노드 복사/붙여넣기 — localStorage 클립보드라 A 워크플로 → B 워크플로 붙여넣기도 된다
+  copySelection: () => number
+  pasteClipboard: () => number
+}
+
+// 노드 클립보드(localStorage) — 워크플로 간 이동/새로고침에도 유지된다.
+const CLIP_KEY = 'fl:node-clipboard'
+
+interface NodeClipboard {
+  nodes: GraphNode[]
+  edges: Array<{ from: string; to: string; fromPort?: string }>
+}
+
+/** 복사된 그룹 안의 토큰({{ key@구노드 }})/바인딩이 붙여넣은 새 id 를 가리키도록 재매핑. */
+function remapNodeRefs(node: GraphNode, idMap: Map<string, string>): GraphNode {
+  let s = JSON.stringify(node)
+  for (const [oldId, newId] of idMap) {
+    // 토큰 sourceId (@old / @req:old) — 뒤가 "}}" 로 닫힐 때만
+    s = s.replace(new RegExp(`(@(?:req:)?)${oldId}(?=\\s*\\}\\})`, 'g'), `$1${newId}`)
+    // 구조적 바인딩(bound.sourceId)
+    s = s.replaceAll(`"sourceId":"${oldId}"`, `"sourceId":"${newId}"`)
+  }
+  return JSON.parse(s) as GraphNode
 }
 
 export const useEditorStore = create<EditorState>()((set, get) => ({
@@ -181,6 +204,67 @@ export const useEditorStore = create<EditorState>()((set, get) => ({
 
   setWaitingNode: (id) => set({ waitingNodeId: id }),
   setRunView: (view) => set({ runView: view }),
+
+  copySelection: () => {
+    const selected = get().nodes.filter((n) => n.selected)
+    const picked = selected.length > 0 ? selected : get().nodes.filter((n) => n.id === get().selectedId)
+    if (picked.length === 0) return 0
+    const ids = new Set(picked.map((n) => n.id))
+    const clip: NodeClipboard = {
+      nodes: picked.map((n) => ({ ...asGraphNode(n.data), id: n.id, x: Math.round(n.position.x), y: Math.round(n.position.y) })),
+      // 복사된 노드들 사이의 연결만 함께(그룹 복사)
+      edges: get().edges
+        .filter((e) => ids.has(e.source) && ids.has(e.target))
+        .map((e) => ({ from: e.source, to: e.target, fromPort: e.sourceHandle ?? 'out' })),
+    }
+    try {
+      localStorage.setItem(CLIP_KEY, JSON.stringify(clip))
+    } catch {
+      return 0
+    }
+    return picked.length
+  },
+
+  pasteClipboard: () => {
+    let clip: NodeClipboard | null = null
+    try {
+      const raw = localStorage.getItem(CLIP_KEY)
+      clip = raw ? (JSON.parse(raw) as NodeClipboard) : null
+    } catch {
+      clip = null
+    }
+    if (!clip || !Array.isArray(clip.nodes) || clip.nodes.length === 0) return 0
+    const idMap = new Map<string, string>()
+    for (const n of clip.nodes) idMap.set(n.id, newId())
+    const rfNodes: Node[] = clip.nodes.map((gn) => {
+      const remapped = remapNodeRefs(gn, idMap)
+      const nid = idMap.get(gn.id)!
+      const pos = { x: (gn.x ?? 0) + 36, y: (gn.y ?? 0) + 36 } // 살짝 어긋나게 — 제자리 붙여넣기 겹침 방지
+      return {
+        id: nid,
+        type: rfNodeType(remapped.type),
+        position: pos,
+        data: { ...remapped, id: nid, x: pos.x, y: pos.y } as unknown as Record<string, unknown>,
+        selected: true,
+      }
+    })
+    const rfEdges: Edge[] = clip.edges
+      .filter((e) => idMap.has(e.from) && idMap.has(e.to))
+      .map((e) => ({
+        id: 'e' + newId(),
+        source: idMap.get(e.from)!,
+        target: idMap.get(e.to)!,
+        sourceHandle: e.fromPort ?? 'out',
+        type: 'deletable',
+      }))
+    set({
+      nodes: [...get().nodes.map((n) => ({ ...n, selected: false })), ...rfNodes],
+      edges: [...get().edges, ...rfEdges],
+      selectedId: rfNodes[0]?.id ?? get().selectedId,
+      dirty: true,
+    })
+    return rfNodes.length
+  },
 
   addPaletteGroup: (group) => set({ palette: [...get().palette, group], dirty: true }),
   removePaletteGroup: (groupId) => set({ palette: get().palette.filter((g) => g.id !== groupId), dirty: true }),

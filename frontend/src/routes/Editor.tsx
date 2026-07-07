@@ -88,6 +88,35 @@ export function Editor() {
     }
   }, [flowId])
 
+  // 노드 복사/붙여넣기(Ctrl/Cmd+C·V) — localStorage 클립보드라 다른 워크플로에 가서 붙여넣어도 된다.
+  const [copyNote, setCopyNote] = useState<string | null>(null)
+  useEffect(() => {
+    if (!copyNote) return
+    const t = setTimeout(() => setCopyNote(null), 2600)
+    return () => clearTimeout(t)
+  }, [copyNote])
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey) return
+      const t = e.target as HTMLElement | null
+      // 입력 중(텍스트 필드/토큰 입력)의 복사·붙여넣기는 브라우저 기본 동작에 양보
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return
+      if (e.key === 'c' || e.key === 'C') {
+        if (window.getSelection()?.toString()) return // 텍스트 선택 복사 우선
+        const n = useEditorStore.getState().copySelection()
+        if (n > 0) setCopyNote(`노드 ${n}개 복사됨 — 다른 워크플로에서도 Ctrl+V`)
+      } else if (e.key === 'v' || e.key === 'V') {
+        const n = useEditorStore.getState().pasteClipboard()
+        if (n > 0) {
+          e.preventDefault()
+          setCopyNote(`노드 ${n}개 붙여넣음`)
+        }
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
   useEffect(() => {
     if (flowQuery.data) loadGraph(flowQuery.data.id, flowQuery.data.name, flowQuery.data.graph)
   }, [flowQuery.data, loadGraph])
@@ -216,6 +245,7 @@ export function Editor() {
           style={{ fontFamily: 'var(--fl-font-head)', fontWeight: 600, fontSize: 15, border: '1px solid transparent', borderRadius: 8, padding: '6px 8px', background: 'transparent', color: 'var(--fl-text)', minWidth: 220 }}
         />
         <span style={{ fontSize: 12, color: dirty ? 'var(--fl-put)' : 'var(--fl-text-muted)' }}>{dirty ? '● 미저장' : '저장됨'}</span>
+        {copyNote && <span role="status" style={{ fontSize: 12, color: 'var(--fl-primary)', fontWeight: 600 }}>{copyNote}</span>}
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
           <button onClick={() => setShowApiImport(true)} style={ghostBtn} title="OpenAPI/Swagger 스펙에서 노드 가져오기 (팔레트에 추가)">API 가져오기</button>
           <button onClick={() => setWorkflowIO('import')} style={ghostBtn}>가져오기</button>

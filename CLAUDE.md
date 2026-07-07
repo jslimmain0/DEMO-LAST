@@ -47,6 +47,7 @@ FlowLink 안에서 **가짜 대상 시스템을 만들고 켜는 1급 기능**. 
 - method+경로(`/users/{id}`)마다 규칙(조건·응답 템플릿·charset·지연·**콜백 발사**)을 UI 에서 정의(전부 사용자 정의 커스텀 목).
 - 응답 `contentType: html` + `{{body.returnUrl}}` 템플릿으로 **결제창 같은 웹페이지가 뜨고 콜백하는** 흐름도 만든다.
 - 워크플로 HTTP/폼 노드의 baseUrl 에 mock base URL 을 넣어 호출. 미완성 시스템을 mock 으로 세워 전체 흐름을 먼저 검증.
+- **TCP 전문 mock**(2026-07-06): spec 의 `tcp` 섹션(포트·문자셋·길이 프리픽스·contains 규칙)을 저장하면 백엔드가 그 포트에 TCP 리스너를 연다 — 워크플로 TCP 노드의 가짜 대상 시스템. 응답 템플릿 `{{req}}`/`{{req:오프셋:길이}}`.
 - 상세: [docs/superpowers/specs/2026-07-04-mock-server-builder-design.md](docs/superpowers/specs/2026-07-04-mock-server-builder-design.md), 결제창+콜백 데모 [demos/pay-mock/README.md](demos/pay-mock/README.md).
 - ⚠️ 상태 관리(부분취소 잔액 원장 등)는 범위 밖(범용 무상태 목) — 상태 있는 시뮬레이터가 필요하면 별도 프로세스로 세워 baseUrl 로 호출.
 
@@ -104,7 +105,7 @@ graphJson 파싱 → Kahn 위상정렬 → 노드 순차 처리 → IF는 단일
 브라우저 협업 노드(client HTTP / FORM / WAIT / INPUT)를 만나면 `WAITING`으로 중단하고 pending 명세 반환 →
 브라우저가 처리 후 `POST /executions/{id}/resume` → 첫 실패 시 `FAILED`, 사용자 중단(⏹)은 `CANCELLED`.
 **현재 완전 동기 실행** (외부 HTTP에 호출 스레드 블로킹).
-노드 타입: START/END/SET/IF/ASSERT/HTTP/FORM/INPUT/WAIT/TRANSFORM.
+노드 타입: START/END/SET/IF/ASSERT/HTTP/FORM/INPUT/WAIT/TRANSFORM/TCP(고정길이 전문).
 - **ASSERT(검증)**: IF 와 같은 SpEL 조건이지만 분기 대신 **거짓이면 노드 실패**(=실행 FAILED). 테스트 시나리오 판정용.
   SimpleEvaluationContext(읽기전용)라 비교·논리·산술·문자열 연결(`+`)만 되고 `.contains()`·`.startsWith()` 메서드 호출은 차단.
 
@@ -412,7 +413,7 @@ design/   theme(라이트/다크) · index.css(CSS 변수)
 
 ### 전체 Kotlin 이관 · TCP 노드 제거 · relay/mock 프로세스 백엔드 통합
 - **백엔드 전체 Kotlin 이관**(Java 0): `src/main/kotlin`·`src/test/kotlin`만 존재. 스택 = Kotlin 1.9(Java 21 toolchain). 상세는 위 "백엔드 구조" 노트 + [docs/코틀린-이관-검토.md](docs/코틀린-이관-검토.md).
-- **TCP 노드 완전 제거**: `TcpNodeExecutor`·`TcpField`/`TcpRespField`·고정길이 금융 전문(BAL1) 삭제. 노드 타입 = start/end/set/if/assert/http/form/wait/input/transform (TCP 없음). SSRF 가드도 HTTP 전용.
+- **(2026-07-06 TCP 부활로 대체)** ~~TCP 노드 완전 제거~~: `TcpNodeExecutor`·`TcpField`/`TcpRespField`·고정길이 금융 전문(BAL1) 삭제. 노드 타입 = start/end/set/if/assert/http/form/wait/input/transform (TCP 없음). SSRF 가드도 HTTP 전용.
 - **relay.js → 백엔드 통합**: 구 relay.js(:8787) 프로세스 폐기. `wait` 노드 콜백을 백엔드가 `/relay/{execId}/cb/{nodeId}`([RelayController](backend/src/main/kotlin/com/flowlink/execution/RelayController.kt))로 직접 받아 자동 재개하고, 타임아웃도 백엔드 스케줄러가 구동 → **브라우저 없이 wait 완결**. 별도 프로세스·:8787 없음.
 - **mock-server.js → 내장 Mock 흡수**: 구 mock-server.js(:9090/:9091) 폐기. `demos/*.json` 은 내장 Mock(base `http://localhost:18080/mock/demo`)을 쓰고 `node demos/seed-mock.mjs` 로 라우트를 시드. demo-05(TCP)·`/openapi.json` 데모는 제외.
 - **띄우는 프로세스 2개**: 백엔드(:18080) + 프론트(:5173). 콜백 데모만 `node demos/seed-mock.mjs` 1회로 mock 을 시드한다.
@@ -503,6 +504,29 @@ design/   theme(라이트/다크) · index.css(CSS 변수)
   한 줄 높이 유지·⤢ 다이얼로그 동기화) PASS, 기존 e2e 40(14+12+10+4) 무회귀.
 - ⚠️ flowCount 는 직속 워크플로 수만(하위 합산 아님) — 후속. 사이드바 트리는 항상 펼침(접기 없음).
   드래그 이동은 데스크톱 전용(터치 미지원 — 카드 ⋯ 메뉴/일괄 select 로 대체 경로 있음).
+
+### TCP 부활(노드+Mock) · 노드 복사/붙여넣기 · 홈=미분류 · 칩 고정폭
+- **TCP 전문 노드 부활**: 코틀린 이관 때 제거했던 TCP 노드(9481019 역방향)를 복원 — `TcpNodeExecutor`(길이 프리픽스
+  + 바이트 고정길이 필드 조립/슬라이싱, 인코딩 노드/필드별, `SsrfGuard.checkHostPort`), `NodeType.TCP`,
+  GraphNode tcp 블록, 프론트 팔레트/PropertyPanel(값은 TokenInput 인라인 칩, 응답 필드명→outputs 자동 동기화),
+  upstream 이 tcpResponse 필드명을 바인딩 소스로 노출. 리터럴 토큰은 `resolveLiteral` 규칙 공용.
+- **내장 Mock 서버 TCP 지원**: spec `tcp` 섹션 — [TcpMockRegistry](backend/src/main/kotlin/com/flowlink/mock/TcpMockRegistry.kt)
+  가 mock 저장/토글/삭제·앱 기동과 동기화해 ServerSocket 리스너를 열고 닫는다(포트 1024~65535, 바인딩 실패/충돌은
+  저장 시 400 → 롤백). 규칙 = 디코딩 전문 contains 첫 매칭, 응답 템플릿 `{{req}}`(전문 에코)/`{{req:오프셋:길이}}`(바이트
+  슬라이스). 프리픽스 규약이면 한 연결에 여러 전문. 편집기에 "TCP 전문 mock" 섹션. 단위테스트 `TcpMockTemplateTest`.
+- **노드 복사/붙여넣기(Ctrl/Cmd+C·V)**: 캔버스 선택(Shift 박스/다중)을 localStorage 클립보드에 복사 — **A 워크플로에서
+  B 워크플로로 붙여넣기 가능**. 붙여넣기는 새 id 부여 + 그룹 내 엣지 복제 + **복사 그룹 안을 가리키는 토큰/바인딩
+  sourceId 재매핑**(editorStore.copySelection/pasteClipboard, remapNodeRefs) + 36px 오프셋 + 붙여넣은 것 선택.
+  입력 필드/토큰 입력에 포커스가 있거나 텍스트 선택 중이면 브라우저 기본 복사에 양보. 탑바에 안내 배지.
+- **대시보드 홈 = 미분류만**: 루트(홈)에서는 폴더 타일 + 미분류 워크플로만 보이고, 폴더 안 워크플로는 들어가야 보인다
+  (탐색기 규칙). 사이드바 [전체 워크플로]+[미분류] 를 [홈] 하나로 통합(홈 드롭 = 미분류로 꺼내기), 검색 중엔 전체를 뒤진다.
+- **폴더 안 복제 → 같은 폴더**: 카드 ⋯ 복제가 원본의 folderId 를 복제본에 승계.
+- **토큰 칩 고정 폭(150px)**: 인라인 블럭이 내용(URI/노드명) 길이만큼 늘어나지 않는다 — 라벨 말줄임 + title 툴팁.
+- 검증: 백엔드 단위 6종(TcpMockTemplate 4 포함) PASS + TCP e2e 13(원시 소켓 프리픽스/에코·노드 슬라이싱·EUC-KR
+  홍길동·IF 분기·기본 규칙·포트 충돌 400·토글/삭제 시 포트 닫힘) + 브라우저 e2e 14(박스선택 복사·같은/다른 플로우
+  붙여넣기·토큰 재매핑 후 실행 성공·칩 150px·홈 미분류만·폴더 안 복제) PASS, 기존 e2e 79 무회귀.
+- ⚠️ TCP mock 은 HTTP mock 과 같은 테스트 도구 전제(무인증) — 리스너가 모든 인터페이스에 바인딩되므로 사내망 전제.
+  노드 클립보드는 브라우저 localStorage(탭 간 공유, 서버 미저장).
 
 ## 참고 문서
 - `backend/README.md` — Phase 1 구현 범위 표, API 요약, 실행 가이드

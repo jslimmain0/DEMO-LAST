@@ -39,7 +39,10 @@ export function Dashboard() {
   const duplicateFlow = useMutation({
     mutationFn: async (f: FlowSummary) => {
       const detail = await flowsApi.get(f.id)
-      return flowsApi.importFlow({ name: `${f.name} 복제본`, nodes: detail.graph.nodes, edges: detail.graph.edges })
+      const created = await flowsApi.importFlow({ name: `${f.name} 복제본`, nodes: detail.graph.nodes, edges: detail.graph.edges })
+      // 폴더 안에서 복제하면 같은 폴더에 복제본이 생긴다(탐색기 규칙)
+      if (f.folderId) await flowsApi.move(created.id, f.folderId)
+      return created
     },
     onSuccess: invalidate,
   })
@@ -159,9 +162,11 @@ export function Dashboard() {
 
   const visible = useMemo(() => {
     let list = allFlows
+    const q = search.trim().toLowerCase()
     if (sel === 'none') list = list.filter((f) => !f.folderId)
     else if (isFolderId(sel)) list = list.filter((f) => f.folderId === sel)
-    const q = search.trim().toLowerCase()
+    // 홈(루트)은 탐색기처럼 미분류만 — 폴더 안 워크플로는 폴더에 들어가야 보인다. 검색 중엔 전체를 뒤진다.
+    else if (!q) list = list.filter((f) => !f.folderId)
     if (q) list = list.filter((f) => f.name.toLowerCase().includes(q) || (f.description ?? '').toLowerCase().includes(q))
     list = [...list].sort((a, b) => (sort === 'name' ? a.name.localeCompare(b.name) : (b.updatedAt ?? '').localeCompare(a.updatedAt ?? '')))
     return list
@@ -203,7 +208,7 @@ export function Dashboard() {
   }
 
   const noneCount = allFlows.filter((f) => !f.folderId).length
-  const scopeName = sel === 'all' ? '전체 워크플로' : sel === 'none' ? '미분류' : folderList.find((f) => f.id === sel)?.name ?? '워크플로'
+  const scopeName = sel === 'all' ? (search.trim() ? '검색 (전체)' : '홈') : sel === 'none' ? '미분류' : folderList.find((f) => f.id === sel)?.name ?? '워크플로'
   // hero 는 전체 스코프·검색 없음일 때만, 가장 최근 수정 워크플로 하나로 페이지를 연다.
   const heroFlow = sel === 'all' && !search.trim()
     ? [...allFlows].sort((a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? ''))[0]
@@ -237,8 +242,8 @@ export function Dashboard() {
   const folderNav = (
     <>
       <div style={sidebarLabel}>워크플로</div>
-      <SidebarItem label="전체 워크플로" count={allFlows.length} active={sel === 'all'} onClick={() => setSel('all')} glyph="▤" />
-      <SidebarItem label="미분류" count={noneCount} active={sel === 'none'} onClick={() => setSel('none')} glyph="◇" drop={dropTo(null)} />
+      {/* 홈 = 탐색기 루트: 폴더 타일 + 미분류 워크플로. 여기로 드롭하면 폴더 밖(미분류)으로 꺼낸다. */}
+      <SidebarItem label="홈" count={noneCount} active={sel === 'all'} onClick={() => setSel('all')} glyph="▤" drop={dropTo(null)} />
       <div style={sidebarLabel}>폴더</div>
       {renderFolderTree(null, 0)}
       <button onClick={() => newFolderIn(null)} style={newFolderBtn}>+ 새 폴더</button>
@@ -256,7 +261,7 @@ export function Dashboard() {
             <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, minWidth: 0, flexWrap: 'wrap' }}>
               {folderPath.length > 0 ? (
                 <nav aria-label="폴더 경로" style={{ display: 'flex', alignItems: 'baseline', gap: 6, minWidth: 0, flexWrap: 'wrap' }}>
-                  <CrumbButton label="전체" onClick={() => setSel('all')} drop={dropTo(null)} />
+                  <CrumbButton label="홈" onClick={() => setSel('all')} drop={dropTo(null)} />
                   {folderPath.map((p, i) => (
                     <span key={p.id} style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
                       <span aria-hidden style={{ color: 'var(--fl-text-muted)', fontSize: 13 }}>›</span>
@@ -692,6 +697,7 @@ function varCat(cat: string): string {
   const known = ['auth', 'bank', 'card', 'generic', 'set', 'if', 'assert', 'form', 'input', 'wait', 'start', 'end']
   if (known.includes(cat)) return `var(--fl-cat-${cat})`
   if (cat === 'transform') return 'var(--fl-patch)'
+  if (cat === 'tcp') return 'var(--fl-post)'
   return 'var(--fl-cat-generic)'
 }
 

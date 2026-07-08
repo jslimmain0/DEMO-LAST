@@ -576,6 +576,16 @@ design/   theme(라이트/다크) · index.css(CSS 변수)
   트랙 추가/삭제/라벨·저장 라운드트립·엣지 정리) PASS + 기존 e2e 143 무회귀.
 - ⚠️ 스위치는 수동 전환 전용(응답 값 기반 자동 분기는 IF). 트랙 전환은 그래프 수정(dirty) — 실행 전에 저장해야 반영.
 
+### 에디터 단축키 한/영(IME) 버그 수정 + Ctrl+S 저장
+- **버그**: 한글 입력 모드에서 Ctrl+C/V/Z 를 누르면 `e.key` 가 `'ㅊ'`/`'ㅍ'`/`'ㅋ'` 로 보고돼 단축키가 전부 죽음
+  ("복사 한 번 하고 나면(한글 입력 후) 다음 복사가 안 됨" 증상). → [Editor](frontend/src/routes/Editor.tsx) 키 핸들러를
+  **물리 키 `e.code`(KeyC/KeyV/KeyZ/KeyY/KeyS) 기준**으로 판정(비QWERTY 배열 폴백으로 `e.key` 도 인정).
+- **Ctrl+S 저장**: 저장 버튼과 동일 조건(dirty && !isPending)으로 저장하고 브라우저 "페이지 저장" 다이얼로그는 항상 차단.
+  **입력 필드 포커스 중에도 동작**(복사/붙여넣기와 달리 입력 가드보다 먼저 처리). 핸들러([] deps)가 최신 뮤테이션을
+  보도록 `saveShortcutRef` 로 연결.
+- 검증: 재현+회귀 e2e 16(복사→붙여넣기→재복사 연쇄·입력/텍스트선택 잔류·한글 모드 C/V/S/Z·Ctrl+S dirty 저장·
+  입력 중 저장) PASS, 단축키 관련 기존 스위트(copy/canvas/anno/switch/chips) 무회귀.
+
 ## 참고 문서
 - `backend/README.md` — Phase 1 구현 범위 표, API 요약, 실행 가이드
 - `docs/` — UI/UX 멀티에이전트 설계 토론 로그, 엔터프라이즈 고도화 설계

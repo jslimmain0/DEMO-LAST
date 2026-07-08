@@ -95,27 +95,39 @@ export function Editor() {
     const t = setTimeout(() => setCopyNote(null), 2600)
     return () => clearTimeout(t)
   }, [copyNote])
+  // Ctrl+S 저장 — 핸들러([] deps)가 최신 save 뮤테이션을 부를 수 있게 ref 로 연결(아래 save 정의 후 갱신)
+  const saveShortcutRef = useRef<() => void>(() => {})
   useEffect(() => {
+    // 단축키는 물리 키(e.code) 기준 — 한/영(IME) 한글 모드에서 e.key 가 'ㅊ'/'ㅍ'/'ㅋ' 로 바뀌어
+    // Ctrl+C/V/Z 가 죽던 버그 수정(e.key 는 비QWERTY 배열 폴백으로 유지)
+    const is = (e: KeyboardEvent, code: string, key: string) =>
+      e.code === code || e.key === key || e.key === key.toUpperCase()
     const onKey = (e: KeyboardEvent) => {
       if (!(e.ctrlKey || e.metaKey) || e.altKey) return
+      // Ctrl+S 저장 — 입력 필드 안에서도 동작. 브라우저 "페이지 저장" 다이얼로그는 항상 차단
+      if (is(e, 'KeyS', 's')) {
+        e.preventDefault()
+        saveShortcutRef.current()
+        return
+      }
       const t = e.target as HTMLElement | null
-      // 입력 중(텍스트 필드/토큰 입력)의 복사·붙여넣기는 브라우저 기본 동작에 양보
+      // 입력 중(텍스트 필드/토큰 입력)의 복사·붙여넣기·undo 는 브라우저 기본 동작에 양보
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return
-      if (e.key === 'c' || e.key === 'C') {
+      if (is(e, 'KeyC', 'c')) {
         if (window.getSelection()?.toString()) return // 텍스트 선택 복사 우선
         const n = useEditorStore.getState().copySelection()
         if (n > 0) setCopyNote(`노드 ${n}개 복사됨 — 다른 워크플로에서도 Ctrl+V`)
-      } else if (e.key === 'v' || e.key === 'V') {
+      } else if (is(e, 'KeyV', 'v')) {
         const n = useEditorStore.getState().pasteClipboard()
         if (n > 0) {
           e.preventDefault()
           setCopyNote(`노드 ${n}개 붙여넣음`)
         }
-      } else if (e.key === 'z' || e.key === 'Z') {
+      } else if (is(e, 'KeyZ', 'z')) {
         e.preventDefault()
         if (e.shiftKey) useEditorStore.getState().redo()
         else useEditorStore.getState().undo()
-      } else if (e.key === 'y' || e.key === 'Y') {
+      } else if (is(e, 'KeyY', 'y')) {
         e.preventDefault()
         useEditorStore.getState().redo()
       }
@@ -144,6 +156,12 @@ export function Editor() {
   const save = useMutation({
     mutationFn: () => flowsApi.saveVersion(flowId, { graph: getGraph() }),
     onSuccess: () => markSaved(),
+  })
+  // Ctrl+S 가 최신 상태(dirty/isPending)를 보고 저장하게 매 렌더 갱신 — 저장 버튼과 동일 조건
+  useEffect(() => {
+    saveShortcutRef.current = () => {
+      if (!save.isPending && useEditorStore.getState().dirty) save.mutate()
+    }
   })
 
   const onRun = async () => {

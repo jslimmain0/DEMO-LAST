@@ -29,6 +29,9 @@ repositories {
 }
 
 dependencies {
+    // --- 변환 SPI (물리 모듈 — 플러그인과 공유하는 계약) ---
+    implementation(project(":transform-spi"))
+
     // --- Web / API ---
     implementation("org.springframework.boot:spring-boot-starter-web")
     implementation("org.springframework.boot:spring-boot-starter-validation")

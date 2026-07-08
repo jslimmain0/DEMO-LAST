@@ -414,7 +414,7 @@ export function Dashboard() {
 
 function Hero({ flow, lastRun }: { flow: FlowSummary; lastRun?: ExecutionSummary }) {
   const detail = useQuery({ queryKey: ['flow', flow.id], queryFn: () => flowsApi.get(flow.id) })
-  const nodes = detail.data?.graph.nodes ?? []
+  const nodes = (detail.data?.graph.nodes ?? []).filter((n) => n.type !== 'note' && n.type !== 'group') // 주석 제외 — 미니어처는 실행 흐름만
   const miniNodes = nodes.map((n) => ({ type: n.type, cat: n.cat }))
   return (
     <section style={heroBand} aria-label="최근 워크플로">
@@ -459,7 +459,7 @@ function FlowCard({ flow, lastRun, folderOptions, selectMode, selected, onToggle
 }) {
   const navigate = useNavigate()
   const detail = useQuery({ queryKey: ['flow', flow.id], queryFn: () => flowsApi.get(flow.id) })
-  const nodes = detail.data?.graph.nodes
+  const nodes = detail.data?.graph.nodes?.filter((n) => n.type !== 'note' && n.type !== 'group') // 주석 제외
   const cats = nodes?.map((n) => n.cat ?? n.type)
   const spine = dominantCat(cats, flow.id)
   const nodeCount = nodes?.length

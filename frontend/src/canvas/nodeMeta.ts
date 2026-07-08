@@ -15,6 +15,21 @@ export const CAT_COLOR: Record<string, string> = {
   end: 'var(--fl-cat-end)',
   transform: 'var(--fl-patch)',
   tcp: 'var(--fl-post)',
+  note: '#eab308',
+  group: '#94a3b8',
+}
+
+// 주석(메모/영역 박스) 색 팔레트 — 라이트/다크 겸용 반투명 배경 + 진한 테두리/제목색
+export const ANNO_COLORS: Record<string, { label: string; bg: string; border: string }> = {
+  yellow: { label: '노랑', bg: 'rgba(234,179,8,.14)', border: '#ca9a04' },
+  blue: { label: '파랑', bg: 'rgba(59,130,246,.12)', border: '#3b82f6' },
+  pink: { label: '분홍', bg: 'rgba(236,72,153,.12)', border: '#ec4899' },
+  green: { label: '초록', bg: 'rgba(34,197,94,.12)', border: '#16a34a' },
+  gray: { label: '회색', bg: 'rgba(148,163,184,.14)', border: '#94a3b8' },
+}
+
+export function annoColor(key: string | undefined, fallback = 'yellow') {
+  return ANNO_COLORS[key ?? fallback] ?? ANNO_COLORS[fallback]
 }
 
 export const METHOD_COLOR: Record<HttpMethod, string> = {
@@ -43,6 +58,8 @@ export function typeIcon(type: string): string {
     case 'wait': return '⏸'
     case 'transform': return '⚙'
     case 'tcp': return '⇄'
+    case 'note': return '✎'
+    case 'group': return '▢'
     default: return '↯'
   }
 }
@@ -59,6 +76,8 @@ export function typeLabel(type: string): string {
     case 'wait': return '콜백 대기'
     case 'transform': return '변환'
     case 'tcp': return 'TCP'
+    case 'note': return '메모'
+    case 'group': return '영역 박스'
     case 'http': return 'HTTP'
     default: return type
   }

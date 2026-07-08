@@ -48,6 +48,11 @@ export function makeNode(type: NodeType, x: number, y: number): GraphNode {
         tcpResponse: [{ id: newId(), name: 'result', length: 10 }],
         outputs: [{ key: 'result', type: 'string' }],
       }
+    case 'note':
+      return { id, name: '메모', type: 'note', cat: 'note', x, y, noteText: '', noteColor: 'yellow' }
+    case 'group':
+      // 그리드(22) 배수 기본 크기 — 노드 몇 개를 감싸는 표시용 사각형
+      return { id, name: '영역', type: 'group', cat: 'group', x, y, groupW: 396, groupH: 264, noteColor: 'gray' }
     case 'transform':
       return {
         id, name: '변환', type: 'transform', cat: 'transform', x, y,
@@ -80,4 +85,6 @@ export const PALETTE: Array<{ type: NodeType; label: string; cat: string }> = [
   { type: 'input', label: '사용자 입력', cat: 'input' },
   { type: 'wait', label: '콜백 대기', cat: 'wait' },
   { type: 'end', label: '끝', cat: 'end' },
+  { type: 'note', label: '메모', cat: 'note' },
+  { type: 'group', label: '영역 박스', cat: 'group' },
 ]

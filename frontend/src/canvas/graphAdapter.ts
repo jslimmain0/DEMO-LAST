@@ -3,7 +3,17 @@ import type { Edge, Node } from '@xyflow/react'
 import type { FlowGraph, GraphNode } from '../api/types'
 
 export function rfNodeType(domainType: string): string {
-  return domainType === 'if' ? 'branch' : 'flnode'
+  if (domainType === 'if') return 'branch'
+  if (domainType === 'note') return 'note'
+  if (domainType === 'group') return 'annogroup' // RF 내장 'group'(parent) 타입과 충돌 회피
+  return 'flnode'
+}
+
+// 타입별 RF 노드 추가 속성 — 영역 박스는 노드들 '뒤'에 깔리고(zIndex), 제목바로만 끌 수 있다.
+// (노드 생성 지점 4곳: toRF · addNode · addNodeFromTemplate · pasteClipboard 에서 공용)
+export function rfExtras(domainType: string): Partial<Node> {
+  if (domainType === 'group') return { zIndex: -1, dragHandle: '.fl-group-drag' }
+  return {}
 }
 
 export function asGraphNode(data: unknown): GraphNode {
@@ -31,6 +41,7 @@ export function toRF(graph: FlowGraph): { nodes: Node[]; edges: Edge[] } {
     type: rfNodeType(n.type),
     position: { x: n.x ?? 0, y: n.y ?? 0 },
     data: n as unknown as Record<string, unknown>,
+    ...rfExtras(n.type),
   }))
   const edges: Edge[] = (Array.isArray(graph.edges) ? graph.edges : []).map((e) => ({
     id: e.id,

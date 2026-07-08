@@ -105,7 +105,7 @@ graphJson 파싱 → Kahn 위상정렬 → 노드 순차 처리 → IF는 단일
 브라우저 협업 노드(client HTTP / FORM / WAIT / INPUT)를 만나면 `WAITING`으로 중단하고 pending 명세 반환 →
 브라우저가 처리 후 `POST /executions/{id}/resume` → 첫 실패 시 `FAILED`, 사용자 중단(⏹)은 `CANCELLED`.
 **현재 완전 동기 실행** (외부 HTTP에 호출 스레드 블로킹).
-노드 타입: START/END/SET/IF/ASSERT/HTTP/FORM/INPUT/WAIT/TRANSFORM/TCP(고정길이 전문).
+노드 타입: START/END/SET/IF/ASSERT/HTTP/FORM/INPUT/WAIT/TRANSFORM/TCP(고정길이 전문) + 주석 NOTE/GROUP(`isAnnotation()` — 실행 제외).
 - **ASSERT(검증)**: IF 와 같은 SpEL 조건이지만 분기 대신 **거짓이면 노드 실패**(=실행 FAILED). 테스트 시나리오 판정용.
   SimpleEvaluationContext(읽기전용)라 비교·논리·산술·문자열 연결(`+`)만 되고 `.contains()`·`.startsWith()` 메서드 호출은 차단.
 
@@ -536,6 +536,29 @@ design/   theme(라이트/다크) · index.css(CSS 변수)
   Ctrl+Z/Shift+Z·탑바 ↺↻·타이핑 병합 1회 undo) PASS, 기존 e2e 무회귀.
 - ⚠️ TCP mock 은 HTTP mock 과 같은 테스트 도구 전제(무인증) — 리스너가 모든 인터페이스에 바인딩되므로 사내망 전제.
   노드 클립보드는 브라우저 localStorage(탭 간 공유, 서버 미저장).
+
+## 최근 변경 (2026-07-08)
+
+### 캔버스 주석 — 메모(스티키 노트) + 영역 박스(뒷배경 사각형)
+"메모기능 + 표시용 영역표시 뒷 사각박스" 요청. 실행과 무관한 **주석 노드 2종**(팔레트 맨 아래 메모/영역 박스).
+- **백엔드**: `NodeType.NOTE/GROUP` + `isAnnotation()` — [FlowExecutor](backend/src/main/kotlin/com/flowlink/execution/engine/FlowExecutor.kt)
+  `newRun` 이 주석 노드를 위상정렬/활성화/기록에서 필터(연결 없어도 UNKNOWN 실패 없음, 실행 로그에 안 나옴).
+  topoOrder/initialActive 는 `containsKey` 가드라 주석을 가리키는 손편집 엣지도 무해. **스키마 변경 없음** —
+  주석 시각 필드(`noteText`/`noteColor`/`groupW`/`groupH`)는 GraphNode `ignoreUnknown` + raw 저장 라운드트립으로 보존.
+- **메모(note)**: 220px 스티키 노트 — 본문 textarea 를 **노드 안에서 바로 입력**(`nodrag`, `field-sizing: content` 로
+  내용만큼 성장). [NoteNode](frontend/src/canvas/NoteNode.tsx). 핸들(연결) 없음.
+- **영역 박스(group)**: 노드들 **뒤**에 깔리는 반투명 점선 사각형([GroupNode](frontend/src/canvas/GroupNode.tsx)) —
+  RF `zIndex:-1` + 본체 `pointer-events:none`(CSS `.react-flow__node-annogroup`)로 **안에 겹친 노드 클릭/드래그를
+  통과**시키고, 제목바(`dragHandle:'.fl-group-drag'`)로만 이동/선택, 우하단 핸들로 크기 조절(포인터 캡처+줌 보정+
+  그리드 22 스냅, 최소 110×66). RF 내장 'group'(parent) 타입과 충돌 피하려 RF 타입명은 `annogroup`.
+- **공통**: 색 5종(노랑/파랑/분홍/초록/회색 — `nodeMeta.ANNO_COLORS`, 라이트/다크 겸용 반투명), PropertyPanel 에
+  메모 내용·영역 크기(22 배수 스냅)·색 스와치. `graphAdapter.rfExtras()` 로 zIndex/dragHandle 을 노드 생성 4곳
+  (toRF/addNode/addNodeFromTemplate/pasteClipboard)에 공용 적용. 복사/붙여넣기·undo/redo 그대로 동작.
+- **오표시 방지**: [runProgress](frontend/src/lib/runProgress.ts) `computeRunView` 가 주석을 진행 추정에서 제외
+  (진입차수 0 인데 기록이 영영 없어 "실행 중" 스피너로 오표시되던 케이스). 대시보드 미니어처(FlowStrip/FlowMini)도 주석 제외.
+- 검증: 브라우저 e2e 20(로드/포인터 통과/영역 안 노드 클릭/인라인 입력/색 변경/제목바 선택/핸들 리사이즈 22 스냅/
+  저장 라운드트립/실행 SUCCEEDED·주석 기록 0·배지 없음/Delete 키 안전/복붙) PASS + 기존 e2e 123 무회귀 + 백엔드 단위 6종 PASS.
+- ⚠️ 영역 박스는 표시 전용 — 안의 노드를 묶어 함께 이동하는 컨테이너(RF parentId) 아님. 메모 본문 토큰 미해석(평문).
 
 ## 참고 문서
 - `backend/README.md` — Phase 1 구현 범위 표, API 요약, 실행 가이드

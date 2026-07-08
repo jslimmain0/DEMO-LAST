@@ -23,8 +23,17 @@ enum class NodeType {
 
     /** 고정길이 금융 전문 TCP — 길이 프리픽스 + 바이트 고정길이 필드 송수신. */
     TCP,
+
+    /** 메모(스티키 노트) — 캔버스 주석. 실행에서 제외된다. */
+    NOTE,
+
+    /** 영역 박스 — 노드들 뒤에 깔리는 표시용 사각형. 실행에서 제외된다. */
+    GROUP,
     UNKNOWN,
     ;
+
+    /** 실행과 무관한 캔버스 주석인가 — FlowExecutor 가 위상정렬/실행에서 걸러낸다. */
+    fun isAnnotation(): Boolean = this == NOTE || this == GROUP
 
     companion object {
         @JvmStatic
@@ -40,6 +49,8 @@ enum class NodeType {
             "assert" -> ASSERT
             "transform" -> TRANSFORM
             "tcp" -> TCP
+            "note" -> NOTE
+            "group" -> GROUP
             else -> UNKNOWN
         }
     }

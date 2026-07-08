@@ -6,10 +6,12 @@ import type { GraphNode, NodeType } from '../api/types'
 import { useEditorStore } from '../store/editorStore'
 import { BranchNode } from './BranchNode'
 import { DeletableEdge } from './DeletableEdge'
+import { GroupNode } from './GroupNode'
 import { NodeCard } from './NodeCard'
+import { NoteNode } from './NoteNode'
 import { catColor } from './nodeMeta'
 
-const nodeTypes = { flnode: NodeCard, branch: BranchNode }
+const nodeTypes = { flnode: NodeCard, branch: BranchNode, note: NoteNode, annogroup: GroupNode }
 const edgeTypes = { deletable: DeletableEdge }
 const connectionLineStyle: CSSProperties = { stroke: 'var(--fl-primary)', strokeWidth: 2 }
 // 배경 도트(gap 22)와 같은 간격으로 스냅 — 노드가 그리드에 딱딱 맞게 배치된다
@@ -54,15 +56,18 @@ export function FlowCanvas() {
   useEffect(() => {
     if (nodes.length === 0 || didFit.current === flowId) return
     didFit.current = flowId // 플로우 전환 시(이전 노드 잔여 → 새 노드)마다 정확히 1회
-    const xs = nodes.map((n) => n.position.x)
-    const ys = nodes.map((n) => n.position.y)
-    const minX = Math.min(...xs)
-    const minY = Math.min(...ys)
-    const maxX = Math.max(...xs)
-    const maxY = Math.max(...ys)
     const NODE_W = 230 // 노드 대략 크기(여유 포함) — 측정값 없이 bounds 를 잡기 위한 상수
     const NODE_H = 96
-    const rect = { x: minX, y: minY, width: maxX - minX + NODE_W, height: maxY - minY + NODE_H }
+    // 영역 박스는 groupW/groupH 만큼 차지 — bounds 에 실제 크기를 반영한다
+    const dims = nodes.map((n) => {
+      const d = n.data as { type?: string; groupW?: number; groupH?: number }
+      return d.type === 'group' ? { w: d.groupW ?? 396, h: d.groupH ?? 264 } : { w: NODE_W, h: NODE_H }
+    })
+    const minX = Math.min(...nodes.map((n) => n.position.x))
+    const minY = Math.min(...nodes.map((n) => n.position.y))
+    const maxX = Math.max(...nodes.map((n, i) => n.position.x + dims[i].w))
+    const maxY = Math.max(...nodes.map((n, i) => n.position.y + dims[i].h))
+    const rect = { x: minX, y: minY, width: maxX - minX, height: maxY - minY }
     fitBounds(rect, { padding: 0.22, duration: reducedMotion.current ? 0 : 220 })
   }, [nodes, flowId, fitBounds])
   // 연결 중에는 핸들을 키워(자석 타겟) 잡기 쉽게 — CSS .fl-canvas.connecting 으로 제어

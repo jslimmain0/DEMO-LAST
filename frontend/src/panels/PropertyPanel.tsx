@@ -9,7 +9,7 @@ import { TokenInput } from '../binding/TokenInput'
 import { bindableSources } from '../binding/upstream'
 import type { BindableSource } from '../binding/upstream'
 import { asGraphNode } from '../canvas/graphAdapter'
-import { catColor, typeIcon, typeLabel } from '../canvas/nodeMeta'
+import { ANNO_COLORS, catColor, typeIcon, typeLabel } from '../canvas/nodeMeta'
 import { fieldsToRaw, rawToFields, headersToRaw, rawToHeaders } from '../lib/bodyConvert'
 import { bindingToToken, isTokenizable } from '../lib/tokenGrammar'
 import { newId } from '../lib/ids'
@@ -234,6 +234,80 @@ export function PropertyPanel({ width = 360 }: { width?: number }) {
 
       <div style={{ padding: 16, overflowY: 'auto', flex: 1 }}>
         <div style={{ fontSize: 11, color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)' }}>{typeLabel(node.type)} · #{id}</div>
+
+        {(node.type === 'note' || node.type === 'group') && (
+          <>
+            {node.type === 'note' ? (
+              <>
+                <label style={label}>메모 내용</label>
+                <textarea
+                  aria-label="메모 내용"
+                  style={{ ...field, minHeight: 110, resize: 'vertical', lineHeight: 1.5 }}
+                  value={node.noteText ?? ''}
+                  onChange={(e) => update(id, { noteText: e.target.value })}
+                  placeholder="메모를 입력하세요… (캔버스의 노드 안에서도 바로 입력됩니다)"
+                />
+              </>
+            ) : (
+              <>
+                <label style={label}>크기 (px · 그리드 22 배수로 스냅)</label>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <input
+                    aria-label="영역 폭"
+                    type="number"
+                    step={22}
+                    min={110}
+                    style={{ ...field, width: 100 }}
+                    value={node.groupW ?? 396}
+                    onChange={(e) => update(id, { groupW: Math.max(110, Math.round((Number(e.target.value) || 396) / 22) * 22) })}
+                  />
+                  <span style={{ color: 'var(--fl-text-muted)', fontSize: 12 }}>×</span>
+                  <input
+                    aria-label="영역 높이"
+                    type="number"
+                    step={22}
+                    min={66}
+                    style={{ ...field, width: 100 }}
+                    value={node.groupH ?? 264}
+                    onChange={(e) => update(id, { groupH: Math.max(66, Math.round((Number(e.target.value) || 264) / 22) * 22) })}
+                  />
+                </div>
+              </>
+            )}
+
+            <label style={label}>색</label>
+            <div role="group" aria-label="주석 색" style={{ display: 'flex', gap: 8 }}>
+              {Object.entries(ANNO_COLORS).map(([key, c]) => {
+                const active = (node.noteColor ?? (node.type === 'group' ? 'gray' : 'yellow')) === key
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    title={c.label}
+                    aria-label={`색: ${c.label}`}
+                    aria-pressed={active}
+                    onClick={() => update(id, { noteColor: key })}
+                    style={{
+                      width: 26,
+                      height: 26,
+                      borderRadius: 8,
+                      cursor: 'pointer',
+                      background: c.bg,
+                      border: active ? `2px solid ${c.border}` : '1px solid var(--fl-border)',
+                      boxShadow: active ? '0 0 0 2px var(--fl-surface), 0 0 0 3.5px ' + c.border : 'none',
+                    }}
+                  />
+                )
+              })}
+            </div>
+
+            <p style={hintP}>
+              {node.type === 'note'
+                ? '메모는 캔버스 주석입니다 — 연결·실행과 무관하고, 실행 시 건너뜁니다.'
+                : '영역 박스는 노드들 뒤에 깔리는 표시용 사각형입니다 — 제목바를 드래그해 옮기고, 우하단 모서리로 크기를 조절합니다. 실행과 무관합니다.'}
+            </p>
+          </>
+        )}
 
         {node.type === 'http' && (
           <>

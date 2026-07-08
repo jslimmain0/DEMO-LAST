@@ -125,7 +125,8 @@ class FlowExecutor(
     fun newRun(graph: FlowGraph, ctx: ExecutionContext): RunState = newRun(graph, ctx, null, null)
 
     fun newRun(graph: FlowGraph, ctx: ExecutionContext, relayBase: String?, relayRunId: String?): RunState {
-        val nodes = graph.nodesOrEmpty()
+        // 메모/영역 박스(주석)는 실행과 무관 — 위상정렬/활성화/기록에서 제외(연결도 없어 UNKNOWN 실패를 만들지 않게)
+        val nodes = graph.nodesOrEmpty().filter { !it.nodeType().isAnnotation() }
         val edges = graph.edgesOrEmpty()
         val byId = HashMap<String, GraphNode>()
         nodes.forEach { n -> byId[n.id!!] = n }
@@ -433,6 +434,9 @@ class FlowExecutor(
             // 정상 흐름에선 drive()가 선처리 — 방어적 통과
             NodeType.FORM, NodeType.WAIT, NodeType.INPUT ->
                 NodeResult.ok(null, "(대기/폼/입력)", "브라우저 협업 노드 — drive 선처리 경로", emptyMap<String, Any?>())
+            // 주석 노드는 newRun 에서 걸러져 여기 오지 않는다 — 방어적 통과
+            NodeType.NOTE, NodeType.GROUP ->
+                NodeResult.ok(null, "(주석)", "메모/영역 박스 — 실행 제외", emptyMap<String, Any?>())
             NodeType.UNKNOWN -> NodeResult.fail(0, "", "지원하지 않는 노드 타입: " + node.type)
         }
 

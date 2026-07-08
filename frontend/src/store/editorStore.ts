@@ -2,7 +2,7 @@ import { addEdge, applyEdgeChanges, applyNodeChanges } from '@xyflow/react'
 import type { Connection, Edge, EdgeChange, Node, NodeChange } from '@xyflow/react'
 import { create } from 'zustand'
 import type { FlowGraph, GraphNode, NodeType, PaletteGroup } from '../api/types'
-import { asGraphNode, fromRF, rfNodeType, toRF } from '../canvas/graphAdapter'
+import { asGraphNode, fromRF, rfExtras, rfNodeType, toRF } from '../canvas/graphAdapter'
 import { makeNode } from '../canvas/nodeFactory'
 import { newId } from '../lib/ids'
 import type { RunView } from '../lib/runProgress'
@@ -178,6 +178,7 @@ export const useEditorStore = create<EditorState>()((set, get) => {
       position: { x: pos.x, y: pos.y },
       data: dn as unknown as Record<string, unknown>,
       selected: true,
+      ...rfExtras(dn.type),
     }
     set({
       nodes: [...get().nodes.map((n) => ({ ...n, selected: false })), rf],
@@ -197,6 +198,7 @@ export const useEditorStore = create<EditorState>()((set, get) => {
       position: { x: pos.x, y: pos.y },
       data: dn as unknown as Record<string, unknown>,
       selected: true,
+      ...rfExtras(dn.type),
     }
     set({
       nodes: [...get().nodes.map((n) => ({ ...n, selected: false })), rf],
@@ -292,6 +294,7 @@ export const useEditorStore = create<EditorState>()((set, get) => {
         position: pos,
         data: { ...remapped, id: nid, x: pos.x, y: pos.y } as unknown as Record<string, unknown>,
         selected: true,
+        ...rfExtras(remapped.type),
       }
     })
     const rfEdges: Edge[] = clip.edges

@@ -310,3 +310,26 @@ html[data-theme='dark'] ::-webkit-scrollbar-thumb { background: #39404f; backgro
   border-color: var(--fl-primary) !important;
   background: var(--fl-surface-2) !important;
 }
+
+/* --- 캔버스 주석(메모/영역 박스) --- */
+/* 영역 박스 본체는 클릭·드래그를 통과시켜(뒤에 깔린 사각형이 안의 노드/캔버스 조작을 막지 않게)
+   제목바(이동·선택)와 우하단 핸들(크기 조절)만 포인터를 잡는다 */
+.react-flow__node-annogroup {
+  pointer-events: none !important;
+}
+.react-flow__node-annogroup .fl-group-bar,
+.react-flow__node-annogroup .fl-group-resize {
+  pointer-events: all;
+}
+.react-flow__node-annogroup .fl-group-bar:active {
+  cursor: grabbing;
+}
+/* 메모 본문 textarea — 내용만큼 늘어나게(지원 브라우저), 가는 스크롤바 */
+.fl-note-text {
+  field-sizing: content;
+  scrollbar-width: thin;
+}
+.fl-note-text::placeholder {
+  color: var(--fl-text-muted);
+  opacity: 0.7;
+}

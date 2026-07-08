@@ -28,13 +28,21 @@ const STATUS_MAP: Record<NodeExecutionStatus, NodeRunState> = {
  *   아직 기록이 없는 첫 노드" — 그 유입 엣지는 active(움직이는 점선)
  * - pending(client/form/wait/input) 노드는 서버가 알려주므로 정확히 표시
  */
+// 메모/영역 박스(주석) — 백엔드가 실행에서 걸러내므로 진행 추정(진입차수 0 활성화)에서도 제외해야
+// 기록이 영영 안 생기는 주석이 "실행 중"으로 오표시되지 않는다.
+const isAnnotation = (n: Node): boolean => {
+  const t = (n.data as { type?: string }).type
+  return t === 'note' || t === 'group'
+}
+
 export function computeRunView(
   detail: ExecutionDetail | null,
   running: boolean,
-  nodes: Node[],
+  allNodes: Node[],
   edges: Edge[],
 ): RunView | null {
   if (!detail && !running) return null
+  const nodes = allNodes.filter((n) => !isAnnotation(n))
 
   const nodeStates: Record<string, NodeRunState> = {}
   const branch: Record<string, string> = {} // IF 노드가 택한 분기(output.branch)

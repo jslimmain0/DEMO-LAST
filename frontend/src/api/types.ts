@@ -2,7 +2,7 @@
 // (enum 대신 문자열 유니온 — tsconfig erasableSyntaxOnly 준수)
 
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD'
-export type NodeType = 'start' | 'end' | 'set' | 'http' | 'if' | 'assert' | 'form' | 'wait' | 'input' | 'transform' | 'tcp'
+export type NodeType = 'start' | 'end' | 'set' | 'http' | 'if' | 'assert' | 'form' | 'wait' | 'input' | 'transform' | 'tcp' | 'note' | 'group'
 export type BodyType = 'json' | 'urlencoded' | 'form' | 'raw' | 'xml'
 export type RespType = 'json' | 'xml' | 'urlencoded' | 'form' | 'query' | 'text' | 'binary'
 export type ReqMode = 'server' | 'client'
@@ -101,6 +101,11 @@ export interface GraphNode {
   tcpPrefixIncludesSelf?: boolean
   tcpRequest?: TcpField[]
   tcpResponse?: TcpRespField[]
+  // note · group (캔버스 주석 — 실행 제외. 백엔드는 raw 저장이라 스키마 변경 없음)
+  noteText?: string   // 메모 본문
+  noteColor?: string  // 주석 색(yellow/blue/pink/green/gray — nodeMeta.ANNO_COLORS)
+  groupW?: number     // 영역 박스 폭(px, 그리드 22 배수)
+  groupH?: number     // 영역 박스 높이(px)
   // canvas
   x?: number
   y?: number

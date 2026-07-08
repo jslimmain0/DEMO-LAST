@@ -235,7 +235,12 @@ export function Editor() {
     <div style={{ height: '100dvh', display: 'flex', flexDirection: 'column', background: 'var(--fl-bg)', overflow: 'hidden' }}>
       {/* top-bar */}
       <header style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 14px', borderBottom: '1px solid var(--fl-border)', background: 'var(--fl-surface)' }}>
-        <Link to="/flows" aria-label="워크플로 목록" style={{ textDecoration: 'none', color: 'var(--fl-text-muted)', fontSize: 18 }}>←</Link>
+        {/* ← 는 홈이 아니라 이 워크플로가 담긴 폴더로 — 탐색기에서 온 흐름 유지 */}
+        <Link
+          to={flowQuery.data?.folderId ? `/flows?folder=${flowQuery.data.folderId}` : '/flows'}
+          aria-label="워크플로 목록"
+          style={{ textDecoration: 'none', color: 'var(--fl-text-muted)', fontSize: 18 }}
+        >←</Link>
         <input
           aria-label="워크플로 이름"
           className="fl-name-input"

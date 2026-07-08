@@ -208,6 +208,7 @@ export interface FlowDetail {
   name: string
   description?: string | null
   currentVersion: number
+  folderId?: string | null // 에디터 ← 가 소속 폴더로 돌아가기 위함
   createdAt: string | null
   updatedAt: string | null
   graph: FlowGraph

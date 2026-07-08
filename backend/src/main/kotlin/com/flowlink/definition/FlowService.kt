@@ -125,7 +125,7 @@ class FlowService(
     private fun toDetail(flow: Flow): FlowDetail =
         FlowDetail(
             flow.id, flow.name, flow.description,
-            flow.currentVersion, flow.createdAt, flow.updatedAt, currentGraph(flow)
+            flow.currentVersion, flow.folderId, flow.createdAt, flow.updatedAt, currentGraph(flow)
         )
 
     private fun emptyGraph(name: String): String {

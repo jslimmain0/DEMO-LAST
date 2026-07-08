@@ -10,6 +10,7 @@ data class FlowDetail(
     val name: String,
     val description: String?,
     val currentVersion: Int,
+    val folderId: UUID?, // 에디터 ← 가 "그 폴더"로 돌아가기 위함
     val createdAt: Instant,
     val updatedAt: Instant,
     val graph: JsonNode

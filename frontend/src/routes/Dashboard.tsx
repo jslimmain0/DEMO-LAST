@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { CSSProperties, ReactNode } from 'react'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import type { ExecutionSummary, FlowSummary, FolderSummary } from '../api/types'
 import { flowsApi, foldersApi, runsApi } from '../api/client'
 import { AppShellTier1 } from '../app/AppShell'
@@ -19,7 +19,11 @@ export function Dashboard() {
   const folders = useQuery({ queryKey: ['folders'], queryFn: foldersApi.list })
   const runs = useQuery({ queryKey: ['executions', 'recent'], queryFn: () => runsApi.recent(50) })
 
-  const [sel, setSel] = useState<Sel>('all')
+  // 현재 위치(홈/폴더)는 URL(?folder=id)이 진실원 — 에디터에서 ←/브라우저 뒤로가기로 돌아와도
+  // 보고 있던 폴더가 유지된다. 폴더 이동은 history 를 쌓아 탐색기처럼 뒤로가기로 상위 복귀 가능.
+  const [params, setParams] = useSearchParams()
+  const sel: Sel = params.get('folder') ?? 'all'
+  const setSel = (s: Sel) => setParams(s === 'all' || s === 'none' ? {} : { folder: s })
   const [search, setSearch] = useState('')
   const [sort, setSort] = useState<Sort>('recent')
   const [selectMode, setSelectMode] = useState(false)
@@ -30,6 +34,14 @@ export function Dashboard() {
     qc.invalidateQueries({ queryKey: ['flows'] })
     qc.invalidateQueries({ queryKey: ['folders'] })
   }
+
+  // URL 의 folder 가 삭제된/없는 폴더면 홈으로 정리(브레드크럼·필터가 빈 화면이 되는 것 방지)
+  useEffect(() => {
+    if (folders.data && isFolderId(sel) && !folders.data.some((f) => f.id === sel)) {
+      setParams({}, { replace: true })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [folders.data, sel])
 
   const createFlow = useMutation({
     mutationFn: () => flowsApi.create({ name: '새 워크플로', folderId: isFolderId(sel) ? sel : null }),

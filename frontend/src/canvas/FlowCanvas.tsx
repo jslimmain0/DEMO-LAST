@@ -9,9 +9,10 @@ import { DeletableEdge } from './DeletableEdge'
 import { GroupNode } from './GroupNode'
 import { NodeCard } from './NodeCard'
 import { NoteNode } from './NoteNode'
+import { SwitchNode } from './SwitchNode'
 import { catColor } from './nodeMeta'
 
-const nodeTypes = { flnode: NodeCard, branch: BranchNode, note: NoteNode, annogroup: GroupNode }
+const nodeTypes = { flnode: NodeCard, branch: BranchNode, switch: SwitchNode, note: NoteNode, annogroup: GroupNode }
 const edgeTypes = { deletable: DeletableEdge }
 const connectionLineStyle: CSSProperties = { stroke: 'var(--fl-primary)', strokeWidth: 2 }
 // 배경 도트(gap 22)와 같은 간격으로 스냅 — 노드가 그리드에 딱딱 맞게 배치된다

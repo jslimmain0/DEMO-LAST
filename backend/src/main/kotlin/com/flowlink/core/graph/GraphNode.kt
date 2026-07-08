@@ -39,6 +39,9 @@ data class GraphNode(
     // --- if ---
     val condition: String?,
 
+    // --- switch(경로 스위치 — 선로 전환기) ---
+    val switchActive: String?,    // 젖혀둔 트랙(엣지 fromPort). 트랙 목록/라벨은 프론트 전용(raw 라운드트립)
+
     // --- form(폼 전송·팝업) ---
     val formAction: String?,      // 팝업으로 열어 form 을 제출할 URL
     val formMethod: String?,      // POST | GET

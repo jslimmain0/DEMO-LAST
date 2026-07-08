@@ -4,6 +4,7 @@ import type { FlowGraph, GraphNode } from '../api/types'
 
 export function rfNodeType(domainType: string): string {
   if (domainType === 'if') return 'branch'
+  if (domainType === 'switch') return 'switch'
   if (domainType === 'note') return 'note'
   if (domainType === 'group') return 'annogroup' // RF 내장 'group'(parent) 타입과 충돌 회피
   return 'flnode'

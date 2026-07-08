@@ -2,7 +2,7 @@
 // (enum 대신 문자열 유니온 — tsconfig erasableSyntaxOnly 준수)
 
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD'
-export type NodeType = 'start' | 'end' | 'set' | 'http' | 'if' | 'assert' | 'form' | 'wait' | 'input' | 'transform' | 'tcp' | 'note' | 'group'
+export type NodeType = 'start' | 'end' | 'set' | 'http' | 'if' | 'assert' | 'switch' | 'form' | 'wait' | 'input' | 'transform' | 'tcp' | 'note' | 'group'
 export type BodyType = 'json' | 'urlencoded' | 'form' | 'raw' | 'xml'
 export type RespType = 'json' | 'xml' | 'urlencoded' | 'form' | 'query' | 'text' | 'binary'
 export type ReqMode = 'server' | 'client'
@@ -78,6 +78,9 @@ export interface GraphNode {
   vars?: NodeVar[]
   // if · assert(검증 — 거짓이면 실행 실패)
   condition?: string
+  // switch (경로 스위치 — 선로 전환기. 조건 없이 젖혀둔 트랙으로만 흐른다)
+  switchPorts?: SwitchPort[]  // 트랙 목록(id=엣지 fromPort, label=표시명)
+  switchActive?: string       // 젖혀둔 트랙 id
   // form (폼 전송 · 팝업/iframe)
   formAction?: string        // 열어서 form 을 제출할 URL
   formMethod?: string        // POST | GET
@@ -109,6 +112,11 @@ export interface GraphNode {
   // canvas
   x?: number
   y?: number
+}
+
+export interface SwitchPort {
+  id: string
+  label?: string
 }
 
 export interface TcpField {

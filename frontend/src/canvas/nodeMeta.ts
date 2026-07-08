@@ -15,6 +15,7 @@ export const CAT_COLOR: Record<string, string> = {
   end: 'var(--fl-cat-end)',
   transform: 'var(--fl-patch)',
   tcp: 'var(--fl-post)',
+  switch: 'var(--fl-put)',
   note: '#eab308',
   group: '#94a3b8',
 }
@@ -58,6 +59,7 @@ export function typeIcon(type: string): string {
     case 'wait': return '⏸'
     case 'transform': return '⚙'
     case 'tcp': return '⇄'
+    case 'switch': return '⑂'
     case 'note': return '✎'
     case 'group': return '▢'
     default: return '↯'
@@ -76,6 +78,7 @@ export function typeLabel(type: string): string {
     case 'wait': return '콜백 대기'
     case 'transform': return '변환'
     case 'tcp': return 'TCP'
+    case 'switch': return '스위치'
     case 'note': return '메모'
     case 'group': return '영역 박스'
     case 'http': return 'HTTP'

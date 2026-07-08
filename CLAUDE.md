@@ -105,7 +105,7 @@ graphJson 파싱 → Kahn 위상정렬 → 노드 순차 처리 → IF는 단일
 브라우저 협업 노드(client HTTP / FORM / WAIT / INPUT)를 만나면 `WAITING`으로 중단하고 pending 명세 반환 →
 브라우저가 처리 후 `POST /executions/{id}/resume` → 첫 실패 시 `FAILED`, 사용자 중단(⏹)은 `CANCELLED`.
 **현재 완전 동기 실행** (외부 HTTP에 호출 스레드 블로킹).
-노드 타입: START/END/SET/IF/ASSERT/HTTP/FORM/INPUT/WAIT/TRANSFORM/TCP(고정길이 전문) + 주석 NOTE/GROUP(`isAnnotation()` — 실행 제외).
+노드 타입: START/END/SET/IF/ASSERT/SWITCH(경로 스위치 — 선로 전환기)/HTTP/FORM/INPUT/WAIT/TRANSFORM/TCP(고정길이 전문) + 주석 NOTE/GROUP(`isAnnotation()` — 실행 제외).
 - **ASSERT(검증)**: IF 와 같은 SpEL 조건이지만 분기 대신 **거짓이면 노드 실패**(=실행 FAILED). 테스트 시나리오 판정용.
   SimpleEvaluationContext(읽기전용)라 비교·논리·산술·문자열 연결(`+`)만 되고 `.contains()`·`.startsWith()` 메서드 호출은 차단.
 
@@ -559,6 +559,22 @@ design/   theme(라이트/다크) · index.css(CSS 변수)
 - 검증: 브라우저 e2e 20(로드/포인터 통과/영역 안 노드 클릭/인라인 입력/색 변경/제목바 선택/핸들 리사이즈 22 스냅/
   저장 라운드트립/실행 SUCCEEDED·주석 기록 0·배지 없음/Delete 키 안전/복붙) PASS + 기존 e2e 123 무회귀 + 백엔드 단위 6종 PASS.
 - ⚠️ 영역 박스는 표시 전용 — 안의 노드를 묶어 함께 이동하는 컨테이너(RF parentId) 아님. 메모 본문 토큰 미해석(평문).
+
+### 경로 스위치(SWITCH) 노드 — 선로 전환기
+"A→B→C 를 스위치로 A→D→C 로 돌리는, 열차 선로 같은" 요청. **조건 평가 없이 사용자가 젖혀둔 트랙으로만 실행이 흐르는**
+수동 라우팅 노드(2~6갈래). 테스트 중 mock 경로 ↔ 실제 경로 전환 같은 용도.
+- **분기 메커니즘은 IF 와 동일 재사용**: `switchNode()` 가 `switchActive` 를 `NodeResult.withBranch(branch)` 로 기록 →
+  `activateDownstream` 이 `fromPort==branch` 엣지만 활성화, 나머지 트랙 하류는 SKIPPED. 실행 애니메이션의 분기 매칭
+  ([runProgress](frontend/src/lib/runProgress.ts))도 `nodeType if|switch` 로 확장만.
+- **모델**: `GraphNode.switchActive`(백엔드가 읽는 유일한 필드) + `switchPorts[{id,label}]`(프론트 전용 — raw 라운드트립).
+  엣지 `fromPort=트랙 id`. 트랙 없이 저장된 그래프는 기본 2트랙('1'/'2')·active '1' 폴백.
+- **[SwitchNode](frontend/src/canvas/SwitchNode.tsx)**: 트랙 행마다 선로 모양(활성=진한 실선+▶, 비활성=점선) + 행별
+  source 핸들. **캔버스에서 트랙 클릭 = 전환**(nodrag). 트랙 수 변경 시 `useUpdateNodeInternals` 로 핸들 재측정.
+- **PropertyPanel**: 트랙 라디오(전환)·라벨 편집·추가(최대 6)/삭제(최소 2, **삭제 시 그 트랙 엣지도 제거** — 유령 선로 방지,
+  활성 트랙 삭제면 첫 트랙으로 폴백).
+- 검증: 브라우저+API e2e 19(젖힌 트랙만 실행·나머지 SKIPPED·3갈래·캔버스 클릭 전환·전환 후 재실행 경로 변경·
+  트랙 추가/삭제/라벨·저장 라운드트립·엣지 정리) PASS + 기존 e2e 143 무회귀.
+- ⚠️ 스위치는 수동 전환 전용(응답 값 기반 자동 분기는 IF). 트랙 전환은 그래프 수정(dirty) — 실행 전에 저장해야 반영.
 
 ## 참고 문서
 - `backend/README.md` — Phase 1 구현 범위 표, API 요약, 실행 가이드

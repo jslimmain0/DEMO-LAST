@@ -49,7 +49,8 @@ export function computeRunView(
   if (detail) {
     for (const ne of detail.nodes) {
       nodeStates[ne.nodeId] = STATUS_MAP[ne.status] ?? 'running'
-      if (ne.nodeType === 'if' && ne.output && typeof ne.output === 'object') {
+      // IF/SWITCH 는 택한 분기(트랙)를 output.branch 로 기록 — 엣지 fromPort 매칭에 쓴다
+      if ((ne.nodeType === 'if' || ne.nodeType === 'switch') && ne.output && typeof ne.output === 'object') {
         const b = (ne.output as { branch?: unknown }).branch
         if (typeof b === 'string') branch[ne.nodeId] = b
       }

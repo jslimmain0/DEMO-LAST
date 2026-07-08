@@ -266,8 +266,9 @@ class FlowExecutor(
                 return Outcome.failed("노드 실패: " + node.name + " — " + truncate(result.responseText))
             }
 
-            // 다운스트림 활성화: IF는 선택 분기만
-            val taken = if (node.nodeType() == NodeType.IF) result.branch else null
+            // 다운스트림 활성화: IF/SWITCH 는 선택 분기(트랙)만
+            val nt = node.nodeType()
+            val taken = if (nt == NodeType.IF || nt == NodeType.SWITCH) result.branch else null
             activateDownstream(st, node, taken)
             st.index++
         }
@@ -427,6 +428,7 @@ class FlowExecutor(
             NodeType.END -> NodeResult.ok(null, "(끝)", "플로우 종료", emptyMap<String, Any?>())
             NodeType.SET -> setNode(node, ctx)
             NodeType.IF -> ifNode(node, ctx)
+            NodeType.SWITCH -> switchNode(node)
             NodeType.ASSERT -> assertNode(node, ctx)
             NodeType.HTTP -> httpExecutor.execute(node, ctx)
             NodeType.TRANSFORM -> transformNode(node, ctx)
@@ -462,6 +464,17 @@ class FlowExecutor(
             masked[v.key] = if (v.secret) "••••••" else resolved
         }
         return NodeResult(true, null, "(변수 저장)", json.toJson(masked), value, masked, null, null)
+    }
+
+    /**
+     * 경로 스위치(선로 전환기) — 조건 평가 없이 에디터에서 젖혀둔 트랙(switchActive)으로만 흐른다.
+     * IF 와 동일한 분기 메커니즘(branch → 엣지 fromPort 매칭)이라 나머지 트랙 하류는 SKIPPED.
+     */
+    private fun switchNode(node: GraphNode): NodeResult {
+        val branch = if (node.switchActive.isNullOrBlank()) "1" else node.switchActive
+        val value = LinkedHashMap<String, Any?>()
+        value["branch"] = branch
+        return NodeResult.ok(null, "switch → 트랙 $branch", json.toJson(value), value).withBranch(branch)
     }
 
     private fun ifNode(node: GraphNode, ctx: ExecutionContext): NodeResult {

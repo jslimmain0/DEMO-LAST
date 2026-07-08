@@ -60,6 +60,7 @@ export function PropertyPanel({ width = 360 }: { width?: number }) {
   const update = useEditorStore((s) => s.updateNodeData)
   const selectNode = useEditorStore((s) => s.selectNode)
   const deleteNode = useEditorStore((s) => s.deleteNode)
+  const removeEdge = useEditorStore((s) => s.removeEdge)
   const [tab, setTab] = useState<'params' | 'headers' | 'body'>('params')
   const [pick, setPick] = useState<string | null>(null) // rawBody | rawParams | rawHeaders (Raw 텍스트영역 전용)
   const [bodyConvNote, setBodyConvNote] = useState<string | null>(null) // 필드↔Raw 변환 안내
@@ -308,6 +309,65 @@ export function PropertyPanel({ width = 360 }: { width?: number }) {
             </p>
           </>
         )}
+
+        {node.type === 'switch' && (() => {
+          const ports = node.switchPorts?.length ? node.switchPorts : [{ id: '1', label: '1' }, { id: '2', label: '2' }]
+          const active = node.switchActive ?? ports[0].id
+          const removePort = (pid: string) => {
+            const next = ports.filter((p) => p.id !== pid)
+            // 그 트랙에서 나가던 엣지도 함께 제거(활성화될 수 없는 유령 선로 방지)
+            for (const e of edges) if (e.source === id && (e.sourceHandle ?? 'out') === pid) removeEdge(e.id)
+            update(id, { switchPorts: next, switchActive: active === pid ? next[0]?.id : active })
+          }
+          const addPort = () => {
+            let n2 = ports.length + 1
+            while (ports.some((p) => p.id === String(n2))) n2++
+            update(id, { switchPorts: [...ports, { id: String(n2), label: String(n2) }] })
+          }
+          return (
+            <>
+              <label style={label}>트랙 (선로) — 실행은 젖혀둔 트랙으로만 흐릅니다</label>
+              <div style={{ display: 'grid', gap: 6 }}>
+                {ports.map((p) => (
+                  <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <input
+                      type="radio"
+                      name={`sw-active-${id}`}
+                      aria-label={`트랙 ${p.label || p.id} 로 전환`}
+                      checked={active === p.id}
+                      onChange={() => update(id, { switchActive: p.id })}
+                      style={{ accentColor: 'var(--fl-put)', cursor: 'pointer' }}
+                    />
+                    <span style={{ fontFamily: 'var(--fl-font-mono)', fontSize: 11, color: 'var(--fl-text-muted)', width: 16, textAlign: 'center' }}>{p.id}</span>
+                    <input
+                      aria-label={`트랙 ${p.id} 이름`}
+                      style={{ ...field, flex: 1 }}
+                      value={p.label ?? ''}
+                      placeholder={`트랙 ${p.id}`}
+                      onChange={(e) => update(id, { switchPorts: ports.map((x) => (x.id === p.id ? { ...x, label: e.target.value } : x)) })}
+                    />
+                    <button
+                      onClick={() => removePort(p.id)}
+                      disabled={ports.length <= 2}
+                      aria-label={`트랙 ${p.label || p.id} 삭제`}
+                      title={ports.length <= 2 ? '트랙은 최소 2개' : '트랙 삭제(연결도 제거)'}
+                      style={{ ...braceBtn, color: ports.length <= 2 ? 'var(--fl-text-muted)' : 'var(--fl-fail)', cursor: ports.length <= 2 ? 'not-allowed' : 'pointer' }}
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
+              {ports.length < 6 && (
+                <button onClick={addPort} style={{ ...addDashed, marginTop: 8, width: '100%' }}>+ 트랙 추가</button>
+              )}
+              <p style={hintP}>
+                열차 선로 전환기처럼 <b>젖혀둔 트랙 하나로만</b> 실행이 흐르고, 나머지 트랙의 하류는 건너뜁니다(조건 평가 없음).
+                캔버스에서 노드의 트랙을 클릭해도 전환됩니다 — 테스트 중 mock 경로 ↔ 실제 경로 전환 같은 용도.
+              </p>
+            </>
+          )
+        })()}
 
         {node.type === 'http' && (
           <>

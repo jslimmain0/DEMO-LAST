@@ -24,6 +24,9 @@ enum class NodeType {
     /** 고정길이 금융 전문 TCP — 길이 프리픽스 + 바이트 고정길이 필드 송수신. */
     TCP,
 
+    /** 경로 스위치(선로 전환기) — 조건 없이 사용자가 젖혀둔 트랙(switchActive=fromPort)으로만 흐른다. */
+    SWITCH,
+
     /** 메모(스티키 노트) — 캔버스 주석. 실행에서 제외된다. */
     NOTE,
 
@@ -49,6 +52,7 @@ enum class NodeType {
             "assert" -> ASSERT
             "transform" -> TRANSFORM
             "tcp" -> TCP
+            "switch" -> SWITCH
             "note" -> NOTE
             "group" -> GROUP
             else -> UNKNOWN

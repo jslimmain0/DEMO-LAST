@@ -33,7 +33,7 @@ export function NodeCard({ data, selected }: NodeProps) {
     <div
       className={running ? 'fl-node-running' : undefined}
       style={{
-        minWidth: 200,
+        width: 230, // 고정 폭 — URL/이름이 길어도 늘어나지 않는다(말줄임). fitBounds NODE_W 와 일치
         background: 'var(--fl-surface)',
         border: `1px solid ${borderColor}`,
         borderRadius: 'var(--fl-radius)',

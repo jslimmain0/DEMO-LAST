@@ -111,11 +111,22 @@ export function Editor() {
           e.preventDefault()
           setCopyNote(`노드 ${n}개 붙여넣음`)
         }
+      } else if (e.key === 'z' || e.key === 'Z') {
+        e.preventDefault()
+        if (e.shiftKey) useEditorStore.getState().redo()
+        else useEditorStore.getState().undo()
+      } else if (e.key === 'y' || e.key === 'Y') {
+        e.preventDefault()
+        useEditorStore.getState().redo()
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [])
+  const canUndo = useEditorStore((s) => s.past.length > 0)
+  const canRedo = useEditorStore((s) => s.future.length > 0)
+  const undo = useEditorStore((s) => s.undo)
+  const redo = useEditorStore((s) => s.redo)
 
   useEffect(() => {
     if (flowQuery.data) loadGraph(flowQuery.data.id, flowQuery.data.name, flowQuery.data.graph)
@@ -252,6 +263,8 @@ export function Editor() {
         <span style={{ fontSize: 12, color: dirty ? 'var(--fl-put)' : 'var(--fl-text-muted)' }}>{dirty ? '● 미저장' : '저장됨'}</span>
         {copyNote && <span role="status" style={{ fontSize: 12, color: 'var(--fl-primary)', fontWeight: 600 }}>{copyNote}</span>}
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+          <button onClick={undo} disabled={!canUndo} aria-label="되돌리기" title="되돌리기 (Ctrl+Z)" style={{ ...ghostBtn, padding: '8px 11px', opacity: canUndo ? 1 : 0.4 }}>↺</button>
+          <button onClick={redo} disabled={!canRedo} aria-label="다시 실행" title="다시 실행 (Ctrl+Shift+Z)" style={{ ...ghostBtn, padding: '8px 11px', opacity: canRedo ? 1 : 0.4 }}>↻</button>
           <button onClick={() => setShowApiImport(true)} style={ghostBtn} title="OpenAPI/Swagger 스펙에서 노드 가져오기 (팔레트에 추가)">API 가져오기</button>
           <button onClick={() => setWorkflowIO('import')} style={ghostBtn}>가져오기</button>
           <button onClick={() => setWorkflowIO('export')} style={ghostBtn}>내보내기</button>

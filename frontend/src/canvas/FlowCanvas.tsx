@@ -12,6 +12,9 @@ import { catColor } from './nodeMeta'
 const nodeTypes = { flnode: NodeCard, branch: BranchNode }
 const edgeTypes = { deletable: DeletableEdge }
 const connectionLineStyle: CSSProperties = { stroke: 'var(--fl-primary)', strokeWidth: 2 }
+// 배경 도트(gap 22)와 같은 간격으로 스냅 — 노드가 그리드에 딱딱 맞게 배치된다
+const GRID = 22
+const snap = (v: number) => Math.round(v / GRID) * GRID
 
 export function FlowCanvas() {
   const nodes = useEditorStore((s) => s.nodes)
@@ -74,7 +77,8 @@ export function FlowCanvas() {
   const onDrop = useCallback(
     (e: DragEvent<HTMLDivElement>) => {
       e.preventDefault()
-      const pos = screenToFlowPosition({ x: e.clientX, y: e.clientY })
+      const raw = screenToFlowPosition({ x: e.clientX, y: e.clientY })
+      const pos = { x: snap(raw.x), y: snap(raw.y) } // 드롭 위치도 그리드에 맞춘다
       const template = e.dataTransfer.getData('application/flowlink-template')
       if (template) {
         try {
@@ -117,6 +121,8 @@ export function FlowCanvas() {
         onClickConnectEnd={() => setConnecting(false)}
         connectionRadius={45}
         connectionLineStyle={connectionLineStyle}
+        snapToGrid
+        snapGrid={[GRID, GRID]}
         onNodeClick={(_, n) => selectNode(n.id)}
         onPaneClick={() => selectNode(null)}
         deleteKeyCode={['Delete', 'Backspace']}

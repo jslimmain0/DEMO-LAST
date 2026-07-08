@@ -24,7 +24,7 @@ export function BranchNode({ data, selected }: NodeProps) {
     <div
       className={running ? 'fl-node-running' : undefined}
       style={{
-        minWidth: 200,
+        width: 230, // NodeCard 와 동일 고정 폭
         background: 'var(--fl-surface)',
         border: `1px solid ${borderColor}`,
         borderRadius: 'var(--fl-radius)',

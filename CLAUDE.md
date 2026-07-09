@@ -27,6 +27,9 @@ powershell -ExecutionPolicy Bypass -File scripts\stop.ps1
 - **H2 파일 위치**: 기본 `~/flowlink-h2db/flowlink.mv.db` (사용자 홈). 변경: `FLOWLINK_H2_FILE`. 초기화: 그 `.mv.db` 삭제.
   Hibernate `ddl-auto: update`(스키마 생성/갱신, 데이터 보존). 검증: 플로우 생성→재시작→유지 확인.
 - 백그라운드 PID/로그: `backend/.run/`
+- **내부 서버 배포(단일 jar)**: `npm run build` → `gradle bootJar` 하면 **frontend/dist 가 flowlink.jar 에 동봉**되어
+  내장 톰캣이 화면+API 를 :18080 한 프로세스로 서빙([SpaStaticConfig](backend/src/main/kotlin/com/flowlink/common/web/SpaStaticConfig.kt)
+  — SPA fallback, api/mock/relay 제외). wait 콜백용 `FLOWLINK_EXECUTION_RELAY_BASEURL` 오버라이드 필수. 절차: [deploy/README.md](deploy/README.md)
 
 ### Frontend (`frontend/`)
 ```

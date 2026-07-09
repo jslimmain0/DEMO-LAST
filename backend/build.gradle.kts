@@ -83,4 +83,8 @@ tasks.withType<JavaCompile> {
 
 tasks.named<org.springframework.boot.gradle.tasks.bundling.BootJar>("bootJar") {
     archiveFileName.set("flowlink.jar")
+    // 프론트엔드(dist) 동봉 — 단일 jar 배포(SpaStaticConfig 가 classpath:/static/ 서빙 + SPA fallback).
+    // 빌드 순서: ① frontend 에서 npm run build ② gradle bootJar → flowlink.jar 하나에 프론트+백엔드.
+    // dist 가 없으면 그냥 빠짐(백엔드 단독 dev 빌드·bootRun/Vite 개발 구성 무회귀).
+    from("../frontend/dist") { into("BOOT-INF/classes/static") }
 }

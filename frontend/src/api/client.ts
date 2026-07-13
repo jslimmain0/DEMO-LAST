@@ -69,10 +69,18 @@ export const mocksApi = {
   remove: (id: string) => http.delete(`/mock-servers/${id}`).then(() => undefined),
 }
 
-/** mock 서빙 base URL — 게이트웨이는 백엔드(18080)가 직접 서빙한다(Vite 프록시는 /api 만). */
+/**
+ * mock 서빙 base URL.
+ * - 프로덕션(단일 jar): 게이트웨이가 화면과 같은 오리진(내장 톰캣)이므로 현재 오리진 그대로 —
+ *   포트를 바꾸거나 프록시/https 뒤에 둬도 복사 URL 이 실제 주소를 따라간다.
+ * - dev(Vite 5173): /mock 프록시가 없으니 백엔드(18080) 직행 고정.
+ */
 export function mockBaseUrl(slug: string): string {
-  const host = window.location.hostname || 'localhost'
-  return `http://${host}:18080/mock/${slug}`
+  if (import.meta.env.DEV) {
+    const host = window.location.hostname || 'localhost'
+    return `http://${host}:18080/mock/${slug}`
+  }
+  return `${window.location.origin}/mock/${slug}`
 }
 
 export const runsApi = {

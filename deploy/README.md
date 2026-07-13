@@ -44,7 +44,8 @@ nohup java -jar flowlink.jar --spring.profiles.active=h2 > flowlink.log 2>&1 &
 - **`FLOWLINK_EXECUTION_RELAY_BASEURL`** ← 필수. wait(콜백 대기) 수신 URL 이 이 주소로 만들어진다.
   기본값(localhost)이면 다른 시스템이 콜백을 못 보낸다. `<서버IP>` 자리에 사내에서 접근하는 실제 IP/호스트명.
 - `FLOWLINK_H2_FILE` — DB 파일 위치(`…/flowlink.mv.db` 로 생성). 생략 시 `~/flowlink-h2db/flowlink`.
-- 포트 변경: `FLOWLINK_PORT=포트` (단, 프론트의 mock base URL 복사 기능이 18080 을 가정하므로 **18080 유지 권장**).
+- 포트 변경: `FLOWLINK_PORT=포트` — mock base URL 복사는 **접속한 주소(오리진)를 그대로 따라가므로** 포트를 바꿔도 된다.
+  (relay base 오버라이드의 포트도 같이 바꿀 것)
 
 종료: `kill $(pgrep -f flowlink.jar)`
 

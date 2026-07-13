@@ -37,15 +37,16 @@ scp backend/build/libs/flowlink.jar  사용자@서버:~/flowlink/
 # 서버에서 — 반드시 ~/flowlink 에서 실행(plugins/ 가 작업 디렉토리 기준 상대경로)
 cd ~/flowlink
 FLOWLINK_H2_FILE=$HOME/flowlink/data/flowlink \
-FLOWLINK_EXECUTION_RELAY_BASEURL=http://<서버IP>:18080 \
 nohup java -jar flowlink.jar --spring.profiles.active=h2 > flowlink.log 2>&1 &
 ```
 
-- **`FLOWLINK_EXECUTION_RELAY_BASEURL`** ← 필수. wait(콜백 대기) 수신 URL 이 이 주소로 만들어진다.
-  기본값(localhost)이면 다른 시스템이 콜백을 못 보낸다. `<서버IP>` 자리에 사내에서 접근하는 실제 IP/호스트명.
+- **콜백 수신 주소는 자동** — wait(콜백 대기) 수신 URL 의 밑둥은 기본적으로 **접속한 주소(오리진)를 그대로** 쓴다
+  (`http://서버IP:18080` 으로 접속해 실행하면 콜백 URL 도 그 주소로 조립). 서버는 어차피 `/relay/**` 를 항상
+  리슨하고 있고, 이 값은 "밖에 알려줄 주소" 문자열일 뿐이다.
+  - 다른 주소(터널/도메인)로 콜백을 받아야 하면: **화면 좌측 하단 ⚙ 설정**에서 저장(서버 DB 보관, 재시작 유지)
+    또는 env `FLOWLINK_EXECUTION_RELAY_BASEURL=http://주소:포트`. 우선순위 = 화면 저장값 > env > 접속 주소 자동.
 - `FLOWLINK_H2_FILE` — DB 파일 위치(`…/flowlink.mv.db` 로 생성). 생략 시 `~/flowlink-h2db/flowlink`.
-- 포트 변경: `FLOWLINK_PORT=포트` — mock base URL 복사는 **접속한 주소(오리진)를 그대로 따라가므로** 포트를 바꿔도 된다.
-  (relay base 오버라이드의 포트도 같이 바꿀 것)
+- 포트 변경: `FLOWLINK_PORT=포트` — mock base URL·콜백 수신 주소 모두 접속한 주소를 따라가므로 포트를 바꿔도 된다.
 
 종료: `kill $(pgrep -f flowlink.jar)`
 

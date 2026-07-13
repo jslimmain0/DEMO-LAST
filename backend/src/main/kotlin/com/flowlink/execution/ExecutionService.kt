@@ -29,6 +29,7 @@ import com.flowlink.execution.dto.ResumeRequest.CallbackPayload
 import com.flowlink.execution.engine.ExecutionContext
 import com.flowlink.execution.engine.FlowExecutor
 import com.flowlink.execution.engine.NodeRecorder
+import com.flowlink.settings.RelayBaseResolver
 import org.slf4j.LoggerFactory
 import org.springframework.data.domain.PageRequest
 import org.springframework.stereotype.Service
@@ -55,7 +56,8 @@ class ExecutionService(
     private val nodeExecRepo: NodeExecutionRepository,
     private val flowExecutor: FlowExecutor,
     private val json: JsonService,
-    private val props: ExecutionProperties
+    private val props: ExecutionProperties,
+    private val relayResolver: RelayBaseResolver
 ) {
     private val mapper: ObjectMapper = json.mapper()
 
@@ -117,7 +119,8 @@ class ExecutionService(
         //
         // 콜백은 백엔드(RelayController)가 직접 받아 재개한다(relay.js 불필요). 수신 URL 은 이 실행ID 기반으로 확정.
         // RunRequest.relayRunId/relayBase(구 프론트가 아직 보냄)는 하위호환 위해 무시한다.
-        val relayBase = props.relay.baseUrl
+        // base 우선순위: 화면 설정(DB) → env/yml 명시 → 접속 오리진 자동(RelayBaseResolver)
+        val relayBase = relayResolver.resolve()
         val relayRunId = execId.toString()
         for (n in graph.nodesOrEmpty()) {
             if (n.effectiveType() == NodeType.WAIT) {
@@ -330,7 +333,7 @@ class ExecutionService(
         TenantContext.setTenantId(current.tenant)
         try {
             val cb = CallbackPayload(
-                method, FlowExecutor.receiveUrl(props.relay.baseUrl, execId.toString(), nodeId), headers, bodyText
+                method, FlowExecutor.receiveUrl(relayResolver.resolve(), execId.toString(), nodeId), headers, bodyText
             )
             val req = ResumeRequest(nodeId, null, null, null, null, null, cb, null, null)
             doResume(execId, current, req)

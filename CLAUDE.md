@@ -29,7 +29,7 @@ powershell -ExecutionPolicy Bypass -File scripts\stop.ps1
 - 백그라운드 PID/로그: `backend/.run/`
 - **내부 서버 배포(단일 jar)**: `npm run build` → `gradle bootJar` 하면 **frontend/dist 가 flowlink.jar 에 동봉**되어
   내장 톰캣이 화면+API 를 :18080 한 프로세스로 서빙([SpaStaticConfig](backend/src/main/kotlin/com/flowlink/common/web/SpaStaticConfig.kt)
-  — SPA fallback, api/mock/relay 제외). wait 콜백용 `FLOWLINK_EXECUTION_RELAY_BASEURL` 오버라이드 필수. 절차: [deploy/README.md](deploy/README.md)
+  — SPA fallback, api/mock/relay 제외). wait 콜백 수신 주소는 **접속 오리진 자동**(⚙ 설정에서 저장 가능 — 아래 RelayBaseResolver). 절차: [deploy/README.md](deploy/README.md)
 
 ### Frontend (`frontend/`)
 ```
@@ -601,6 +601,28 @@ design/   theme(라이트/다크) · index.css(CSS 변수)
   보도록 `saveShortcutRef` 로 연결.
 - 검증: 재현+회귀 e2e 16(복사→붙여넣기→재복사 연쇄·입력/텍스트선택 잔류·한글 모드 C/V/S/Z·Ctrl+S dirty 저장·
   입력 중 저장) PASS, 단축키 관련 기존 스위트(copy/canvas/anno/switch/chips) 무회귀.
+
+## 최근 변경 (2026-07-13)
+
+### 콜백 수신 주소(relay base) — 화면 설정 + 접속 오리진 자동
+"callbackUrl 설정하는 게 그냥 있으면, 기본은 어디서 받아오게" 요청. env 없이도 wait 콜백이 되도록 재설계.
+- **[RelayBaseResolver](backend/src/main/kotlin/com/flowlink/settings/RelayBaseResolver.kt)** — 우선순위:
+  ① 화면(⚙ 설정)에서 저장한 값(DB) → ② env/yml 명시값(`FLOWLINK_EXECUTION_RELAY_BASEURL`) → ③ **실행 요청의
+  접속 오리진 자동**(브라우저가 접속한 그 주소가 곧 도달 가능한 서버 주소 — 서버는 `/relay/**` 를 항상 리슨하므로
+  base 는 "밖에 알려줄 주소" 문자열일 뿐) → ④ localhost 폴백. `application.yml` 의 base-url 기본값을 비워
+  ②를 "명시했을 때만"으로 만듦(`ExecutionProperties.Relay.configured`).
+- **설정 저장소**: `AppSetting`(키-값, 테넌트 스코프, V6 마이그레이션·h2 는 ddl-auto) +
+  [SettingsService](backend/src/main/kotlin/com/flowlink/settings/SettingsService.kt) ·
+  `GET/PUT /api/v1/settings/relay`(value=저장값·effective=적용값·auto=접속 오리진, 빈 값 저장=삭제).
+- **프론트**: 사이드바 하단 **⚙ 설정** → [SettingsDialog](frontend/src/components/SettingsDialog.tsx)
+  (현재 적용값·자동값 표시, 저장/자동으로 되돌리기). wait 노드 속성의 수신 URL 패턴도 `{백엔드}` 대신
+  실제 적용값으로 표시(PropertyPanel `WaitReceiveUrl` — settings 쿼리).
+- `ExecutionService` 의 두 사용처(`start` 시드·`recordWaitCallback`)가 resolver 경유. 콜백 수신 스레드에선
+  오리진 = 콜백이 실제로 때린 주소라 더 정확해진다.
+- 검증: e2e 16(우선순위 매트릭스 env/저장/자동·삭제 복귀·DB 영속·자동 base 콜백 수신→재개·UI 저장/재열기/되돌리기)
+  PASS + ui-wait 10·e2e 14·ui-e2e 12 무회귀. env 없이 기동한 jar 에서 콜백 완결 확인.
+- ⚠️ ③은 실행을 시작한 요청의 오리진 기준 — 프록시 뒤에서 X-Forwarded 를 해석하려면 ForwardedHeaderFilter 후속.
+  스케줄 실행(비요청 스레드) 도입 시엔 설정/env 필요(현재 MANUAL 만).
 
 ## 참고 문서
 - `backend/README.md` — Phase 1 구현 범위 표, API 요약, 실행 가이드

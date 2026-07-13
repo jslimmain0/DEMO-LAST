@@ -1,7 +1,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { CSSProperties } from 'react'
 import { useEffect, useMemo, useState } from 'react'
-import { pluginsApi, transformsApi } from '../api/client'
+import { pluginsApi, settingsApi, transformsApi } from '../api/client'
 import type { Binding, BodyType, GraphNode, HttpMethod, NodeField, NodeOutput, NodeVar, ReqMode, RespType, TcpField, TcpRespField, WaitField as WaitFieldT } from '../api/types'
 import { BindingChip } from '../binding/BindingChip'
 import { BindingPicker } from '../binding/BindingPicker'
@@ -830,7 +830,9 @@ function WaitFieldsEditor({ fields, onChange }: { fields: WaitFieldT[]; onChange
 
 /** wait 노드 수신 URL 표시 + 바인딩 토큰 복사. 콜백은 백엔드가 직접 받아 재개한다. */
 function WaitReceiveUrl({ nodeId }: { nodeId: string }) {
-  const pattern = `{백엔드}/relay/{실행ID}/cb/${nodeId}`
+  // 설정(콜백 수신 주소)의 실제 적용값으로 표시 — 사이드바 ⚙ 설정에서 저장/수정, 기본은 접속 주소 자동
+  const relay = useQuery({ queryKey: ['settings', 'relay'], queryFn: settingsApi.relay })
+  const pattern = `${relay.data?.effective ?? '{백엔드}'}/relay/{실행ID}/cb/${nodeId}`
   const token = `{{ url@${nodeId} }}`
   return (
     <>

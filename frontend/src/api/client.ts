@@ -83,6 +83,17 @@ export function mockBaseUrl(slug: string): string {
   return `${window.location.origin}/mock/${slug}`
 }
 
+/** 런타임 설정 — 콜백 수신 주소(relay base). value=저장된 오버라이드(null=자동), effective=실제 적용값, auto=접속 주소 자동값 */
+export interface RelaySetting {
+  value: string | null
+  effective: string
+  auto: string | null
+}
+export const settingsApi = {
+  relay: () => http.get<RelaySetting>('/settings/relay').then((r) => r.data),
+  saveRelay: (value: string | null) => http.put<RelaySetting>('/settings/relay', { value }).then((r) => r.data),
+}
+
 export const runsApi = {
   run: (flowId: string, body?: RunRequest) =>
     http.post<ExecutionDetail>(`/flows/${flowId}/runs`, body ?? {}).then((r) => r.data),

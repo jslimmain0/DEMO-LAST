@@ -29,8 +29,9 @@ class ExecutionProperties(
      * 외부 게이트웨이가 콜백해야 하면 이 값을 도달 가능한 주소(터널 등)로 override 한다.
      */
     class Relay(baseUrl: String?) {
-        val baseUrl: String =
-            if (baseUrl.isNullOrBlank()) "http://localhost:18080" else baseUrl.trim().trimEnd('/')
+        /** 명시 설정된 값(env/yml — 없으면 null). 우선순위 판단은 RelayBaseResolver 가 한다. */
+        val configured: String? = if (baseUrl.isNullOrBlank()) null else baseUrl.trim().trimEnd('/')
+        val baseUrl: String = configured ?: "http://localhost:18080"
     }
 
     class Http(

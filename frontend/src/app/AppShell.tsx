@@ -1,6 +1,7 @@
 import type { CSSProperties, ReactNode } from 'react'
 import { useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
+import { SettingsDialog } from '../components/SettingsDialog'
 import { getTheme, toggleTheme, type Theme } from '../design/theme'
 
 const NAV = [
@@ -13,6 +14,7 @@ const NAV = [
  *  sidebarExtra: 페이지가 사이드바에 덧붙이는 컨텍스트 UI(예: 대시보드의 폴더 목록). */
 export function AppShellTier1({ children, sidebarExtra }: { children: ReactNode; sidebarExtra?: ReactNode }) {
   const [theme, setTheme] = useState<Theme>(getTheme())
+  const [settingsOpen, setSettingsOpen] = useState(false)
   const loc = useLocation()
 
   const navItem = (to: string): CSSProperties => {
@@ -54,10 +56,14 @@ export function AppShellTier1({ children, sidebarExtra }: { children: ReactNode;
 
         {sidebarExtra && <div style={{ marginTop: 8, overflowY: 'auto', flex: '0 1 auto' }}>{sidebarExtra}</div>}
 
+        <button onClick={() => setSettingsOpen(true)} aria-label="설정" style={{ ...themeBtn, marginTop: 'auto' }}>
+          <span aria-hidden style={{ fontSize: 15 }}>⚙</span>
+          <span>설정</span>
+        </button>
         <button
           onClick={() => setTheme(toggleTheme())}
           aria-label={theme === 'dark' ? '라이트 모드로 전환' : '다크 모드로 전환'}
-          style={themeBtn}
+          style={{ ...themeBtn, marginTop: 0 }}
         >
           <span aria-hidden style={{ fontSize: 15 }}>{theme === 'dark' ? '☀' : '🌙'}</span>
           <span>{theme === 'dark' ? '라이트 모드' : '다크 모드'}</span>
@@ -65,6 +71,7 @@ export function AppShellTier1({ children, sidebarExtra }: { children: ReactNode;
       </aside>
 
       <main id="main" style={{ flex: 1, minWidth: 0 }}>{children}</main>
+      {settingsOpen && <SettingsDialog onClose={() => setSettingsOpen(false)} />}
     </div>
   )
 }

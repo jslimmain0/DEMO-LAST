@@ -1,0 +1,159 @@
+{
+  "realm": "flowlink",
+  "enabled": true,
+  "registrationAllowed": false,
+  "sslRequired": "none",
+  "roles": {
+    "realm": [
+      {
+        "name": "admin",
+        "description": "팀 관리자 — 설정 저장 포함 전체 쓰기"
+      },
+      {
+        "name": "editor",
+        "description": "워크플로/Mock 편집·실행"
+      },
+      {
+        "name": "viewer",
+        "description": "조회 전용"
+      },
+      {
+        "name": "platform-admin",
+        "description": "전역 관리자 — 플러그인 JAR 업로드(임의 코드 실행)"
+      }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "flowlink-web",
+      "name": "FlowLink SPA",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "redirectUris": [
+        "http://localhost:18080/*",
+        "http://localhost:5173/*"
+      ],
+      "webOrigins": [
+        "+"
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://localhost:18080##http://localhost:5173"
+      },
+      "protocolMappers": [
+        {
+          "name": "tenant",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "tenant",
+            "claim.name": "tenant",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "alice",
+      "enabled": true,
+      "firstName": "Alice",
+      "email": "alice@example.com",
+      "emailVerified": true,
+      "attributes": {
+        "tenant": [
+          "team-a"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "alice",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "admin",
+        "editor",
+        "platform-admin"
+      ],
+      "lastName": "Kim"
+    },
+    {
+      "username": "bob",
+      "enabled": true,
+      "firstName": "Bob",
+      "email": "bob@example.com",
+      "emailVerified": true,
+      "attributes": {
+        "tenant": [
+          "team-a"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "bob",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "editor"
+      ],
+      "lastName": "Lee"
+    },
+    {
+      "username": "carol",
+      "enabled": true,
+      "firstName": "Carol",
+      "email": "carol@example.com",
+      "emailVerified": true,
+      "attributes": {
+        "tenant": [
+          "team-a"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "carol",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "viewer"
+      ],
+      "lastName": "Park"
+    },
+    {
+      "username": "dave",
+      "enabled": true,
+      "firstName": "Dave",
+      "email": "dave@example.com",
+      "emailVerified": true,
+      "attributes": {
+        "tenant": [
+          "team-b"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "dave",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "editor"
+      ],
+      "lastName": "Choi"
+    }
+  ]
+}

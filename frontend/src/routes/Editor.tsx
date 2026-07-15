@@ -14,9 +14,13 @@ import { OpenApiImportDialog } from '../openapi/OpenApiImportDialog'
 import { WorkflowIODialog } from '../openapi/WorkflowIODialog'
 import { InputPromptDialog } from '../components/InputPromptDialog'
 import { ResizeHandle } from '../components/ResizeHandle'
+import { ConflictDialog } from '../components/ConflictDialog'
+import { toast } from '../components/toast'
+import { usePermissions } from '../auth/AuthContext'
 import { openFormIframe, openFormPopup } from '../lib/popup'
 import { computeRunView } from '../lib/runProgress'
 import { useEditorStore } from '../store/editorStore'
+import { isAxiosError } from 'axios'
 
 export function Editor() {
   const { id } = useParams()
@@ -30,9 +34,11 @@ export function Editor() {
   const addPaletteGroup = useEditorStore((s) => s.addPaletteGroup)
   const importGraph = useEditorStore((s) => s.importGraph)
 
+  const { canEdit, isViewer } = usePermissions()
   const [execution, setExecution] = useState<ExecutionDetail | null>(null)
   const [running, setRunning] = useState(false)
   const [showLog, setShowLog] = useState(false)
+  const [saveConflict, setSaveConflict] = useState(false)
   const [showApiImport, setShowApiImport] = useState(false)
   const [workflowIO, setWorkflowIO] = useState<'export' | 'import' | null>(null)
   // wait(콜백 대기) 진행 상태 — RunPanel 카운트다운/수신 URL 표시용
@@ -156,15 +162,20 @@ export function Editor() {
   const save = useMutation({
     mutationFn: () => flowsApi.saveVersion(flowId, { graph: getGraph() }),
     onSuccess: () => markSaved(),
+    onError: (e) => {
+      if (isAxiosError(e) && e.response?.status === 409) setSaveConflict(true)
+      else toast(`저장 실패: ${e instanceof Error ? e.message : e}`, 'error')
+    },
   })
   // Ctrl+S 가 최신 상태(dirty/isPending)를 보고 저장하게 매 렌더 갱신 — 저장 버튼과 동일 조건
   useEffect(() => {
     saveShortcutRef.current = () => {
-      if (!save.isPending && useEditorStore.getState().dirty) save.mutate()
+      if (canEdit && !save.isPending && useEditorStore.getState().dirty) save.mutate()
     }
   })
 
   const onRun = async () => {
+    if (!canEdit) return
     setShowLog(true)
     setRunning(true)
     setExecution(null)
@@ -241,7 +252,11 @@ export function Editor() {
         }
         setExecution(detail)
       }
-    } catch {
+    } catch (e) {
+      // 저장 409 는 save.onError 가 충돌 다이얼로그로 안내 — 여기선 중복 토스트만 피한다
+      if (!(isAxiosError(e) && e.response?.status === 409)) {
+        toast(`실행 실패: ${isAxiosError(e) ? (e.response?.data as { message?: string })?.message ?? e.message : e instanceof Error ? e.message : e}`, 'error')
+      }
       setExecution(null)
     } finally {
       watch.abort()
@@ -279,16 +294,22 @@ export function Editor() {
           style={{ fontFamily: 'var(--fl-font-head)', fontWeight: 600, fontSize: 15, border: '1px solid transparent', borderRadius: 8, padding: '6px 8px', background: 'transparent', color: 'var(--fl-text)', minWidth: 220 }}
         />
         <span style={{ fontSize: 12, color: dirty ? 'var(--fl-put)' : 'var(--fl-text-muted)' }}>{dirty ? '● 미저장' : '저장됨'}</span>
+        {isViewer && (
+          <span title="viewer 역할은 조회만 가능합니다 — 저장/실행이 비활성화됩니다"
+            style={{ fontSize: 12, fontWeight: 600, color: 'var(--fl-waiting)', border: '1px solid var(--fl-waiting)', borderRadius: 'var(--fl-radius-pill)', padding: '2px 8px' }}>
+            읽기 전용
+          </span>
+        )}
         {copyNote && <span role="status" style={{ fontSize: 12, color: 'var(--fl-primary)', fontWeight: 600 }}>{copyNote}</span>}
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
           <button onClick={undo} disabled={!canUndo} aria-label="되돌리기" title="되돌리기 (Ctrl+Z)" style={{ ...ghostBtn, padding: '8px 11px', opacity: canUndo ? 1 : 0.4 }}>↺</button>
           <button onClick={redo} disabled={!canRedo} aria-label="다시 실행" title="다시 실행 (Ctrl+Shift+Z)" style={{ ...ghostBtn, padding: '8px 11px', opacity: canRedo ? 1 : 0.4 }}>↻</button>
-          <button onClick={() => setShowApiImport(true)} style={ghostBtn} title="OpenAPI/Swagger 스펙에서 노드 가져오기 (팔레트에 추가)">API 가져오기</button>
-          <button onClick={() => setWorkflowIO('import')} style={ghostBtn}>가져오기</button>
+          <button onClick={() => setShowApiImport(true)} disabled={!canEdit} style={{ ...ghostBtn, opacity: canEdit ? 1 : 0.4 }} title="OpenAPI/Swagger 스펙에서 노드 가져오기 (팔레트에 추가)">API 가져오기</button>
+          <button onClick={() => setWorkflowIO('import')} disabled={!canEdit} style={{ ...ghostBtn, opacity: canEdit ? 1 : 0.4 }}>가져오기</button>
           <button onClick={() => setWorkflowIO('export')} style={ghostBtn}>내보내기</button>
           {running && <button onClick={onStop} style={stopBtn} title="실행 중단 — 대기 중이면 즉시 해제됩니다">⏹ 중단</button>}
-          <button onClick={() => onRun()} disabled={running} style={runBtn}>{running ? '실행 중…' : '▶ 실행'}</button>
-          <button onClick={() => save.mutate()} disabled={save.isPending || !dirty} style={saveBtn}>💾 저장</button>
+          <button onClick={() => onRun()} disabled={running || !canEdit} title={canEdit ? undefined : 'viewer 역할은 실행할 수 없습니다'} style={runBtn}>{running ? '실행 중…' : '▶ 실행'}</button>
+          <button onClick={() => save.mutate()} disabled={save.isPending || !dirty || !canEdit} title={canEdit ? undefined : 'viewer 역할은 저장할 수 없습니다'} style={saveBtn}>💾 저장</button>
         </div>
       </header>
 
@@ -315,6 +336,13 @@ export function Editor() {
           input={pendingInput}
           onConfirm={(values) => resolveInput(values)}
           onCancel={() => resolveInput(null)}
+        />
+      )}
+      {saveConflict && (
+        <ConflictDialog
+          onRetry={() => save.mutate()}
+          onReload={() => { void flowQuery.refetch() }}
+          onClose={() => setSaveConflict(false)}
         />
       )}
       {showApiImport && <OpenApiImportDialog onClose={() => setShowApiImport(false)} onImport={(group) => addPaletteGroup(group)} />}

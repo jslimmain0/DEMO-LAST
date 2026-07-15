@@ -76,12 +76,15 @@ export const mocksApi = {
  *   포트를 바꾸거나 프록시/https 뒤에 둬도 복사 URL 이 실제 주소를 따라간다.
  * - dev(Vite 5173): /mock 프록시가 없으니 백엔드(18080) 직행 고정.
  */
-export function mockBaseUrl(slug: string): string {
+export function mockBaseUrl(slug: string, tenant?: string | null): string {
+  // 팀(테넌트) 스코프 slug — default 팀은 레거시 /mock/{slug} 그대로(demos·기존 그래프 호환),
+  // 그 외 팀은 /mock/{tenant}/{slug} (팀끼리 같은 slug 를 써도 충돌하지 않는다)
+  const seg = tenant && tenant !== 'default' ? `${tenant}/${slug}` : slug
   if (import.meta.env.DEV) {
     const host = window.location.hostname || 'localhost'
-    return `http://${host}:18080/mock/${slug}`
+    return `http://${host}:18080/mock/${seg}`
   }
-  return `${window.location.origin}/mock/${slug}`
+  return `${window.location.origin}/mock/${seg}`
 }
 
 /** 런타임 설정 — 콜백 수신 주소(relay base). value=저장된 오버라이드(null=자동), effective=실제 적용값, auto=접속 주소 자동값 */

@@ -5,6 +5,7 @@ import { Link, useParams } from 'react-router-dom'
 import type { HttpMethod, MockCond, MockRouteSpec, MockRuleSpec, MockServerSpec, MockTcpRuleSpec, MockTcpSpec } from '../api/types'
 import { mockBaseUrl, mocksApi } from '../api/client'
 import { AppShellTier1 } from '../app/AppShell'
+import { useAuth, usePermissions } from '../auth/AuthContext'
 import { METHOD_COLOR } from '../canvas/nodeMeta'
 import { apiErrorMessage } from '../lib/apiError'
 import { newId } from '../lib/ids'
@@ -21,6 +22,8 @@ const COND_OPS = ['eq', 'ne', 'exists', 'contains'] as const
 export function MockServerEditor() {
   const { id = '' } = useParams()
   const qc = useQueryClient()
+  const { canEdit } = usePermissions()
+  const { me } = useAuth()
   const detail = useQuery({ queryKey: ['mock-server', id], queryFn: () => mocksApi.get(id), enabled: !!id })
 
   const [spec, setSpec] = useState<MockServerSpec>({ routes: [] })
@@ -67,7 +70,7 @@ export function MockServerEditor() {
   }
 
   const d = detail.data
-  const base = d ? mockBaseUrl(d.slug) : ''
+  const base = d ? mockBaseUrl(d.slug, me?.tenant) : ''
 
   return (
     <AppShellTier1>
@@ -86,12 +89,14 @@ export function MockServerEditor() {
               />
               <span style={{ ...badge, background: 'var(--fl-cat-generic)' }}>Mock</span>
               <button
-                style={{ ...miniBtn, color: d.enabled ? 'var(--fl-ok)' : 'var(--fl-text-muted)' }}
+                style={{ ...miniBtn, color: d.enabled ? 'var(--fl-ok)' : 'var(--fl-text-muted)', opacity: canEdit ? 1 : 0.5 }}
+                disabled={!canEdit}
+                title={canEdit ? undefined : 'viewer 역할은 변경할 수 없습니다'}
                 onClick={() => toggle.mutate()}
               >
                 {d.enabled ? '● 서빙 중' : '○ 꺼짐'}
               </button>
-              <button style={{ ...primaryBtn, marginLeft: 'auto', opacity: dirty ? 1 : 0.55 }} disabled={!dirty || save.isPending} onClick={() => save.mutate()}>
+              <button style={{ ...primaryBtn, marginLeft: 'auto', opacity: dirty && canEdit ? 1 : 0.55 }} disabled={!dirty || save.isPending || !canEdit} title={canEdit ? undefined : 'viewer 역할은 저장할 수 없습니다'} onClick={() => save.mutate()}>
                 저장
               </button>
             </div>

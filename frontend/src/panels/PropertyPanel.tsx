@@ -2,6 +2,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { CSSProperties } from 'react'
 import { useEffect, useMemo, useState } from 'react'
 import { pluginsApi, settingsApi, transformsApi } from '../api/client'
+import { usePermissions } from '../auth/AuthContext'
+import { toast } from '../components/toast'
 import type { Binding, BodyType, GraphNode, HttpMethod, NodeField, NodeOutput, NodeVar, ReqMode, RespType, TcpField, TcpRespField, WaitField as WaitFieldT } from '../api/types'
 import { BindingChip } from '../binding/BindingChip'
 import { BindingPicker } from '../binding/BindingPicker'
@@ -66,6 +68,7 @@ export function PropertyPanel({ width = 360 }: { width?: number }) {
   const [bodyConvNote, setBodyConvNote] = useState<string | null>(null) // 필드↔Raw 변환 안내
   const transforms = useQuery({ queryKey: ['transforms'], queryFn: transformsApi.list })
   const qc = useQueryClient()
+  const { canPlatformAdmin } = usePermissions()
 
   const node = useMemo<GraphNode | null>(() => {
     const n = nodes.find((x) => x.id === selectedId)
@@ -557,26 +560,29 @@ export function PropertyPanel({ width = 360 }: { width?: number }) {
               <option value="">선택…</option>
               {(transforms.data ?? []).map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
             </select>
-            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 8, fontSize: 12, color: 'var(--fl-primary)', cursor: 'pointer' }}>
-              ⬆ JAR 플러그인 업로드
-              <input
-                type="file"
-                accept=".jar"
-                style={{ display: 'none' }}
-                onChange={async (e) => {
-                  const file = e.target.files?.[0]
-                  if (file) {
-                    try {
-                      await pluginsApi.upload(file)
-                      qc.invalidateQueries({ queryKey: ['transforms'] })
-                    } catch {
-                      /* 업로드 실패 무시(후속: 토스트) */
+            {canPlatformAdmin && (
+              <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 8, fontSize: 12, color: 'var(--fl-primary)', cursor: 'pointer' }}>
+                ⬆ JAR 플러그인 업로드
+                <input
+                  type="file"
+                  accept=".jar"
+                  style={{ display: 'none' }}
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0]
+                    if (file) {
+                      try {
+                        await pluginsApi.upload(file)
+                        qc.invalidateQueries({ queryKey: ['transforms'] })
+                        toast('플러그인이 업로드되어 즉시 반영되었습니다.', 'ok')
+                      } catch (err) {
+                        toast(`플러그인 업로드 실패: ${err instanceof Error ? err.message : err}`, 'error')
+                      }
                     }
-                  }
-                  e.target.value = ''
-                }}
-              />
-            </label>
+                    e.target.value = ''
+                  }}
+                />
+              </label>
+            )}
 
             {selectedTransform?.inputs.map((io) => {
               const f = node.fields?.body?.find((x) => x.key === io.key)

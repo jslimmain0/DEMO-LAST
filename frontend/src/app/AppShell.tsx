@@ -1,6 +1,7 @@
 import type { CSSProperties, ReactNode } from 'react'
 import { useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
+import { useAuth } from '../auth/AuthContext'
 import { SettingsDialog } from '../components/SettingsDialog'
 import { getTheme, toggleTheme, type Theme } from '../design/theme'
 
@@ -16,6 +17,7 @@ export function AppShellTier1({ children, sidebarExtra }: { children: ReactNode;
   const [theme, setTheme] = useState<Theme>(getTheme())
   const [settingsOpen, setSettingsOpen] = useState(false)
   const loc = useLocation()
+  const { enabled: authEnabled, me, logout } = useAuth()
 
   const navItem = (to: string): CSSProperties => {
     const active = loc.pathname.startsWith(to)
@@ -56,7 +58,19 @@ export function AppShellTier1({ children, sidebarExtra }: { children: ReactNode;
 
         {sidebarExtra && <div style={{ marginTop: 8, overflowY: 'auto', flex: '0 1 auto' }}>{sidebarExtra}</div>}
 
-        <button onClick={() => setSettingsOpen(true)} aria-label="설정" style={{ ...themeBtn, marginTop: 'auto' }}>
+        {authEnabled && me && (
+          <div style={{ ...userChip, marginTop: 'auto' }} title={`${me.username} · ${me.tenant} · ${me.roles.join(', ')}`}>
+            <span aria-hidden style={avatar}>{me.username.slice(0, 1).toUpperCase()}</span>
+            <span style={{ minWidth: 0, flex: 1 }}>
+              <span style={{ display: 'block', fontSize: 12.5, fontWeight: 600, color: 'var(--fl-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{me.username}</span>
+              <span style={{ display: 'block', fontSize: 11, color: 'var(--fl-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {me.tenant} · {primaryRole(me.roles)}
+              </span>
+            </span>
+            <button onClick={logout} aria-label="로그아웃" title="로그아웃" style={logoutBtn}>⎋</button>
+          </div>
+        )}
+        <button onClick={() => setSettingsOpen(true)} aria-label="설정" style={{ ...themeBtn, marginTop: authEnabled && me ? 0 : 'auto' }}>
           <span aria-hidden style={{ fontSize: 15 }}>⚙</span>
           <span>설정</span>
         </button>
@@ -96,6 +110,43 @@ const sectionLabel: CSSProperties = {
   textTransform: 'uppercase',
   letterSpacing: '.06em',
   margin: '20px 8px 8px',
+}
+/** 대표 역할 하나만 표시(우선순위: admin > editor > viewer). */
+function primaryRole(roles: string[]): string {
+  if (roles.includes('admin')) return 'admin'
+  if (roles.includes('editor')) return 'editor'
+  if (roles.includes('viewer')) return 'viewer'
+  return roles[0] ?? '역할 없음'
+}
+
+const userChip: CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 8,
+  padding: '8px 10px',
+  borderRadius: 'var(--fl-radius-sm)',
+  border: '1px solid var(--fl-border)',
+  background: 'var(--fl-surface-2)',
+}
+const avatar: CSSProperties = {
+  width: 26,
+  height: 26,
+  flexShrink: 0,
+  borderRadius: '50%',
+  display: 'grid',
+  placeItems: 'center',
+  fontSize: 12,
+  fontWeight: 700,
+  color: '#fff',
+  background: 'linear-gradient(135deg,var(--fl-primary),var(--fl-primary-2))',
+}
+const logoutBtn: CSSProperties = {
+  border: 'none',
+  background: 'transparent',
+  color: 'var(--fl-text-muted)',
+  cursor: 'pointer',
+  fontSize: 14,
+  padding: 4,
 }
 const themeBtn: CSSProperties = {
   marginTop: 'auto',

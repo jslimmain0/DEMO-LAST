@@ -5,6 +5,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import type { ExecutionSummary, FlowSummary, FolderSummary } from '../api/types'
 import { flowsApi, foldersApi, runsApi } from '../api/client'
 import { AppShellTier1 } from '../app/AppShell'
+import { usePermissions } from '../auth/AuthContext'
 import { FlowGhost, FlowMini, FlowStrip, dominantCat, fallbackCats } from '../components/MiniFlow'
 import { StatusBadge } from '../components/StatusBadge'
 import { relTime } from '../lib/format'
@@ -15,6 +16,7 @@ type Sort = 'recent' | 'name'
 export function Dashboard() {
   const qc = useQueryClient()
   const navigate = useNavigate()
+  const { canEdit } = usePermissions()
   const flows = useQuery({ queryKey: ['flows'], queryFn: flowsApi.list })
   const folders = useQuery({ queryKey: ['folders'], queryFn: foldersApi.list })
   const runs = useQuery({ queryKey: ['executions', 'recent'], queryFn: () => runsApi.recent(50) })
@@ -258,7 +260,7 @@ export function Dashboard() {
       <SidebarItem label="홈" count={noneCount} active={sel === 'all'} onClick={() => setSel('all')} glyph="▤" drop={dropTo(null)} />
       <div style={sidebarLabel}>폴더</div>
       {renderFolderTree(null, 0)}
-      <button onClick={() => newFolderIn(null)} style={newFolderBtn}>+ 새 폴더</button>
+      {canEdit && <button onClick={() => newFolderIn(null)} style={newFolderBtn}>+ 새 폴더</button>}
     </>
   )
 
@@ -299,10 +301,10 @@ export function Dashboard() {
                 <button onClick={() => setSort('recent')} style={segBtn(sort === 'recent')}>최근</button>
                 <button onClick={() => setSort('name')} style={segBtn(sort === 'name')}>이름</button>
               </div>
-              {(visible.length > 0 || selectMode) && (
+              {canEdit && (visible.length > 0 || selectMode) && (
                 <button onClick={toggleSelectMode} aria-pressed={selectMode} style={selectToggleBtn(selectMode)}>{selectMode ? '선택 완료' : '☑ 선택'}</button>
               )}
-              <button onClick={() => createFlow.mutate()} disabled={createFlow.isPending} style={primaryBtn}>+ 새 워크플로</button>
+              {canEdit && <button onClick={() => createFlow.mutate()} disabled={createFlow.isPending} style={primaryBtn}>+ 새 워크플로</button>}
             </div>
           </div>
 
@@ -348,9 +350,10 @@ export function Dashboard() {
                     onDragEndSelf={endDrag}
                     onRename={() => { const n = prompt('폴더 이름', f.name); if (n && n.trim()) renameFolder.mutate({ id: f.id, name: n.trim() }) }}
                     onDelete={() => deleteFolder(f)}
+                    readOnly={!canEdit}
                   />
                 ))}
-                {sel !== 'none' && !search.trim() && !selectMode && (
+                {canEdit && sel !== 'none' && !search.trim() && !selectMode && (
                   <button
                     onClick={() => newFolderIn(isFolderId(sel) ? sel : null)}
                     aria-label={isFolderId(sel) ? '이 폴더 안에 새 폴더' : '새 폴더 만들기'}
@@ -400,6 +403,7 @@ export function Dashboard() {
                   onMove={(folderId) => moveFlow.mutate({ id: f.id, folderId })}
                   onDragStartSelf={() => startFlowDrag(f.id)}
                   onDragEndSelf={endDrag}
+                  readOnly={!canEdit}
                 />
               ))}
             </Grid>
@@ -444,7 +448,7 @@ function Hero({ flow, lastRun }: { flow: FlowSummary; lastRun?: ExecutionSummary
 
 // ---------- 카드 ----------
 
-function FlowCard({ flow, lastRun, folderOptions, selectMode, selected, onToggleSelect, onDuplicate, onDelete, onMove, onDragStartSelf, onDragEndSelf }: {
+function FlowCard({ flow, lastRun, folderOptions, selectMode, selected, onToggleSelect, onDuplicate, onDelete, onMove, onDragStartSelf, onDragEndSelf, readOnly }: {
   flow: FlowSummary
   lastRun?: ExecutionSummary
   folderOptions: Array<{ f: FolderSummary; depth: number }> // 트리 순서 + 깊이(들여쓰기 라벨)
@@ -456,6 +460,7 @@ function FlowCard({ flow, lastRun, folderOptions, selectMode, selected, onToggle
   onMove: (folderId: string | null) => void
   onDragStartSelf: () => void
   onDragEndSelf: () => void
+  readOnly?: boolean // viewer — 복제/이동/삭제/드래그 숨김(서버 403 이 최종 권위, UI 는 편의)
 }) {
   const navigate = useNavigate()
   const detail = useQuery({ queryKey: ['flow', flow.id], queryFn: () => flowsApi.get(flow.id) })
@@ -482,8 +487,9 @@ function FlowCard({ flow, lastRun, folderOptions, selectMode, selected, onToggle
       tabIndex={0}
       onClick={openCard}
       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openCard() } }}
-      draggable
+      draggable={!readOnly}
       onDragStart={(e) => {
+        if (readOnly) return
         e.dataTransfer.effectAllowed = 'move'
         e.dataTransfer.setData('text/plain', flow.name) // 외부 드롭용 표시값(내부 이동은 ref 기반)
         onDragStartSelf()
@@ -509,7 +515,7 @@ function FlowCard({ flow, lastRun, folderOptions, selectMode, selected, onToggle
             {nodeCount != null && <span style={metaMono}>노드 {nodeCount}</span>}
           </div>
         </div>
-        {!selectMode && (
+        {!selectMode && !readOnly && (
           <div ref={menuRef} className="fl-card-actions" onClick={(e) => e.stopPropagation()} style={{ position: 'relative', flexShrink: 0 }}>
             <button onClick={() => setMenu((v) => !v)} aria-label={`${flow.name} 작업 메뉴`} aria-haspopup="menu" aria-expanded={menu} title="작업" style={iconBtn}>⋯</button>
             {menu && (
@@ -552,7 +558,7 @@ interface DropSpec {
 }
 
 /** 탐색기식 폴더 타일 — 클릭해 들어가고, 드래그로 넣기/재배치, 호버 시 이름변경/삭제. */
-function FolderTile({ folder, subCount, onOpen, drop, onDragStartSelf, onDragEndSelf, onRename, onDelete }: {
+function FolderTile({ folder, subCount, onOpen, drop, onDragStartSelf, onDragEndSelf, onRename, onDelete, readOnly }: {
   folder: FolderSummary
   subCount: number
   onOpen: () => void
@@ -561,6 +567,7 @@ function FolderTile({ folder, subCount, onOpen, drop, onDragStartSelf, onDragEnd
   onDragEndSelf: () => void
   onRename: () => void
   onDelete: () => void
+  readOnly?: boolean // viewer — 이름변경/삭제/드래그 숨김
 }) {
   const [over, setOver] = useState(false)
   const accent = varCat(fallbackCats(folder.id, 1)[0])
@@ -572,8 +579,9 @@ function FolderTile({ folder, subCount, onOpen, drop, onDragStartSelf, onDragEnd
       onClick={onOpen}
       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen() } }}
       aria-label={`${folder.name} 폴더 열기`}
-      draggable
+      draggable={!readOnly}
       onDragStart={(e) => {
+        if (readOnly) return
         e.dataTransfer.effectAllowed = 'move'
         e.dataTransfer.setData('text/plain', folder.name)
         onDragStartSelf()
@@ -600,10 +608,12 @@ function FolderTile({ folder, subCount, onOpen, drop, onDragStartSelf, onDragEnd
           워크플로 {folder.flowCount}{subCount > 0 ? ` · 폴더 ${subCount}` : ''}
         </div>
       </div>
-      <div className="fl-card-actions" onClick={(e) => e.stopPropagation()} style={{ display: 'flex', flexShrink: 0 }}>
-        <button onClick={onRename} aria-label="이름 변경" title="이름 변경" style={miniBtn}>✎</button>
-        <button onClick={onDelete} aria-label="삭제" title="삭제" style={miniBtn}>×</button>
-      </div>
+      {!readOnly && (
+        <div className="fl-card-actions" onClick={(e) => e.stopPropagation()} style={{ display: 'flex', flexShrink: 0 }}>
+          <button onClick={onRename} aria-label="이름 변경" title="이름 변경" style={miniBtn}>✎</button>
+          <button onClick={onDelete} aria-label="삭제" title="삭제" style={miniBtn}>×</button>
+        </div>
+      )}
     </article>
   )
 }

@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom'
 import type { MockServerSummary } from '../api/types'
 import { mockBaseUrl, mocksApi } from '../api/client'
 import { AppShellTier1 } from '../app/AppShell'
+import { useAuth, usePermissions } from '../auth/AuthContext'
 import { apiErrorMessage } from '../lib/apiError'
 import { relTime } from '../lib/format'
 
@@ -15,6 +16,8 @@ import { relTime } from '../lib/format'
 export function MockServers() {
   const qc = useQueryClient()
   const navigate = useNavigate()
+  const { canEdit } = usePermissions()
+  const { me } = useAuth()
   const servers = useQuery({ queryKey: ['mock-servers'], queryFn: mocksApi.list })
   const [name, setName] = useState('')
   const [slug, setSlug] = useState('')
@@ -47,7 +50,7 @@ export function MockServers() {
               미완성 시스템을 흉내 내는 가짜 API. 경로마다 응답·조건 분기·콜백 발사를 정의하면 워크플로 노드가 바로 호출합니다.
             </p>
           </div>
-          {!creating && <button onClick={() => setCreating(true)} style={primaryBtn}>+ 새 Mock 서버</button>}
+          {!creating && canEdit && <button onClick={() => setCreating(true)} style={primaryBtn}>+ 새 Mock 서버</button>}
         </div>
 
         {creating && (
@@ -62,7 +65,7 @@ export function MockServers() {
 
         <div style={{ display: 'grid', gap: 10, marginTop: 24 }}>
           {list.map((s) => (
-            <MockCard key={s.id} server={s} onToggle={() => toggle.mutate(s)} onRemove={() => { if (window.confirm(`'${s.name}' Mock 서버를 삭제할까요? 되돌릴 수 없습니다.`)) remove.mutate(s.id) }} />
+            <MockCard key={s.id} server={s} tenant={me?.tenant} readOnly={!canEdit} onToggle={() => toggle.mutate(s)} onRemove={() => { if (window.confirm(`'${s.name}' Mock 서버를 삭제할까요? 되돌릴 수 없습니다.`)) remove.mutate(s.id) }} />
           ))}
           {servers.isSuccess && list.length === 0 && !creating && (
             <div style={emptyBox}>
@@ -70,7 +73,7 @@ export function MockServers() {
               <div style={{ color: 'var(--fl-text-muted)', fontSize: 13.5, marginTop: 6, maxWidth: 420, marginInline: 'auto' }}>
                 slug 를 정하면 <code style={codeChip}>/mock/&#123;slug&#125;/**</code> 로 즉시 서빙됩니다. 경로마다 JSON·HTML·XML 응답과 조건 분기·콜백을 정의할 수 있습니다.
               </div>
-              <button onClick={() => setCreating(true)} style={{ ...primaryBtn, marginTop: 18 }}>+ 새 Mock 서버</button>
+              {canEdit && <button onClick={() => setCreating(true)} style={{ ...primaryBtn, marginTop: 18 }}>+ 새 Mock 서버</button>}
             </div>
           )}
         </div>
@@ -79,7 +82,7 @@ export function MockServers() {
   )
 }
 
-function MockCard({ server: s, onToggle, onRemove }: { server: MockServerSummary; onToggle: () => void; onRemove: () => void }) {
+function MockCard({ server: s, tenant, readOnly, onToggle, onRemove }: { server: MockServerSummary; tenant?: string | null; readOnly?: boolean; onToggle: () => void; onRemove: () => void }) {
   const navigate = useNavigate()
   const detail = useQuery({ queryKey: ['mock-server', s.id], queryFn: () => mocksApi.get(s.id) })
   const routeCount = detail.data?.spec?.routes?.length
@@ -99,20 +102,20 @@ function MockCard({ server: s, onToggle, onRemove }: { server: MockServerSummary
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 5, minWidth: 0 }}>
           <button
             title="base URL 복사"
-            onClick={(e) => { e.stopPropagation(); void navigator.clipboard?.writeText(mockBaseUrl(s.slug)).catch(() => {}) }}
+            onClick={(e) => { e.stopPropagation(); void navigator.clipboard?.writeText(mockBaseUrl(s.slug, tenant)).catch(() => {}) }}
             style={{ ...metaMono, display: 'inline-flex', alignItems: 'center', gap: 5, border: 'none', background: 'transparent', cursor: 'pointer', padding: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 360 }}
           >
-            {mockBaseUrl(s.slug)} <span aria-hidden style={{ color: 'var(--fl-primary)' }}>⧉</span>
+            {mockBaseUrl(s.slug, tenant)} <span aria-hidden style={{ color: 'var(--fl-primary)' }}>⧉</span>
           </button>
           {routeCount != null && <span style={metaMono}>· 라우트 {routeCount}</span>}
         </div>
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
         <span style={metaMono}>{relTime(s.updatedAt ?? '') || ''}</span>
-        <button onClick={(e) => { e.stopPropagation(); onToggle() }} title={s.enabled ? '서빙 중 — 클릭하면 끔' : '꺼짐 — 클릭하면 켬'} style={{ ...pill, color: s.enabled ? 'var(--fl-ok)' : 'var(--fl-text-muted)', borderColor: s.enabled ? 'color-mix(in srgb, var(--fl-ok) 40%, var(--fl-border))' : 'var(--fl-border)' }}>
+        <button disabled={readOnly} onClick={(e) => { e.stopPropagation(); onToggle() }} title={readOnly ? 'viewer 역할은 변경할 수 없습니다' : s.enabled ? '서빙 중 — 클릭하면 끔' : '꺼짐 — 클릭하면 켬'} style={{ ...pill, opacity: readOnly ? 0.5 : 1, color: s.enabled ? 'var(--fl-ok)' : 'var(--fl-text-muted)', borderColor: s.enabled ? 'color-mix(in srgb, var(--fl-ok) 40%, var(--fl-border))' : 'var(--fl-border)' }}>
           {s.enabled ? '● 켜짐' : '○ 꺼짐'}
         </button>
-        <button className="fl-card-actions" onClick={(e) => { e.stopPropagation(); onRemove() }} title="삭제" aria-label={`${s.name} 삭제`} style={{ ...pill, color: 'var(--fl-fail)', borderColor: 'var(--fl-border)' }}>삭제</button>
+        {!readOnly && <button className="fl-card-actions" onClick={(e) => { e.stopPropagation(); onRemove() }} title="삭제" aria-label={`${s.name} 삭제`} style={{ ...pill, color: 'var(--fl-fail)', borderColor: 'var(--fl-border)' }}>삭제</button>}
       </div>
     </div>
   )

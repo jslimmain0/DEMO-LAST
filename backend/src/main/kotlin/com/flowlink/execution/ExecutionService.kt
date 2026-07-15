@@ -32,6 +32,8 @@ import com.flowlink.execution.engine.NodeRecorder
 import com.flowlink.settings.RelayBaseResolver
 import org.slf4j.LoggerFactory
 import org.springframework.data.domain.PageRequest
+import org.springframework.security.core.context.SecurityContextHolder
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.util.UUID
@@ -204,6 +206,9 @@ class ExecutionService(
 
     @Transactional(readOnly = true)
     fun listForFlow(flowId: UUID, limit: Int): List<ExecutionSummary> {
+        // 테넌트 스코프 소유 확인 선행 — flowId 만 알면 타 테넌트 실행 요약이 새던 구멍 방지.
+        flowRepo.findByIdAndTenantId(flowId, TenantContext.getTenantId())
+            .orElseThrow { NotFoundException.of("Flow", flowId) }
         val execs = executionRepo.findByFlowIdOrderByStartedAtDesc(flowId, PageRequest.of(0, clamp(limit)))
         return withFlowNames(execs)
     }
@@ -402,8 +407,9 @@ class ExecutionService(
     }
 
     private fun currentUser(): String? {
-        // 인증 도입 전: null. 후속 Phase에서 SecurityContext(OIDC subject)로 채운다.
-        return null
+        // OIDC 모드면 JwtRoleConverter 가 name=preferred_username(없으면 sub)으로 세팅. dev 모드는 null.
+        val auth = SecurityContextHolder.getContext().authentication
+        return if (auth is JwtAuthenticationToken) auth.name else null
     }
 
     /**

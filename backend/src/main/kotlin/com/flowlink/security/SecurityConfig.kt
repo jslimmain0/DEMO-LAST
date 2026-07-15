@@ -4,6 +4,7 @@ import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
+import org.springframework.http.HttpMethod
 import org.springframework.security.config.Customizer
 import org.springframework.security.config.annotation.web.builders.HttpSecurity
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity
@@ -40,17 +41,29 @@ class SecurityConfig {
             .headers { h -> h.frameOptions { frame -> frame.disable() } }
 
         if (jwtDecoder.getIfAvailable() != null) {
-            // 운영: OIDC 리소스 서버
+            // 운영: OIDC 리소스 서버 + URL RBAC (admin/editor/viewer + 전역 platform-admin)
             http
                 .authorizeHttpRequests { auth ->
                     auth
                         .requestMatchers(*PUBLIC_PATHS).permitAll()
+                        // 프론트가 인증 모드를 발견하는 부트스트랩 엔드포인트(비밀 없음)
+                        .requestMatchers("/api/v1/auth/config").permitAll()
+                        // 조회는 viewer 포함 인증만
+                        .requestMatchers(HttpMethod.GET, "/api/v1/**").authenticated()
+                        // 플러그인 = 임의 JAR 실행 + 전역 레지스트리 → 팀 admin 도 불가, 전역 롤만
+                        .requestMatchers("/api/v1/plugins/**").hasRole("platform-admin")
+                        // 설정 저장(콜백 수신 주소 등)은 팀 admin
+                        .requestMatchers(HttpMethod.PUT, "/api/v1/settings/**").hasRole("admin")
+                        // 나머지 쓰기(플로우/폴더/mock CRUD·실행·재개)는 editor 이상
+                        .requestMatchers("/api/v1/**").hasAnyRole("editor", "admin")
                         .anyRequest().authenticated()
                 }
-                .oauth2ResourceServer { oauth -> oauth.jwt(Customizer.withDefaults()) }
+                .oauth2ResourceServer { oauth ->
+                    oauth.jwt { jwt -> jwt.jwtAuthenticationConverter(JwtRoleConverter()) }
+                }
                 .addFilterAfter(TenantClaimFilter(props.tenantClaim),
                     BearerTokenAuthenticationFilter::class.java)
-            log.info("보안: OIDC JWT 리소스 서버 활성 (테넌트 클레임='{}')", props.tenantClaim)
+            log.info("보안: OIDC JWT 리소스 서버 + RBAC 활성 (테넌트 클레임='{}')", props.tenantClaim)
         } else {
             // 개발: 인증 없음 (issuer-uri 미설정)
             http.authorizeHttpRequests { auth -> auth.anyRequest().permitAll() }
@@ -61,13 +74,9 @@ class SecurityConfig {
     }
 
     @Bean
-    fun corsConfigurationSource(): CorsConfigurationSource {
+    fun corsConfigurationSource(props: SecurityProperties): CorsConfigurationSource {
         val config = CorsConfiguration()
-        config.allowedOrigins = listOf(
-            "http://localhost:5173",
-            "http://localhost:3000",
-            "http://localhost:18080"
-        )
+        config.allowedOrigins = props.corsOrigins
         config.allowedMethods = listOf("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
         config.allowedHeaders = listOf("*")
         config.allowCredentials = true

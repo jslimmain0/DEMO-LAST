@@ -70,15 +70,20 @@ flowlink:
       base-url: ${FLOWLINK_EXECUTION_RELAY_BASEURL:}
   # 보안 (IdP 비종속). issuer-uri 미설정 시 dev permitAll 로 동작.
   security:
-    tenant-claim: tenant                 # JWT 에서 테넌트 식별자를 읽을 클레임 이름
+    tenant-claim: tenant                 # JWT 에서 테넌트(팀) 식별자를 읽을 클레임 이름
+    client-id: flowlink-web              # 프론트(SPA)용 OIDC public 클라이언트 id — /api/v1/auth/config 로 노출
+    # cors-origins:                      # /api/** CORS 허용 오리진(미설정 시 localhost 5173/3000/18080)
+    #   - https://flowlink.example.com
 
-# 운영 전환 시 아래 주석을 풀어 OIDC 리소스 서버 활성화(어떤 OIDC IdP와도 호환):
+# 운영 전환 시 아래 주석을 풀어 OIDC 리소스 서버 + RBAC(admin/editor/viewer/platform-admin) 활성화.
+# issuer-uri 는 브라우저가 보는 주소(토큰 iss 와 일치해야 함), 컨테이너에서 IdP 도달 주소가 다르면 jwk-set-uri 를 별도 지정:
 # spring:
 #   security:
 #     oauth2:
 #       resourceserver:
 #         jwt:
-#           issuer-uri: https://your-idp.example.com/
+#           issuer-uri: http://localhost:8081/realms/flowlink
+#           # jwk-set-uri: http://keycloak:8080/realms/flowlink/protocol/openid-connect/certs
 
 springdoc:
   swagger-ui:

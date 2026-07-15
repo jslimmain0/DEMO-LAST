@@ -182,40 +182,42 @@ export function Editor() {
     setWaitStatus(null)
     const stop = new AbortController()
     stopRef.current = stop
-    // 진행 상태 폴러 전용 시그널 — ⏹(stop)과 별개로, 실행 루프가 끝나면 반드시 중단한다.
-    const watch = new AbortController()
     const setWaitingNode = useEditorStore.getState().setWaitingNode
     try {
       if (useEditorStore.getState().dirty) await save.mutateAsync()
 
-      // 실행 경과 애니메이션: 백엔드가 노드별 결과를 즉시 저장하므로, 방금 시작된 실행을 찾아
-      // 폴링하면 동기 실행 구간에서도 "어디까지 왔는지"가 실시간으로 보인다.
-      const baselineId = await runsApi.listForFlow(flowId, 1).then((l) => l[0]?.id ?? null).catch(() => null)
-      // GET /executions/{id} 는 대기(suspension) 중이면 pending 명세도 포함하므로 스냅샷을 그대로 쓴다.
-      void watchRunProgress(flowId, baselineId, watch.signal, (d) => {
-        setExecution((prev) => (prev && prev.finishedAt && !d.finishedAt ? prev : d)) // 종료 후 늦은 스냅샷만 무시
-      })
-
+      // 비동기 실행: POST 는 즉시 RUNNING 을 반환하고, 이 루프가 폴링 드라이버가 된다 —
+      // 폴링 스냅샷이 실행 경과 애니메이션(runView)도 함께 구동한다(별도 baseline 폴러 불필요).
+      // pending(브라우저 협업 지점)을 만나면 처리 후 resume(즉시 반환) → 다시 폴링으로 다음 상태를 감지.
       let detail = await runsApi.run(flowId)
       setExecution(detail)
-      // 서버가 중단(WAITING)하며 넘기는 지점을 처리하고 resume 으로 이어가길 반복:
-      //  - pendingForm: 팝업 열고 form 자동 submit → 즉시 재개(기다리지 않음)
-      //  - pendingWait: 백엔드가 콜백/타임아웃을 직접 받아 자동 재개 → 폴링으로 완료(또는 다음 pending)를 감지
-      //  - pendingClient: 브라우저가 직접 API 호출 → 결과 전송
       let guard = 0
-      while ((detail.pendingClient || detail.pendingForm || detail.pendingWait || detail.pendingInput) && guard++ < 100) {
-        // ⏹ 중단은 wait 대기뿐 아니라 어느 중단 지점에서도 존중 — 대기 중인 노드를 중단 사유로 재개해 CANCELLED 로 마감
+      let waitBannerNode: string | null = null
+      while (guard++ < 5000) {
+        if (detail.status !== 'RUNNING' && detail.status !== 'WAITING') break // 종료(SUCCEEDED/FAILED/CANCELLED)
+
+        // ⏹ 중단 — pending 지점이면 그 노드를 중단 사유로 재개해 CANCELLED 로 마감.
+        // (노드 실행 도중이면 취소 API 가 없어 백엔드는 이어 진행 — 화면만 멈춘다)
         if (stop.signal.aborted) {
           const nodeId = detail.pendingForm?.nodeId ?? detail.pendingWait?.nodeId ?? detail.pendingInput?.nodeId ?? detail.pendingClient?.nodeId
-          detail = await runsApi.resume(detail.id, { nodeId, error: '실행이 중단되었습니다.', aborted: true })
-          setExecution(detail)
+          if (nodeId) {
+            await runsApi.resume(detail.id, { nodeId, error: '실행이 중단되었습니다.', aborted: true })
+            // 취소 확정(비동기 재개)을 짧게 폴링
+            for (let i = 0; i < 20; i++) {
+              await sleep(300)
+              detail = await runsApi.get(detail.id)
+              setExecution(detail)
+              if (detail.status !== 'RUNNING' && detail.status !== 'WAITING') break
+            }
+          }
           break
         }
+
         if (detail.pendingInput) {
           // 사용자 입력 대기: 모달에 값 입력 → confirm 값이 노드 출력. 취소는 실행 중단.
           const pi = detail.pendingInput
           const values = await askInput(pi)
-          detail = await runsApi.resume(detail.id, values === null
+          await runsApi.resume(detail.id, values === null
             ? { nodeId: pi.nodeId, error: '사용자가 입력을 취소했습니다.', aborted: true }
             : { nodeId: pi.nodeId, formValues: values })
         } else if (detail.pendingForm) {
@@ -224,12 +226,18 @@ export function Editor() {
           const fnode = useEditorStore.getState().nodes.find((n) => n.id === pf.nodeId)
           const display = (fnode?.data as { formDisplay?: string } | undefined)?.formDisplay
           const err = display === 'iframe' ? openFormIframe(pf) : openFormPopup(pf)
-          detail = await runsApi.resume(detail.id, err
+          await runsApi.resume(detail.id, err
             ? { nodeId: pf.nodeId, error: err }
             : { nodeId: pf.nodeId, popupOpened: true })
-        } else if (detail.pendingWait) {
-          // 콜백/타임아웃은 백엔드가 직접 받아 자동 재개한다 — 프론트는 폴링으로 완료(또는 다음 pending)를 감지.
-          const pw = detail.pendingWait
+        } else if (detail.pendingClient) {
+          const resumeBody = await callClientRequest(detail.pendingClient)
+          await runsApi.resume(detail.id, resumeBody)
+        }
+
+        // wait 배너/펄스 — pendingWait 가 보이는 동안 유지(콜백/타임아웃은 백엔드가 자가 재개)
+        const pw = detail.pendingWait
+        if (pw?.nodeId && pw.nodeId !== waitBannerNode) {
+          waitBannerNode = pw.nodeId
           setWaitingNode(pw.nodeId)
           setWaitStatus({
             nodeId: pw.nodeId,
@@ -237,19 +245,15 @@ export function Editor() {
             receiveUrl: pw.receiveUrl ?? null,
             deadline: Date.now() + pw.timeoutSec * 1000,
           })
-          // 같은 wait 노드가 대기 중인 동안 1초 간격 폴링. ⏹ 중단 시 즉시 빠져나가 루프 상단이 취소 처리(resume aborted).
-          while (detail.pendingWait?.nodeId === pw.nodeId && !stop.signal.aborted) {
-            await sleep(1000, stop.signal)
-            if (stop.signal.aborted) break
-            detail = await runsApi.get(detail.id)
-            setExecution(detail)
-          }
+        } else if (!pw && waitBannerNode) {
+          waitBannerNode = null
           setWaitStatus(null)
           setWaitingNode(null)
-        } else if (detail.pendingClient) {
-          const resumeBody = await callClientRequest(detail.pendingClient)
-          detail = await runsApi.resume(detail.id, resumeBody)
         }
+
+        await sleep(detail.pendingWait ? 1000 : 400, stop.signal)
+        if (stop.signal.aborted) continue // 루프 상단의 중단 처리로
+        detail = await runsApi.get(detail.id)
         setExecution(detail)
       }
     } catch (e) {
@@ -259,7 +263,6 @@ export function Editor() {
       }
       setExecution(null)
     } finally {
-      watch.abort()
       stopRef.current = null
       setWaitingNode(null)
       setWaitStatus(null)
@@ -359,38 +362,7 @@ export function Editor() {
   )
 }
 
-/**
- * 실행 경과 폴러 — 방금 시작된 실행(baseline 과 다른 최신 실행)을 찾아 완료될 때까지
- * ExecutionDetail 을 폴링한다. 실패는 애니메이션 저하일 뿐이라 조용히 무시(실행 자체 무영향).
- */
-async function watchRunProgress(
-  flowId: string,
-  baselineId: string | null,
-  signal: AbortSignal,
-  onDetail: (d: ExecutionDetail) => void,
-) {
-  try {
-    let execId: string | null = null
-    for (let i = 0; i < 40 && !execId; i++) { // 최대 ~12초 탐색(그 안에 못 찾으면 애니메이션 없이 진행)
-      await sleep(300, signal)
-      if (signal.aborted) return
-      const latest = (await runsApi.listForFlow(flowId, 1))[0]
-      if (latest && latest.id !== baselineId) execId = latest.id
-    }
-    while (execId && !signal.aborted) {
-      const d = await runsApi.get(execId)
-      if (signal.aborted) return
-      onDetail(d)
-      if (d.status !== 'RUNNING' && d.status !== 'WAITING') return // 종료 상태 — 더 폴링할 것 없음
-      // WAITING(콜백/입력/팝업 대기)엔 실행 루프가 이미 1초 폴링을 담당 — 진행 폴러는 백오프(부하 중복 완화)
-      await sleep(d.status === 'WAITING' ? 1500 : 400, signal)
-    }
-  } catch {
-    /* 폴링 실패 무시 — 실행 루프의 결과 반영이 항상 우선한다 */
-  }
-}
-
-// wait(콜백 대기) 폴링 간격용 sleep — 중단 시그널이 오면 즉시 깨어난다(⏹ 반응성).
+// 폴링 간격용 sleep — 중단 시그널이 오면 즉시 깨어난다(⏹ 반응성).
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve) => {
     if (signal?.aborted) return resolve()

@@ -6,6 +6,7 @@ import jakarta.persistence.EnumType
 import jakarta.persistence.Enumerated
 import jakarta.persistence.Id
 import jakarta.persistence.Table
+import jakarta.persistence.UniqueConstraint
 import org.hibernate.annotations.CreationTimestamp
 import org.hibernate.annotations.UpdateTimestamp
 import java.time.Instant
@@ -17,13 +18,17 @@ import java.util.UUID
  * 저장하면 즉시 `/mock/{slug}/` 이하로 서빙된다(별도 프로세스 없음).
  *
  * 라우트/규칙/응답 템플릿을 spec_json 으로 정의한다(전부 사용자 정의 커스텀 목).
- * slug 는 서빙 URL 경로라서 **전역 유니크**(테넌트 무관). 서빙은 무인증(외부 시스템 흉내),
- * 관리 API 만 테넌트 스코프.
+ * slug 는 **팀(테넌트) 스코프 유니크** — 서빙 경로는 `/mock/{tenant}/{slug}/…`,
+ * default 테넌트는 레거시 `/mock/{slug}/…` 로도 서빙(하위호환, MockPathResolver).
+ * 서빙은 무인증(외부 시스템 흉내), 관리 API 만 테넌트 스코프.
  *
  * `kind` 는 향후 프리셋 확장 여지를 위해 남긴 컬럼으로, 현재는 CUSTOM 하나뿐이다.
  */
 @Entity
-@Table(name = "mock_server")
+@Table(
+    name = "mock_server",
+    uniqueConstraints = [UniqueConstraint(name = "uq_mock_server_tenant_slug", columnNames = ["tenant_id", "slug"])]
+)
 class MockServer {
 
     enum class Kind { CUSTOM }
@@ -40,8 +45,8 @@ class MockServer {
     @Column(nullable = false)
     lateinit var name: String
 
-    /** 서빙 경로 조각(/mock/{slug}/…) — 전역 유니크, [a-z0-9-]{3,40}. */
-    @Column(nullable = false, unique = true, length = 64)
+    /** 서빙 경로 조각 — 팀 스코프 유니크(tenant_id, slug), [a-z0-9-]{3,40}. */
+    @Column(nullable = false, length = 64)
     lateinit var slug: String
         private set
 

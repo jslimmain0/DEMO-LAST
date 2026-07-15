@@ -39,19 +39,19 @@ class MockGatewayController(
     /** 서버별 파싱된 spec 캐시(raw JSON 이 그대로면 재파싱 생략 — mock 은 반복 호출되는 경로). */
     private val specCache: MutableMap<UUID, Pair<String, MockSpec>> = ConcurrentHashMap()
 
-    @RequestMapping(path = ["/mock/{slug}", "/mock/{slug}/**"])
-    fun handle(@PathVariable slug: String, request: HttpServletRequest): ResponseEntity<ByteArray> {
+    @RequestMapping(path = ["/mock/{first}", "/mock/{first}/**"])
+    fun handle(@PathVariable first: String, request: HttpServletRequest): ResponseEntity<ByteArray> {
         if ("OPTIONS".equals(request.method, ignoreCase = true)) {
             return withCors(ResponseEntity.noContent()).build()
         }
         return try {
-            val found = service.findForServing(slug)
-            if (found.isEmpty) {
-                return jsonError(404, "mock 서버가 없거나 비활성화됨: $slug")
-            }
-            val server = found.get()
-            val req = parse(slug, request)
-            log.info("[mock:{}] {} {}", slug, req.method, req.path)
+            // slug 는 팀 스코프 — /mock/{tenant}/{slug}/… 우선, 실패 시 레거시 /mock/{slug}/…(default 테넌트)
+            val resolved = MockPathResolver.resolve(request.requestURI) { t, s ->
+                service.findForServing(t, s).orElse(null)
+            } ?: return jsonError(404, "mock 서버가 없거나 비활성화됨: $first")
+            val server = resolved.server
+            val req = parse(resolved.pathPrefix, request)
+            log.info("[mock:{}/{}] {} {}", server.tenantId, server.slug, req.method, req.path)
 
             val res = handleCustom(server, req)
 
@@ -70,7 +70,7 @@ class MockGatewayController(
             res.headers.forEach { (k, v) -> b.header(k, v) }
             b.body(res.body)
         } catch (e: Exception) {
-            log.warn("[mock:{}] 처리 오류: {}", slug, if (e.message == null) e.toString() else e.message)
+            log.warn("[mock:{}] 처리 오류: {}", first, if (e.message == null) e.toString() else e.message)
             jsonError(500, "mock 처리 오류: " + (if (e.message == null) e.toString() else e.message))
         }
     }
@@ -116,9 +116,8 @@ class MockGatewayController(
 
     // ---------- 요청 파싱 ----------
 
-    private fun parse(slug: String, request: HttpServletRequest): MockRequest {
+    private fun parse(prefix: String, request: HttpServletRequest): MockRequest {
         val raw = request.requestURI
-        val prefix = "/mock/$slug"
         val rawPath = if (raw.length > prefix.length) raw.substring(prefix.length) else "/"
         val path = MockHttp.decodePath(rawPath)
 

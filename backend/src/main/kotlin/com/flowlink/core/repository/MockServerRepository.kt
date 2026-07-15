@@ -11,8 +11,8 @@ interface MockServerRepository : JpaRepository<MockServer, UUID> {
 
     fun findByIdAndTenantId(id: UUID, tenantId: String): Optional<MockServer>
 
-    /** 서빙 경로 조회 — slug 는 전역 유니크라 테넌트 무관(무인증 게이트웨이용). */
-    fun findBySlug(slug: String): Optional<MockServer>
+    /** 서빙 경로 조회 — slug 는 팀 스코프 유니크(무인증 게이트웨이는 경로의 tenant 세그먼트로 조회). */
+    fun findByTenantIdAndSlug(tenantId: String, slug: String): Optional<MockServer>
 
-    fun existsBySlug(slug: String): Boolean
+    fun existsByTenantIdAndSlug(tenantId: String, slug: String): Boolean
 }

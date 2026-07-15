@@ -18,7 +18,7 @@ import java.util.Optional
 import java.util.UUID
 import java.util.regex.Pattern
 
-/** Mock 서버 관리(테넌트 스코프 CRUD) + 서빙 조회(무인증, slug 전역 유니크). */
+/** Mock 서버 관리(테넌트 스코프 CRUD) + 서빙 조회(무인증, slug 팀 스코프 유니크). */
 @Service
 class MockServerService(
     private val repository: MockServerRepository,
@@ -37,7 +37,7 @@ class MockServerService(
         if (!SLUG.matcher(slug).matches()) {
             throw BadRequestException("slug 는 소문자·숫자·하이픈 3~40자여야 합니다: $slug")
         }
-        if (repository.existsBySlug(slug)) {
+        if (repository.existsByTenantIdAndSlug(tenant(), slug)) {
             throw BadRequestException("이미 사용 중인 slug 입니다: $slug")
         }
         // saveAndFlush: 신규 엔티티라 @CreationTimestamp lateinit createdAt/updatedAt 가 flush 후 채워진다
@@ -88,10 +88,10 @@ class MockServerService(
         tcpRegistry.stop(m.id)
     }
 
-    /** 게이트웨이 서빙용 — 무인증·테넌트 무관(slug 전역 유니크). */
+    /** 게이트웨이 서빙용 — 무인증. tenant 는 경로 세그먼트에서 온다(레거시 경로는 default 테넌트). */
     @Transactional(readOnly = true)
-    fun findForServing(slug: String): Optional<MockServer> =
-        repository.findBySlug(slug).filter { it.isEnabled }
+    fun findForServing(tenantId: String, slug: String): Optional<MockServer> =
+        repository.findByTenantIdAndSlug(tenantId, slug).filter { it.isEnabled }
 
     fun parseSpec(specJson: String?): MockSpec {
         if (specJson == null || specJson.isBlank()) {

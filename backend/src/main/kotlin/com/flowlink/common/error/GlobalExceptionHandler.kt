@@ -21,6 +21,10 @@ class GlobalExceptionHandler {
     fun handleBadRequest(ex: BadRequestException, req: HttpServletRequest): ResponseEntity<ApiError> =
         build(HttpStatus.BAD_REQUEST, ex.message, req, listOf())
 
+    @ExceptionHandler(TooManyRequestsException::class)
+    fun handleTooMany(ex: TooManyRequestsException, req: HttpServletRequest): ResponseEntity<ApiError> =
+        build(HttpStatus.TOO_MANY_REQUESTS, ex.message, req, listOf())
+
     @ExceptionHandler(OptimisticLockingFailureException::class)
     fun handleConflict(ex: OptimisticLockingFailureException, req: HttpServletRequest): ResponseEntity<ApiError> =
         build(HttpStatus.CONFLICT,

@@ -13,4 +13,8 @@ interface ExecutionSuspensionRepository : JpaRepository<ExecutionSuspension, UUI
      */
     @Modifying
     fun deleteByExecutionIdAndPendingNodeId(executionId: UUID, pendingNodeId: String): Int
+
+    /** 종료(완료/실패/취소) 시 잔여 행 정리 — 없으면 0 (조용히). */
+    @Modifying
+    fun deleteByExecutionId(executionId: UUID): Int
 }

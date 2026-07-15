@@ -3,6 +3,25 @@
 프론트(dist)가 **jar 안에 동봉**되어 내장 톰캣이 화면+API 를 한 프로세스(:18080)로 서빙한다.
 nginx·별도 프론트 서버 불필요. 내부망 전용 구성(h2 프로파일 = H2 파일 DB + SSRF 가드 off — 사내 사설 IP 자유 호출).
 
+## 0. (선택) SSO 로그인 + 팀 격리 — Keycloak (SaaS P1)
+
+기본은 인증 없음(dev 모드, 지금까지와 동일). **여러 팀이 쓰는 공유 인스턴스**로 돌리려면 Keycloak 을 붙인다:
+
+```bash
+# Keycloak 기동 (realm flowlink + 롤 admin/editor/viewer/platform-admin + 테스트 유저 자동 import)
+docker compose -f deploy/keycloak-dev.compose.yml up -d
+
+# 백엔드를 issuer 로 기동 → 로그인 필수 + RBAC + 팀(tenant 클레임) 격리 활성
+SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI=http://localhost:8081/realms/flowlink \
+java -jar flowlink.jar --spring.profiles.active=h2
+```
+
+- 테스트 유저(비번=아이디): alice(team-a, admin+platform-admin) / bob(team-a, editor) / carol(team-a, viewer) / dave(team-b, editor)
+- SPA 는 `/api/v1/auth/config` 로 인증 모드를 자동 발견(프론트 env 불필요), 화면은 Keycloak 로그인으로 리다이렉트.
+- 사용자·팀 관리: Keycloak 관리 콘솔 `http://localhost:8081` (admin/admin) — 유저 attribute `tenant` = 팀 id, realm 롤로 권한.
+- 검증: `node e2e/saas-p1-auth.mjs` (27 케이스).
+- 실 IdP(Entra/Auth0 등)를 쓰려면 issuer-uri 만 그쪽으로 — 코드는 IdP 비종속. 프록시 뒤라면 realm JSON 의 redirectUris 에 실제 오리진 추가.
+
 ## 1. 빌드 (개발 PC)
 
 ```bash

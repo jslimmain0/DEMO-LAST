@@ -624,6 +624,32 @@ design/   theme(라이트/다크) · index.css(CSS 변수)
 - ⚠️ ③은 실행을 시작한 요청의 오리진 기준 — 프록시 뒤에서 X-Forwarded 를 해석하려면 ForwardedHeaderFilter 후속.
   스케줄 실행(비요청 스레드) 도입 시엔 설정/env 필요(현재 MANUAL 만).
 
+## 최근 변경 (2026-07-15) — SaaS 전환 P1: 인증·RBAC·테넌시 하드닝 (`saas-overhaul` 브랜치)
+
+설계: [docs/superpowers/specs/2026-07-15-saas-overhaul-design.md](docs/superpowers/specs/2026-07-15-saas-overhaul-design.md) (4페이즈 — P1 인증·격리 / P2 내구 비동기 실행 / P3 presence / P4 Oracle·Compose).
+- **RBAC(OIDC 모드에서만)**: [JwtRoleConverter](backend/src/main/kotlin/com/flowlink/security/JwtRoleConverter.kt) 가
+  Keycloak `realm_access`/`resource_access` 롤 → `ROLE_*`. SecurityConfig URL 규칙: GET=인증만(viewer),
+  쓰기=editor/admin, `/plugins/**`=platform-admin(전역), settings 쓰기=admin. **dev 모드(issuer 미설정)는 현행 그대로 permitAll**.
+- **부트스트랩 API**: `GET /api/v1/auth/config`(public — enabled/issuer/clientId, 프론트가 env 없이 인증 모드 발견) ·
+  `GET /api/v1/auth/me`(username/tenant/roles — dev 모드는 전권 가짜 사용자 "dev"). `Execution.triggeredBy` 에 사용자명 기록.
+- **테넌트 구멍 수정**: `GET /flows/{id}/runs` 가 테넌트 미필터였음 → flow 소유 확인 선행.
+- **mock slug 팀 스코프**: V7 마이그레이션 — 유니크가 (tenant_id, slug). 서빙 경로 `/mock/{tenant}/{slug}/**` +
+  **레거시 `/mock/{slug}/**` 는 default 테넌트로 폴백**([MockPathResolver](backend/src/main/kotlin/com/flowlink/mock/MockPathResolver.kt),
+  더 구체적인 쌍 매치 우선) — 기존 데이터·demos·seed 무변경 동작. ⚠ 기존 H2 파일 DB 엔 옛 전역 유니크 인덱스가 남음(ddl-auto 는 못 지움) — 팀별 동일 slug 를 dev 에서 쓰려면 `.mv.db` 초기화.
+- **프론트 로그인**: oidc-client-ts PKCE([auth/](frontend/src/auth/)) — 부팅 시 `/auth/config` → enabled 면 자동 SSO 리다이렉트,
+  `/auth/callback`(StrictMode 가드), axios 두 인스턴스에 Bearer+401 silent 갱신 인터셉터. `usePermissions()` 로
+  viewer 읽기전용 게이팅(에디터 저장/실행/가져오기·대시보드/Mock 쓰기 UI·플러그인 업로드=platform-admin), 사이드바 사용자 칩.
+- **저장 409 다이얼로그**([ConflictDialog](frontend/src/components/ConflictDialog.tsx)) + **미니 토스트**([components/toast.tsx](frontend/src/components/toast.tsx)) —
+  onRun 무음 catch 제거, 플러그인 업로드 실패 표면화(알려진 부채 해소).
+- **Keycloak dev 스택**: `docker compose -f deploy/keycloak-dev.compose.yml up -d`(realm 자동 import,
+  [deploy/keycloak/flowlink-realm.json](deploy/keycloak/flowlink-realm.json)) → 백엔드 env
+  `SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI=http://localhost:8081/realms/flowlink` 로 기동.
+  테스트 유저(비번=아이디): alice(team-a admin+platform-admin)/bob(team-a editor)/carol(team-a viewer)/dave(team-b editor).
+- 검증: 단위 8종(JwtRoleConverter 8·MockPathResolver 9 포함) + **OIDC e2e 27/27**(`node e2e/saas-p1-auth.mjs` —
+  401/403 매트릭스·테넌트 격리·팀별 동일 slug·플러그인 게이트·triggeredBy) + 브라우저(SSO 리다이렉트·viewer 게이팅·사용자 칩)
+  + dev 모드 무회귀(mock 레거시/테넌트 경로·seed). 프론트 tsc/build/oxlint 통과.
+- ⚠ Keycloak 유저는 프로필 필수값(firstName/lastName/email) 없으면 password grant 가 "Account is not fully set up" 에러.
+
 ## 참고 문서
 - `backend/README.md` — Phase 1 구현 범위 표, API 요약, 실행 가이드
 - `docs/` — UI/UX 멀티에이전트 설계 토론 로그, 엔터프라이즈 고도화 설계

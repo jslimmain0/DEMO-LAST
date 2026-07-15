@@ -135,6 +135,29 @@ class FlowExecutor(
         return RunState(edges, byId, order, active, ctx, relayBase, relayRunId)
     }
 
+    /**
+     * 재개 상태의 내구 영속용 스냅샷 — 그래프는 제외(graphJson 재파싱으로 재구성),
+     * 변이 상태(active/ctx/index/seq/pending)만 담는다.
+     */
+    fun snapshot(st: RunState): RunStateSnapshot = RunStateSnapshot(
+        st.active.toList(), st.ctx.snapshotValues(), st.ctx.snapshotSeeds(),
+        st.index, st.seq, st.pendingNodeId, st.pendingFormSpec, st.relayBase, st.relayRunId
+    )
+
+    /** 스냅샷 + 원본 그래프로 RunState 를 되살린다(서버 재시작 후 콜백/재개용). */
+    fun rehydrate(graph: FlowGraph, snap: RunStateSnapshot): RunState {
+        val ctx = ExecutionContext()
+        ctx.restore(snap.ctxValues, snap.ctxSeeds)
+        val st = newRun(graph, ctx, snap.relayBase, snap.relayRunId)
+        st.active.clear()
+        st.active.addAll(snap.activeIds)
+        st.index = snap.index
+        st.seq = snap.seq
+        st.pendingNodeId = snap.pendingNodeId
+        st.pendingFormSpec = snap.pendingForm
+        return st
+    }
+
     /** 처음부터 실행한다(편의 오버로드 — 재개가 필요 없는 호출/테스트용). */
     fun execute(graph: FlowGraph, ctx: ExecutionContext, recorder: NodeRecorder): Outcome =
         drive(newRun(graph, ctx), recorder)

@@ -10,12 +10,24 @@ class ExecutionProperties(
     capture: Capture?,
     relay: Relay?,
     maxNodesPerRun: Int = 0,
+    stateSecret: String? = null,
+    worker: Worker? = null,
 ) {
     val http: Http = http ?: Http(5000, 30000, 5_242_880L)
     val ssrf: Ssrf = ssrf ?: Ssrf(true, true, false, listOf("169.254.169.254"), listOf("http", "https"))
     val capture: Capture = capture ?: Capture(false)
     val relay: Relay = relay ?: Relay(null)
     val maxNodesPerRun: Int = if (maxNodesPerRun <= 0) 200 else maxNodesPerRun
+
+    /** suspension run_state 암호화 키 소스(env FLOWLINK_EXECUTION_STATE_SECRET) — 미설정 시 dev 고정키. */
+    val stateSecret: String? = if (stateSecret.isNullOrBlank()) null else stateSecret
+    val worker: Worker = worker ?: Worker()
+
+    /** 실행 워커 풀(비동기 실행/재개 연속 실행 전용). 큐 초과 제출은 429 로 거절. */
+    class Worker(poolSize: Int = 0, queueCapacity: Int = 0) {
+        val poolSize: Int = if (poolSize <= 0) 8 else poolSize
+        val queueCapacity: Int = if (queueCapacity <= 0) 100 else queueCapacity
+    }
 
     /**
      * 실행 로그 캡처 정책(redaction). 기본은 deny-by-default — 요청/응답 본문은 저장하지 않는다.

@@ -37,4 +37,18 @@ class ExecutionContext {
 
     /** 삽입 역순 키 목록(가장 최근에 생성된 출력부터). */
     fun keysReversed(): List<String> = values.keys.reversed()
+
+    // ---------- 내구 실행(suspension DB 영속)용 스냅샷/복원 ----------
+    // 삽입 순서가 의미론(nearest-upstream)이라 LinkedHashMap 순서 그대로 내보내고 되살린다.
+
+    fun snapshotValues(): Map<String, Any?> = LinkedHashMap(values)
+
+    fun snapshotSeeds(): Map<String, Any?> = LinkedHashMap(seeds)
+
+    fun restore(values: Map<String, Any?>, seeds: Map<String, Any?>) {
+        this.values.clear()
+        this.values.putAll(values)
+        this.seeds.clear()
+        this.seeds.putAll(seeds)
+    }
 }

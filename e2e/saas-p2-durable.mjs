@@ -7,9 +7,10 @@
  * 실행: node e2e/saas-p2-durable.mjs
  */
 import { execSync } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
 
 const BASE = process.env.FLOWLINK_BASE || 'http://localhost:18080'
-const BACKEND_DIR = new URL('../backend', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')
+const BACKEND_DIR = fileURLToPath(new URL('../backend', import.meta.url))
 
 let pass = 0, fail = 0
 const ok = (name, cond, extra = '') => {
@@ -49,7 +50,12 @@ async function pollExec(execId, until, timeoutMs = 30000, intervalMs = 300) {
 const TERMINAL = (d) => ['SUCCEEDED', 'FAILED', 'CANCELLED'].includes(d.status)
 
 function ps(script, args = '') {
-  execSync(`powershell -ExecutionPolicy Bypass -File scripts\\${script} ${args}`, { cwd: BACKEND_DIR, stdio: 'pipe' })
+  try {
+    execSync(`powershell -ExecutionPolicy Bypass -File scripts\\${script} ${args}`, { cwd: BACKEND_DIR, stdio: 'pipe' })
+  } catch (e) {
+    console.error(`  ⚠ ${script} ${args} 실패(exit=${e.status}):`, e.stderr?.toString?.().slice(-500) ?? e.message)
+    throw e
+  }
 }
 
 async function waitHealth(timeoutMs = 120000) {

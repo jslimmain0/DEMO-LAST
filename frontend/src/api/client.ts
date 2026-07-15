@@ -19,7 +19,8 @@ export const http = axios.create({
 })
 
 // 멀티파트(파일 업로드)용 — 기본 JSON 헤더 없이 axios가 boundary 를 설정하게 둔다.
-const uploadHttp = axios.create({ baseURL: '/api/v1' })
+// (auth 모듈이 두 인스턴스 모두에 Bearer 인터셉터를 부착한다)
+export const uploadHttp = axios.create({ baseURL: '/api/v1' })
 
 export const flowsApi = {
   list: () => http.get<FlowSummary[]>('/flows').then((r) => r.data),

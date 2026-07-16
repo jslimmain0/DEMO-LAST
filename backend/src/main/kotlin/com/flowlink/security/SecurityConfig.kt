@@ -56,6 +56,12 @@ class SecurityConfig {
                         .requestMatchers(HttpMethod.PUT, "/api/v1/settings/**").hasRole("admin")
                         // 나머지 쓰기(플로우/폴더/mock CRUD·실행·재개)는 editor 이상
                         .requestMatchers("/api/v1/**").hasAnyRole("editor", "admin")
+                        // 동봉 SPA 셸 — 로그인 전에 index.html/assets 가 로드돼야 SSO 리다이렉트가
+                        // 시작된다. 화면 라우트(GET, SPA fallback=index.html)와 정적 번들만 명시 허용
+                        // (데이터는 전부 /api 게이트 뒤 — 셸 자체엔 비밀 없음).
+                        .requestMatchers(HttpMethod.GET,
+                            "/", "/index.html", "/assets/**", "/favicon.svg", "/auth/callback",
+                            "/flows", "/flows/*", "/executions", "/mocks", "/mocks/*").permitAll()
                         .anyRequest().authenticated()
                 }
                 .oauth2ResourceServer { oauth ->

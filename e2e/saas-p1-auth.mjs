@@ -87,7 +87,13 @@ async function main() {
   const flowId = created.data?.id
   ok('bob 버전 저장', (await B('POST', `/flows/${flowId}/versions`, { graph: MINI_GRAPH })).status < 300)
   const run = await B('POST', `/flows/${flowId}/runs`, {})
-  ok('bob 실행 SUCCEEDED', run.data?.status === 'SUCCEEDED', JSON.stringify(run.data?.status))
+  // P2 비동기화 이후 POST 는 RUNNING 즉시 반환 — 종료까지 폴링
+  let runDone = run.data
+  for (let i = 0; i < 40 && runDone && !['SUCCEEDED', 'FAILED', 'CANCELLED'].includes(runDone.status); i++) {
+    await new Promise((r) => setTimeout(r, 300))
+    runDone = (await B('GET', `/executions/${run.data.id}`)).data
+  }
+  ok('bob 실행 SUCCEEDED', runDone?.status === 'SUCCEEDED', JSON.stringify(runDone?.status))
   ok('triggeredBy=bob', run.data?.triggeredBy === 'bob', `=${run.data?.triggeredBy}`)
   ok('carol 실행 403', (await C('POST', `/flows/${flowId}/runs`, {})).status === 403)
 
@@ -109,6 +115,13 @@ async function main() {
   ok('alice(platform-admin) 는 403 아님(깨진 JAR 4xx/5xx 허용)', upAlice.status !== 403, `=${upAlice.status}`)
 
   console.log('== ⑦ mock slug 팀 스코프 ==')
+  // 재실행 멱등 — 영속 DB(Oracle 등)에 이전 실행의 demo slug 가 남아 있으면 지우고 시작
+  for (const who of [B, D]) {
+    const list = await who('GET', '/mock-servers')
+    for (const m of (list.data ?? []).filter((m) => m.slug === 'demo')) {
+      await who('DELETE', `/mock-servers/${m.id}`)
+    }
+  }
   const mkB = await B('POST', '/mock-servers', { name: 'demo', slug: 'demo' })
   ok('bob(team-a) slug demo 생성', mkB.status === 201, `=${mkB.status} ${JSON.stringify(mkB.data)}`)
   const mkD = await D('POST', '/mock-servers', { name: 'demo', slug: 'demo' })

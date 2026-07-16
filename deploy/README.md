@@ -22,6 +22,34 @@ java -jar flowlink.jar --spring.profiles.active=h2
 - 검증: `node e2e/saas-p1-auth.mjs` (27 케이스).
 - 실 IdP(Entra/Auth0 등)를 쓰려면 issuer-uri 만 그쪽으로 — 코드는 IdP 비종속. 프록시 뒤라면 realm JSON 의 redirectUris 에 실제 오리진 추가.
 
+## 0.5. (선택) Compose 풀스택 — 앱 + Oracle Free + Keycloak (SaaS P4)
+
+`docker compose up` 한 번으로 **앱(Oracle 프로파일) + Oracle Free 23ai + Keycloak(SSO)** 전부 컨테이너로 뜬다.
+사내 Oracle 로 옮길 때는 `FLOWLINK_DB_URL` 만 그쪽으로 바꾸면 된다(스키마는 Flyway `db/migration/oracle` 이 자동 생성).
+
+```bash
+# ① 빌드(호스트) — dist 를 jar 에 동봉
+cd frontend && npm run build
+cd ../backend && gradle bootJar
+
+# ② 스택 기동 (첫 회는 Oracle 이미지 pull + DB 생성으로 수 분)
+cd .. && docker compose -f deploy/docker-compose.yml up -d --build
+
+# 접속: http://localhost:18080  (Keycloak 로그인 — 비번=아이디: alice/bob/carol/dave)
+# 초기화(데이터 포함 삭제): docker compose -f deploy/docker-compose.yml down -v
+```
+
+- 서비스: `app`(:18080, `SPRING_PROFILES_ACTIVE=oracle`) · `oracle`(gvenzl/oracle-free:23-slim, :1521, APP_USER=flowlink) · `keycloak`(:8081, realm 자동 import).
+- issuer 이중 주소: 토큰 iss 검증은 `issuer-uri=http://localhost:8081/...`(브라우저 관점), JWKS 는 `jwk-set-uri=http://keycloak:8080/...`(컨테이너 내부) — compose env 에 이미 분리 설정됨.
+- mock 시드(OIDC 라 editor 이상 토큰 필요):
+  ```bash
+  TOKEN=$(curl -s http://localhost:8081/realms/flowlink/protocol/openid-connect/token \
+    -d grant_type=password -d client_id=flowlink-web -d username=alice -d password=alice | jq -r .access_token)
+  FLOWLINK_TOKEN=$TOKEN node demos/seed-mock.mjs
+  ```
+- 검증: `node e2e/saas-p1-auth.mjs` — RBAC/테넌트 격리 27 케이스가 Oracle 위에서 그대로 통과.
+- 운영 전 교체: `FLOWLINK_EXECUTION_STATE_SECRET`(스냅샷 암호키)·Keycloak admin 비번·DB 비번.
+
 ## 1. 빌드 (개발 PC)
 
 ```bash

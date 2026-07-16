@@ -705,6 +705,35 @@ design/   theme(라이트/다크) · index.css(CSS 변수)
   OIDC 토큰이 쿼리스트링(사내 도구 전제 — 액세스 로그에 남을 수 있음). dev 모드는 두 탭이 같은 브라우저면 닉네임 공유(`fl:nick`).
   토큰 만료 후 재접속은 현재 액세스 토큰 사용(silent renew 는 axios 인터셉터가 유지).
 
+## 최근 변경 (2026-07-16) — SaaS 전환 P4: Oracle 지원 + Docker Compose 배포 (`saas-overhaul` 브랜치)
+
+계획: [docs/superpowers/plans/2026-07-16-saas-p4-oracle-compose.md](docs/superpowers/plans/2026-07-16-saas-p4-oracle-compose.md).
+`docker compose up` 한 번으로 **앱(Oracle 프로파일) + Oracle Free 23ai + Keycloak** 이 뜬다. 사내 Oracle 로는 `FLOWLINK_DB_URL` 만 교체.
+- **Flyway vendor 분리**: 기존 V1~V8 → `db/migration/postgresql/`(체크섬 내용 기반 — 기존 PG DB 안전),
+  Oracle 은 최종 상태 통합 [`db/migration/oracle/V1__init.sql`](backend/src/main/resources/db/migration/oracle/V1__init.sql)
+  (uuid→varchar2(36)·text→clob·boolean→number(1)·timestamptz→timestamp with time zone·varchar 는 **char 단위**).
+  `spring.flyway.locations: classpath:db/migration/{vendor}`. h2 프로파일은 flyway off 그대로(무영향).
+- **oracle 프로파일**([application-oracle.yml](backend/src/main/resources/application-oracle.yml)): ojdbc11(runtime)+
+  flyway-database-oracle, `hibernate.type.preferred_uuid_jdbc_type: CHAR`, **`ddl-auto: none`**(엔티티
+  `columnDefinition="text"` 12곳이 Oracle validate 와 충돌 — Flyway 가 스키마 소유), ssrf allow-loopback(내장 mock 호출).
+  Flyway 10.10 이 "Oracle 23 untested" WARN 을 내지만 마이그레이션 정상 적용 확인.
+- **Compose**([deploy/docker-compose.yml](deploy/docker-compose.yml) + [deploy/Dockerfile](deploy/Dockerfile)):
+  `oracle`(gvenzl/oracle-free:23-slim, APP_USER=flowlink, healthcheck) · `keycloak`(:8081, realm 자동 import,
+  `KC_HOSTNAME` 고정+backchannel dynamic) · `app`(eclipse-temurin:21-jre + flowlink.jar). **issuer 이중 주소 해법**:
+  `issuer-uri=localhost:8081`(토큰 iss 검증, 브라우저 관점)+`jwk-set-uri=keycloak:8080`(컨테이너 내부 도달) 분리.
+  빌드는 호스트에서(npm build→bootJar) 후 `docker compose -f deploy/docker-compose.yml up -d --build`. 런북: [deploy/README.md](deploy/README.md) §0.5.
+- **OIDC 모드 SPA 셸 401 버그 수정**: 단일 jar + OIDC 에서 `anyRequest().authenticated()` 가 index.html/assets 까지
+  막아 **로그인 리다이렉트가 시작조차 못 하던** 문제(P1 은 vite dev(:5173) 로만 브라우저 검증해서 잠복) —
+  SPA 셸 GET 경로(`/`·`/assets/**`·`/auth/callback`·화면 라우트)만 명시 permitAll(셸엔 비밀 없음, 데이터는 /api 게이트 뒤),
+  catch-all 은 authenticated 유지.
+- `demos/seed-mock.mjs` 에 `FLOWLINK_TOKEN` Bearer 지원(OIDC 스택용). `e2e/saas-p1-auth.mjs` 를 P2 비동기(폴링)·
+  영속 DB 재실행(멱등 slug 정리)에 맞게 갱신.
+- 검증(compose 스택): Flyway `Successfully applied 1 migration`(Oracle 23) → **RBAC/테넌시 e2e 27/27 on Oracle**(재실행 멱등) →
+  wait 실행이 suspension(clob AES-GCM)→콜백 claim→rehydrate→SUCCEEDED(내장 mock HTTP 호출 포함) → 브라우저 :18080 접속 시
+  Keycloak SSO 리다이렉트(PKCE)·`/auth/callback`/딥링크 200·h2-console 401. H2 dev 무회귀(단위 전부 PASS + 기동 확인).
+- ⚠ Oracle 데이터는 `oracle-data` 볼륨(초기화 `down -v`). 첫 기동은 이미지 pull+DB 생성으로 수 분. compose 의
+  state secret·비번은 데모값 — 운영 전 교체. Windows Docker Desktop 필요(데몬 미기동 시 compose 실패).
+
 ## 참고 문서
 - `backend/README.md` — Phase 1 구현 범위 표, API 요약, 실행 가이드
 - `docs/` — UI/UX 멀티에이전트 설계 토론 로그, 엔터프라이즈 고도화 설계

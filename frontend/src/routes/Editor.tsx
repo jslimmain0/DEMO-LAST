@@ -15,8 +15,11 @@ import { WorkflowIODialog } from '../openapi/WorkflowIODialog'
 import { InputPromptDialog } from '../components/InputPromptDialog'
 import { ResizeHandle } from '../components/ResizeHandle'
 import { ConflictDialog } from '../components/ConflictDialog'
+import { PresenceAvatars } from '../components/PresenceAvatars'
 import { toast } from '../components/toast'
-import { usePermissions } from '../auth/AuthContext'
+import { useAuth, usePermissions } from '../auth/AuthContext'
+import { getAccessToken } from '../auth/auth'
+import { devNickname, presence } from '../lib/presence'
 import { openFormIframe, openFormPopup } from '../lib/popup'
 import { computeRunView } from '../lib/runProgress'
 import { useEditorStore } from '../store/editorStore'
@@ -35,6 +38,19 @@ export function Editor() {
   const importGraph = useEditorStore((s) => s.importGraph)
 
   const { canEdit, isViewer } = usePermissions()
+  const { me, enabled: authEnabled } = useAuth()
+
+  // presence — 같은 플로우를 연 사람들끼리 커서/편집중/저장 알림(별도 presenceStore, 그래프 불변)
+  useEffect(() => {
+    if (!id) return
+    presence.connect(id, me?.username ?? devNickname(), authEnabled ? getAccessToken : undefined)
+    // 선택 노드 변경 → 편집중 신호(속성 패널이 그 노드를 편집 중)
+    const unsub = useEditorStore.subscribe((s, prev) => {
+      if (s.selectedId !== prev.selectedId) presence.sendEditing(s.selectedId)
+    })
+    return () => { unsub(); presence.close() }
+  }, [id, me?.username, authEnabled])
+
   const [execution, setExecution] = useState<ExecutionDetail | null>(null)
   const [running, setRunning] = useState(false)
   const [showLog, setShowLog] = useState(false)
@@ -161,7 +177,7 @@ export function Editor() {
 
   const save = useMutation({
     mutationFn: () => flowsApi.saveVersion(flowId, { graph: getGraph() }),
-    onSuccess: () => markSaved(),
+    onSuccess: () => { markSaved(); presence.sendSaved() },
     onError: (e) => {
       if (isAxiosError(e) && e.response?.status === 409) setSaveConflict(true)
       else toast(`저장 실패: ${e instanceof Error ? e.message : e}`, 'error')
@@ -304,6 +320,7 @@ export function Editor() {
           </span>
         )}
         {copyNote && <span role="status" style={{ fontSize: 12, color: 'var(--fl-primary)', fontWeight: 600 }}>{copyNote}</span>}
+        <PresenceAvatars />
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
           <button onClick={undo} disabled={!canUndo} aria-label="되돌리기" title="되돌리기 (Ctrl+Z)" style={{ ...ghostBtn, padding: '8px 11px', opacity: canUndo ? 1 : 0.4 }}>↺</button>
           <button onClick={redo} disabled={!canRedo} aria-label="다시 실행" title="다시 실행 (Ctrl+Shift+Z)" style={{ ...ghostBtn, padding: '8px 11px', opacity: canRedo ? 1 : 0.4 }}>↻</button>

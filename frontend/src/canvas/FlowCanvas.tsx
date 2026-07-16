@@ -4,11 +4,13 @@ import type { CSSProperties, DragEvent } from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { GraphNode, NodeType } from '../api/types'
 import { useEditorStore } from '../store/editorStore'
+import { presence } from '../lib/presence'
 import { BranchNode } from './BranchNode'
 import { DeletableEdge } from './DeletableEdge'
 import { GroupNode } from './GroupNode'
 import { NodeCard } from './NodeCard'
 import { NoteNode } from './NoteNode'
+import { PresenceOverlay } from './PresenceOverlay'
 import { SwitchNode } from './SwitchNode'
 import { catColor } from './nodeMeta'
 
@@ -112,6 +114,12 @@ export function FlowCanvas() {
         e.preventDefault()
         e.dataTransfer.dropEffect = 'copy'
       }}
+      onPointerMove={(e) => {
+        // presence — 내 커서를 flow 좌표로 다른 참여자에게(쓰로틀은 presence 가)
+        const p = screenToFlowPosition({ x: e.clientX, y: e.clientY })
+        presence.sendCursor(p.x, p.y)
+      }}
+      onPointerLeave={() => presence.hideCursor()}
     >
       <ReactFlow
         nodes={nodes}
@@ -144,6 +152,7 @@ export function FlowCanvas() {
           bgColor="var(--fl-surface)"
         />
         <Controls />
+        <PresenceOverlay />
       </ReactFlow>
     </div>
   )

@@ -43,7 +43,9 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-data-jpa")
     implementation("org.flywaydb:flyway-core")
     implementation("org.flywaydb:flyway-database-postgresql")
+    implementation("org.flywaydb:flyway-database-oracle")   // oracle 프로파일(db/migration/oracle)
     runtimeOnly("org.postgresql:postgresql")
+    runtimeOnly("com.oracle.database.jdbc:ojdbc11")         // oracle 프로파일 드라이버
     runtimeOnly("com.h2database:h2")        // dev 전용 인메모리 프로파일(-Dspring.profiles.active=h2)
 
     // --- Security (1단계: 골격만. OIDC/RBAC는 후속 Phase) ---

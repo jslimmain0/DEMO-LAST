@@ -18,6 +18,8 @@ spring:
   flyway:
     enabled: true
     baseline-on-migrate: true
+    # vendor 별 마이그레이션 디렉터리 — PG=postgresql/(기존 V1~V8 이동), Oracle=oracle/(통합 V1)
+    locations: classpath:db/migration/{vendor}
   mvc:
     servlet:
       load-on-startup: 1        # 시작 시 DispatcherServlet 초기화(첫 요청 지연/레이스 방지)

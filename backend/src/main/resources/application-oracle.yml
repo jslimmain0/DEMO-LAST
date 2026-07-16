@@ -1,0 +1,18 @@
+# Oracle 프로파일 — SPRING_PROFILES_ACTIVE=oracle (deploy/docker-compose.yml 기본 스택)
+# ddl-auto: none — 엔티티 columnDefinition="text"(PG 문법) 12곳이 Oracle validate 와 충돌.
+# 스키마 소유권은 Flyway(db/migration/oracle) 단독.
+spring:
+  datasource:
+    url: ${FLOWLINK_DB_URL:jdbc:oracle:thin:@//localhost:1521/FREEPDB1}
+    username: ${FLOWLINK_DB_USER:flowlink}
+    password: ${FLOWLINK_DB_PASSWORD:flowlink}
+  jpa:
+    hibernate:
+      ddl-auto: none
+    properties:
+      hibernate.type.preferred_uuid_jdbc_type: CHAR   # uuid → varchar2(36) 문자열 바인딩
+
+flowlink:
+  execution:
+    ssrf:
+      allow-loopback: true   # 내장 mock(/mock/**) 을 앱 자신에게 호출(사설망은 여전히 차단)

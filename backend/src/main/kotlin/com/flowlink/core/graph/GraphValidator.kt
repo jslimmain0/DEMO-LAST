@@ -29,6 +29,11 @@ class GraphValidator(
             if (!ids.add(n.id)) {
                 throw BadRequestException("중복된 노드 id: " + n.id)
             }
+            // node_execution.node_id(64) 컬럼에 저장 — 초과하면 실행 시 불투명한 DB 오류로 실패하므로
+            // 저장/가져오기 시점에 명확히 거절한다(가져온/손편집 그래프 방어).
+            if (n.id.length > MAX_NODE_ID_LEN) {
+                throw BadRequestException("노드 id 가 너무 깁니다(최대 ${MAX_NODE_ID_LEN}자): " + n.id)
+            }
         }
 
         for (e in graph.edgesOrEmpty()) {
@@ -39,5 +44,10 @@ class GraphValidator(
                 throw BadRequestException("존재하지 않는 노드를 가리키는 엣지: " + e.id)
             }
         }
+    }
+
+    companion object {
+        // node_execution.node_id / execution_suspension.pending_node_id 중 더 좁은 컬럼(64)에 맞춤
+        private const val MAX_NODE_ID_LEN = 64
     }
 }

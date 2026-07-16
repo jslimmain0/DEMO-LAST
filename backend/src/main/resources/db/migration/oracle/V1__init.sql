@@ -103,7 +103,7 @@ CREATE TABLE app_setting (
 CREATE TABLE execution_suspension (
     execution_id     varchar2(36) PRIMARY KEY REFERENCES execution (id) ON DELETE CASCADE,
     tenant_id        varchar2(64 char) NOT NULL,
-    pending_node_id  varchar2(80)      NOT NULL,
+    pending_node_id  varchar2(80 char) NOT NULL,   -- char 단위 — 한글 노드 id 도 잘리지 않게
     run_state        clob              NOT NULL,
     outcome_json     clob,
     wait_deadline    timestamp with time zone,

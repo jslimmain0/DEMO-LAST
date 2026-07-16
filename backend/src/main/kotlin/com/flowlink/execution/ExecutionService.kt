@@ -183,7 +183,10 @@ class ExecutionService(
         TenantContext.setTenantId(tenant)
         try {
             body()
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
+            // Throwable — 플러그인 JAR(무샌드박스)의 LinkageError·깊은 SpEL 의 StackOverflowError 등도 잡아
+            // 실행을 FAILED 로 마감한다. Exception 만 잡으면 이런 Error 에 워커 스레드가 죽고 실행이 RUNNING
+            // 으로 영영 남는다([M3]). 진짜 치명적 VM 오류는 정리 후 재던져 스레드가 회수되게 한다.
             log.error("실행 워커 오류(exec={}): {}", execId, msg(e), e)
             try {
                 executionRepo.findById(execId).ifPresent { ex ->
@@ -197,6 +200,7 @@ class ExecutionService(
             } catch (cleanup: Exception) {
                 log.warn("실행 실패 정리 오류(exec={}): {}", execId, msg(cleanup))
             }
+            if (e is VirtualMachineError) throw e // OOM 등은 삼키지 않고 재던짐
         } finally {
             TenantContext.clear()
         }
@@ -275,13 +279,39 @@ class ExecutionService(
             if (r.pendingNodeId != nodeId) return@execute null
             if (suspensionRepo.deleteByExecutionIdAndPendingNodeId(executionId, nodeId) == 0) return@execute null
             r
-        } ?: return null
-        val mem = suspensions.remove(executionId)
-        mem?.future?.cancel(false)
-        if (mem != null) {
-            return mem
         }
-        return rehydrateFromRow(row)
+        if (row != null) {
+            val mem = suspensions.remove(executionId)
+            mem?.future?.cancel(false)
+            if (mem != null) return mem
+            // 서버 재시작 후(캐시 없음) — DB 스냅샷 복호화·rehydrate. 실패하면 행은 이미 삭제됐으므로
+            // 조용히 null 반환하면 실행이 영영 WAITING 으로 갇힌다 → FAILED 로 명시 마감(누수 방지, [H3]).
+            return rehydrateFromRow(row) ?: run { markStranded(executionId, "재개 상태 복원 실패(암호키 교체/그래프 삭제 등)"); null }
+        }
+        // DB 행이 없음 — persist 실패로 캐시에만 존재할 수 있다(같은 인스턴스 한정 폴백, [H2]).
+        // pendingNodeId 일치 확인 후 원자적 map 제거로 승자 판정.
+        val mem = suspensions[executionId] ?: return null
+        if (mem.state.pendingNodeId != nodeId) return null
+        if (!suspensions.remove(executionId, mem)) return null // 다른 경쟁자가 먼저 가져감
+        mem.future?.cancel(false)
+        return mem
+    }
+
+    /** claim 은 성공했으나 상태 복원이 불가능한 실행 — WAITING 방치 대신 FAILED 로 마감(별도 tx). */
+    private fun markStranded(execId: UUID, reason: String) {
+        try {
+            tx.execute {
+                executionRepo.findById(execId).ifPresent { ex ->
+                    if (ex.status == ExecutionStatus.RUNNING || ex.status == ExecutionStatus.WAITING) {
+                        ex.markFailed(reason)
+                        executionRepo.save(ex)
+                    }
+                }
+            }
+            suspensions.remove(execId)
+        } catch (e: Exception) {
+            log.warn("stranded 마감 실패(exec={}): {}", execId, msg(e))
+        }
     }
 
     /** 재시작 후 콜백/재개 — Execution→FlowVersion graphJson + 복호화 스냅샷으로 RunState 복원. */
@@ -452,7 +482,8 @@ class ExecutionService(
             "콜백 대기 타임아웃 — ${secs}초 동안 콜백이 오지 않았습니다.",
             null, null, null, null, null
         )
-        inWorker(execId, claimed.tenant) { doResumeWork(execId, claimed, req) }
+        // 워커 풀로 제출 — 단일 스케줄러 스레드에서 재개 체인을 직접 돌리면 다른 타임아웃들이 줄서서 밀린다([M2]).
+        submitResume(execId, claimed, req)
     }
 
     /**
@@ -472,15 +503,24 @@ class ExecutionService(
                 log.warn("타임아웃 재무장 실패(exec={}): {}", row.executionId, msg(e))
             }
         }
-        val alive = rows.map { it.executionId }.toSet()
-        val orphans = executionRepo.findByStatusIn(listOf(ExecutionStatus.RUNNING, ExecutionStatus.WAITING))
-            .filter { it.id !in alive }
+        val alive = rows.associateBy { it.executionId }
+        val inFlight = executionRepo.findByStatusIn(listOf(ExecutionStatus.RUNNING, ExecutionStatus.WAITING))
+        // ① suspension 행은 있는데 status 가 RUNNING 인 실행 = 행 commit 과 상태 save 사이에 크래시([M1]).
+        //    WAITING 으로 화해시켜 GET 폴링이 pending 을 다시 받고 콜백/타임아웃으로 재개되게 한다.
+        var reconciled = 0
+        for (e in inFlight) {
+            if (e.status == ExecutionStatus.RUNNING && alive.containsKey(e.id)) {
+                e.markWaiting(); executionRepo.save(e); reconciled++
+            }
+        }
+        // ② suspension 이 없는 진행 중 실행 = 스냅샷 없이 소실된 고아 → FAILED.
+        val orphans = inFlight.filter { it.id !in alive.keys && it.status != ExecutionStatus.FAILED }
         for (e in orphans) {
             e.markFailed("서버 재시작으로 중단된 실행")
             executionRepo.save(e)
         }
-        if (orphans.isNotEmpty() || rows.isNotEmpty()) {
-            log.info("기동 복구: suspension {}건 재무장 대상 확인, 고아 실행 {}건 FAILED 처리", rows.size, orphans.size)
+        if (orphans.isNotEmpty() || rows.isNotEmpty() || reconciled > 0) {
+            log.info("기동 복구: suspension {}건 재무장, RUNNING→WAITING 화해 {}건, 고아 {}건 FAILED", rows.size, reconciled, orphans.size)
         }
         if (crypto.isDevKey) {
             log.warn("suspension 암호화가 dev 고정키로 동작 중 — 공유 배포에선 FLOWLINK_EXECUTION_STATE_SECRET 설정 권장")
@@ -613,7 +653,7 @@ class ExecutionService(
             )
         }
 
-        private fun msg(e: Exception): String = e.message ?: e.toString()
+        private fun msg(e: Throwable): String = e.message ?: e.toString()
 
         private fun clamp(limit: Int): Int {
             if (limit <= 0) {

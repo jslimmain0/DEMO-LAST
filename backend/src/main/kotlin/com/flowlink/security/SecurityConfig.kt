@@ -48,12 +48,14 @@ class SecurityConfig {
                         .requestMatchers(*PUBLIC_PATHS).permitAll()
                         // 프론트가 인증 모드를 발견하는 부트스트랩 엔드포인트(비밀 없음)
                         .requestMatchers("/api/v1/auth/config").permitAll()
-                        // 조회는 viewer 포함 인증만
-                        .requestMatchers(HttpMethod.GET, "/api/v1/**").authenticated()
-                        // 플러그인 = 임의 JAR 실행 + 전역 레지스트리 → 팀 admin 도 불가, 전역 롤만
+                        // 플러그인 = 임의 JAR 실행 + 전역 레지스트리 → 팀 admin 도 불가, 전역 롤만.
+                        // ⚠ 메서드 무관 + GET 조회 규칙보다 먼저 — 목록 조회(GET)도 platform-admin 만
+                        // (매처는 선언 순서 우선매치라, 아래 GET /api/v1/** 보다 반드시 위에 있어야 한다)
                         .requestMatchers("/api/v1/plugins/**").hasRole("platform-admin")
-                        // 설정 저장(콜백 수신 주소 등)은 팀 admin
+                        // 설정 저장(콜백 수신 주소 등)은 팀 admin (PUT 은 GET 블랭킷에 안 걸리지만 명시 우선)
                         .requestMatchers(HttpMethod.PUT, "/api/v1/settings/**").hasRole("admin")
+                        // 조회는 viewer 포함 인증만 (위의 구체 규칙에서 안 걸린 나머지 GET)
+                        .requestMatchers(HttpMethod.GET, "/api/v1/**").authenticated()
                         // 나머지 쓰기(플로우/폴더/mock CRUD·실행·재개)는 editor 이상
                         .requestMatchers("/api/v1/**").hasAnyRole("editor", "admin")
                         // 동봉 SPA 셸 — 로그인 전에 index.html/assets 가 로드돼야 SSO 리다이렉트가

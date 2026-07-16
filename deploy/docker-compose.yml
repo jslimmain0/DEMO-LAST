@@ -64,7 +64,7 @@ services:
       oracle:
         condition: service_healthy
       keycloak:
-        condition: service_started
+        condition: service_healthy   # realm import 완료(HTTP 리슨) 후 기동 — 첫 접속 SSO 리다이렉트가 바로 되게
 
 volumes:
   oracle-data:

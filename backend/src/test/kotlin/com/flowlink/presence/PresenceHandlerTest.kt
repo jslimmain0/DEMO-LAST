@@ -13,8 +13,8 @@ import org.springframework.web.socket.WebSocketSession
 import java.net.InetSocketAddress
 import java.net.URI
 
-/** 전송 프레임을 기록하는 가짜 세션 — 네트워크 없이 릴레이 로직을 검증한다. */
-class FakeSession(private val id: String, flowId: String, name: String) : WebSocketSession {
+/** 전송 프레임을 기록하는 가짜 세션 — 네트워크 없이 릴레이 로직을 검증한다. failSend=true 면 전송이 던진다. */
+class FakeSession(private val id: String, flowId: String, name: String, var failSend: Boolean = false) : WebSocketSession {
     val sent = mutableListOf<String>()
     private val attrs = mutableMapOf<String, Any>("flowId" to flowId, "name" to name)
     private var open = true
@@ -31,7 +31,10 @@ class FakeSession(private val id: String, flowId: String, name: String) : WebSoc
     override fun setBinaryMessageSizeLimit(limit: Int) {}
     override fun getBinaryMessageSizeLimit() = 8192
     override fun getExtensions(): List<WebSocketExtension> = emptyList()
-    override fun sendMessage(message: WebSocketMessage<*>) { sent.add((message as TextMessage).payload) }
+    override fun sendMessage(message: WebSocketMessage<*>) {
+        if (failSend) throw java.io.IOException("소켓 끊김")
+        sent.add((message as TextMessage).payload)
+    }
     override fun isOpen() = open
     override fun close() { open = false }
     override fun close(status: CloseStatus) { open = false }
@@ -107,6 +110,33 @@ class PresenceHandlerTest {
         val c = FakeSession("C", "f1", "carol")
         handler.afterConnectionEstablished(c)
         assertEquals(1, parse(c.sent.first())["peers"].size())   // alice 만 남음
+    }
+
+    @Test
+    fun `전송 실패로 퇴출된 참여자도 leave 가 브로드캐스트된다(유령 방지)`() {
+        val a = FakeSession("A", "f1", "alice"); val b = FakeSession("B", "f1", "bob")
+        handler.afterConnectionEstablished(a); handler.afterConnectionEstablished(b)
+        b.failSend = true // 이제 B 로의 전송은 던진다 → 다음 브로드캐스트에서 퇴출
+        // A 가 커서를 보내면 B 로 중계 시도 → 실패 → B 퇴출 + A 에게 leave
+        handler.handleMessage(a, TextMessage("""{"t":"cursor","x":1,"y":1}"""))
+        val leave = last(a)
+        assertEquals("leave", leave["t"].asText())
+        assertEquals("B", leave["id"].asText())
+        // B 가 방에서 빠졌는지 — 새 입장자의 스냅샷에 A 만 남는다
+        val c = FakeSession("C", "f1", "carol")
+        handler.afterConnectionEstablished(c)
+        assertEquals(1, parse(c.sent.first())["peers"].size())
+    }
+
+    @Test
+    fun `방 참여자들은 서로 다른 색을 받는다`() {
+        val a = FakeSession("A", "f1", "alice"); val b = FakeSession("B", "f1", "bob")
+        handler.afterConnectionEstablished(a); handler.afterConnectionEstablished(b)
+        val join = last(a)
+        val colorB = join["peer"]["color"].asText()
+        // A 의 색(B 의 hello 스냅샷에서)과 달라야 한다
+        val colorA = parse(b.sent.first())["peers"][0]["color"].asText()
+        assertTrue(colorA != colorB, "색 충돌: $colorA")
     }
 
     @Test

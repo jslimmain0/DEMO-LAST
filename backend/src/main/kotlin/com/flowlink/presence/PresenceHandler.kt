@@ -34,18 +34,34 @@ class PresenceHandler(private val mapper: ObjectMapper) : TextWebSocketHandler()
         val name = (raw.attributes["name"] as? String) ?: "익명"
         // 표준 WebSocketSession 은 동시 sendMessage 가 미정의 — 데코레이터로 직렬화(버퍼 64KB·2초 제한)
         val session = ConcurrentWebSocketSessionDecorator(raw, 2000, 64 * 1024)
-        val room = rooms.computeIfAbsent(flowId) { ConcurrentHashMap() }
-        val peer = Peer(session, name, COLORS[room.size % COLORS.size])
-        room[session.id] = peer
+        // 원자적 합류 — 마지막 leave 의 방 제거와 경쟁해도 유령 방/누락 없이 들어간다([A2]).
+        val room = joinRoom(flowId, session.id) { color -> Peer(session, name, color) }
+        val peer = room[session.id] ?: return
         val hello = mapper.createObjectNode()
         hello.put("t", "hello"); hello.put("id", session.id)
         val arr = hello.putArray("peers")
         room.forEach { (id, p) -> if (id != session.id) arr.add(peerJson(id, p)) }
-        send(flowId, session.id, peer, hello)
+        // hello 전송 실패로 새 피어가 즉시 퇴출됐으면 join 브로드캐스트하지 않는다(탄생 시 유령 방지, [A1]).
+        if (!send(flowId, session.id, peer, hello)) return
         val join = mapper.createObjectNode()
         join.put("t", "join"); join.set<ObjectNode>("peer", peerJson(session.id, peer))
         broadcast(flowId, session.id, join)
         log.debug("presence join flow={} id={} name={} ({}명)", flowId, session.id, name, room.size)
+    }
+
+    /**
+     * 방에 원자적으로 합류 — computeIfAbsent 로 방을 잡고 피어를 넣은 뒤, 그 사이 마지막 leave 가 방을
+     * 제거했으면(현재 매핑이 다른 인스턴스) 재시도한다. 색은 방에서 현재 안 쓰는 것 우선(충돌 완화, [A3]).
+     */
+    private fun joinRoom(flowId: String, id: String, make: (String) -> Peer): ConcurrentHashMap<String, Peer> {
+        while (true) {
+            val room = rooms.computeIfAbsent(flowId) { ConcurrentHashMap() }
+            val used = room.values.mapTo(HashSet()) { it.color }
+            val color = COLORS.firstOrNull { it !in used } ?: COLORS[room.size % COLORS.size]
+            room[id] = make(color)
+            if (rooms[flowId] === room) return room
+            room.remove(id) // 방이 동시에 제거됨 — 되돌리고 재시도
+        }
     }
 
     override fun handleTextMessage(session: WebSocketSession, message: TextMessage) {
@@ -73,12 +89,21 @@ class PresenceHandler(private val mapper: ObjectMapper) : TextWebSocketHandler()
 
     override fun afterConnectionClosed(session: WebSocketSession, status: CloseStatus) {
         val flowId = session.attributes["flowId"] as? String ?: return
+        removePeer(flowId, session.id)
+    }
+
+    /**
+     * 방에서 피어를 제거하는 단일 경로(정상 종료·전송 실패 퇴출 공용) — 실제로 있던 피어면 leave 를
+     * 브로드캐스트하고 빈 방을 원자적으로 정리한다. 퇴출이 leave 를 안 쏘면 다른 참여자에게 유령으로
+     * 영영 남는다([A1]). 빈 방 제거는 compute 로 join 과 경쟁해도 안전하게([A2]).
+     */
+    private fun removePeer(flowId: String, id: String) {
         val room = rooms[flowId] ?: return
-        if (room.remove(session.id) == null) return
-        if (room.isEmpty()) rooms.remove(flowId, room)
+        if (room.remove(id) == null) return
+        rooms.compute(flowId) { _, r -> if (r == null || r.isEmpty()) null else r }
         val leave = mapper.createObjectNode()
-        leave.put("t", "leave"); leave.put("id", session.id)
-        broadcast(flowId, session.id, leave)
+        leave.put("t", "leave"); leave.put("id", id)
+        broadcast(flowId, id, leave)
     }
 
     private fun peerJson(id: String, p: Peer): ObjectNode {
@@ -99,14 +124,20 @@ class PresenceHandler(private val mapper: ObjectMapper) : TextWebSocketHandler()
         room.forEach { (id, p) -> if (id != senderId) send(flowId, id, p, node) }
     }
 
-    /** 전송 실패(끊긴 소켓 등)한 참여자는 방에서 제거 — 릴레이가 죽은 세션에 발목 잡히지 않게. */
-    private fun send(flowId: String, id: String, p: Peer, node: ObjectNode) {
-        try {
+    /**
+     * 전송 실패(끊긴 소켓 등)한 참여자는 방에서 제거하고 leave 를 브로드캐스트 — 릴레이가 죽은 세션에
+     * 발목 잡히지 않게, 그리고 다른 참여자에게 유령으로 남지 않게([A1]). 성공 여부를 반환한다.
+     * (제거는 removePeer 가 room.remove 로 1회만 처리하므로 중첩 브로드캐스트는 피어 수만큼으로 유한.)
+     */
+    private fun send(flowId: String, id: String, p: Peer, node: ObjectNode): Boolean {
+        return try {
             p.session.sendMessage(TextMessage(mapper.writeValueAsString(node)))
+            true
         } catch (e: Exception) {
             log.debug("presence 전송 실패 → 제거 flow={} id={}: {}", flowId, id, e.message)
-            rooms[flowId]?.remove(id)
             try { p.session.close(CloseStatus.SESSION_NOT_RELIABLE) } catch (ignored: Exception) { }
+            removePeer(flowId, id)
+            false
         }
     }
 

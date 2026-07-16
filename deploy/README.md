@@ -40,7 +40,15 @@ cd .. && docker compose -f deploy/docker-compose.yml up -d --build
 ```
 
 - 서비스: `app`(:18080, `SPRING_PROFILES_ACTIVE=oracle`) · `oracle`(gvenzl/oracle-free:23-slim, :1521, APP_USER=flowlink) · `keycloak`(:8081, realm 자동 import).
-- issuer 이중 주소: 토큰 iss 검증은 `issuer-uri=http://localhost:8081/...`(브라우저 관점), JWKS 는 `jwk-set-uri=http://keycloak:8080/...`(컨테이너 내부) — compose env 에 이미 분리 설정됨.
+- issuer 이중 주소: 토큰 iss 검증은 `issuer-uri`(브라우저 관점 = `KC_PUBLIC_URL`), JWKS 는 `jwk-set-uri=http://keycloak:8080/...`(컨테이너 내부) — compose env 에 분리 설정됨.
+- **공유 서버 배포**: 기본값은 전부 `localhost` 라 개발 PC 단독 실행에 그대로 동작한다. 사내 공유 서버(예: `http://flowlink.corp:18080`)에
+  올릴 때는 `deploy/.env.example` 을 `deploy/.env` 로 복사해 `FLOWLINK_APP_ORIGIN`·`KC_PUBLIC_URL`(+운영이면 `FLOWLINK_STATE_SECRET`·
+  KC 관리자 비번)을 그 서버 주소로 채우면, Keycloak redirectUris·issuer·CORS 가 자동으로 그 오리진으로 맞춰진다(realm import 의 `${VAR:default}` 치환).
+  ```bash
+  cp deploy/.env.example deploy/.env   # 편집: FLOWLINK_APP_ORIGIN=http://flowlink.corp:18080, KC_PUBLIC_URL=http://flowlink.corp:8081
+  docker compose -f deploy/docker-compose.yml up -d
+  ```
+  (⚠ 이미 뜬 스택의 realm 은 재import 안 되므로 `.env` 변경 후엔 `down -v` 로 초기화하거나 keycloak 컨테이너를 재생성한다.)
 - mock 시드(OIDC 라 editor 이상 토큰 필요):
   ```bash
   TOKEN=$(curl -s http://localhost:8081/realms/flowlink/protocol/openid-connect/token \

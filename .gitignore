@@ -8,3 +8,7 @@ uploads/
 
 # 루트에 npm 프로젝트 없음 — stray lockfile 재유입 차단
 /package-lock.json
+
+# 배포 로컬 오버라이드(비밀 포함 가능) — .env.example 만 커밋
+deploy/.env
+.env

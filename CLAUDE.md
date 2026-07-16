@@ -740,8 +740,9 @@ design/   theme(라이트/다크) · index.css(CSS 변수)
 - **실행 내구/동시성**: (1) claim CAS 가 파생 `deleteBy…`(SELECT 후 PK 삭제)라 경합 시 다음 대기 노드 행을 잘못 지우던 레이스 → `@Query` 단일 조건부 DELETE 로 원자화. (2) 재시작 후 rehydrate 실패가 행만 삭제하고 조용히 WAITING 방치 → FAILED 명시 마감. (3) persist 실패 시 인메모리 캐시 폴백(같은 인스턴스). (4) wait 타임아웃 재개를 단일 스케줄러 스레드 직접 실행 → 워커 풀 제출(head-of-line 차단 해소). (5) 워커 catch 를 Throwable 로(플러그인 JAR 의 Error 에 실행이 RUNNING 고착 방지). (6) 기동 시 suspension 행은 있으나 RUNNING 인 실행(행 commit·상태 save 사이 크래시)을 WAITING 으로 화해. (7) 노드 id 길이 검증(컬럼 초과 → 저장 시 거절) + Oracle `pending_node_id` char 단위.
 - **프론트**: presence 옛 소켓의 늦은 onclose 가 새 세션 상태를 지우던 [H] 버그(reset 을 현재 소켓 가드 안으로) · 재접속 시 편집중 재announce · dev 닉네임 실동작 · **폴링 드라이버가 재시작 등 일시 GET 실패를 견디게**(P2 내구성 실효) · ⏹ 가 입력 모달을 즉시 중단 · 플로우 전환 시 낡은 실행이 새 화면 덧칠 방지.
 - **presence 백엔드**: 전송 실패로 퇴출된 참여자도 leave 브로드캐스트(유령 아바타 방지) · 방 제거/합류 원자화(마지막 leave↔join 레이스) · 색 충돌 완화. keycloak `service_healthy` 게이트.
-- **검증**: 백엔드 단위 13종 PASS(presence 8 포함) + **P2 내구성 제어 재시작 e2e**(실 백엔드 kill→기동→WAITING 유지→콜백→rehydrate→SUCCEEDED, `amount==1500` 숫자 라운드트립) + **P1 RBAC e2e 27/27 on Oracle**(plugins GET 게이트 포함) + 프론트 tsc/build/oxlint.
-- **의식적 수용(문서화)**: (H4) 체인 wait 노드에서 외부 게이트웨이가 ACK 직후 다음 콜백을 쏘면 워커 큐 대기창과 경합 가능(테스트 도구·비동기 트레이드오프 — 필요 시 미매칭 콜백 버퍼링 후속). (L1) 워커 큐 포화 시 재개를 호출 스레드에서 수행(재개 입력 유실 방지 우선). (B3) compose 는 `localhost` 고정(KC_HOSTNAME·redirectUris) — 공유 서버 배포 시 오리진 파라미터화 필요. presence 토큰은 쿼리스트링(사내 도구 전제, 로그 노출 가능).
+- **검증**: 백엔드 단위 **77종** PASS(presence 8 + **claim CAS `@DataJpaTest` 4종** 포함 — 조건부 삭제가 pending_node_id 일치 시만 삭제하고 PK-only 회귀를 잡음) + **P2 내구성 e2e 22/22**(자체 백엔드 3회 재시작 — 아래 재시작 hang 수정으로 신뢰성 회복) + **P1 RBAC e2e 27/27 on Oracle**(plugins GET 게이트 포함) + 프론트 tsc/build/oxlint.
+- **후속 정리(리뷰 뒤)**: (B3 해소) compose 를 `.env`(`FLOWLINK_APP_ORIGIN`·`KC_PUBLIC_URL`)로 파라미터화 — realm import `${VAR:default}` 치환으로 공유 서버 배포 시 redirectUris·issuer·CORS 자동 정렬(기본 localhost 무회귀, 오버라이드·복귀 실측). P2 e2e 재시작 hang(execSync 손자 파이프 상속) → `stdio:'ignore'`+독립 헬스판정으로 22/22 완주. 이미 shipped 된 기능을 "후속 Phase"로 오도하던 stale 주석 3건(테넌트/내구성/플러그인 RBAC) 정정.
+- **의식적 수용(문서화)**: (H4) 체인 wait 노드에서 외부 게이트웨이가 ACK 직후 다음 콜백을 쏘면 워커 큐 대기창과 경합 가능(테스트 도구·비동기 트레이드오프 — 필요 시 미매칭 콜백 버퍼링 후속). (L1) 워커 큐 포화 시 재개를 호출 스레드에서 수행(재개 입력 유실 방지 우선). presence 토큰은 쿼리스트링(사내 도구 전제, 로그 노출 가능). P3 2탭 렌더링 자동화(Playwright)는 미도입(프로토콜은 e2e·렌더링은 수동 검증).
 
 ## 참고 문서
 - `backend/README.md` — Phase 1 구현 범위 표, API 요약, 실행 가이드

@@ -36,6 +36,7 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-web")
     implementation("org.springframework.boot:spring-boot-starter-validation")
     implementation("org.springframework.boot:spring-boot-starter-aop")
+    implementation("org.springframework.boot:spring-boot-starter-websocket")   // presence 릴레이(/ws/presence)
     implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:2.6.0")
 
     // --- Persistence (PostgreSQL + Flyway) ---

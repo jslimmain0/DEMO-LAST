@@ -680,6 +680,31 @@ design/   theme(라이트/다크) · index.css(CSS 변수)
 - ⚠ 스냅샷 암호키 미설정 시 dev 키(로컬 전용). 실행 이력의 대량 폴링은 여전히 GET(SSE 아님). 워커 풀은 단일 인스턴스 스코프 —
   수평 확장(공유 큐) 은 범위 밖. `Execution` 고아 정리는 기동 시 1회(주기 스윕 없음).
 
+## 최근 변경 (2026-07-16) — SaaS 전환 P3: 실시간 협업 presence (`saas-overhaul` 브랜치)
+
+계획: [docs/superpowers/plans/2026-07-16-saas-p3-presence.md](docs/superpowers/plans/2026-07-16-saas-p3-presence.md).
+같은 워크플로를 연 사람들끼리 **커서·이름표·편집중 배지·저장 알림**이 실시간으로 보인다(공동 편집/CRDT 아님 — 그래프는 서로 불변).
+- **백엔드 릴레이**: `spring-boot-starter-websocket` + raw `TextWebSocketHandler`(STOMP 미사용) —
+  [PresenceHandler](backend/src/main/kotlin/com/flowlink/presence/PresenceHandler.kt) 가 방(flowId)별 참여자 최신 상태
+  (커서/편집중)만 인메모리 보관, `hello`(입장 스냅샷)+`join/leave/cursor/editing/saved` 중계(보낸 사람 제외, 서버가 id·색 부여).
+  동시 전송은 `ConcurrentWebSocketSessionDecorator`, 전송 실패 세션은 방에서 제거.
+- **핸드셰이크 검증**([PresenceHandshakeInterceptor](backend/src/main/kotlin/com/flowlink/presence/PresenceHandshakeInterceptor.kt)):
+  dev 모드=무인증(flowId UUID 검사 + 쿼리 `?name=`), OIDC 모드=쿼리 `?token=` JWT 검증(브라우저 WebSocket 은 Authorization
+  헤더 불가) + **flow 테넌트 소유 확인**(교차 테넌트 훔쳐보기 차단), 이름은 `preferred_username`. SecurityConfig PUBLIC_PATHS
+  `/ws/**`(자체 검증) + SpaStaticConfig fallback 제외 `ws/`.
+- **프론트**: [lib/presence.ts](frontend/src/lib/presence.ts)(모듈 싱글턴 — 재접속 2초·커서 50ms 트레일링 쓰로틀) +
+  별도 [presenceStore](frontend/src/store/presenceStore.ts)(**editorStore 오염 금지** — dirty/undo/selected 불변).
+  렌더링은 xyflow v12 `ViewportPortal`([PresenceOverlay](frontend/src/canvas/PresenceOverlay.tsx) — flow 좌표라 팬/줌 자동 추종):
+  원격 커서 SVG+이름표, 편집중 노드 색 링+`✎ 이름` 배지(선택=속성 패널 편집이라 editing 신호 하나로 통합). Editor 헤더
+  아바타 스택([PresenceAvatars](frontend/src/components/PresenceAvatars.tsx)), `saved` 수신 시 토스트, 저장 성공 시 `sendSaved()`.
+  이름: OIDC=`/me` username, dev=localStorage `fl:nick` 자동 생성(`게스트-xxxx`). vite proxy `/ws`(ws:true).
+- 검증: 단위 11종(핸들러 6·인터셉터 5) PASS + **presence e2e 11/11**(`node e2e/saas-p3-presence.mjs` — 스냅샷/중계/본인 제외/
+  늦은 입장자 상태/방 격리/퇴장/비 UUID 거절) + 브라우저 2탭(커서 좌표 정합·편집중 링·저장 토스트·아바타 join/leave·
+  원격 이동이 로컬 그래프 불변·dirty 무영향). 프론트 tsc/build/oxlint 통과.
+- ⚠ 방 상태 인메모리(서버 재시작 시 소실 — 클라 2초 재접속으로 복구, 수평 확장 시 sticky/공유 브로커 필요).
+  OIDC 토큰이 쿼리스트링(사내 도구 전제 — 액세스 로그에 남을 수 있음). dev 모드는 두 탭이 같은 브라우저면 닉네임 공유(`fl:nick`).
+  토큰 만료 후 재접속은 현재 액세스 토큰 사용(silent renew 는 axios 인터셉터가 유지).
+
 ## 참고 문서
 - `backend/README.md` — Phase 1 구현 범위 표, API 요약, 실행 가이드
 - `docs/` — UI/UX 멀티에이전트 설계 토론 로그, 엔터프라이즈 고도화 설계

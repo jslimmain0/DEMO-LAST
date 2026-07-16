@@ -132,10 +132,12 @@ const SPEC = {
 }
 
 // ---------- HTTP 헬퍼 ----------
+// OIDC 스택(compose)에선 editor 이상 토큰 필요: FLOWLINK_TOKEN=<액세스토큰> node demos/seed-mock.mjs
+const AUTH = process.env.FLOWLINK_TOKEN ? { Authorization: `Bearer ${process.env.FLOWLINK_TOKEN}` } : {}
 async function api(method, path, body) {
   const res = await fetch(BASE + path, {
     method,
-    headers: body ? { 'Content-Type': 'application/json' } : undefined,
+    headers: { ...(body ? { 'Content-Type': 'application/json' } : {}), ...AUTH },
     body: body ? JSON.stringify(body) : undefined,
   })
   const text = await res.text()

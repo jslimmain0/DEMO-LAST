@@ -1,0 +1,70 @@
+# FlowLink 풀스택 — 앱(Oracle 프로파일) + Oracle Free 23ai + Keycloak(OIDC).
+#   빌드:  (frontend) npm run build  →  (backend) gradlew bootJar  →  docker compose -f deploy/docker-compose.yml up -d --build
+#   접속:  http://localhost:18080 (테스트 유저 비번=아이디: alice/bob/carol/dave)
+#   초기화: docker compose -f deploy/docker-compose.yml down -v
+name: flowlink
+
+services:
+  oracle:
+    image: gvenzl/oracle-free:23-slim
+    container_name: flowlink-oracle
+    environment:
+      ORACLE_PASSWORD: admin
+      APP_USER: flowlink
+      APP_USER_PASSWORD: flowlink
+    ports:
+      - "1521:1521"
+    volumes:
+      - oracle-data:/opt/oracle/oradata
+    healthcheck:
+      test: ["CMD", "healthcheck.sh"]
+      interval: 10s
+      timeout: 5s
+      retries: 60
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    container_name: flowlink-kc
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      # 브라우저(:8081)와 컨테이너 내부(keycloak:8080)가 같은 issuer 를 보도록 고정
+      KC_HOSTNAME: http://localhost:8081
+      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
+    ports:
+      - "8081:8080"
+    volumes:
+      - ./keycloak:/opt/keycloak/data/import:ro
+    healthcheck:
+      # KC 25+ 는 curl 미포함 — TCP 오픈만 확인
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/8080"]
+      interval: 5s
+      timeout: 3s
+      retries: 40
+
+  app:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    container_name: flowlink-app
+    ports:
+      - "18080:18080"
+    environment:
+      SPRING_PROFILES_ACTIVE: oracle
+      FLOWLINK_DB_URL: jdbc:oracle:thin:@//oracle:1521/FREEPDB1
+      FLOWLINK_DB_USER: flowlink
+      FLOWLINK_DB_PASSWORD: flowlink
+      # issuer 는 토큰 iss 검증(브라우저 관점 주소), JWKS 는 컨테이너 내부 도달 주소로 분리
+      SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI: http://localhost:8081/realms/flowlink
+      SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWK_SET_URI: http://keycloak:8080/realms/flowlink/protocol/openid-connect/certs
+      # RunState 스냅샷(AES-GCM) 암호키 — 운영에선 반드시 교체
+      FLOWLINK_EXECUTION_STATE_SECRET: compose-dev-state-secret-change-me
+    depends_on:
+      oracle:
+        condition: service_healthy
+      keycloak:
+        condition: service_started
+
+volumes:
+  oracle-data:

@@ -1,14 +1,15 @@
 package com.flowlink.common.tenant
 
 /**
- * 요청 단위 테넌트 식별자 보관소(1단계 골격).
+ * 요청 단위 테넌트 식별자 보관소(ThreadLocal).
  *
- * 현재는 단일 기본 테넌트로 동작하며, 후속 Phase에서 인증 토큰(OIDC claim)/서브도메인 기반으로
- * 채워 넣는다. 멀티테넌시 격리(행 수준 보안·데이터 분리)의 진입점 역할을 한다.
+ * OIDC 모드(SaaS P1)에서는 [com.flowlink.security.TenantClaimFilter] 가 JWT 테넌트 클레임으로 채우고,
+ * 비동기 워커 스레드(P2)에서는 ExecutionService 가 수동으로 set/clear 한다. dev 모드(issuer 미설정)는
+ * 아래 기본 테넌트로 동작. 쿼리의 `tenant_id` 필터링(팀 데이터 격리)의 진입점. RLS(행 수준 보안)는 미도입.
  */
 object TenantContext {
 
-    /** 인증·멀티테넌시 도입 전까지 사용할 기본 테넌트. */
+    /** dev 모드(인증 미설정) 기본 테넌트. */
     const val DEFAULT_TENANT = "default"
 
     private val CURRENT: ThreadLocal<String> = ThreadLocal.withInitial { DEFAULT_TENANT }

@@ -102,7 +102,9 @@ class FlowExecutor(
 
     /**
      * 재개 가능한 실행 진행 상태(인메모리). 브라우저 협업 노드에서 WAITING 으로 중단했다가
-     * {@link #resume} 으로 이어서 실행한다. (서버 단일 인스턴스/세션 한정 — 내구성 보관은 후속 Phase)
+     * {@link #resume} 으로 이어서 실행한다. wait/input/form/client 중단 지점의 이 상태는
+     * [snapshot]/[rehydrate] 로 DB(execution_suspension, AES-GCM 암호화)에 내구화돼 서버 재시작을 견딘다(SaaS P2).
+     * 워커 풀은 단일 인스턴스 스코프(수평 확장=공유 큐는 범위 밖).
      */
     class RunState internal constructor(
         internal val edges: List<GraphEdge>,

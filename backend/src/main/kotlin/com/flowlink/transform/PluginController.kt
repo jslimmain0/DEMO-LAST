@@ -17,8 +17,9 @@ import java.nio.file.StandardCopyOption
 /**
  * 변환 플러그인 JAR 업로드/조회.
  *
- * **보안**: 신뢰 JAR 전용 — 샌드박스 없음. 업로드된 JAR은 전체 권한으로 실행되므로
- * 운영에서는 이 엔드포인트를 관리자 권한으로 제한해야 한다(현재 permitAll, 후속 RBAC 게이트).
+ * **보안**: 신뢰 JAR 전용 — 샌드박스 없음. 업로드된 JAR은 전체 권한으로 실행된다.
+ * OIDC 모드(SaaS P1)에서는 plugins 하위 경로를 전역 `platform-admin` 롤로 게이트한다(SecurityConfig).
+ * dev 모드(issuer 미설정)는 permitAll — 사내 로컬 전제. JAR 샌드박싱은 범위 밖(권한 게이트만).
  */
 @RestController
 @RequestMapping("/api/v1/plugins")

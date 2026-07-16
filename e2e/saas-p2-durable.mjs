@@ -49,12 +49,18 @@ async function pollExec(execId, until, timeoutMs = 30000, intervalMs = 300) {
 
 const TERMINAL = (d) => ['SUCCEEDED', 'FAILED', 'CANCELLED'].includes(d.status)
 
+// ⚠ start.ps1 은 java 를 백그라운드로 띄운다(Start-Process, 출력은 파일로 리다이렉트). execSync 를
+// stdio:'pipe' 로 돌리면 파워셸이 만든 stdout 파이프를 손자(java)가 물고 있어 파워셸이 끝나도 execSync
+// 가 EOF 를 못 받아 영영 블록되는 전형적 Windows 이슈가 있다. → stdio:'ignore'(파이프 없음)로 돌리고
+// 준비 판정은 waitHealth() 의 독립 HTTP 폴링에 맡긴다. timeout 은 만일의 스크립트 무한대기 백스톱.
 function ps(script, args = '') {
   try {
-    execSync(`powershell -ExecutionPolicy Bypass -File scripts\\${script} ${args}`, { cwd: BACKEND_DIR, stdio: 'pipe' })
+    execSync(`powershell -ExecutionPolicy Bypass -File scripts\\${script} ${args}`,
+      { cwd: BACKEND_DIR, stdio: 'ignore', timeout: 150000 })
   } catch (e) {
-    console.error(`  ⚠ ${script} ${args} 실패(exit=${e.status}):`, e.stderr?.toString?.().slice(-500) ?? e.message)
-    throw e
+    // start.ps1 의 헬스타임아웃(비정상 기동) 등만 여기 온다 — 정상 기동은 파이프 없이 곧장 반환.
+    console.error(`  ⚠ ${script} ${args} 종료코드 ${e.status ?? e.signal ?? e.message}`)
+    // start 는 waitHealth 가 최종 판정하므로 던지지 않고 진행(stop 실패도 재기동으로 자연 복구)
   }
 }
 

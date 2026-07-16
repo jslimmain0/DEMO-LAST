@@ -27,6 +27,7 @@ class PresenceSession {
   private lastSent = 0
   private pending: { x: number | null; y: number | null } | null = null
   private cursorTimer: number | undefined
+  private editing: string | null = null   // 현재 편집중 노드 — 재접속 시 재announce
 
   connect(flowId: string, name: string, tokenFn?: () => string | null) {
     this.close()
@@ -43,12 +44,18 @@ class PresenceSession {
     const token = this.tokenFn?.()
     if (token) url += `&token=${encodeURIComponent(token)}`
     const ws = new WebSocket(url)
+    ws.onopen = () => {
+      // 재접속(백엔드 재시작 등) 후 편집중 상태를 다시 알림 — 안 그러면 상대에게 링이 안 보인다
+      if (this.ws === ws && this.editing) this.send({ t: 'editing', nodeId: this.editing })
+    }
     ws.onmessage = (ev) => {
       try { this.dispatch(JSON.parse(ev.data as string)) } catch { /* 프레임 파싱 실패 무시 */ }
     }
     ws.onclose = () => {
-      usePresenceStore.getState().reset()
+      // ⚠ reset 은 반드시 현재 세션 소켓일 때만 — 옛 소켓의 늦은 onclose 가 새 세션 상태를 지우지 않게
+      // (플로우 전환·StrictMode 이중 마운트에서 old.onclose 가 new.hello 뒤에 도착할 수 있음)
       if (this.ws === ws) {
+        usePresenceStore.getState().reset()
         this.ws = null
         // 사용자가 close() 한 게 아니면 재접속(백엔드 재시작·네트워크 순단 대응)
         this.retry = window.setTimeout(() => this.open(), 2000)
@@ -96,18 +103,19 @@ class PresenceSession {
     this.pending = null
   }
 
-  sendEditing(nodeId: string | null) { this.send({ t: 'editing', nodeId }) }
+  sendEditing(nodeId: string | null) { this.editing = nodeId; this.send({ t: 'editing', nodeId }) }
   sendSaved() { this.send({ t: 'saved' }) }
 
   close() {
     if (this.retry !== undefined) { clearTimeout(this.retry); this.retry = undefined }
     if (this.cursorTimer !== undefined) { clearTimeout(this.cursorTimer); this.cursorTimer = undefined }
     const ws = this.ws
-    this.ws = null // onclose 의 재접속 분기 차단
+    this.ws = null // onclose 의 재접속·reset 분기 차단
     ws?.close()
     usePresenceStore.getState().reset()
     this.flowId = null
     this.pending = null
+    this.editing = null
   }
 }
 

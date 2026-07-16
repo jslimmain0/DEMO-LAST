@@ -43,7 +43,9 @@ export function Editor() {
   // presence — 같은 플로우를 연 사람들끼리 커서/편집중/저장 알림(별도 presenceStore, 그래프 불변)
   useEffect(() => {
     if (!id) return
-    presence.connect(id, me?.username ?? devNickname(), authEnabled ? getAccessToken : undefined)
+    // 이름: OIDC 면 로그인 사용자명, dev 면 브라우저별 닉네임(dev 모드 /me 는 전원 "dev" 라 devNickname 사용)
+    const displayName = authEnabled ? (me?.username ?? devNickname()) : devNickname()
+    presence.connect(id, displayName, authEnabled ? getAccessToken : undefined)
     // 선택 노드 변경 → 편집중 신호(속성 패널이 그 노드를 편집 중)
     const unsub = useEditorStore.subscribe((s, prev) => {
       if (s.selectedId !== prev.selectedId) presence.sendEditing(s.selectedId)
@@ -60,6 +62,9 @@ export function Editor() {
   // wait(콜백 대기) 진행 상태 — RunPanel 카운트다운/수신 URL 표시용
   const [waitStatus, setWaitStatus] = useState<WaitStatus | null>(null)
   const stopRef = useRef<AbortController | null>(null)
+  // 최신 flowId 를 비동기 실행 루프가 참조 — 플로우 전환 후 낡은 실행이 새 화면을 덧칠하지 않게 가드
+  const flowIdRef = useRef(flowId)
+  flowIdRef.current = flowId
   // input(사용자 입력) 노드 모달 — 실행 루프가 confirm 값(취소=null)을 기다리도록 resolver 보관
   const [pendingInput, setPendingInput] = useState<PendingInputRequest | null>(null)
   const inputResolverRef = useRef<((values: Record<string, unknown> | null) => void) | null>(null)
@@ -209,21 +214,34 @@ export function Editor() {
       setExecution(detail)
       let guard = 0
       let waitBannerNode: string | null = null
+      let pollFailures = 0 // 연속 폴링 실패(백엔드 재시작 등 일시 장애) — 임계까지는 추적 유지(P2 내구성)
+      // ⏹/플로우 전환 abort 를 Promise 로도 대기 — input 모달처럼 사용자 상호작용에 갇힌 지점도 즉시 깨우기
+      const aborted = new Promise<'__abort__'>((resolve) => {
+        if (stop.signal.aborted) resolve('__abort__')
+        else stop.signal.addEventListener('abort', () => resolve('__abort__'), { once: true })
+      })
       while (guard++ < 5000) {
         if (detail.status !== 'RUNNING' && detail.status !== 'WAITING') break // 종료(SUCCEEDED/FAILED/CANCELLED)
 
         // ⏹ 중단 — pending 지점이면 그 노드를 중단 사유로 재개해 CANCELLED 로 마감.
         // (노드 실행 도중이면 취소 API 가 없어 백엔드는 이어 진행 — 화면만 멈춘다)
         if (stop.signal.aborted) {
+          // 플로우 전환으로 인한 abort 면 UI 갱신은 새 플로우 몫 — 취소 resume 만 보내고 화면은 안 건드린다
+          const switched = flowIdRef.current !== flowId
+          // 최신 스냅샷으로 pending 노드를 다시 확인 — 마지막 폴링 이후 다음 대기 지점으로 넘어갔을 수 있어
+          // 낡은 nodeId 로 resume 하면 claim 이 어긋나 취소가 무산된다(실패는 무시하고 기존 값 폴백)
+          try { detail = await runsApi.get(detail.id) } catch { /* 스냅샷 갱신 실패 — 기존 detail 사용 */ }
           const nodeId = detail.pendingForm?.nodeId ?? detail.pendingWait?.nodeId ?? detail.pendingInput?.nodeId ?? detail.pendingClient?.nodeId
           if (nodeId) {
             await runsApi.resume(detail.id, { nodeId, error: '실행이 중단되었습니다.', aborted: true })
-            // 취소 확정(비동기 재개)을 짧게 폴링
-            for (let i = 0; i < 20; i++) {
-              await sleep(300)
-              detail = await runsApi.get(detail.id)
-              setExecution(detail)
-              if (detail.status !== 'RUNNING' && detail.status !== 'WAITING') break
+            // 취소 확정(비동기 재개)을 짧게 폴링 — 같은 플로우를 계속 보고 있을 때만 화면 반영
+            if (!switched) {
+              for (let i = 0; i < 20; i++) {
+                await sleep(300)
+                detail = await runsApi.get(detail.id)
+                setExecution(detail)
+                if (detail.status !== 'RUNNING' && detail.status !== 'WAITING') break
+              }
             }
           }
           break
@@ -231,8 +249,10 @@ export function Editor() {
 
         if (detail.pendingInput) {
           // 사용자 입력 대기: 모달에 값 입력 → confirm 값이 노드 출력. 취소는 실행 중단.
+          // ⏹/플로우 전환 abort 도 함께 대기 — 모달에 갇혀 중단 버튼이 먹통되지 않게(먼저 오는 것 채택)
           const pi = detail.pendingInput
-          const values = await askInput(pi)
+          const values = await Promise.race([askInput(pi), aborted])
+          if (values === '__abort__') { resolveInput(null); continue } // 루프 상단 중단 처리로
           await runsApi.resume(detail.id, values === null
             ? { nodeId: pi.nodeId, error: '사용자가 입력을 취소했습니다.', aborted: true }
             : { nodeId: pi.nodeId, formValues: values })
@@ -269,8 +289,16 @@ export function Editor() {
 
         await sleep(detail.pendingWait ? 1000 : 400, stop.signal)
         if (stop.signal.aborted) continue // 루프 상단의 중단 처리로
-        detail = await runsApi.get(detail.id)
-        setExecution(detail)
+        // 폴링 GET 은 일시 장애(백엔드 재시작 등)를 견딘다 — 실행은 DB 에 내구(P2)하므로 몇 번 실패해도
+        // 마지막 스냅샷을 유지하고 계속 폴링, 연속 임계 초과 시에만 포기(재시작 중 추적 유실 방지).
+        try {
+          const next = await runsApi.get(detail.id)
+          pollFailures = 0
+          detail = next
+          setExecution(detail)
+        } catch (e) {
+          if (++pollFailures >= 10) throw e
+        }
       }
     } catch (e) {
       // 저장 409 는 save.onError 가 충돌 다이얼로그로 안내 — 여기선 중복 토스트만 피한다

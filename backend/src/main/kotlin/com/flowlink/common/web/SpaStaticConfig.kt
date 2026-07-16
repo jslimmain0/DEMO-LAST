@@ -43,7 +43,7 @@ class SpaStaticConfig : WebMvcConfigurer {
 
     companion object {
         private val NO_FALLBACK_PREFIXES = listOf(
-            "api/", "mock/", "relay/", "actuator/", "swagger-ui", "v3/", "h2-console",
+            "api/", "mock/", "relay/", "actuator/", "swagger-ui", "v3/", "h2-console", "ws/",
         )
     }
 }

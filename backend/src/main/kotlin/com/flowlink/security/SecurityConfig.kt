@@ -97,6 +97,9 @@ class SecurityConfig {
             "/relay/**",
             // mock 서빙은 외부 시스템 흉내라 무인증(slug 는 비밀값 아님 — 테스트 도구 전제)
             "/mock/**",
+            // presence WebSocket 핸드셰이크 — 브라우저 WebSocket 은 Authorization 헤더를 못 실어
+            // 인터셉터가 쿼리 token 으로 자체 검증한다(PresenceHandshakeInterceptor)
+            "/ws/**",
         )
     }
 }

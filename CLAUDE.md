@@ -650,6 +650,36 @@ design/   theme(라이트/다크) · index.css(CSS 변수)
   + dev 모드 무회귀(mock 레거시/테넌트 경로·seed). 프론트 tsc/build/oxlint 통과.
 - ⚠ Keycloak 유저는 프로필 필수값(firstName/lastName/email) 없으면 password grant 가 "Account is not fully set up" 에러.
 
+## 최근 변경 (2026-07-16) — SaaS 전환 P2: 내구 비동기 실행 (`saas-overhaul` 브랜치)
+
+계획: [docs/superpowers/plans/2026-07-15-saas-p2-durable-exec.md](docs/superpowers/plans/2026-07-15-saas-p2-durable-exec.md).
+"동기 실행 + 인메모리 suspension"(가장 큰 아키텍처 부채 2건)을 해소 — **실행은 워커 풀에서 비동기, 재개 상태는 DB 내구화(서버 재시작 생존)**.
+- **RunState 스냅샷/rehydrate**: [RunStateSnapshot](backend/src/main/kotlin/com/flowlink/execution/engine/RunStateSnapshot.kt)
+  (activeIds·ctx values/seeds(삽입 순서 보존 — nearest-upstream 의미 유지)·index·seq·pendingNodeId·pendingForm·relayBase/RunId) +
+  `FlowExecutor.snapshot()/rehydrate()`(그래프는 flowVersionId 의 graphJson 에서 재구성). 값은 JSON 라운드트립이라
+  숫자/불리언/객체 원형 보존(assert 숫자 비교 검증). ⚠ 스냅샷 시점 한정: **wait/input/form/client 중단 지점**(HTTP 응답 등 비직렬화 상태 없음).
+- **suspension DB 내구화**: `execution_suspension` 테이블(V8 — execution_id PK·pending_node_id·run_state(암호문)·outcome_json·
+  wait_deadline). run_state 는 **AES-GCM 암호화**([StateCrypto](backend/src/main/kotlin/com/flowlink/execution/engine/StateCrypto.kt) —
+  키는 SHA-256(`flowlink.execution.state-secret`), **미설정 시 dev 폴백 키 + 기동 WARN**(운영에선 반드시 설정)) — ctx 에 시크릿/응답 본문이 실리므로.
+  outcome_json 은 평문(pending 명세 — GET 폴링이 재시작 후에도 pendingWait 등을 반환하는 소스).
+- **이중 재개 방지 CAS**: 재개 경쟁(콜백/타임아웃/수동 resume/⏹)은 전부 **suspension 행 조건부 DELETE(영향 행수 1=승자)** 로 판정
+  ([ExecutionSuspensionRepository](backend/src/main/kotlin/com/flowlink/core/repository/ExecutionSuspensionRepository.kt)
+  `deleteByExecutionIdAndPendingNodeId` in TransactionTemplate). 패자는 멱등 no-op(200 + 현재 상태). 인메모리 suspensions 맵은
+  성능 캐시로만 남음(미스 시 DB 복호화 rehydrate).
+- **비동기 실행**: `POST /runs`·`/resume` 은 **즉시 반환**(RUNNING), 본체는 전용 워커 풀("flowlink-exec",
+  `flowlink.execution.worker.pool-size=8`/`queue-capacity=100`)에서 실행. 큐 포화는 **429**(TooManyRequestsException).
+  워커 스레드는 TenantContext 수동 set/clear. relayBase 는 **요청 스레드에서 선캡처**(RelayBaseResolver 는 요청 컨텍스트 전용).
+- **기동 복구**(`recoverOnStartup`): wait 데드라인 재무장(경과분은 즉시 발화=타임아웃 실패) + suspension 없는 RUNNING/WAITING 고아는
+  FAILED("서버 재시작으로 중단된 실행") 로 정리.
+- **프론트 실행 루프 = 폴링 드라이버**([Editor.tsx](frontend/src/routes/Editor.tsx) `onRun`): POST 후 RUNNING/WAITING 동안
+  `GET /executions/{id}` 폴링(0.4초, wait 중 1초)하며 pendingInput/Form/Client 를 처리해 resume — 기존 watchRunProgress
+  (baseline 발견 방식) 폴러는 제거(실행·애니메이션이 한 루프로 통합). 서버가 대기를 구동하므로 **탭을 닫아도 wait 콜백/타임아웃은 완결**.
+- 검증: 단위 10종(RunStateSnapshotTest·StateCryptoTest 포함) PASS + **P2 e2e 22/22**(`node e2e/saas-p2-durable.mjs` —
+  비동기 즉시 반환·wait 콜백 재개·**재시작 후 WAITING 유지→콜백→rehydrate 완주**·재시작 후 타임아웃 재무장·RUNNING 고아 FAILED·
+  resume 멱등·input 재개·⏹ CANCELLED. 스크립트가 백엔드를 3회 재시작) + 브라우저(폴링 루프 대기 배너/카운트다운/수신 URL/콜백 자동 완료) PASS.
+- ⚠ 스냅샷 암호키 미설정 시 dev 키(로컬 전용). 실행 이력의 대량 폴링은 여전히 GET(SSE 아님). 워커 풀은 단일 인스턴스 스코프 —
+  수평 확장(공유 큐) 은 범위 밖. `Execution` 고아 정리는 기동 시 1회(주기 스윕 없음).
+
 ## 참고 문서
 - `backend/README.md` — Phase 1 구현 범위 표, API 요약, 실행 가이드
 - `docs/` — UI/UX 멀티에이전트 설계 토론 로그, 엔터프라이즈 고도화 설계

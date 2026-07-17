@@ -56,7 +56,9 @@ class TriggerService(
         } else {
             t.webhookToken = UUID.randomUUID().toString().replace("-", "")
         }
-        return TriggerView.from(triggerRepo.save(t))
+        // 할당식 UUID 엔티티는 save 가 merge 로 동작 → @CreationTimestamp createdAt 은 saveAndFlush 가 반환한
+        // 관리 인스턴스에만 채워진다(FlowVersion 과 동일 이유). 원본 t 를 읽으면 lateinit 미초기화 예외.
+        return TriggerView.from(triggerRepo.saveAndFlush(t))
     }
 
     @Transactional

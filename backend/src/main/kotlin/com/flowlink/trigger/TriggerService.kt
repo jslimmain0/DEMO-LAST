@@ -83,55 +83,52 @@ class TriggerService(
         triggerRepo.delete(load(id))
     }
 
+    /** 발화 스펙 — claim(트랜잭션) 이 확정해 run(비트랜잭션) 으로 넘긴다. */
+    data class FireSpec(val tenantId: String, val flowId: UUID, val versionNo: Int?, val inputJson: String?)
+
     /**
-     * 웹훅 발화 — 무인증 경로에서 호출(POST /hooks/{token}). 토큰으로 트리거를 찾아 tenant 를 세팅하고 실행.
-     * 본문(input)은 RunRequest.input 으로 주입되며 트리거 저장 input 과 병합하지 않고 본문 우선(있으면).
+     * 웹훅 claim — 토큰으로 트리거를 찾아 lastRunAt 갱신 후 실행 스펙 반환(비활성/미존재는 null=존재 은닉).
+     * @Transactional 이라 lastRunAt 이 실제로 영속된다(구: fireWebhook 자기호출로 프록시 우회돼 미영속이던 버그 수정).
      */
-    fun fireWebhook(token: String, body: com.fasterxml.jackson.databind.JsonNode?): UUID {
-        val t = triggerRepo.findByWebhookToken(token)
-            .orElseThrow { NotFoundException.of("Webhook", token) }
-        if (!t.enabled) throw NotFoundException.of("Webhook", token) // 비활성은 존재 은닉
-        val input = if (body != null && !body.isNull && body.isObject) body
-        else t.inputJson?.let { json.readTree(it) }
-        TenantContext.setTenantId(t.tenantId)
-        try {
-            val detail = executionService.run(t.flowId, RunRequest(input, null, t.versionNo), TriggerType.WEBHOOK)
-            markFired(t.id)
-            return detail.id
-        } finally {
-            TenantContext.clear()
-        }
+    @Transactional
+    fun claimWebhookFire(token: String, body: com.fasterxml.jackson.databind.JsonNode?): FireSpec? {
+        val t = triggerRepo.findByWebhookToken(token).orElse(null) ?: return null
+        if (!t.enabled) return null
+        t.lastRunAt = Instant.now()
+        // 본문(JSON object)이 있으면 그걸 input 으로, 없으면 트리거 저장 input
+        val inputJson = if (body != null && !body.isNull && body.isObject) json.toJson(body) else t.inputJson
+        return FireSpec(t.tenantId, t.flowId, t.versionNo, inputJson)
     }
 
-    /** 발화할 SCHEDULE 트리거 id 목록 — 스케줄러가 각 id 로 fireSchedule 을 (프록시 경유) 호출한다. */
+    /** 발화할 SCHEDULE 트리거 id 목록 — 스케줄러가 각 id 로 claimScheduleFire 를 (프록시 경유) 호출한다. */
     @Transactional(readOnly = true)
     fun dueScheduleIds(now: Instant): List<UUID> =
         triggerRepo.findByTypeAndEnabledTrueAndNextRunAtLessThanEqual(TriggerType.SCHEDULE, now).map { it.id }
 
+    /**
+     * 스케줄 claim — nextRunAt 을 **미리** 전진(중복 발화 방지, 실패해도 폭주 없음) + lastRunAt, 실행 스펙 반환.
+     * 실행(run)은 이 트랜잭션 커밋 **후** 비트랜잭션 runFire 에서 — 그래야 executionRepo.save(execution) 이
+     * 즉시 커밋돼 비동기 워커가 execution 행을 본다(구: fireSchedule @Transactional 안에서 run 을 불러 커밋 전
+     * 워커가 시작 → FK 위반/NotFound → RUNNING 고착·노드 기록 유실이던 HIGH 버그 수정).
+     */
     @Transactional
-    fun fireSchedule(triggerId: UUID, now: Instant) {
-        val t = triggerRepo.findById(triggerId).orElse(null) ?: return
-        if (!t.enabled || t.type != TriggerType.SCHEDULE) return
-        val input = t.inputJson?.let { json.readTree(it) }
-        TenantContext.setTenantId(t.tenantId)
+    fun claimScheduleFire(triggerId: UUID, now: Instant): FireSpec? {
+        val t = triggerRepo.findById(triggerId).orElse(null) ?: return null
+        if (!t.enabled || t.type != TriggerType.SCHEDULE) return null
+        t.lastRunAt = now
+        t.nextRunAt = computeNext(t.cron.orEmpty(), now)
+        return FireSpec(t.tenantId, t.flowId, t.versionNo, t.inputJson)
+    }
+
+    /** 실제 실행 — **비트랜잭션**(ambient tx 없음)이라 run() 의 Execution INSERT 가 즉시 커밋된다. */
+    fun runFire(spec: FireSpec, trigger: TriggerType): UUID {
+        val input = spec.inputJson?.let { json.readTree(it) }
+        TenantContext.setTenantId(spec.tenantId)
         try {
-            executionService.run(t.flowId, RunRequest(input, null, t.versionNo), TriggerType.SCHEDULE)
+            return executionService.run(spec.flowId, RunRequest(input, null, spec.versionNo), trigger).id
         } finally {
             TenantContext.clear()
         }
-        t.lastRunAt = now
-        t.nextRunAt = computeNext(t.cron.orEmpty(), now)
-    }
-
-    @Transactional
-    fun advance(triggerId: UUID, from: Instant) {
-        val t = triggerRepo.findById(triggerId).orElse(null) ?: return
-        t.nextRunAt = computeNext(t.cron.orEmpty(), from)
-    }
-
-    @Transactional
-    fun markFired(triggerId: UUID) {
-        triggerRepo.findById(triggerId).ifPresent { it.lastRunAt = Instant.now() }
     }
 
     // --- 내부 ---

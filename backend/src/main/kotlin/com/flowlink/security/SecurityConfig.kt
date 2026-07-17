@@ -54,6 +54,13 @@ class SecurityConfig {
                         .requestMatchers("/api/v1/plugins/**").hasRole("platform-admin")
                         // 설정 저장(콜백 수신 주소 등)은 팀 admin (PUT 은 GET 블랭킷에 안 걸리지만 명시 우선)
                         .requestMatchers(HttpMethod.PUT, "/api/v1/settings/**").hasRole("admin")
+                        // 알림 웹훅 URL(Slack/Teams)은 그 자체가 채널 쓰기 자격증명 → GET 도 admin 만(viewer 노출 방지)
+                        .requestMatchers(HttpMethod.GET, "/api/v1/settings/notify").hasRole("admin")
+                        // 트리거는 webhookToken(무인증 /hooks 실행 경로의 유일한 비밀)을 반환하므로 GET 포함 editor 이상
+                        // (GET 블랭킷보다 먼저 — viewer 가 토큰을 조회하지 못하게)
+                        .requestMatchers("/api/v1/flows/*/triggers/**").hasAnyRole("editor", "admin")
+                        // 시크릿 볼트는 write-only(값 미노출)지만 이름 목록도 editor 이상으로 제한
+                        .requestMatchers("/api/v1/secrets/**").hasAnyRole("editor", "admin")
                         // 조회는 viewer 포함 인증만 (위의 구체 규칙에서 안 걸린 나머지 GET)
                         .requestMatchers(HttpMethod.GET, "/api/v1/**").authenticated()
                         // 나머지 쓰기(플로우/폴더/mock CRUD·실행·재개)는 editor 이상

@@ -25,7 +25,10 @@ class WebhookController(private val service: TriggerService) {
         @RequestBody(required = false) body: JsonNode?,
     ): ResponseEntity<Map<String, Any?>> {
         return try {
-            val execId = service.fireWebhook(token, body)
+            // claim(트랜잭션: lastRunAt 영속) → runFire(비트랜잭션: Execution 즉시 커밋 후 워커 제출)
+            val spec = service.claimWebhookFire(token, body)
+                ?: return ResponseEntity.status(HttpStatus.NOT_FOUND).body(mapOf("error" to "unknown or disabled webhook"))
+            val execId = service.runFire(spec, com.flowlink.core.domain.TriggerType.WEBHOOK)
             ResponseEntity.accepted().body(mapOf("executionId" to execId.toString(), "status" to "RUNNING"))
         } catch (e: Exception) {
             log.debug("웹훅 발화 실패 {}: {}", token, e.message)

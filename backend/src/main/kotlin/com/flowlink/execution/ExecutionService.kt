@@ -165,9 +165,10 @@ class ExecutionService(
 
         val ctx = ExecutionContext()
         seedInput(ctx, req)
-        // 시크릿 볼트 시드 — {{ 이름@secret }} 로 주입. 값은 캡처 로그에서 마스킹된다(recorder).
+        // 시크릿 볼트 시드 — putSeed 로 넣어 **명시 스코프 {{ 이름@secret }} 로만** 보이게 한다(bare {{키}} 의
+        // nearest-upstream 오염/input·env 가림 방지 — wait URL 시드와 동일 격리). 값은 캡처 로그에서 마스킹(recorder).
         val secrets = secretMap()
-        if (secrets.isNotEmpty()) ctx.putOutput("secret", secrets)
+        if (secrets.isNotEmpty()) ctx.putSeed("secret", secrets)
 
         // wait(콜백 대기) 노드 수신 URL 시드 — 실행 시작 시점에 모든 wait 노드의 url 출력을 미리 확정해
         // {{ url@노드ID }} 가 wait 보다 앞의 노드(returnUrl/notiUrl)에서도 해석되게 한다.
@@ -410,12 +411,15 @@ class ExecutionService(
         status: ExecutionStatus?, flowId: UUID?, fromMs: Long?, toMs: Long?, limit: Int, offset: Int
     ): List<ExecutionSummary> {
         val pageSize = clamp(limit)
-        val page = (offset.coerceAtLeast(0)) / pageSize
-        val execs = executionRepo.findFiltered(
+        val off = offset.coerceAtLeast(0)
+        // 임의 offset(pageSize 배수 아님)도 정확히 건너뛰도록 off+pageSize 를 가져와 앞 off 개를 버린다
+        // (구: page=off/pageSize 정수나눗셈으로 페이지 경계 내림 → 잘못된 윈도 반환하던 버그 수정).
+        val fetched = executionRepo.findFiltered(
             TenantContext.getTenantId(), status, flowId,
             fromMs?.let { Instant.ofEpochMilli(it) }, toMs?.let { Instant.ofEpochMilli(it) },
-            PageRequest.of(page, pageSize)
+            PageRequest.of(0, off + pageSize)
         )
+        val execs = if (off > 0) fetched.drop(off) else fetched
         return withFlowNames(execs)
     }
 
@@ -454,8 +458,9 @@ class ExecutionService(
 
     private fun recorder(execId: UUID, secretValues: Collection<String> = emptyList()): NodeRecorder {
         val captureBodies = props.capture.requestResponseBodies
-        // 마스킹 대상 = 비어있지 않은 시크릿 값(짧은 값의 과도 마스킹 방지 위해 1자 이상). 긴 것부터 치환.
-        val masks = secretValues.filter { it.isNotBlank() }.distinct().sortedByDescending { it.length }
+        // 마스킹 대상 = 시크릿 원문 + 캡처 텍스트에 나타날 수 있는 인코딩 변형(URL 인코딩·JSON 이스케이프).
+        // 원문만 치환하면 쿼리/urlencoded(퍼센트 인코딩)·JSON 출력(따옴표·역슬래시 이스케이프)에서 시크릿이 새므로 변형도 포함.
+        val masks = secretMaskVariants(secretValues).sortedByDescending { it.length }
         return NodeRecorder { node, seq, result, status, durationMs ->
             val ne = NodeExecution.of(execId, node.id!!, node.name, node.type, seq)
             val outputJson = if (result.storedValue != null) mask(json.toJson(result.storedValue), masks) else null
@@ -468,6 +473,19 @@ class ExecutionService(
             )
             nodeExecRepo.save(ne)
         }
+    }
+
+    /** 시크릿 값 + 인코딩 변형(URL 인코딩·JSON 이스케이프) 마스킹 후보. 1자 이상만(과도 마스킹 방지). */
+    private fun secretMaskVariants(values: Collection<String>): List<String> {
+        val out = LinkedHashSet<String>()
+        for (v in values) {
+            if (v.isBlank()) continue
+            out.add(v)
+            try { out.add(java.net.URLEncoder.encode(v, Charsets.UTF_8)) } catch (_: Exception) {}
+            // JSON 이스케이프형 — toJson("v") 의 양끝 따옴표 제거
+            try { val j = json.toJson(v); if (j.length >= 2) out.add(j.substring(1, j.length - 1)) } catch (_: Exception) {}
+        }
+        return out.filter { it.isNotBlank() }
     }
 
     /** 캡처 텍스트에서 시크릿 값 문자열을 마스킹(로그/DB 평문 노출 방지). */

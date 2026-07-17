@@ -1,5 +1,6 @@
 package com.flowlink.trigger
 
+import com.flowlink.core.domain.TriggerType
 import jakarta.annotation.PostConstruct
 import jakarta.annotation.PreDestroy
 import org.slf4j.LoggerFactory
@@ -36,11 +37,12 @@ class TriggerScheduler(private val service: TriggerService) {
         }
         for (id in ids) {
             try {
-                service.fireSchedule(id, now)
+                // claim(트랜잭션: nextRunAt 선전진 커밋) → run(비트랜잭션: Execution 즉시 커밋 후 워커 제출)
+                val spec = service.claimScheduleFire(id, now) ?: continue
+                service.runFire(spec, TriggerType.SCHEDULE)
             } catch (e: Exception) {
+                // claim 에서 nextRunAt 은 이미 전진됨(폭주 없음). run 실패는 로깅만.
                 log.warn("스케줄 트리거 발화 실패 {}: {}", id, e.message)
-                // 실패해도 다음 발화 시각은 전진(폭주 방지)
-                try { service.advance(id, now) } catch (_: Exception) {}
             }
         }
     }

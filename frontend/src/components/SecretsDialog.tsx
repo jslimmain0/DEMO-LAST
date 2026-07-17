@@ -37,6 +37,7 @@ export function SecretsDialog({ onClose }: { onClose: () => void }) {
         <p style={hint}>
           Bearer 토큰·API 키 등을 저장하고 <code style={code}>{'{{ 이름@secret }}'}</code> 로 씁니다.
           값은 암호화 저장되고 실행 로그/DB 에는 <b>마스킹(••••••)</b> 됩니다. 저장된 값은 다시 볼 수 없습니다.
+          시크릿은 <b>서버(S→S) 모드</b> HTTP 노드에서 쓰세요 — 클라이언트(C→S) 모드는 값이 브라우저로 전달돼 대기 상태에 남을 수 있습니다.
         </p>
 
         <div style={{ display: 'grid', gap: 6, margin: '12px 0' }}>

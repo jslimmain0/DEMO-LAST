@@ -16,6 +16,7 @@ import { ANNO_COLORS, catColor, METHOD_COLOR, typeIcon, typeLabel } from '../can
 import { fieldsToRaw, rawToFields, headersToRaw, rawToHeaders } from '../lib/bodyConvert'
 import { parseCurl, toCurl } from '../lib/curl'
 import { computeReachInfo, isUnreachableExecutable } from '../lib/reachable'
+import { useEnvStore } from '../lib/environments'
 import { bindingToToken, isTokenizable } from '../lib/tokenGrammar'
 import { newId } from '../lib/ids'
 import { useEditorStore } from '../store/editorStore'
@@ -110,9 +111,14 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
   }, [nodes, selectedId])
 
   // 조상 소스 + 그래프 내 wait 노드 수신 URL(앞 노드에서 returnUrl/notiUrl 에 꽂는 표준 패턴)
+  // envStore 를 구독해 활성 환경 변수 변경(스위처/관리 다이얼로그)이 즉시 바인딩 피커에 반영되게 한다.
+  const envStore = useEnvStore()
+  // envStore 를 시그니처로 참조 — bindableSources 가 activeEnvVars 를 명령형으로 읽으므로, 활성 환경 변경 시
+  // 재계산되도록 memo 입력에 포함(린트가 '미사용'으로 오인하지 않게 실제 값으로 참조).
+  const envSig = JSON.stringify(envStore.active ? envStore.envs[envStore.active] ?? {} : {})
   const sources: BindableSource[] = useMemo(
-    () => (selectedId ? bindableSources(nodes, edges, selectedId) : []),
-    [nodes, edges, selectedId],
+    () => { void envSig; return selectedId ? bindableSources(nodes, edges, selectedId) : [] },
+    [nodes, edges, selectedId, envSig],
   )
 
   // 연결(바로가기) — 선택 노드의 상류(들어오는)·하류(나가는) 이웃 노드 id (early-return 위에서 훅 순서 고정)

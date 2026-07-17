@@ -7,6 +7,7 @@ import { newId } from '../lib/ids'
 import { parseOpenApi } from './parseOpenApi'
 import type { ParsedOperation } from './parseOpenApi'
 
+/** 독립 다이얼로그(오버레이+카드+헤더). 통합 가져오기 다이얼로그는 아래 OpenApiImportBody 를 탭으로 재사용한다. */
 export function OpenApiImportDialog({
   onImport,
   onClose,
@@ -15,6 +16,27 @@ export function OpenApiImportDialog({
   onClose: () => void
 }) {
   useEscapeClose(onClose)
+  return (
+    <div role="dialog" aria-modal="true" aria-label="OpenAPI 가져오기" style={overlay} onClick={onClose}>
+      <div style={card} onClick={(e) => e.stopPropagation()}>
+        <header style={{ display: 'flex', alignItems: 'center', padding: '16px 18px', borderBottom: '1px solid var(--fl-border)' }}>
+          <strong style={{ fontFamily: 'var(--fl-font-head)', fontSize: 16 }}>OpenAPI / Swagger 가져오기</strong>
+          <button onClick={onClose} aria-label="닫기" style={{ marginLeft: 'auto', border: 'none', background: 'transparent', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 18 }}>×</button>
+        </header>
+        <OpenApiImportBody onImport={onImport} onClose={onClose} />
+      </div>
+    </div>
+  )
+}
+
+/** OpenAPI/Swagger 문서를 파싱해 선택한 오퍼레이션을 팔레트 그룹으로 추가. (오버레이/헤더 없는 본문 — 탭 재사용용) */
+export function OpenApiImportBody({
+  onImport,
+  onClose,
+}: {
+  onImport: (group: PaletteGroup) => void
+  onClose: () => void
+}) {
   const [text, setText] = useState('')
   const [url, setUrl] = useState('')
   const [fetching, setFetching] = useState(false)
@@ -86,13 +108,7 @@ export function OpenApiImportDialog({
   }
 
   return (
-    <div role="dialog" aria-modal="true" aria-label="OpenAPI 가져오기" style={overlay} onClick={onClose}>
-      <div style={card} onClick={(e) => e.stopPropagation()}>
-        <header style={{ display: 'flex', alignItems: 'center', padding: '16px 18px', borderBottom: '1px solid var(--fl-border)' }}>
-          <strong style={{ fontFamily: 'var(--fl-font-head)', fontSize: 16 }}>OpenAPI / Swagger 가져오기</strong>
-          <button onClick={onClose} aria-label="닫기" style={{ marginLeft: 'auto', border: 'none', background: 'transparent', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 18 }}>×</button>
-        </header>
-
+    <>
         {!ops ? (
           <div style={{ padding: 18 }}>
             <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
@@ -138,8 +154,7 @@ export function OpenApiImportDialog({
             </footer>
           </>
         )}
-      </div>
-    </div>
+    </>
   )
 }
 

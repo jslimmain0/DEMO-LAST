@@ -37,7 +37,7 @@ export function WorkflowIODialog({
 
         {tab === 'export'
           ? <ExportTab json={exportJson} flowName={flowName} />
-          : <ImportTab onImport={onImport} onClose={onClose} />}
+          : <WorkflowImportBody onImport={onImport} onClose={onClose} />}
       </div>
     </div>
   )
@@ -83,7 +83,8 @@ function ExportTab({ json, flowName }: { json: string; flowName: string }) {
   )
 }
 
-function ImportTab({ onImport, onClose }: { onImport: (graph: FlowGraph) => void; onClose: () => void }) {
+/** 워크플로 JSON(파일/붙여넣기)을 검증해 캔버스에 로드(교체). 오버레이/헤더 없는 본문 — 통합 다이얼로그가 탭으로 재사용. */
+export function WorkflowImportBody({ onImport, onClose }: { onImport: (graph: FlowGraph) => void; onClose: () => void }) {
   const [text, setText] = useState('')
   const [error, setError] = useState('')
 

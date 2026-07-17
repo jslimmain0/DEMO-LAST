@@ -11,8 +11,8 @@ import { Palette } from '../canvas/Palette'
 import { PropertyPanel } from '../panels/PropertyPanel'
 import { RunPanel } from '../panels/RunPanel'
 import type { WaitStatus } from '../panels/RunPanel'
-import { OpenApiImportDialog } from '../openapi/OpenApiImportDialog'
 import { WorkflowIODialog } from '../openapi/WorkflowIODialog'
+import { ImportDialog } from '../openapi/ImportDialog'
 import { InputPromptDialog } from '../components/InputPromptDialog'
 import { ResizeHandle } from '../components/ResizeHandle'
 import { ConflictDialog } from '../components/ConflictDialog'
@@ -41,6 +41,8 @@ export function Editor() {
   const markSaved = useEditorStore((s) => s.markSaved)
   const addPaletteGroup = useEditorStore((s) => s.addPaletteGroup)
   const importGraph = useEditorStore((s) => s.importGraph)
+  const addNodeFromTemplate = useEditorStore((s) => s.addNodeFromTemplate)
+  const focusNode = useEditorStore((s) => s.focusNode)
 
   const { canEdit, isViewer } = usePermissions()
   const { me, enabled: authEnabled } = useAuth()
@@ -63,7 +65,7 @@ export function Editor() {
   const [running, setRunning] = useState(false)
   const [showLog, setShowLog] = useState(false)
   const [saveConflict, setSaveConflict] = useState(false)
-  const [showApiImport, setShowApiImport] = useState(false)
+  const [importTab, setImportTab] = useState<'workflow' | 'openapi' | 'curl' | null>(null)
   const [workflowIO, setWorkflowIO] = useState<'export' | 'import' | null>(null)
   // wait(콜백 대기) 진행 상태 — RunPanel 카운트다운/수신 URL 표시용
   const [waitStatus, setWaitStatus] = useState<WaitStatus | null>(null)
@@ -446,8 +448,7 @@ export function Editor() {
               </div>
             </>
           )}
-          <button onClick={() => setShowApiImport(true)} disabled={!canEdit} style={{ ...ghostBtn, opacity: canEdit ? 1 : 0.4 }} title="OpenAPI/Swagger 스펙에서 노드 가져오기 (팔레트에 추가)">API 가져오기</button>
-          <button onClick={() => setWorkflowIO('import')} disabled={!canEdit} style={{ ...ghostBtn, opacity: canEdit ? 1 : 0.4 }}>가져오기</button>
+          <button onClick={() => setImportTab('workflow')} disabled={!canEdit} style={{ ...ghostBtn, opacity: canEdit ? 1 : 0.4 }} title="워크플로 JSON · OpenAPI/Swagger · cURL 가져오기">가져오기</button>
           <button onClick={() => setWorkflowIO('export')} style={ghostBtn}>내보내기</button>
           {running && <button onClick={onStop} style={stopBtn} title="실행 중단 — 대기 중이면 즉시 해제됩니다">⏹ 중단</button>}
           <button onClick={() => onRun()} disabled={running || !canEdit} title={canEdit ? undefined : 'viewer 역할은 실행할 수 없습니다'} style={runBtn}>{running ? '실행 중…' : '▶ 실행'}</button>
@@ -512,7 +513,22 @@ export function Editor() {
           onClose={() => setSaveConflict(false)}
         />
       )}
-      {showApiImport && <OpenApiImportDialog onClose={() => setShowApiImport(false)} onImport={(group) => addPaletteGroup(group)} />}
+      {importTab && (
+        <ImportDialog
+          initialTab={importTab}
+          onImportGraph={(g) => importGraph(g)}
+          onImportPalette={(group) => addPaletteGroup(group)}
+          onImportNode={(template) => {
+            // 기존 노드들 우측 아래에 배치 후 그 노드로 화면 이동(바로가기)
+            const ns = useEditorStore.getState().nodes
+            const maxY = ns.reduce((m, n) => Math.max(m, n.position.y), 0)
+            const pos = { x: 132, y: ns.length ? maxY + 132 : 132 }
+            const newId = addNodeFromTemplate(template, pos)
+            focusNode(newId)
+          }}
+          onClose={() => setImportTab(null)}
+        />
+      )}
       {workflowIO && (
         <WorkflowIODialog
           getGraph={getGraph}

@@ -400,6 +400,8 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
     if (pick === 'rawBody') update(id, { rawBody: `${node.rawBody ?? ''} ${bindingToToken(b)}`.trim() })
     else if (pick === 'rawParams') update(id, { rawParams: `${node.rawParams ?? ''} ${bindingToToken(b)}`.trim() })
     else if (pick === 'rawHeaders') update(id, { rawHeaders: `${node.rawHeaders ?? ''} ${bindingToToken(b)}`.trim() })
+    else if (pick === 'waitMsg') update(id, { waitMsg: `${node.waitMsg ?? ''} ${bindingToToken(b)}`.trim() })
+    else if (pick === 'callbackRespBody') update(id, { callbackRespBody: `${node.callbackRespBody ?? ''} ${bindingToToken(b)}`.trim() })
     setPick(null)
   }
 
@@ -851,11 +853,20 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
               style={field}
               value={node.transformId ?? ''}
               onChange={(e) => {
+                if (e.target.value === node.transformId) return // 같은 변환 재선택은 no-op(리셋 방지)
                 const tr = (transforms.data ?? []).find((t) => t.id === e.target.value)
+                // 같은 입력 키의 기존 값/바인딩은 승계(파괴적 리셋 방지)
+                const prev = node.fields?.body ?? []
+                const body = (tr?.inputs ?? []).map((io) => {
+                  const old = prev.find((f) => f.key === io.key)
+                  return { id: newId(), key: io.key, value: old?.value ?? '', ...(old?.bound ? { bound: old.bound } : {}) }
+                })
+                const keptConfig: Record<string, string> = {}
+                for (const p of tr?.params ?? []) if (node.config?.[p.key] != null) keptConfig[p.key] = node.config[p.key]
                 update(id, {
                   transformId: e.target.value,
-                  config: {},
-                  fields: { params: node.fields?.params ?? [], headers: node.fields?.headers ?? [], body: (tr?.inputs ?? []).map((io) => ({ id: newId(), key: io.key, value: '' })) },
+                  config: keptConfig,
+                  fields: { params: node.fields?.params ?? [], headers: node.fields?.headers ?? [], body },
                   outputs: (tr?.outputs ?? []).map((o) => ({ key: o.key, type: o.type })),
                 })
               }}
@@ -1064,6 +1075,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
               onChange={(e) => update(id, { waitMsg: e.target.value })}
               placeholder="휴대폰으로 받은 OTP를 입력하세요"
             />
+            <button onClick={() => setPick('waitMsg')} style={{ ...braceBtn, width: 'auto', padding: '0 10px', marginTop: 4 }} title="데이터 삽입"><DataInsertIcon /></button>
             <label style={label}>입력 필드 (키 · 라벨 · 타입)</label>
             <WaitFieldsEditor fields={node.waitFields ?? []} onChange={(waitFields) => update(id, { waitFields })} />
             {(node.waitFields ?? []).filter((f) => f.key?.trim()).length === 0 && <p style={{ ...hintP, color: 'var(--fl-put)', marginTop: 6 }}>⚠ 입력 필드가 없습니다 — 최소 1개(키)를 추가하세요.</p>}
@@ -1142,14 +1154,15 @@ function WaitFieldsEditor({ fields, onChange }: { fields: WaitFieldT[]; onChange
   const upd = (fid: string, patch: Partial<WaitFieldT>) => onChange(fields.map((f) => (f.id === fid ? { ...f, ...patch } : f)))
   return (
     <>
-      {fields.map((f) => (
-        <div key={f.id} style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
+      {fields.map((f, i) => (
+        <div key={f.id} style={{ display: 'flex', gap: 6, marginBottom: 6, alignItems: 'center' }}>
           <input style={{ ...mono, flex: 1 }} value={f.key} placeholder="키(=출력)" onChange={(e) => upd(f.id, { key: e.target.value })} />
           <input style={{ ...field, flex: 1 }} value={f.label ?? ''} placeholder="라벨(표시)" onChange={(e) => upd(f.id, { label: e.target.value })} />
-          <select style={{ ...field, width: 92 }} value={f.type ?? 'string'} onChange={(e) => upd(f.id, { type: e.target.value })}>
+          <select style={{ ...field, width: 84 }} value={f.type ?? 'string'} onChange={(e) => upd(f.id, { type: e.target.value })}>
             {['string', 'number', 'boolean', 'json'].map((t) => <option key={t} value={t}>{t}</option>)}
           </select>
-          <button onClick={() => onChange(fields.filter((x) => x.id !== f.id))} aria-label="삭제" style={{ width: 28, border: '1px solid var(--fl-border)', borderRadius: 6, background: 'var(--fl-surface)', cursor: 'pointer' }}>×</button>
+          <RowMove i={i} len={fields.length} onMove={(d) => onChange(moveInList(fields, i, d))} />
+          <button onClick={() => onChange(fields.filter((x) => x.id !== f.id))} aria-label="삭제" style={{ width: 26, flexShrink: 0, border: '1px solid var(--fl-border)', borderRadius: 6, background: 'var(--fl-surface)', cursor: 'pointer' }}>×</button>
         </div>
       ))}
       <button onClick={() => onChange([...fields, { id: newId(), key: '', label: '', type: 'string' }])} style={addDashed}>+ 입력 필드</button>
@@ -1216,6 +1229,7 @@ function OutputsEditor({ outputs, onChange, nodeId }: { outputs: NodeOutput[]; o
               style={{ width: 30, flexShrink: 0, border: '1px solid var(--fl-border)', borderRadius: 6, background: 'var(--fl-surface)', color: 'var(--fl-primary)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
             ><CopyIcon /></button>
           )}
+          <RowMove i={i} len={outputs.length} onMove={(d) => onChange(moveInList(outputs, i, d))} />
           <button onClick={() => onChange(outputs.filter((_, idx) => idx !== i))} aria-label="삭제" style={{ width: 28, flexShrink: 0, border: '1px solid var(--fl-border)', borderRadius: 6, background: 'var(--fl-surface)', cursor: 'pointer' }}>×</button>
         </div>
       ))}
@@ -1227,6 +1241,8 @@ function OutputsEditor({ outputs, onChange, nodeId }: { outputs: NodeOutput[]; o
 function VarsEditor({ vars, onChange, sources, sourceType }: { vars: NodeVar[]; onChange: (v: NodeVar[]) => void; sources: BindableSource[]; sourceType: (b: Binding) => string | undefined }) {
   // 시크릿 행은 마스킹(password) 유지가 우선이라 인라인 칩 대신 기존 [값|칩 + { }] 방식을 유지한다.
   const [pickVar, setPickVar] = useState<string | null>(null)
+  const [revealed, setRevealed] = useState<Set<string>>(new Set())
+  const toggleReveal = (vid: string) => setRevealed((p) => { const n = new Set(p); n.has(vid) ? n.delete(vid) : n.add(vid); return n })
   const upd = (vid: string, patch: Partial<NodeVar>) => onChange(vars.map((v) => (v.id === vid ? { ...v, ...patch } : v)))
   return (
     <>
@@ -1239,7 +1255,8 @@ function VarsEditor({ vars, onChange, sources, sourceType }: { vars: NodeVar[]; 
               <div style={{ flex: 1 }}><BindingChip binding={v.bound} sourceType={sourceType(v.bound)} onRemove={() => upd(v.id, { bound: null })} onClick={() => setPickVar(v.id)} /></div>
             ) : (
               <>
-                <input style={{ ...mono, flex: 1 }} type="password" value={v.value ?? ''} placeholder="value" onChange={(e) => upd(v.id, { value: e.target.value })} />
+                <input style={{ ...mono, flex: 1 }} type={revealed.has(v.id) ? 'text' : 'password'} value={v.value ?? ''} placeholder="value" onChange={(e) => upd(v.id, { value: e.target.value })} />
+                <button onClick={() => toggleReveal(v.id)} title={revealed.has(v.id) ? '값 숨기기' : '값 보기'} aria-label={revealed.has(v.id) ? '값 숨기기' : '값 보기'} style={braceBtn}>{revealed.has(v.id) ? '🙈' : '👁'}</button>
                 <button onClick={() => setPickVar(v.id)} title="데이터 삽입" style={braceBtn}><DataInsertIcon /></button>
               </>
             )
@@ -1271,22 +1288,45 @@ function VarsEditor({ vars, onChange, sources, sourceType }: { vars: NodeVar[]; 
 }
 
 
+// 목록 행 위/아래 이동 — 순서가 load-bearing 인 편집기(TCP 바이트 배치·출력·입력)에서 재정렬용
+function moveInList<T>(arr: T[], i: number, dir: -1 | 1): T[] {
+  const j = i + dir
+  if (j < 0 || j >= arr.length) return arr
+  const next = arr.slice()
+  const tmp = next[i]; next[i] = next[j]; next[j] = tmp
+  return next
+}
+function RowMove({ i, len, onMove }: { i: number; len: number; onMove: (dir: -1 | 1) => void }) {
+  return (
+    <span style={{ display: 'inline-flex', flexDirection: 'column', flexShrink: 0 }}>
+      <button onClick={() => onMove(-1)} disabled={i === 0} aria-label="위로" title="위로" style={rowMoveBtn(i === 0)}>▲</button>
+      <button onClick={() => onMove(1)} disabled={i === len - 1} aria-label="아래로" title="아래로" style={rowMoveBtn(i === len - 1)}>▼</button>
+    </span>
+  )
+}
+
 /** TCP 요청 필드 편집기 — 값은 텍스트+토큰 칩 혼합(TokenInput), 토큰화 불가 bound 는 구조적 칩 유지. */
 function TcpReqEditor({ fields, sources, sourceType, onChange }: { fields: TcpField[]; sources: BindableSource[]; sourceType: (b: Binding) => string | undefined; onChange: (f: TcpField[]) => void }) {
   const upd = (fid: string, patch: Partial<TcpField>) => onChange(fields.map((f) => (f.id === fid ? { ...f, ...patch } : f)))
+  let off = 0
+  const total = fields.reduce((a, f) => a + (f.length ?? 0), 0)
   return (
     <>
-      {fields.map((f) => (
+      {fields.map((f, i) => {
+        const start = off; off += f.length ?? 0
+        return (
         <div key={f.id} style={{ border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', padding: 8, marginBottom: 6 }}>
-          <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
+          <div style={{ display: 'flex', gap: 6, marginBottom: 6, alignItems: 'center' }}>
+            <span title={`시작 바이트 오프셋 ${start} (길이 ${f.length ?? 0})`} style={offBadge}>@{start}</span>
             <input style={{ ...mono, flex: 2 }} value={f.name ?? ''} placeholder="이름" onChange={(e) => upd(f.id, { name: e.target.value })} />
-            <input style={{ ...mono, width: 60 }} type="number" value={f.length ?? 0} title="바이트 길이" onChange={(e) => upd(f.id, { length: Number(e.target.value) })} />
-            <select style={{ ...field, width: 56 }} value={f.pad ?? 'right'} title="패딩 방향" onChange={(e) => upd(f.id, { pad: e.target.value as 'left' | 'right' })}>
+            <input style={{ ...mono, width: 54 }} type="number" value={f.length ?? 0} title="바이트 길이" onChange={(e) => upd(f.id, { length: Number(e.target.value) })} />
+            <select style={{ ...field, width: 50 }} value={f.pad ?? 'right'} title="패딩 방향" onChange={(e) => upd(f.id, { pad: e.target.value as 'left' | 'right' })}>
               <option value="right">→</option>
               <option value="left">←</option>
             </select>
-            <input style={{ ...mono, width: 38 }} maxLength={1} value={f.padChar ?? ' '} title="패딩 문자" onChange={(e) => upd(f.id, { padChar: e.target.value })} />
-            <button onClick={() => onChange(fields.filter((x) => x.id !== f.id))} aria-label="삭제" style={{ width: 28, border: '1px solid var(--fl-border)', borderRadius: 6, background: 'var(--fl-surface)', cursor: 'pointer' }}>×</button>
+            <input style={{ ...mono, width: 34 }} maxLength={1} value={f.padChar ?? ' '} title="패딩 문자" onChange={(e) => upd(f.id, { padChar: e.target.value })} />
+            <RowMove i={i} len={fields.length} onMove={(d) => onChange(moveInList(fields, i, d))} />
+            <button onClick={() => onChange(fields.filter((x) => x.id !== f.id))} aria-label="삭제" style={{ width: 26, flexShrink: 0, border: '1px solid var(--fl-border)', borderRadius: 6, background: 'var(--fl-surface)', cursor: 'pointer' }}>×</button>
           </div>
           {f.bound && !isTokenizable(f.bound) ? (
             <BindingChip binding={f.bound} sourceType={sourceType(f.bound)} onRemove={() => upd(f.id, { bound: null })} />
@@ -1300,7 +1340,8 @@ function TcpReqEditor({ fields, sources, sourceType, onChange }: { fields: TcpFi
             />
           )}
         </div>
-      ))}
+      ) })}
+      <div style={{ fontSize: 11, color: 'var(--fl-text-muted)', margin: '2px 0 6px', fontFamily: 'var(--fl-font-mono)' }}>총 {total} 바이트</div>
       <button onClick={() => onChange([...fields, { id: newId(), name: '', length: 10, value: '', pad: 'right', padChar: ' ' }])} style={addDashed}>+ 요청 필드</button>
     </>
   )
@@ -1308,15 +1349,22 @@ function TcpReqEditor({ fields, sources, sourceType, onChange }: { fields: TcpFi
 
 function TcpRespEditor({ fields, onChange }: { fields: TcpRespField[]; onChange: (f: TcpRespField[]) => void }) {
   const upd = (fid: string, patch: Partial<TcpRespField>) => onChange(fields.map((f) => (f.id === fid ? { ...f, ...patch } : f)))
+  let off = 0
+  const total = fields.reduce((a, f) => a + (f.length ?? 0), 0)
   return (
     <>
-      {fields.map((f) => (
-        <div key={f.id} style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
+      {fields.map((f, i) => {
+        const start = off; off += f.length ?? 0
+        return (
+        <div key={f.id} style={{ display: 'flex', gap: 6, marginBottom: 6, alignItems: 'center' }}>
+          <span title={`시작 바이트 오프셋 ${start} (길이 ${f.length ?? 0})`} style={offBadge}>@{start}</span>
           <input style={{ ...mono, flex: 2 }} value={f.name ?? ''} placeholder="이름(=출력 키)" onChange={(e) => upd(f.id, { name: e.target.value })} />
-          <input style={{ ...mono, width: 70 }} type="number" value={f.length ?? 0} title="바이트 길이" onChange={(e) => upd(f.id, { length: Number(e.target.value) })} />
-          <button onClick={() => onChange(fields.filter((x) => x.id !== f.id))} aria-label="삭제" style={{ width: 28, border: '1px solid var(--fl-border)', borderRadius: 6, background: 'var(--fl-surface)', cursor: 'pointer' }}>×</button>
+          <input style={{ ...mono, width: 64 }} type="number" value={f.length ?? 0} title="바이트 길이" onChange={(e) => upd(f.id, { length: Number(e.target.value) })} />
+          <RowMove i={i} len={fields.length} onMove={(d) => onChange(moveInList(fields, i, d))} />
+          <button onClick={() => onChange(fields.filter((x) => x.id !== f.id))} aria-label="삭제" style={{ width: 26, flexShrink: 0, border: '1px solid var(--fl-border)', borderRadius: 6, background: 'var(--fl-surface)', cursor: 'pointer' }}>×</button>
         </div>
-      ))}
+      ) })}
+      <div style={{ fontSize: 11, color: 'var(--fl-text-muted)', margin: '2px 0 6px', fontFamily: 'var(--fl-font-mono)' }}>총 {total} 바이트</div>
       <button onClick={() => onChange([...fields, { id: newId(), name: '', length: 10 }])} style={addDashed}>+ 응답 필드</button>
     </>
   )
@@ -1337,6 +1385,10 @@ function methodSel(m?: string): CSSProperties {
 const ghostMini: CSSProperties = { padding: '5px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 12, fontWeight: 500 }
 const smartLink: CSSProperties = { marginTop: 6, padding: '4px 8px', border: 'none', background: 'transparent', color: 'var(--fl-primary)', cursor: 'pointer', fontSize: 12, fontWeight: 600, textAlign: 'left' }
 const snippetChip: CSSProperties = { padding: '2px 8px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-pill)', background: 'var(--fl-surface-2)', color: 'var(--fl-text)', cursor: 'pointer', fontSize: 11.5, fontFamily: 'var(--fl-font-mono)' }
+const offBadge: CSSProperties = { flexShrink: 0, fontSize: 10, fontFamily: 'var(--fl-font-mono)', color: 'var(--fl-text-muted)', background: 'var(--fl-surface-2)', borderRadius: 4, padding: '2px 4px', minWidth: 26, textAlign: 'center' }
+function rowMoveBtn(disabled: boolean): CSSProperties {
+  return { width: 18, height: 11, border: 'none', background: 'transparent', color: disabled ? 'var(--fl-border)' : 'var(--fl-text-muted)', cursor: disabled ? 'default' : 'pointer', fontSize: 8, lineHeight: '11px', padding: 0 }
+}
 const advToggle: CSSProperties = { marginTop: 12, padding: '4px 0', border: 'none', background: 'transparent', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 12, fontWeight: 600, textAlign: 'left', width: '100%', display: 'block' }
 // 연결(바로가기) 이웃 노드 칩
 const navChip: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 5, padding: '4px 9px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-pill)', background: 'var(--fl-surface-2)', color: 'var(--fl-text)', cursor: 'pointer', fontSize: 12, maxWidth: 160 }

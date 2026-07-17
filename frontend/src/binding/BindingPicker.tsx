@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react'
-import type { CSSProperties } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent } from 'react'
 import type { Binding } from '../api/types'
 import { catColor, typeIcon, typeLabel } from '../canvas/nodeMeta'
 import { useEscapeClose } from '../components/useEscapeClose'
@@ -30,12 +30,23 @@ export function BindingPicker({
     onClose()
   }
 
+  // 키보드 선택 — 검색 후 방향키로 이동, Enter 로 삽입
+  const flat = useMemo(() => filtered.flatMap((s) => s.items.map((it) => ({ s, it }))), [filtered])
+  const [active, setActive] = useState(0)
+  useEffect(() => { setActive(0) }, [q])
+  const onKey = (e: ReactKeyboardEvent) => {
+    if (e.key === 'ArrowDown') { e.preventDefault(); setActive((a) => Math.min(a + 1, flat.length - 1)) }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setActive((a) => Math.max(a - 1, 0)) }
+    else if (e.key === 'Enter') { e.preventDefault(); const sel = flat[active]; if (sel) pick(sel.s, sel.it) }
+  }
+  let gi = -1
+
   return (
     <div role="dialog" aria-modal="true" aria-label="데이터 삽입" style={overlay} onClick={onClose}>
       <div style={card} onClick={(e) => e.stopPropagation()}>
         <header style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 16px', borderBottom: '1px solid var(--fl-border)' }}>
           <strong style={{ fontFamily: 'var(--fl-font-head)', fontSize: 15 }}>데이터 삽입</strong>
-          <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="키 검색…" style={search} />
+          <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={onKey} placeholder="키 검색… (↑↓ 이동, Enter 삽입)" style={search} />
           <button onClick={onClose} aria-label="닫기" style={{ border: 'none', background: 'transparent', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 18 }}>×</button>
         </header>
 
@@ -54,13 +65,17 @@ export function BindingPicker({
               </div>
               {/* 파라미터는 세로 목록 대신 블럭(칩)으로 나열 — 한눈에 훑고 바로 집는다 */}
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: '0 8px 4px 27px' }}>
-                {s.items.map((it, i) => (
+                {s.items.map((it, i) => {
+                  gi++
+                  const isActive = gi === active
+                  return (
                   <button
                     key={`${it.group}-${it.key}-${i}`}
                     onClick={() => pick(s, it)}
+                    onMouseEnter={() => setActive(gi)}
                     className="fl-bind-chip"
                     title={`${it.group === 'response' ? '응답' : '요청'} · ${it.key}${it.type ? ` (${it.type})` : ''}`}
-                    style={chipBtn(it.group === 'response')}
+                    style={{ ...chipBtn(it.group === 'response'), ...(isActive ? { outline: '2px solid var(--fl-primary)', outlineOffset: 1 } : {}) }}
                   >
                     {/* 색 단독 금지(1.4.1) — 응답/요청 구분은 텍스트 태그로 */}
                     <span style={{ fontSize: 9.5, fontWeight: 700, flexShrink: 0, color: it.group === 'response' ? 'var(--fl-ok)' : 'var(--fl-running)' }}>
@@ -69,7 +84,7 @@ export function BindingPicker({
                     <span style={{ fontFamily: 'var(--fl-font-mono)', fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 180 }}>{it.key}</span>
                     {it.type && <span style={typeBadge}>{it.type}</span>}
                   </button>
-                ))}
+                ) })}
               </div>
             </section>
           ))}

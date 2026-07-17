@@ -12,14 +12,15 @@ import { TokenInput } from '../binding/TokenInput'
 import { bindableSources } from '../binding/upstream'
 import type { BindableSource } from '../binding/upstream'
 import { asGraphNode } from '../canvas/graphAdapter'
-import { ANNO_COLORS, catColor, typeIcon, typeLabel } from '../canvas/nodeMeta'
+import { ANNO_COLORS, catColor, METHOD_COLOR, typeIcon, typeLabel } from '../canvas/nodeMeta'
 import { fieldsToRaw, rawToFields, headersToRaw, rawToHeaders } from '../lib/bodyConvert'
+import { parseCurl, toCurl } from '../lib/curl'
 import { bindingToToken, isTokenizable } from '../lib/tokenGrammar'
 import { newId } from '../lib/ids'
 import { useEditorStore } from '../store/editorStore'
 import { KeyValueEditor } from './KeyValueEditor'
 
-const label: CSSProperties = { display: 'block', fontSize: 11.5, fontWeight: 600, color: 'var(--fl-text-muted)', margin: '12px 0 5px' }
+const label: CSSProperties = { display: 'block', fontSize: 11.5, fontWeight: 600, color: 'var(--fl-text-muted)', margin: '10px 0 4px' }
 const field: CSSProperties = { width: '100%', padding: '8px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 13, fontFamily: 'var(--fl-font-ui)' }
 const mono: CSSProperties = { ...field, fontFamily: 'var(--fl-font-mono)', fontSize: 12 }
 const braceBtn: CSSProperties = { width: 32, height: 32, flexShrink: 0, border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-primary)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }
@@ -68,12 +69,16 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
   const update = useEditorStore((s) => s.updateNodeData)
   const selectNode = useEditorStore((s) => s.selectNode)
   const deleteNode = useEditorStore((s) => s.deleteNode)
+  const duplicateSelection = useEditorStore((s) => s.duplicateSelection)
   const removeEdge = useEditorStore((s) => s.removeEdge)
   const [tab, setTab] = useState<'params' | 'headers' | 'body'>('params')
   const [pick, setPick] = useState<string | null>(null) // rawBody | rawParams | rawHeaders (Raw 텍스트영역 전용)
   const [bodyConvNote, setBodyConvNote] = useState<string | null>(null) // 필드↔Raw 변환 안내
   const [single, setSingle] = useState<SingleNodeRunResult | null>(null) // 이 노드만 실행 결과
   const [singleRunning, setSingleRunning] = useState(false)
+  const [advOpen, setAdvOpen] = useState(false) // HTTP 고급(문자셋·요청 방식) 접기
+  const [curlText, setCurlText] = useState<string | null>(null) // cURL 붙여넣기 입력창(열림=문자열)
+  const focusNode = useEditorStore((s) => s.focusNode)
   const transforms = useQuery({ queryKey: ['transforms'], queryFn: transformsApi.list })
   const qc = useQueryClient()
   const { canPlatformAdmin, canEdit } = usePermissions()
@@ -100,6 +105,10 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
     () => (selectedId ? bindableSources(nodes, edges, selectedId) : []),
     [nodes, edges, selectedId],
   )
+
+  // 연결(바로가기) — 선택 노드의 상류(들어오는)·하류(나가는) 이웃 노드 id (early-return 위에서 훅 순서 고정)
+  const upstreamIds = useMemo(() => (selectedId ? edges.filter((e) => e.target === selectedId).map((e) => e.source) : []), [edges, selectedId])
+  const downstreamIds = useMemo(() => (selectedId ? edges.filter((e) => e.source === selectedId).map((e) => e.target) : []), [edges, selectedId])
 
   // 다른 노드를 고르면 변환 안내는 초기화
   useEffect(() => setBodyConvNote(null), [selectedId])
@@ -132,6 +141,70 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
   }
   const sourceType = (b: Binding) => sources.find((s) => s.id === b.sourceId)?.type
   const selectedTransform = (transforms.data ?? []).find((t) => t.id === node.transformId)
+
+  const nodeLabel = (nid: string): { name: string; type: string } => {
+    const n = nodes.find((x) => x.id === nid)
+    const d = n ? asGraphNode(n.data) : null
+    return { name: d?.name || (d ? typeLabel(d.type) : nid), type: d?.type ?? '' }
+  }
+  const copyText = (t: string, msg: string) => { void navigator.clipboard?.writeText(t).then(() => toast(msg, 'ok')).catch(() => {}) }
+
+  // URL = Base URL + Path 병합(백엔드는 base+path 이므로 전체를 baseUrl 로 쓰고 path 는 비운다 — 무변경 호환)
+  const mergedUrl = (node.baseUrlBound ? bindingToToken(node.baseUrlBound) : (node.baseUrl ?? '')) + (node.path ?? '')
+  const setMergedUrl = (v: string) => update(id, { baseUrl: v, path: '', baseUrlBound: null })
+
+  // URL 의 ?쿼리 → Params 필드로 분리(스마트)
+  const urlQuery = (() => {
+    const qi = mergedUrl.indexOf('?')
+    return qi >= 0 ? mergedUrl.slice(qi + 1) : ''
+  })()
+  const extractQueryToParams = () => {
+    const qi = mergedUrl.indexOf('?')
+    if (qi < 0) return
+    const base = mergedUrl.slice(0, qi)
+    const qs = mergedUrl.slice(qi + 1)
+    const rows: NodeField[] = qs.split('&').filter(Boolean).map((pair) => {
+      const eq = pair.indexOf('=')
+      const k = eq >= 0 ? pair.slice(0, eq) : pair
+      const val = eq >= 0 ? pair.slice(eq + 1) : ''
+      return { id: newId(), key: decodeURIComponent(k), value: decodeURIComponent(val.replace(/\+/g, ' ')) }
+    })
+    update(id, { baseUrl: base, path: '', baseUrlBound: null, paramsRaw: false, fields: { params: [...(fields.params ?? []), ...rows], headers: fields.headers ?? [], body: fields.body ?? [] } })
+    setTab('params')
+    toast(`쿼리 ${rows.length}개를 Params 로 분리했습니다.`, 'ok')
+  }
+
+  // 현재 헤더를 key/value 목록으로(필드 또는 Raw 모드 공통) — cURL 복사용
+  const headerList = (): { key: string; value: string }[] => {
+    if (node.headersRaw) {
+      return (node.rawHeaders ?? '').split(/\r?\n/).map((l) => l.trim()).filter(Boolean).map((l) => {
+        const ci = l.indexOf(':')
+        return ci > 0 ? { key: l.slice(0, ci).trim(), value: l.slice(ci + 1).trim() } : { key: l, value: '' }
+      }).filter((h) => h.key)
+    }
+    return (fields.headers ?? []).filter((f) => f.key?.trim()).map((f) => ({ key: f.key!, value: f.bound ? bindingToToken(f.bound) : (f.value ?? '') }))
+  }
+  const currentBody = (): string => {
+    if (node.bodyType === 'raw' || node.bodyType === 'xml' || node.jsonRaw) return node.rawBody ?? ''
+    const rows = fields.body ?? []
+    if (!rows.length) return ''
+    if ((node.bodyType ?? 'json') === 'json') return `{${rows.filter((r) => r.key).map((r) => `"${r.key}":${JSON.stringify(r.bound ? bindingToToken(r.bound) : (r.value ?? ''))}`).join(',')}}`
+    return rows.filter((r) => r.key).map((r) => `${r.key}=${r.bound ? bindingToToken(r.bound) : (r.value ?? '')}`).join('&')
+  }
+  const copyCurl = () => copyText(toCurl({ method: node.method ?? 'GET', url: mergedUrl, headers: headerList(), body: currentBody() }), 'cURL 로 복사했습니다.')
+  const applyCurl = (text: string) => {
+    const r = parseCurl(text)
+    if (!r) { toast('cURL 을 인식하지 못했습니다. `curl ...` 형식인지 확인하세요.', 'error'); return }
+    const patch: Partial<GraphNode> = {
+      method: r.method as HttpMethod, baseUrl: r.url, path: '', baseUrlBound: null,
+      headersRaw: false,
+      fields: { params: fields.params ?? [], headers: r.headers.map((h) => ({ id: newId(), key: h.key, value: h.value })), body: fields.body ?? [] },
+    }
+    if (r.body) { patch.bodyType = r.bodyType === 'json' ? 'json' : r.bodyType === 'urlencoded' ? 'urlencoded' : 'raw'; patch.jsonRaw = true; patch.rawBody = r.body; setTab('body') }
+    update(id, patch)
+    setCurlText(null)
+    toast('cURL 을 노드에 반영했습니다.', 'ok')
+  }
 
   // [필드 ↔ Raw] 전환 시 현재 내용을 서로 변환(치환). 바인딩은 토큰으로, id 는 새로 부여.
   const switchBodyMode = (raw: boolean) => {
@@ -252,7 +325,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
     <aside aria-label="속성" style={{ ...shell, width }}>
       <header style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '14px 16px', borderBottom: '1px solid var(--fl-border)' }}>
         <span aria-hidden style={{ color: catColor(node.cat), fontSize: 16 }}>{typeIcon(node.type)}</span>
-        <input aria-label="노드 이름" value={node.name ?? ''} onChange={(e) => update(id, { name: e.target.value })} style={{ ...field, fontWeight: 600, fontFamily: 'var(--fl-font-head)' }} />
+        <input aria-label="노드 이름" value={node.name ?? ''} placeholder={typeLabel(node.type)} onChange={(e) => update(id, { name: e.target.value })} style={{ ...field, fontWeight: 600, fontFamily: 'var(--fl-font-head)' }} />
         {onExpand && (
           <button onClick={onExpand} aria-label="넓게 편집" title="넓은 모달로 편집" style={iconBtn}>⤢</button>
         )}
@@ -265,7 +338,38 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
       </header>
 
       <div style={{ padding: 16, overflowY: 'auto', flex: 1 }}>
-        <div style={{ fontSize: 11, color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)' }}>{typeLabel(node.type)} · #{id}</div>
+        <button
+          onClick={() => copyText(id, '노드 id 를 복사했습니다.')}
+          title="노드 id 복사"
+          style={{ border: 'none', background: 'transparent', padding: 0, fontSize: 11, color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)', cursor: 'pointer' }}
+        >{typeLabel(node.type)} · #{id} ⧉</button>
+
+        {(upstreamIds.length > 0 || downstreamIds.length > 0) && (
+          <div style={{ marginTop: 10, display: 'grid', gap: 6 }}>
+            {upstreamIds.length > 0 && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
+                <span style={{ fontSize: 11, color: 'var(--fl-text-muted)', minWidth: 42 }}>← 이전</span>
+                {upstreamIds.map((nid) => { const nl = nodeLabel(nid); return (
+                  <button key={'u' + nid} style={navChip} title={`${nl.name} 로 이동`} onClick={() => focusNode(nid)}>
+                    <span aria-hidden style={{ color: catColor(nl.type), flexShrink: 0 }}>{typeIcon(nl.type)}</span>
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{nl.name}</span>
+                  </button>
+                ) })}
+              </div>
+            )}
+            {downstreamIds.length > 0 && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
+                <span style={{ fontSize: 11, color: 'var(--fl-text-muted)', minWidth: 42 }}>다음 →</span>
+                {downstreamIds.map((nid) => { const nl = nodeLabel(nid); return (
+                  <button key={'d' + nid} style={navChip} title={`${nl.name} 로 이동`} onClick={() => focusNode(nid)}>
+                    <span aria-hidden style={{ color: catColor(nl.type), flexShrink: 0 }}>{typeIcon(nl.type)}</span>
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{nl.name}</span>
+                  </button>
+                ) })}
+              </div>
+            )}
+          </div>
+        )}
 
         {SINGLE_RUNNABLE.has(node.type) && canEdit && (
           <div style={{ marginTop: 10 }}>
@@ -424,51 +528,93 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
 
         {node.type === 'http' && (
           <>
-            <label style={label}>메서드</label>
-            <select style={field} value={node.method ?? 'GET'} onChange={(e) => update(id, { method: e.target.value as HttpMethod })}>
-              {METHODS.map((m) => <option key={m} value={m}>{m}</option>)}
-            </select>
-
-            <label style={label}>문자셋 (요청 인코딩 · 응답 디코딩)</label>
-            <select style={field} value={node.charset ?? 'UTF-8'} onChange={(e) => update(id, { charset: e.target.value })}>
-              {CHARSETS.map((c) => <option key={c} value={c}>{c}</option>)}
-            </select>
-            {node.reqMode === 'client' && (node.charset ?? 'UTF-8') !== 'UTF-8' && (
-              <p style={{ ...hintP, color: 'var(--fl-put)' }}>
-                ⚠ 클라이언트 모드는 브라우저가 요청을 UTF-8로 보내고 응답 디코딩도 브라우저가 처리합니다. 선택한 문자셋은 <b>서버 모드</b>에서 완전히 적용됩니다. (urlencoded/form 요청은 클라이언트 모드에서도 정상)
-              </p>
-            )}
-
-            <label style={label}>Base URL</label>
+            {/* URL 한 줄 — [메서드▾][주소]. Base URL·Path 는 하나로 합쳤다(안에서 https://.../{{ id }}/ 처럼 토큰으로). */}
+            <label style={label}>URL (메서드 · 주소)</label>
             {node.baseUrlBound && !isTokenizable(node.baseUrlBound) ? (
-              // 토큰 문법 밖 키/id 의 구(舊) bound — 이관하면 조용히 깨지므로 구조적 바인딩 칩 유지
-              <BindingChip binding={node.baseUrlBound} sourceType={sourceType(node.baseUrlBound)} onRemove={() => update(id, { baseUrlBound: null })} />
+              // 토큰 문법 밖 키/id 의 구(舊) bound — 이관하면 조용히 깨지므로 구조적 바인딩 칩 + Path 유지
+              <>
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                  <select aria-label="메서드" style={methodSel(node.method)} value={node.method ?? 'GET'} onChange={(e) => update(id, { method: e.target.value as HttpMethod })}>
+                    {METHODS.map((m) => <option key={m} value={m}>{m}</option>)}
+                  </select>
+                  <div style={{ flex: 1, minWidth: 0 }}><BindingChip binding={node.baseUrlBound} sourceType={sourceType(node.baseUrlBound)} onRemove={() => update(id, { baseUrlBound: null })} /></div>
+                </div>
+                <TokenInput ariaLabel="Path" value={node.path ?? ''} onChange={(v) => update(id, { path: v })} sources={sources} placeholder="/resource — { } 로 데이터 삽입" />
+              </>
             ) : (
-              <TokenInput
-                ariaLabel="Base URL"
-                value={node.baseUrlBound ? bindingToToken(node.baseUrlBound) : (node.baseUrl ?? '')}
-                onChange={(v) => update(id, { baseUrl: v, baseUrlBound: null })}
-                sources={sources}
-                placeholder="https://api.example.com — { } 로 데이터 삽입"
-              />
+              <div style={{ display: 'flex', gap: 6, alignItems: 'stretch' }}>
+                <select aria-label="메서드" style={methodSel(node.method)} value={node.method ?? 'GET'} onChange={(e) => update(id, { method: e.target.value as HttpMethod })}>
+                  {METHODS.map((m) => <option key={m} value={m}>{m}</option>)}
+                </select>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <TokenInput
+                    ariaLabel="URL"
+                    value={mergedUrl}
+                    onChange={setMergedUrl}
+                    sources={sources}
+                    placeholder="https://api.example.com/{{ id }}/detail — { } 로 데이터 삽입"
+                  />
+                </div>
+              </div>
             )}
 
-            <label style={label}>Path</label>
-            <TokenInput
-              ariaLabel="Path"
-              value={node.path ?? ''}
-              onChange={(v) => update(id, { path: v })}
-              sources={sources}
-              placeholder="/resource — { } 로 데이터 삽입"
-            />
+            {urlQuery && (
+              <button onClick={extractQueryToParams} style={smartLink} title="URL 의 ? 뒤 쿼리를 Params 필드로 옮깁니다">
+                ↳ 쿼리 {urlQuery.split('&').filter(Boolean).length}개를 Params 로 분리
+              </button>
+            )}
 
-            <ReqModeToggle mode={node.reqMode} onChange={(m) => update(id, { reqMode: m })} />
+            <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+              <button onClick={() => setCurlText(curlText === null ? '' : null)} style={ghostMini} title="curl 명령을 붙여넣어 이 노드를 채웁니다">cURL 붙여넣기</button>
+              <button onClick={copyCurl} style={ghostMini} title="이 노드를 curl 명령으로 클립보드에 복사(토큰은 그대로)">cURL 로 복사</button>
+            </div>
+            {curlText !== null && (
+              <div style={{ marginTop: 6 }}>
+                <textarea autoFocus style={{ ...mono, minHeight: 74, resize: 'vertical' }} value={curlText} onChange={(e) => setCurlText(e.target.value)}
+                  placeholder="curl -X POST 'https://api.example.com/pay' -H 'Authorization: Bearer ...' --data '{&quot;amount&quot;:1000}'" />
+                <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+                  <button onClick={() => applyCurl(curlText)} style={{ ...braceBtn, width: 'auto', padding: '0 14px', color: 'var(--fl-primary)', fontWeight: 600 }}>적용</button>
+                  <button onClick={() => setCurlText(null)} style={ghostMini}>취소</button>
+                </div>
+              </div>
+            )}
+
+            <button onClick={() => setAdvOpen((v) => !v)} style={advToggle} aria-expanded={advOpen}>
+              {advOpen ? '▾' : '▸'} 고급 — 문자셋 · 요청 방식(서버/클라이언트)
+            </button>
+            {advOpen && (
+              <div style={{ borderLeft: '2px solid var(--fl-border)', paddingLeft: 10, marginTop: 4 }}>
+                <label style={label}>문자셋 (요청 인코딩 · 응답 디코딩)</label>
+                <select style={field} value={node.charset ?? 'UTF-8'} onChange={(e) => update(id, { charset: e.target.value })}>
+                  {CHARSETS.map((c) => <option key={c} value={c}>{c}</option>)}
+                </select>
+                {node.reqMode === 'client' && (node.charset ?? 'UTF-8') !== 'UTF-8' && (
+                  <p style={{ ...hintP, color: 'var(--fl-put)' }}>
+                    ⚠ 클라이언트 모드는 브라우저가 요청을 UTF-8로 보내고 응답 디코딩도 브라우저가 처리합니다. 선택한 문자셋은 <b>서버 모드</b>에서 완전히 적용됩니다. (urlencoded/form 요청은 클라이언트 모드에서도 정상)
+                  </p>
+                )}
+                <ReqModeToggle mode={node.reqMode} onChange={(m) => update(id, { reqMode: m })} />
+              </div>
+            )}
 
             <div style={{ display: 'flex', gap: 4, margin: '16px 0 6px', borderBottom: '1px solid var(--fl-border)' }}>
-              {(['params', 'headers', 'body'] as const).map((t) => (
-                <button key={t} onClick={() => { setTab(t); setBodyConvNote(null) }} style={tabBtn(tab === t)}>{t === 'params' ? 'Params' : t === 'headers' ? 'Headers' : 'Body'}</button>
-              ))}
+              {(['params', 'headers', 'body'] as const).map((t) => {
+                const cnt = t === 'params'
+                  ? (node.paramsRaw ? ((node.rawParams ?? '').trim() ? '•' : '') : String((fields.params ?? []).filter((f) => f.key?.trim()).length || ''))
+                  : t === 'headers'
+                    ? (node.headersRaw ? ((node.rawHeaders ?? '').trim() ? '•' : '') : String((fields.headers ?? []).filter((f) => f.key?.trim()).length || ''))
+                    : (((node.bodyType === 'raw' || node.bodyType === 'xml' || node.jsonRaw) ? !!(node.rawBody?.trim()) : (fields.body ?? []).some((f) => f.key?.trim())) ? '•' : '')
+                return (
+                  <button key={t} onClick={() => { setTab(t); setBodyConvNote(null) }} style={tabBtn(tab === t)}>
+                    {t === 'params' ? 'Params' : t === 'headers' ? 'Headers' : 'Body'}
+                    {cnt && <span style={{ marginLeft: 5, fontSize: 10.5, color: tab === t ? 'var(--fl-primary)' : 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)' }}>{cnt === '•' ? '•' : `(${cnt})`}</span>}
+                  </button>
+                )
+              })}
             </div>
+            {(node.method === 'GET' || node.method === 'HEAD') && tab === 'body' && (
+              <p style={{ ...hintP, marginTop: 0, color: 'var(--fl-put)' }}>ⓘ {node.method} 요청은 보통 본문을 보내지 않습니다 — 조회 조건은 Params 를 쓰세요.</p>
+            )}
             <p style={{ ...hintP, marginTop: 0 }}>
               {tab === 'params'
                 ? 'URL 쿼리스트링 ?key=value — 주소에 붙는 조회 조건 (주로 GET)'
@@ -536,7 +682,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
             {KEYED_RESP.includes(node.respType ?? 'json') ? (
               <>
                 <label style={label}>{respOutputLabel(node.respType)}</label>
-                <OutputsEditor outputs={node.outputs ?? []} onChange={(outputs) => update(id, { outputs })} />
+                <OutputsEditor outputs={node.outputs ?? []} onChange={(outputs) => update(id, { outputs })} nodeId={id} />
                 <p style={hintP}>응답이 키 구조가 아니거나 파싱에 실패하면 전체 본문이 body 키로 제공됩니다. (그 경우 raw/조건식에 {'{{ body@이노드 }}'}로 바인딩)</p>
               </>
             ) : (
@@ -676,10 +822,19 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
 
         {node.type === 'tcp' && (
           <>
-            <div style={{ display: 'flex', gap: 6 }}>
-              <div style={{ flex: 2 }}><label style={label}>호스트</label><input style={mono} value={node.tcpHost ?? ''} onChange={(e) => update(id, { tcpHost: e.target.value })} /></div>
-              <div style={{ flex: 1 }}><label style={label}>포트</label><input style={mono} type="number" value={node.tcpPort ?? 0} onChange={(e) => update(id, { tcpPort: Number(e.target.value) })} /></div>
-            </div>
+            <label style={label}>대상 (host:port)</label>
+            <input
+              style={mono}
+              aria-label="대상 host:port"
+              value={`${node.tcpHost ?? ''}${node.tcpPort ? ':' + node.tcpPort : ''}`}
+              placeholder="10.0.0.5:9999"
+              onChange={(e) => {
+                const v = e.target.value.trim()
+                const ci = v.lastIndexOf(':')
+                if (ci > 0) update(id, { tcpHost: v.slice(0, ci), tcpPort: Number(v.slice(ci + 1).replace(/[^0-9]/g, '')) || 0 })
+                else update(id, { tcpHost: v, tcpPort: node.tcpPort ?? 0 })
+              }}
+            />
             <div style={{ display: 'flex', gap: 6 }}>
               <div style={{ flex: 1 }}>
                 <label style={label}>인코딩</label>
@@ -788,7 +943,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
             <WaitReceiveUrl nodeId={id} />
 
             <label style={label}>응답 규격 (출력) — 콜백 본문 키 (하위 노드가 바인딩)</label>
-            <OutputsEditor outputs={node.outputs ?? []} onChange={(outputs) => update(id, { outputs })} />
+            <OutputsEditor outputs={node.outputs ?? []} onChange={(outputs) => update(id, { outputs })} nodeId={id} />
             <p style={hintP}>
               선언은 바인딩 피커 칩용입니다 — 실제로는 콜백 본문(JSON/urlencoded 파싱)의 <b>모든</b> 키가 출력이 되고,
               키 구조가 아니면 원문이 body 로 제공됩니다. 수신 URL 은 <code>{`{{ url@${id} }}`}</code> 로 어느 노드에서든 바인딩됩니다.
@@ -819,7 +974,15 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
           <p style={{ fontSize: 13, color: 'var(--fl-text-muted)', marginTop: 14 }}>이 노드는 추가 설정이 없습니다.</p>
         )}
 
-        <button onClick={() => deleteNode(id)} style={deleteBtn}>이 노드 삭제</button>
+        {node.type !== 'start' && (
+          <div style={{ display: 'flex', gap: 8, marginTop: 28 }}>
+            <button onClick={() => duplicateSelection()} style={{ ...deleteBtn, marginTop: 0, flex: 1, borderColor: 'var(--fl-border)', color: 'var(--fl-text-muted)' }} title="이 노드 복제 (Ctrl+D)">⧉ 복제</button>
+            <button onClick={() => deleteNode(id)} style={{ ...deleteBtn, marginTop: 0, flex: 1 }}>이 노드 삭제</button>
+          </div>
+        )}
+        {node.type === 'start' && (
+          <button onClick={() => deleteNode(id)} style={deleteBtn}>이 노드 삭제</button>
+        )}
       </div>
 
       {pick && <BindingPicker sources={sources} onClose={() => setPick(null)} onPick={onPick} />}
@@ -914,17 +1077,24 @@ function WaitReceiveUrl({ nodeId }: { nodeId: string }) {
   )
 }
 
-function OutputsEditor({ outputs, onChange }: { outputs: NodeOutput[]; onChange: (o: NodeOutput[]) => void }) {
+function OutputsEditor({ outputs, onChange, nodeId }: { outputs: NodeOutput[]; onChange: (o: NodeOutput[]) => void; nodeId?: string }) {
   const upd = (i: number, patch: Partial<NodeOutput>) => onChange(outputs.map((o, idx) => (idx === i ? { ...o, ...patch } : o)))
   return (
     <>
       {outputs.map((o, i) => (
         <div key={i} style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
           <input style={{ ...mono, flex: 1 }} value={o.key} placeholder="키" onChange={(e) => upd(i, { key: e.target.value })} />
-          <select style={{ ...field, width: 110 }} value={o.type ?? 'string'} onChange={(e) => upd(i, { type: e.target.value })}>
+          <select style={{ ...field, width: 96 }} value={o.type ?? 'string'} onChange={(e) => upd(i, { type: e.target.value })}>
             {OUTPUT_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
           </select>
-          <button onClick={() => onChange(outputs.filter((_, idx) => idx !== i))} aria-label="삭제" style={{ width: 28, border: '1px solid var(--fl-border)', borderRadius: 6, background: 'var(--fl-surface)', cursor: 'pointer' }}>×</button>
+          {nodeId && o.key?.trim() && (
+            <button
+              onClick={() => { void navigator.clipboard?.writeText(`{{ ${o.key}@${nodeId} }}`).then(() => toast(`{{ ${o.key}@${nodeId} }} 복사`, 'ok')).catch(() => {}) }}
+              aria-label="바인딩 토큰 복사" title={`{{ ${o.key}@${nodeId} }} 복사 — 하위 노드에 붙여넣기`}
+              style={{ width: 30, flexShrink: 0, border: '1px solid var(--fl-border)', borderRadius: 6, background: 'var(--fl-surface)', color: 'var(--fl-primary)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
+            ><CopyIcon /></button>
+          )}
+          <button onClick={() => onChange(outputs.filter((_, idx) => idx !== i))} aria-label="삭제" style={{ width: 28, flexShrink: 0, border: '1px solid var(--fl-border)', borderRadius: 6, background: 'var(--fl-surface)', cursor: 'pointer' }}>×</button>
         </div>
       ))}
       <button onClick={() => onChange([...outputs, { key: '', type: 'string' }])} style={addDashed}>+ 출력 항목</button>
@@ -1038,6 +1208,15 @@ const singlePre: CSSProperties = { margin: 0, padding: '8px 10px', fontSize: 11.
 const deleteBtn: CSSProperties = { marginTop: 28, width: '100%', padding: '9px', border: '1px solid var(--fl-fail)', borderRadius: 'var(--fl-radius-sm)', background: 'transparent', color: 'var(--fl-fail)', cursor: 'pointer', fontSize: 13, fontWeight: 600 }
 const addDashed: CSSProperties = { marginTop: 2, padding: '6px 10px', border: '1px dashed var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'transparent', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 12.5 }
 const hintP: CSSProperties = { fontSize: 11.5, color: 'var(--fl-text-muted)', marginTop: 12, lineHeight: 1.5 }
+// URL 행의 메서드 셀렉트 — 좁은 고정폭 + 메서드 색 강조(모노)
+function methodSel(m?: string): CSSProperties {
+  return { ...field, width: 82, flexShrink: 0, fontFamily: 'var(--fl-font-mono)', fontWeight: 700, color: METHOD_COLOR[(m ?? 'GET') as HttpMethod] ?? 'var(--fl-text)', padding: '8px 6px' }
+}
+const ghostMini: CSSProperties = { padding: '5px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 12, fontWeight: 500 }
+const smartLink: CSSProperties = { marginTop: 6, padding: '4px 8px', border: 'none', background: 'transparent', color: 'var(--fl-primary)', cursor: 'pointer', fontSize: 12, fontWeight: 600, textAlign: 'left' }
+const advToggle: CSSProperties = { marginTop: 12, padding: '4px 0', border: 'none', background: 'transparent', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 12, fontWeight: 600, textAlign: 'left', width: '100%', display: 'block' }
+// 연결(바로가기) 이웃 노드 칩
+const navChip: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 5, padding: '4px 9px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-pill)', background: 'var(--fl-surface-2)', color: 'var(--fl-text)', cursor: 'pointer', fontSize: 12, maxWidth: 160 }
 function tabBtn(active: boolean): CSSProperties {
   return { padding: '7px 12px', border: 'none', borderBottom: `2px solid ${active ? 'var(--fl-primary)' : 'transparent'}`, background: 'transparent', color: active ? 'var(--fl-text)' : 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 13, fontWeight: 600 }
 }

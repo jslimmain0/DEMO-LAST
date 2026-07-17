@@ -34,6 +34,11 @@ export function KeyValueEditor({
   const update = (id: string, patch: Partial<NodeField>) => onChange(rows.map((r) => (r.id === id ? { ...r, ...patch } : r)))
   const add = () => onChange([...rows, { id: newId(), key: '', value: '' }])
   const remove = (id: string) => onChange(rows.filter((r) => r.id !== id))
+  const dup = (id: string) => {
+    const idx = rows.findIndex((r) => r.id === id)
+    if (idx < 0) return
+    onChange([...rows.slice(0, idx + 1), { ...rows[idx], id: newId() }, ...rows.slice(idx + 1)])
+  }
   const sourceType = (b: Binding) => sources.find((s) => s.id === b.sourceId)?.type
 
   return (
@@ -67,6 +72,7 @@ export function KeyValueEditor({
               {VALUE_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
             </select>
           )}
+          <button onClick={() => dup(r.id)} aria-label="행 복제" title="이 행 복제" style={delBtn}>⧉</button>
           <button onClick={() => remove(r.id)} aria-label="행 삭제" style={delBtn}>×</button>
         </div>
       ))}

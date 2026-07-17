@@ -14,6 +14,9 @@ interface EditorState {
   nodes: Node[]
   edges: Edge[]
   selectedId: string | null
+  // 노드 바로가기 신호 — focusNode 로 증가. FlowCanvas 가 구독해 focusId 노드로 setCenter.
+  focusTick: number
+  focusId: string | null
   dirty: boolean
   palette: PaletteGroup[]
   // 실행 중 콜백을 기다리는 wait 노드(캔버스 펄스·유입 엣지 애니메이션용). 실행 상태라 dirty 와 무관.
@@ -37,6 +40,8 @@ interface EditorState {
   addNodeFromTemplate: (template: GraphNode, pos: { x: number; y: number }) => string
   updateNodeData: (id: string, patch: Partial<GraphNode>) => void
   selectNode: (id: string | null) => void
+  // 노드로 이동(바로가기) — 선택 + 캔버스 센터링 신호(FlowCanvas 가 focusTick 을 구독해 setCenter)
+  focusNode: (id: string) => void
   deleteNode: (id: string) => void
   setName: (name: string) => void
   markSaved: () => void
@@ -94,6 +99,8 @@ export const useEditorStore = create<EditorState>()((set, get) => {
   nodes: [],
   edges: [],
   selectedId: null,
+  focusTick: 0,
+  focusId: null,
   dirty: false,
   palette: [],
   waitingNodeId: null,
@@ -249,6 +256,16 @@ export const useEditorStore = create<EditorState>()((set, get) => {
       selectedId: id,
       nodes: get().nodes.map((n) => ({ ...n, selected: n.id === id })),
     })
+  },
+
+  focusNode: (id) => {
+    if (!get().nodes.some((n) => n.id === id)) return
+    set((s) => ({
+      selectedId: id,
+      nodes: s.nodes.map((n) => ({ ...n, selected: n.id === id })),
+      focusId: id,
+      focusTick: s.focusTick + 1,
+    }))
   },
 
   deleteNode: (id) => {

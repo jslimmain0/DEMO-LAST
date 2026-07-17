@@ -51,7 +51,19 @@ export function FlowCanvas() {
   const deleteNode = useEditorStore((s) => s.deleteNode)
   const duplicateSelection = useEditorStore((s) => s.duplicateSelection)
   const flowId = useEditorStore((s) => s.flowId)
-  const { screenToFlowPosition, fitBounds, zoomTo } = useReactFlow()
+  const focusTick = useEditorStore((s) => s.focusTick)
+  const { screenToFlowPosition, fitBounds, zoomTo, setCenter, getZoom } = useReactFlow()
+  // 노드 바로가기 — focusNode 신호가 오면 그 노드를 화면 중앙으로(줌 유지, 최소 1)
+  useEffect(() => {
+    if (focusTick === 0) return
+    const { focusId, nodes: ns } = useEditorStore.getState()
+    const n = focusId ? ns.find((x) => x.id === focusId) : null
+    if (!n) return
+    const w = n.measured?.width ?? 230
+    const h = n.measured?.height ?? 80
+    setCenter(n.position.x + w / 2, n.position.y + h / 2, { zoom: Math.max(1, getZoom()), duration: 320 })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusTick])
   // QoL: 미니맵/그리드 표시 토글(localStorage), 노드 우클릭 컨텍스트 메뉴
   const [showMinimap, setShowMinimap] = useState(() => localStorage.getItem('fl:canvas:minimap') !== '0')
   const [showGrid, setShowGrid] = useState(() => localStorage.getItem('fl:canvas:grid') !== '0')

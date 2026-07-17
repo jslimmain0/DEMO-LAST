@@ -433,10 +433,19 @@ function makeChip(tokenRaw: string, onMutate: () => void): HTMLSpanElement {
   })
   chip.appendChild(x)
 
-  // 칩 몸통 클릭 → 캐럿을 칩 바로 뒤로. non-editable 위 클릭은 캐럿이 안 잡혀
-  // 이어지는 타이핑이 통째로 사라지므로, 클릭을 "칩 뒤에서 이어쓰기"로 해석한다.
+  // Alt/⌘+클릭 → 이 토큰이 가리키는 소스 노드로 바로가기(선택 + 캔버스 센터링)
+  if (parsed?.sourceId) {
+    const jumpId = parsed.sourceId
+    if (name && name !== jumpId) chip.title = `${tokenRaw}\n(Alt+클릭: ${name} 노드로 이동)`
+  }
   chip.addEventListener('click', (e) => {
     if (e.target === x) return
+    if ((e.altKey || e.metaKey) && parsed?.sourceId && useEditorStore.getState().nodes.some((n) => n.id === parsed.sourceId)) {
+      e.preventDefault()
+      e.stopPropagation()
+      useEditorStore.getState().focusNode(parsed.sourceId)
+      return
+    }
     const editor = chip.closest('.fl-token-input') as HTMLElement | null
     const sel = window.getSelection()
     if (!editor || !sel) return

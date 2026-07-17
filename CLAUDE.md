@@ -788,6 +788,16 @@ design/   theme(라이트/다크) · index.css(CSS 변수)
 - **새(빈) 플로우 자동 START** — 위 실행 정확성 항목과 연동(시작점 보장).
 - 브라우저 실측: 새 플로우 START 자동 배치·우클릭 메뉴로 HTTP 추가(노드 2)·START+떠있는 HTTP 실행 시 HTTP SKIPPED(전체 성공)·팔레트 검색.
 
+### 색 배지·협업 커서 글자색 자동 대비(테마 가독성)
+"커서 색이나 폰트색이 가끔 테마에 안 맞아 잘 안 보인다" 요청. 색 위 흰 글자가 특정 테마·색(초록/주황/청록/밝은 슬레이트)에서 대비 부족.
+- **[lib/contrast.ts](frontend/src/lib/contrast.ts)** — WCAG 상대휘도로 배경색(hex 또는 `var(--x)` 테마변수)에 대비가 큰 전경색(흰/진한 글자)을 고르는
+  `readableText`(순수) / `useReadableInk`(훅 — `applyTheme` 이 쏘는 window `fl-theme` 이벤트로 **테마 전환 시 재계산**).
+- **적용**: 협업 커서 이름표·편집중 배지·참여자 아바타([PresenceOverlay](frontend/src/canvas/PresenceOverlay.tsx)·[PresenceAvatars](frontend/src/components/PresenceAvatars.tsx), peer 색은 concrete hex) ·
+  HTTP 메서드 태그([MethodTag](frontend/src/components/MethodTag.tsx)) · 대시보드 미니 흐름 아이콘 칩([MiniFlow](frontend/src/components/MiniFlow.tsx) `CatIcon`) · Mock 배지 — 전부 `#fff` 고정 → 대비 기반 자동.
+- **원격 커서 외곽선**: 고정 흰색 → 테마별 `--fl-cursor-halo`(라이트=진한/다크=흰, [index.css](frontend/src/index.css))로 캔버스 배경과 대비.
+- ⚠ 브랜드 고정색 액션 버튼(실행/저장/중단, `--fl-ok/primary/fail`)은 "가끔 색이 바뀌는" 대상이 아니라 그대로 둠(항상 같은 색).
+- 브라우저 실측: 라이트/다크 모두 GET 배지가 읽기 좋은 글자색, 테마 토글 시 즉시 재계산. tsc/build/oxlint 통과.
+
 ## 참고 문서
 - `backend/README.md` — Phase 1 구현 범위 표, API 요약, 실행 가이드
 - `docs/` — UI/UX 멀티에이전트 설계 토론 로그, 엔터프라이즈 고도화 설계

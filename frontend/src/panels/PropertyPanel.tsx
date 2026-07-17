@@ -40,7 +40,10 @@ function rawBodyPlaceholder(bt: BodyType | undefined): string {
   if (bt === 'xml') return '<root> ... </root>  또는 { } 로 데이터 삽입'
   return '{ "key": "value" }  또는 { } 로 데이터 삽입'
 }
-const RESP_TYPES: RespType[] = ['json', 'xml', 'urlencoded', 'form', 'query', 'text', 'binary']
+// 'form' 은 'urlencoded' 와 백엔드 파싱이 동일 — 드롭다운에선 하나로 통합(중복 제거). 저장된 'form' 그래프는
+// 선택값을 'urlencoded' 로 정규화해 표시하고(normRespType), 새로 고르면 'urlencoded' 로 저장(동작 불변).
+const RESP_TYPES: RespType[] = ['json', 'xml', 'urlencoded', 'query', 'text', 'binary']
+const normRespType = (rt: RespType | undefined): RespType => (rt === 'form' ? 'urlencoded' : rt ?? 'json')
 const CHARSETS = ['UTF-8', 'EUC-KR', 'MS949', 'US-ASCII']
 const OUTPUT_TYPES = ['string', 'int', 'number', 'boolean', 'object', 'array', 'secret']
 // 단일 노드 독립 실행이 의미 있는 타입(즉석 처리). start/end/주석/대기·폼·입력은 제외.
@@ -50,7 +53,9 @@ const SINGLE_RUNNABLE = new Set(['http', 'set', 'if', 'switch', 'assert', 'trans
 // 통짜형(text/binary): 키가 없으므로 응답 본문 전체가 단일 값(body)으로만 제공됨.
 const KEYED_RESP: RespType[] = ['json', 'xml', 'urlencoded', 'form', 'query']
 function respTypeLabel(rt: RespType): string {
-  return rt === 'query' ? 'query (URL/쿼리 파라미터)' : rt
+  if (rt === 'query') return 'query (URL/쿼리 파라미터)'
+  if (rt === 'urlencoded') return 'urlencoded / form (a=1&b=2)'
+  return rt
 }
 function respOutputLabel(rt: RespType | undefined): string {
   if (rt === 'xml') return '응답 요소 (XML) — 하위 노드가 바인딩할 항목'
@@ -763,8 +768,8 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
             )}
 
             {/* 응답 섹션 */}
-            <HttpSection title="응답 (Response)" badge={node.respType ?? 'json'} open={secIsOpen('resp')} onToggle={() => toggleSec('resp')}
-              right={<select style={{ ...field, width: 'auto', padding: '5px 6px', fontSize: 12 }} value={node.respType ?? 'json'} onChange={(e) => update(id, { respType: e.target.value as RespType })} aria-label="응답 타입">
+            <HttpSection title="응답 (Response)" badge={normRespType(node.respType)} open={secIsOpen('resp')} onToggle={() => toggleSec('resp')}
+              right={<select style={{ ...field, width: 'auto', padding: '5px 6px', fontSize: 12 }} value={normRespType(node.respType)} onChange={(e) => update(id, { respType: e.target.value as RespType })} aria-label="응답 타입">
                 {RESP_TYPES.map((r) => <option key={r} value={r}>{respTypeLabel(r)}</option>)}
               </select>}>
               {node.respType === 'query' && (
@@ -803,33 +808,29 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
         )}
 
         {node.type === 'if' && (
-          <>
-            <label style={label}>조건식</label>
-            <TokenInput
-              ariaLabel="조건식"
-              value={node.condition ?? ''}
-              onChange={(v) => update(id, { condition: v })}
-              sources={sources}
-              placeholder="{{ id }} != null — { } 로 데이터 삽입"
-            />
-            <CondSnippets onInsert={(s) => update(id, { condition: appendCond(node.condition, s) })} />
-            {!((node.condition ?? '').trim()) && <p style={{ ...hintP, color: 'var(--fl-put)', marginTop: 6 }}>⚠ 조건식이 비어 있습니다 — 비면 항상 거짓(F 분기)으로 처리됩니다.</p>}
+          <ConditionEditor
+            label="조건식"
+            ariaLabel="조건식"
+            value={node.condition}
+            onChange={(v) => update(id, { condition: v })}
+            sources={sources}
+            placeholder="{{ id }} != null — { } 로 데이터 삽입"
+            emptyWarn="⚠ 조건식이 비어 있습니다 — 비면 항상 거짓(F 분기)으로 처리됩니다."
+          >
             <p style={{ fontSize: 11.5, color: 'var(--fl-text-muted)', marginTop: 8 }}>참이면 T 분기, 거짓이면 F 분기로 진행합니다. (SpEL 안전 평가)</p>
-          </>
+          </ConditionEditor>
         )}
 
         {node.type === 'assert' && (
-          <>
-            <label style={label}>검증 조건식</label>
-            <TokenInput
-              ariaLabel="검증 조건식"
-              value={node.condition ?? ''}
-              onChange={(v) => update(id, { condition: v })}
-              sources={sources}
-              placeholder="{{ resultCode }} == '0000' — { } 로 데이터 삽입"
-            />
-            <CondSnippets onInsert={(s) => update(id, { condition: appendCond(node.condition, s) })} />
-            {!((node.condition ?? '').trim()) && <p style={{ ...hintP, color: 'var(--fl-put)', marginTop: 6 }}>⚠ 검증 조건식이 비어 있습니다 — 비면 검증이 항상 실패합니다.</p>}
+          <ConditionEditor
+            label="검증 조건식"
+            ariaLabel="검증 조건식"
+            value={node.condition}
+            onChange={(v) => update(id, { condition: v })}
+            sources={sources}
+            placeholder="{{ resultCode }} == '0000' — { } 로 데이터 삽입"
+            emptyWarn="⚠ 검증 조건식이 비어 있습니다 — 비면 검증이 항상 실패합니다."
+          >
             <p style={{ fontSize: 11.5, color: 'var(--fl-text-muted)', marginTop: 8 }}>
               조건이 <b>거짓이면 이 노드가 실패</b>하고 실행이 FAILED 로 끝납니다(테스트 시나리오의 assert).
               두 값 비교도 가능: <code style={{ fontFamily: 'var(--fl-font-mono)', fontSize: 11 }}>{'{{ tid@노티 }} == {{ tid@승인 }}'}</code>
@@ -839,7 +840,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
               상태코드를 바인딩합니다 — 예: <code style={{ fontFamily: 'var(--fl-font-mono)', fontSize: 11 }}>{'{{ httpStatus@조회 }} == 200'}</code> /
               <code style={{ fontFamily: 'var(--fl-font-mono)', fontSize: 11 }}>{' != 404'}</code>. (SimpleEvaluationContext 라 비교·산술만 — 메서드 호출은 불가)
             </p>
-          </>
+          </ConditionEditor>
         )}
 
         {node.type === 'set' && (
@@ -1198,6 +1199,32 @@ function WaitReceiveUrl({ nodeId }: { nodeId: string }) {
 function appendCond(cond: string | undefined, s: string): string {
   const c = (cond ?? '').trim()
   return c ? `${c} ${s}` : s
+}
+/**
+ * IF·ASSERT 공용 조건식 편집기 — 라벨 + 토큰 입력 + 빠른 삽입 스니펫 + 빈-조건 경고.
+ * 두 노드가 같은 SpEL 조건 UI 를 쓰므로 한 곳으로 통합(중복 제거). 노드별 안내는 children 으로.
+ */
+function ConditionEditor({
+  label: lbl, ariaLabel, value, onChange, sources, placeholder, emptyWarn, children,
+}: {
+  label: string
+  ariaLabel: string
+  value: string | undefined
+  onChange: (v: string) => void
+  sources: BindableSource[]
+  placeholder: string
+  emptyWarn: string
+  children?: ReactNode
+}) {
+  return (
+    <>
+      <label style={label}>{lbl}</label>
+      <TokenInput ariaLabel={ariaLabel} value={value ?? ''} onChange={onChange} sources={sources} placeholder={placeholder} />
+      <CondSnippets onInsert={(s) => onChange(appendCond(value, s))} />
+      {!((value ?? '').trim()) && <p style={{ ...hintP, color: 'var(--fl-put)', marginTop: 6 }}>{emptyWarn}</p>}
+      {children}
+    </>
+  )
 }
 // IF/ASSERT 조건식 자주 쓰는 비교 스니펫 — 클릭하면 조건식 끝에 붙는다.
 function CondSnippets({ onInsert }: { onInsert: (s: string) => void }) {

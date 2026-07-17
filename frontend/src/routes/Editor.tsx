@@ -172,6 +172,8 @@ export function Editor() {
       const inField = !!(tgt && (tgt.tagName === 'INPUT' || tgt.tagName === 'TEXTAREA' || tgt.tagName === 'SELECT' || tgt.isContentEditable))
       // Esc: 선택 해제 (입력 중 아닐 때)
       if (e.key === 'Escape' && !inField && !(e.ctrlKey || e.metaKey)) { useEditorStore.getState().selectNode(null); return }
+      // ? : 단축키 도움말
+      if (e.key === '?' && !inField && !(e.ctrlKey || e.metaKey)) { e.preventDefault(); setShortcutsOpen(true); return }
       // 방향키: 선택 노드 그리드 단위 이동 (Shift=4칸)
       if (!inField && !e.ctrlKey && !e.metaKey && !e.altKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
         if (!useEditorStore.getState().nodes.some((n) => n.selected)) return // 선택 없으면 캔버스 팬에 양보
@@ -647,8 +649,11 @@ function ShortcutsModal({ onClose }: { onClose: () => void }) {
   const rows: Array<[string, string]> = [
     ['Ctrl/⌘ + S', '저장'], ['Ctrl/⌘ + Z', '되돌리기'], ['Ctrl/⌘ + Shift + Z', '다시 실행'],
     ['Ctrl/⌘ + C / V', '노드 복사 / 붙여넣기(워크플로 간)'], ['Ctrl/⌘ + D', '선택 노드 복제'],
-    ['Ctrl/⌘ + F', '노드 검색'], ['Delete / Backspace', '노드·연결 삭제'],
-    ['우클릭', '노드 컨텍스트 메뉴(실행/복제/삭제)'], ['Esc', '모달·피커 닫기'],
+    ['Ctrl/⌘ + F', '노드 검색'], ['Ctrl/⌘ + K', '빠른 노드 추가(화면 중앙)'], ['Ctrl/⌘ + A', '전체 선택'],
+    ['방향키 (Shift=4칸)', '선택 노드 그리드 이동'], ['Delete / Backspace', '노드·연결 삭제'],
+    ['캔버스 우클릭 / 빈 곳 더블클릭', '그 위치에 노드 추가'], ['핸들을 빈 곳에 드래그', '노드 추가 + 자동 연결'],
+    ['엣지 끝점 드래그', '연결 재연결(리라우트)'], ['토큰 칩 Alt/⌘ + 클릭', '값의 소스 노드로 이동'],
+    ['노드 우클릭', '컨텍스트 메뉴(실행/복제/삭제)'], ['Esc', '선택 해제 · 모달 닫기'], ['?', '이 도움말'],
   ]
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }

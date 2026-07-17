@@ -16,6 +16,8 @@ export function OpenApiImportDialog({
 }) {
   useEscapeClose(onClose)
   const [text, setText] = useState('')
+  const [url, setUrl] = useState('')
+  const [fetching, setFetching] = useState(false)
   const [error, setError] = useState('')
   const [ops, setOps] = useState<ParsedOperation[] | null>(null)
   const [title, setTitle] = useState('')
@@ -44,6 +46,18 @@ export function OpenApiImportDialog({
     const reader = new FileReader()
     reader.onload = () => setText(String(reader.result))
     reader.readAsText(file)
+  }
+
+  const fetchUrl = async () => {
+    if (!url.trim()) return
+    setFetching(true); setError('')
+    try {
+      const res = await fetch(url.trim(), { headers: { Accept: 'application/json' } })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      setText(await res.text())
+    } catch (e) {
+      setError(`URL 가져오기 실패: ${e instanceof Error ? e.message : String(e)} — CORS 로 막혔을 수 있습니다(파일/붙여넣기로 시도하세요).`)
+    } finally { setFetching(false) }
   }
 
   const toggle = (key: string) => {
@@ -81,6 +95,12 @@ export function OpenApiImportDialog({
 
         {!ops ? (
           <div style={{ padding: 18 }}>
+            <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
+              <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="스펙 URL (예: https://host/v3/api-docs)"
+                onKeyDown={(e) => { if (e.key === 'Enter') fetchUrl() }}
+                style={{ flex: 1, padding: '8px 11px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', color: 'var(--fl-text)', fontSize: 13 }} />
+              <button onClick={fetchUrl} disabled={fetching || !url.trim()} style={{ padding: '8px 14px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', cursor: 'pointer', fontSize: 13, whiteSpace: 'nowrap' }}>{fetching ? '…' : 'URL 가져오기'}</button>
+            </div>
             <input type="file" accept=".json,application/json" onChange={onFile} style={{ marginBottom: 12 }} />
             <textarea
               value={text}

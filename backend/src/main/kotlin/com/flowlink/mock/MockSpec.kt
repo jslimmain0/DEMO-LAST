@@ -64,12 +64,15 @@ data class MockSpec(
         val headers: List<KV>?,
         val body: String?,
         val delayMs: Int?,        // cap 10초
-        val callback: MockCallback?
+        val callback: MockCallback?,
+        // 상태 있는 목: 응답 후 서버(slug)별 상태를 설정(값은 템플릿). 조건/템플릿에서 {{state.KEY}}·source=state 로 읽는다.
+        // 예: 1차 호출이 setState status=approved → 2차 호출 when source=state key=status value=approved 로 다른 응답.
+        val setState: List<KV>? = null
     ) {
         fun whenOrEmpty(): List<MockCond> = `when` ?: emptyList()
     }
 
-    /** 조건 — 요청의 query/header/body/path 값 비교. */
+    /** 조건 — 요청의 query/header/body/path/state 값 비교. */
     @JsonIgnoreProperties(ignoreUnknown = true)
     data class MockCond(
         val source: String?,

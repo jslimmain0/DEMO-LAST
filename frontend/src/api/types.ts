@@ -389,7 +389,7 @@ export interface ExecutionDetail {
 // --- Mock 서버 (내장 mock 기능 — /mock/{slug}/** 로 서빙) ---
 
 export interface MockCond {
-  source: 'query' | 'header' | 'body' | 'path'
+  source: 'query' | 'header' | 'body' | 'path' | 'state'
   key: string
   op: 'eq' | 'ne' | 'exists' | 'contains'
   value?: string
@@ -412,9 +412,10 @@ export interface MockRuleSpec {
   contentType?: string // json|text|html|xml|urlencoded 또는 mime
   charset?: string     // UTF-8(기본)|EUC-KR|MS949
   headers?: Array<{ key: string; value: string }>
-  body?: string        // 템플릿: {{path.x}} {{query.x}} {{body.x}} {{header.x}} {{uuid}} {{seq}} {{now}}
+  body?: string        // 템플릿: {{path.x}} {{query.x}} {{body.x}} {{header.x}} {{state.x}} {{uuid}} {{seq}} {{now}}
   delayMs?: number
   callback?: MockCallbackSpec | null
+  setState?: Array<{ key: string; value: string }> // 상태 있는 목: 응답 후 서버 상태 갱신(값은 템플릿)
 }
 
 export interface MockRouteSpec {

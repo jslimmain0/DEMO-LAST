@@ -30,7 +30,7 @@ class MockRuntime {
     data class Match(val rule: MockRule, val pathParams: Map<String, String>)
 
     /** 정의 순서대로 method+경로 첫 매칭 라우트, 그 안에서 조건 만족 첫 규칙. */
-    fun match(routes: List<MockRoute>, req: MockRequest): Optional<Match> {
+    fun match(routes: List<MockRoute>, req: MockRequest, state: Map<String, String> = emptyMap()): Optional<Match> {
         for (route in routes) {
             val params = matchPath(route.path, req.path) ?: continue
             val m = if (route.method == null) "ANY" else route.method.uppercase(Locale.ROOT)
@@ -38,7 +38,7 @@ class MockRuntime {
                 continue
             }
             for (rule in route.rulesOrEmpty()) {
-                if (conditionsPass(rule.whenOrEmpty(), req, params)) {
+                if (conditionsPass(rule.whenOrEmpty(), req, params, state)) {
                     return Optional.of(Match(rule, params))
                 }
             }
@@ -49,20 +49,27 @@ class MockRuntime {
     }
 
     /** 규칙 → 실제 응답(바이트) + 지연 + 콜백 명세. seq 는 서버별 증가 카운터 공급자에서 받은 값. */
-    fun render(rule: MockRule, req: MockRequest, pathParams: Map<String, String>, seq: Long): MockResponse {
+    fun render(rule: MockRule, req: MockRequest, pathParams: Map<String, String>, seq: Long, state: Map<String, String> = emptyMap()): MockResponse {
         val cs = MockHttp.charsetOf(rule.charset)
-        val body = template(if (rule.body == null) "" else rule.body, req, pathParams, seq)
+        val body = template(if (rule.body == null) "" else rule.body, req, pathParams, seq, state)
         val headers = LinkedHashMap<String, String>()
         for (kv in rule.headers ?: emptyList()) {
             if (kv.key != null && kv.key.isNotBlank()) {
-                headers[kv.key] = template(if (kv.value == null) "" else kv.value, req, pathParams, seq)
+                headers[kv.key] = template(if (kv.value == null) "" else kv.value, req, pathParams, seq, state)
+            }
+        }
+        // 상태 있는 목: setState 의 값을 템플릿 해석해 서버 상태에 반영할 맵으로(게이트웨이가 적용)
+        val newState = LinkedHashMap<String, String>()
+        for (kv in rule.setState ?: emptyList()) {
+            if (kv.key != null && kv.key.isNotBlank()) {
+                newState[kv.key] = template(if (kv.value == null) "" else kv.value, req, pathParams, seq, state)
             }
         }
         val delay = if (rule.delayMs == null) 0 else Math.max(0, Math.min(rule.delayMs, MAX_DELAY_MS))
         var cb: FiredCallback? = null
         val c = rule.callback
         if (c != null) {
-            val url = template(if (c.url == null) "" else c.url, req, pathParams, seq).trim()
+            val url = template(if (c.url == null) "" else c.url, req, pathParams, seq, state).trim()
             if (url.isNotEmpty()) {
                 cb = FiredCallback(
                     if (c.afterMs == null) 0 else Math.max(0, Math.min(c.afterMs, MAX_CALLBACK_DELAY_MS)),
@@ -72,7 +79,7 @@ class MockRuntime {
                         if (c.contentType == null || c.contentType.isBlank()) "urlencoded" else c.contentType,
                         StandardCharsets.UTF_8
                     ),
-                    template(if (c.body == null) "" else c.body, req, pathParams, seq),
+                    template(if (c.body == null) "" else c.body, req, pathParams, seq, state),
                     c.retryUntilOk == true
                 )
             }
@@ -80,26 +87,26 @@ class MockRuntime {
         val status = rule.status ?: 200
         return MockResponse(
             status, MockHttp.contentTypeHeader(rule.contentType, cs), headers,
-            body.toByteArray(cs), delay, cb
+            body.toByteArray(cs), delay, cb, newState
         )
     }
 
     // ---------- 템플릿 ----------
 
-    fun template(text: String?, req: MockRequest, pathParams: Map<String, String>, seq: Long): String {
+    fun template(text: String?, req: MockRequest, pathParams: Map<String, String>, seq: Long, state: Map<String, String> = emptyMap()): String {
         if (text == null || text.isEmpty() || !text.contains("{{")) {
             return text ?: ""
         }
         val m = TOKEN.matcher(text)
         val sb = StringBuilder()
         while (m.find()) {
-            m.appendReplacement(sb, Matcher.quoteReplacement(resolve(m.group(1), req, pathParams, seq)))
+            m.appendReplacement(sb, Matcher.quoteReplacement(resolve(m.group(1), req, pathParams, seq, state)))
         }
         m.appendTail(sb)
         return sb.toString()
     }
 
-    private fun resolve(token: String, req: MockRequest, pathParams: Map<String, String>, seq: Long): String {
+    private fun resolve(token: String, req: MockRequest, pathParams: Map<String, String>, seq: Long, state: Map<String, String> = emptyMap()): String {
         val t = token.trim()
         val v: String? = when (t) {
             "uuid" -> UUID.randomUUID().toString()
@@ -116,7 +123,7 @@ class MockRuntime {
         if (dot > 0 && dot < t.length - 1) {
             val src = t.substring(0, dot)
             val key = t.substring(dot + 1)
-            val got = valueOf(src, key, req, pathParams)
+            val got = valueOf(src, key, req, pathParams, state)
             return got ?: ""
         }
         return "" // 미해석 토큰 — 빈 문자열
@@ -169,9 +176,9 @@ class MockRuntime {
         // ---------- 조건 ----------
 
         @JvmStatic
-        fun conditionsPass(conds: List<MockCond>, req: MockRequest, pathParams: Map<String, String>): Boolean {
+        fun conditionsPass(conds: List<MockCond>, req: MockRequest, pathParams: Map<String, String>, state: Map<String, String> = emptyMap()): Boolean {
             for (c in conds) {
-                val actual = valueOf(c.source, c.key, req, pathParams)
+                val actual = valueOf(c.source, c.key, req, pathParams, state)
                 val op = if (c.op == null) "eq" else c.op.lowercase(Locale.ROOT)
                 val pass = when (op) {
                     "eq" -> actual != null && actual == (c.value ?: "")
@@ -187,7 +194,7 @@ class MockRuntime {
             return true
         }
 
-        private fun valueOf(source: String?, key: String?, req: MockRequest, pathParams: Map<String, String>): String? {
+        private fun valueOf(source: String?, key: String?, req: MockRequest, pathParams: Map<String, String>, state: Map<String, String> = emptyMap()): String? {
             if (key == null) {
                 return null
             }
@@ -197,6 +204,7 @@ class MockRuntime {
                 "header" -> req.headers[key.lowercase(Locale.ROOT)]
                 "body" -> req.bodyFields[key]
                 "path" -> pathParams[key]
+                "state" -> state[key] // 상태 있는 목 — 이전 호출이 setState 한 값
                 else -> null
             }
         }

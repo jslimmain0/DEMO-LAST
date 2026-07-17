@@ -28,7 +28,8 @@ object MockHttp {
         val headers: Map<String, String>,
         val body: ByteArray,
         val delayMs: Int,
-        val callback: FiredCallback?
+        val callback: FiredCallback?,
+        val setState: Map<String, String> = emptyMap() // 렌더 후 서버 상태에 반영할 키-값(상태 있는 목)
     ) {
         companion object {
             @JvmStatic

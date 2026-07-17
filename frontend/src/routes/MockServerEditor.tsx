@@ -17,7 +17,7 @@ const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'ANY']
 const methodColor = (m: string): string => METHOD_COLOR[m as HttpMethod] ?? 'var(--fl-cat-generic)'
 const CONTENT_TYPES = ['json', 'text', 'html', 'xml', 'urlencoded']
 const CHARSETS = ['UTF-8', 'EUC-KR', 'MS949']
-const COND_SOURCES = ['body', 'query', 'header', 'path'] as const
+const COND_SOURCES = ['body', 'query', 'header', 'path', 'state'] as const
 const COND_OPS = ['eq', 'ne', 'exists', 'contains'] as const
 
 /** Mock 서버 편집기 — 경로별 라우트/규칙(응답 템플릿·조건·콜백)을 정의하고 바로 보내본다. */
@@ -378,9 +378,22 @@ function RuleCard({ rule, index, total, onChange, onDup, onRemove }: {
       <textarea
         style={{ ...input, width: '100%', minHeight: 74, marginTop: 8, fontFamily: 'var(--fl-font-mono)', fontSize: 12, resize: 'vertical', boxSizing: 'border-box' }}
         value={rule.body ?? ''}
-        placeholder={'응답 본문 — 예: {"orderId":"{{body.orderId}}","tid":"TID-{{seq}}"}'}
+        placeholder={'응답 본문 — 예: {"orderId":"{{body.orderId}}","status":"{{state.status}}"}'}
         onChange={(e) => onChange({ ...rule, body: e.target.value })}
       />
+
+      {/* 상태 설정(setState) — 상태 있는 목: 응답 후 서버 상태 갱신 → 다음 호출 조건(source=state)/템플릿({{state.x}}) */}
+      <div style={{ marginTop: 8 }}>
+        {(rule.setState ?? []).map((s, i) => (
+          <div key={i} style={{ display: 'flex', gap: 6, marginBottom: 4 }}>
+            <span style={{ fontSize: 11, color: 'var(--fl-text-muted)', alignSelf: 'center' }}>state.</span>
+            <input style={{ ...input, flex: 1 }} value={s.key} placeholder="키(예: status)" onChange={(e) => onChange({ ...rule, setState: (rule.setState ?? []).map((x, xi) => xi === i ? { ...x, key: e.target.value } : x) })} />
+            <input style={{ ...input, flex: 1.4 }} value={s.value} placeholder="값(템플릿, 예: approved)" onChange={(e) => onChange({ ...rule, setState: (rule.setState ?? []).map((x, xi) => xi === i ? { ...x, value: e.target.value } : x) })} />
+            <button style={miniBtn} onClick={() => onChange({ ...rule, setState: (rule.setState ?? []).filter((_, xi) => xi !== i) })}>×</button>
+          </div>
+        ))}
+        <button style={miniBtn} onClick={() => onChange({ ...rule, setState: [...(rule.setState ?? []), { key: '', value: '' }] })}>+ 상태 설정 (호출 후 저장 · 다음 호출에 {'{{state.x}}'}로 보임)</button>
+      </div>
 
       {/* 콜백 발사 */}
       <div style={{ marginTop: 8 }}>

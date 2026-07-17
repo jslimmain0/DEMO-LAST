@@ -28,6 +28,7 @@ class PresenceSession {
   private pending: { x: number | null; y: number | null } | null = null
   private cursorTimer: number | undefined
   private editing: string | null = null   // 현재 편집중 노드 — 재접속 시 재announce
+  private graphHandler: ((m: Record<string, unknown>) => void) | null = null // 공동 편집 수신
 
   connect(flowId: string, name: string, tokenFn?: () => string | null) {
     this.close()
@@ -73,6 +74,7 @@ class PresenceSession {
       case 'cursor': st.cursor(m.id as string, m.x as number | null, m.y as number | null); break
       case 'editing': st.editing(m.id as string, m.nodeId as string | null); break
       case 'saved': toast(`${m.name} 님이 이 워크플로를 저장했습니다`); break
+      case 'graph': this.graphHandler?.(m); break // 공동 편집 — 원격 그래프 스냅샷을 collab 브리지로
     }
   }
 
@@ -105,6 +107,10 @@ class PresenceSession {
 
   sendEditing(nodeId: string | null) { this.editing = nodeId; this.send({ t: 'editing', nodeId }) }
   sendSaved() { this.send({ t: 'saved' }) }
+
+  /** 공동 편집 — 그래프 스냅샷 송신 + 원격 수신 핸들러 등록(collab 브리지가 사용). */
+  sendGraph(payload: { nodes: unknown[]; edges: unknown[] }) { this.send({ t: 'graph', ...payload }) }
+  onGraph(fn: ((m: Record<string, unknown>) => void) | null) { this.graphHandler = fn }
 
   close() {
     if (this.retry !== undefined) { clearTimeout(this.retry); this.retry = undefined }

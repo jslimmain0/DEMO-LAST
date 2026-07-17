@@ -26,6 +26,8 @@ interface EditorState {
 
   loadGraph: (flowId: string, name: string, graph: FlowGraph) => void
   importGraph: (graph: FlowGraph) => void
+  // 공동 편집 — 원격 참여자의 그래프 스냅샷을 적용(로컬 선택 하이라이트는 보존, 히스토리 미적재)
+  applyRemoteGraph: (nodes: Node[], edges: Edge[]) => void
   getGraph: () => FlowGraph
   onNodesChange: (changes: NodeChange[]) => void
   onEdgesChange: (changes: EdgeChange[]) => void
@@ -119,6 +121,17 @@ export const useEditorStore = create<EditorState>()((set, get) => {
       flowName: graph.name && graph.name.trim() ? graph.name : get().flowName,
       palette: graph.palette ?? get().palette,
       runView: null,
+    })
+  },
+
+  // 공동 편집 — 원격 스냅샷을 그대로 반영. 로컬 selectedId 하이라이트만 유지(내 선택은 안 뺏김),
+  // dirty=true(받은 쪽도 저장 가능), 히스토리 미적재(내 undo 스택 오염 방지). 에코 방지는 collab 이 담당.
+  applyRemoteGraph: (nodes, edges) => {
+    const sel = get().selectedId
+    set({
+      nodes: nodes.map((n) => ({ ...n, selected: n.id === sel })),
+      edges,
+      dirty: true,
     })
   },
 

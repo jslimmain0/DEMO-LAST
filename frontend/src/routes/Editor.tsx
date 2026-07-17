@@ -20,6 +20,7 @@ import { toast } from '../components/toast'
 import { useAuth, usePermissions } from '../auth/AuthContext'
 import { getAccessToken } from '../auth/auth'
 import { devNickname, presence } from '../lib/presence'
+import { startCollab, stopCollab } from '../lib/collab'
 import { openFormIframe, openFormPopup } from '../lib/popup'
 import { computeRunView } from '../lib/runProgress'
 import { useEditorStore } from '../store/editorStore'
@@ -46,11 +47,12 @@ export function Editor() {
     // 이름: OIDC 면 로그인 사용자명, dev 면 브라우저별 닉네임(dev 모드 /me 는 전원 "dev" 라 devNickname 사용)
     const displayName = authEnabled ? (me?.username ?? devNickname()) : devNickname()
     presence.connect(id, displayName, authEnabled ? getAccessToken : undefined)
+    startCollab() // 실시간 공동 편집(그래프 변경 중계·적용)
     // 선택 노드 변경 → 편집중 신호(속성 패널이 그 노드를 편집 중)
     const unsub = useEditorStore.subscribe((s, prev) => {
       if (s.selectedId !== prev.selectedId) presence.sendEditing(s.selectedId)
     })
-    return () => { unsub(); presence.close() }
+    return () => { unsub(); stopCollab(); presence.close() }
   }, [id, me?.username, authEnabled])
 
   const [execution, setExecution] = useState<ExecutionDetail | null>(null)

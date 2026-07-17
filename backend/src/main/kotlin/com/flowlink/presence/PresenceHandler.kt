@@ -82,6 +82,13 @@ class PresenceHandler(private val mapper: ObjectMapper) : TextWebSocketHandler()
                 if (peer.editing != null) out.put("nodeId", peer.editing) else out.putNull("nodeId")
             }
             "saved" -> { out.put("t", "saved"); out.put("name", peer.name) }
+            "graph" -> {
+                // 공동 편집 — 그래프 스냅샷(nodes/edges)을 방에 그대로 중계한다(서버 무상태 릴레이).
+                // 클라이언트가 last-write-wins 로 적용. 서버는 그래프 상태를 보관하지 않는다.
+                out.put("t", "graph")
+                out.set<JsonNode>("nodes", msg.path("nodes"))
+                out.set<JsonNode>("edges", msg.path("edges"))
+            }
             else -> return   // 미지의 타입은 무시(전방 호환)
         }
         broadcast(flowId, session.id, out)

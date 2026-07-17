@@ -129,6 +129,22 @@ class PresenceHandlerTest {
     }
 
     @Test
+    fun `graph 스냅샷은 보낸 사람 제외하고 방에 그대로 중계된다(공동 편집)`() {
+        val a = FakeSession("A", "f1", "alice"); val b = FakeSession("B", "f1", "bob")
+        handler.afterConnectionEstablished(a); handler.afterConnectionEstablished(b)
+        val aBefore = a.sent.size
+        handler.handleMessage(a, TextMessage(
+            """{"t":"graph","nodes":[{"id":"n1","position":{"x":5,"y":6}}],"edges":[{"id":"e1"}]}"""))
+        assertEquals(aBefore, a.sent.size) // 본인에겐 미중계
+        val g = last(b)
+        assertEquals("graph", g["t"].asText())
+        assertEquals("A", g["id"].asText())
+        assertEquals("n1", g["nodes"][0]["id"].asText())
+        assertEquals(5, g["nodes"][0]["position"]["x"].asInt())
+        assertEquals(1, g["edges"].size())
+    }
+
+    @Test
     fun `방 참여자들은 서로 다른 색을 받는다`() {
         val a = FakeSession("A", "f1", "alice"); val b = FakeSession("B", "f1", "bob")
         handler.afterConnectionEstablished(a); handler.afterConnectionEstablished(b)

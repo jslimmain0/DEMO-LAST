@@ -705,6 +705,17 @@ design/   theme(라이트/다크) · index.css(CSS 변수)
   OIDC 토큰이 쿼리스트링(사내 도구 전제 — 액세스 로그에 남을 수 있음). dev 모드는 두 탭이 같은 브라우저면 닉네임 공유(`fl:nick`).
   토큰 만료 후 재접속은 현재 액세스 토큰 사용(silent renew 는 axios 인터셉터가 유지).
 
+### 실시간 공동 편집(후속 추가) — presence 위에 그래프 스냅샷 중계
+설계 스펙에선 CRDT 공동편집을 범위 밖으로 뒀으나, 사용자 요청으로 **비CRDT(last-write-wins) 실시간 공동 편집**을 presence 위에 추가.
+- **백엔드**: PresenceHandler 가 `t:"graph"` 메시지를 방에 **무상태 릴레이**(nodes/edges 페이로드 그대로, 서버는 그래프 미보관).
+- **프론트** [lib/collab.ts](frontend/src/lib/collab.ts): editorStore 의 nodes/edges 변경을 구독해 **전체 그래프 스냅샷을 throttle(100ms)+서명 dedup** 으로 송신,
+  원격 수신 시 [editorStore.applyRemoteGraph](frontend/src/store/editorStore.ts)(로컬 selectedId 하이라이트 보존·히스토리 미적재·에코 방지 플래그).
+  **`dirty` 인 변경만 중계**(로드/초기화는 제외 — 새 접속자의 저장본 로드가 기존 참여자의 미저장 편집을 덮어쓰는 것 방지).
+  → 노드 추가·이동·삭제·연결·**속성 편집**이 모든 참여자에게 실시간 반영(위치는 서명에 포함). 뷰포트(팬/줌)는 사용자별(비공유).
+- 검증: 헤더리스 WS 릴레이(A→B 중계·본인 제외) + 브라우저 2탭 실측(메모 노드 추가·이동이 즉시 상대 화면에 반영, 편집중 링·dirty 동기화). 백엔드 presence 테스트 9종.
+- ⚠ **last-write-wins**: 두 사람이 정확히 동시(같은 100ms 창)에 서로 다른 편집을 하면 마지막 스냅샷이 이김(드물게 발산 — 다음 편집/새로고침으로 수렴).
+  진짜 충돌 병합(CRDT)은 아니다. 턴 주고받기·한 명 편집+관전 같은 일반 사용은 매끄럽다. 팀(테넌트) 스코프 flow 안에서만 공유(핸드셰이크 격리).
+
 ## 최근 변경 (2026-07-16) — SaaS 전환 P4: Oracle 지원 + Docker Compose 배포 (`saas-overhaul` 브랜치)
 
 계획: [docs/superpowers/plans/2026-07-16-saas-p4-oracle-compose.md](docs/superpowers/plans/2026-07-16-saas-p4-oracle-compose.md).

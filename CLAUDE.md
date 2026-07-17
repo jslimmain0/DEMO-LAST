@@ -755,6 +755,19 @@ design/   theme(라이트/다크) · index.css(CSS 변수)
 - **후속 정리(리뷰 뒤)**: (B3 해소) compose 를 `.env`(`FLOWLINK_APP_ORIGIN`·`KC_PUBLIC_URL`)로 파라미터화 — realm import `${VAR:default}` 치환으로 공유 서버 배포 시 redirectUris·issuer·CORS 자동 정렬(기본 localhost 무회귀, 오버라이드·복귀 실측). P2 e2e 재시작 hang(execSync 손자 파이프 상속) → `stdio:'ignore'`+독립 헬스판정으로 22/22 완주. 이미 shipped 된 기능을 "후속 Phase"로 오도하던 stale 주석 3건(테넌트/내구성/플러그인 RBAC) 정정.
 - **의식적 수용(문서화)**: (H4) 체인 wait 노드에서 외부 게이트웨이가 ACK 직후 다음 콜백을 쏘면 워커 큐 대기창과 경합 가능(테스트 도구·비동기 트레이드오프 — 필요 시 미매칭 콜백 버퍼링 후속). (L1) 워커 큐 포화 시 재개를 호출 스레드에서 수행(재개 입력 유실 방지 우선). presence 토큰은 쿼리스트링(사내 도구 전제, 로그 노출 가능). P3 2탭 렌더링 자동화(Playwright)는 미도입(프로토콜은 e2e·렌더링은 수동 검증).
 
+## 최근 변경 (2026-07-17) — 실행 정확성 + 에디터 편의 기능 묶음
+- **버그: 연결 안 된 노드 실행 수정** — [FlowExecutor](backend/src/main/kotlin/com/flowlink/execution/engine/FlowExecutor.kt) `initialActive` 가
+  "진입차수 0" 인 모든 노드를 시작점으로 삼아, START 에 연결 안 된 떠 있는 노드가 멋대로 실행되던 문제. **START 노드에서 시작해
+  엣지를 따라 흐르게** 변경(도달 못 하는 노드는 SKIPPED). START 없는 구/손편집 그래프는 진입차수 0 폴백.
+- **HTTP 상태코드 검증(400/404)** — [HttpNodeExecutor](backend/src/main/kotlin/com/flowlink/execution/engine/HttpNodeExecutor.kt) 가 응답 출력 맵에
+  `httpStatus` 를 실어(server·client 모드) `{{ httpStatus@노드 }} == 200` / `!= 404` 로 검증(assert). 바인딩 picker([upstream.ts](frontend/src/binding/upstream.ts))·안내 노출.
+- **단일 노드 독립 실행** — `POST /flows/{id}/nodes/{nodeId}/run`([ExecutionController](backend/src/main/kotlin/com/flowlink/execution/ExecutionController.kt))
+  가 그 노드만 새 컨텍스트로 즉석 실행(이력 미저장, 상류 바인딩은 null). 대기/폼/입력/client 는 미지원(거절). 속성 패널 `▶ 이 노드만 실행` 버튼 + 결과 인라인(ok/httpStatus/output).
+- **사이드바 접기** — 에디터 좌 팔레트·우 속성 패널을 접기 토글(» / «), 접으면 얇은 세로 바로. localStorage 지속.
+- **속성 패널 오버레이** — 우 사이드바에 도킹 ↔ **캔버스 위 플로팅 오버레이**(⧉/→) 전환. 오버레이는 top-right 플로팅 카드([Editor](frontend/src/routes/Editor.tsx) `overlayCard`).
+- **데이터 삽입 버튼 아이콘화** — raw 모드의 `{ } 데이터 삽입` 텍스트 버튼을 `{ }` 아이콘으로(TokenInput 인라인 버튼은 이미 아이콘).
+- 검증: 백엔드 단위(presence 9 등) + 헤더리스 e2e(연결 안 된 노드 SKIPPED·httpStatus 출력·단일 실행 ok/status·assert httpStatus==200 SUCCEEDED) + 브라우저(단일 실행 인라인 결과·팔레트 접기·속성 오버레이) 실측. 프론트 tsc/build/oxlint.
+
 ## 참고 문서
 - `backend/README.md` — Phase 1 구현 범위 표, API 요약, 실행 가이드
 - `docs/` — UI/UX 멀티에이전트 설계 토론 로그, 엔터프라이즈 고도화 설계

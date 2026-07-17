@@ -8,6 +8,7 @@ import { AppShellTier1 } from '../app/AppShell'
 import { useAuth, usePermissions } from '../auth/AuthContext'
 import { METHOD_COLOR } from '../canvas/nodeMeta'
 import { apiErrorMessage } from '../lib/apiError'
+import { useReadableInk } from '../lib/contrast'
 import { newId } from '../lib/ids'
 
 const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'ANY']
@@ -24,6 +25,7 @@ export function MockServerEditor() {
   const qc = useQueryClient()
   const { canEdit } = usePermissions()
   const { me } = useAuth()
+  const badgeInk = useReadableInk('var(--fl-cat-generic)')
   const detail = useQuery({ queryKey: ['mock-server', id], queryFn: () => mocksApi.get(id), enabled: !!id })
 
   const [spec, setSpec] = useState<MockServerSpec>({ routes: [] })
@@ -87,7 +89,7 @@ export function MockServerEditor() {
                 style={{ ...input, fontSize: 17, fontWeight: 700, minWidth: 240 }}
                 aria-label="이름"
               />
-              <span style={{ ...badge, background: 'var(--fl-cat-generic)' }}>Mock</span>
+              <span style={{ ...badge, background: 'var(--fl-cat-generic)', color: badgeInk }}>Mock</span>
               <button
                 style={{ ...miniBtn, color: d.enabled ? 'var(--fl-ok)' : 'var(--fl-text-muted)', opacity: canEdit ? 1 : 0.5 }}
                 disabled={!canEdit}

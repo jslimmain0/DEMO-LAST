@@ -1,4 +1,5 @@
 import { CAT_COLOR, catColor, typeIcon } from '../canvas/nodeMeta'
+import { useReadableInk } from '../lib/contrast'
 
 // 워크플로의 노드 구성을 캔버스와 같은 노드/흐름 언어로 시각화한다.
 // hero 는 아이콘 칩 시퀀스(FlowStrip), 카드는 색 도트 미니어처(FlowMini).
@@ -6,6 +7,20 @@ import { CAT_COLOR, catColor, typeIcon } from '../canvas/nodeMeta'
 export interface MiniNode {
   type: string
   cat?: string
+}
+
+/** 카테고리색 배경 위 아이콘 칩 — 글자색을 배경 대비로 골라(테마·색 무관 가독성) 렌더. */
+function CatIcon({ type, cat, size, radius, fontSize }: { type: string; cat?: string; size: number; radius: number; fontSize: number }) {
+  const bg = catColor(cat ?? type)
+  const ink = useReadableInk(bg)
+  return (
+    <span title={type} style={{
+      width: size, height: size, borderRadius: radius, display: 'flex', alignItems: 'center',
+      justifyContent: 'center', background: bg, color: ink, fontSize, flexShrink: 0,
+    }}>
+      {typeIcon(type)}
+    </span>
+  )
 }
 
 /** hero 밴드용 — 노드를 typeIcon + catColor 칩으로 실제 실행 순서대로 이어붙인다. */
@@ -17,23 +32,7 @@ export function FlowStrip({ nodes, max = 8 }: { nodes: MiniNode[]; max?: number 
       {shown.map((n, i) => (
         <div key={i} style={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
           {i > 0 && <span style={{ width: 16, height: 2, background: 'var(--fl-border)', flexShrink: 0 }} />}
-          <span
-            title={n.type}
-            style={{
-              width: 30,
-              height: 30,
-              borderRadius: 9,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              background: catColor(n.cat ?? n.type),
-              color: '#fff',
-              fontSize: 14,
-              flexShrink: 0,
-            }}
-          >
-            {typeIcon(n.type)}
-          </span>
+          <CatIcon type={n.type} cat={n.cat} size={30} radius={9} fontSize={14} />
         </div>
       ))}
       {extra > 0 && (
@@ -70,7 +69,7 @@ export function FlowGhost() {
       {ghost.map((c, i) => (
         <div key={i} style={{ display: 'flex', alignItems: 'center' }}>
           {i > 0 && <span style={{ width: 14, height: 2, background: 'var(--fl-border)' }} />}
-          <span style={{ width: 26, height: 26, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', background: catColor(c), color: '#fff', fontSize: 12 }}>{typeIcon(c)}</span>
+          <CatIcon type={c} size={26} radius={8} fontSize={12} />
         </div>
       ))}
     </div>

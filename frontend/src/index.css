@@ -15,6 +15,8 @@
   --fl-text-muted: #6e6e77;
   --fl-border: #e6e6ea;
   --fl-focus: #6155f5;
+  /* 원격 커서(협업) 외곽선 — 캔버스 배경과 대비되게(라이트=진한 후광 / 다크=흰 후광) */
+  --fl-cursor-halo: rgba(28, 28, 31, .5);
 
   /* HTTP 메서드 6종 */
   --fl-get: #16a34a;
@@ -74,6 +76,7 @@ html[data-theme='dark'] {
   --fl-text-muted: #9a9aa4;
   --fl-border: #2c2c32;
   --fl-focus: #9b90ff;
+  --fl-cursor-halo: rgba(255, 255, 255, .92);
   --fl-get: #3ecf72; --fl-post: #5b8def; --fl-put: #f0a23b; --fl-patch: #a479f5; --fl-delete: #f15b5b; --fl-head: #8b94a6;
   --fl-cat-auth: #7d72ff; --fl-cat-bank: #2bc4c2; --fl-cat-card: #ed6fb0; --fl-cat-generic: #8b94a6;
   --fl-cat-set: #ef9b46; --fl-cat-if: #a479f5; --fl-cat-assert: #34c26b; --fl-cat-form: #ed6fb0; --fl-cat-input: #5b8def; --fl-cat-wait: #22acd1; --fl-cat-start: #3ecf72; --fl-cat-end: #8b94a6;

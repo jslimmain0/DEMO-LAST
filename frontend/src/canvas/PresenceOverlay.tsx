@@ -1,4 +1,5 @@
 import { ViewportPortal } from '@xyflow/react'
+import { readableText } from '../lib/contrast'
 import { usePresenceStore } from '../store/presenceStore'
 import { useEditorStore } from '../store/editorStore'
 
@@ -26,7 +27,7 @@ export function PresenceOverlay() {
             pointerEvents: 'none', zIndex: 5,
           }}>
             <span style={{
-              position: 'absolute', top: -22, left: 0, background: p.color, color: '#fff',
+              position: 'absolute', top: -22, left: 0, background: p.color, color: readableText(p.color),
               fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 999, whiteSpace: 'nowrap',
             }}>✎ {p.name}</span>
           </div>
@@ -38,10 +39,10 @@ export function PresenceOverlay() {
           pointerEvents: 'none', zIndex: 6, transition: 'transform 80ms linear',
         }}>
           <svg width="18" height="18" viewBox="0 0 24 24" style={{ display: 'block' }}>
-            <path d="M4 2 L20 12 L12 13.5 L9 21 Z" fill={p.color} stroke="#fff" strokeWidth="1.5" />
+            <path d="M4 2 L20 12 L12 13.5 L9 21 Z" fill={p.color} stroke="var(--fl-cursor-halo)" strokeWidth="1.5" />
           </svg>
           <span style={{
-            marginLeft: 10, background: p.color, color: '#fff', fontSize: 11, fontWeight: 600,
+            marginLeft: 10, background: p.color, color: readableText(p.color), fontSize: 11, fontWeight: 600,
             padding: '2px 8px', borderRadius: 999, whiteSpace: 'nowrap',
           }}>{p.name}</span>
         </div>

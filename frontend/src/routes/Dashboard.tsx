@@ -3,13 +3,16 @@ import type { CSSProperties, ReactNode } from 'react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import type { ExecutionSummary, FlowSummary, FolderSummary } from '../api/types'
-import { flowsApi, foldersApi, runsApi } from '../api/client'
+import { flowsApi, foldersApi, runsApi, suitesApi } from '../api/client'
+import type { SuiteRunItem } from '../api/client'
 import { AppShellTier1 } from '../app/AppShell'
 import { usePermissions } from '../auth/AuthContext'
 import { AskDialog } from '../components/AskDialog'
 import type { AskSpec } from '../components/AskDialog'
 import { FlowGhost, FlowMini, FlowStrip, dominantCat, fallbackCats } from '../components/MiniFlow'
 import { StatusBadge } from '../components/StatusBadge'
+import { SuiteRunDialog } from '../components/SuiteRunDialog'
+import { toast } from '../components/toast'
 import { relTime } from '../lib/format'
 
 type Sel = 'all' | 'none' | string // 'all' | 'none' | folderId
@@ -68,6 +71,12 @@ export function Dashboard() {
   const renameFolder = useMutation({ mutationFn: (v: { id: string; name: string }) => foldersApi.rename(v.id, v.name), onSuccess: invalidate })
   const removeFolder = useMutation({ mutationFn: (id: string) => foldersApi.remove(id), onSuccess: invalidate })
   const renameFlow = useMutation({ mutationFn: (v: { id: string; name: string }) => flowsApi.updateMeta(v.id, { name: v.name }), onSuccess: invalidate })
+  const [suiteItems, setSuiteItems] = useState<SuiteRunItem[] | null>(null)
+  const runSuite = useMutation({
+    mutationFn: (body: { flowIds?: string[]; folderId?: string }) => suitesApi.run(body),
+    onSuccess: (items) => { setSuiteItems(items); if (items.length === 0) toast('실행할 워크플로가 없습니다.', 'error') },
+    onError: () => toast('스위트 실행에 실패했습니다.', 'error'),
+  })
 
   // 앱 다이얼로그(prompt/confirm 대체)
   const [ask, setAsk] = useState<AskSpec | null>(null)
@@ -319,6 +328,9 @@ export function Dashboard() {
                 <button onClick={() => setSort('recent')} style={segBtn(sort === 'recent')}>최근</button>
                 <button onClick={() => setSort('name')} style={segBtn(sort === 'name')}>이름</button>
               </div>
+              {canEdit && sel !== 'all' && sel !== 'none' && !selectMode && (
+                <button onClick={() => runSuite.mutate({ folderId: sel })} disabled={runSuite.isPending} title="이 폴더의 워크플로를 한 번에 실행하고 성공/실패를 봅니다" style={selectToggleBtn(false)}>▶ 폴더 실행</button>
+              )}
               {canEdit && (visible.length > 0 || selectMode) && (
                 <button onClick={toggleSelectMode} aria-pressed={selectMode} style={selectToggleBtn(selectMode)}>{selectMode ? '선택 완료' : '☑ 선택'}</button>
               )}
@@ -348,7 +360,8 @@ export function Dashboard() {
                   <option key={fo.id} value={fo.id}>{'  '.repeat(depth) + (depth > 0 ? '└ ' : '') + fo.name}</option>
                 ))}
               </select>
-              <button onClick={bulkDelete} disabled={selectedIds.size === 0} style={{ ...dangerBtn(selectedIds.size === 0), marginLeft: 'auto' }}>🗑 선택 삭제 ({selectedIds.size})</button>
+              <button onClick={() => runSuite.mutate({ flowIds: [...selectedIds] })} disabled={selectedIds.size === 0 || runSuite.isPending} style={{ ...selectToggleBtn(false), marginLeft: 'auto' }}>▶ 선택 실행 ({selectedIds.size})</button>
+              <button onClick={bulkDelete} disabled={selectedIds.size === 0} style={dangerBtn(selectedIds.size === 0)}>🗑 선택 삭제 ({selectedIds.size})</button>
             </div>
           )}
 
@@ -453,6 +466,7 @@ export function Dashboard() {
           )}
         </div>
       {ask && <AskDialog spec={ask} onClose={() => setAsk(null)} />}
+      {suiteItems && <SuiteRunDialog items={suiteItems} onClose={() => setSuiteItems(null)} />}
     </AppShellTier1>
   )
 }

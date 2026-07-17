@@ -20,8 +20,18 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
       setDraft(null)
     },
   })
+  // 실행 실패 알림 웹훅
+  const notifyQ = useQuery({ queryKey: ['settings', 'notify'], queryFn: settingsApi.notify })
+  const [notifyDraft, setNotifyDraft] = useState<string | null>(null)
+  const saveNotify = useMutation({
+    mutationFn: (value: string | null) => settingsApi.saveNotify(value),
+    onSuccess: (data) => { qc.setQueryData(['settings', 'notify'], data); setNotifyDraft(null) },
+  })
   useEscapeClose(onClose)
   useEffect(() => setDraft(null), [q.data?.value])
+  useEffect(() => setNotifyDraft(null), [notifyQ.data?.value])
+  const notifyValue = notifyDraft ?? notifyQ.data?.value ?? ''
+  const notifyDirty = notifyDraft != null && notifyDraft !== (notifyQ.data?.value ?? '')
 
   const value = draft ?? q.data?.value ?? ''
   const dirty = draft != null && draft !== (q.data?.value ?? '')
@@ -52,6 +62,19 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
           지금 적용되는 값: <code style={code}>{q.data?.effective ?? '…'}</code>
           {' '}→ 수신 URL 은 <code style={code}>{'{이 값}/relay/{실행ID}/cb/{노드ID}'}</code>
         </p>
+
+        <label style={{ ...label, marginTop: 18 }}>실행 실패 알림 웹훅 (Slack/Teams incoming webhook)</label>
+        <input
+          aria-label="실패 알림 웹훅 URL"
+          style={mono}
+          value={notifyValue}
+          placeholder="https://hooks.slack.com/services/…  (비우면 알림 끔)"
+          onChange={(e) => setNotifyDraft(e.target.value)}
+        />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
+          <p style={{ ...hint, margin: 0, flex: 1 }}>실행이 <b>실패</b>하면 이 URL 로 <code style={code}>{'{text}'}</code> JSON 을 발송합니다(무인 스케줄/웹훅 실행에 특히 유용).</p>
+          <button style={primaryBtn} disabled={!notifyDirty || saveNotify.isPending} onClick={() => saveNotify.mutate(notifyValue.trim() || null)}>알림 저장</button>
+        </div>
 
         <div style={{ display: 'flex', gap: 8, marginTop: 16, justifyContent: 'flex-end' }}>
           {(q.data?.value || dirty) && (

@@ -77,6 +77,7 @@ class ExecutionService(
     private val json: JsonService,
     private val props: ExecutionProperties,
     private val relayResolver: RelayBaseResolver,
+    private val notifier: com.flowlink.notify.NotificationService,
     txManager: PlatformTransactionManager,
 ) {
     private val mapper: ObjectMapper = json.mapper()
@@ -240,6 +241,10 @@ class ExecutionService(
         }
         rememberIfPending(execId, outcome, state, tenant)
         executionRepo.save(execution)
+        // 실행 실패(사용자 중단 제외) 시 설정된 웹훅으로 비동기 알림 — 무인 실행(스케줄/웹훅)에서 특히 유용.
+        if (execution.status == ExecutionStatus.FAILED) {
+            notifier.notifyFailure(tenant, execId, execution.flowId, execution.error)
+        }
     }
 
     /**

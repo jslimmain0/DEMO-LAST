@@ -38,7 +38,12 @@ class SettingsService(private val repo: AppSettingRepository) {
     @Transactional(readOnly = true)
     fun relayBaseUrl(): String? = get(KEY_RELAY_BASE)
 
+    /** 실행 실패 알림 웹훅 URL(Slack/Teams incoming webhook 등) — 없으면 null. */
+    @Transactional(readOnly = true)
+    fun notifyWebhookUrl(): String? = get(KEY_NOTIFY_WEBHOOK)
+
     companion object {
         const val KEY_RELAY_BASE = "relay.base-url"
+        const val KEY_NOTIFY_WEBHOOK = "notify.webhook-url"
     }
 }

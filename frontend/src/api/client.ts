@@ -56,6 +56,12 @@ export const triggersApi = {
     http.delete(`/flows/${flowId}/triggers/${id}`).then(() => undefined),
 }
 
+export interface SuiteRunItem { flowId: string; flowName: string; executionId: string | null; status: string; error: string | null }
+export const suitesApi = {
+  run: (body: { flowIds?: string[]; folderId?: string }) =>
+    http.post<SuiteRunItem[]>('/suites/run', body).then((r) => r.data),
+}
+
 export const transformsApi = {
   list: () => http.get<import('./types').TransformInfo[]>('/transforms').then((r) => r.data),
 }
@@ -117,6 +123,8 @@ export interface RelaySetting {
 export const settingsApi = {
   relay: () => http.get<RelaySetting>('/settings/relay').then((r) => r.data),
   saveRelay: (value: string | null) => http.put<RelaySetting>('/settings/relay', { value }).then((r) => r.data),
+  notify: () => http.get<{ value: string | null }>('/settings/notify').then((r) => r.data),
+  saveNotify: (value: string | null) => http.put<{ value: string | null }>('/settings/notify', { value }).then((r) => r.data),
 }
 
 export const runsApi = {

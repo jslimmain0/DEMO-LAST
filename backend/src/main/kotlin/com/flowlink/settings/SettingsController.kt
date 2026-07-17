@@ -30,6 +30,18 @@ class SettingsController(
         return current()
     }
 
+    // 실행 실패 알림 웹훅(Slack/Teams incoming webhook URL). 빈 값 저장 = 알림 끄기.
+    data class NotifySetting(val value: String?)
+
+    @GetMapping("/notify")
+    fun notify(): NotifySetting = NotifySetting(settings.notifyWebhookUrl())
+
+    @PutMapping("/notify")
+    fun saveNotify(@RequestBody req: NotifySetting): NotifySetting {
+        settings.put(SettingsService.KEY_NOTIFY_WEBHOOK, req.value)
+        return NotifySetting(settings.notifyWebhookUrl())
+    }
+
     private fun current(): RelaySetting =
         RelaySetting(settings.relayBaseUrl(), resolver.resolve(), resolver.requestOrigin())
 }

@@ -16,6 +16,9 @@ interface FlowRepository : JpaRepository<Flow, UUID> {
 
     fun countByTenantIdAndFolderIdAndArchivedFalse(tenantId: String, folderId: UUID): Long
 
+    /** 폴더 직속 워크플로 — 스위트 일괄 실행용(하위 폴더 재귀 아님). */
+    fun findByTenantIdAndFolderIdAndArchivedFalse(tenantId: String, folderId: UUID): List<Flow>
+
     /** 폴더 삭제 시 안의 워크플로를 상위 폴더로(루트 폴더 삭제면 toId=null → 미분류). */
     @Modifying
     @Query("update Flow f set f.folderId = :toId where f.folderId = :fromId")

@@ -45,6 +45,17 @@ export const flowsApi = {
     http.patch<FlowDetail>(`/flows/${id}`, body).then((r) => r.data),
 }
 
+export const triggersApi = {
+  list: (flowId: string) =>
+    http.get<import('./types').TriggerView[]>(`/flows/${flowId}/triggers`).then((r) => r.data),
+  create: (flowId: string, body: import('./types').CreateTriggerRequest) =>
+    http.post<import('./types').TriggerView>(`/flows/${flowId}/triggers`, body).then((r) => r.data),
+  update: (flowId: string, id: string, body: { enabled?: boolean; cron?: string; versionNo?: number; input?: Record<string, unknown> }) =>
+    http.put<import('./types').TriggerView>(`/flows/${flowId}/triggers/${id}`, body).then((r) => r.data),
+  remove: (flowId: string, id: string) =>
+    http.delete(`/flows/${flowId}/triggers/${id}`).then(() => undefined),
+}
+
 export const transformsApi = {
   list: () => http.get<import('./types').TransformInfo[]>('/transforms').then((r) => r.data),
 }

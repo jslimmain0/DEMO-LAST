@@ -20,6 +20,7 @@ import { PresenceAvatars } from '../components/PresenceAvatars'
 import { EnvSwitcher } from '../components/EnvSwitcher'
 import { VersionHistoryDialog } from '../components/VersionHistoryDialog'
 import { RunInputDialog } from '../components/RunInputDialog'
+import { TriggersDialog } from '../components/TriggersDialog'
 import { activeEnvVars } from '../lib/environments'
 import { activeInputVars, loadRunInput } from '../lib/runInput'
 import { toast } from '../components/toast'
@@ -104,6 +105,7 @@ export function Editor() {
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
   const [versionsOpen, setVersionsOpen] = useState(false)
   const [runInputOpen, setRunInputOpen] = useState(false)
+  const [triggersOpen, setTriggersOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
   const [autosave, setAutosave] = useState(() => localStorage.getItem('fl:editor:autosave') === '1')
   const autoLayout = useEditorStore((s) => s.autoLayout)
@@ -455,6 +457,7 @@ export function Editor() {
                 <button style={toolItem} onClick={() => { toggleZen(); setToolsOpen(false) }}>{zen ? '◱ 집중 모드 끄기' : '⛶ 집중 모드'}</button>
                 <button style={toolItem} onClick={() => { setSearchOpen(true); setToolsOpen(false) }}>🔍 노드 검색 (Ctrl+F)</button>
                 <button style={toolItem} onClick={() => { setVersionsOpen(true); setToolsOpen(false) }}>🕘 버전 기록</button>
+                <button style={toolItem} onClick={() => { setTriggersOpen(true); setToolsOpen(false) }}>⏰ 자동 실행 트리거</button>
                 <button style={toolItem} onClick={() => { setJsonOpen(true); setToolsOpen(false) }}>{'{ } 그래프 JSON 보기'}</button>
                 <button style={toolItem} onClick={() => { setAutosave((v) => { persistUI('fl:editor:autosave', v ? '0' : '1'); return !v }); setToolsOpen(false) }}>{autosave ? '☑ 자동 저장 켜짐' : '☐ 자동 저장'}</button>
                 <button style={toolItem} onClick={() => { resetPanels(); setToolsOpen(false) }}>↺ 패널 크기 리셋</button>
@@ -519,6 +522,7 @@ export function Editor() {
           />
         )}
         {runInputOpen && <RunInputDialog onClose={() => setRunInputOpen(false)} onRun={() => onRun()} />}
+        {triggersOpen && <TriggersDialog flowId={flowId} onClose={() => setTriggersOpen(false)} />}
         {searchOpen && <NodeSearch onClose={() => setSearchOpen(false)} />}
       </ReactFlowProvider>
 

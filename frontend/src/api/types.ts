@@ -249,6 +249,26 @@ export type NodeExecutionStatus =
   | 'RUNNING' | 'SUCCEEDED' | 'FAILED' | 'WAITING' | 'SKIPPED'
 export type TriggerType = 'MANUAL' | 'SCHEDULE' | 'WEBHOOK' | 'EVENT'
 
+export interface TriggerView {
+  id: string
+  flowId: string
+  type: TriggerType
+  enabled: boolean
+  cron?: string | null
+  webhookToken?: string | null
+  versionNo?: number | null
+  nextRunAt?: string | null
+  lastRunAt?: string | null
+  createdAt: string
+}
+export interface CreateTriggerRequest {
+  type: 'SCHEDULE' | 'WEBHOOK'
+  cron?: string
+  versionNo?: number
+  input?: Record<string, unknown>
+  enabled?: boolean
+}
+
 export interface RunRequest {
   input?: Record<string, unknown>
   env?: Record<string, unknown>

@@ -138,7 +138,8 @@ class ExecutionService(
         return SingleNodeRunResult(r.ok, r.httpStatus, r.value, r.requestText, r.responseText)
     }
 
-    fun run(flowId: UUID, req: RunRequest?): ExecutionDetail {
+    // trigger 는 실행을 시작시킨 종류(MANUAL/SCHEDULE/WEBHOOK). 스케줄러·웹훅은 호출 전 TenantContext 를 세팅한다.
+    fun run(flowId: UUID, req: RunRequest?, trigger: TriggerType = TriggerType.MANUAL): ExecutionDetail {
         val tenant = TenantContext.getTenantId()
         val flow = flowRepo.findByIdAndTenantId(flowId, tenant)
             .orElseThrow { NotFoundException.of("Flow", flowId) }
@@ -155,7 +156,7 @@ class ExecutionService(
         val inputJson: String? = req?.input?.let { if (it.isNull) null else json.toJson(it) }
 
         val execution = Execution.start(
-            tenant, flowId, version.id, TriggerType.MANUAL, currentUser(), inputJson
+            tenant, flowId, version.id, trigger, currentUser(), inputJson
         )
         executionRepo.save(execution)
         val execId = execution.id

@@ -208,6 +208,11 @@ class FlowExecutor(
     }
 
     private fun drive(st: RunState, recorder: NodeRecorder): Outcome {
+        // 실행할 노드가 있는데 활성 시작점(START)이 하나도 없으면 명확히 실패시킨다 —
+        // START 없는 그래프에서 떠 있는 노드가 멋대로 실행되지 않도록(재개 중엔 active 가 채워져 있어 무해).
+        if (st.active.isEmpty() && st.index == 0 && st.order.any { st.byId[it] != null }) {
+            return Outcome.failed("실행하려면 시작(START) 노드가 필요합니다 — 시작 노드를 추가해 흐름을 연결하세요.")
+        }
         while (st.index < st.order.size) {
             val id = st.order[st.index]
             val node = st.byId[id]
@@ -623,31 +628,12 @@ class FlowExecutor(
     }
 
     /**
-     * 실행 시작점 — **START 노드에서 시작해 연결(엣지)을 따라 흐른다.** START 에서 도달하지 못하는 노드는
-     * 실행하지 않는다(활성화 안 돼 SKIPPED). 이전에는 "진입차수 0" 인 노드를 전부 시작점으로 삼아,
-     * START 에 연결 안 된 떠 있는 노드가 멋대로 실행되던 버그가 있었다.
-     * START 가 하나도 없는 (구/손편집) 그래프는 레거시 폴백으로 진입차수 0 을 시작점으로 쓴다.
+     * 실행 시작점 — **오직 START 노드.** 실행은 START 에서 시작해 연결(엣지)을 따라 흐르고, START 에서
+     * 도달하지 못하는 노드는 실행하지 않는다(활성화 안 돼 SKIPPED). START 가 없으면 빈 집합을 돌려주고,
+     * drive() 가 "시작 노드 필요" 로 명확히 실패시킨다(예전엔 진입차수 0 인 떠 있는 노드가 멋대로 실행됐다).
      */
-    private fun initialActive(nodes: List<GraphNode>, edges: List<GraphEdge>): MutableSet<String> {
-        val starts = nodes.filter { it.nodeType() == NodeType.START }.mapNotNull { it.id }
-        if (starts.isNotEmpty()) return HashSet(starts)
-
-        val indeg = HashMap<String, Int>()
-        nodes.forEach { n -> indeg[n.id!!] = 0 }
-        for (e in edges) {
-            val to = e.to
-            if (to != null && indeg.containsKey(to)) {
-                indeg.merge(to, 1) { a, b -> a + b }
-            }
-        }
-        val active = HashSet<String>()
-        nodes.forEach { n ->
-            if (indeg[n.id!!] == 0) {
-                active.add(n.id!!)
-            }
-        }
-        return active
-    }
+    private fun initialActive(nodes: List<GraphNode>, edges: List<GraphEdge>): MutableSet<String> =
+        HashSet(nodes.filter { it.nodeType() == NodeType.START }.mapNotNull { it.id })
 
     companion object {
         /**

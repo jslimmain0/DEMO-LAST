@@ -1,6 +1,6 @@
 import { useReactFlow } from '@xyflow/react'
 import type { CSSProperties, DragEvent } from 'react'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import type { GraphNode, HttpMethod, NodeType } from '../api/types'
 import { MethodTag } from '../components/MethodTag'
 import { useEditorStore } from '../store/editorStore'
@@ -15,6 +15,22 @@ export function Palette({ width = 200, onCollapse }: { width?: number; onCollaps
   const removePaletteItem = useEditorStore((s) => s.removePaletteItem)
   const { screenToFlowPosition } = useReactFlow()
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
+  const [q, setQ] = useState('')
+  const [recent, setRecent] = useState<NodeType[]>(() => {
+    try { return JSON.parse(localStorage.getItem('fl:palette:recent') ?? '[]') as NodeType[] } catch { return [] }
+  })
+  const shownPalette = useMemo(() => {
+    const query = q.trim().toLowerCase()
+    return PALETTE.filter((p) => !query || p.label.toLowerCase().includes(query) || p.type.includes(query))
+  }, [q])
+  const addWithRecent = (type: NodeType) => {
+    addNode(type, center())
+    setRecent((prev) => {
+      const next = [type, ...prev.filter((t) => t !== type)].slice(0, 4)
+      try { localStorage.setItem('fl:palette:recent', JSON.stringify(next)) } catch { /* 프라이빗 모드 무시 */ }
+      return next
+    })
+  }
   const toggleGroup = (id: string) =>
     setCollapsed((prev) => {
       const next = new Set(prev)
@@ -55,12 +71,27 @@ export function Palette({ width = 200, onCollapse }: { width?: number; onCollaps
             style={{ width: 24, height: 24, border: '1px solid var(--fl-border)', borderRadius: 6, background: 'var(--fl-surface)', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 13 }}>«</button>
         )}
       </div>
-      {PALETTE.map((p) => (
+      <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="노드 검색…"
+        style={{ width: '100%', padding: '6px 9px', marginBottom: 4, border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', color: 'var(--fl-text)', fontSize: 12.5, outline: 'none' }} />
+      {recent.length > 0 && !q && (
+        <div style={{ marginBottom: 4 }}>
+          <div style={{ ...groupTitle, padding: '2px 2px 4px', fontSize: 10.5 }}>최근</div>
+          {recent.map((rt) => {
+            const p = PALETTE.find((x) => x.type === rt); if (!p) return null
+            return (
+              <button key={'r-' + rt} draggable onDragStart={(e) => onDragStart(e, p.type)} onClick={() => addWithRecent(p.type)} title={`${p.label} 추가`} style={paletteBtn}>
+                <span aria-hidden style={{ color: catColor(p.cat), fontSize: 15, width: 18, textAlign: 'center' }}>{typeIcon(p.type)}</span>{p.label}
+              </button>
+            )
+          })}
+        </div>
+      )}
+      {shownPalette.map((p) => (
         <button
           key={p.type}
           draggable
           onDragStart={(e) => onDragStart(e, p.type)}
-          onClick={() => addNode(p.type, center())}
+          onClick={() => addWithRecent(p.type)}
           title={`${p.label} 추가 (클릭 또는 드래그)`}
           style={paletteBtn}
         >
@@ -70,6 +101,7 @@ export function Palette({ width = 200, onCollapse }: { width?: number; onCollaps
           {p.label}
         </button>
       ))}
+      {shownPalette.length === 0 && <div style={{ padding: 8, fontSize: 12, color: 'var(--fl-text-muted)' }}>일치하는 노드 없음</div>}
 
       {palette.map((group) => {
         const isCollapsed = collapsed.has(group.id)

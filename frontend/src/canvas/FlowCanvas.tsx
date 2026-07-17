@@ -10,6 +10,7 @@ import { presence } from '../lib/presence'
 import { BranchNode } from './BranchNode'
 import { DeletableEdge } from './DeletableEdge'
 import { GroupNode } from './GroupNode'
+import { NodeAddMenu } from './NodeAddMenu'
 import { NodeCard } from './NodeCard'
 import { NoteNode } from './NoteNode'
 import { PresenceOverlay } from './PresenceOverlay'
@@ -55,6 +56,29 @@ export function FlowCanvas() {
   const [showMinimap, setShowMinimap] = useState(() => localStorage.getItem('fl:canvas:minimap') !== '0')
   const [showGrid, setShowGrid] = useState(() => localStorage.getItem('fl:canvas:grid') !== '0')
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; nodeId: string; nodeType: string } | null>(null)
+  // 빈 캔버스 우클릭/더블클릭·엣지 드래그를 빈 곳에 놓으면 뜨는 노드 추가 메뉴
+  const [addMenu, setAddMenu] = useState<{ x: number; y: number; flowPos: { x: number; y: number }; from?: { nodeId: string; handle: string } } | null>(null)
+  const openAddMenu = (clientX: number, clientY: number, from?: { nodeId: string; handle: string }) =>
+    setAddMenu({ x: clientX, y: clientY, flowPos: screenToFlowPosition({ x: clientX, y: clientY }), from })
+  const addFromMenu = (type: NodeType) => {
+    if (!addMenu) return
+    const newId = addNode(type, addMenu.flowPos)
+    if (addMenu.from) onConnect({ source: addMenu.from.nodeId, target: newId, sourceHandle: addMenu.from.handle, targetHandle: null })
+    setAddMenu(null)
+  }
+  // Ctrl/⌘+K — 화면 중앙에 빠른 노드 추가 메뉴
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && (e.code === 'KeyK' || e.key === 'k')) {
+        e.preventDefault()
+        openAddMenu(window.innerWidth / 2, window.innerHeight / 2 - 60)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+    // openAddMenu 는 안정적인 setter/훅 참조만 사용 — 최초 클로저로 충분
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   const toggleMinimap = () => setShowMinimap((v) => { localStorage.setItem('fl:canvas:minimap', v ? '0' : '1'); return !v })
   const toggleGrid = () => setShowGrid((v) => { localStorage.setItem('fl:canvas:grid', v ? '0' : '1'); return !v })
   const runSingleFromMenu = async (nodeId: string) => {
@@ -148,7 +172,15 @@ export function FlowCanvas() {
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
         onConnectStart={() => setConnecting(true)}
-        onConnectEnd={() => setConnecting(false)}
+        onConnectEnd={(event, connectionState) => {
+          setConnecting(false)
+          // 엣지를 노드가 아닌 빈 곳에 놓으면 → 그 위치에 노드 추가 메뉴(고르면 자동 연결)
+          if (connectionState.isValid) return
+          const from = connectionState.fromNode
+          if (!from) return
+          const pt = 'changedTouches' in event ? event.changedTouches[0] : (event as MouseEvent)
+          openAddMenu(pt.clientX, pt.clientY, { nodeId: from.id, handle: connectionState.fromHandle?.id ?? 'out' })
+        }}
         onClickConnectStart={() => setConnecting(true)}
         onClickConnectEnd={() => setConnecting(false)}
         connectionRadius={45}
@@ -156,9 +188,11 @@ export function FlowCanvas() {
         snapToGrid
         snapGrid={[GRID, GRID]}
         onNodeClick={(_, n) => selectNode(n.id)}
-        onPaneClick={() => { selectNode(null); setCtxMenu(null) }}
+        onPaneClick={() => { selectNode(null); setCtxMenu(null); setAddMenu(null) }}
         onNodeContextMenu={(e, n) => { e.preventDefault(); selectNode(n.id); setCtxMenu({ x: e.clientX, y: e.clientY, nodeId: n.id, nodeType: (n.data as { type?: string }).type ?? '' }) }}
-        onMoveStart={() => setCtxMenu(null)}
+        onPaneContextMenu={(e) => { e.preventDefault(); openAddMenu((e as MouseEvent).clientX, (e as MouseEvent).clientY) }}
+        onDoubleClick={(e) => { if ((e.target as HTMLElement)?.classList?.contains('react-flow__pane')) openAddMenu(e.clientX, e.clientY) }}
+        onMoveStart={() => { setCtxMenu(null); setAddMenu(null) }}
         deleteKeyCode={['Delete', 'Backspace']}
         proOptions={{ hideAttribution: true }}
       >
@@ -191,6 +225,10 @@ export function FlowCanvas() {
             <button style={{ ...ctxItem, color: 'var(--fl-fail)' }} onClick={() => { deleteNode(ctxMenu.nodeId); setCtxMenu(null) }}>× 삭제 (Delete)</button>
           </div>
         </>
+      )}
+      {addMenu && (
+        <NodeAddMenu x={addMenu.x} y={addMenu.y} onPick={addFromMenu} onClose={() => setAddMenu(null)}
+          title={addMenu.from ? '연결할 노드 추가 — 검색' : '노드 추가 — 검색'} />
       )}
     </div>
   )

@@ -105,7 +105,13 @@ export const useEditorStore = create<EditorState>()((set, get) => {
     const { nodes, edges } = toRF(graph)
     lastDataEdit = null
     dragInProgress = false
-    set({ flowId, flowName: name, nodes, edges, selectedId: null, dirty: false, palette: graph.palette ?? [], runView: null, past: [], future: [] })
+    // 빈(새) 플로우면 START 노드를 하나 자동 배치 — 실행은 START 에서 시작하므로 시작점을 미리 준다.
+    const seeded = nodes.length === 0
+    if (seeded) {
+      const dn = makeNode('start', 60, 160)
+      nodes.push({ id: dn.id, type: rfNodeType(dn.type), position: { x: 60, y: 160 }, data: dn as unknown as Record<string, unknown>, ...rfExtras(dn.type) })
+    }
+    set({ flowId, flowName: name, nodes, edges, selectedId: null, dirty: seeded, palette: graph.palette ?? [], runView: null, past: [], future: [] })
   },
 
   // 현재 플로우(flowId 유지)의 캔버스를 가져온 그래프로 교체. 저장 가능하도록 dirty=true.

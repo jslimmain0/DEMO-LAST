@@ -1,10 +1,10 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { CSSProperties } from 'react'
 import { useEffect, useMemo, useState } from 'react'
-import { pluginsApi, settingsApi, transformsApi } from '../api/client'
+import { pluginsApi, runsApi, settingsApi, transformsApi } from '../api/client'
 import { usePermissions } from '../auth/AuthContext'
 import { toast } from '../components/toast'
-import type { Binding, BodyType, GraphNode, HttpMethod, NodeField, NodeOutput, NodeVar, ReqMode, RespType, TcpField, TcpRespField, WaitField as WaitFieldT } from '../api/types'
+import type { Binding, BodyType, GraphNode, HttpMethod, NodeField, NodeOutput, NodeVar, ReqMode, RespType, SingleNodeRunResult, TcpField, TcpRespField, WaitField as WaitFieldT } from '../api/types'
 import { BindingChip } from '../binding/BindingChip'
 import { BindingPicker } from '../binding/BindingPicker'
 import { TokenInput } from '../binding/TokenInput'
@@ -41,6 +41,8 @@ function rawBodyPlaceholder(bt: BodyType | undefined): string {
 const RESP_TYPES: RespType[] = ['json', 'xml', 'urlencoded', 'form', 'query', 'text', 'binary']
 const CHARSETS = ['UTF-8', 'EUC-KR', 'MS949', 'US-ASCII']
 const OUTPUT_TYPES = ['string', 'int', 'number', 'boolean', 'object', 'array', 'secret']
+// 단일 노드 독립 실행이 의미 있는 타입(즉석 처리). start/end/주석/대기·폼·입력은 제외.
+const SINGLE_RUNNABLE = new Set(['http', 'set', 'if', 'switch', 'assert', 'transform', 'tcp'])
 
 // 키형(json/xml/urlencoded/form/query): 응답이 키-값 구조라 "예상 응답 키"가 의미 있음 → 하위 노드가 키로 바인딩.
 // 통짜형(text/binary): 키가 없으므로 응답 본문 전체가 단일 값(body)으로만 제공됨.
@@ -55,10 +57,13 @@ function respOutputLabel(rt: RespType | undefined): string {
   return '예상 응답 필드 (JSON 키) — 하위 노드가 바인딩할 항목'
 }
 
-export function PropertyPanel({ width = 360 }: { width?: number }) {
+export function PropertyPanel({ width = 360, overlay = false, onToggleOverlay, onCollapse }: {
+  width?: number; overlay?: boolean; onToggleOverlay?: () => void; onCollapse?: () => void
+}) {
   const selectedId = useEditorStore((s) => s.selectedId)
   const nodes = useEditorStore((s) => s.nodes)
   const edges = useEditorStore((s) => s.edges)
+  const flowId = useEditorStore((s) => s.flowId)
   const update = useEditorStore((s) => s.updateNodeData)
   const selectNode = useEditorStore((s) => s.selectNode)
   const deleteNode = useEditorStore((s) => s.deleteNode)
@@ -66,9 +71,23 @@ export function PropertyPanel({ width = 360 }: { width?: number }) {
   const [tab, setTab] = useState<'params' | 'headers' | 'body'>('params')
   const [pick, setPick] = useState<string | null>(null) // rawBody | rawParams | rawHeaders (Raw 텍스트영역 전용)
   const [bodyConvNote, setBodyConvNote] = useState<string | null>(null) // 필드↔Raw 변환 안내
+  const [single, setSingle] = useState<SingleNodeRunResult | null>(null) // 이 노드만 실행 결과
+  const [singleRunning, setSingleRunning] = useState(false)
   const transforms = useQuery({ queryKey: ['transforms'], queryFn: transformsApi.list })
   const qc = useQueryClient()
-  const { canPlatformAdmin } = usePermissions()
+  const { canPlatformAdmin, canEdit } = usePermissions()
+
+  // 다른 노드 선택 시 단일 실행 결과 초기화
+  useEffect(() => { setSingle(null); setSingleRunning(false) }, [selectedId])
+
+  // 이 노드만 실행 — 새 컨텍스트로 즉석 실행(상류 바인딩 null). 대기/폼/입력/client 는 백엔드가 거절.
+  const runSingle = async () => {
+    if (!flowId || !selectedId) return
+    setSingleRunning(true)
+    try { setSingle(await runsApi.runNode(flowId, selectedId)) }
+    catch (e) { setSingle({ ok: false, httpStatus: null, output: null, requestText: null, responseText: e instanceof Error ? e.message : String(e) }) }
+    finally { setSingleRunning(false) }
+  }
 
   const node = useMemo<GraphNode | null>(() => {
     const n = nodes.find((x) => x.id === selectedId)
@@ -230,14 +249,43 @@ export function PropertyPanel({ width = 360 }: { width?: number }) {
 
   return (
     <aside aria-label="속성" style={{ ...shell, width }}>
-      <header style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '14px 16px', borderBottom: '1px solid var(--fl-border)' }}>
+      <header style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '14px 16px', borderBottom: '1px solid var(--fl-border)' }}>
         <span aria-hidden style={{ color: catColor(node.cat), fontSize: 16 }}>{typeIcon(node.type)}</span>
         <input aria-label="노드 이름" value={node.name ?? ''} onChange={(e) => update(id, { name: e.target.value })} style={{ ...field, fontWeight: 600, fontFamily: 'var(--fl-font-head)' }} />
+        {onToggleOverlay && (
+          <button onClick={onToggleOverlay} aria-label={overlay ? '패널 도킹' : '오버레이로 보기'}
+            title={overlay ? '오른쪽 사이드바에 도킹' : '캔버스 위 오버레이로 보기'} style={iconBtn}>{overlay ? '⇥' : '⧉'}</button>
+        )}
+        {!overlay && onCollapse && (
+          <button onClick={onCollapse} aria-label="속성 패널 접기" title="접기" style={iconBtn}>»</button>
+        )}
         <button onClick={() => selectNode(null)} aria-label="패널 닫기" style={closeBtn}>×</button>
       </header>
 
       <div style={{ padding: 16, overflowY: 'auto', flex: 1 }}>
         <div style={{ fontSize: 11, color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)' }}>{typeLabel(node.type)} · #{id}</div>
+
+        {SINGLE_RUNNABLE.has(node.type) && canEdit && (
+          <div style={{ marginTop: 10 }}>
+            <button onClick={runSingle} disabled={singleRunning} style={singleBtn}
+              title="이 노드만 새 컨텍스트로 즉석 실행합니다(상류 바인딩은 값이 없어 빈 값). 전체 실행과 별개.">
+              {singleRunning ? '실행 중…' : '▶ 이 노드만 실행'}
+            </button>
+            {single && (
+              <div style={{ marginTop: 8, border: `1px solid ${single.ok ? 'var(--fl-ok)' : 'var(--fl-fail)'}`, borderRadius: 'var(--fl-radius-sm)', overflow: 'hidden' }}>
+                <div style={{ padding: '6px 10px', fontSize: 12, fontWeight: 600, background: 'var(--fl-surface-2)', color: single.ok ? 'var(--fl-ok)' : 'var(--fl-fail)' }}>
+                  {single.ok ? '✓ 성공' : '✕ 실패'}{single.httpStatus != null ? ` · HTTP ${single.httpStatus}` : ''}
+                </div>
+                {single.output != null && (
+                  <pre style={singlePre}>{typeof single.output === 'string' ? single.output : JSON.stringify(single.output, null, 2)}</pre>
+                )}
+                {single.responseText && (!single.ok || single.output == null) && (
+                  <pre style={{ ...singlePre, color: single.ok ? 'var(--fl-text)' : 'var(--fl-fail)' }}>{single.responseText}</pre>
+                )}
+              </div>
+            )}
+          </div>
+        )}
 
         {(node.type === 'note' || node.type === 'group') && (
           <>
@@ -465,7 +513,7 @@ export function PropertyPanel({ width = 360 }: { width?: number }) {
                   onChange={(e) => update(id, tab === 'body' ? { rawBody: e.target.value } : tab === 'params' ? { rawParams: e.target.value } : { rawHeaders: e.target.value })}
                   placeholder={tab === 'body' ? rawBodyPlaceholder(node.bodyType) : tab === 'params' ? 'a=1&b=2  또는 { } 로 데이터 삽입' : 'Authorization: Bearer ...\nContent-Type: application/json'}
                 />
-                <button onClick={() => setPick(tab === 'body' ? 'rawBody' : tab === 'params' ? 'rawParams' : 'rawHeaders')} style={{ ...braceBtn, width: 'auto', padding: '0 10px', marginTop: 4 }}>{'{ } 데이터 삽입'}</button>
+                <button onClick={() => setPick(tab === 'body' ? 'rawBody' : tab === 'params' ? 'rawParams' : 'rawHeaders')} style={{ ...braceBtn, width: 'auto', padding: '0 10px', marginTop: 4 }} title="데이터 삽입">{'{ }'}</button>
               </div>
             ) : (
               <KeyValueEditor rows={fields[tab] ?? []} onChange={(rows) => setRows(tab, rows)} sources={sources} showType={tab === 'body' && (node.bodyType ?? 'json') === 'json'} />
@@ -533,6 +581,11 @@ export function PropertyPanel({ width = 360 }: { width?: number }) {
             <p style={{ fontSize: 11.5, color: 'var(--fl-text-muted)', marginTop: 8 }}>
               조건이 <b>거짓이면 이 노드가 실패</b>하고 실행이 FAILED 로 끝납니다(테스트 시나리오의 assert).
               두 값 비교도 가능: <code style={{ fontFamily: 'var(--fl-font-mono)', fontSize: 11 }}>{'{{ tid@노티 }} == {{ tid@승인 }}'}</code>
+            </p>
+            <p style={{ fontSize: 11.5, color: 'var(--fl-text-muted)', marginTop: 6 }}>
+              <b>HTTP 상태 검증</b>: HTTP 노드는 <code style={{ fontFamily: 'var(--fl-font-mono)', fontSize: 11 }}>{'{{ httpStatus@노드 }}'}</code> 로
+              상태코드를 바인딩합니다 — 예: <code style={{ fontFamily: 'var(--fl-font-mono)', fontSize: 11 }}>{'{{ httpStatus@조회 }} == 200'}</code> /
+              <code style={{ fontFamily: 'var(--fl-font-mono)', fontSize: 11 }}>{' != 404'}</code>. (SimpleEvaluationContext 라 비교·산술만 — 메서드 호출은 불가)
             </p>
           </>
         )}
@@ -688,7 +741,7 @@ export function PropertyPanel({ width = 360 }: { width?: number }) {
             {node.jsonRaw ? (
               <div>
                 <textarea style={{ ...mono, minHeight: 100, resize: 'vertical' }} value={node.rawBody ?? ''} onChange={(e) => update(id, { rawBody: e.target.value })} placeholder="field1=value1&field2=value2  또는 { } 로 데이터 삽입" />
-                <button onClick={() => setPick('rawBody')} style={{ ...braceBtn, width: 'auto', padding: '0 10px', marginTop: 4 }}>{'{ } 데이터 삽입'}</button>
+                <button onClick={() => setPick('rawBody')} style={{ ...braceBtn, width: 'auto', padding: '0 10px', marginTop: 4 }} title="데이터 삽입">{'{ }'}</button>
               </div>
             ) : (
               <KeyValueEditor rows={node.fields?.body ?? []} onChange={(rows) => update(id, { fields: { params: fields.params ?? [], headers: fields.headers ?? [], body: rows } })} sources={sources} />
@@ -977,6 +1030,9 @@ function TcpRespEditor({ fields, onChange }: { fields: TcpRespField[]; onChange:
 
 const shell: CSSProperties = { flexShrink: 0, background: 'var(--fl-surface)', display: 'flex', flexDirection: 'column', height: '100%' }
 const closeBtn: CSSProperties = { width: 30, height: 30, borderRadius: 8, border: 'none', background: 'var(--fl-surface-2)', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 16 }
+const iconBtn: CSSProperties = { width: 30, height: 30, flexShrink: 0, borderRadius: 8, border: '1px solid var(--fl-border)', background: 'var(--fl-surface)', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 14 }
+const singleBtn: CSSProperties = { width: '100%', padding: '8px 10px', border: '1px solid var(--fl-primary)', borderRadius: 'var(--fl-radius-sm)', background: 'transparent', color: 'var(--fl-primary)', cursor: 'pointer', fontSize: 12.5, fontWeight: 600 }
+const singlePre: CSSProperties = { margin: 0, padding: '8px 10px', fontSize: 11.5, fontFamily: 'var(--fl-font-mono)', color: 'var(--fl-text)', background: 'var(--fl-surface)', whiteSpace: 'pre-wrap', wordBreak: 'break-all', maxHeight: 200, overflow: 'auto' }
 const deleteBtn: CSSProperties = { marginTop: 28, width: '100%', padding: '9px', border: '1px solid var(--fl-fail)', borderRadius: 'var(--fl-radius-sm)', background: 'transparent', color: 'var(--fl-fail)', cursor: 'pointer', fontSize: 13, fontWeight: 600 }
 const addDashed: CSSProperties = { marginTop: 2, padding: '6px 10px', border: '1px dashed var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'transparent', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 12.5 }
 const hintP: CSSProperties = { fontSize: 11.5, color: 'var(--fl-text-muted)', marginTop: 12, lineHeight: 1.5 }

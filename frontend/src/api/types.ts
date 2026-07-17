@@ -335,6 +335,15 @@ export interface NodeExecutionView {
   output?: unknown
 }
 
+// 단일 노드 독립 실행 결과 (POST /flows/{id}/nodes/{nodeId}/run)
+export interface SingleNodeRunResult {
+  ok: boolean
+  httpStatus: number | null
+  output: unknown
+  requestText: string | null
+  responseText: string | null
+}
+
 export interface ExecutionDetail {
   id: string
   flowId: string

@@ -84,6 +84,11 @@ export function Editor() {
   const [paletteW, setPaletteW] = useState(() => loadSize('paletteW', 200, 160, 420))
   const [propertyW, setPropertyW] = useState(() => loadSize('propertyW', 330, 300, 560))
   const [runH, setRunH] = useState(() => loadSize('runH', 260, 120, 600))
+  // 사이드바 접기 + 속성 패널 도킹/오버레이 (localStorage 지속)
+  const [paletteCollapsed, setPaletteCollapsed] = useState(() => localStorage.getItem('fl:editor:palColl') === '1')
+  const [propCollapsed, setPropCollapsed] = useState(() => localStorage.getItem('fl:editor:propColl') === '1')
+  const [propMode, setPropMode] = useState<'docked' | 'overlay'>(() => localStorage.getItem('fl:editor:propMode') === 'overlay' ? 'overlay' : 'docked')
+  const persistUI = (k: string, v: string) => { try { localStorage.setItem(k, v) } catch { /* 프라이빗 모드 무시 */ } }
 
   // 뷰포트에 맞춘 동적 상한 — 패널이 화면을 넘어 캔버스를 0으로 만들지 않도록 창 크기 변화에 재클램프
   const [vp, setVp] = useState(() => ({ w: window.innerWidth, h: window.innerHeight }))
@@ -365,13 +370,32 @@ export function Editor() {
 
       <ReactFlowProvider>
         <div style={{ flex: 1, display: 'flex', minHeight: 0, overflow: 'hidden' }}>
-          <Palette width={paletteW} />
-          <ResizeHandle axis="x" sign={1} size={paletteW} min={160} max={maxPaletteW} defaultSize={200} onResize={setPaletteW} onResizeEnd={(n) => saveSize('paletteW', n)} ariaLabel="팔레트 너비 조절" />
-          <div style={{ flex: 1, minWidth: 0 }}>
+          {!paletteCollapsed ? (
+            <>
+              <Palette width={paletteW} onCollapse={() => { setPaletteCollapsed(true); persistUI('fl:editor:palColl', '1') }} />
+              <ResizeHandle axis="x" sign={1} size={paletteW} min={160} max={maxPaletteW} defaultSize={200} onResize={setPaletteW} onResizeEnd={(n) => saveSize('paletteW', n)} ariaLabel="팔레트 너비 조절" />
+            </>
+          ) : (
+            <button onClick={() => { setPaletteCollapsed(false); persistUI('fl:editor:palColl', '0') }} title="노드 팔레트 펼치기" aria-label="노드 팔레트 펼치기" style={expandStrip}>»</button>
+          )}
+          <div style={{ flex: 1, minWidth: 0, position: 'relative' }}>
             <FlowCanvas />
+            {propMode === 'overlay' && (
+              <div style={overlayCard}>
+                <PropertyPanel width={360} overlay onToggleOverlay={() => { setPropMode('docked'); persistUI('fl:editor:propMode', 'docked') }} />
+              </div>
+            )}
           </div>
-          <ResizeHandle axis="x" sign={-1} size={propertyW} min={300} max={maxPropertyW} defaultSize={330} onResize={setPropertyW} onResizeEnd={(n) => saveSize('propertyW', n)} ariaLabel="속성 패널 너비 조절" />
-          <PropertyPanel width={propertyW} />
+          {propMode === 'docked' && (propCollapsed ? (
+            <button onClick={() => { setPropCollapsed(false); persistUI('fl:editor:propColl', '0') }} title="속성 패널 펼치기" aria-label="속성 패널 펼치기" style={expandStrip}>«</button>
+          ) : (
+            <>
+              <ResizeHandle axis="x" sign={-1} size={propertyW} min={300} max={maxPropertyW} defaultSize={330} onResize={setPropertyW} onResizeEnd={(n) => saveSize('propertyW', n)} ariaLabel="속성 패널 너비 조절" />
+              <PropertyPanel width={propertyW}
+                onToggleOverlay={() => { setPropMode('overlay'); persistUI('fl:editor:propMode', 'overlay') }}
+                onCollapse={() => { setPropCollapsed(true); persistUI('fl:editor:propColl', '1') }} />
+            </>
+          ))}
         </div>
         {showLog && (
           <>
@@ -464,3 +488,7 @@ const ghostBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', 
 const runBtn: CSSProperties = { ...ghostBtn, border: 'none', background: 'var(--fl-ok)', color: '#fff' }
 const stopBtn: CSSProperties = { ...ghostBtn, border: 'none', background: 'var(--fl-fail)', color: '#fff' }
 const saveBtn: CSSProperties = { ...ghostBtn, border: 'none', background: 'var(--fl-primary)', color: '#fff' }
+// 접힌 사이드바를 펼치는 얇은 세로 바
+const expandStrip: CSSProperties = { width: 22, flexShrink: 0, border: 'none', borderLeft: '1px solid var(--fl-border)', borderRight: '1px solid var(--fl-border)', background: 'var(--fl-surface)', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 13 }
+// 캔버스 위에 뜨는 속성 오버레이 카드
+const overlayCard: CSSProperties = { position: 'absolute', top: 12, right: 12, width: 360, maxHeight: 'calc(100% - 24px)', display: 'flex', flexDirection: 'column', background: 'var(--fl-surface)', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius)', boxShadow: 'var(--fl-shadow-lg)', zIndex: 20, overflow: 'hidden' }

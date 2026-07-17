@@ -7,7 +7,7 @@ import { useEditorStore } from '../store/editorStore'
 import { PALETTE } from './nodeFactory'
 import { catColor, typeIcon } from './nodeMeta'
 
-export function Palette({ width = 200 }: { width?: number }) {
+export function Palette({ width = 200, onCollapse }: { width?: number; onCollapse?: () => void }) {
   const addNode = useEditorStore((s) => s.addNode)
   const addNodeFromTemplate = useEditorStore((s) => s.addNodeFromTemplate)
   const palette = useEditorStore((s) => s.palette)
@@ -48,7 +48,13 @@ export function Palette({ width = 200 }: { width?: number }) {
         overflowY: 'auto',
       }}
     >
-      <div style={groupTitle}>노드</div>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={groupTitle}>노드</div>
+        {onCollapse && (
+          <button onClick={onCollapse} aria-label="팔레트 접기" title="접기"
+            style={{ width: 24, height: 24, border: '1px solid var(--fl-border)', borderRadius: 6, background: 'var(--fl-surface)', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 13 }}>«</button>
+        )}
+      </div>
       {PALETTE.map((p) => (
         <button
           key={p.type}

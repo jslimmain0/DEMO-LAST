@@ -50,6 +50,10 @@ function upstreamSources(nodes: Node[], edges: Edge[], targetId: string): Bindab
     } else {
       for (const o of n.outputs ?? []) items.push({ key: o.key, type: o.type, scope: null, group: 'response' })
     }
+    // HTTP 상태코드 — 검증 노드에서 {{ httpStatus@노드 }} == 200 / != 404 로 상태 검증
+    if (n.type === 'http' && !items.some((it) => it.key === 'httpStatus')) {
+      items.push({ key: 'httpStatus', type: 'HTTP 상태', scope: null, group: 'response' })
+    }
     if (n.type === 'wait') {
       // 콜백 대기 노드 고정 제공 항목 — 수신 URL(실행 시 시드)과 콜백 원문(body). 선언 outputs 는 위에서 이미 노출.
       if (!items.some((it) => it.key === 'url')) items.push({ key: 'url', type: '수신 URL', scope: null, group: 'response' })

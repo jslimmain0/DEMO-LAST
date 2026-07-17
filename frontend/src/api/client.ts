@@ -10,6 +10,7 @@ import type {
   ResumeRequest,
   RunRequest,
   SaveVersionRequest,
+  SingleNodeRunResult,
 } from './types'
 
 // Vite 프록시(/api → 18080) 기준 동일 오리진 호출. (운영 절대경로 주입은 후속)
@@ -108,6 +109,9 @@ export const runsApi = {
     http.get<ExecutionSummary[]>(`/flows/${flowId}/runs`, { params: { limit } }).then((r) => r.data),
   resume: (executionId: string, body: ResumeRequest) =>
     http.post<ExecutionDetail>(`/executions/${executionId}/resume`, body).then((r) => r.data),
+  // 단일 노드 독립 실행 — 그 노드만 새 컨텍스트로 즉석 실행(이력 미저장, 상류 바인딩 null)
+  runNode: (flowId: string, nodeId: string) =>
+    http.post<SingleNodeRunResult>(`/flows/${flowId}/nodes/${nodeId}/run`, {}).then((r) => r.data),
   recent: (limit = 50) =>
     http.get<ExecutionSummary[]>('/executions', { params: { limit } }).then((r) => r.data),
 }

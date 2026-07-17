@@ -832,6 +832,25 @@ design/   theme(라이트/다크) · index.css(CSS 변수)
 - **Mock**([MockServerEditor](frontend/src/routes/MockServerEditor.tsx)): 라우트 **▶ 원클릭 테스트**(경로 파라미터 예시 채움, 인라인 결과) · 라우트/규칙 **복제** · **OpenAPI→라우트 자동 생성**(`openApiToMockRoutes`). [OpenApiImportDialog](frontend/src/openapi/OpenApiImportDialog.tsx): **URL 에서 가져오기**(fetch, CORS 안내).
 - 검증: 프론트 tsc/build/oxlint · 백엔드 test 77 + compileKotlin 통과. 적대적 멀티에이전트 리뷰(3관점×검증) 반영.
 
+## 최근 변경 (2026-07-18) — 실행 환경(env)·조건편집기 공용화·가져오기 통합 (사용자 친화 UX 선별 배치)
+멀티에이전트 프로젝트 평가([docs/flowlink-user-critique.md](docs/flowlink-user-critique.md), 커밋 제외) 중 **UI/UX·간편함** 기준 항목을 선별해 구현.
+- **실행 환경(dev/staging/prod) 전환 + `{{ 키@env }}`**: [lib/environments.ts](frontend/src/lib/environments.ts)(localStorage `fl:environments` — 활성 환경+변수, useSyncExternalStore) ·
+  [EnvManagerDialog](frontend/src/components/EnvManagerDialog.tsx)(환경 CRUD·변수 편집)·[EnvSwitcher](frontend/src/components/EnvSwitcher.tsx)(에디터 상단 스위처, IssueBadge 옆). 실행 시
+  활성 환경 변수를 `RunRequest.env`(신규 `JsonNode?`)로 전송 → [ExecutionService](backend/src/main/kotlin/com/flowlink/execution/ExecutionService.kt) `seedInput`→`seedScope` 로
+  input/env 공통 시드(`ctx.putOutput("env", map)`). [upstream.ts](frontend/src/binding/upstream.ts) 가 활성 env 키를 바인딩 소스(`env`)로 노출 → `{{ 키@env }}` 칩.
+  시드는 실행 시작 시점이라 **bare `{{ 키 }}` 는 상위 노드 우선, 없으면 env 폴백**(낮은 우선순위 기본값 — baseUrl/토큰을 노드마다 안 고치고 전환).
+  [Editor.onRun](frontend/src/routes/Editor.tsx) 이 `activeEnvVars()` 를 실어 보냄. ⚠ env 값은 문자열 저장(비교는 `== '1500'`).
+- **IF·ASSERT 조건식 공용 [ConditionEditor](frontend/src/panels/PropertyPanel.tsx)**: 두 노드가 쓰던 동일 SpEL 조건 UI(라벨·토큰입력·빠른삽입·빈조건 경고)를 한 컴포넌트로 통합(노드별 안내는 children).
+- **응답타입 form/urlencoded 통합**: 드롭다운에서 `form` 제거(백엔드 파싱 동일) → `normRespType` 이 저장된 `form` 그래프를 `urlencoded` 로 표시(선택값 blank 방지), 동작·후방호환 불변.
+- **가져오기 통합 [ImportDialog](frontend/src/openapi/ImportDialog.tsx)**: 진입점 2개(API 가져오기·가져오기)를 탭 하나로 — [워크플로 JSON | OpenAPI/Swagger | cURL].
+  `OpenApiImportDialog`→`OpenApiImportBody`, `WorkflowIODialog` ImportTab→`WorkflowImportBody` 로 본문 추출(재사용). **cURL 탭**은 curl→HTTP 노드 하나 생성 후 `focusNode` 로 이동. "내보내기"(WorkflowIODialog export)는 유지.
+- **실행 이력**([Executions](frontend/src/routes/Executions.tsx)): 행별 **↻ 재실행** + **더 보기**(50→200).
+- 검증: 환경 e2e 6/6(명시@env·bare 폴백·문자열 비교·env 미전송 무회귀·상위 노드 우선순위, H2 새 jar 재확인) + 브라우저 실측(환경 생성/변수 편집/전환/삭제·가져오기 3탭·cURL→노드·콘솔 무에러) + 프론트 tsc/build/oxlint·백엔드 compileKotlin.
+- **적대적 멀티에이전트 리뷰(4관점 파인더 → 발견별 반박 투표, 3건 확정) 반영**: (1)[medium] `VarEditor` 의 sig 재동기화가 **작성 중(빈 키) 변수 행을 조용히 버리던 유실 버그** →
+  `key={환경}` 리마운트 + rows 를 로컬 source of truth 로(초기값만 initial prop). (2)[low] 키 전체 삭제(select-all)로 재명명 시 행+값 소실 — 같은 수정으로 해소.
+  (3)[low] `BindingPicker` sources 가 env store 미구독이라 활성 env 변수 추가가 즉시 반영 안 되던 stale → PropertyPanel 이 `useEnvStore` 구독 + 활성 env 시그니처를 memo 입력에 포함.
+- ⚠ 환경은 브라우저 localStorage 개인 스코프(팀 공유 아님·서버 미저장). cURL 복사는 토큰을 그대로 실어 그대로는 실행 불가(템플릿).
+
 ## 참고 문서
 - `backend/README.md` — Phase 1 구현 범위 표, API 요약, 실행 가이드
 - `docs/` — UI/UX 멀티에이전트 설계 토론 로그, 엔터프라이즈 고도화 설계

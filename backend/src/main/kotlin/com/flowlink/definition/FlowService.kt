@@ -37,6 +37,7 @@ class FlowService(
     // 목록 카드 미리보기 + 내용 검색을 위해 현재 버전 그래프에서 노드 요약을 뽑는다(서버측 1왕복 — 카드별 재조회 N+1 제거).
     private fun summaryOf(flow: Flow): FlowSummary {
         val types = ArrayList<String>()
+        val cats = ArrayList<String>()
         val text = StringBuilder()
         var count = 0
         try {
@@ -46,7 +47,10 @@ class FlowService(
                     val t = n.get("type")?.asText() ?: continue
                     if (t == "note" || t == "group") continue
                     count++
-                    if (types.size < 12) types.add(t)
+                    if (types.size < 12) {
+                        types.add(t)
+                        cats.add(n.get("cat")?.asText()?.takeIf { it.isNotBlank() } ?: t)
+                    }
                     if (text.length < 600) {
                         for (fld in SEARCH_FIELDS) {
                             val v = n.get(fld)?.asText()
@@ -59,7 +63,7 @@ class FlowService(
         val blob = text.toString().trim().lowercase().take(700)
         return FlowSummary(
             flow.id, flow.name, flow.description, flow.currentVersion, flow.folderId, flow.updatedAt,
-            count, types, blob.ifBlank { null }
+            count, types, cats, blob.ifBlank { null }
         )
     }
 

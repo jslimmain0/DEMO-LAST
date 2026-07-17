@@ -460,8 +460,8 @@ export function Dashboard() {
 // ---------- hero ----------
 
 function Hero({ flow, lastRun }: { flow: FlowSummary; lastRun?: ExecutionSummary }) {
-  // 목록 요약(nodeTypes)로 미리보기 — 카드별 graph 재조회(N+1) 없이 그린다
-  const miniNodes = (flow.nodeTypes ?? []).map((t) => ({ type: t }))
+  // 목록 요약(nodeTypes/nodeCats)로 미리보기 — 카드별 graph 재조회(N+1) 없이 그린다
+  const miniNodes = (flow.nodeTypes ?? []).map((t, i) => ({ type: t, cat: flow.nodeCats?.[i] }))
   return (
     <section style={heroBand} aria-label="최근 워크플로">
       <div style={{ fontSize: 'var(--fl-fs-xs)', fontFamily: 'var(--fl-font-mono)', color: 'var(--fl-text-muted)', letterSpacing: '.04em', textTransform: 'uppercase' }}>최근 작업</div>
@@ -508,8 +508,8 @@ function FlowCard({ flow, lastRun, folderOptions, selectMode, selected, pinned, 
   readOnly?: boolean // viewer — 복제/이동/삭제/드래그 숨김(서버 403 이 최종 권위, UI 는 편의)
 }) {
   const navigate = useNavigate()
-  // 목록 요약(nodeTypes/nodeCount)로 미리보기 — 카드별 graph 재조회(N+1) 제거
-  const cats = flow.nodeTypes
+  // 목록 요약(nodeCats/nodeCount)로 미리보기 — 카드별 graph 재조회(N+1) 제거
+  const cats = flow.nodeCats ?? flow.nodeTypes
   const spine = dominantCat(cats, flow.id)
   const nodeCount = flow.nodeCount
   const [menu, setMenu] = useState(false)

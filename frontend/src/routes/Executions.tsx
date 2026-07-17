@@ -6,6 +6,7 @@ import type { ExecutionStatus, ExecutionSummary } from '../api/types'
 import { runsApi } from '../api/client'
 import { AppShellTier1 } from '../app/AppShell'
 import { StatusBadge } from '../components/StatusBadge'
+import { useEscapeClose } from '../components/useEscapeClose'
 import { duration, relTime } from '../lib/format'
 
 const STATUS_COLOR: Record<string, string> = {
@@ -114,12 +115,12 @@ export function Executions() {
 
 // 과거 실행 상세 — 노드별 요청/응답/출력 재열람(에디터 안 열고)
 function ExecutionDetailModal({ execId, onClose }: { execId: string; onClose: () => void }) {
-  const { data, isLoading } = useQuery({ queryKey: ['execution', execId], queryFn: () => runsApi.get(execId) })
+  const { data, isLoading, isError, refetch } = useQuery({ queryKey: ['execution', execId], queryFn: () => runsApi.get(execId) })
   const [openNode, setOpenNode] = useState<string | null>(null)
+  useEscapeClose(onClose)
   return (
     <div role="dialog" aria-modal="true" aria-label="실행 상세" onClick={onClose}
-      style={{ position: 'fixed', inset: 0, background: 'rgba(26,29,39,.4)', zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}
-      onKeyDown={(e) => { if (e.key === 'Escape') onClose() }}>
+      style={{ position: 'fixed', inset: 0, background: 'rgba(26,29,39,.4)', zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
       <div onClick={(e) => e.stopPropagation()} style={{ width: 720, maxWidth: '100%', maxHeight: '85vh', background: 'var(--fl-surface)', borderRadius: 'var(--fl-radius-lg)', boxShadow: 'var(--fl-shadow-lg)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         <header style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 16px', borderBottom: '1px solid var(--fl-border)' }}>
           <strong style={{ fontFamily: 'var(--fl-font-head)', fontSize: 15 }}>실행 상세</strong>
@@ -129,6 +130,12 @@ function ExecutionDetailModal({ execId, onClose }: { execId: string; onClose: ()
         </header>
         <div style={{ overflowY: 'auto', flex: 1 }}>
           {isLoading && <div style={{ padding: 20, color: 'var(--fl-text-muted)', fontSize: 13 }}>불러오는 중…</div>}
+          {isError && (
+            <div style={{ padding: 20, display: 'flex', alignItems: 'center', gap: 12 }}>
+              <span style={{ fontSize: 13, color: 'var(--fl-fail)' }}>실행 상세를 불러오지 못했습니다.</span>
+              <button onClick={() => refetch()} style={{ ...ghostBtn, padding: '6px 12px' }}>다시 시도</button>
+            </div>
+          )}
           {data?.nodes.map((nd) => {
             const open = openNode === nd.id
             return (

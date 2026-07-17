@@ -51,7 +51,7 @@ class FlowController(private val service: FlowService) {
 
     // 이름·설명 편집(에디터를 열지 않고 대시보드에서) — 버전 그래프는 건드리지 않는다
     @PatchMapping("/{id}")
-    fun updateMeta(@PathVariable id: UUID, @RequestBody req: UpdateFlowMetaRequest): FlowDetail =
+    fun updateMeta(@PathVariable id: UUID, @Valid @RequestBody req: UpdateFlowMetaRequest): FlowDetail =
         service.updateMeta(id, req.name, req.description)
 
     @PostMapping("/{id}/versions")

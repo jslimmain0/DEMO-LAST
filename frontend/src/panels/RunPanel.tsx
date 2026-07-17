@@ -124,7 +124,7 @@ export function RunPanel({
               >
                 <span style={{ width: 18, color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)', fontSize: 11 }}>{nd.seq}</span>
                 <StatusBadge status={nd.status} />
-                {nd.nodeType === 'http' && nd.httpStatus != null && <MethodTag method={methodOf(nd.requestText)} />}
+                {nd.nodeType === 'http' && nd.httpStatus != null && methodOf(nd.requestText) && <MethodTag method={methodOf(nd.requestText)!} />}
                 <span style={{ fontSize: 13, fontWeight: 500 }}>{nd.nodeName || nd.nodeId}</span>
                 <span style={{ marginLeft: 'auto', display: 'flex', gap: 12, color: 'var(--fl-text-muted)', fontSize: 12, fontFamily: 'var(--fl-font-mono)' }}>
                   {nd.httpStatus != null && <span>{nd.httpStatus}</span>}
@@ -181,10 +181,11 @@ function WaitBanner({ status }: { status: WaitStatus }) {
   )
 }
 
-// 실행 로그의 요청 텍스트("GET https://…") 첫 토큰에서 실제 메서드 추출(응답에 method 필드가 없어서)
-function methodOf(requestText: string | null | undefined): HttpMethod {
+// 실행 로그의 요청 텍스트("GET https://…") 첫 토큰에서 실제 메서드 추출(응답에 method 필드가 없어서).
+// 본문 미캡처(redacted)면 복원 불가 → null(잘못된 GET 대신 태그를 아예 안 보인다).
+function methodOf(requestText: string | null | undefined): HttpMethod | null {
   const m = (requestText?.trim().split(/\s+/)[0] ?? '').toUpperCase()
-  return (['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD'].includes(m) ? m : 'GET') as HttpMethod
+  return (['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD'].includes(m) ? m : null) as HttpMethod | null
 }
 
 function LogBlock({ title, text }: { title: string; text: string | null | undefined }) {

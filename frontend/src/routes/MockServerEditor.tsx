@@ -75,6 +75,13 @@ export function MockServerEditor() {
   const d = detail.data
   const base = d ? mockBaseUrl(d.slug, me?.tenant) : ''
 
+  // 테스트는 저장된 mock 을 호출하므로, 미저장 편집이 있으면 먼저 저장(권한 없으면 거절)
+  const ensureSaved = async (): Promise<boolean> => {
+    if (!dirty) return true
+    if (!canEdit) { toast('미저장 편집이 있습니다 — 먼저 저장하세요(테스트는 저장된 mock 을 호출합니다).', 'error'); return false }
+    try { await save.mutateAsync(); return true } catch { toast('저장 실패 — 미저장 편집을 반영하지 못했습니다.', 'error'); return false }
+  }
+
   return (
     <AppShellTier1>
       <div style={{ maxWidth: 1040, margin: '0 auto', padding: '24px 24px 60px' }}>
@@ -113,6 +120,7 @@ export function MockServerEditor() {
 
             <RoutesEditor
               base={base}
+              ensureSaved={ensureSaved}
               routes={spec.routes ?? []}
               onChange={(routes) => mutate((s) => ({ ...s, routes }))}
             />
@@ -122,7 +130,7 @@ export function MockServerEditor() {
               onChange={(tcp) => mutate((s) => ({ ...s, tcp }))}
             />
 
-            <TestPanel base={base} />
+            <TestPanel base={base} ensureSaved={ensureSaved} />
           </>
         )}
       </div>
@@ -164,7 +172,7 @@ function openApiToMockRoutes(text: string): MockRouteSpec[] {
   return out
 }
 
-function RoutesEditor({ base, routes, onChange }: { base: string; routes: MockRouteSpec[]; onChange: (r: MockRouteSpec[]) => void }) {
+function RoutesEditor({ base, ensureSaved, routes, onChange }: { base: string; ensureSaved: () => Promise<boolean>; routes: MockRouteSpec[]; onChange: (r: MockRouteSpec[]) => void }) {
   const setRoute = (i: number, r: MockRouteSpec) => onChange(routes.map((x, xi) => (xi === i ? r : x)))
   const move = (i: number, dir: -1 | 1) => {
     const j = i + dir
@@ -216,6 +224,7 @@ function RoutesEditor({ base, routes, onChange }: { base: string; routes: MockRo
           <RouteCard
             key={r.id}
             base={base}
+            ensureSaved={ensureSaved}
             route={r}
             onChange={(nr) => setRoute(i, nr)}
             onRemove={() => onChange(routes.filter((_, xi) => xi !== i))}
@@ -229,8 +238,9 @@ function RoutesEditor({ base, routes, onChange }: { base: string; routes: MockRo
   )
 }
 
-function RouteCard({ base, route, onChange, onRemove, onDup, onUp, onDown }: {
+function RouteCard({ base, ensureSaved, route, onChange, onRemove, onDup, onUp, onDown }: {
   base: string
+  ensureSaved: () => Promise<boolean>
   route: MockRouteSpec
   onChange: (r: MockRouteSpec) => void
   onRemove: () => void
@@ -247,6 +257,8 @@ function RouteCard({ base, route, onChange, onRemove, onDup, onUp, onDown }: {
   const [test, setTest] = useState<{ status: number; body: string } | string | null>(null)
   const [testing, setTesting] = useState(false)
   const runTest = async () => {
+    // 테스트는 저장된 mock 을 호출하므로 미저장 편집을 먼저 반영(아니면 stale 상태 테스트)
+    if (!(await ensureSaved())) return
     setTesting(true); setTest(null)
     try {
       const p = route.path.replace(/\{[^}]+\}/g, '1') // {id} → 1
@@ -479,7 +491,7 @@ function TcpEditor({ tcp, onChange }: { tcp: MockTcpSpec | null; onChange: (t: M
 
 // ---------- 보내보기 ----------
 
-function TestPanel({ base }: { base: string }) {
+function TestPanel({ base, ensureSaved }: { base: string; ensureSaved: () => Promise<boolean> }) {
   const [method, setMethod] = useState('GET')
   const [path, setPath] = useState('/')
   const [body, setBody] = useState('')
@@ -487,6 +499,7 @@ function TestPanel({ base }: { base: string }) {
   const [busy, setBusy] = useState(false)
 
   const send = async () => {
+    if (!(await ensureSaved())) return
     setBusy(true)
     setResult(null)
     try {

@@ -17,6 +17,7 @@ data class FlowSummary(
     val updatedAt: Instant,
     val nodeCount: Int = 0,
     val nodeTypes: List<String> = emptyList(),
+    val nodeCats: List<String> = emptyList(), // 노드 카테고리(cat ?: type) — 미리보기 색상 보존(auth/bank/card 등)
     val nodeText: String? = null
 ) {
     companion object {

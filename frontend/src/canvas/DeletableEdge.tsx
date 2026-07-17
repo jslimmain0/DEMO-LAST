@@ -16,18 +16,27 @@ export function DeletableEdge({ id, source, target, sourceHandleId, sourceX, sou
   let portLabel: string | null = null
   let portColor = 'var(--fl-text-muted)'
   let cycle: (() => void) | null = null
+  // 같은 소스→타깃에 그 포트로 이미 다른 엣지가 있으면 전환은 dedup-삭제로 이 엣지를 잃게 되므로 그런 포트는 건너뛴다.
+  const collides = (port: string) => useEditorStore.getState().edges.some((e) => e.id !== id && e.source === source && e.target === target && (e.sourceHandle ?? 'out') === port)
   if (srcType === 'if' && (handle === 'true' || handle === 'false')) {
     portLabel = handle === 'true' ? 'T' : 'F'
     portColor = handle === 'true' ? 'var(--fl-ok)' : 'var(--fl-fail)'
-    cycle = () => updateEdge(id, { source, target, sourceHandle: handle === 'true' ? 'false' : 'true', targetHandle: null })
+    cycle = () => {
+      const next = handle === 'true' ? 'false' : 'true'
+      if (collides(next)) return // 반대 갈래가 이미 같은 타깃에 연결됨 → 무시(엣지 유실 방지)
+      updateEdge(id, { source, target, sourceHandle: next, targetHandle: null })
+    }
   } else if (srcType === 'switch' && switchPorts.length > 0) {
     const p = switchPorts.find((x) => x.id === handle)
     portLabel = String(p?.label || handle)
     portColor = 'var(--fl-put)'
     cycle = () => {
-      const i = switchPorts.findIndex((x) => x.id === handle)
-      const next = switchPorts[(i + 1) % switchPorts.length]
-      updateEdge(id, { source, target, sourceHandle: next.id, targetHandle: null })
+      const i0 = switchPorts.findIndex((x) => x.id === handle)
+      for (let k = 1; k < switchPorts.length; k++) {
+        const cand = switchPorts[(i0 + k) % switchPorts.length]
+        if (!collides(cand.id)) { updateEdge(id, { source, target, sourceHandle: cand.id, targetHandle: null }); return }
+      }
+      // 남은 트랙이 전부 같은 타깃에 이미 연결됨 → 무시
     }
   }
 

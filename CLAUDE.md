@@ -823,6 +823,15 @@ design/   theme(라이트/다크) · index.css(CSS 변수)
 - **입력대기 버그 조사 결론**: "선 안 이어진 input 노드가 실행 시 뜬다"는 **백엔드 `FlowExecutor.initialActive` 를 START 전용으로 고친 커밋(f028f6c) 이전 빌드**의 증상. 헤드리스 재현으로 현재 빌드는 floating input 이 **SKIPPED**(pendingInput=null) 확인 — 프론트는 서버 pendingInput 의 충실한 미러라 단독으로 못 띄운다. 위 미연결 표시는 재발 방지용.
 - 검증: 브라우저 — 미연결 점선+배너, 프리셋 GET↔JSON(본문 섹션 등장·Content-Type 칩·노드 JSON 배지), 4개 섹션, 요청 미리보기(URL 병합 유지). tsc/build/oxlint 통과.
 
+### 전 영역 UX 개선 묶음(~25) — 캔버스·노드·대시보드·실행·Mock (코드베이스 서베이 기반)
+"유용/간소화 20개 리스트업 → 다 해줘(대시보드·Mock 포함)". 6관점 병렬 서베이(41후보)에서 추려 구현. 대부분 프론트, 대시보드 N+1 만 백엔드.
+- **캔버스/편집**: 엣지 드래그 **재연결**(FlowCanvas `onReconnect`+[editorStore](frontend/src/store/editorStore.ts) `updateEdge`, sourceHandle 승계) · **중복 평행 엣지 방지**(`onConnect`/`updateEdge` dedup + `isValidConnection`) · 분기/스위치 엣지 **포트 칩(T/F·트랙)+클릭 전환**([DeletableEdge](frontend/src/canvas/DeletableEdge.tsx)) · **다중선택 정렬/분배 툴바**(`alignNodes`/`distributeNodes`) · **방향키 이동**(Shift=4칸)·**Ctrl+A**·**Esc 해제**·**? 도움말**(전역) · **문제 요약 배지**([lib/issues.ts](frontend/src/lib/issues.ts) `collectIssues` — 미연결·빈 필수값 → 클릭 시 `focusNode` 점프) · **선택영역 맞춤 줌**(⛶) · 노드 카드 `title` 툴팁.
+- **노드 설정**([PropertyPanel](frontend/src/panels/PropertyPanel.tsx)): transform 재선택 시 **입력 바인딩 보존**(파괴적 리셋 제거) · SET 시크릿 **값 표시/숨김(👁)** · TCP 필드 **바이트 오프셋(@N)+총길이** · 목록 **행 순서 이동(▲▼)**(TCP/출력/입력, `moveInList`/`RowMove`) · input 안내메시지 `{ }` 삽입 · **데이터 삽입 피커 키보드 선택**([BindingPicker](frontend/src/binding/BindingPicker.tsx) ↑↓/Enter).
+- **대시보드**([Dashboard](frontend/src/routes/Dashboard.tsx)): 카드 미리보기 **N+1 제거** — [FlowSummary](backend/src/main/kotlin/com/flowlink/definition/dto/FlowSummary.kt) 에 nodeCount/nodeTypes/**nodeText** 동봉([FlowService](backend/src/main/kotlin/com/flowlink/definition/FlowService.kt) `summaryOf` 가 현재 버전 그래프에서 서버측 1회 추출) → 카드가 `flow.nodeTypes` 로 그림 · **노드 내용 검색**(nodeText: 이름/URL/조건 등, 시크릿 값 제외) · **즐겨찾기(핀)**(localStorage, 홈 상단) · **이름 변경**(`PATCH /flows/{id}` `updateMeta`, 에디터 안 열고) · 폴더/삭제 다이얼로그([AskDialog](frontend/src/components/AskDialog.tsx) — `prompt`/`confirm` 제거).
+- **실행 이력**([Executions](frontend/src/routes/Executions.tsx)): 행 클릭 → **과거 실행 상세 모달**(노드별 요청/응답/출력 재열람) · 상태 필터·검색. [RunPanel](frontend/src/panels/RunPanel.tsx): **실패 노드 자동 펼침** · 메서드 태그 정확화(requestText 파싱, 하드코딩 GET 버그) · **로그 내보내기(.txt)**.
+- **Mock**([MockServerEditor](frontend/src/routes/MockServerEditor.tsx)): 라우트 **▶ 원클릭 테스트**(경로 파라미터 예시 채움, 인라인 결과) · 라우트/규칙 **복제** · **OpenAPI→라우트 자동 생성**(`openApiToMockRoutes`). [OpenApiImportDialog](frontend/src/openapi/OpenApiImportDialog.tsx): **URL 에서 가져오기**(fetch, CORS 안내).
+- 검증: 프론트 tsc/build/oxlint · 백엔드 test 77 + compileKotlin 통과. 적대적 멀티에이전트 리뷰(3관점×검증) 반영.
+
 ## 참고 문서
 - `backend/README.md` — Phase 1 구현 범위 표, API 요약, 실행 가이드
 - `docs/` — UI/UX 멀티에이전트 설계 토론 로그, 엔터프라이즈 고도화 설계

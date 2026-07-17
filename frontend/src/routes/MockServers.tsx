@@ -6,6 +6,8 @@ import type { MockServerSummary } from '../api/types'
 import { mockBaseUrl, mocksApi } from '../api/client'
 import { AppShellTier1 } from '../app/AppShell'
 import { useAuth, usePermissions } from '../auth/AuthContext'
+import { AskDialog } from '../components/AskDialog'
+import type { AskSpec } from '../components/AskDialog'
 import { apiErrorMessage } from '../lib/apiError'
 import { relTime } from '../lib/format'
 
@@ -19,6 +21,7 @@ export function MockServers() {
   const { canEdit } = usePermissions()
   const { me } = useAuth()
   const servers = useQuery({ queryKey: ['mock-servers'], queryFn: mocksApi.list })
+  const [ask, setAsk] = useState<AskSpec | null>(null)
   const [name, setName] = useState('')
   const [slug, setSlug] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -65,7 +68,7 @@ export function MockServers() {
 
         <div style={{ display: 'grid', gap: 10, marginTop: 24 }}>
           {list.map((s) => (
-            <MockCard key={s.id} server={s} tenant={me?.tenant} readOnly={!canEdit} onToggle={() => toggle.mutate(s)} onRemove={() => { if (window.confirm(`'${s.name}' Mock 서버를 삭제할까요? 되돌릴 수 없습니다.`)) remove.mutate(s.id) }} />
+            <MockCard key={s.id} server={s} tenant={me?.tenant} readOnly={!canEdit} onToggle={() => toggle.mutate(s)} onRemove={() => setAsk({ title: 'Mock 서버 삭제', danger: true, confirmLabel: '삭제', message: `'${s.name}' Mock 서버를 삭제할까요? 되돌릴 수 없습니다.`, onConfirm: () => remove.mutate(s.id) })} />
           ))}
           {servers.isSuccess && list.length === 0 && !creating && (
             <div style={emptyBox}>
@@ -78,6 +81,7 @@ export function MockServers() {
           )}
         </div>
       </div>
+      {ask && <AskDialog spec={ask} onClose={() => setAsk(null)} />}
     </AppShellTier1>
   )
 }

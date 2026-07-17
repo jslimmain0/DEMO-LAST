@@ -233,6 +233,7 @@ export function FlowCanvas() {
         connectionLineStyle={connectionLineStyle}
         snapToGrid
         snapGrid={[GRID, GRID]}
+        disableKeyboardA11y
         onNodeClick={(_, n) => selectNode(n.id)}
         onPaneClick={() => { selectNode(null); setCtxMenu(null); setAddMenu(null) }}
         onNodeContextMenu={(e, n) => { e.preventDefault(); selectNode(n.id); setCtxMenu({ x: e.clientX, y: e.clientY, nodeId: n.id, nodeType: (n.data as { type?: string }).type ?? '' }) }}

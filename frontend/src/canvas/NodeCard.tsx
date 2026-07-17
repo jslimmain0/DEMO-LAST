@@ -2,7 +2,7 @@ import { Handle, Position } from '@xyflow/react'
 import type { NodeProps } from '@xyflow/react'
 import type { HttpMethod } from '../api/types'
 import { MethodTag } from '../components/MethodTag'
-import { getReachableCached } from '../lib/reachable'
+import { getReachInfoCached } from '../lib/reachable'
 import { useEditorStore } from '../store/editorStore'
 import { asGraphNode } from './graphAdapter'
 import { catColor, typeIcon, typeLabel } from './nodeMeta'
@@ -14,8 +14,8 @@ export function NodeCard({ data, selected }: NodeProps) {
   // 시작에서 도달 못 하는 실행 노드 = 실행 시 건너뜀. 실행 전에 점선 테두리로 미리 표시.
   const unreachable = useEditorStore((s) => {
     if (n.type === 'start' || n.type === 'note' || n.type === 'group') return false
-    if (!s.nodes.some((x) => (x.data as { type?: string } | undefined)?.type === 'start')) return false
-    return !getReachableCached(s.nodes, s.edges).has(n.id)
+    const info = getReachInfoCached(s.nodes, s.edges)
+    return info.hasStart && !info.reachable.has(n.id)
   })
   const waiting = waitingId === n.id || runState === 'waiting'
   const running = runState === 'running'

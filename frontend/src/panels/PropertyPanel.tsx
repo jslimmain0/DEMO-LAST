@@ -15,7 +15,7 @@ import { asGraphNode } from '../canvas/graphAdapter'
 import { ANNO_COLORS, catColor, METHOD_COLOR, typeIcon, typeLabel } from '../canvas/nodeMeta'
 import { fieldsToRaw, rawToFields, headersToRaw, rawToHeaders } from '../lib/bodyConvert'
 import { parseCurl, toCurl } from '../lib/curl'
-import { isUnreachableExecutable, reachableFromStart } from '../lib/reachable'
+import { computeReachInfo, isUnreachableExecutable } from '../lib/reachable'
 import { bindingToToken, isTokenizable } from '../lib/tokenGrammar'
 import { newId } from '../lib/ids'
 import { useEditorStore } from '../store/editorStore'
@@ -84,8 +84,11 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
   const qc = useQueryClient()
   const { canPlatformAdmin, canEdit } = usePermissions()
 
-  // 다른 노드 선택 시 단일 실행 결과 초기화
-  useEffect(() => { setSingle(null); setSingleRunning(false) }, [selectedId])
+  // 다른 노드 선택 시 단일 실행 결과 + HTTP 임시 UI 상태 초기화(다른 노드로 새어가지 않게)
+  useEffect(() => {
+    setSingle(null); setSingleRunning(false)
+    setCurlText(null); setSecOverride({}); setPreviewOpen(false); setAdvOpen(false)
+  }, [selectedId])
 
   // 이 노드만 실행 — 새 컨텍스트로 즉석 실행(상류 바인딩 null). 대기/폼/입력/client 는 백엔드가 거절.
   const runSingle = async () => {
@@ -111,7 +114,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
   const upstreamIds = useMemo(() => (selectedId ? edges.filter((e) => e.target === selectedId).map((e) => e.source) : []), [edges, selectedId])
   const downstreamIds = useMemo(() => (selectedId ? edges.filter((e) => e.source === selectedId).map((e) => e.target) : []), [edges, selectedId])
   // 실행 도달성 — START 에서 못 오는 노드는 실행 시 건너뜀. 실행 전에 미리 경고.
-  const reachable = useMemo(() => reachableFromStart(nodes, edges), [nodes, edges])
+  const reachInfo = useMemo(() => computeReachInfo(nodes, edges), [nodes, edges])
 
   // 다른 노드를 고르면 변환 안내는 초기화
   useEffect(() => setBodyConvNote(null), [selectedId])
@@ -134,7 +137,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
 
   const id = node.id
   const rfNode = nodes.find((n) => n.id === id)
-  const unreachable = rfNode ? isUnreachableExecutable(rfNode, nodes, reachable) : false
+  const unreachable = rfNode ? isUnreachableExecutable(rfNode, reachInfo) : false
   const fields = node.fields ?? { params: [], headers: [], body: [] }
   const setRows = (t: 'params' | 'headers' | 'body', rows: NodeField[]) => update(id, { fields: { ...fields, [t]: rows } })
   const setInputField = (key: string, patch: Partial<NodeField>) => {
@@ -224,15 +227,22 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
     : (fields.headers ?? []).find((f) => (f.key ?? '').toLowerCase() === 'content-type')?.value
   const autoCT = bodyKind === 'json' ? 'application/json' : bodyKind === 'urlencoded' ? 'application/x-www-form-urlencoded' : bodyKind === 'xml' ? 'application/xml' : ''
   const cs = node.charset ?? 'UTF-8'
-  const contentType = hasBody ? (explicitCT || (autoCT && (node.reqMode !== 'client' && cs !== 'UTF-8') ? `${autoCT}; charset=${cs.toLowerCase() === 'ms949' ? 'windows-949' : cs.toLowerCase()}` : autoCT)) : ''
+  const wireCs = cs === 'MS949' ? 'windows-949' : cs // 백엔드 wireCharset 와 동일(MS949→windows-949, 그 외 cs.name() 대문자 유지)
+  // 백엔드는 explicit·auto 여부와 무관하게 (본문有 · 서버모드 · 비UTF-8 · charset 미포함) 이면 CT 에 charset 부착
+  const ctBase = hasBody ? (explicitCT || autoCT) : ''
+  const contentType = ctBase && node.reqMode !== 'client' && cs !== 'UTF-8' && !/charset/i.test(ctBase)
+    ? `${ctBase}; charset=${wireCs}`
+    : ctBase
 
   // 프리셋: 흔한 조합을 한 번에(method+bodyType). 현재 선택 하이라이트는 파생.
   const presetKey = method === 'GET' ? 'get' : (hasBody && bodyKind === 'json') ? 'json' : (hasBody && bodyKind === 'urlencoded') ? 'form' : (hasBody && bodyKind === 'raw') ? 'raw' : 'other'
   const applyPreset = (k: string) => {
-    if (k === 'get') update(id, { method: 'GET' as HttpMethod })
-    else if (k === 'json') update(id, { method: (hasBody ? method : 'POST') as HttpMethod, bodyType: 'json' })
-    else if (k === 'form') update(id, { method: (hasBody ? method : 'POST') as HttpMethod, bodyType: 'urlencoded' })
-    else if (k === 'raw') update(id, { method: (hasBody ? method : 'POST') as HttpMethod, bodyType: 'raw', jsonRaw: true })
+    if (k === 'get') { update(id, { method: 'GET' as HttpMethod }); return }
+    if (!hasBody) update(id, { method: 'POST' as HttpMethod }) // GET/HEAD → POST 로 승격해 본문이 실제로 실리게
+    // 본문 종류 전환은 changeBodyType 로 — 내용 변환/정규화(보이는 것=보내는 것) 유지
+    if (k === 'json') changeBodyType('json')
+    else if (k === 'form') changeBodyType('urlencoded')
+    else if (k === 'raw') changeBodyType('raw')
   }
 
   // 섹션 접기 상태(사용자 오버라이드 우선, 없으면 스마트 기본값)
@@ -257,13 +267,26 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
     toast(`응답에서 출력 키 ${added.length}개를 추가했습니다.`, 'ok')
   }
 
-  // 요청 미리보기 — 보이는 것 = 보내는 것 (필드 쿼리는 URL 에 붙여 표기)
+  // 요청 미리보기 — 보이는 것 = 보내는 것 (쿼리는 URL 에 붙이고, 백엔드가 자동 붙이는 Content-Type 도 포함)
   const previewUrl = (() => {
-    if (node.paramsRaw || paramCount === 0) return mergedUrl
+    if (node.paramsRaw) {
+      const raw = (node.rawParams ?? '').trim()
+      return raw ? mergedUrl + (mergedUrl.includes('?') ? '&' : '?') + raw : mergedUrl
+    }
+    if (paramCount === 0) return mergedUrl
     const qs = (fields.params ?? []).filter((f) => f.key?.trim()).map((f) => `${f.key}=${f.bound ? bindingToToken(f.bound) : (f.value ?? '')}`).join('&')
     return mergedUrl + (mergedUrl.includes('?') ? '&' : '?') + qs
   })()
-  const previewText = `${method} ${previewUrl}\n${headerList().map((h) => `${h.key}: ${h.value}`).join('\n')}${hasBody && currentBody() ? '\n\n' + currentBody() : ''}`
+  const previewHeaders = (() => {
+    const hs = headerList().map((h) => ({ ...h }))
+    if (hasBody && contentType) {
+      const i = hs.findIndex((h) => h.key.toLowerCase() === 'content-type')
+      if (i < 0) hs.push({ key: 'Content-Type', value: contentType }) // 백엔드 putIfAbsent 자동 부착 미러
+      else if (node.reqMode !== 'client' && cs !== 'UTF-8' && !/charset/i.test(hs[i].value)) hs[i].value = `${hs[i].value}; charset=${wireCs}`
+    }
+    return hs
+  })()
+  const previewText = `${method} ${previewUrl}\n${previewHeaders.map((h) => `${h.key}: ${h.value}`).join('\n')}${hasBody && currentBody() ? '\n\n' + currentBody() : ''}`
 
   // [필드 ↔ Raw] 전환 시 현재 내용을 서로 변환(치환). 바인딩은 토큰으로, id 는 새로 부여.
   const switchBodyMode = (raw: boolean) => {

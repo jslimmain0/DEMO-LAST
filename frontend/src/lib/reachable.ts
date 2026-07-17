@@ -8,44 +8,50 @@ function nodeType(n: Node): string | undefined {
   return (n.data as { type?: string } | undefined)?.type
 }
 
-/** START 노드들에서 엣지를 따라 도달 가능한 노드 id 집합. */
-export function reachableFromStart(nodes: Node[], edges: Edge[]): Set<string> {
-  const starts = nodes.filter((n) => nodeType(n) === 'start').map((n) => n.id)
+export interface ReachInfo {
+  hasStart: boolean
+  reachable: Set<string>
+}
+
+/** START 도달성 + START 존재 여부. 주석(메모/영역) 노드는 백엔드가 실행/활성화에서 제외하므로 경로에서도 뺀다. */
+export function computeReachInfo(nodes: Node[], edges: Edge[]): ReachInfo {
+  const typeById = new Map<string, string | undefined>()
+  const starts: string[] = []
+  for (const n of nodes) {
+    const t = nodeType(n)
+    typeById.set(n.id, t)
+    if (t === 'start') starts.push(n.id)
+  }
   const adj = new Map<string, string[]>()
   for (const e of edges) {
+    if (ANNO.has(typeById.get(e.source) ?? '') || ANNO.has(typeById.get(e.target) ?? '')) continue
     if (!adj.has(e.source)) adj.set(e.source, [])
     adj.get(e.source)!.push(e.target)
   }
-  const seen = new Set<string>()
+  const reachable = new Set<string>()
   const stack = [...starts]
   while (stack.length) {
     const x = stack.pop()!
-    if (seen.has(x)) continue
-    seen.add(x)
+    if (reachable.has(x)) continue
+    reachable.add(x)
     for (const t of adj.get(x) ?? []) stack.push(t)
   }
-  return seen
+  return { hasStart: starts.length > 0, reachable }
 }
 
 // nodes/edges 참조가 그대로면 재계산하지 않는 캐시 — 노드마다 selector 로 조회해도 O(N) 유지.
-let _cache: { nodes: Node[]; edges: Edge[]; set: Set<string> } | null = null
-export function getReachableCached(nodes: Node[], edges: Edge[]): Set<string> {
-  if (_cache && _cache.nodes === nodes && _cache.edges === edges) return _cache.set
-  const set = reachableFromStart(nodes, edges)
-  _cache = { nodes, edges, set }
-  return set
-}
-
-/** 주석(메모/영역)이 아닌 = 실제 실행되는 노드인가. */
-export function isExecutableNode(n: Node): boolean {
-  const t = nodeType(n)
-  return !!t && !ANNO.has(t)
+let _cache: { nodes: Node[]; edges: Edge[]; info: ReachInfo } | null = null
+export function getReachInfoCached(nodes: Node[], edges: Edge[]): ReachInfo {
+  if (_cache && _cache.nodes === nodes && _cache.edges === edges) return _cache.info
+  const info = computeReachInfo(nodes, edges)
+  _cache = { nodes, edges, info }
+  return info
 }
 
 /** START 이 하나라도 있는데 이 노드가 도달 불가한(=실행 시 건너뛰는) 실행 노드인지. */
-export function isUnreachableExecutable(node: Node, nodes: Node[], reachable: Set<string>): boolean {
+export function isUnreachableExecutable(node: Node, info: ReachInfo): boolean {
   const t = nodeType(node)
   if (!t || ANNO.has(t) || t === 'start') return false
-  if (!nodes.some((n) => nodeType(n) === 'start')) return false // START 자체가 없으면 별도 문제(실행 시 안내)
-  return !reachable.has(node.id)
+  if (!info.hasStart) return false // START 자체가 없으면 별도 문제(실행 시 안내)
+  return !info.reachable.has(node.id)
 }

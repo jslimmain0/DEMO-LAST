@@ -811,6 +811,18 @@ design/   theme(라이트/다크) · index.css(CSS 변수)
 - 브라우저 실측: cURL 붙여넣기로 POST/헤더2/JSON바디 채움 → `?src=web` 을 "쿼리 1개를 Params 로 분리" → 탭 배지(Params(1)/Headers(2)/Body•) · 바로가기 칩으로 START↔HTTP 이동+센터링. tsc/build/oxlint 통과.
 - ⚠ cURL 복사는 토큰을 그대로 실어 그대로는 실행 불가(템플릿). 병합 URL 의 구(舊) 비토큰 `baseUrlBound` 는 레거시 칩+Path 유지.
 
+### HTTP 요청 3파트 통합(섹션)+프리셋 · 미연결 노드 경고 · 노드별 입력 검증 (~20 UX)
+"http 노드를 나누거나 간소화 / params·header·body 를 합쳐서 / 입력대기가 선이 안 이어졌는데 뜬다 / 사용자 친화적인 수정 20개" 요청.
+**설계 결론(적대적 멀티에이전트 조사)**: HTTP 를 JSON/FORM 노드로 쪼개지 **않는다** — 단일 백엔드 `HttpNodeExecutor` 를 UI 만 갈라 팔레트·모델을 분열시키는 함정. 대신 한 노드에서 요청 3파트를 합쳐 보이고 프리셋으로 간소화. **전부 프론트 UI — 실행 모델 무변경, 기존 그래프 호환.**
+- **요청 3파트 통합**: Params/Headers/Body **탭 → 항상 보이는 접이식 섹션**(쿼리(URL)/헤더/본문/응답, `HttpSection`). 한눈에 전체 요청. 섹션 기본 열림은 method/내용 기반(스마트).
+- **프리셋(GET/JSON/Form/Raw)**: `applyPreset` 이 method+본문종류를 한 번에. 본문 종류 셀렉트 = JSON/Form/XML/Raw(**‘Form’=bodyType `urlencoded`**, 백엔드 동일 처리라 `form`↔`urlencoded` 통합·기존 저장분 라운드트립). **GET/HEAD 는 본문 섹션 자동 숨김**(백엔드가 무시 — 데이터는 비파괴 보존)+안내.
+- **Content-Type 미리보기 칩**(`contentType` — build() 규칙 미러: bodyType→MIME, 명시 헤더 우선, 서버모드 비UTF-8 charset 부착), 노드 카드 **본문종류 배지**(JSON/FORM/XML/RAW).
+- **‘이 응답에서 키 채우기’**(`populateOutputs` — ‘이 노드만 실행’ 응답의 키를 출력에 자동 추가·타입 추론) · **‘요청 미리보기’**(`previewText` — 보이는 것=보내는 것, 필드 쿼리는 URL 에 붙여 표기)+복사.
+- **미연결 노드 경고**(입력대기 버그의 예방책): [lib/reachable.ts](frontend/src/lib/reachable.ts) `reachableFromStart`(+참조 캐시 `getReachableCached`). START 에서 도달 못 하는 실행 노드를 **캔버스 점선+‘⚠ 미연결’**([NodeCard](frontend/src/canvas/NodeCard.tsx))·**속성 패널 경고 배너**([PropertyPanel])로 **실행 전에** 표시.
+- **노드별 입력 검증/도움**: 빈 URL/조건식/폼 URL/변환 미선택/입력 필드 없음 → 인라인 경고. IF/ASSERT **조건 빠른 삽입 칩**(`!= null`·`== 200`·`!= 404`·`== '0000'`·`== true`, `appendCond`).
+- **입력대기 버그 조사 결론**: "선 안 이어진 input 노드가 실행 시 뜬다"는 **백엔드 `FlowExecutor.initialActive` 를 START 전용으로 고친 커밋(f028f6c) 이전 빌드**의 증상. 헤드리스 재현으로 현재 빌드는 floating input 이 **SKIPPED**(pendingInput=null) 확인 — 프론트는 서버 pendingInput 의 충실한 미러라 단독으로 못 띄운다. 위 미연결 표시는 재발 방지용.
+- 검증: 브라우저 — 미연결 점선+배너, 프리셋 GET↔JSON(본문 섹션 등장·Content-Type 칩·노드 JSON 배지), 4개 섹션, 요청 미리보기(URL 병합 유지). tsc/build/oxlint 통과.
+
 ## 참고 문서
 - `backend/README.md` — Phase 1 구현 범위 표, API 요약, 실행 가이드
 - `docs/` — UI/UX 멀티에이전트 설계 토론 로그, 엔터프라이즈 고도화 설계

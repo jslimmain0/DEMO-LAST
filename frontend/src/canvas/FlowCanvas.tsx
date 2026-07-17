@@ -20,6 +20,7 @@ import { catColor } from './nodeMeta'
 const nodeTypes = { flnode: NodeCard, branch: BranchNode, switch: SwitchNode, note: NoteNode, annogroup: GroupNode }
 const edgeTypes = { deletable: DeletableEdge }
 const connectionLineStyle: CSSProperties = { stroke: 'var(--fl-primary)', strokeWidth: 2 }
+const alignBtn: CSSProperties = { width: 26, height: 26, border: 'none', borderRadius: 6, background: 'transparent', color: 'var(--fl-text)', cursor: 'pointer', fontSize: 14, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }
 // 배경 도트(gap 22)와 같은 간격으로 스냅 — 노드가 그리드에 딱딱 맞게 배치된다
 const GRID = 22
 const snap = (v: number) => Math.round(v / GRID) * GRID
@@ -50,6 +51,10 @@ export function FlowCanvas() {
   const addNodeFromTemplate = useEditorStore((s) => s.addNodeFromTemplate)
   const deleteNode = useEditorStore((s) => s.deleteNode)
   const duplicateSelection = useEditorStore((s) => s.duplicateSelection)
+  const updateEdge = useEditorStore((s) => s.updateEdge)
+  const alignNodes = useEditorStore((s) => s.alignNodes)
+  const distributeNodes = useEditorStore((s) => s.distributeNodes)
+  const selectedCount = useEditorStore((s) => s.nodes.reduce((a, n) => a + (n.selected ? 1 : 0), 0))
   const flowId = useEditorStore((s) => s.flowId)
   const focusTick = useEditorStore((s) => s.focusTick)
   const { screenToFlowPosition, fitBounds, zoomTo, setCenter, getZoom } = useReactFlow()
@@ -127,6 +132,22 @@ export function FlowCanvas() {
     const rect = { x: minX, y: minY, width: maxX - minX, height: maxY - minY }
     fitBounds(rect, { padding: 0.22, duration: reducedMotion.current ? 0 : 220 })
   }, [nodes, flowId, fitBounds])
+  // 선택(없으면 전체) 영역을 화면에 꽉 채움 — 큰 서브그래프를 한눈에
+  const fitToSelection = useCallback(() => {
+    const all = useEditorStore.getState().nodes
+    const sel = all.filter((n) => n.selected)
+    const target = sel.length ? sel : all
+    if (!target.length) return
+    const dims = target.map((n) => {
+      const d = n.data as { type?: string; groupW?: number; groupH?: number }
+      return d.type === 'group' ? { w: d.groupW ?? 396, h: d.groupH ?? 264 } : { w: 230, h: 96 }
+    })
+    const minX = Math.min(...target.map((n) => n.position.x))
+    const minY = Math.min(...target.map((n) => n.position.y))
+    const maxX = Math.max(...target.map((n, i) => n.position.x + dims[i].w))
+    const maxY = Math.max(...target.map((n, i) => n.position.y + dims[i].h))
+    fitBounds({ x: minX, y: minY, width: maxX - minX, height: maxY - minY }, { padding: 0.2, duration: reducedMotion.current ? 0 : 220 })
+  }, [fitBounds])
   // 연결 중에는 핸들을 키워(자석 타겟) 잡기 쉽게 — CSS .fl-canvas.connecting 으로 제어
   const [connecting, setConnecting] = useState(false)
   // 창 밖에서 포인터를 떼거나 포커스를 잃어 onConnectEnd 가 누락돼도 확대 상태가 고착되지 않도록 복구
@@ -162,7 +183,7 @@ export function FlowCanvas() {
       role="application"
       aria-label="워크플로 캔버스"
       className={connecting ? 'fl-canvas connecting' : 'fl-canvas'}
-      style={{ width: '100%', height: '100%' }}
+      style={{ width: '100%', height: '100%', position: 'relative' }}
       onDrop={onDrop}
       onDragOver={(e) => {
         e.preventDefault()
@@ -175,6 +196,17 @@ export function FlowCanvas() {
       }}
       onPointerLeave={() => presence.hideCursor()}
     >
+      {selectedCount >= 2 && (
+        <div style={{ position: 'absolute', top: 10, left: '50%', transform: 'translateX(-50%)', zIndex: 6, display: 'flex', gap: 3, alignItems: 'center', background: 'var(--fl-surface)', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-pill)', boxShadow: 'var(--fl-shadow-lg)', padding: '4px 6px' }}>
+          <span style={{ fontSize: 11, color: 'var(--fl-text-muted)', padding: '0 4px' }}>{selectedCount}개 정렬</span>
+          {([['left', '⇤', '왼쪽'], ['centerX', '⇔', '가로 가운데'], ['right', '⇥', '오른쪽'], ['top', '⤒', '위'], ['centerY', '⇕', '세로 가운데'], ['bottom', '⤓', '아래']] as const).map(([k, ic, t]) => (
+            <button key={k} onClick={() => alignNodes(k)} title={`${t} 정렬`} aria-label={`${t} 정렬`} style={alignBtn}>{ic}</button>
+          ))}
+          {selectedCount >= 3 && <span style={{ width: 1, height: 16, background: 'var(--fl-border)', margin: '0 2px' }} />}
+          {selectedCount >= 3 && <button onClick={() => distributeNodes('x')} title="가로 균등 분배" style={alignBtn}>↔</button>}
+          {selectedCount >= 3 && <button onClick={() => distributeNodes('y')} title="세로 균등 분배" style={alignBtn}>↕</button>}
+        </div>
+      )}
       <ReactFlow
         nodes={nodes}
         edges={displayEdges}
@@ -183,6 +215,8 @@ export function FlowCanvas() {
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
+        onReconnect={(oldEdge, newConn) => updateEdge(oldEdge.id, newConn)}
+        isValidConnection={(c) => !useEditorStore.getState().edges.some((e) => e.source === c.source && e.target === c.target && (e.sourceHandle ?? 'out') === (c.sourceHandle ?? 'out'))}
         onConnectStart={() => setConnecting(true)}
         onConnectEnd={(event, connectionState) => {
           setConnecting(false)
@@ -221,6 +255,7 @@ export function FlowCanvas() {
         )}
         <Controls>
           <ControlButton onClick={() => zoomTo(1, { duration: 200 })} title="줌 100%" aria-label="줌 100%"><span style={{ fontSize: 9, fontWeight: 700 }}>1:1</span></ControlButton>
+          <ControlButton onClick={fitToSelection} title="선택 영역 맞춤 (없으면 전체)" aria-label="선택 영역 맞춤">⛶</ControlButton>
           <ControlButton onClick={toggleMinimap} title={showMinimap ? '미니맵 숨기기' : '미니맵 보기'} aria-label="미니맵 토글">▣</ControlButton>
           <ControlButton onClick={toggleGrid} title={showGrid ? '그리드 숨기기' : '그리드 보기'} aria-label="그리드 토글">▦</ControlButton>
         </Controls>

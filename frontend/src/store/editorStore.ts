@@ -56,6 +56,14 @@ interface EditorState {
   pasteClipboard: () => number
   duplicateSelection: () => number
   autoLayout: () => void
+  // 엣지 재연결(리라우트) — 끝점을 다른 노드/핸들로 옮김. sourceHandle(분기 포트) 승계.
+  updateEdge: (oldEdgeId: string, conn: Connection) => void
+  // 선택 노드 그리드 단위 이동(방향키)
+  nudgeSelection: (dx: number, dy: number) => void
+  selectAll: () => void
+  // 선택 노드 정렬/분배
+  alignNodes: (edge: 'left' | 'right' | 'top' | 'bottom' | 'centerX' | 'centerY') => void
+  distributeNodes: (axis: 'x' | 'y') => void
   undo: () => void
   redo: () => void
 }
@@ -181,6 +189,9 @@ export const useEditorStore = create<EditorState>()((set, get) => {
   },
 
   onConnect: (conn) => {
+    // 같은 소스포트→타깃 중복(평행) 엣지 방지 — 유령 중복 실행 제거
+    const dup = get().edges.some((e) => e.source === conn.source && e.target === conn.target && (e.sourceHandle ?? 'out') === (conn.sourceHandle ?? 'out'))
+    if (dup) return
     pushHistory()
     const edge: Edge = {
       id: 'e' + newId(),
@@ -406,6 +417,83 @@ export const useEditorStore = create<EditorState>()((set, get) => {
       nodes: nodes.map((n) => {
         const p = pos.get(n.id)
         return p ? { ...n, position: p, data: { ...n.data, x: p.x, y: p.y } } : n
+      }),
+      dirty: true,
+    })
+  },
+
+  updateEdge: (oldEdgeId, conn) => {
+    if (!conn.source || !conn.target) return
+    // 재연결 결과가 기존 다른 엣지와 중복이면 무시
+    const dup = get().edges.some((e) => e.id !== oldEdgeId && e.source === conn.source && e.target === conn.target && (e.sourceHandle ?? 'out') === (conn.sourceHandle ?? 'out'))
+    if (dup) { set({ edges: get().edges.filter((e) => e.id !== oldEdgeId) }); return }
+    pushHistory()
+    set({
+      edges: get().edges.map((e) => e.id === oldEdgeId
+        ? { ...e, source: conn.source!, target: conn.target!, sourceHandle: conn.sourceHandle ?? 'out', targetHandle: conn.targetHandle ?? null }
+        : e),
+      dirty: true,
+    })
+  },
+
+  nudgeSelection: (dx, dy) => {
+    const sel = get().nodes.filter((n) => n.selected)
+    if (sel.length === 0) return
+    pushHistory()
+    set({
+      nodes: get().nodes.map((n) => {
+        if (!n.selected) return n
+        const x = n.position.x + dx, y = n.position.y + dy
+        return { ...n, position: { x, y }, data: { ...n.data, x, y } }
+      }),
+      dirty: true,
+    })
+  },
+
+  selectAll: () => set({ nodes: get().nodes.map((n) => ({ ...n, selected: true })) }),
+
+  alignNodes: (edge) => {
+    const sel = get().nodes.filter((n) => n.selected)
+    if (sel.length < 2) return
+    pushHistory()
+    const xs = sel.map((n) => n.position.x), ys = sel.map((n) => n.position.y)
+    const ws = sel.map((n) => n.measured?.width ?? 230), hs = sel.map((n) => n.measured?.height ?? 80)
+    const left = Math.min(...xs), right = Math.max(...sel.map((n, i) => n.position.x + ws[i]))
+    const top = Math.min(...ys), bottom = Math.max(...sel.map((n, i) => n.position.y + hs[i]))
+    const cx = (left + right) / 2, cy = (top + bottom) / 2
+    const snap = (v: number) => Math.round(v / 22) * 22
+    set({
+      nodes: get().nodes.map((n) => {
+        if (!n.selected) return n
+        const w = n.measured?.width ?? 230, h = n.measured?.height ?? 80
+        let x = n.position.x, y = n.position.y
+        if (edge === 'left') x = left
+        else if (edge === 'right') x = right - w
+        else if (edge === 'centerX') x = snap(cx - w / 2)
+        else if (edge === 'top') y = top
+        else if (edge === 'bottom') y = bottom - h
+        else if (edge === 'centerY') y = snap(cy - h / 2)
+        return { ...n, position: { x, y }, data: { ...n.data, x, y } }
+      }),
+      dirty: true,
+    })
+  },
+
+  distributeNodes: (axis) => {
+    const sel = get().nodes.filter((n) => n.selected)
+    if (sel.length < 3) return
+    pushHistory()
+    const key = axis === 'x' ? 'x' : 'y'
+    const sorted = [...sel].sort((a, b) => a.position[key] - b.position[key])
+    const first = sorted[0].position[key], last = sorted[sorted.length - 1].position[key]
+    const step = (last - first) / (sorted.length - 1)
+    const posById = new Map(sorted.map((n, i) => [n.id, Math.round((first + i * step) / 22) * 22]))
+    set({
+      nodes: get().nodes.map((n) => {
+        if (!posById.has(n.id)) return n
+        const v = posById.get(n.id)!
+        const position = axis === 'x' ? { x: v, y: n.position.y } : { x: n.position.x, y: v }
+        return { ...n, position, data: { ...n.data, x: position.x, y: position.y } }
       }),
       dirty: true,
     })

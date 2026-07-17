@@ -25,6 +25,7 @@ import { startCollab, stopCollab } from '../lib/collab'
 import { openFormIframe, openFormPopup } from '../lib/popup'
 import { computeRunView } from '../lib/runProgress'
 import { useEditorStore } from '../store/editorStore'
+import { collectIssues } from '../lib/issues'
 import { isAxiosError } from 'axios'
 
 export function Editor() {
@@ -167,6 +168,21 @@ export function Editor() {
     const is = (e: KeyboardEvent, code: string, key: string) =>
       e.code === code || e.key === key || e.key === key.toUpperCase()
     const onKey = (e: KeyboardEvent) => {
+      const tgt = e.target as HTMLElement | null
+      const inField = !!(tgt && (tgt.tagName === 'INPUT' || tgt.tagName === 'TEXTAREA' || tgt.tagName === 'SELECT' || tgt.isContentEditable))
+      // Esc: 선택 해제 (입력 중 아닐 때)
+      if (e.key === 'Escape' && !inField && !(e.ctrlKey || e.metaKey)) { useEditorStore.getState().selectNode(null); return }
+      // 방향키: 선택 노드 그리드 단위 이동 (Shift=4칸)
+      if (!inField && !e.ctrlKey && !e.metaKey && !e.altKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+        if (!useEditorStore.getState().nodes.some((n) => n.selected)) return // 선택 없으면 캔버스 팬에 양보
+        e.preventDefault()
+        const step = e.shiftKey ? 88 : 22
+        useEditorStore.getState().nudgeSelection(
+          e.key === 'ArrowLeft' ? -step : e.key === 'ArrowRight' ? step : 0,
+          e.key === 'ArrowUp' ? -step : e.key === 'ArrowDown' ? step : 0,
+        )
+        return
+      }
       if (!(e.ctrlKey || e.metaKey) || e.altKey) return
       // Ctrl+S 저장 — 입력 필드 안에서도 동작. 브라우저 "페이지 저장" 다이얼로그는 항상 차단
       if (is(e, 'KeyS', 's')) {
@@ -201,6 +217,9 @@ export function Editor() {
       } else if (is(e, 'KeyF', 'f')) { // 노드 검색
         e.preventDefault()
         setSearchOpen(true)
+      } else if (is(e, 'KeyA', 'a')) { // 전체 선택
+        e.preventDefault()
+        useEditorStore.getState().selectAll()
       }
     }
     window.addEventListener('keydown', onKey)
@@ -399,6 +418,7 @@ export function Editor() {
         )}
         {copyNote && <span role="status" style={{ fontSize: 12, color: 'var(--fl-primary)', fontWeight: 600 }}>{copyNote}</span>}
         <span title="노드 수" style={{ fontSize: 11.5, color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)' }}>노드 {nodeCount}</span>
+        <IssueBadge />
         <PresenceAvatars />
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, position: 'relative' }}>
           <button onClick={undo} disabled={!canUndo} aria-label="되돌리기" title="되돌리기 (Ctrl+Z)" style={{ ...ghostBtn, padding: '8px 11px', opacity: canUndo ? 1 : 0.4 }}>↺</button>
@@ -566,6 +586,41 @@ const mHeader: CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, 
 const mTitle: CSSProperties = { flex: 1, fontFamily: 'var(--fl-font-head)', fontWeight: 600, fontSize: 14 }
 
 // 그래프 JSON 보기/복사
+// 편집 문제 요약 배지 — 미연결·빈 필수값을 헤더에 모아, 클릭하면 목록에서 해당 노드로 점프
+function IssueBadge() {
+  const nodes = useEditorStore((s) => s.nodes)
+  const edges = useEditorStore((s) => s.edges)
+  const focusNode = useEditorStore((s) => s.focusNode)
+  const [open, setOpen] = useState(false)
+  const issues = useMemo(() => collectIssues(nodes, edges), [nodes, edges])
+  useEffect(() => { if (issues.length === 0) setOpen(false) }, [issues.length])
+  if (issues.length === 0) return null
+  const errs = issues.filter((i) => i.severity === 'error').length
+  const color = errs ? 'var(--fl-fail)' : 'var(--fl-put)'
+  return (
+    <div style={{ position: 'relative' }}>
+      <button onClick={() => setOpen((o) => !o)} title="편집 문제 — 클릭해 목록 보기"
+        style={{ fontSize: 12, fontWeight: 700, color, border: `1px solid ${color}`, borderRadius: 'var(--fl-radius-pill)', padding: '2px 9px', background: 'transparent', cursor: 'pointer' }}>
+        ⚠ {issues.length}
+      </button>
+      {open && (
+        <>
+          <div style={{ position: 'fixed', inset: 0, zIndex: 40 }} onClick={() => setOpen(false)} />
+          <div style={{ position: 'absolute', top: '110%', left: 0, zIndex: 41, width: 300, maxHeight: 320, overflow: 'auto', background: 'var(--fl-surface)', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', boxShadow: 'var(--fl-shadow-lg)', padding: 6 }}>
+            {issues.map((iss, i) => (
+              <button key={i} onClick={() => { if (iss.nodeId) focusNode(iss.nodeId); setOpen(false) }}
+                style={{ display: 'block', width: '100%', textAlign: 'left', padding: '7px 9px', border: 'none', background: 'transparent', color: 'var(--fl-text)', cursor: iss.nodeId ? 'pointer' : 'default', borderRadius: 6, fontSize: 12.5 }}>
+                <span style={{ color: iss.severity === 'error' ? 'var(--fl-fail)' : 'var(--fl-put)', fontWeight: 700 }}>{iss.severity === 'error' ? '✕' : '⚠'}</span>{' '}
+                <b>{iss.label}</b> — <span style={{ color: 'var(--fl-text-muted)' }}>{iss.detail}</span>
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
 function JsonViewModal({ graph, onClose }: { graph: object; onClose: () => void }) {
   const json = useMemo(() => JSON.stringify(graph, null, 2), [graph])
   useEffect(() => {

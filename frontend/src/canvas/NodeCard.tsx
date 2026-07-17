@@ -58,7 +58,7 @@ export function NodeCard({ data, selected }: NodeProps) {
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 12px', borderLeft: `3px solid ${accent}` }}>
         <span aria-hidden style={{ color: accent, fontSize: 14, width: 16, textAlign: 'center' }}>{typeIcon(n.type)}</span>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 13.5, fontWeight: 600, letterSpacing: '-.01em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <div title={n.name ?? typeLabel(n.type)} style={{ fontSize: 13.5, fontWeight: 600, letterSpacing: '-.01em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {n.name ?? typeLabel(n.type)}
           </div>
           <div style={{ fontSize: 11.5, color: showUnreachable ? 'var(--fl-put)' : 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)', fontWeight: showUnreachable ? 600 : 400 }}>
@@ -71,7 +71,7 @@ export function NodeCard({ data, selected }: NodeProps) {
       {isHttp && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 12px', borderTop: '1px solid var(--fl-border)', background: 'var(--fl-surface-2)' }}>
           <MethodTag method={(n.method ?? 'GET') as HttpMethod} />
-          <span style={{ flex: 1, minWidth: 0, fontFamily: 'var(--fl-font-mono)', fontSize: 11.5, color: 'var(--fl-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <span title={`${n.method ?? 'GET'} ${(n.baseUrl ?? '')}${n.path || '/'}`} style={{ flex: 1, minWidth: 0, fontFamily: 'var(--fl-font-mono)', fontSize: 11.5, color: 'var(--fl-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {n.path || '/'}
           </span>
           {n.method && n.method !== 'GET' && n.method !== 'HEAD' && (

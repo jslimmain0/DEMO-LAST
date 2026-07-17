@@ -7,6 +7,7 @@ import { mockBaseUrl, mocksApi } from '../api/client'
 import { AppShellTier1 } from '../app/AppShell'
 import { useAuth, usePermissions } from '../auth/AuthContext'
 import { METHOD_COLOR } from '../canvas/nodeMeta'
+import { toast } from '../components/toast'
 import { apiErrorMessage } from '../lib/apiError'
 import { useReadableInk } from '../lib/contrast'
 import { newId } from '../lib/ids'
@@ -111,6 +112,7 @@ export function MockServerEditor() {
             {note && <p style={{ fontSize: 12.5, marginTop: 8, color: note.startsWith('저장됨') ? 'var(--fl-ok)' : 'var(--fl-fail)' }}>{note}</p>}
 
             <RoutesEditor
+              base={base}
               routes={spec.routes ?? []}
               onChange={(routes) => mutate((s) => ({ ...s, routes }))}
             />
@@ -130,7 +132,39 @@ export function MockServerEditor() {
 
 // ---------- 커스텀 라우트 편집 ----------
 
-function RoutesEditor({ routes, onChange }: { routes: MockRouteSpec[]; onChange: (r: MockRouteSpec[]) => void }) {
+// OpenAPI/Swagger 문서(JSON) → mock 라우트. path+method 마다 첫 성공 응답 코드와 예시 본문으로 규칙 1개 생성.
+function openApiToMockRoutes(text: string): MockRouteSpec[] {
+  let doc: Record<string, unknown>
+  try { doc = JSON.parse(text) } catch { return [] }
+  const paths = doc.paths as Record<string, Record<string, unknown>> | undefined
+  if (!paths || typeof paths !== 'object') return []
+  const out: MockRouteSpec[] = []
+  const METHODS_L = ['get', 'post', 'put', 'patch', 'delete', 'head']
+  for (const [path, ops] of Object.entries(paths)) {
+    if (!ops || typeof ops !== 'object') continue
+    for (const m of METHODS_L) {
+      const op = ops[m] as Record<string, unknown> | undefined
+      if (!op) continue
+      const responses = (op.responses ?? {}) as Record<string, unknown>
+      const codes = Object.keys(responses)
+      const okCode = codes.find((c) => c.startsWith('2')) ?? codes[0] ?? 'default'
+      const status = /^\d+$/.test(okCode) ? Number(okCode) : 200
+      // 예시 응답: responses[code].content['application/json'].example / schema.example, 없으면 {}
+      let body = '{}'
+      try {
+        const resp = responses[okCode] as Record<string, unknown> | undefined
+        const content = (resp?.content ?? {}) as Record<string, { example?: unknown; schema?: { example?: unknown } }>
+        const jsonCt = Object.keys(content).find((k) => k.includes('json'))
+        const ex = jsonCt ? (content[jsonCt].example ?? content[jsonCt].schema?.example) : (resp?.example ?? (resp?.examples as Record<string, { value?: unknown }> | undefined)?.[Object.keys((resp?.examples as object) ?? {})[0]]?.value)
+        if (ex !== undefined) body = JSON.stringify(ex, null, 2)
+      } catch { /* 예시 없으면 {} */ }
+      out.push({ id: newId(), method: m.toUpperCase(), path: String(path), rules: [{ id: newId(), status, contentType: 'json', body }] })
+    }
+  }
+  return out
+}
+
+function RoutesEditor({ base, routes, onChange }: { base: string; routes: MockRouteSpec[]; onChange: (r: MockRouteSpec[]) => void }) {
   const setRoute = (i: number, r: MockRouteSpec) => onChange(routes.map((x, xi) => (xi === i ? r : x)))
   const move = (i: number, dir: -1 | 1) => {
     const j = i + dir
@@ -139,15 +173,38 @@ function RoutesEditor({ routes, onChange }: { routes: MockRouteSpec[]; onChange:
     const t = next[i]; next[i] = next[j]; next[j] = t
     onChange(next)
   }
+  const dup = (i: number) => {
+    const src = routes[i]
+    const copy: MockRouteSpec = { ...src, id: newId(), rules: src.rules.map((r) => ({ ...r, id: newId() })) }
+    onChange([...routes.slice(0, i + 1), copy, ...routes.slice(i + 1)])
+  }
+  const [openApi, setOpenApi] = useState<string | null>(null)
   return (
     <section style={panel}>
-      <div style={{ display: 'flex', alignItems: 'center' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
         <h2 style={h2}>라우트 <span style={{ fontWeight: 400, fontSize: 12, color: 'var(--fl-text-muted)' }}>(위에서부터 첫 매칭)</span></h2>
+        <button style={{ ...miniBtn, marginLeft: 'auto' }} onClick={() => setOpenApi(openApi === null ? '' : null)} title="OpenAPI/Swagger 문서를 붙여넣어 라우트 자동 생성">OpenAPI 가져오기</button>
         <button
-          style={{ ...miniBtn, marginLeft: 'auto' }}
+          style={miniBtn}
           onClick={() => onChange([...routes, { id: newId(), method: 'GET', path: '/new', rules: [{ id: newId(), status: 200, contentType: 'json', body: '{"ok":true}' }] }])}
         >+ 라우트 추가</button>
       </div>
+      {openApi !== null && (
+        <div style={{ margin: '8px 0' }}>
+          <textarea autoFocus value={openApi} onChange={(e) => setOpenApi(e.target.value)} placeholder="OpenAPI 3 / Swagger 2 JSON 을 붙여넣으세요…"
+            style={{ ...input, width: '100%', minHeight: 90, fontFamily: 'var(--fl-font-mono)', fontSize: 12 }} />
+          <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+            <button style={{ ...miniBtn, color: 'var(--fl-primary)' }} onClick={() => {
+              const generated = openApiToMockRoutes(openApi)
+              if (!generated.length) { toast('라우트를 추출하지 못했습니다 — 유효한 OpenAPI/Swagger JSON 인지 확인하세요.', 'error'); return }
+              onChange([...routes, ...generated])
+              setOpenApi(null)
+              toast(`라우트 ${generated.length}개를 생성했습니다.`, 'ok')
+            }}>가져오기</button>
+            <button style={miniBtn} onClick={() => setOpenApi(null)}>취소</button>
+          </div>
+        </div>
+      )}
       <p style={hint}>
         경로는 <code style={code}>{'/users/{id}'}</code> 패턴 지원. 응답 본문·헤더·콜백은 템플릿을 쓸 수 있습니다:
         <code style={code}>{'{{path.id}} {{query.q}} {{body.필드}} {{header.이름}} {{body}} {{uuid}} {{seq}} {{now}}'}</code>
@@ -158,9 +215,11 @@ function RoutesEditor({ routes, onChange }: { routes: MockRouteSpec[]; onChange:
         {routes.map((r, i) => (
           <RouteCard
             key={r.id}
+            base={base}
             route={r}
             onChange={(nr) => setRoute(i, nr)}
             onRemove={() => onChange(routes.filter((_, xi) => xi !== i))}
+            onDup={() => dup(i)}
             onUp={() => move(i, -1)}
             onDown={() => move(i, 1)}
           />
@@ -170,14 +229,33 @@ function RoutesEditor({ routes, onChange }: { routes: MockRouteSpec[]; onChange:
   )
 }
 
-function RouteCard({ route, onChange, onRemove, onUp, onDown }: {
+function RouteCard({ base, route, onChange, onRemove, onDup, onUp, onDown }: {
+  base: string
   route: MockRouteSpec
   onChange: (r: MockRouteSpec) => void
   onRemove: () => void
+  onDup: () => void
   onUp: () => void
   onDown: () => void
 }) {
   const setRule = (i: number, u: MockRuleSpec) => onChange({ ...route, rules: route.rules.map((x, xi) => (xi === i ? u : x)) })
+  const dupRule = (i: number) => {
+    const copy = { ...route.rules[i], id: newId() }
+    onChange({ ...route, rules: [...route.rules.slice(0, i + 1), copy, ...route.rules.slice(i + 1)] })
+  }
+  // 이 라우트 원클릭 테스트 — 경로 파라미터({id})는 예시값으로 채워 mock 에 실제 요청
+  const [test, setTest] = useState<{ status: number; body: string } | string | null>(null)
+  const [testing, setTesting] = useState(false)
+  const runTest = async () => {
+    setTesting(true); setTest(null)
+    try {
+      const p = route.path.replace(/\{[^}]+\}/g, '1') // {id} → 1
+      const hasBody = route.method !== 'GET' && route.method !== 'HEAD'
+      const res = await fetch(base + p, { method: route.method, headers: hasBody ? { 'Content-Type': 'application/json' } : undefined, body: hasBody ? '{}' : undefined })
+      setTest({ status: res.status, body: (await res.text()).slice(0, 2000) })
+    } catch (e) { setTest(e instanceof Error ? e.message : String(e)) }
+    finally { setTesting(false) }
+  }
   return (
     <div style={{ border: '1px solid var(--fl-border)', borderLeft: `3px solid ${methodColor(route.method)}`, borderRadius: 'var(--fl-radius)', padding: 14, background: 'var(--fl-surface)' }}>
       <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -185,10 +263,20 @@ function RouteCard({ route, onChange, onRemove, onUp, onDown }: {
           {METHODS.map((m) => <option key={m}>{m}</option>)}
         </select>
         <input style={{ ...input, flex: 1, fontFamily: 'var(--fl-font-mono)' }} value={route.path} onChange={(e) => onChange({ ...route, path: e.target.value })} placeholder="/users/{id}" />
+        <button style={{ ...miniBtn, color: 'var(--fl-primary)' }} onClick={runTest} disabled={testing} title="이 라우트로 바로 요청을 보내 응답을 봅니다">{testing ? '…' : '▶ 테스트'}</button>
+        <button style={miniBtn} onClick={onDup} title="라우트 복제">복제</button>
         <button style={miniBtn} onClick={onUp} title="위로">↑</button>
         <button style={miniBtn} onClick={onDown} title="아래로">↓</button>
         <button style={{ ...miniBtn, color: 'var(--fl-fail)' }} onClick={onRemove}>삭제</button>
       </div>
+      {test != null && (
+        <div style={{ marginTop: 8, border: `1px solid ${typeof test === 'string' ? 'var(--fl-fail)' : 'var(--fl-border)'}`, borderRadius: 'var(--fl-radius-sm)', overflow: 'hidden' }}>
+          {typeof test === 'string'
+            ? <div style={{ padding: '6px 10px', fontSize: 12, color: 'var(--fl-fail)' }}>{test}</div>
+            : <><div style={{ padding: '5px 10px', fontSize: 12, fontWeight: 600, background: 'var(--fl-surface-2)', color: test.status < 400 ? 'var(--fl-ok)' : 'var(--fl-fail)' }}>HTTP {test.status}</div>
+                <pre style={{ margin: 0, padding: '8px 10px', fontSize: 11.5, fontFamily: 'var(--fl-font-mono)', whiteSpace: 'pre-wrap', wordBreak: 'break-all', maxHeight: 180, overflow: 'auto', color: 'var(--fl-text)' }}>{test.body}</pre></>}
+        </div>
+      )}
       <div style={{ display: 'grid', gap: 10, marginTop: 10 }}>
         {route.rules.map((u, i) => (
           <RuleCard
@@ -197,6 +285,7 @@ function RouteCard({ route, onChange, onRemove, onUp, onDown }: {
             index={i}
             total={route.rules.length}
             onChange={(nu) => setRule(i, nu)}
+            onDup={() => dupRule(i)}
             onRemove={() => onChange({ ...route, rules: route.rules.filter((_, xi) => xi !== i) })}
           />
         ))}
@@ -209,11 +298,12 @@ function RouteCard({ route, onChange, onRemove, onUp, onDown }: {
   )
 }
 
-function RuleCard({ rule, index, total, onChange, onRemove }: {
+function RuleCard({ rule, index, total, onChange, onDup, onRemove }: {
   rule: MockRuleSpec
   index: number
   total: number
   onChange: (u: MockRuleSpec) => void
+  onDup: () => void
   onRemove: () => void
 }) {
   const [showCb, setShowCb] = useState(!!rule.callback?.url)
@@ -245,6 +335,7 @@ function RuleCard({ rule, index, total, onChange, onRemove }: {
           value={rule.delayMs ?? 0}
           onChange={(e) => onChange({ ...rule, delayMs: Number(e.target.value) || 0 })}
         />
+        <button style={miniBtn} onClick={onDup} title="규칙 복제">복제</button>
         <button style={{ ...miniBtn, color: 'var(--fl-fail)' }} onClick={onRemove}>규칙 삭제</button>
       </div>
 

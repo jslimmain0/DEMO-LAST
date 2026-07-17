@@ -394,6 +394,33 @@ class ExecutionService(
         return withFlowNames(execs)
     }
 
+    /** 실행 이력 필터 조회(status/flowId/기간 + offset 페이지네이션) — 과거 실패 추적용. */
+    @Transactional(readOnly = true)
+    fun listFiltered(
+        status: ExecutionStatus?, flowId: UUID?, fromMs: Long?, toMs: Long?, limit: Int, offset: Int
+    ): List<ExecutionSummary> {
+        val pageSize = clamp(limit)
+        val page = (offset.coerceAtLeast(0)) / pageSize
+        val execs = executionRepo.findFiltered(
+            TenantContext.getTenantId(), status, flowId,
+            fromMs?.let { Instant.ofEpochMilli(it) }, toMs?.let { Instant.ofEpochMilli(it) },
+            PageRequest.of(page, pageSize)
+        )
+        return withFlowNames(execs)
+    }
+
+    /**
+     * 같은 조건으로 다시 실행 — 원본 실행의 flowVersion + input 을 그대로 재실행(반복 테스트/디버깅 루프).
+     * 그래프가 그 사이 바뀌어도 원본이 돌던 버전으로 재현한다.
+     */
+    fun rerun(execId: UUID): ExecutionDetail {
+        val src = executionRepo.findByIdAndTenantId(execId, TenantContext.getTenantId())
+            .orElseThrow { NotFoundException.of("Execution", execId) }
+        val versionNo = versionRepo.findById(src.flowVersionId).map { it.versionNo }.orElse(null)
+        val input = src.inputJson?.let { json.readTree(it) }
+        return run(src.flowId, RunRequest(input, null, versionNo, null, null))
+    }
+
     /** 실행 목록에 워크플로 이름을 채운다(삭제/보관된 플로우도 이름 조회 — UUID 노출 방지). */
     private fun withFlowNames(execs: List<Execution>): List<ExecutionSummary> {
         val ids = execs.map { it.flowId }.toSet()

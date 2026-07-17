@@ -123,4 +123,10 @@ export const runsApi = {
     http.post<SingleNodeRunResult>(`/flows/${flowId}/nodes/${nodeId}/run`, {}).then((r) => r.data),
   recent: (limit = 50) =>
     http.get<ExecutionSummary[]>('/executions', { params: { limit } }).then((r) => r.data),
+  // 서버측 필터/페이지네이션 — status/flowId/기간(epoch ms)/offset
+  list: (params: { limit?: number; offset?: number; status?: string; flowId?: string; from?: number; to?: number }) =>
+    http.get<ExecutionSummary[]>('/executions', { params }).then((r) => r.data),
+  // 같은 조건(원본 버전+입력)으로 재실행
+  rerun: (executionId: string) =>
+    http.post<ExecutionDetail>(`/executions/${executionId}/rerun`, {}).then((r) => r.data),
 }

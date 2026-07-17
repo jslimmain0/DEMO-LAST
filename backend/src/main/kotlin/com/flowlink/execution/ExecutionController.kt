@@ -1,5 +1,6 @@
 package com.flowlink.execution
 
+import com.flowlink.core.domain.ExecutionStatus
 import com.flowlink.execution.dto.ExecutionDetail
 import com.flowlink.execution.dto.ExecutionSummary
 import com.flowlink.execution.dto.ResumeRequest
@@ -55,7 +56,24 @@ class ExecutionController(private val service: ExecutionService) {
     @GetMapping("/executions/{id}")
     fun get(@PathVariable id: UUID): ExecutionDetail = service.get(id)
 
+    /**
+     * 실행 이력 조회. 파라미터가 없으면 최근순(기존 동작), status/flowId/from/to/offset 중 하나라도 있으면 필터 조회.
+     * from/to 는 epoch millis(쿼리 파라미터 Instant 변환 이슈 회피).
+     */
     @GetMapping("/executions")
-    fun recent(@RequestParam(defaultValue = "50") limit: Int): List<ExecutionSummary> =
-        service.listRecent(limit)
+    fun recent(
+        @RequestParam(defaultValue = "50") limit: Int,
+        @RequestParam(required = false) status: ExecutionStatus?,
+        @RequestParam(required = false) flowId: UUID?,
+        @RequestParam(required = false) from: Long?,
+        @RequestParam(required = false) to: Long?,
+        @RequestParam(defaultValue = "0") offset: Int,
+    ): List<ExecutionSummary> =
+        if (status == null && flowId == null && from == null && to == null && offset == 0)
+            service.listRecent(limit)
+        else service.listFiltered(status, flowId, from, to, limit, offset)
+
+    /** 같은 조건(원본 flowVersion+input)으로 재실행. */
+    @PostMapping("/executions/{id}/rerun")
+    fun rerun(@PathVariable id: UUID): ExecutionDetail = service.rerun(id)
 }

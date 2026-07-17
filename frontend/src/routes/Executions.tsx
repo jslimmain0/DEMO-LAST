@@ -25,25 +25,40 @@ function elapsed(e: ExecutionSummary): string | null {
   return ms >= 0 ? duration(ms) : null
 }
 
+// 기간 필터 — 서버측 from(epoch ms) 로 승격. now 는 렌더 시점 계산(고정 상수 아님).
+const RANGES: Array<[string, string, number | null]> = [
+  ['all', '전체', null], ['1d', '24시간', 86400_000], ['7d', '7일', 7 * 86400_000], ['30d', '30일', 30 * 86400_000],
+]
+
 export function Executions() {
   const qc = useQueryClient()
   const [limit, setLimit] = useState(50)
-  const { data, isLoading, isError, refetch } = useQuery({ queryKey: ['executions', 'recent', limit], queryFn: () => runsApi.recent(limit) })
+  const [filter, setFilter] = useState<'all' | ExecutionStatus>('all')
+  const [range, setRange] = useState<string>('all')
+  const [q, setQ] = useState('')
+  const [openExec, setOpenExec] = useState<string | null>(null)
+
+  const rangeMs = RANGES.find(([k]) => k === range)?.[2] ?? null
+  // 서버측 status/기간 필터 + limit. from 은 쿼리 실행 시점 기준(키에는 range 코드만 넣어 매 렌더 재요청 방지).
+  const { data, isLoading, isError, refetch } = useQuery({
+    queryKey: ['executions', 'list', limit, filter, range],
+    queryFn: () => runsApi.list({
+      limit,
+      status: filter === 'all' ? undefined : filter,
+      from: rangeMs != null ? Date.now() - rangeMs : undefined,
+    }),
+  })
   const all = data ?? []
   const okCount = all.filter((e) => e.status === 'SUCCEEDED').length
   const failCount = all.filter((e) => e.status === 'FAILED').length
-  const [filter, setFilter] = useState<'all' | ExecutionStatus>('all')
-  const [q, setQ] = useState('')
-  const [openExec, setOpenExec] = useState<string | null>(null)
   const reRun = useMutation({
-    mutationFn: (flowId: string) => runsApi.run(flowId),
-    onSuccess: () => { toast('재실행을 시작했습니다.', 'ok'); qc.invalidateQueries({ queryKey: ['executions', 'recent'] }) },
+    mutationFn: (execId: string) => runsApi.rerun(execId),
+    onSuccess: () => { toast('같은 조건으로 재실행을 시작했습니다.', 'ok'); qc.invalidateQueries({ queryKey: ['executions', 'list'] }) },
     onError: () => toast('재실행에 실패했습니다.', 'error'),
   })
   const query = q.trim().toLowerCase()
-  const rows = all.filter((e) =>
-    (filter === 'all' || e.status === filter)
-    && (!query || (e.flowName ?? '').toLowerCase().includes(query)))
+  // status/기간은 서버가 필터 → 여기선 이름 검색만(서버는 flowId 로만 필터하므로 이름은 클라 측)
+  const rows = all.filter((e) => !query || (e.flowName ?? '').toLowerCase().includes(query))
 
   return (
     <AppShellTier1>
@@ -59,13 +74,18 @@ export function Executions() {
           )}
         </div>
 
-        {all.length > 0 && (
+        {!isLoading && !isError && (all.length > 0 || filter !== 'all' || range !== 'all' || q) && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 16, flexWrap: 'wrap' }}>
             <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="워크플로 이름 검색…"
               style={{ padding: '7px 11px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', color: 'var(--fl-text)', fontSize: 13, minWidth: 220 }} />
             <div style={{ display: 'flex', gap: 3 }}>
               {([['all', '전체'], ['SUCCEEDED', '성공'], ['FAILED', '실패'], ['WAITING', '대기'], ['CANCELLED', '취소']] as const).map(([k, lbl]) => (
                 <button key={k} onClick={() => setFilter(k)} style={{ padding: '5px 11px', fontSize: 12, border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-pill)', cursor: 'pointer', background: filter === k ? 'var(--fl-primary)' : 'transparent', color: filter === k ? '#fff' : 'var(--fl-text-muted)', fontWeight: 500 }}>{lbl}</button>
+              ))}
+            </div>
+            <div style={{ display: 'flex', gap: 3, marginLeft: 4 }} title="기간 필터">
+              {RANGES.map(([k, lbl]) => (
+                <button key={k} onClick={() => setRange(k)} style={{ padding: '5px 10px', fontSize: 12, border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-pill)', cursor: 'pointer', background: range === k ? 'var(--fl-surface-2)' : 'transparent', color: range === k ? 'var(--fl-text)' : 'var(--fl-text-muted)', fontWeight: range === k ? 600 : 400 }}>{lbl}</button>
               ))}
             </div>
           </div>
@@ -108,7 +128,7 @@ export function Executions() {
                     <span style={metaMono}>{TRIGGER_LABEL[e.trigger] ?? e.trigger}</span>
                     {el && <span style={metaMono}>{el}</span>}
                     <span style={{ ...metaMono, minWidth: 56, textAlign: 'right' }}>{relTime(e.startedAt)}</span>
-                    <button onClick={(ev) => { ev.stopPropagation(); reRun.mutate(e.flowId) }} disabled={reRun.isPending} title="이 워크플로를 다시 실행" style={{ ...metaMono, color: 'var(--fl-ok)', background: 'transparent', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-pill)', padding: '3px 9px', cursor: 'pointer', fontWeight: 600 }}>↻ 재실행</button>
+                    <button onClick={(ev) => { ev.stopPropagation(); reRun.mutate(e.id) }} disabled={reRun.isPending} title="같은 조건(원본 버전+입력)으로 다시 실행" style={{ ...metaMono, color: 'var(--fl-ok)', background: 'transparent', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-pill)', padding: '3px 9px', cursor: 'pointer', fontWeight: 600 }}>↻ 재실행</button>
                     <Link to={`/flows/${e.flowId}`} onClick={(ev) => ev.stopPropagation()} title="에디터 열기" style={{ ...metaMono, color: 'var(--fl-primary)', textDecoration: 'none', fontWeight: 600 }}>편집 →</Link>
                   </div>
                 </div>

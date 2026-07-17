@@ -798,6 +798,19 @@ design/   theme(라이트/다크) · index.css(CSS 변수)
 - ⚠ 브랜드 고정색 액션 버튼(실행/저장/중단, `--fl-ok/primary/fail`)은 "가끔 색이 바뀌는" 대상이 아니라 그대로 둠(항상 같은 색).
 - 브라우저 실측: 라이트/다크 모두 GET 배지가 읽기 좋은 글자색, 테마 토글 시 즉시 재계산. tsc/build/oxlint 통과.
 
+### 노드 편집 UI 컴팩트·통합 + 노드 바로가기 묶음(~20)
+"URL 과 Path 를 굳이 나눌 필요 없다(안에서 `https://api.example.com/{{ otp@i1 }}/` 처럼 토큰) / 노드 바로가기 같은 느낌으로 / 합칠 수 있는 건 합치자" 요청.
+**실행 모델(백엔드) 무변경 — 전부 프론트 UI 레이어 통합이라 기존 그래프 완전 호환.**
+- **HTTP URL 통합**: Base URL + Path → **한 필드**([PropertyPanel](frontend/src/panels/PropertyPanel.tsx) `mergedUrl`/`setMergedUrl`). 백엔드는 여전히 `base+path` 이므로 전체를 `baseUrl` 로 쓰고 `path`는 빈다(무회귀·기존 분리 저장분은 병합 표시). **메서드를 URL 앞 인라인 셀렉트**(메서드 색 강조 `methodSel`). **문자셋·요청 방식(server/client)은 "고급" 접기**로.
+- **cURL 상호변환**([lib/curl.ts](frontend/src/lib/curl.ts) — 순수): **cURL 붙여넣기**(`parseCurl` — `-X`/`-H`/`-d`계열/`-G`/`--url`/흔한 무해 플래그 → 메서드/URL/헤더/바디 채움) · **cURL 로 복사**(`toCurl` — 토큰은 그대로 = 실행 가능한 템플릿 스캐폴드).
+- **URL `?쿼리` → Params 스마트 분리**(`extractQueryToParams`) · **Params/Headers/Body 탭 개수 배지**((2)/•).
+- **노드 바로가기(navigation)**: 속성 패널 **연결 이웃 칩**(← 이전 / 다음 →) 클릭 → [editorStore](frontend/src/store/editorStore.ts) `focusNode` 신호 → [FlowCanvas](frontend/src/canvas/FlowCanvas.tsx) 가 `focusTick` 구독해 `setCenter`(선택+센터링). **토큰 칩 Alt/⌘+클릭 → 소스 노드로 이동**([TokenInput](frontend/src/binding/TokenInput.tsx)). Ctrl+F 노드 검색과 같은 어휘.
+- **배선 가속**: 출력 키마다 `{{ key@id }}` **토큰 복사 버튼**(`OutputsEditor` `nodeId`) · 헤더의 **노드 id 복사**(`#id ⧉`).
+- **TCP 대상**: 호스트+포트 → `host:port` 한 필드.
+- **기타**: [KeyValueEditor](frontend/src/panels/KeyValueEditor.tsx) **행 복제(⧉)** · 속성 패널 **이 노드 복제/삭제** · 간격 축약 · 이름 빈칸=타입 라벨 placeholder · GET/HEAD 본문 안내.
+- 브라우저 실측: cURL 붙여넣기로 POST/헤더2/JSON바디 채움 → `?src=web` 을 "쿼리 1개를 Params 로 분리" → 탭 배지(Params(1)/Headers(2)/Body•) · 바로가기 칩으로 START↔HTTP 이동+센터링. tsc/build/oxlint 통과.
+- ⚠ cURL 복사는 토큰을 그대로 실어 그대로는 실행 불가(템플릿). 병합 URL 의 구(舊) 비토큰 `baseUrlBound` 는 레거시 칩+Path 유지.
+
 ## 참고 문서
 - `backend/README.md` — Phase 1 구현 범위 표, API 요약, 실행 가이드
 - `docs/` — UI/UX 멀티에이전트 설계 토론 로그, 엔터프라이즈 고도화 설계

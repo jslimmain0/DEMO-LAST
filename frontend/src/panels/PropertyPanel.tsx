@@ -1,7 +1,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { CSSProperties, ReactNode } from 'react'
 import { useEffect, useMemo, useState } from 'react'
-import { pluginsApi, runsApi, settingsApi, transformsApi } from '../api/client'
+import { pluginsApi, runsApi, secretsApi, settingsApi, transformsApi } from '../api/client'
 import { usePermissions } from '../auth/AuthContext'
 import { toast } from '../components/toast'
 import type { Binding, BodyType, GraphNode, HttpMethod, NodeField, NodeOutput, NodeVar, ReqMode, RespType, SingleNodeRunResult, TcpField, TcpRespField, WaitField as WaitFieldT } from '../api/types'
@@ -115,11 +115,21 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
   // envStore 를 구독해 활성 환경 변수 변경(스위처/관리 다이얼로그)이 즉시 바인딩 피커에 반영되게 한다.
   const envStore = useEnvStore()
   const runInput = useRunInput()
+  // 시크릿 이름을 바인딩 소스로 노출({{ 이름@secret }}) — 값은 서버에만(write-only).
+  const secretsQ = useQuery({ queryKey: ['secrets'], queryFn: secretsApi.list })
+  const secretNames = secretsQ.data?.map((s) => s.name) ?? []
   // env/input 을 시그니처로 참조 — bindableSources 가 activeEnvVars/activeInputVars 를 명령형으로 읽으므로,
   // 변경 시 재계산되도록 memo 입력에 포함(린트가 '미사용'으로 오인하지 않게 실제 값으로 참조).
-  const envSig = JSON.stringify(envStore.active ? envStore.envs[envStore.active] ?? {} : {}) + '|' + JSON.stringify(runInput)
+  const envSig = JSON.stringify(envStore.active ? envStore.envs[envStore.active] ?? {} : {}) + '|' + JSON.stringify(runInput) + '|' + secretNames.join(',')
   const sources: BindableSource[] = useMemo(
-    () => { void envSig; return selectedId ? bindableSources(nodes, edges, selectedId) : [] },
+    () => {
+      void envSig
+      const base = selectedId ? bindableSources(nodes, edges, selectedId) : []
+      if (secretNames.length) base.unshift({ id: 'secret', name: '시크릿', type: 'secret', items: secretNames.map((k) => ({ key: k, type: '시크릿', scope: null, group: 'response' as const })) })
+      return base
+    },
+    // envSig 가 env/input/secret 시그니처를 모두 담아 재계산을 구동 — secretNames 는 그 안에 포함됨
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [nodes, edges, selectedId, envSig],
   )
 

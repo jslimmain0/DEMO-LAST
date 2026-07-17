@@ -78,6 +78,7 @@ class ExecutionService(
     private val props: ExecutionProperties,
     private val relayResolver: RelayBaseResolver,
     private val notifier: com.flowlink.notify.NotificationService,
+    private val secretService: com.flowlink.secret.SecretService,
     txManager: PlatformTransactionManager,
 ) {
     private val mapper: ObjectMapper = json.mapper()
@@ -164,6 +165,9 @@ class ExecutionService(
 
         val ctx = ExecutionContext()
         seedInput(ctx, req)
+        // 시크릿 볼트 시드 — {{ 이름@secret }} 로 주입. 값은 캡처 로그에서 마스킹된다(recorder).
+        val secrets = secretMap()
+        if (secrets.isNotEmpty()) ctx.putOutput("secret", secrets)
 
         // wait(콜백 대기) 노드 수신 URL 시드 — 실행 시작 시점에 모든 wait 노드의 url 출력을 미리 확정해
         // {{ url@노드ID }} 가 wait 보다 앞의 노드(returnUrl/notiUrl)에서도 해석되게 한다.
@@ -187,7 +191,7 @@ class ExecutionService(
         try {
             worker.execute {
                 inWorker(execId, tenant) {
-                    val outcome = flowExecutor.execute(state, recorder(execId))
+                    val outcome = flowExecutor.execute(state, recorder(execId, secrets.values))
                     settle(execId, outcome, state, tenant, aborted = false)
                 }
             }
@@ -283,7 +287,7 @@ class ExecutionService(
             outcome = flowExecutor.resume(
                 suspended.state, toResumeInput(req),
                 req?.durationMs ?: 0L,
-                recorder(executionId)
+                recorder(executionId, secretMap().values)
             )
         } catch (e: Exception) {
             val execution = executionRepo.findById(executionId).orElse(null) ?: return
@@ -442,20 +446,36 @@ class ExecutionService(
      * redaction deny-by-default: HTTP 노드의 요청/응답 본문(토큰·시크릿 섞일 수 있음)은
      * capture 가 켜진 경우에만 저장하고, 제어 노드(start/if/set 등)의 무해한 표시는 그대로 둔다.
      */
-    private fun recorder(execId: UUID): NodeRecorder {
+    /** 실행 시작 시점의 시크릿 맵(테넌트). 실패해도 실행은 진행(빈 맵). */
+    private fun secretMap(): Map<String, String> =
+        try { secretService.activeSecrets() } catch (e: Exception) {
+            log.warn("시크릿 로드 실패(시드/마스킹 생략): {}", e.message); emptyMap()
+        }
+
+    private fun recorder(execId: UUID, secretValues: Collection<String> = emptyList()): NodeRecorder {
         val captureBodies = props.capture.requestResponseBodies
+        // 마스킹 대상 = 비어있지 않은 시크릿 값(짧은 값의 과도 마스킹 방지 위해 1자 이상). 긴 것부터 치환.
+        val masks = secretValues.filter { it.isNotBlank() }.distinct().sortedByDescending { it.length }
         return NodeRecorder { node, seq, result, status, durationMs ->
             val ne = NodeExecution.of(execId, node.id!!, node.name, node.type, seq)
-            val outputJson = if (result.storedValue != null) json.toJson(result.storedValue) else null
+            val outputJson = if (result.storedValue != null) mask(json.toJson(result.storedValue), masks) else null
             val redact = !captureBodies && node.nodeType() == NodeType.HTTP
-            val requestText = if (redact) "(redacted — capture 비활성)" else result.requestText
-            val responseText = if (redact) "(redacted — capture 비활성)" else result.responseText
+            val requestText = if (redact) "(redacted — capture 비활성)" else mask(result.requestText, masks)
+            val responseText = if (redact) "(redacted — capture 비활성)" else mask(result.responseText, masks)
             ne.complete(
                 status, result.ok, result.httpStatus,
                 requestText, responseText, outputJson, durationMs
             )
             nodeExecRepo.save(ne)
         }
+    }
+
+    /** 캡처 텍스트에서 시크릿 값 문자열을 마스킹(로그/DB 평문 노출 방지). */
+    private fun mask(text: String?, masks: List<String>): String? {
+        if (text == null || masks.isEmpty()) return text
+        var out: String = text
+        for (v in masks) if (v.isNotEmpty()) out = out.replace(v, "••••••")
+        return out
     }
 
     private fun applyStatus(execution: Execution, outcome: FlowExecutor.Outcome) {

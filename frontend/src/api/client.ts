@@ -56,6 +56,13 @@ export const triggersApi = {
     http.delete(`/flows/${flowId}/triggers/${id}`).then(() => undefined),
 }
 
+export interface SecretView { name: string; createdAt: string }
+export const secretsApi = {
+  list: () => http.get<SecretView[]>('/secrets').then((r) => r.data),
+  put: (name: string, value: string) => http.put<SecretView>(`/secrets/${encodeURIComponent(name)}`, { value }).then((r) => r.data),
+  remove: (name: string) => http.delete(`/secrets/${encodeURIComponent(name)}`).then(() => undefined),
+}
+
 export interface SuiteRunItem { flowId: string; flowName: string; executionId: string | null; status: string; error: string | null }
 export const suitesApi = {
   run: (body: { flowIds?: string[]; folderId?: string }) =>

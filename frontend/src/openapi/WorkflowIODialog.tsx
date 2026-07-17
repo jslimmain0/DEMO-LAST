@@ -71,7 +71,7 @@ function ExportTab({ json, flowName }: { json: string; flowName: string }) {
   }
 
   return (
-    <div style={{ padding: 18, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+    <div style={{ padding: 18, display: 'flex', flexDirection: 'column', minHeight: 0, flex: 1 }}>
       <p style={{ fontSize: 12.5, color: 'var(--fl-text-muted)', margin: '0 0 10px' }}>현재 캔버스의 워크플로를 JSON 으로 내보냅니다.</p>
       <textarea readOnly value={json} style={{ ...area, flex: 1 }} onFocus={(e) => e.currentTarget.select()} />
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 14 }}>
@@ -137,7 +137,7 @@ function ImportTab({ onImport, onClose }: { onImport: (graph: FlowGraph) => void
   }
 
   return (
-    <div style={{ padding: 18, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+    <div style={{ padding: 18, display: 'flex', flexDirection: 'column', minHeight: 0, flex: 1 }}>
       <input type="file" accept=".json,application/json" onChange={onFile} style={{ marginBottom: 10 }} />
       <textarea
         autoFocus
@@ -156,7 +156,7 @@ function ImportTab({ onImport, onClose }: { onImport: (graph: FlowGraph) => void
 }
 
 const overlay: CSSProperties = { position: 'fixed', inset: 0, background: 'rgba(26,29,39,.4)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }
-const card: CSSProperties = { width: 600, maxWidth: '100%', height: 540, maxHeight: '82vh', background: 'var(--fl-surface)', borderRadius: 'var(--fl-radius-lg)', boxShadow: 'var(--fl-shadow-lg)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }
+const card: CSSProperties = { width: 820, maxWidth: '94vw', height: 'min(680px, 88vh)', background: 'var(--fl-surface)', borderRadius: 'var(--fl-radius-lg)', boxShadow: 'var(--fl-shadow-lg)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }
 const area: CSSProperties = { width: '100%', resize: 'none', fontFamily: 'var(--fl-font-mono)', fontSize: 12, padding: 12, border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', color: 'var(--fl-text)' }
 const primary: CSSProperties = { padding: '9px 18px', border: 'none', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-primary)', color: '#fff', fontWeight: 600, fontSize: 13, cursor: 'pointer' }
 const ghost: CSSProperties = { padding: '9px 16px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 13, cursor: 'pointer' }

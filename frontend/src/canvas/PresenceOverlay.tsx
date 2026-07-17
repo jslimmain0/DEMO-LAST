@@ -38,8 +38,9 @@ export function PresenceOverlay() {
           position: 'absolute', transform: `translate(${p.cursor.x}px, ${p.cursor.y}px)`,
           pointerEvents: 'none', zIndex: 6, transition: 'transform 80ms linear',
         }}>
-          <svg width="18" height="18" viewBox="0 0 24 24" style={{ display: 'block' }}>
-            <path d="M4 2 L20 12 L12 13.5 L9 21 Z" fill={p.color} stroke="var(--fl-cursor-halo)" strokeWidth="1.5" />
+          <svg width="22" height="22" viewBox="0 0 24 24" style={{ display: 'block', filter: 'drop-shadow(0 1px 2px rgba(0,0,0,.4))' }}>
+            {/* 외곽선을 굵게(테마 대비 halo) + 그림자 — 라이트/다크 어디서든 또렷하게 */}
+            <path d="M4 2 L20 12 L12 13.5 L9 21 Z" fill={p.color} stroke="var(--fl-cursor-halo)" strokeWidth="2.5" strokeLinejoin="round" />
           </svg>
           <span style={{
             marginLeft: 10, background: p.color, color: readableText(p.color), fontSize: 11, fontWeight: 600,

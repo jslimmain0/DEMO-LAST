@@ -34,6 +34,33 @@ export function RunPanel({
     || (filter === 'ok' && s === 'SUCCEEDED') || (filter === 'fail' && s === 'FAILED') || (filter === 'skip' && s === 'SKIPPED')
   const visibleNodes = (execution?.nodes ?? []).filter((nd) => matchFilter(nd.status))
 
+  // 실패 시 첫 실패 노드를 자동으로 펼쳐 실패 지점을 바로 보여준다(긴 그래프에서 손으로 찾을 필요 없이)
+  useEffect(() => {
+    if (execution?.status === 'FAILED') {
+      const failed = execution.nodes.find((n) => n.status === 'FAILED')
+      if (failed) setOpenId(failed.id)
+    }
+    // 실행 id/상태가 바뀔 때만 — nodes 변경마다 재실행 불필요
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [execution?.id, execution?.status])
+
+  // 실행 로그 전체를 텍스트로 내보내기(다운로드) — 오류 리포트·회귀 비교용
+  const exportLog = () => {
+    if (!execution) return
+    const lines = [`# 실행 ${execution.id} · ${execution.status}${execution.error ? ` · ${execution.error}` : ''}`]
+    for (const nd of execution.nodes) {
+      lines.push(`\n## [${nd.status}] ${nd.nodeName || nd.nodeId}${nd.httpStatus != null ? ` · HTTP ${nd.httpStatus}` : ''}${nd.durationMs != null ? ` · ${nd.durationMs}ms` : ''}`)
+      if (nd.requestText) lines.push(`요청:\n${nd.requestText}`)
+      if (nd.responseText) lines.push(`응답:\n${nd.responseText}`)
+      if (nd.output != null) lines.push(`출력:\n${JSON.stringify(nd.output, null, 2)}`)
+    }
+    const blob = new Blob([lines.join('\n')], { type: 'text/plain;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url; a.download = `run-${execution.id.slice(0, 8)}.txt`; a.click()
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
+  }
+
   return (
     <section
       aria-label="실행 로그"
@@ -59,6 +86,7 @@ export function RunPanel({
             {([['all', '전체'], ['ok', '성공'], ['fail', '실패'], ['skip', '건너뜀']] as const).map(([k, lbl]) => (
               <button key={k} onClick={() => setFilter(k)} style={{ padding: '3px 8px', fontSize: 11.5, border: '1px solid var(--fl-border)', borderRadius: 6, cursor: 'pointer', background: filter === k ? 'var(--fl-primary)' : 'transparent', color: filter === k ? '#fff' : 'var(--fl-text-muted)' }}>{lbl}</button>
             ))}
+            <button onClick={exportLog} title="실행 로그 전체 내보내기(.txt)" style={{ padding: '3px 8px', fontSize: 11.5, border: '1px solid var(--fl-border)', borderRadius: 6, cursor: 'pointer', background: 'transparent', color: 'var(--fl-text-muted)' }}>⬇ 내보내기</button>
           </div>
         )}
         <button onClick={onClose} aria-label="로그 닫기" style={{ marginLeft: execution && execution.nodes.length > 0 ? 8 : (running && onStop ? 0 : 'auto'), border: 'none', background: 'transparent', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 16 }}>×</button>
@@ -96,7 +124,7 @@ export function RunPanel({
               >
                 <span style={{ width: 18, color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)', fontSize: 11 }}>{nd.seq}</span>
                 <StatusBadge status={nd.status} />
-                {nd.nodeType === 'http' && nd.httpStatus != null && <MethodTag method={'GET' as HttpMethod} />}
+                {nd.nodeType === 'http' && nd.httpStatus != null && <MethodTag method={methodOf(nd.requestText)} />}
                 <span style={{ fontSize: 13, fontWeight: 500 }}>{nd.nodeName || nd.nodeId}</span>
                 <span style={{ marginLeft: 'auto', display: 'flex', gap: 12, color: 'var(--fl-text-muted)', fontSize: 12, fontFamily: 'var(--fl-font-mono)' }}>
                   {nd.httpStatus != null && <span>{nd.httpStatus}</span>}
@@ -151,6 +179,12 @@ function WaitBanner({ status }: { status: WaitStatus }) {
       )}
     </div>
   )
+}
+
+// 실행 로그의 요청 텍스트("GET https://…") 첫 토큰에서 실제 메서드 추출(응답에 method 필드가 없어서)
+function methodOf(requestText: string | null | undefined): HttpMethod {
+  const m = (requestText?.trim().split(/\s+/)[0] ?? '').toUpperCase()
+  return (['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD'].includes(m) ? m : 'GET') as HttpMethod
 }
 
 function LogBlock({ title, text }: { title: string; text: string | null | undefined }) {

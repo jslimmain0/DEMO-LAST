@@ -4,6 +4,7 @@ import type {
   ExecutionDetail,
   ExecutionSummary,
   FlowDetail,
+  FlowGraph,
   FlowSummary,
   FlowVersionSummary,
   FolderSummary,
@@ -30,6 +31,12 @@ export const flowsApi = {
   remove: (id: string) => http.delete(`/flows/${id}`).then(() => undefined),
   saveVersion: (id: string, body: SaveVersionRequest) =>
     http.post<FlowVersionSummary>(`/flows/${id}/versions`, body).then((r) => r.data),
+  listVersions: (id: string) =>
+    http.get<FlowVersionSummary[]>(`/flows/${id}/versions`).then((r) => r.data),
+  getVersion: (id: string, no: number) =>
+    http.get<FlowGraph>(`/flows/${id}/versions/${no}`).then((r) => r.data),
+  restoreVersion: (id: string, no: number) =>
+    http.post<FlowVersionSummary>(`/flows/${id}/versions/${no}/restore`).then((r) => r.data),
   importFlow: (graph: unknown) =>
     http.post<FlowDetail>('/flows/import', graph).then((r) => r.data),
   move: (id: string, folderId: string | null) =>

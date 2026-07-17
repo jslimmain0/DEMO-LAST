@@ -8,4 +8,7 @@ import java.util.UUID
 interface FlowVersionRepository : JpaRepository<FlowVersion, UUID> {
 
     fun findByFlowIdAndVersionNo(flowId: UUID, versionNo: Int): Optional<FlowVersion>
+
+    /** 버전 기록(최신 우선) — 버전 히스토리/복원 UI 목록용. */
+    fun findByFlowIdOrderByVersionNoDesc(flowId: UUID): List<FlowVersion>
 }

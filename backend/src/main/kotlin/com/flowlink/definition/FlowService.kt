@@ -15,6 +15,8 @@ import com.flowlink.definition.dto.CreateFlowRequest
 import com.flowlink.definition.dto.FlowDetail
 import com.flowlink.definition.dto.FlowSummary
 import com.flowlink.definition.dto.FlowVersionSummary
+import org.springframework.security.core.context.SecurityContextHolder
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.util.UUID
@@ -105,13 +107,47 @@ class FlowService(
         val name = if (gname != null && gname.isNotBlank()) gname else flow.name
         val nextNo = flow.currentVersion + 1
 
-        val version = FlowVersion.create(flow.id, nextNo, name, graphJson, note, null)
+        val version = FlowVersion.create(flow.id, nextNo, name, graphJson, note, currentUser())
         // 할당식 UUID 엔티티는 save 가 merge 로 동작 → @CreationTimestamp lateinit createdAt 은
         // **반환된 관리 인스턴스**에만 채워진다(원본 version 은 merge 소스라 미초기화). from 이 createdAt
         // 을 읽으므로 반환값(saved)을 써야 한다. createInternal 의 `flow = saveAndFlush(flow)` 와 동일 이유.
         val saved = versionRepo.saveAndFlush(version)
 
         flow.name = name
+        flow.currentVersion = nextNo
+        return FlowVersionSummary.from(saved)
+    }
+
+    /** 버전 기록(최신 우선) — 테넌트 소유 확인 후. */
+    @Transactional(readOnly = true)
+    fun listVersions(id: UUID): List<FlowVersionSummary> {
+        loadFlow(id) // 테넌트 소유 확인(없으면 404)
+        return versionRepo.findByFlowIdOrderByVersionNoDesc(id).map { FlowVersionSummary.from(it) }
+    }
+
+    /** 특정 버전의 그래프 JSON — 미리보기/diff 용. */
+    @Transactional(readOnly = true)
+    fun getVersionGraph(id: UUID, versionNo: Int): JsonNode {
+        loadFlow(id)
+        val v = versionRepo.findByFlowIdAndVersionNo(id, versionNo)
+            .orElseThrow { NotFoundException.of("FlowVersion", versionNo) }
+        return json.readTree(v.graphJson)
+    }
+
+    /**
+     * 과거 버전을 **새 버전으로 복원**(불변 이력 유지 — 되돌린 것도 새 스냅샷). currentVersion 이 그 그래프로 갱신된다.
+     * 되돌리기 자체가 감사 로그에 남아 팀 협업에서 안전하다.
+     */
+    @Transactional
+    fun restoreVersion(id: UUID, versionNo: Int): FlowVersionSummary {
+        val flow = loadFlow(id)
+        val src = versionRepo.findByFlowIdAndVersionNo(id, versionNo)
+            .orElseThrow { NotFoundException.of("FlowVersion", versionNo) }
+        val nextNo = flow.currentVersion + 1
+        val note = "v$versionNo 복원"
+        val restored = FlowVersion.create(flow.id, nextNo, src.name, src.graphJson, note, currentUser())
+        val saved = versionRepo.saveAndFlush(restored)
+        flow.name = src.name
         flow.currentVersion = nextNo
         return FlowVersionSummary.from(saved)
     }
@@ -186,5 +222,11 @@ class FlowService(
         }
 
         private fun tenant(): String = TenantContext.getTenantId()
+
+        // OIDC 모드면 name=preferred_username(없으면 sub), dev 모드는 null — 버전 작성자 기록용.
+        private fun currentUser(): String? {
+            val auth = SecurityContextHolder.getContext().authentication
+            return if (auth is JwtAuthenticationToken) auth.name else null
+        }
     }
 }

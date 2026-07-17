@@ -59,6 +59,19 @@ class FlowController(private val service: FlowService) {
     fun saveVersion(@PathVariable id: UUID, @Valid @RequestBody req: SaveVersionRequest): FlowVersionSummary =
         service.saveVersion(id, req.graph, req.note)
 
+    // 버전 기록(최신 우선) — 히스토리/복원 UI 목록
+    @GetMapping("/{id}/versions")
+    fun listVersions(@PathVariable id: UUID): List<FlowVersionSummary> = service.listVersions(id)
+
+    // 특정 버전 그래프 — 읽기전용 미리보기 + diff
+    @GetMapping("/{id}/versions/{no}")
+    fun getVersion(@PathVariable id: UUID, @PathVariable no: Int): JsonNode = service.getVersionGraph(id, no)
+
+    // 과거 버전을 새 버전으로 복원(불변 이력 유지)
+    @PostMapping("/{id}/versions/{no}/restore")
+    fun restoreVersion(@PathVariable id: UUID, @PathVariable no: Int): FlowVersionSummary =
+        service.restoreVersion(id, no)
+
     @PostMapping("/import")
     @ResponseStatus(HttpStatus.CREATED)
     fun importFlow(@RequestBody export: JsonNode): FlowDetail = service.importFlow(export)

@@ -768,6 +768,15 @@ design/   theme(라이트/다크) · index.css(CSS 변수)
 - **데이터 삽입 버튼 아이콘화** — raw 모드의 `{ } 데이터 삽입` 텍스트 버튼을 `{ }` 아이콘으로(TokenInput 인라인 버튼은 이미 아이콘).
 - 검증: 백엔드 단위(presence 9 등) + 헤더리스 e2e(연결 안 된 노드 SKIPPED·httpStatus 출력·단일 실행 ok/status·assert httpStatus==200 SUCCEEDED) + 브라우저(단일 실행 인라인 결과·팔레트 접기·속성 오버레이) 실측. 프론트 tsc/build/oxlint.
 
+### 에디터 편의기능 묶음(~20)
+- **데이터 삽입 전면 아이콘화** — 모든 `{ }`/복사 버튼을 SVG 아이콘으로([components/icons.tsx](frontend/src/components/icons.tsx) DataInsertIcon·CopyIcon).
+- **넓은 속성 모달** — 좁은 사이드 대신 `⤢` 로 중앙 넓은 모달(760px)에서 편집(Esc/배경 닫기·선택해제 시 자동닫힘).
+- **도구 메뉴(⋯)** — 자동 정렬(위상 좌→우 `autoLayout`)·재실행·집중 모드(양 패널 접기)·노드 검색(Ctrl+F, 센터 이동)·그래프 JSON 보기+복사·자동 저장(dirty 후 1.5초 debounce)·패널 크기 리셋·단축키 도움말.
+- **노드 조작** — 복제(Ctrl+D `duplicateSelection`)·우클릭 컨텍스트 메뉴(실행/복제/삭제).
+- **캔버스 컨트롤** — 줌 100%·미니맵 토글·그리드 토글(localStorage). **헤더 노드 개수 배지**.
+- **실행 로그** — 필터(전체/성공/실패/건너뜀)·요청/응답/출력 복사 버튼.
+- 브라우저 실측: 도구 메뉴·JSON 모달·넓은 속성 모달·필터·미니맵/그리드 컨트롤·팔레트 접기·아이콘 전부 렌더 확인.
+
 ## 참고 문서
 - `backend/README.md` — Phase 1 구현 범위 표, API 요약, 실행 가이드
 - `docs/` — UI/UX 멀티에이전트 설계 토론 로그, 엔터프라이즈 고도화 설계

@@ -756,9 +756,11 @@ design/   theme(라이트/다크) · index.css(CSS 변수)
 - **의식적 수용(문서화)**: (H4) 체인 wait 노드에서 외부 게이트웨이가 ACK 직후 다음 콜백을 쏘면 워커 큐 대기창과 경합 가능(테스트 도구·비동기 트레이드오프 — 필요 시 미매칭 콜백 버퍼링 후속). (L1) 워커 큐 포화 시 재개를 호출 스레드에서 수행(재개 입력 유실 방지 우선). presence 토큰은 쿼리스트링(사내 도구 전제, 로그 노출 가능). P3 2탭 렌더링 자동화(Playwright)는 미도입(프로토콜은 e2e·렌더링은 수동 검증).
 
 ## 최근 변경 (2026-07-17) — 실행 정확성 + 에디터 편의 기능 묶음
-- **버그: 연결 안 된 노드 실행 수정** — [FlowExecutor](backend/src/main/kotlin/com/flowlink/execution/engine/FlowExecutor.kt) `initialActive` 가
-  "진입차수 0" 인 모든 노드를 시작점으로 삼아, START 에 연결 안 된 떠 있는 노드가 멋대로 실행되던 문제. **START 노드에서 시작해
-  엣지를 따라 흐르게** 변경(도달 못 하는 노드는 SKIPPED). START 없는 구/손편집 그래프는 진입차수 0 폴백.
+- **버그: 연결 안 된 노드 실행 수정(확정)** — [FlowExecutor](backend/src/main/kotlin/com/flowlink/execution/engine/FlowExecutor.kt) `initialActive` 가
+  "진입차수 0" 인 모든 노드를 시작점으로 삼아, START 에 연결 안 된 떠 있는 노드가 멋대로 실행되던 문제. **오직 START 노드에서
+  시작해 엣지를 따라 흐르게** 변경(도달 못 하는 노드는 SKIPPED). 1차 수정(30d6e42)은 START 없는 그래프에 진입차수 0 폴백을
+  남겨 사용자 플로우(START 부재)에서 재현됐음 → **폴백 완전 제거**하고, START 가 없으면 `drive()` 가 "시작(START) 노드가
+  필요합니다" 로 명확히 실패(f028f6c). 프론트는 **빈 새 플로우 로드 시 START 자동 배치**([editorStore](frontend/src/store/editorStore.ts) `loadGraph`)로 시작점을 보장. 재개 중엔 active 가 채워져 무해.
 - **HTTP 상태코드 검증(400/404)** — [HttpNodeExecutor](backend/src/main/kotlin/com/flowlink/execution/engine/HttpNodeExecutor.kt) 가 응답 출력 맵에
   `httpStatus` 를 실어(server·client 모드) `{{ httpStatus@노드 }} == 200` / `!= 404` 로 검증(assert). 바인딩 picker([upstream.ts](frontend/src/binding/upstream.ts))·안내 노출.
 - **단일 노드 독립 실행** — `POST /flows/{id}/nodes/{nodeId}/run`([ExecutionController](backend/src/main/kotlin/com/flowlink/execution/ExecutionController.kt))
@@ -776,6 +778,15 @@ design/   theme(라이트/다크) · index.css(CSS 변수)
 - **캔버스 컨트롤** — 줌 100%·미니맵 토글·그리드 토글(localStorage). **헤더 노드 개수 배지**.
 - **실행 로그** — 필터(전체/성공/실패/건너뜀)·요청/응답/출력 복사 버튼.
 - 브라우저 실측: 도구 메뉴·JSON 모달·넓은 속성 모달·필터·미니맵/그리드 컨트롤·팔레트 접기·아이콘 전부 렌더 확인.
+
+### 노드 생성 편의기능(빠른 추가)
+"노드를 쉽게 만들 수 있게" 요청 반영. 팔레트 드래그/클릭 외에 위치 지정·연결 동시 생성 경로 추가.
+- **캔버스 우클릭 / 빈 곳 더블클릭 → 노드 추가 검색 메뉴**([NodeAddMenu](frontend/src/canvas/NodeAddMenu.tsx)) — 클릭한 그 위치(`screenToFlowPosition`)에 배치. 검색 + Enter=첫 항목.
+- **엣지를 빈 곳에 놓기 → 그 위치에 노드 추가 + 자동 연결**([FlowCanvas](frontend/src/canvas/FlowCanvas.tsx) `onConnectEnd` 의 `connectionState.isValid==false` 분기 → 메뉴, 고르면 `onConnect` 로 소스 핸들에 연결).
+- **Ctrl/Cmd+K** — 화면 중앙 빠른 추가 메뉴.
+- **팔레트 검색창 + 최근 사용 노드**([Palette](frontend/src/canvas/Palette.tsx) `q`/`recent`, `fl:palette:recent` localStorage 4개).
+- **새(빈) 플로우 자동 START** — 위 실행 정확성 항목과 연동(시작점 보장).
+- 브라우저 실측: 새 플로우 START 자동 배치·우클릭 메뉴로 HTTP 추가(노드 2)·START+떠있는 HTTP 실행 시 HTTP SKIPPED(전체 성공)·팔레트 검색.
 
 ## 참고 문서
 - `backend/README.md` — Phase 1 구현 범위 표, API 요약, 실행 가이드

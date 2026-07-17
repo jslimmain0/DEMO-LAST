@@ -851,6 +851,24 @@ design/   theme(라이트/다크) · index.css(CSS 변수)
   (3)[low] `BindingPicker` sources 가 env store 미구독이라 활성 env 변수 추가가 즉시 반영 안 되던 stale → PropertyPanel 이 `useEnvStore` 구독 + 활성 env 시그니처를 memo 입력에 포함.
 - ⚠ 환경은 브라우저 localStorage 개인 스코프(팀 공유 아님·서버 미저장). cURL 복사는 토큰을 그대로 실어 그대로는 실행 불가(템플릿).
 
+## 최근 변경 (2026-07-18) — 분석 문서 기반 기능 확장 배치(자동화·버저닝·시크릿·상태Mock 등)
+멀티에이전트 평가([docs/flowlink-user-critique.md](docs/flowlink-user-critique.md), 커밋 제외)에서 **반박에서도 유지된 핵심 마찰**과 추가/정리 항목을 ROI 순으로 구현. 전부 헤드리스 e2e 44/44 검증([features-e2e 성격]).
+- **버전 히스토리/복원**: `GET /flows/{id}/versions`·`GET .../versions/{no}`·`POST .../versions/{no}/restore`([FlowController](backend/src/main/kotlin/com/flowlink/definition/FlowController.kt)/[FlowService](backend/src/main/kotlin/com/flowlink/definition/FlowService.kt)).
+  복원=그 스냅샷을 **새 버전으로**(불변 이력 유지). 도구(⋯) → 🕘 버전 기록 다이얼로그 + [graphDiff.ts](frontend/src/lib/graphDiff.ts)(노드/연결 added/removed/changed, 좌표 제외) 요약.
+- **자동 실행 트리거(문서화 부채 해소 — MANUAL 만 동작 → 스케줄/웹훅)**: `trigger/` 모듈 — [FlowTrigger](backend/src/main/kotlin/com/flowlink/core/domain/FlowTrigger.kt)(V9 pg/oracle) +
+  [TriggerService](backend/src/main/kotlin/com/flowlink/trigger/TriggerService.kt)(cron=Spring CronExpression 6필드·잘못된 식 400) + [TriggerScheduler](backend/src/main/kotlin/com/flowlink/trigger/TriggerScheduler.kt)(전용 20초 폴러 — `fireSchedule` 을 **프록시 경유**로 불러 @Transactional 적용) +
+  [WebhookController](backend/src/main/kotlin/com/flowlink/trigger/WebhookController.kt)(`POST /hooks/{token}` 무인증·permitAll·전체 예외 가드). `ExecutionService.run(…, trigger)` 로 실행 종류 기록. 스케줄러/웹훅은 TenantContext 수동. P2 워커 풀 재사용이라 브라우저 없이 완결. 도구 → ⏰ 트리거 다이얼로그(cron 프리셋·다음실행·웹훅 URL 복사).
+- **실행 이력 강화**: `GET /executions` 에 status/flowId/from/to(epoch ms)/offset([ExecutionRepository](backend/src/main/kotlin/com/flowlink/core/repository/ExecutionRepository.kt) `findFiltered` @Query, null 파라미터 무시) + `POST /executions/{id}/rerun`(원본 flowVersion+input 재현). Executions 화면 status/기간 서버 필터 + 재실행.
+- **런타임 입력 파라미터**: [runInput.ts](frontend/src/lib/runInput.ts)(플로우별 localStorage) → onRun 이 `RunRequest.input` 로 주입(seedScope "input"). 도구 → ▶ 입력값과 실행. `{{ 키@input }}` 피커 노출. **실행 상세 응답 diff**([Executions](frontend/src/routes/Executions.tsx) '⇄ 이전 실행과 비교' — 노드별 변경/동일/신규).
+- **테스트 스위트 일괄 실행**: `POST /api/v1/suites/run{folderId|flowIds}`([SuiteController](backend/src/main/kotlin/com/flowlink/suite/SuiteController.kt)) → 대시보드 '▶ 폴더/선택 실행' → [SuiteRunDialog](frontend/src/components/SuiteRunDialog.tsx) 성공/실패 매트릭스(각 실행 폴링).
+- **실행 실패 알림**: [NotificationService](backend/src/main/kotlin/com/flowlink/notify/NotificationService.kt)(FAILED settle 시 비동기 파이어&포겟) → 테넌트 설정 웹훅(Slack/Teams `{text}`). `GET/PUT /api/v1/settings/notify`(admin), SettingsDialog 알림 필드. ⚠ admin 설정 URL 이라 스킴만 검증(전체 SsrfGuard 미적용).
+- **시크릿 볼트(시크릿 전파 누수 부채 해소)**: [Secret](backend/src/main/kotlin/com/flowlink/core/domain/Secret.kt)(V10) + [SecretService](backend/src/main/kotlin/com/flowlink/secret/SecretService.kt)(StateCrypto AES-GCM 재사용·write-only). `{{ 이름@secret }}` 시드 + **캡처 로그 마스킹**(recorder 가 시크릿 값 문자열을 ••••••로, run·resume 양쪽). 도구 → 🔑 시크릿 볼트.
+- **상태 있는 Mock**: `MockRule.setState`(응답 후 서버 상태 갱신) + `{{state.KEY}}`·조건 `source=state`([MockRuntime](backend/src/main/kotlin/com/flowlink/mock/MockRuntime.kt) 가 state 를 default emptyMap 로 스레딩 — 기존 호출/단위테스트 무변경, [MockGatewayController](backend/src/main/kotlin/com/flowlink/mock/MockGatewayController.kt) 서버별 상태맵). "1차 pending → 2차 approved" 시나리오. MockServerEditor 에 setState 편집.
+- **정리/통합**: RunRequest 죽은 relayRunId/relayBase 제거. 공용 [Modal](frontend/src/components/Modal.tsx) 셸(신규 다이얼로그 이관) + [NodeExecutionLog](frontend/src/components/NodeExecutionLog.tsx)(RunPanel↔Executions 로그 블록 공용화 — 이력 모달도 복사 버튼).
+- 검증: **features e2e 44/44**(버전 복원·필터/rerun·트리거(스케줄 폴러 실발화·웹훅)·시크릿 해석+마스킹·스위트 성공/실패·실패알림 앱 자체 웹훅 싱크로 전달 확인·상태Mock 1차/2차) + 백엔드 단위 전종 + tsc/build/oxlint. 적대적 멀티에이전트 리뷰 반영.
+- ⚠ 단일 인스턴스 스코프(트리거 스케줄러·상태Mock·suspension 캐시 — 수평 확장 시 분산 락). 스케줄 실행은 요청 오리진 없어 relay base=설정/env/localhost. 시크릿 마스킹은 값 문자열 정확 일치(인코딩 변형은 후속). 트리거/스위트는 워커 큐 포화 시 429 상속.
+- **미착수(의도적 연기)**: 대형 파일 물리 분리(PropertyPanel 1400줄·ExecutionService·FlowExecutor·editorStore·Editor·Dashboard·MockEditor·TokenInput → 분석 §8). 순수 유지보수 리팩토링이라 회귀 위험 대비 사용자 가치가 낮아 **개별 리뷰 PR로 분리 권장**(마라톤 일괄 분리는 지양).
+
 ## 참고 문서
 - `backend/README.md` — Phase 1 구현 범위 표, API 요약, 실행 가이드
 - `docs/` — UI/UX 멀티에이전트 설계 토론 로그, 엔터프라이즈 고도화 설계

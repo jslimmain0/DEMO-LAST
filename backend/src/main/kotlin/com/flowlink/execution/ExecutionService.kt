@@ -28,6 +28,7 @@ import com.flowlink.execution.dto.PendingInputRequest
 import com.flowlink.execution.dto.PendingWaitRequest
 import com.flowlink.execution.dto.ResumeRequest
 import com.flowlink.execution.dto.RunRequest
+import com.flowlink.execution.dto.SingleNodeRunResult
 import com.flowlink.execution.dto.ResumeRequest.CallbackPayload
 import com.flowlink.execution.engine.ExecutionContext
 import com.flowlink.execution.engine.FlowExecutor
@@ -117,6 +118,24 @@ class ExecutionService(
     ) {
         @Volatile
         var future: ScheduledFuture<*>? = null
+    }
+
+    /**
+     * 단일 노드 독립 실행 — 그 노드 하나만 새 컨텍스트로 즉석 실행하고 결과를 돌려준다(이력 미저장).
+     * 상류 바인딩은 null. HTTP/TCP/SET/IF/SWITCH/ASSERT/TRANSFORM 지원, 대기/폼/입력/client 는 미지원.
+     */
+    @Transactional(readOnly = true)
+    fun runSingleNode(flowId: UUID, nodeId: String): SingleNodeRunResult {
+        val tenant = TenantContext.getTenantId()
+        val flow = flowRepo.findByIdAndTenantId(flowId, tenant)
+            .orElseThrow { NotFoundException.of("Flow", flowId) }
+        val version = versionRepo.findByFlowIdAndVersionNo(flowId, flow.currentVersion)
+            .orElseThrow { NotFoundException.of("FlowVersion", "$flowId/v${flow.currentVersion}") }
+        val graph = json.parseGraph(version.graphJson)
+        val node = graph.nodesOrEmpty().find { it.id == nodeId }
+            ?: throw NotFoundException.of("Node", nodeId)
+        val r = flowExecutor.runSingleNode(node)
+        return SingleNodeRunResult(r.ok, r.httpStatus, r.value, r.requestText, r.responseText)
     }
 
     fun run(flowId: UUID, req: RunRequest?): ExecutionDetail {

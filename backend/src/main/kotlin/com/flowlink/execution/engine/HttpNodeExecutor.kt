@@ -215,11 +215,24 @@ class HttpNodeExecutor(
             val raw = (if (req.body != null) spec.body(req.body.toByteArray(cs)) else spec)
                 .exchange { _, response -> readRaw(response, cs) }
 
-            val value = parseResponse(node.respType, raw, cs)
+            val value = withStatus(parseResponse(node.respType, raw, cs), raw.status)
             NodeResult.okHttp(raw.status, req.requestText, raw.text, value, req.reqValues)
         } catch (e: Exception) {
             NodeResult.fail(0, req.requestText, "⚠ 요청 실패: " + (e.message ?: e.toString()))
         }
+    }
+
+    /**
+     * 응답 출력 맵에 HTTP 상태코드를 `httpStatus` 키로 실어 바인딩 가능하게 한다
+     * (검증 노드에서 `{{ httpStatus@노드 }} == 200` / `!= 404` 같은 상태 검증용). 배열 응답은 키를 못 넣어 그대로 둔다.
+     */
+    private fun withStatus(value: Any, status: Int): Any {
+        if (value !is Map<*, *>) return value
+        val out = LinkedHashMap<String, Any?>()
+        @Suppress("UNCHECKED_CAST")
+        out.putAll(value as Map<String, Any?>)
+        out["httpStatus"] = status
+        return out
     }
 
     /**
@@ -232,8 +245,8 @@ class HttpNodeExecutor(
         }
         val text = body ?: ""
         // client 모드는 브라우저가 이미 디코딩한 문자열을 받으므로 form 퍼센트 디코딩은 UTF-8 기준
-        val value = parseResponse(node.respType,
-            RawResponse(status, text, text.toByteArray(StandardCharsets.UTF_8).size), StandardCharsets.UTF_8)
+        val value = withStatus(parseResponse(node.respType,
+            RawResponse(status, text, text.toByteArray(StandardCharsets.UTF_8).size), StandardCharsets.UTF_8), status)
         return NodeResult.okHttp(status, req.requestText, text, value, req.reqValues)
     }
 

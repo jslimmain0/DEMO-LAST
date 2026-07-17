@@ -447,6 +447,24 @@ class FlowExecutor(
         return out
     }
 
+    /**
+     * 단일 노드 독립 실행 — 새(빈) 컨텍스트로 그 노드 하나만 처리한다. 상류 바인딩({{ x@노드 }})은
+     * 값이 없어 null 로 풀린다(노드 자체 로직·리터럴 검증용). 브라우저 협업 노드(대기/폼/입력/client HTTP)는
+     * 콜백/모달이 필요해 단독 실행을 지원하지 않는다.
+     */
+    fun runSingleNode(node: GraphNode): NodeResult {
+        val et = node.effectiveType()
+        if (et == NodeType.FORM || et == NodeType.WAIT || et == NodeType.INPUT ||
+            (et == NodeType.HTTP && isClientMode(node))) {
+            return NodeResult.fail(0, "", "단독 실행 미지원 노드(대기/폼/입력/클라이언트 모드) — 전체 실행을 쓰세요.")
+        }
+        return try {
+            processNode(node, ExecutionContext())
+        } catch (e: Exception) {
+            NodeResult.fail(0, "", "⚠ " + (e.message ?: e.toString()))
+        }
+    }
+
     private fun processNode(node: GraphNode, ctx: ExecutionContext): NodeResult =
         when (node.nodeType()) {
             NodeType.START -> NodeResult.ok(null, "(시작)", "플로우 시작", emptyMap<String, Any?>())
@@ -604,7 +622,16 @@ class FlowExecutor(
         return order
     }
 
+    /**
+     * 실행 시작점 — **START 노드에서 시작해 연결(엣지)을 따라 흐른다.** START 에서 도달하지 못하는 노드는
+     * 실행하지 않는다(활성화 안 돼 SKIPPED). 이전에는 "진입차수 0" 인 노드를 전부 시작점으로 삼아,
+     * START 에 연결 안 된 떠 있는 노드가 멋대로 실행되던 버그가 있었다.
+     * START 가 하나도 없는 (구/손편집) 그래프는 레거시 폴백으로 진입차수 0 을 시작점으로 쓴다.
+     */
     private fun initialActive(nodes: List<GraphNode>, edges: List<GraphEdge>): MutableSet<String> {
+        val starts = nodes.filter { it.nodeType() == NodeType.START }.mapNotNull { it.id }
+        if (starts.isNotEmpty()) return HashSet(starts)
+
         val indeg = HashMap<String, Int>()
         nodes.forEach { n -> indeg[n.id!!] = 0 }
         for (e in edges) {

@@ -4,6 +4,7 @@ import com.flowlink.execution.dto.ExecutionDetail
 import com.flowlink.execution.dto.ExecutionSummary
 import com.flowlink.execution.dto.ResumeRequest
 import com.flowlink.execution.dto.RunRequest
+import com.flowlink.execution.dto.SingleNodeRunResult
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
@@ -36,6 +37,13 @@ class ExecutionController(private val service: ExecutionService) {
         @PathVariable flowId: UUID,
         @RequestParam(defaultValue = "50") limit: Int
     ): List<ExecutionSummary> = service.listForFlow(flowId, limit)
+
+    /** 단일 노드 독립 실행 — 그 노드 하나만 새 컨텍스트로 즉석 실행(이력 미저장, 상류 바인딩 null). */
+    @PostMapping("/flows/{flowId}/nodes/{nodeId}/run")
+    fun runNode(
+        @PathVariable flowId: UUID,
+        @PathVariable nodeId: String
+    ): SingleNodeRunResult = service.runSingleNode(flowId, nodeId)
 
     /** 브라우저 협업 노드(client HTTP / form / wait)에서 중단된 실행을 재개한다. */
     @PostMapping("/executions/{id}/resume")

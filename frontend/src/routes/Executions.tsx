@@ -5,6 +5,7 @@ import { Link } from 'react-router-dom'
 import type { ExecutionStatus, ExecutionSummary } from '../api/types'
 import { runsApi } from '../api/client'
 import { AppShellTier1 } from '../app/AppShell'
+import { LogBlock } from '../components/NodeExecutionLog'
 import { StatusBadge } from '../components/StatusBadge'
 import { toast } from '../components/toast'
 import { useEscapeClose } from '../components/useEscapeClose'
@@ -218,15 +219,15 @@ function ExecutionDetailModal({ execId, onClose }: { execId: string; onClose: ()
                 </button>
                 {open && (
                   <div style={{ padding: '0 14px 12px', display: 'grid', gap: 8 }}>
-                    {nd.requestText && <pre style={logPre}>{nd.requestText}</pre>}
-                    {nd.responseText && <pre style={logPre}>{nd.responseText}</pre>}
-                    {nd.output != null && <pre style={logPre}>{JSON.stringify(nd.output, null, 2)}</pre>}
+                    <LogBlock title="요청" text={nd.requestText} />
+                    <LogBlock title="응답" text={nd.responseText} />
+                    {nd.output != null && <LogBlock title="출력" text={JSON.stringify(nd.output, null, 2)} />}
                     {!nd.requestText && !nd.responseText && nd.output == null && <span style={{ fontSize: 12, color: 'var(--fl-text-muted)' }}>기록된 상세가 없습니다.</span>}
                     {changed && p && (
                       <div>
-                        <div style={{ fontSize: 10.5, color: 'var(--fl-text-muted)', margin: '2px 0 4px' }}>◀ 이전 실행 응답</div>
-                        {p.responseText && <pre style={{ ...logPre, opacity: 0.7 }}>{p.responseText}</pre>}
-                        {p.output != null && <pre style={{ ...logPre, opacity: 0.7 }}>{JSON.stringify(p.output, null, 2)}</pre>}
+                        <div style={{ fontSize: 10.5, color: 'var(--fl-text-muted)', margin: '2px 0 4px' }}>◀ 이전 실행</div>
+                        <LogBlock title="이전 응답" text={p.responseText} />
+                        {p.output != null && <LogBlock title="이전 출력" text={JSON.stringify(p.output, null, 2)} />}
                       </div>
                     )}
                   </div>
@@ -246,4 +247,3 @@ const ghostBtn: CSSProperties = { border: '1px solid var(--fl-border)', backgrou
 const emptyBox: CSSProperties = { border: '1.5px dashed var(--fl-border)', borderRadius: 16, padding: 48, textAlign: 'center', color: 'var(--fl-text-muted)' }
 const errorBox: CSSProperties = { display: 'flex', alignItems: 'center', gap: 14, border: '1px solid var(--fl-fail)', borderRadius: 12, padding: 18, color: 'var(--fl-text)' }
 const codeChip: CSSProperties = { fontFamily: 'var(--fl-font-mono)', fontSize: 11.5, background: 'var(--fl-surface-2)', padding: '1px 6px', borderRadius: 5 }
-const logPre: CSSProperties = { margin: 0, padding: '8px 10px', fontSize: 11.5, fontFamily: 'var(--fl-font-mono)', color: 'var(--fl-text)', background: 'var(--fl-surface-2)', borderRadius: 6, whiteSpace: 'pre-wrap', wordBreak: 'break-all', maxHeight: 240, overflow: 'auto' }

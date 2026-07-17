@@ -32,7 +32,36 @@ class FlowService(
     @Transactional(readOnly = true)
     fun list(): List<FlowSummary> =
         flowRepo.findByTenantIdAndArchivedFalseOrderByUpdatedAtDesc(tenant())
-            .map { FlowSummary.from(it) }
+            .map { summaryOf(it) }
+
+    // 목록 카드 미리보기 + 내용 검색을 위해 현재 버전 그래프에서 노드 요약을 뽑는다(서버측 1왕복 — 카드별 재조회 N+1 제거).
+    private fun summaryOf(flow: Flow): FlowSummary {
+        val types = ArrayList<String>()
+        val text = StringBuilder()
+        var count = 0
+        try {
+            val nodes = currentGraph(flow).get("nodes")
+            if (nodes != null && nodes.isArray) {
+                for (n in nodes) {
+                    val t = n.get("type")?.asText() ?: continue
+                    if (t == "note" || t == "group") continue
+                    count++
+                    if (types.size < 12) types.add(t)
+                    if (text.length < 600) {
+                        for (fld in SEARCH_FIELDS) {
+                            val v = n.get(fld)?.asText()
+                            if (!v.isNullOrBlank()) text.append(v).append(' ')
+                        }
+                    }
+                }
+            }
+        } catch (_: Exception) { /* 손상 그래프는 요약 없이 넘어감 */ }
+        val blob = text.toString().trim().lowercase().take(700)
+        return FlowSummary(
+            flow.id, flow.name, flow.description, flow.currentVersion, flow.folderId, flow.updatedAt,
+            count, types, blob.ifBlank { null }
+        )
+    }
 
     @Transactional(readOnly = true)
     fun get(id: UUID): FlowDetail = toDetail(loadFlow(id))
@@ -46,6 +75,14 @@ class FlowService(
     @Transactional
     fun moveToFolder(id: UUID, folderId: UUID?) {
         loadFlow(id).folderId = folderId
+    }
+
+    @Transactional
+    fun updateMeta(id: UUID, name: String?, description: String?): FlowDetail {
+        val flow = loadFlow(id)
+        name?.takeIf { it.isNotBlank() }?.let { flow.name = it }
+        if (description != null) flow.description = description
+        return toDetail(flow)
     }
 
     @Transactional
@@ -137,6 +174,8 @@ class FlowService(
     }
 
     companion object {
+        // 노드 내용 검색 대상 필드 — 이름/URL/경로/폼URL/변환/조건
+        private val SEARCH_FIELDS = listOf("name", "baseUrl", "path", "formAction", "transformId", "condition")
         private fun textOr(node: JsonNode, field: String, fallback: String): String {
             val v = node.get(field)
             return if (v != null && v.isTextual && !v.asText().isBlank()) v.asText() else fallback

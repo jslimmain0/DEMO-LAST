@@ -6,6 +6,8 @@ import type { ExecutionSummary, FlowSummary, FolderSummary } from '../api/types'
 import { flowsApi, foldersApi, runsApi } from '../api/client'
 import { AppShellTier1 } from '../app/AppShell'
 import { usePermissions } from '../auth/AuthContext'
+import { AskDialog } from '../components/AskDialog'
+import type { AskSpec } from '../components/AskDialog'
 import { FlowGhost, FlowMini, FlowStrip, dominantCat, fallbackCats } from '../components/MiniFlow'
 import { StatusBadge } from '../components/StatusBadge'
 import { relTime } from '../lib/format'
@@ -65,6 +67,18 @@ export function Dashboard() {
   const createFolder = useMutation({ mutationFn: (v: { name: string; parentId: string | null }) => foldersApi.create(v.name, v.parentId), onSuccess: invalidate })
   const renameFolder = useMutation({ mutationFn: (v: { id: string; name: string }) => foldersApi.rename(v.id, v.name), onSuccess: invalidate })
   const removeFolder = useMutation({ mutationFn: (id: string) => foldersApi.remove(id), onSuccess: invalidate })
+  const renameFlow = useMutation({ mutationFn: (v: { id: string; name: string }) => flowsApi.updateMeta(v.id, { name: v.name }), onSuccess: invalidate })
+
+  // 앱 다이얼로그(prompt/confirm 대체)
+  const [ask, setAsk] = useState<AskSpec | null>(null)
+
+  // 즐겨찾기(핀) — localStorage. 홈 상단에 고정 노출.
+  const [favorites, setFavorites] = useState<string[]>(() => { try { return JSON.parse(localStorage.getItem('fl:favorites') ?? '[]') as string[] } catch { return [] } })
+  const toggleFav = (id: string) => setFavorites((prev) => {
+    const next = prev.includes(id) ? prev.filter((x) => x !== id) : [id, ...prev]
+    try { localStorage.setItem('fl:favorites', JSON.stringify(next)) } catch { /* 프라이빗 모드 */ }
+    return next
+  })
 
   // 렌더마다 새 [] 가 만들어져 useMemo 의존성이 매번 갈리는 것 방지
   const folderList: FolderSummary[] = useMemo(() => folders.data ?? [], [folders.data])
@@ -102,9 +116,10 @@ export function Dashboard() {
   }, [folderList])
 
   const newFolderIn = (parentId: string | null) => {
-    const n = prompt(parentId ? '새 하위 폴더 이름' : '새 폴더 이름')
-    if (n && n.trim()) createFolder.mutate({ name: n.trim(), parentId })
+    setAsk({ title: parentId ? '새 하위 폴더' : '새 폴더', input: { label: '폴더 이름', placeholder: '폴더 이름' }, confirmLabel: '만들기', onConfirm: (name) => createFolder.mutate({ name, parentId }) })
   }
+  const askRenameFolder = (f: FolderSummary) => setAsk({ title: '폴더 이름 변경', input: { label: '폴더 이름', initial: f.name }, onConfirm: (name) => renameFolder.mutate({ id: f.id, name }) })
+  const askRenameFlow = (f: FlowSummary) => setAsk({ title: '워크플로 이름 변경', input: { label: '이름', initial: f.name }, onConfirm: (name) => renameFlow.mutate({ id: f.id, name }) })
 
   // ---- 드래그&드롭 (탐색기) ----
   // 같은 창 안 드래그라 dataTransfer 대신 ref 로 페이로드를 들고 다닌다(드래그오버 중에도 검증 가능).
@@ -161,10 +176,11 @@ export function Dashboard() {
     exitSelect()
   }
   const deleteFolder = (f: FolderSummary) => {
-    if (confirm(`'${f.name}' 폴더를 삭제할까요? 안의 워크플로와 하위 폴더는 상위로 옮겨집니다.`)) {
-      if (sel === f.id) setSel(f.parentId ?? 'all')
-      removeFolder.mutate(f.id)
-    }
+    setAsk({
+      title: '폴더 삭제', danger: true, confirmLabel: '삭제',
+      message: `'${f.name}' 폴더를 삭제할까요? 안의 워크플로와 하위 폴더는 상위로 옮겨집니다.`,
+      onConfirm: () => { if (sel === f.id) setSel(f.parentId ?? 'all'); removeFolder.mutate(f.id) },
+    })
   }
 
   // recent() 한 번으로 모든 카드·hero 의 '최근 실행'을 확보(카드별 N+1 회피). flowId 별 최신 1건.
@@ -181,7 +197,8 @@ export function Dashboard() {
     else if (isFolderId(sel)) list = list.filter((f) => f.folderId === sel)
     // 홈(루트)은 탐색기처럼 미분류만 — 폴더 안 워크플로는 폴더에 들어가야 보인다. 검색 중엔 전체를 뒤진다.
     else if (!q) list = list.filter((f) => !f.folderId)
-    if (q) list = list.filter((f) => f.name.toLowerCase().includes(q) || (f.description ?? '').toLowerCase().includes(q))
+    // 이름·설명 + 노드 내용(nodeText: 노드 이름/URL/조건 등)까지 가로질러 검색
+    if (q) list = list.filter((f) => f.name.toLowerCase().includes(q) || (f.description ?? '').toLowerCase().includes(q) || (f.nodeText ?? '').includes(q))
     list = [...list].sort((a, b) => (sort === 'name' ? a.name.localeCompare(b.name) : (b.updatedAt ?? '').localeCompare(a.updatedAt ?? '')))
     return list
   }, [allFlows, sel, search, sort])
@@ -208,17 +225,18 @@ export function Dashboard() {
     else visibleIds.forEach((id) => next.add(id))
     return next
   })
-  const bulkDelete = async () => {
+  const bulkDelete = () => {
     const ids = [...selectedIds]
     if (ids.length === 0) return
-    if (!confirm(`선택한 ${ids.length}개 워크플로를 삭제할까요? 되돌릴 수 없습니다.`)) return
-    try {
-      await Promise.all(ids.map((id) => flowsApi.remove(id)))
-    } catch (e) {
-      console.warn('일괄 삭제 중 일부 실패', e)
-    }
-    invalidate()
-    exitSelect()
+    setAsk({
+      title: '선택 삭제', danger: true, confirmLabel: '삭제',
+      message: `선택한 ${ids.length}개 워크플로를 삭제할까요? 되돌릴 수 없습니다.`,
+      onConfirm: async () => {
+        try { await Promise.all(ids.map((id) => flowsApi.remove(id))) } catch (e) { console.warn('일괄 삭제 중 일부 실패', e) }
+        invalidate()
+        exitSelect()
+      },
+    })
   }
 
   const noneCount = allFlows.filter((f) => !f.folderId).length
@@ -246,7 +264,7 @@ export function Dashboard() {
           indent={depth}
           accent={fallbackCats(f.id, 1)[0]}
           drop={dropTo(f.id)}
-          onRename={() => { const n = prompt('폴더 이름', f.name); if (n && n.trim()) renameFolder.mutate({ id: f.id, name: n.trim() }) }}
+          onRename={() => askRenameFolder(f)}
           onDelete={() => deleteFolder(f)}
         />
         {depth < 30 && renderFolderTree(f.id, depth + 1)}
@@ -348,7 +366,7 @@ export function Dashboard() {
                     drop={dropTo(f.id)}
                     onDragStartSelf={() => startFolderDrag(f.id)}
                     onDragEndSelf={endDrag}
-                    onRename={() => { const n = prompt('폴더 이름', f.name); if (n && n.trim()) renameFolder.mutate({ id: f.id, name: n.trim() }) }}
+                    onRename={() => askRenameFolder(f)}
                     onDelete={() => deleteFolder(f)}
                     readOnly={!canEdit}
                   />
@@ -383,6 +401,27 @@ export function Dashboard() {
             <EmptyState mode={search ? 'search' : sel === 'all' ? 'onboarding' : 'folder'} onCreate={() => createFlow.mutate()} onClearSearch={() => setSearch('')} />
           )}
 
+          {/* 즐겨찾기 — 홈에서만, 검색·선택 모드 아닐 때 상단 고정 */}
+          {sel === 'all' && !search.trim() && !selectMode && favorites.length > 0 && (() => {
+            const favFlows = favorites.map((id) => allFlows.find((f) => f.id === id)).filter(Boolean) as FlowSummary[]
+            if (favFlows.length === 0) return null
+            return (
+              <div style={{ marginBottom: 22 }}>
+                <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--fl-text-muted)', letterSpacing: '.05em', textTransform: 'uppercase', marginBottom: 10 }}>★ 즐겨찾기</div>
+                <Grid>
+                  {favFlows.map((f) => (
+                    <FlowCard key={'fav-' + f.id} flow={f} lastRun={lastRunByFlow.get(f.id)} folderOptions={flatFolders}
+                      selectMode={false} selected={false} onToggleSelect={() => {}}
+                      pinned onTogglePin={() => toggleFav(f.id)}
+                      onRename={() => askRenameFlow(f)} onDuplicate={() => duplicateFlow.mutate(f)}
+                      onDelete={() => setAsk({ title: '워크플로 삭제', danger: true, confirmLabel: '삭제', message: `'${f.name}' 워크플로를 삭제할까요? 되돌릴 수 없습니다.`, onConfirm: () => removeFlow.mutate(f.id) })}
+                      onMove={(folderId) => moveFlow.mutate({ id: f.id, folderId })} onDragStartSelf={() => startFlowDrag(f.id)} onDragEndSelf={endDrag} readOnly={!canEdit} />
+                  ))}
+                </Grid>
+              </div>
+            )
+          })()}
+
           {visible.length > 0 && (
             <div>
               {!selectMode && !search.trim() && sel !== 'none' && (
@@ -398,8 +437,11 @@ export function Dashboard() {
                   selectMode={selectMode}
                   selected={selectedIds.has(f.id)}
                   onToggleSelect={() => toggleOne(f.id)}
+                  pinned={favorites.includes(f.id)}
+                  onTogglePin={() => toggleFav(f.id)}
+                  onRename={() => askRenameFlow(f)}
                   onDuplicate={() => duplicateFlow.mutate(f)}
-                  onDelete={() => { if (confirm(`'${f.name}' 워크플로를 삭제할까요? 되돌릴 수 없습니다.`)) removeFlow.mutate(f.id) }}
+                  onDelete={() => setAsk({ title: '워크플로 삭제', danger: true, confirmLabel: '삭제', message: `'${f.name}' 워크플로를 삭제할까요? 되돌릴 수 없습니다.`, onConfirm: () => removeFlow.mutate(f.id) })}
                   onMove={(folderId) => moveFlow.mutate({ id: f.id, folderId })}
                   onDragStartSelf={() => startFlowDrag(f.id)}
                   onDragEndSelf={endDrag}
@@ -410,6 +452,7 @@ export function Dashboard() {
             </div>
           )}
         </div>
+      {ask && <AskDialog spec={ask} onClose={() => setAsk(null)} />}
     </AppShellTier1>
   )
 }
@@ -417,9 +460,8 @@ export function Dashboard() {
 // ---------- hero ----------
 
 function Hero({ flow, lastRun }: { flow: FlowSummary; lastRun?: ExecutionSummary }) {
-  const detail = useQuery({ queryKey: ['flow', flow.id], queryFn: () => flowsApi.get(flow.id) })
-  const nodes = (detail.data?.graph.nodes ?? []).filter((n) => n.type !== 'note' && n.type !== 'group') // 주석 제외 — 미니어처는 실행 흐름만
-  const miniNodes = nodes.map((n) => ({ type: n.type, cat: n.cat }))
+  // 목록 요약(nodeTypes)로 미리보기 — 카드별 graph 재조회(N+1) 없이 그린다
+  const miniNodes = (flow.nodeTypes ?? []).map((t) => ({ type: t }))
   return (
     <section style={heroBand} aria-label="최근 워크플로">
       <div style={{ fontSize: 'var(--fl-fs-xs)', fontFamily: 'var(--fl-font-mono)', color: 'var(--fl-text-muted)', letterSpacing: '.04em', textTransform: 'uppercase' }}>최근 작업</div>
@@ -448,13 +490,16 @@ function Hero({ flow, lastRun }: { flow: FlowSummary; lastRun?: ExecutionSummary
 
 // ---------- 카드 ----------
 
-function FlowCard({ flow, lastRun, folderOptions, selectMode, selected, onToggleSelect, onDuplicate, onDelete, onMove, onDragStartSelf, onDragEndSelf, readOnly }: {
+function FlowCard({ flow, lastRun, folderOptions, selectMode, selected, pinned, onTogglePin, onToggleSelect, onRename, onDuplicate, onDelete, onMove, onDragStartSelf, onDragEndSelf, readOnly }: {
   flow: FlowSummary
   lastRun?: ExecutionSummary
   folderOptions: Array<{ f: FolderSummary; depth: number }> // 트리 순서 + 깊이(들여쓰기 라벨)
   selectMode: boolean
   selected: boolean
+  pinned?: boolean
+  onTogglePin?: () => void
   onToggleSelect: () => void
+  onRename: () => void
   onDuplicate: () => void
   onDelete: () => void
   onMove: (folderId: string | null) => void
@@ -463,11 +508,10 @@ function FlowCard({ flow, lastRun, folderOptions, selectMode, selected, onToggle
   readOnly?: boolean // viewer — 복제/이동/삭제/드래그 숨김(서버 403 이 최종 권위, UI 는 편의)
 }) {
   const navigate = useNavigate()
-  const detail = useQuery({ queryKey: ['flow', flow.id], queryFn: () => flowsApi.get(flow.id) })
-  const nodes = detail.data?.graph.nodes?.filter((n) => n.type !== 'note' && n.type !== 'group') // 주석 제외
-  const cats = nodes?.map((n) => n.cat ?? n.type)
+  // 목록 요약(nodeTypes/nodeCount)로 미리보기 — 카드별 graph 재조회(N+1) 제거
+  const cats = flow.nodeTypes
   const spine = dominantCat(cats, flow.id)
-  const nodeCount = nodes?.length
+  const nodeCount = flow.nodeCount
   const [menu, setMenu] = useState(false)
   const openCard = selectMode ? onToggleSelect : () => navigate(`/flows/${flow.id}`)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -520,6 +564,8 @@ function FlowCard({ flow, lastRun, folderOptions, selectMode, selected, onToggle
             <button onClick={() => setMenu((v) => !v)} aria-label={`${flow.name} 작업 메뉴`} aria-haspopup="menu" aria-expanded={menu} title="작업" style={iconBtn}>⋯</button>
             {menu && (
               <div role="menu" style={menuBox}>
+                {onTogglePin && <button role="menuitem" onClick={() => { onTogglePin(); setMenu(false) }} style={menuItem}>{pinned ? '☆ 즐겨찾기 해제' : '★ 즐겨찾기'}</button>}
+                <button role="menuitem" onClick={() => { onRename(); setMenu(false) }} style={menuItem}>✎ 이름 바꾸기</button>
                 <button role="menuitem" onClick={() => { onDuplicate(); setMenu(false) }} style={menuItem}>⧉ 복제</button>
                 <div style={{ padding: '6px 10px 4px', fontSize: 11, color: 'var(--fl-text-muted)' }}>폴더로 이동</div>
                 <select aria-label="폴더 이동" value={flow.folderId ?? ''} onChange={(e) => { onMove(e.target.value || null); setMenu(false) }} style={menuSelect}>

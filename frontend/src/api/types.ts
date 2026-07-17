@@ -197,6 +197,9 @@ export interface FlowSummary {
   currentVersion: number
   folderId?: string | null
   updatedAt: string
+  nodeCount?: number
+  nodeTypes?: string[] // 카드 미리보기용 노드 타입(주석 제외, 상한 12)
+  nodeText?: string | null // 노드 내용 검색용(이름/URL/조건 등, 소문자)
 }
 
 export interface FolderSummary {

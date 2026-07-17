@@ -6,11 +6,13 @@ import com.flowlink.definition.dto.FlowDetail
 import com.flowlink.definition.dto.FlowSummary
 import com.flowlink.definition.dto.FlowVersionSummary
 import com.flowlink.definition.dto.SaveVersionRequest
+import com.flowlink.definition.dto.UpdateFlowMetaRequest
 import com.flowlink.folder.FolderDtos.MoveFlowRequest
 import jakarta.validation.Valid
 import org.springframework.http.HttpStatus
 import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
+import org.springframework.web.bind.annotation.PatchMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.PutMapping
@@ -46,6 +48,11 @@ class FlowController(private val service: FlowService) {
     fun move(@PathVariable id: UUID, @RequestBody req: MoveFlowRequest) {
         service.moveToFolder(id, req.folderId)
     }
+
+    // 이름·설명 편집(에디터를 열지 않고 대시보드에서) — 버전 그래프는 건드리지 않는다
+    @PatchMapping("/{id}")
+    fun updateMeta(@PathVariable id: UUID, @RequestBody req: UpdateFlowMetaRequest): FlowDetail =
+        service.updateMeta(id, req.name, req.description)
 
     @PostMapping("/{id}/versions")
     @ResponseStatus(HttpStatus.CREATED)

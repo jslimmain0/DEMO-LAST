@@ -1242,7 +1242,7 @@ function VarsEditor({ vars, onChange, sources, sourceType }: { vars: NodeVar[]; 
   // 시크릿 행은 마스킹(password) 유지가 우선이라 인라인 칩 대신 기존 [값|칩 + { }] 방식을 유지한다.
   const [pickVar, setPickVar] = useState<string | null>(null)
   const [revealed, setRevealed] = useState<Set<string>>(new Set())
-  const toggleReveal = (vid: string) => setRevealed((p) => { const n = new Set(p); n.has(vid) ? n.delete(vid) : n.add(vid); return n })
+  const toggleReveal = (vid: string) => setRevealed((p) => { const n = new Set(p); if (n.has(vid)) n.delete(vid); else n.add(vid); return n })
   const upd = (vid: string, patch: Partial<NodeVar>) => onChange(vars.map((v) => (v.id === vid ? { ...v, ...patch } : v)))
   return (
     <>

@@ -34,6 +34,8 @@ export const flowsApi = {
     http.post<FlowDetail>('/flows/import', graph).then((r) => r.data),
   move: (id: string, folderId: string | null) =>
     http.put(`/flows/${id}/folder`, { folderId }).then(() => undefined),
+  updateMeta: (id: string, body: { name?: string; description?: string }) =>
+    http.patch<FlowDetail>(`/flows/${id}`, body).then((r) => r.data),
 }
 
 export const transformsApi = {

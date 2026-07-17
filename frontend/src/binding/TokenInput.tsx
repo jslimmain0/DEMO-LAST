@@ -1,5 +1,6 @@
 import type { CSSProperties, ClipboardEvent, KeyboardEvent, ReactNode } from 'react'
 import { useEffect, useRef, useState } from 'react'
+import { DataInsertIcon } from '../components/icons'
 import { asGraphNode } from '../canvas/graphAdapter'
 import { catColor, typeIcon } from '../canvas/nodeMeta'
 import { parseToken, segmentValue, tokenRegex, bindingToToken } from '../lib/tokenGrammar'
@@ -262,7 +263,7 @@ export function TokenInput({
         title="데이터 삽입"
         aria-label="데이터 삽입"
         style={braceBtn}
-      >{'{ }'}</button>
+      ><DataInsertIcon /></button>
       {picking && (
         <BindingPicker
           sources={sources}
@@ -577,6 +578,7 @@ const braceBtn: CSSProperties = {
   background: 'var(--fl-surface)',
   color: 'var(--fl-primary)',
   cursor: 'pointer',
-  fontFamily: 'var(--fl-font-mono)',
-  fontSize: 12,
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
 }

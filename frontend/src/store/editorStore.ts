@@ -49,6 +49,8 @@ interface EditorState {
   // 노드 복사/붙여넣기 — localStorage 클립보드라 A 워크플로 → B 워크플로 붙여넣기도 된다
   copySelection: () => number
   pasteClipboard: () => number
+  duplicateSelection: () => number
+  autoLayout: () => void
   undo: () => void
   redo: () => void
 }
@@ -326,6 +328,64 @@ export const useEditorStore = create<EditorState>()((set, get) => {
       dirty: true,
     })
     return rfNodes.length
+  },
+
+  // 선택 노드 복제(그룹 내 연결·토큰 재매핑 포함) — 복사+붙여넣기를 한 동작으로
+  duplicateSelection: () => {
+    if (get().copySelection() === 0) return 0
+    return get().pasteClipboard()
+  },
+
+  // 자동 정렬 — 위상 레벨(진입차수 BFS)로 좌→우, 같은 레벨은 세로로. 주석 노드는 그대로 둔다.
+  autoLayout: () => {
+    const nodes = get().nodes
+    const edges = get().edges
+    if (nodes.length === 0) return
+    pushHistory()
+    const isAnno = (n: Node) => { const t = (n.data as { type?: string }).type; return t === 'note' || t === 'group' }
+    const gnodes = nodes.filter((n) => !isAnno(n))
+    const ids = new Set(gnodes.map((n) => n.id))
+    const indeg = new Map<string, number>()
+    const adj = new Map<string, string[]>()
+    gnodes.forEach((n) => indeg.set(n.id, 0))
+    edges.forEach((e) => {
+      if (ids.has(e.source) && ids.has(e.target)) {
+        indeg.set(e.target, (indeg.get(e.target) ?? 0) + 1)
+        adj.set(e.source, [...(adj.get(e.source) ?? []), e.target])
+      }
+    })
+    const level = new Map<string, number>()
+    const rem = new Map(indeg)
+    const q = gnodes.filter((n) => (indeg.get(n.id) ?? 0) === 0).map((n) => n.id)
+    q.forEach((id) => level.set(id, 0))
+    while (q.length) {
+      const id = q.shift() as string
+      const l = level.get(id) ?? 0
+      for (const t of adj.get(id) ?? []) {
+        level.set(t, Math.max(level.get(t) ?? 0, l + 1))
+        rem.set(t, (rem.get(t) ?? 1) - 1)
+        if ((rem.get(t) ?? 0) === 0) q.push(t)
+      }
+    }
+    const maxLevel = level.size ? Math.max(...level.values()) : 0
+    gnodes.forEach((n) => { if (!level.has(n.id)) level.set(n.id, maxLevel + 1) }) // 사이클/고립은 끝 열로
+    const COLW = 264, ROWH = 110, X0 = 60, Y0 = 80 // 그리드(22) 배수
+    const perLevel = new Map<number, number>()
+    const pos = new Map<string, { x: number; y: number }>()
+    const ordered = [...gnodes].sort((a, b) => ((level.get(a.id) as number) - (level.get(b.id) as number)) || (a.position.y - b.position.y))
+    for (const n of ordered) {
+      const l = level.get(n.id) as number
+      const row = perLevel.get(l) ?? 0
+      perLevel.set(l, row + 1)
+      pos.set(n.id, { x: X0 + l * COLW, y: Y0 + row * ROWH })
+    }
+    set({
+      nodes: nodes.map((n) => {
+        const p = pos.get(n.id)
+        return p ? { ...n, position: p, data: { ...n.data, x: p.x, y: p.y } } : n
+      }),
+      dirty: true,
+    })
   },
 
   undo: () => {

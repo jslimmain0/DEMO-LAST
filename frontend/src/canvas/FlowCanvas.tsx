@@ -1,8 +1,10 @@
-import { Background, Controls, MiniMap, ReactFlow, useReactFlow } from '@xyflow/react'
+import { Background, ControlButton, Controls, MiniMap, ReactFlow, useReactFlow } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import type { CSSProperties, DragEvent } from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { GraphNode, NodeType } from '../api/types'
+import { runsApi } from '../api/client'
+import { toast } from '../components/toast'
 import { useEditorStore } from '../store/editorStore'
 import { presence } from '../lib/presence'
 import { BranchNode } from './BranchNode'
@@ -45,8 +47,24 @@ export function FlowCanvas() {
   const selectNode = useEditorStore((s) => s.selectNode)
   const addNode = useEditorStore((s) => s.addNode)
   const addNodeFromTemplate = useEditorStore((s) => s.addNodeFromTemplate)
+  const deleteNode = useEditorStore((s) => s.deleteNode)
+  const duplicateSelection = useEditorStore((s) => s.duplicateSelection)
   const flowId = useEditorStore((s) => s.flowId)
-  const { screenToFlowPosition, fitBounds } = useReactFlow()
+  const { screenToFlowPosition, fitBounds, zoomTo } = useReactFlow()
+  // QoL: 미니맵/그리드 표시 토글(localStorage), 노드 우클릭 컨텍스트 메뉴
+  const [showMinimap, setShowMinimap] = useState(() => localStorage.getItem('fl:canvas:minimap') !== '0')
+  const [showGrid, setShowGrid] = useState(() => localStorage.getItem('fl:canvas:grid') !== '0')
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; nodeId: string; nodeType: string } | null>(null)
+  const toggleMinimap = () => setShowMinimap((v) => { localStorage.setItem('fl:canvas:minimap', v ? '0' : '1'); return !v })
+  const toggleGrid = () => setShowGrid((v) => { localStorage.setItem('fl:canvas:grid', v ? '0' : '1'); return !v })
+  const runSingleFromMenu = async (nodeId: string) => {
+    if (!flowId) return
+    try {
+      const r = await runsApi.runNode(flowId, nodeId)
+      toast(r.ok ? `이 노드 실행 성공${r.httpStatus != null ? ` · HTTP ${r.httpStatus}` : ''}` : `실행 실패: ${r.responseText ?? ''}`, r.ok ? 'ok' : 'error')
+    } catch (e) { toast(`실행 실패: ${e instanceof Error ? e.message : e}`, 'error') }
+  }
+  const SINGLE_OK = new Set(['http', 'set', 'if', 'switch', 'assert', 'transform', 'tcp'])
 
   // 정적 fitView prop 은 노드 로드 전(빈 store)에 맞춰져 노드가 좌하단에 몰리는 버그가 있고,
   // fitView 는 측정 완료된 노드만 bounds 에 넣어 초기 로드 시 일부만 맞춘다. 그래서 노드 위치로
@@ -138,22 +156,44 @@ export function FlowCanvas() {
         snapToGrid
         snapGrid={[GRID, GRID]}
         onNodeClick={(_, n) => selectNode(n.id)}
-        onPaneClick={() => selectNode(null)}
+        onPaneClick={() => { selectNode(null); setCtxMenu(null) }}
+        onNodeContextMenu={(e, n) => { e.preventDefault(); selectNode(n.id); setCtxMenu({ x: e.clientX, y: e.clientY, nodeId: n.id, nodeType: (n.data as { type?: string }).type ?? '' }) }}
+        onMoveStart={() => setCtxMenu(null)}
         deleteKeyCode={['Delete', 'Backspace']}
         proOptions={{ hideAttribution: true }}
       >
-        <Background gap={22} color="var(--fl-border)" />
-        <MiniMap
-          pannable
-          zoomable
-          nodeColor={(n) => catColor((n.data as { cat?: string }).cat)}
-          nodeStrokeColor="var(--fl-border)"
-          maskColor="color-mix(in srgb, var(--fl-bg) 72%, transparent)"
-          bgColor="var(--fl-surface)"
-        />
-        <Controls />
+        {showGrid && <Background gap={22} color="var(--fl-border)" />}
+        {showMinimap && (
+          <MiniMap
+            pannable
+            zoomable
+            nodeColor={(n) => catColor((n.data as { cat?: string }).cat)}
+            nodeStrokeColor="var(--fl-border)"
+            maskColor="color-mix(in srgb, var(--fl-bg) 72%, transparent)"
+            bgColor="var(--fl-surface)"
+          />
+        )}
+        <Controls>
+          <ControlButton onClick={() => zoomTo(1, { duration: 200 })} title="줌 100%" aria-label="줌 100%"><span style={{ fontSize: 9, fontWeight: 700 }}>1:1</span></ControlButton>
+          <ControlButton onClick={toggleMinimap} title={showMinimap ? '미니맵 숨기기' : '미니맵 보기'} aria-label="미니맵 토글">▣</ControlButton>
+          <ControlButton onClick={toggleGrid} title={showGrid ? '그리드 숨기기' : '그리드 보기'} aria-label="그리드 토글">▦</ControlButton>
+        </Controls>
         <PresenceOverlay />
       </ReactFlow>
+      {ctxMenu && (
+        <>
+          <div style={{ position: 'fixed', inset: 0, zIndex: 40 }} onClick={() => setCtxMenu(null)} onContextMenu={(e) => { e.preventDefault(); setCtxMenu(null) }} />
+          <div style={{ position: 'fixed', left: Math.min(ctxMenu.x, window.innerWidth - 180), top: Math.min(ctxMenu.y, window.innerHeight - 140), zIndex: 41, background: 'var(--fl-surface)', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', boxShadow: 'var(--fl-shadow-lg)', minWidth: 160, padding: 4 }}>
+            {SINGLE_OK.has(ctxMenu.nodeType) && (
+              <button style={ctxItem} onClick={() => { runSingleFromMenu(ctxMenu.nodeId); setCtxMenu(null) }}>▶ 이 노드만 실행</button>
+            )}
+            <button style={ctxItem} onClick={() => { duplicateSelection(); setCtxMenu(null) }}>⧉ 복제 (Ctrl+D)</button>
+            <button style={{ ...ctxItem, color: 'var(--fl-fail)' }} onClick={() => { deleteNode(ctxMenu.nodeId); setCtxMenu(null) }}>× 삭제 (Delete)</button>
+          </div>
+        </>
+      )}
     </div>
   )
 }
+
+const ctxItem: CSSProperties = { display: 'block', width: '100%', textAlign: 'left', padding: '7px 10px', border: 'none', background: 'transparent', color: 'var(--fl-text)', cursor: 'pointer', fontSize: 12.5, borderRadius: 6 }

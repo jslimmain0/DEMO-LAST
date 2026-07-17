@@ -5,6 +5,7 @@ import { pluginsApi, runsApi, settingsApi, transformsApi } from '../api/client'
 import { usePermissions } from '../auth/AuthContext'
 import { toast } from '../components/toast'
 import type { Binding, BodyType, GraphNode, HttpMethod, NodeField, NodeOutput, NodeVar, ReqMode, RespType, SingleNodeRunResult, TcpField, TcpRespField, WaitField as WaitFieldT } from '../api/types'
+import { CopyIcon, DataInsertIcon } from '../components/icons'
 import { BindingChip } from '../binding/BindingChip'
 import { BindingPicker } from '../binding/BindingPicker'
 import { TokenInput } from '../binding/TokenInput'
@@ -21,7 +22,7 @@ import { KeyValueEditor } from './KeyValueEditor'
 const label: CSSProperties = { display: 'block', fontSize: 11.5, fontWeight: 600, color: 'var(--fl-text-muted)', margin: '12px 0 5px' }
 const field: CSSProperties = { width: '100%', padding: '8px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 13, fontFamily: 'var(--fl-font-ui)' }
 const mono: CSSProperties = { ...field, fontFamily: 'var(--fl-font-mono)', fontSize: 12 }
-const braceBtn: CSSProperties = { width: 32, height: 32, flexShrink: 0, border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-primary)', cursor: 'pointer', fontFamily: 'var(--fl-font-mono)', fontSize: 12 }
+const braceBtn: CSSProperties = { width: 32, height: 32, flexShrink: 0, border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-primary)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }
 
 const METHODS: HttpMethod[] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD']
 // wait(콜백 대기) 노드 — 콜백에 줄 응답 형식
@@ -57,8 +58,8 @@ function respOutputLabel(rt: RespType | undefined): string {
   return '예상 응답 필드 (JSON 키) — 하위 노드가 바인딩할 항목'
 }
 
-export function PropertyPanel({ width = 360, overlay = false, onToggleOverlay, onCollapse }: {
-  width?: number; overlay?: boolean; onToggleOverlay?: () => void; onCollapse?: () => void
+export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseModal, onCollapse }: {
+  width?: number; modal?: boolean; onExpand?: () => void; onCloseModal?: () => void; onCollapse?: () => void
 }) {
   const selectedId = useEditorStore((s) => s.selectedId)
   const nodes = useEditorStore((s) => s.nodes)
@@ -252,14 +253,15 @@ export function PropertyPanel({ width = 360, overlay = false, onToggleOverlay, o
       <header style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '14px 16px', borderBottom: '1px solid var(--fl-border)' }}>
         <span aria-hidden style={{ color: catColor(node.cat), fontSize: 16 }}>{typeIcon(node.type)}</span>
         <input aria-label="노드 이름" value={node.name ?? ''} onChange={(e) => update(id, { name: e.target.value })} style={{ ...field, fontWeight: 600, fontFamily: 'var(--fl-font-head)' }} />
-        {onToggleOverlay && (
-          <button onClick={onToggleOverlay} aria-label={overlay ? '패널 도킹' : '오버레이로 보기'}
-            title={overlay ? '오른쪽 사이드바에 도킹' : '캔버스 위 오버레이로 보기'} style={iconBtn}>{overlay ? '⇥' : '⧉'}</button>
+        {onExpand && (
+          <button onClick={onExpand} aria-label="넓게 편집" title="넓은 모달로 편집" style={iconBtn}>⤢</button>
         )}
-        {!overlay && onCollapse && (
+        {onCollapse && (
           <button onClick={onCollapse} aria-label="속성 패널 접기" title="접기" style={iconBtn}>»</button>
         )}
-        <button onClick={() => selectNode(null)} aria-label="패널 닫기" style={closeBtn}>×</button>
+        {modal
+          ? <button onClick={onCloseModal} aria-label="모달 닫기" title="닫기(도킹으로)" style={closeBtn}>×</button>
+          : <button onClick={() => selectNode(null)} aria-label="패널 닫기" style={closeBtn}>×</button>}
       </header>
 
       <div style={{ padding: 16, overflowY: 'auto', flex: 1 }}>
@@ -513,7 +515,7 @@ export function PropertyPanel({ width = 360, overlay = false, onToggleOverlay, o
                   onChange={(e) => update(id, tab === 'body' ? { rawBody: e.target.value } : tab === 'params' ? { rawParams: e.target.value } : { rawHeaders: e.target.value })}
                   placeholder={tab === 'body' ? rawBodyPlaceholder(node.bodyType) : tab === 'params' ? 'a=1&b=2  또는 { } 로 데이터 삽입' : 'Authorization: Bearer ...\nContent-Type: application/json'}
                 />
-                <button onClick={() => setPick(tab === 'body' ? 'rawBody' : tab === 'params' ? 'rawParams' : 'rawHeaders')} style={{ ...braceBtn, width: 'auto', padding: '0 10px', marginTop: 4 }} title="데이터 삽입">{'{ }'}</button>
+                <button onClick={() => setPick(tab === 'body' ? 'rawBody' : tab === 'params' ? 'rawParams' : 'rawHeaders')} style={{ ...braceBtn, width: 'auto', padding: '0 10px', marginTop: 4 }} title="데이터 삽입"><DataInsertIcon /></button>
               </div>
             ) : (
               <KeyValueEditor rows={fields[tab] ?? []} onChange={(rows) => setRows(tab, rows)} sources={sources} showType={tab === 'body' && (node.bodyType ?? 'json') === 'json'} />
@@ -741,7 +743,7 @@ export function PropertyPanel({ width = 360, overlay = false, onToggleOverlay, o
             {node.jsonRaw ? (
               <div>
                 <textarea style={{ ...mono, minHeight: 100, resize: 'vertical' }} value={node.rawBody ?? ''} onChange={(e) => update(id, { rawBody: e.target.value })} placeholder="field1=value1&field2=value2  또는 { } 로 데이터 삽입" />
-                <button onClick={() => setPick('rawBody')} style={{ ...braceBtn, width: 'auto', padding: '0 10px', marginTop: 4 }} title="데이터 삽입">{'{ }'}</button>
+                <button onClick={() => setPick('rawBody')} style={{ ...braceBtn, width: 'auto', padding: '0 10px', marginTop: 4 }} title="데이터 삽입"><DataInsertIcon /></button>
               </div>
             ) : (
               <KeyValueEditor rows={node.fields?.body ?? []} onChange={(rows) => update(id, { fields: { params: fields.params ?? [], headers: fields.headers ?? [], body: rows } })} sources={sources} />
@@ -902,7 +904,7 @@ function WaitReceiveUrl({ nodeId }: { nodeId: string }) {
           onClick={() => { void navigator.clipboard?.writeText(token).catch(() => {}) }}
           title={`바인딩 토큰 복사 — ${token}`}
           style={{ ...braceBtn, width: 'auto', padding: '0 10px', whiteSpace: 'nowrap' }}
-        >바인딩 토큰 복사</button>
+        ><CopyIcon /></button>
       </div>
       <p style={{ ...hintP, marginTop: 6 }}>
         실행 시작 시 실행ID가 생성되어 URL 이 확정됩니다(정확한 주소는 실행 로그에 표시). 앞 노드(결제요청의 returnUrl/notiUrl 등)에서
@@ -946,7 +948,7 @@ function VarsEditor({ vars, onChange, sources, sourceType }: { vars: NodeVar[]; 
             ) : (
               <>
                 <input style={{ ...mono, flex: 1 }} type="password" value={v.value ?? ''} placeholder="value" onChange={(e) => upd(v.id, { value: e.target.value })} />
-                <button onClick={() => setPickVar(v.id)} title="데이터 삽입" style={braceBtn}>{'{ }'}</button>
+                <button onClick={() => setPickVar(v.id)} title="데이터 삽입" style={braceBtn}><DataInsertIcon /></button>
               </>
             )
           ) : v.bound && !isTokenizable(v.bound) ? (

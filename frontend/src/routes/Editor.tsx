@@ -1,10 +1,11 @@
-import { ReactFlowProvider } from '@xyflow/react'
+import { ReactFlowProvider, useReactFlow } from '@xyflow/react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import type { CSSProperties } from 'react'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import type { ExecutionDetail, PendingClientRequest, PendingInputRequest, ResumeRequest } from '../api/types'
 import { flowsApi, runsApi } from '../api/client'
+import { catColor, typeIcon, typeLabel } from '../canvas/nodeMeta'
 import { FlowCanvas } from '../canvas/FlowCanvas'
 import { Palette } from '../canvas/Palette'
 import { PropertyPanel } from '../panels/PropertyPanel'
@@ -84,11 +85,40 @@ export function Editor() {
   const [paletteW, setPaletteW] = useState(() => loadSize('paletteW', 200, 160, 420))
   const [propertyW, setPropertyW] = useState(() => loadSize('propertyW', 330, 300, 560))
   const [runH, setRunH] = useState(() => loadSize('runH', 260, 120, 600))
-  // 사이드바 접기 + 속성 패널 도킹/오버레이 (localStorage 지속)
+  // 사이드바 접기 + 속성 패널 넓게 편집(모달) (localStorage 지속)
   const [paletteCollapsed, setPaletteCollapsed] = useState(() => localStorage.getItem('fl:editor:palColl') === '1')
   const [propCollapsed, setPropCollapsed] = useState(() => localStorage.getItem('fl:editor:propColl') === '1')
-  const [propMode, setPropMode] = useState<'docked' | 'overlay'>(() => localStorage.getItem('fl:editor:propMode') === 'overlay' ? 'overlay' : 'docked')
+  const [propModal, setPropModal] = useState(false) // 좁은 사이드 대신 넓은 모달로 편집
   const persistUI = (k: string, v: string) => { try { localStorage.setItem(k, v) } catch { /* 프라이빗 모드 무시 */ } }
+  // QoL: 도구 메뉴 + 모달들 + 자동저장
+  const [toolsOpen, setToolsOpen] = useState(false)
+  const [jsonOpen, setJsonOpen] = useState(false)
+  const [shortcutsOpen, setShortcutsOpen] = useState(false)
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [autosave, setAutosave] = useState(() => localStorage.getItem('fl:editor:autosave') === '1')
+  const autoLayout = useEditorStore((s) => s.autoLayout)
+  const nodeCount = useEditorStore((s) => s.nodes.length)
+  const zen = paletteCollapsed && propCollapsed
+  const toggleZen = () => {
+    const next = !zen
+    setPaletteCollapsed(next); persistUI('fl:editor:palColl', next ? '1' : '0')
+    setPropCollapsed(next); persistUI('fl:editor:propColl', next ? '1' : '0')
+  }
+  const resetPanels = () => {
+    setPaletteW(200); saveSize('paletteW', 200)
+    setPropertyW(330); saveSize('propertyW', 330)
+    setRunH(260); saveSize('runH', 260)
+    setPaletteCollapsed(false); persistUI('fl:editor:palColl', '0')
+    setPropCollapsed(false); persistUI('fl:editor:propColl', '0')
+  }
+  // 속성 모달: Esc 닫기 + 노드 선택이 풀리면 자동으로 닫는다
+  useEffect(() => {
+    if (!propModal) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setPropModal(false) }
+    window.addEventListener('keydown', onKey)
+    const unsub = useEditorStore.subscribe((s, prev) => { if (s.selectedId !== prev.selectedId && !s.selectedId) setPropModal(false) })
+    return () => { window.removeEventListener('keydown', onKey); unsub() }
+  }, [propModal])
 
   // 뷰포트에 맞춘 동적 상한 — 패널이 화면을 넘어 캔버스를 0으로 만들지 않도록 창 크기 변화에 재클램프
   const [vp, setVp] = useState(() => ({ w: window.innerWidth, h: window.innerHeight }))
@@ -164,6 +194,13 @@ export function Editor() {
       } else if (is(e, 'KeyY', 'y')) {
         e.preventDefault()
         useEditorStore.getState().redo()
+      } else if (is(e, 'KeyD', 'd')) { // 선택 노드 복제
+        e.preventDefault()
+        const n = useEditorStore.getState().duplicateSelection()
+        if (n > 0) setCopyNote(`노드 ${n}개 복제됨`)
+      } else if (is(e, 'KeyF', 'f')) { // 노드 검색
+        e.preventDefault()
+        setSearchOpen(true)
       }
     }
     window.addEventListener('keydown', onKey)
@@ -201,6 +238,12 @@ export function Editor() {
       if (canEdit && !save.isPending && useEditorStore.getState().dirty) save.mutate()
     }
   })
+  // 자동 저장 — 켜져 있으면 dirty 후 1.5초 뒤 저장(연속 편집은 debounce). 편집 권한/저장중 아닐 때만.
+  useEffect(() => {
+    if (!autosave || !canEdit || !dirty || save.isPending) return
+    const t = setTimeout(() => { if (useEditorStore.getState().dirty) save.mutate() }, 1500)
+    return () => clearTimeout(t)
+  }, [autosave, canEdit, dirty, save])
 
   const onRun = async () => {
     if (!canEdit) return
@@ -355,10 +398,27 @@ export function Editor() {
           </span>
         )}
         {copyNote && <span role="status" style={{ fontSize: 12, color: 'var(--fl-primary)', fontWeight: 600 }}>{copyNote}</span>}
+        <span title="노드 수" style={{ fontSize: 11.5, color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)' }}>노드 {nodeCount}</span>
         <PresenceAvatars />
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, position: 'relative' }}>
           <button onClick={undo} disabled={!canUndo} aria-label="되돌리기" title="되돌리기 (Ctrl+Z)" style={{ ...ghostBtn, padding: '8px 11px', opacity: canUndo ? 1 : 0.4 }}>↺</button>
           <button onClick={redo} disabled={!canRedo} aria-label="다시 실행" title="다시 실행 (Ctrl+Shift+Z)" style={{ ...ghostBtn, padding: '8px 11px', opacity: canRedo ? 1 : 0.4 }}>↻</button>
+          <button onClick={() => setToolsOpen((v) => !v)} title="도구" aria-label="도구 메뉴" style={{ ...ghostBtn, padding: '8px 11px' }}>⋯ 도구</button>
+          {toolsOpen && (
+            <>
+              <div style={{ position: 'fixed', inset: 0, zIndex: 90 }} onClick={() => setToolsOpen(false)} />
+              <div style={toolsMenu}>
+                <button style={toolItem} onClick={() => { autoLayout(); setToolsOpen(false) }}>⇥ 자동 정렬</button>
+                <button style={{ ...toolItem, opacity: canEdit && !running ? 1 : 0.4 }} disabled={!canEdit || running} onClick={() => { onRun(); setToolsOpen(false) }}>▶ 재실행</button>
+                <button style={toolItem} onClick={() => { toggleZen(); setToolsOpen(false) }}>{zen ? '◱ 집중 모드 끄기' : '⛶ 집중 모드'}</button>
+                <button style={toolItem} onClick={() => { setSearchOpen(true); setToolsOpen(false) }}>🔍 노드 검색 (Ctrl+F)</button>
+                <button style={toolItem} onClick={() => { setJsonOpen(true); setToolsOpen(false) }}>{'{ } 그래프 JSON 보기'}</button>
+                <button style={toolItem} onClick={() => { setAutosave((v) => { persistUI('fl:editor:autosave', v ? '0' : '1'); return !v }); setToolsOpen(false) }}>{autosave ? '☑ 자동 저장 켜짐' : '☐ 자동 저장'}</button>
+                <button style={toolItem} onClick={() => { resetPanels(); setToolsOpen(false) }}>↺ 패널 크기 리셋</button>
+                <button style={toolItem} onClick={() => { setShortcutsOpen(true); setToolsOpen(false) }}>⌨ 단축키 도움말</button>
+              </div>
+            </>
+          )}
           <button onClick={() => setShowApiImport(true)} disabled={!canEdit} style={{ ...ghostBtn, opacity: canEdit ? 1 : 0.4 }} title="OpenAPI/Swagger 스펙에서 노드 가져오기 (팔레트에 추가)">API 가져오기</button>
           <button onClick={() => setWorkflowIO('import')} disabled={!canEdit} style={{ ...ghostBtn, opacity: canEdit ? 1 : 0.4 }}>가져오기</button>
           <button onClick={() => setWorkflowIO('export')} style={ghostBtn}>내보내기</button>
@@ -378,24 +438,19 @@ export function Editor() {
           ) : (
             <button onClick={() => { setPaletteCollapsed(false); persistUI('fl:editor:palColl', '0') }} title="노드 팔레트 펼치기" aria-label="노드 팔레트 펼치기" style={expandStrip}>»</button>
           )}
-          <div style={{ flex: 1, minWidth: 0, position: 'relative' }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
             <FlowCanvas />
-            {propMode === 'overlay' && (
-              <div style={overlayCard}>
-                <PropertyPanel width={360} overlay onToggleOverlay={() => { setPropMode('docked'); persistUI('fl:editor:propMode', 'docked') }} />
-              </div>
-            )}
           </div>
-          {propMode === 'docked' && (propCollapsed ? (
+          {propCollapsed ? (
             <button onClick={() => { setPropCollapsed(false); persistUI('fl:editor:propColl', '0') }} title="속성 패널 펼치기" aria-label="속성 패널 펼치기" style={expandStrip}>«</button>
           ) : (
             <>
               <ResizeHandle axis="x" sign={-1} size={propertyW} min={300} max={maxPropertyW} defaultSize={330} onResize={setPropertyW} onResizeEnd={(n) => saveSize('propertyW', n)} ariaLabel="속성 패널 너비 조절" />
               <PropertyPanel width={propertyW}
-                onToggleOverlay={() => { setPropMode('overlay'); persistUI('fl:editor:propMode', 'overlay') }}
+                onExpand={() => setPropModal(true)}
                 onCollapse={() => { setPropCollapsed(true); persistUI('fl:editor:propColl', '1') }} />
             </>
-          ))}
+          )}
         </div>
         {showLog && (
           <>
@@ -403,6 +458,17 @@ export function Editor() {
             <RunPanel execution={execution} running={running} waitStatus={waitStatus} onStop={onStop} height={runH} onClose={() => setShowLog(false)} />
           </>
         )}
+        {/* 넓은 모달 편집 — 좁은 사이드가 불편할 때. 배경/Esc 로 닫으면 도킹으로 복귀 */}
+        {propModal && (
+          <div style={modalBackdrop} onClick={() => setPropModal(false)} role="presentation">
+            <div style={modalCard} onClick={(e) => e.stopPropagation()}>
+              <PropertyPanel width={760} modal onCloseModal={() => setPropModal(false)} />
+            </div>
+          </div>
+        )}
+        {jsonOpen && <JsonViewModal graph={getGraph()} onClose={() => setJsonOpen(false)} />}
+        {shortcutsOpen && <ShortcutsModal onClose={() => setShortcutsOpen(false)} />}
+        {searchOpen && <NodeSearch onClose={() => setSearchOpen(false)} />}
       </ReactFlowProvider>
 
       {pendingInput && (
@@ -490,5 +556,108 @@ const stopBtn: CSSProperties = { ...ghostBtn, border: 'none', background: 'var(-
 const saveBtn: CSSProperties = { ...ghostBtn, border: 'none', background: 'var(--fl-primary)', color: '#fff' }
 // 접힌 사이드바를 펼치는 얇은 세로 바
 const expandStrip: CSSProperties = { width: 22, flexShrink: 0, border: 'none', borderLeft: '1px solid var(--fl-border)', borderRight: '1px solid var(--fl-border)', background: 'var(--fl-surface)', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 13 }
-// 캔버스 위에 뜨는 속성 오버레이 카드
-const overlayCard: CSSProperties = { position: 'absolute', top: 12, right: 12, width: 360, maxHeight: 'calc(100% - 24px)', display: 'flex', flexDirection: 'column', background: 'var(--fl-surface)', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius)', boxShadow: 'var(--fl-shadow-lg)', zIndex: 20, overflow: 'hidden' }
+// 넓은 속성 편집 모달(배경 딤 + 중앙 카드)
+const modalBackdrop: CSSProperties = { position: 'fixed', inset: 0, background: 'color-mix(in srgb, var(--fl-bg) 55%, transparent)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 250, padding: 24 }
+const modalCard: CSSProperties = { width: 'min(760px, 94vw)', height: 'min(85vh, 900px)', display: 'flex', flexDirection: 'column', background: 'var(--fl-surface)', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius)', boxShadow: 'var(--fl-shadow-lg)', overflow: 'hidden' }
+// 도구 드롭다운 메뉴
+const toolsMenu: CSSProperties = { position: 'absolute', top: '110%', right: 0, zIndex: 91, background: 'var(--fl-surface)', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', boxShadow: 'var(--fl-shadow-lg)', minWidth: 200, padding: 4 }
+const toolItem: CSSProperties = { display: 'block', width: '100%', textAlign: 'left', padding: '8px 10px', border: 'none', background: 'transparent', color: 'var(--fl-text)', cursor: 'pointer', fontSize: 12.5, borderRadius: 6 }
+const mHeader: CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, padding: '12px 16px', borderBottom: '1px solid var(--fl-border)' }
+const mTitle: CSSProperties = { flex: 1, fontFamily: 'var(--fl-font-head)', fontWeight: 600, fontSize: 14 }
+
+// 그래프 JSON 보기/복사
+function JsonViewModal({ graph, onClose }: { graph: object; onClose: () => void }) {
+  const json = useMemo(() => JSON.stringify(graph, null, 2), [graph])
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+  return (
+    <div style={modalBackdrop} onClick={onClose} role="presentation">
+      <div style={{ ...modalCard, height: 'min(80vh, 800px)' }} onClick={(e) => e.stopPropagation()}>
+        <header style={mHeader}>
+          <span style={mTitle}>그래프 JSON</span>
+          <button style={ghostBtn} onClick={() => { void navigator.clipboard?.writeText(json).catch(() => {}); toast('JSON 복사됨', 'ok') }}>복사</button>
+          <button style={{ ...ghostBtn, padding: '8px 11px' }} onClick={onClose} aria-label="닫기">×</button>
+        </header>
+        <pre style={{ margin: 0, flex: 1, overflow: 'auto', padding: 16, fontSize: 12, fontFamily: 'var(--fl-font-mono)', color: 'var(--fl-text)', whiteSpace: 'pre' }}>{json}</pre>
+      </div>
+    </div>
+  )
+}
+
+// 키보드 단축키 도움말
+function ShortcutsModal({ onClose }: { onClose: () => void }) {
+  const rows: Array<[string, string]> = [
+    ['Ctrl/⌘ + S', '저장'], ['Ctrl/⌘ + Z', '되돌리기'], ['Ctrl/⌘ + Shift + Z', '다시 실행'],
+    ['Ctrl/⌘ + C / V', '노드 복사 / 붙여넣기(워크플로 간)'], ['Ctrl/⌘ + D', '선택 노드 복제'],
+    ['Ctrl/⌘ + F', '노드 검색'], ['Delete / Backspace', '노드·연결 삭제'],
+    ['우클릭', '노드 컨텍스트 메뉴(실행/복제/삭제)'], ['Esc', '모달·피커 닫기'],
+  ]
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+  return (
+    <div style={modalBackdrop} onClick={onClose} role="presentation">
+      <div style={{ ...modalCard, height: 'auto', maxHeight: '80vh', width: 'min(440px, 94vw)' }} onClick={(e) => e.stopPropagation()}>
+        <header style={mHeader}><span style={mTitle}>키보드 단축키</span><button style={{ ...ghostBtn, padding: '8px 11px' }} onClick={onClose} aria-label="닫기">×</button></header>
+        <div style={{ padding: 16, overflow: 'auto' }}>
+          {rows.map(([k, d]) => (
+            <div key={k} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '6px 0', borderBottom: '1px solid var(--fl-border)' }}>
+              <kbd style={{ fontFamily: 'var(--fl-font-mono)', fontSize: 12, color: 'var(--fl-primary)' }}>{k}</kbd>
+              <span style={{ fontSize: 12.5, color: 'var(--fl-text-muted)' }}>{d}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// 노드 검색 — 이름/타입/id 로 찾아 선택하고 캔버스를 그 노드로 이동
+function NodeSearch({ onClose }: { onClose: () => void }) {
+  const nodes = useEditorStore((s) => s.nodes)
+  const selectNode = useEditorStore((s) => s.selectNode)
+  const { setCenter } = useReactFlow()
+  const [q, setQ] = useState('')
+  const results = useMemo(() => {
+    const query = q.trim().toLowerCase()
+    return nodes.filter((n) => {
+      const d = n.data as { name?: string; type?: string }
+      if (d.type === 'note' || d.type === 'group') return false
+      if (!query) return true
+      return (d.name ?? '').toLowerCase().includes(query) || (d.type ?? '').includes(query) || n.id.toLowerCase().includes(query)
+    }).slice(0, 8)
+  }, [nodes, q])
+  const pick = (n: { id: string; position: { x: number; y: number } }) => {
+    selectNode(n.id)
+    setCenter(n.position.x + 115, n.position.y + 44, { zoom: 1, duration: 300 })
+    onClose()
+  }
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 250, display: 'flex', justifyContent: 'center', alignItems: 'flex-start', paddingTop: '12vh' }} onClick={onClose} role="presentation">
+      <div style={{ width: 'min(460px, 92vw)', background: 'var(--fl-surface)', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius)', boxShadow: 'var(--fl-shadow-lg)', overflow: 'hidden' }} onClick={(e) => e.stopPropagation()}>
+        <input autoFocus value={q} onChange={(e) => setQ(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Escape') onClose(); if (e.key === 'Enter' && results[0]) pick(results[0]) }}
+          placeholder="노드 이름·타입으로 검색 (Enter=첫 결과)"
+          style={{ width: '100%', padding: '12px 14px', border: 'none', borderBottom: '1px solid var(--fl-border)', background: 'transparent', color: 'var(--fl-text)', fontSize: 14, outline: 'none' }} />
+        <div style={{ maxHeight: 300, overflow: 'auto' }}>
+          {results.length === 0 && <div style={{ padding: 14, fontSize: 12.5, color: 'var(--fl-text-muted)' }}>일치하는 노드 없음</div>}
+          {results.map((n) => {
+            const d = n.data as { name?: string; type?: string; cat?: string }
+            return (
+              <button key={n.id} onClick={() => pick(n)} style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '9px 14px', border: 'none', background: 'transparent', color: 'var(--fl-text)', cursor: 'pointer', fontSize: 13 }}>
+                <span aria-hidden style={{ color: catColor(d.cat), width: 16, textAlign: 'center' }}>{typeIcon(d.type ?? '')}</span>
+                <span style={{ fontWeight: 600 }}>{d.name || d.type}</span>
+                <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)' }}>{typeLabel(d.type ?? '')}</span>
+              </button>
+            )
+          })}
+        </div>
+      </div>
+    </div>
+  )
+}

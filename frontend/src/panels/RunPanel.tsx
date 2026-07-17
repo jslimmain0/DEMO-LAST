@@ -29,6 +29,10 @@ export function RunPanel({
   height?: number
 }) {
   const [openId, setOpenId] = useState<string | null>(null)
+  const [filter, setFilter] = useState<'all' | 'ok' | 'fail' | 'skip'>('all')
+  const matchFilter = (s: string) => filter === 'all'
+    || (filter === 'ok' && s === 'SUCCEEDED') || (filter === 'fail' && s === 'FAILED') || (filter === 'skip' && s === 'SKIPPED')
+  const visibleNodes = (execution?.nodes ?? []).filter((nd) => matchFilter(nd.status))
 
   return (
     <section
@@ -50,7 +54,14 @@ export function RunPanel({
             ⏹ 중단
           </button>
         )}
-        <button onClick={onClose} aria-label="로그 닫기" style={{ marginLeft: running && onStop ? 0 : 'auto', border: 'none', background: 'transparent', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 16 }}>×</button>
+        {execution && execution.nodes.length > 0 && (
+          <div style={{ marginLeft: running && onStop ? 12 : 'auto', display: 'flex', gap: 2 }}>
+            {([['all', '전체'], ['ok', '성공'], ['fail', '실패'], ['skip', '건너뜀']] as const).map(([k, lbl]) => (
+              <button key={k} onClick={() => setFilter(k)} style={{ padding: '3px 8px', fontSize: 11.5, border: '1px solid var(--fl-border)', borderRadius: 6, cursor: 'pointer', background: filter === k ? 'var(--fl-primary)' : 'transparent', color: filter === k ? '#fff' : 'var(--fl-text-muted)' }}>{lbl}</button>
+            ))}
+          </div>
+        )}
+        <button onClick={onClose} aria-label="로그 닫기" style={{ marginLeft: execution && execution.nodes.length > 0 ? 8 : (running && onStop ? 0 : 'auto'), border: 'none', background: 'transparent', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 16 }}>×</button>
       </header>
 
       <div style={{ flex: 1, overflowY: 'auto' }}>
@@ -72,7 +83,10 @@ export function RunPanel({
         {!running && !execution && (
           <div style={{ padding: 16, color: 'var(--fl-text-muted)', fontSize: 13 }}>아직 실행하지 않았습니다. ▶ 실행을 눌러보세요.</div>
         )}
-        {execution && execution.nodes.map((nd) => {
+        {execution && execution.nodes.length > 0 && visibleNodes.length === 0 && (
+          <div style={{ padding: 16, color: 'var(--fl-text-muted)', fontSize: 13 }}>이 필터에 해당하는 노드가 없습니다.</div>
+        )}
+        {execution && visibleNodes.map((nd) => {
           const open = openId === nd.id
           return (
             <div key={nd.id} style={{ borderBottom: '1px solid var(--fl-border)' }}>
@@ -143,7 +157,11 @@ function LogBlock({ title, text }: { title: string; text: string | null | undefi
   if (!text) return null
   return (
     <div>
-      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--fl-text-muted)', marginBottom: 4 }}>{title}</div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--fl-text-muted)' }}>{title}</div>
+        <button onClick={() => { void navigator.clipboard?.writeText(text).catch(() => {}) }} title={`${title} 복사`}
+          style={{ fontSize: 10.5, padding: '1px 7px', border: '1px solid var(--fl-border)', borderRadius: 5, background: 'transparent', color: 'var(--fl-text-muted)', cursor: 'pointer' }}>복사</button>
+      </div>
       <pre style={{ margin: 0, padding: 10, background: 'var(--fl-surface-2)', color: 'var(--fl-text)', borderRadius: 'var(--fl-radius-sm)', fontFamily: 'var(--fl-font-mono)', fontSize: 11.5, whiteSpace: 'pre-wrap', wordBreak: 'break-all', maxHeight: 160, overflow: 'auto' }}>{text}</pre>
     </div>
   )

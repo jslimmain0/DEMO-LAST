@@ -1,7 +1,7 @@
 import type { CSSProperties } from 'react'
 import { useState } from 'react'
 import { getRunInputVars, setRunInputVars } from '../lib/runInput'
-import { useEscapeClose } from './useEscapeClose'
+import { Modal } from './Modal'
 
 /**
  * 실행 입력(런타임 파라미터) 다이얼로그 — `{{ 키@input }}` 로 참조되는 값을 넣고 실행.
@@ -11,8 +11,6 @@ export function RunInputDialog({ onClose, onRun }: { onClose: () => void; onRun:
   const [rows, setRows] = useState<Array<{ k: string; v: string }>>(
     () => { const e = Object.entries(getRunInputVars()); return e.length ? e.map(([k, v]) => ({ k, v })) : [{ k: '', v: '' }] },
   )
-  useEscapeClose(onClose)
-
   const commit = (next: Array<{ k: string; v: string }>) => {
     setRows(next)
     const out: Record<string, string> = {}
@@ -24,8 +22,7 @@ export function RunInputDialog({ onClose, onRun }: { onClose: () => void; onRun:
   const runNow = () => { onRun(); onClose() }
 
   return (
-    <div role="dialog" aria-modal="true" aria-label="입력값과 실행" style={overlay} onClick={onClose}>
-      <div style={card} onClick={(e) => e.stopPropagation()}>
+    <Modal onClose={onClose} ariaLabel="입력값과 실행" width={520} card={{ padding: 18, display: 'block' }}>
         <header style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
           <span aria-hidden>▶</span>
           <b style={{ flex: 1, fontSize: 15 }}>입력값과 실행</b>
@@ -49,13 +46,10 @@ export function RunInputDialog({ onClose, onRun }: { onClose: () => void; onRun:
           <button onClick={onClose} style={ghostBtn}>닫기</button>
           <button onClick={runNow} style={primaryBtn}>▶ 이 입력으로 실행</button>
         </div>
-      </div>
-    </div>
+    </Modal>
   )
 }
 
-const overlay: CSSProperties = { position: 'fixed', inset: 0, background: 'rgba(26,29,39,.4)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }
-const card: CSSProperties = { width: 520, maxWidth: '96vw', background: 'var(--fl-surface)', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius)', boxShadow: 'var(--fl-shadow-lg)', padding: 18 }
 const hint: CSSProperties = { fontSize: 11.5, color: 'var(--fl-text-muted)', lineHeight: 1.6, margin: 0 }
 const code: CSSProperties = { fontFamily: 'var(--fl-font-mono)', fontSize: 11, background: 'var(--fl-surface-2)', padding: '1px 5px', borderRadius: 4 }
 const mono: CSSProperties = { padding: '7px 9px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 12, fontFamily: 'var(--fl-font-mono)', minWidth: 0 }

@@ -2,8 +2,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { CSSProperties } from 'react'
 import { useState } from 'react'
 import { secretsApi } from '../api/client'
+import { Modal } from './Modal'
 import { toast } from './toast'
-import { useEscapeClose } from './useEscapeClose'
 
 /**
  * 시크릿 볼트 — Bearer/API 키 등을 이름으로 저장하고 `{{ 이름@secret }}` 로 참조.
@@ -11,7 +11,6 @@ import { useEscapeClose } from './useEscapeClose'
  */
 export function SecretsDialog({ onClose }: { onClose: () => void }) {
   const qc = useQueryClient()
-  useEscapeClose(onClose)
   const q = useQuery({ queryKey: ['secrets'], queryFn: secretsApi.list })
   const [name, setName] = useState('')
   const [value, setValue] = useState('')
@@ -29,8 +28,7 @@ export function SecretsDialog({ onClose }: { onClose: () => void }) {
   const list = q.data ?? []
 
   return (
-    <div role="dialog" aria-modal="true" aria-label="시크릿" style={overlay} onClick={onClose}>
-      <div style={card} onClick={(e) => e.stopPropagation()}>
+    <Modal onClose={onClose} ariaLabel="시크릿" width={540} card={{ padding: 18, display: 'block', overflowY: 'auto' }}>
         <header style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
           <span aria-hidden>🔑</span>
           <b style={{ flex: 1, fontSize: 15 }}>시크릿 볼트</b>
@@ -61,8 +59,7 @@ export function SecretsDialog({ onClose }: { onClose: () => void }) {
             <button onClick={() => put.mutate()} disabled={!name.trim() || !value || put.isPending} style={primary}>저장</button>
           </div>
         </div>
-      </div>
-    </div>
+    </Modal>
   )
 }
 
@@ -72,8 +69,6 @@ function errMsg(e: unknown, fallback: string): string {
 }
 function copy(s: string) { void navigator.clipboard?.writeText(s).then(() => toast(`${s} 복사`, 'ok')).catch(() => {}) }
 
-const overlay: CSSProperties = { position: 'fixed', inset: 0, background: 'rgba(26,29,39,.4)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }
-const card: CSSProperties = { width: 540, maxWidth: '96vw', maxHeight: '86vh', overflowY: 'auto', background: 'var(--fl-surface)', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius)', boxShadow: 'var(--fl-shadow-lg)', padding: 18 }
 const hint: CSSProperties = { fontSize: 11.5, color: 'var(--fl-text-muted)', lineHeight: 1.6, margin: 0 }
 const label: CSSProperties = { display: 'block', fontSize: 11.5, fontWeight: 600, color: 'var(--fl-text-muted)', margin: '0 0 5px' }
 const code: CSSProperties = { fontFamily: 'var(--fl-font-mono)', fontSize: 11, background: 'var(--fl-surface-2)', padding: '1px 5px', borderRadius: 4 }

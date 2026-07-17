@@ -1,7 +1,7 @@
 import type { CSSProperties } from 'react'
 import { useEffect, useMemo, useState } from 'react'
 import { getEnvStore, setEnvStore, useEnvStore } from '../lib/environments'
-import { useEscapeClose } from './useEscapeClose'
+import { Modal } from './Modal'
 
 /**
  * 환경(dev/staging/prod) 관리 다이얼로그.
@@ -13,8 +13,6 @@ export function EnvManagerDialog({ onClose }: { onClose: () => void }) {
   const store = useEnvStore()
   const names = useMemo(() => Object.keys(store.envs).sort((a, b) => a.localeCompare(b)), [store.envs])
   const [selected, setSelected] = useState<string | null>(store.active ?? names[0] ?? null)
-  useEscapeClose(onClose)
-
   // 선택 환경이 삭제되면 유효한 것으로 보정
   useEffect(() => {
     if (selected && !store.envs[selected]) setSelected(store.active ?? Object.keys(store.envs)[0] ?? null)
@@ -57,8 +55,7 @@ export function EnvManagerDialog({ onClose }: { onClose: () => void }) {
   const vars = selected ? store.envs[selected] ?? {} : {}
 
   return (
-    <div style={overlay} onClick={onClose}>
-      <div role="dialog" aria-label="환경 관리" style={card} onClick={(e) => e.stopPropagation()}>
+    <Modal onClose={onClose} ariaLabel="환경 관리" width={720} card={{ padding: 18 }}>
         <header style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
           <span aria-hidden style={{ fontSize: 15 }}>🌐</span>
           <b style={{ flex: 1, fontSize: 15 }}>환경 관리</b>
@@ -133,8 +130,7 @@ export function EnvManagerDialog({ onClose }: { onClose: () => void }) {
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
           <button style={primaryBtn} onClick={onClose}>닫기</button>
         </div>
-      </div>
-    </div>
+    </Modal>
   )
 }
 
@@ -172,8 +168,6 @@ function VarEditor({ initial, onChange }: { initial: Record<string, string>; onC
   )
 }
 
-const overlay: CSSProperties = { position: 'fixed', inset: 0, background: 'rgba(26,29,39,.4)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }
-const card: CSSProperties = { width: 720, maxWidth: '96vw', maxHeight: '90vh', display: 'flex', flexDirection: 'column', background: 'var(--fl-surface)', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius)', boxShadow: 'var(--fl-shadow-lg)', padding: 18 }
 const hint: CSSProperties = { fontSize: 11.5, color: 'var(--fl-text-muted)', marginTop: 6, lineHeight: 1.6 }
 const code: CSSProperties = { fontFamily: 'var(--fl-font-mono)', fontSize: 11, background: 'var(--fl-surface-2)', padding: '1px 5px', borderRadius: 4 }
 const mono: CSSProperties = { padding: '7px 9px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 12, minWidth: 0 }

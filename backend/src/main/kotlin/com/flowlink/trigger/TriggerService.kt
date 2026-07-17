@@ -95,7 +95,7 @@ class TriggerService(
         else t.inputJson?.let { json.readTree(it) }
         TenantContext.setTenantId(t.tenantId)
         try {
-            val detail = executionService.run(t.flowId, RunRequest(input, null, t.versionNo, null, null), TriggerType.WEBHOOK)
+            val detail = executionService.run(t.flowId, RunRequest(input, null, t.versionNo), TriggerType.WEBHOOK)
             markFired(t.id)
             return detail.id
         } finally {
@@ -115,7 +115,7 @@ class TriggerService(
         val input = t.inputJson?.let { json.readTree(it) }
         TenantContext.setTenantId(t.tenantId)
         try {
-            executionService.run(t.flowId, RunRequest(input, null, t.versionNo, null, null), TriggerType.SCHEDULE)
+            executionService.run(t.flowId, RunRequest(input, null, t.versionNo), TriggerType.SCHEDULE)
         } finally {
             TenantContext.clear()
         }

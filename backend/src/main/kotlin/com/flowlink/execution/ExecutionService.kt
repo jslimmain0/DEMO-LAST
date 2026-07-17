@@ -428,7 +428,7 @@ class ExecutionService(
             .orElseThrow { NotFoundException.of("Execution", execId) }
         val versionNo = versionRepo.findById(src.flowVersionId).map { it.versionNo }.orElse(null)
         val input = src.inputJson?.let { json.readTree(it) }
-        return run(src.flowId, RunRequest(input, null, versionNo, null, null))
+        return run(src.flowId, RunRequest(input, null, versionNo))
     }
 
     /** 실행 목록에 워크플로 이름을 채운다(삭제/보관된 플로우도 이름 조회 — UUID 노출 방지). */

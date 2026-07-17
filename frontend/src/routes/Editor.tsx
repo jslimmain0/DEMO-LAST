@@ -3,7 +3,7 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import type { CSSProperties } from 'react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import type { ExecutionDetail, PendingClientRequest, PendingInputRequest, ResumeRequest } from '../api/types'
+import type { ExecutionDetail, PendingClientRequest, PendingInputRequest, ResumeRequest, RunRequest } from '../api/types'
 import { flowsApi, runsApi } from '../api/client'
 import { catColor, typeIcon, typeLabel } from '../canvas/nodeMeta'
 import { FlowCanvas } from '../canvas/FlowCanvas'
@@ -19,7 +19,9 @@ import { ConflictDialog } from '../components/ConflictDialog'
 import { PresenceAvatars } from '../components/PresenceAvatars'
 import { EnvSwitcher } from '../components/EnvSwitcher'
 import { VersionHistoryDialog } from '../components/VersionHistoryDialog'
+import { RunInputDialog } from '../components/RunInputDialog'
 import { activeEnvVars } from '../lib/environments'
+import { activeInputVars, loadRunInput } from '../lib/runInput'
 import { toast } from '../components/toast'
 import { useAuth, usePermissions } from '../auth/AuthContext'
 import { getAccessToken } from '../auth/auth'
@@ -101,6 +103,7 @@ export function Editor() {
   const [jsonOpen, setJsonOpen] = useState(false)
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
   const [versionsOpen, setVersionsOpen] = useState(false)
+  const [runInputOpen, setRunInputOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
   const [autosave, setAutosave] = useState(() => localStorage.getItem('fl:editor:autosave') === '1')
   const autoLayout = useEditorStore((s) => s.autoLayout)
@@ -242,6 +245,9 @@ export function Editor() {
     if (flowQuery.data) loadGraph(flowQuery.data.id, flowQuery.data.name, flowQuery.data.graph)
   }, [flowQuery.data, loadGraph])
 
+  // 현재 플로우의 저장된 실행 입력을 로드 — {{ 키@input }} 바인딩 소스 + onRun 이 주입
+  useEffect(() => { loadRunInput(flowId) }, [flowId])
+
   // 이탈 경고 — 미저장 편집 또는 실행 중(탭을 닫으면 실행이 끊긴다)
   useEffect(() => {
     const handler = (e: BeforeUnloadEvent) => {
@@ -287,9 +293,13 @@ export function Editor() {
       // 비동기 실행: POST 는 즉시 RUNNING 을 반환하고, 이 루프가 폴링 드라이버가 된다 —
       // 폴링 스냅샷이 실행 경과 애니메이션(runView)도 함께 구동한다(별도 baseline 폴러 불필요).
       // pending(브라우저 협업 지점)을 만나면 처리 후 resume(즉시 반환) → 다시 폴링으로 다음 상태를 감지.
-      // 활성 환경(dev/staging/prod)의 변수를 실행에 주입 — 백엔드가 `{{ 키@env }}` 로 해석한다.
+      // 활성 환경(dev/staging/prod)의 변수 + 실행 입력을 주입 — 백엔드가 `{{ 키@env }}`/`{{ 키@input }}` 로 해석한다.
       const envVars = activeEnvVars()
-      let detail = await runsApi.run(flowId, Object.keys(envVars).length ? { env: envVars } : undefined)
+      const inputVars = activeInputVars()
+      const body: RunRequest = {}
+      if (Object.keys(envVars).length) body.env = envVars
+      if (Object.keys(inputVars).length) body.input = inputVars
+      let detail = await runsApi.run(flowId, Object.keys(body).length ? body : undefined)
       setExecution(detail)
       let guard = 0
       let waitBannerNode: string | null = null
@@ -441,6 +451,7 @@ export function Editor() {
               <div style={toolsMenu}>
                 <button style={toolItem} onClick={() => { autoLayout(); setToolsOpen(false) }}>⇥ 자동 정렬</button>
                 <button style={{ ...toolItem, opacity: canEdit && !running ? 1 : 0.4 }} disabled={!canEdit || running} onClick={() => { onRun(); setToolsOpen(false) }}>▶ 재실행</button>
+                <button style={{ ...toolItem, opacity: canEdit && !running ? 1 : 0.4 }} disabled={!canEdit || running} onClick={() => { setRunInputOpen(true); setToolsOpen(false) }}>▶ 입력값과 실행</button>
                 <button style={toolItem} onClick={() => { toggleZen(); setToolsOpen(false) }}>{zen ? '◱ 집중 모드 끄기' : '⛶ 집중 모드'}</button>
                 <button style={toolItem} onClick={() => { setSearchOpen(true); setToolsOpen(false) }}>🔍 노드 검색 (Ctrl+F)</button>
                 <button style={toolItem} onClick={() => { setVersionsOpen(true); setToolsOpen(false) }}>🕘 버전 기록</button>
@@ -507,6 +518,7 @@ export function Editor() {
             onClose={() => setVersionsOpen(false)}
           />
         )}
+        {runInputOpen && <RunInputDialog onClose={() => setRunInputOpen(false)} onRun={() => onRun()} />}
         {searchOpen && <NodeSearch onClose={() => setSearchOpen(false)} />}
       </ReactFlowProvider>
 

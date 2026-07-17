@@ -2,6 +2,7 @@
 import type { Edge, Node } from '@xyflow/react'
 import { asGraphNode } from '../canvas/graphAdapter'
 import { activeEnvVars } from '../lib/environments'
+import { activeInputVars } from '../lib/runInput'
 
 export interface BindableItem {
   key: string
@@ -95,6 +96,16 @@ export function bindableSources(nodes: Node[], edges: Edge[], targetId: string):
       name: '환경 변수',
       type: 'env',
       items: envKeys.map((k) => ({ key: k, type: '환경', scope: null, group: 'response' as const })),
+    })
+  }
+  // 실행 입력(런타임 파라미터) — `{{ 키@input }}`. 저장된 입력값 키를 노출.
+  const inputKeys = Object.keys(activeInputVars())
+  if (inputKeys.length) {
+    sources.unshift({
+      id: 'input',
+      name: '실행 입력',
+      type: 'input',
+      items: inputKeys.map((k) => ({ key: k, type: '입력', scope: null, group: 'response' as const })),
     })
   }
   for (const rf of nodes) {

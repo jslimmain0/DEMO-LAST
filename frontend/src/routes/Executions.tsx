@@ -147,11 +147,27 @@ export function Executions() {
   )
 }
 
-// 과거 실행 상세 — 노드별 요청/응답/출력 재열람(에디터 안 열고)
+// 노드 결과 시그니처(응답+출력) — 이전 실행과 비교용
+function nodeSig(nd: { responseText?: string | null; output?: unknown }): string {
+  return `${nd.responseText ?? ''}::${nd.output == null ? '' : JSON.stringify(nd.output)}`
+}
+
+// 과거 실행 상세 — 노드별 요청/응답/출력 재열람(에디터 안 열고) + 이전 실행과 비교(응답 diff)
 function ExecutionDetailModal({ execId, onClose }: { execId: string; onClose: () => void }) {
   const { data, isLoading, isError, refetch } = useQuery({ queryKey: ['execution', execId], queryFn: () => runsApi.get(execId) })
   const [openNode, setOpenNode] = useState<string | null>(null)
+  const [compare, setCompare] = useState(false)
   useEscapeClose(onClose)
+
+  // 같은 플로우의 '이 실행 직전' 실행을 찾아 그 상세를 가져온다(비교 켤 때만).
+  const flowRuns = useQuery({
+    queryKey: ['exec-flow-runs', data?.flowId],
+    queryFn: () => runsApi.list({ flowId: data!.flowId, limit: 30 }),
+    enabled: compare && !!data?.flowId,
+  })
+  const prevId = flowRuns.data?.find((r) => r.id !== execId && (!data?.startedAt || (r.startedAt && r.startedAt < data.startedAt)))?.id
+  const prev = useQuery({ queryKey: ['execution', prevId], queryFn: () => runsApi.get(prevId as string), enabled: !!prevId })
+  const prevByNode = new Map((prev.data?.nodes ?? []).map((n) => [n.nodeId, n]))
   return (
     <div role="dialog" aria-modal="true" aria-label="실행 상세" onClick={onClose}
       style={{ position: 'fixed', inset: 0, background: 'rgba(26,29,39,.4)', zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
@@ -160,7 +176,12 @@ function ExecutionDetailModal({ execId, onClose }: { execId: string; onClose: ()
           <strong style={{ fontFamily: 'var(--fl-font-head)', fontSize: 15 }}>실행 상세</strong>
           {data && <StatusBadge status={data.status} />}
           {data?.error && <span style={{ fontSize: 12, color: 'var(--fl-fail)' }}>{data.error}</span>}
-          <button onClick={onClose} aria-label="닫기" style={{ marginLeft: 'auto', border: 'none', background: 'transparent', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 18 }}>×</button>
+          <button
+            onClick={() => setCompare((v) => !v)}
+            title="같은 플로우의 직전 실행과 응답을 비교합니다"
+            style={{ marginLeft: 'auto', fontSize: 12, padding: '5px 11px', borderRadius: 'var(--fl-radius-pill)', cursor: 'pointer', border: '1px solid var(--fl-border)', background: compare ? 'var(--fl-primary)' : 'transparent', color: compare ? '#fff' : 'var(--fl-text-muted)', fontWeight: 600 }}
+          >⇄ 이전 실행과 비교</button>
+          <button onClick={onClose} aria-label="닫기" style={{ border: 'none', background: 'transparent', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 18 }}>×</button>
         </header>
         <div style={{ overflowY: 'auto', flex: 1 }}>
           {isLoading && <div style={{ padding: 20, color: 'var(--fl-text-muted)', fontSize: 13 }}>불러오는 중…</div>}
@@ -170,13 +191,26 @@ function ExecutionDetailModal({ execId, onClose }: { execId: string; onClose: ()
               <button onClick={() => refetch()} style={{ ...ghostBtn, padding: '6px 12px' }}>다시 시도</button>
             </div>
           )}
+          {compare && (
+            <div style={{ padding: '8px 14px', fontSize: 11.5, color: 'var(--fl-text-muted)', background: 'var(--fl-surface-2)', borderBottom: '1px solid var(--fl-border)' }}>
+              {prev.data ? <>직전 실행({relTime(prev.data.startedAt ?? '')})과 응답 비교 — 노드별 <b style={{ color: 'var(--fl-put)' }}>변경</b>/동일 표시</>
+                : flowRuns.isLoading || prev.isLoading ? '이전 실행을 찾는 중…'
+                : '비교할 이전 실행이 없습니다.'}
+            </div>
+          )}
           {data?.nodes.map((nd) => {
             const open = openNode === nd.id
+            const p = prevByNode.get(nd.nodeId)
+            const changed = compare && !!p && nodeSig(p) !== nodeSig(nd)
+            const isNew = compare && prev.data != null && !p
             return (
               <div key={nd.id} style={{ borderBottom: '1px solid var(--fl-border)' }}>
                 <button onClick={() => setOpenNode(open ? null : nd.id)} style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '9px 14px', border: 'none', background: 'transparent', cursor: 'pointer', textAlign: 'left' }}>
                   <span style={{ fontSize: 12, fontWeight: 700, color: nd.status === 'FAILED' ? 'var(--fl-fail)' : nd.status === 'SKIPPED' ? 'var(--fl-text-muted)' : 'var(--fl-ok)' }}>{nd.status === 'FAILED' ? '✕' : nd.status === 'SKIPPED' ? '⊘' : '✓'}</span>
                   <span style={{ fontSize: 13.5, fontWeight: 600 }}>{nd.nodeName || nd.nodeId}</span>
+                  {changed && <span style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--fl-put)', border: '1px solid var(--fl-put)', borderRadius: 8, padding: '0 6px' }}>변경</span>}
+                  {compare && !changed && p && <span style={{ fontSize: 10.5, color: 'var(--fl-text-muted)' }}>동일</span>}
+                  {isNew && <span style={{ fontSize: 10.5, color: 'var(--fl-ok)' }}>신규</span>}
                   <div style={{ marginLeft: 'auto', display: 'flex', gap: 12, alignItems: 'center' }}>
                     {nd.httpStatus != null && <span style={metaMono}>{nd.httpStatus}</span>}
                     {nd.durationMs != null && <span style={metaMono}>{duration(nd.durationMs)}</span>}
@@ -188,6 +222,13 @@ function ExecutionDetailModal({ execId, onClose }: { execId: string; onClose: ()
                     {nd.responseText && <pre style={logPre}>{nd.responseText}</pre>}
                     {nd.output != null && <pre style={logPre}>{JSON.stringify(nd.output, null, 2)}</pre>}
                     {!nd.requestText && !nd.responseText && nd.output == null && <span style={{ fontSize: 12, color: 'var(--fl-text-muted)' }}>기록된 상세가 없습니다.</span>}
+                    {changed && p && (
+                      <div>
+                        <div style={{ fontSize: 10.5, color: 'var(--fl-text-muted)', margin: '2px 0 4px' }}>◀ 이전 실행 응답</div>
+                        {p.responseText && <pre style={{ ...logPre, opacity: 0.7 }}>{p.responseText}</pre>}
+                        {p.output != null && <pre style={{ ...logPre, opacity: 0.7 }}>{JSON.stringify(p.output, null, 2)}</pre>}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

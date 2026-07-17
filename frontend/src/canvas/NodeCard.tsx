@@ -2,6 +2,7 @@ import { Handle, Position } from '@xyflow/react'
 import type { NodeProps } from '@xyflow/react'
 import type { HttpMethod } from '../api/types'
 import { MethodTag } from '../components/MethodTag'
+import { getReachableCached } from '../lib/reachable'
 import { useEditorStore } from '../store/editorStore'
 import { asGraphNode } from './graphAdapter'
 import { catColor, typeIcon, typeLabel } from './nodeMeta'
@@ -10,6 +11,12 @@ export function NodeCard({ data, selected }: NodeProps) {
   const n = asGraphNode(data)
   const waitingId = useEditorStore((s) => s.waitingNodeId)
   const runState = useEditorStore((s) => s.runView?.nodeStates[n.id])
+  // 시작에서 도달 못 하는 실행 노드 = 실행 시 건너뜀. 실행 전에 점선 테두리로 미리 표시.
+  const unreachable = useEditorStore((s) => {
+    if (n.type === 'start' || n.type === 'note' || n.type === 'group') return false
+    if (!s.nodes.some((x) => (x.data as { type?: string } | undefined)?.type === 'start')) return false
+    return !getReachableCached(s.nodes, s.edges).has(n.id)
+  })
   const waiting = waitingId === n.id || runState === 'waiting'
   const running = runState === 'running'
   const accent = catColor(n.cat)
@@ -17,6 +24,7 @@ export function NodeCard({ data, selected }: NodeProps) {
   const isEnd = n.type === 'end'
   const isHttp = n.type === 'http'
 
+  const showUnreachable = unreachable && !selected && !runState && !waiting && !running
   const borderColor = waiting
     ? 'var(--fl-waiting)'
     : running
@@ -27,7 +35,9 @@ export function NodeCard({ data, selected }: NodeProps) {
           ? 'var(--fl-primary)'
           : runState === 'success'
             ? 'var(--fl-ok)'
-            : 'var(--fl-border)'
+            : showUnreachable
+              ? 'var(--fl-put)'
+              : 'var(--fl-border)'
 
   return (
     <div
@@ -35,7 +45,7 @@ export function NodeCard({ data, selected }: NodeProps) {
       style={{
         width: 230, // 고정 폭 — URL/이름이 길어도 늘어나지 않는다(말줄임). fitBounds NODE_W 와 일치
         background: 'var(--fl-surface)',
-        border: `1px solid ${borderColor}`,
+        border: `1px ${showUnreachable ? 'dashed' : 'solid'} ${borderColor}`,
         borderRadius: 'var(--fl-radius)',
         boxShadow: selected ? 'var(--fl-shadow-lg)' : 'var(--fl-shadow)',
         overflow: 'hidden',
@@ -51,8 +61,8 @@ export function NodeCard({ data, selected }: NodeProps) {
           <div style={{ fontSize: 13.5, fontWeight: 600, letterSpacing: '-.01em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {n.name ?? typeLabel(n.type)}
           </div>
-          <div style={{ fontSize: 11.5, color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)' }}>
-            {waiting ? '콜백 대기 중…' : running ? '실행 중…' : runState === 'skipped' ? '건너뜀' : typeLabel(n.type)}
+          <div style={{ fontSize: 11.5, color: showUnreachable ? 'var(--fl-put)' : 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)', fontWeight: showUnreachable ? 600 : 400 }}>
+            {waiting ? '콜백 대기 중…' : running ? '실행 중…' : runState === 'skipped' ? '건너뜀' : showUnreachable ? '⚠ 미연결' : typeLabel(n.type)}
           </div>
         </div>
         <RunBadge state={waiting ? 'waiting' : runState} />
@@ -64,6 +74,11 @@ export function NodeCard({ data, selected }: NodeProps) {
           <span style={{ flex: 1, minWidth: 0, fontFamily: 'var(--fl-font-mono)', fontSize: 11.5, color: 'var(--fl-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {n.path || '/'}
           </span>
+          {n.method && n.method !== 'GET' && n.method !== 'HEAD' && (
+            <span title={`본문 종류: ${n.bodyType ?? 'json'}`} style={{ flexShrink: 0, fontSize: 9.5, fontWeight: 700, fontFamily: 'var(--fl-font-mono)', padding: '2px 5px', borderRadius: 'var(--fl-radius-pill)', color: 'var(--fl-text-muted)', background: 'var(--fl-surface)', border: '1px solid var(--fl-border)' }}>
+              {(n.bodyType === 'form' || n.bodyType === 'urlencoded') ? 'FORM' : (n.bodyType ?? 'json').toUpperCase()}
+            </span>
+          )}
           {(() => {
             const client = n.reqMode === 'client'
             return (

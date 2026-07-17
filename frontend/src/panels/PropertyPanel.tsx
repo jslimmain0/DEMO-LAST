@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import type { CSSProperties } from 'react'
+import type { CSSProperties, ReactNode } from 'react'
 import { useEffect, useMemo, useState } from 'react'
 import { pluginsApi, runsApi, settingsApi, transformsApi } from '../api/client'
 import { usePermissions } from '../auth/AuthContext'
@@ -15,6 +15,7 @@ import { asGraphNode } from '../canvas/graphAdapter'
 import { ANNO_COLORS, catColor, METHOD_COLOR, typeIcon, typeLabel } from '../canvas/nodeMeta'
 import { fieldsToRaw, rawToFields, headersToRaw, rawToHeaders } from '../lib/bodyConvert'
 import { parseCurl, toCurl } from '../lib/curl'
+import { isUnreachableExecutable, reachableFromStart } from '../lib/reachable'
 import { bindingToToken, isTokenizable } from '../lib/tokenGrammar'
 import { newId } from '../lib/ids'
 import { useEditorStore } from '../store/editorStore'
@@ -32,7 +33,6 @@ const CALLBACK_RESP_TYPES = [
   { value: 'html', label: 'HTML (text/html)' },
   { value: 'json', label: 'JSON (application/json)' },
 ]
-const BODY_TYPES: BodyType[] = ['json', 'urlencoded', 'form', 'raw', 'xml']
 // 구조형 바디(키-값 또는 raw 텍스트 둘 다 가능) — jsonRaw 플래그로 [필드|Raw] 전환
 const STRUCTURED_BODY: BodyType[] = ['json', 'urlencoded', 'form']
 function rawBodyPlaceholder(bt: BodyType | undefined): string {
@@ -71,13 +71,14 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
   const deleteNode = useEditorStore((s) => s.deleteNode)
   const duplicateSelection = useEditorStore((s) => s.duplicateSelection)
   const removeEdge = useEditorStore((s) => s.removeEdge)
-  const [tab, setTab] = useState<'params' | 'headers' | 'body'>('params')
   const [pick, setPick] = useState<string | null>(null) // rawBody | rawParams | rawHeaders (Raw 텍스트영역 전용)
   const [bodyConvNote, setBodyConvNote] = useState<string | null>(null) // 필드↔Raw 변환 안내
   const [single, setSingle] = useState<SingleNodeRunResult | null>(null) // 이 노드만 실행 결과
   const [singleRunning, setSingleRunning] = useState(false)
-  const [advOpen, setAdvOpen] = useState(false) // HTTP 고급(문자셋·요청 방식) 접기
+  const [advOpen, setAdvOpen] = useState(false) // HTTP 고급(문자셋) 접기
   const [curlText, setCurlText] = useState<string | null>(null) // cURL 붙여넣기 입력창(열림=문자열)
+  const [secOverride, setSecOverride] = useState<Record<string, boolean>>({}) // HTTP 요청 섹션 접기 오버라이드
+  const [previewOpen, setPreviewOpen] = useState(false) // 요청 미리보기 접기
   const focusNode = useEditorStore((s) => s.focusNode)
   const transforms = useQuery({ queryKey: ['transforms'], queryFn: transformsApi.list })
   const qc = useQueryClient()
@@ -109,6 +110,8 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
   // 연결(바로가기) — 선택 노드의 상류(들어오는)·하류(나가는) 이웃 노드 id (early-return 위에서 훅 순서 고정)
   const upstreamIds = useMemo(() => (selectedId ? edges.filter((e) => e.target === selectedId).map((e) => e.source) : []), [edges, selectedId])
   const downstreamIds = useMemo(() => (selectedId ? edges.filter((e) => e.source === selectedId).map((e) => e.target) : []), [edges, selectedId])
+  // 실행 도달성 — START 에서 못 오는 노드는 실행 시 건너뜀. 실행 전에 미리 경고.
+  const reachable = useMemo(() => reachableFromStart(nodes, edges), [nodes, edges])
 
   // 다른 노드를 고르면 변환 안내는 초기화
   useEffect(() => setBodyConvNote(null), [selectedId])
@@ -130,6 +133,8 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
   }
 
   const id = node.id
+  const rfNode = nodes.find((n) => n.id === id)
+  const unreachable = rfNode ? isUnreachableExecutable(rfNode, nodes, reachable) : false
   const fields = node.fields ?? { params: [], headers: [], body: [] }
   const setRows = (t: 'params' | 'headers' | 'body', rows: NodeField[]) => update(id, { fields: { ...fields, [t]: rows } })
   const setInputField = (key: string, patch: Partial<NodeField>) => {
@@ -170,7 +175,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
       return { id: newId(), key: decodeURIComponent(k), value: decodeURIComponent(val.replace(/\+/g, ' ')) }
     })
     update(id, { baseUrl: base, path: '', baseUrlBound: null, paramsRaw: false, fields: { params: [...(fields.params ?? []), ...rows], headers: fields.headers ?? [], body: fields.body ?? [] } })
-    setTab('params')
+    setSecOverride((p) => ({ ...p, query: true }))
     toast(`쿼리 ${rows.length}개를 Params 로 분리했습니다.`, 'ok')
   }
 
@@ -200,11 +205,65 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
       headersRaw: false,
       fields: { params: fields.params ?? [], headers: r.headers.map((h) => ({ id: newId(), key: h.key, value: h.value })), body: fields.body ?? [] },
     }
-    if (r.body) { patch.bodyType = r.bodyType === 'json' ? 'json' : r.bodyType === 'urlencoded' ? 'urlencoded' : 'raw'; patch.jsonRaw = true; patch.rawBody = r.body; setTab('body') }
+    if (r.body) { patch.bodyType = r.bodyType === 'json' ? 'json' : r.bodyType === 'urlencoded' ? 'urlencoded' : 'raw'; patch.jsonRaw = true; patch.rawBody = r.body; setSecOverride((p) => ({ ...p, body: true })) }
     update(id, patch)
     setCurlText(null)
     toast('cURL 을 노드에 반영했습니다.', 'ok')
   }
+
+  // --- HTTP: 요청 3파트 통합(섹션) + 프리셋 + Content-Type 미리보기 ---
+  const method = node.method ?? 'GET'
+  const hasBody = method !== 'GET' && method !== 'HEAD'
+  const bodyKind: BodyType = node.bodyType === 'form' ? 'urlencoded' : (node.bodyType ?? 'json') // form==urlencoded (백엔드 동일 처리)
+  const paramCount = node.paramsRaw ? ((node.rawParams ?? '').trim() ? 1 : 0) : (fields.params ?? []).filter((f) => f.key?.trim()).length
+  const headerCount = node.headersRaw ? ((node.rawHeaders ?? '').trim() ? 1 : 0) : (fields.headers ?? []).filter((f) => f.key?.trim()).length
+  const bodyFilled = (bodyKind === 'raw' || bodyKind === 'xml' || node.jsonRaw) ? !!(node.rawBody?.trim()) : (fields.body ?? []).some((f) => f.key?.trim())
+  // 사용자가 명시한 Content-Type 헤더가 있으면 그걸 우선, 아니면 bodyType 로 백엔드가 붙이는 값 미러
+  const explicitCT = node.headersRaw
+    ? ((node.rawHeaders ?? '').split(/\r?\n/).map((l) => l.trim()).find((l) => /^content-type\s*:/i.test(l))?.split(':').slice(1).join(':').trim())
+    : (fields.headers ?? []).find((f) => (f.key ?? '').toLowerCase() === 'content-type')?.value
+  const autoCT = bodyKind === 'json' ? 'application/json' : bodyKind === 'urlencoded' ? 'application/x-www-form-urlencoded' : bodyKind === 'xml' ? 'application/xml' : ''
+  const cs = node.charset ?? 'UTF-8'
+  const contentType = hasBody ? (explicitCT || (autoCT && (node.reqMode !== 'client' && cs !== 'UTF-8') ? `${autoCT}; charset=${cs.toLowerCase() === 'ms949' ? 'windows-949' : cs.toLowerCase()}` : autoCT)) : ''
+
+  // 프리셋: 흔한 조합을 한 번에(method+bodyType). 현재 선택 하이라이트는 파생.
+  const presetKey = method === 'GET' ? 'get' : (hasBody && bodyKind === 'json') ? 'json' : (hasBody && bodyKind === 'urlencoded') ? 'form' : (hasBody && bodyKind === 'raw') ? 'raw' : 'other'
+  const applyPreset = (k: string) => {
+    if (k === 'get') update(id, { method: 'GET' as HttpMethod })
+    else if (k === 'json') update(id, { method: (hasBody ? method : 'POST') as HttpMethod, bodyType: 'json' })
+    else if (k === 'form') update(id, { method: (hasBody ? method : 'POST') as HttpMethod, bodyType: 'urlencoded' })
+    else if (k === 'raw') update(id, { method: (hasBody ? method : 'POST') as HttpMethod, bodyType: 'raw', jsonRaw: true })
+  }
+
+  // 섹션 접기 상태(사용자 오버라이드 우선, 없으면 스마트 기본값)
+  const secDefault = (key: string): boolean =>
+    key === 'query' ? (paramCount > 0 || method === 'GET')
+    : key === 'headers' ? headerCount > 0
+    : key === 'body' ? true
+    : key === 'resp' ? false
+    : false
+  const secIsOpen = (key: string): boolean => secOverride[key] ?? secDefault(key)
+  const toggleSec = (key: string) => setSecOverride((p) => ({ ...p, [key]: !secIsOpen(key) }))
+
+  // 단일 실행 응답에서 출력 키 자동 채우기
+  const inferOut = (v: unknown): string => v === null ? 'string' : Array.isArray(v) ? 'array' : typeof v === 'number' ? 'number' : typeof v === 'boolean' ? 'boolean' : typeof v === 'object' ? 'object' : 'string'
+  const populateOutputs = () => {
+    const out = single?.output
+    if (!out || typeof out !== 'object' || Array.isArray(out)) return
+    const existing = new Set((node.outputs ?? []).map((o) => o.key))
+    const added = Object.entries(out as Record<string, unknown>).filter(([k]) => k && !existing.has(k)).map(([k, v]) => ({ key: k, type: inferOut(v) }))
+    if (!added.length) { toast('추가할 새 키가 없습니다.', 'ok'); return }
+    update(id, { outputs: [...(node.outputs ?? []), ...added] })
+    toast(`응답에서 출력 키 ${added.length}개를 추가했습니다.`, 'ok')
+  }
+
+  // 요청 미리보기 — 보이는 것 = 보내는 것 (필드 쿼리는 URL 에 붙여 표기)
+  const previewUrl = (() => {
+    if (node.paramsRaw || paramCount === 0) return mergedUrl
+    const qs = (fields.params ?? []).filter((f) => f.key?.trim()).map((f) => `${f.key}=${f.bound ? bindingToToken(f.bound) : (f.value ?? '')}`).join('&')
+    return mergedUrl + (mergedUrl.includes('?') ? '&' : '?') + qs
+  })()
+  const previewText = `${method} ${previewUrl}\n${headerList().map((h) => `${h.key}: ${h.value}`).join('\n')}${hasBody && currentBody() ? '\n\n' + currentBody() : ''}`
 
   // [필드 ↔ Raw] 전환 시 현재 내용을 서로 변환(치환). 바인딩은 토큰으로, id 는 새로 부여.
   const switchBodyMode = (raw: boolean) => {
@@ -368,6 +427,12 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
                 ) })}
               </div>
             )}
+          </div>
+        )}
+
+        {unreachable && (
+          <div style={{ marginTop: 10, padding: '8px 10px', border: '1px solid var(--fl-put)', borderRadius: 'var(--fl-radius-sm)', background: 'color-mix(in srgb, var(--fl-put) 12%, transparent)', fontSize: 12, color: 'var(--fl-text)', lineHeight: 1.5 }}>
+            ⚠ <b>시작(START)에 연결되어 있지 않습니다.</b> 이 노드는 실행 시 <b>건너뜁니다</b> — 위쪽 노드에서 핸들(●)을 끌어 연결하세요.
           </div>
         )}
 
@@ -558,6 +623,9 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
               </div>
             )}
 
+            {!mergedUrl.trim() && !node.baseUrlBound && (
+              <p style={{ ...hintP, color: 'var(--fl-put)', marginTop: 6 }}>⚠ URL 이 비어 있습니다 — 호출할 주소를 입력하세요.</p>
+            )}
             {urlQuery && (
               <button onClick={extractQueryToParams} style={smartLink} title="URL 의 ? 뒤 쿼리를 Params 필드로 옮깁니다">
                 ↳ 쿼리 {urlQuery.split('&').filter(Boolean).length}개를 Params 로 분리
@@ -597,107 +665,114 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
               </div>
             )}
 
-            <div style={{ display: 'flex', gap: 4, margin: '16px 0 6px', borderBottom: '1px solid var(--fl-border)' }}>
-              {(['params', 'headers', 'body'] as const).map((t) => {
-                const cnt = t === 'params'
-                  ? (node.paramsRaw ? ((node.rawParams ?? '').trim() ? '•' : '') : String((fields.params ?? []).filter((f) => f.key?.trim()).length || ''))
-                  : t === 'headers'
-                    ? (node.headersRaw ? ((node.rawHeaders ?? '').trim() ? '•' : '') : String((fields.headers ?? []).filter((f) => f.key?.trim()).length || ''))
-                    : (((node.bodyType === 'raw' || node.bodyType === 'xml' || node.jsonRaw) ? !!(node.rawBody?.trim()) : (fields.body ?? []).some((f) => f.key?.trim())) ? '•' : '')
-                return (
-                  <button key={t} onClick={() => { setTab(t); setBodyConvNote(null) }} style={tabBtn(tab === t)}>
-                    {t === 'params' ? 'Params' : t === 'headers' ? 'Headers' : 'Body'}
-                    {cnt && <span style={{ marginLeft: 5, fontSize: 10.5, color: tab === t ? 'var(--fl-primary)' : 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)' }}>{cnt === '•' ? '•' : `(${cnt})`}</span>}
-                  </button>
-                )
-              })}
+            {/* 프리셋 — 흔한 조합을 한 번에(method+본문 종류) */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12 }}>
+              <span style={{ fontSize: 11.5, color: 'var(--fl-text-muted)', fontWeight: 600, flexShrink: 0 }}>프리셋</span>
+              <div style={miniSeg} role="group" aria-label="요청 프리셋">
+                {([['get', 'GET'], ['json', 'JSON'], ['form', 'Form'], ['raw', 'Raw']] as const).map(([k, lbl]) => (
+                  <button key={k} type="button" onClick={() => applyPreset(k)} style={miniSegBtn(presetKey === k)}
+                    title={k === 'get' ? 'GET 조회' : k === 'json' ? 'POST + JSON 본문' : k === 'form' ? 'POST + Form(x-www-form-urlencoded)' : 'POST + Raw 본문'}>{lbl}</button>
+                ))}
+              </div>
             </div>
-            {(node.method === 'GET' || node.method === 'HEAD') && tab === 'body' && (
-              <p style={{ ...hintP, marginTop: 0, color: 'var(--fl-put)' }}>ⓘ {node.method} 요청은 보통 본문을 보내지 않습니다 — 조회 조건은 Params 를 쓰세요.</p>
-            )}
-            <p style={{ ...hintP, marginTop: 0 }}>
-              {tab === 'params'
-                ? 'URL 쿼리스트링 ?key=value — 주소에 붙는 조회 조건 (주로 GET)'
-                : tab === 'headers'
-                  ? 'HTTP 헤더 — 인증 토큰(Authorization) 등 메타데이터'
-                  : '요청 본문(body) — 서버로 보내는 데이터 (주로 POST/PUT/PATCH)'}
-            </p>
 
-            {tab === 'body' && (
-              <div style={{ marginBottom: 10, display: 'flex', alignItems: 'center', gap: 8 }}>
-                <select style={{ ...field, width: 'auto' }} value={node.bodyType ?? 'json'} onChange={(e) => changeBodyType(e.target.value as BodyType)}>
-                  {BODY_TYPES.map((b) => <option key={b} value={b}>{b}</option>)}
-                </select>
-                {STRUCTURED_BODY.includes(node.bodyType ?? 'json') && (
-                  <div style={miniSeg} role="group" aria-label="바디 입력 방식">
+            {bodyConvNote && <p style={{ ...hintP, color: 'var(--fl-put)' }}>⚠ {bodyConvNote}</p>}
+
+            {/* === 요청: 쿼리 / 헤더 / 본문 — 탭 대신 항상 보이는 섹션(한눈에) === */}
+            <HttpSection title="쿼리 (URL)" badge={paramCount ? String(paramCount) : ''} open={secIsOpen('query')} onToggle={() => toggleSec('query')}
+              right={<div style={miniSeg} role="group" aria-label="쿼리 입력 방식">
+                <button type="button" onClick={() => switchKvRaw('params', false)} style={miniSegBtn(!node.paramsRaw)}>필드</button>
+                <button type="button" onClick={() => switchKvRaw('params', true)} style={miniSegBtn(!!node.paramsRaw)}>Raw</button>
+              </div>}>
+              {node.paramsRaw ? (
+                <div>
+                  <textarea style={{ ...mono, minHeight: 90, resize: 'vertical' }} value={node.rawParams ?? ''} onChange={(e) => update(id, { rawParams: e.target.value })} placeholder="a=1&b=2  또는 { } 로 데이터 삽입" />
+                  <button onClick={() => setPick('rawParams')} style={{ ...braceBtn, width: 'auto', padding: '0 10px', marginTop: 4 }} title="데이터 삽입"><DataInsertIcon /></button>
+                </div>
+              ) : (
+                <KeyValueEditor rows={fields.params ?? []} onChange={(rows) => setRows('params', rows)} sources={sources} />
+              )}
+            </HttpSection>
+
+            <HttpSection title="헤더" badge={headerCount ? String(headerCount) : ''} open={secIsOpen('headers')} onToggle={() => toggleSec('headers')}
+              right={<div style={miniSeg} role="group" aria-label="헤더 입력 방식">
+                <button type="button" onClick={() => switchKvRaw('headers', false)} style={miniSegBtn(!node.headersRaw)}>필드</button>
+                <button type="button" onClick={() => switchKvRaw('headers', true)} style={miniSegBtn(!!node.headersRaw)}>Raw</button>
+              </div>}>
+              {node.headersRaw ? (
+                <div>
+                  <textarea style={{ ...mono, minHeight: 90, resize: 'vertical' }} value={node.rawHeaders ?? ''} onChange={(e) => update(id, { rawHeaders: e.target.value })} placeholder={'Authorization: Bearer ...\nContent-Type: application/json'} />
+                  <button onClick={() => setPick('rawHeaders')} style={{ ...braceBtn, width: 'auto', padding: '0 10px', marginTop: 4 }} title="데이터 삽입"><DataInsertIcon /></button>
+                </div>
+              ) : (
+                <KeyValueEditor rows={fields.headers ?? []} onChange={(rows) => setRows('headers', rows)} sources={sources} />
+              )}
+            </HttpSection>
+
+            {hasBody ? (
+              <HttpSection title="본문 (Body)" badge={bodyFilled ? '•' : ''} open={secIsOpen('body')} onToggle={() => toggleSec('body')}
+                right={<select style={{ ...field, width: 'auto', padding: '5px 6px', fontSize: 12 }} value={bodyKind} onChange={(e) => changeBodyType(e.target.value as BodyType)} aria-label="본문 종류">
+                  <option value="json">JSON</option>
+                  <option value="urlencoded">Form</option>
+                  <option value="xml">XML</option>
+                  <option value="raw">Raw</option>
+                </select>}>
+                {contentType && <div style={{ marginBottom: 8 }}><span style={ctChip} title="실제로 전송될 Content-Type (자동)">Content-Type: {contentType}</span></div>}
+                {STRUCTURED_BODY.includes(bodyKind) && (
+                  <div style={{ ...miniSeg, marginBottom: 10 }} role="group" aria-label="바디 입력 방식">
                     <button type="button" onClick={() => switchBodyMode(false)} style={miniSegBtn(!node.jsonRaw)}>필드</button>
                     <button type="button" onClick={() => switchBodyMode(true)} style={miniSegBtn(!!node.jsonRaw)}>Raw</button>
                   </div>
                 )}
-              </div>
-            )}
-
-            {/* Params(쿼리 urlencoded)·Headers(Key: Value)도 [필드 ↔ Raw] 전환 지원 */}
-            {(tab === 'params' || tab === 'headers') && (
-              <div style={{ marginBottom: 10 }}>
-                <div style={miniSeg} role="group" aria-label={tab === 'params' ? '쿼리 입력 방식' : '헤더 입력 방식'}>
-                  <button type="button" onClick={() => switchKvRaw(tab, false)} style={miniSegBtn(!(tab === 'params' ? node.paramsRaw : node.headersRaw))}>필드</button>
-                  <button type="button" onClick={() => switchKvRaw(tab, true)} style={miniSegBtn(!!(tab === 'params' ? node.paramsRaw : node.headersRaw))}>Raw</button>
-                </div>
-              </div>
-            )}
-
-            {bodyConvNote && (
-              <p style={{ ...hintP, color: 'var(--fl-put)', marginTop: 0 }}>⚠ {bodyConvNote}</p>
-            )}
-
-            {(tab === 'body'
-              ? (node.bodyType === 'raw' || node.bodyType === 'xml' || (STRUCTURED_BODY.includes(node.bodyType ?? 'json') && !!node.jsonRaw))
-              : tab === 'params' ? !!node.paramsRaw : !!node.headersRaw) ? (
-              <div>
-                <textarea
-                  style={{ ...mono, minHeight: tab === 'headers' ? 100 : 140, resize: 'vertical' }}
-                  value={(tab === 'body' ? node.rawBody : tab === 'params' ? node.rawParams : node.rawHeaders) ?? ''}
-                  onChange={(e) => update(id, tab === 'body' ? { rawBody: e.target.value } : tab === 'params' ? { rawParams: e.target.value } : { rawHeaders: e.target.value })}
-                  placeholder={tab === 'body' ? rawBodyPlaceholder(node.bodyType) : tab === 'params' ? 'a=1&b=2  또는 { } 로 데이터 삽입' : 'Authorization: Bearer ...\nContent-Type: application/json'}
-                />
-                <button onClick={() => setPick(tab === 'body' ? 'rawBody' : tab === 'params' ? 'rawParams' : 'rawHeaders')} style={{ ...braceBtn, width: 'auto', padding: '0 10px', marginTop: 4 }} title="데이터 삽입"><DataInsertIcon /></button>
-              </div>
-            ) : (
-              <KeyValueEditor rows={fields[tab] ?? []} onChange={(rows) => setRows(tab, rows)} sources={sources} showType={tab === 'body' && (node.bodyType ?? 'json') === 'json'} />
-            )}
-
-            <label style={label}>응답 타입</label>
-            <select style={field} value={node.respType ?? 'json'} onChange={(e) => update(id, { respType: e.target.value as RespType })}>
-              {RESP_TYPES.map((r) => <option key={r} value={r}>{respTypeLabel(r)}</option>)}
-            </select>
-
-            {node.respType === 'query' && (
-              <p style={{ ...hintP, marginTop: 6 }}>
-                응답 본문이 URL(<code style={{ fontFamily: 'var(--fl-font-mono)', fontSize: 11 }}>…?code=0000&tid=T1</code>)
-                또는 쿼리스트링이면 <b>? 뒤 파라미터</b>가 키-값으로 제공됩니다 — 리다이렉트/리턴 URL 응답용.
-              </p>
-            )}
-
-            {KEYED_RESP.includes(node.respType ?? 'json') ? (
-              <>
-                <label style={label}>{respOutputLabel(node.respType)}</label>
-                <OutputsEditor outputs={node.outputs ?? []} onChange={(outputs) => update(id, { outputs })} nodeId={id} />
-                <p style={hintP}>응답이 키 구조가 아니거나 파싱에 실패하면 전체 본문이 body 키로 제공됩니다. (그 경우 raw/조건식에 {'{{ body@이노드 }}'}로 바인딩)</p>
-              </>
-            ) : (
-              <>
-                <p style={hintP}>
-                  {node.respType === 'binary'
-                    ? '이진 응답이라 키를 추출하지 않습니다. 응답 본문 전체가 body 값 하나로 제공됩니다.'
-                    : '텍스트 응답은 키가 없습니다. 응답 본문 전체가 body 값 하나로 제공되며, 하위 노드에서 body로 바인딩하세요.'}
-                </p>
-                {(node.outputs?.length ?? 0) > 0 && (
-                  <p style={{ ...hintP, color: 'var(--fl-put)' }}>
-                    ⚠ 이 응답 타입에서는 기존 출력 키({(node.outputs ?? []).map((o) => o.key).filter(Boolean).join(', ')})가 무시됩니다. 하위 노드가 이 키로 바인딩 중이면 끊어집니다.
-                  </p>
+                {(bodyKind === 'raw' || bodyKind === 'xml' || (STRUCTURED_BODY.includes(bodyKind) && !!node.jsonRaw)) ? (
+                  <div>
+                    <textarea style={{ ...mono, minHeight: 130, resize: 'vertical' }} value={node.rawBody ?? ''} onChange={(e) => update(id, { rawBody: e.target.value })} placeholder={rawBodyPlaceholder(bodyKind)} />
+                    <button onClick={() => setPick('rawBody')} style={{ ...braceBtn, width: 'auto', padding: '0 10px', marginTop: 4 }} title="데이터 삽입"><DataInsertIcon /></button>
+                  </div>
+                ) : (
+                  <KeyValueEditor rows={fields.body ?? []} onChange={(rows) => setRows('body', rows)} sources={sources} showType={bodyKind === 'json'} />
                 )}
-              </>
+              </HttpSection>
+            ) : (
+              <p style={{ ...hintP }}>ⓘ {method} 요청은 본문을 보내지 않습니다 — 조회 조건은 위 <b>쿼리(URL)</b>에 넣으세요.</p>
+            )}
+
+            {/* 응답 섹션 */}
+            <HttpSection title="응답 (Response)" badge={node.respType ?? 'json'} open={secIsOpen('resp')} onToggle={() => toggleSec('resp')}
+              right={<select style={{ ...field, width: 'auto', padding: '5px 6px', fontSize: 12 }} value={node.respType ?? 'json'} onChange={(e) => update(id, { respType: e.target.value as RespType })} aria-label="응답 타입">
+                {RESP_TYPES.map((r) => <option key={r} value={r}>{respTypeLabel(r)}</option>)}
+              </select>}>
+              {node.respType === 'query' && (
+                <p style={{ ...hintP, marginTop: 0 }}>응답이 URL/쿼리스트링(<code style={{ fontFamily: 'var(--fl-font-mono)', fontSize: 11 }}>…?code=0000&tid=T1</code>)이면 ? 뒤 파라미터가 키-값으로 제공됩니다.</p>
+              )}
+              {KEYED_RESP.includes(node.respType ?? 'json') ? (
+                <>
+                  <label style={label}>{respOutputLabel(node.respType)}</label>
+                  <OutputsEditor outputs={node.outputs ?? []} onChange={(outputs) => update(id, { outputs })} nodeId={id} />
+                  {single?.output && typeof single.output === 'object' && !Array.isArray(single.output) && (
+                    <button onClick={populateOutputs} style={{ ...ghostMini, marginTop: 6 }} title="방금 '이 노드만 실행'한 응답의 키를 출력 목록에 채웁니다">↧ 이 응답에서 키 채우기</button>
+                  )}
+                  <p style={hintP}>응답이 키 구조가 아니거나 파싱 실패 시 전체 본문이 body 키로 제공됩니다. ({'{{ body@이노드 }}'})</p>
+                </>
+              ) : (
+                <>
+                  <p style={{ ...hintP, marginTop: 0 }}>{node.respType === 'binary' ? '이진 응답 — 키 추출 없이 본문 전체가 body 값 하나.' : '텍스트 응답 — 키 없이 본문 전체가 body 값 하나. 하위에서 body 로 바인딩.'}</p>
+                  {(node.outputs?.length ?? 0) > 0 && (
+                    <p style={{ ...hintP, color: 'var(--fl-put)' }}>⚠ 이 타입에서는 기존 출력 키({(node.outputs ?? []).map((o) => o.key).filter(Boolean).join(', ')})가 무시됩니다.</p>
+                  )}
+                </>
+              )}
+            </HttpSection>
+
+            {/* 요청 미리보기 — 보이는 것 = 보내는 것 */}
+            <button onClick={() => setPreviewOpen((v) => !v)} style={advToggle} aria-expanded={previewOpen}>
+              {previewOpen ? '▾' : '▸'} 요청 미리보기 (보이는 것 = 보내는 것)
+            </button>
+            {previewOpen && (
+              <div style={{ marginTop: 4 }}>
+                <pre style={singlePre}>{previewText}</pre>
+                <button onClick={() => copyText(previewText, '요청 미리보기를 복사했습니다.')} style={{ ...ghostMini, marginTop: 4 }}>복사</button>
+              </div>
             )}
           </>
         )}
@@ -712,6 +787,8 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
               sources={sources}
               placeholder="{{ id }} != null — { } 로 데이터 삽입"
             />
+            <CondSnippets onInsert={(s) => update(id, { condition: appendCond(node.condition, s) })} />
+            {!((node.condition ?? '').trim()) && <p style={{ ...hintP, color: 'var(--fl-put)', marginTop: 6 }}>⚠ 조건식이 비어 있습니다 — 비면 항상 거짓(F 분기)으로 처리됩니다.</p>}
             <p style={{ fontSize: 11.5, color: 'var(--fl-text-muted)', marginTop: 8 }}>참이면 T 분기, 거짓이면 F 분기로 진행합니다. (SpEL 안전 평가)</p>
           </>
         )}
@@ -726,6 +803,8 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
               sources={sources}
               placeholder="{{ resultCode }} == '0000' — { } 로 데이터 삽입"
             />
+            <CondSnippets onInsert={(s) => update(id, { condition: appendCond(node.condition, s) })} />
+            {!((node.condition ?? '').trim()) && <p style={{ ...hintP, color: 'var(--fl-put)', marginTop: 6 }}>⚠ 검증 조건식이 비어 있습니다 — 비면 검증이 항상 실패합니다.</p>}
             <p style={{ fontSize: 11.5, color: 'var(--fl-text-muted)', marginTop: 8 }}>
               조건이 <b>거짓이면 이 노드가 실패</b>하고 실행이 FAILED 로 끝납니다(테스트 시나리오의 assert).
               두 값 비교도 가능: <code style={{ fontFamily: 'var(--fl-font-mono)', fontSize: 11 }}>{'{{ tid@노티 }} == {{ tid@승인 }}'}</code>
@@ -761,6 +840,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
               <option value="">선택…</option>
               {(transforms.data ?? []).map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
             </select>
+            {!node.transformId && <p style={{ ...hintP, color: 'var(--fl-put)', marginTop: 6 }}>⚠ 변환을 선택하세요 — 미선택이면 실행 시 실패합니다.</p>}
             {canPlatformAdmin && (
               <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 8, fontSize: 12, color: 'var(--fl-primary)', cursor: 'pointer' }}>
                 ⬆ JAR 플러그인 업로드
@@ -877,6 +957,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
               sources={sources}
               placeholder="https://pg.example.com/pay — { } 로 데이터 삽입"
             />
+            {!((node.formAction ?? '').trim()) && <p style={{ ...hintP, color: 'var(--fl-put)', marginTop: 6 }}>⚠ 열기 URL 이 비어 있습니다 — 비면 이 노드가 실행 시 실패합니다.</p>}
             <label style={label}>메서드</label>
             <select style={{ ...field, width: 'auto' }} value={node.formMethod ?? 'POST'} onChange={(e) => update(id, { formMethod: e.target.value })}>
               <option value="POST">POST</option>
@@ -962,6 +1043,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
             />
             <label style={label}>입력 필드 (키 · 라벨 · 타입)</label>
             <WaitFieldsEditor fields={node.waitFields ?? []} onChange={(waitFields) => update(id, { waitFields })} />
+            {(node.waitFields ?? []).filter((f) => f.key?.trim()).length === 0 && <p style={{ ...hintP, color: 'var(--fl-put)', marginTop: 6 }}>⚠ 입력 필드가 없습니다 — 최소 1개(키)를 추가하세요.</p>}
             <p style={hintP}>
               실행이 이 노드에 도달하면 <b>입력 창</b>이 뜨고, 값을 입력해 확인하면 각 키가 이 노드의 출력이 되어
               다음 노드에서 <code>{'{{ 키@' + id + ' }}'}</code> 로 바인딩됩니다. 타입이 <code>json</code> 이면
@@ -1074,6 +1156,23 @@ function WaitReceiveUrl({ nodeId }: { nodeId: string }) {
         {'{ }'} 피커의 <b>수신 URL</b> 항목 또는 위 토큰으로 꽂아 쓰세요. 콜백은 <b>백엔드가 직접 받아</b> 실행을 재개합니다.
       </p>
     </>
+  )
+}
+
+function appendCond(cond: string | undefined, s: string): string {
+  const c = (cond ?? '').trim()
+  return c ? `${c} ${s}` : s
+}
+// IF/ASSERT 조건식 자주 쓰는 비교 스니펫 — 클릭하면 조건식 끝에 붙는다.
+function CondSnippets({ onInsert }: { onInsert: (s: string) => void }) {
+  const snips = ['!= null', '== 200', '!= 404', "== '0000'", '== true']
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 6 }}>
+      <span style={{ fontSize: 11, color: 'var(--fl-text-muted)', alignSelf: 'center' }}>빠른 삽입:</span>
+      {snips.map((s) => (
+        <button key={s} type="button" onClick={() => onInsert(s)} title={`조건식 끝에 "${s}" 추가`} style={snippetChip}>{s}</button>
+      ))}
+    </div>
   )
 }
 
@@ -1214,11 +1313,30 @@ function methodSel(m?: string): CSSProperties {
 }
 const ghostMini: CSSProperties = { padding: '5px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 12, fontWeight: 500 }
 const smartLink: CSSProperties = { marginTop: 6, padding: '4px 8px', border: 'none', background: 'transparent', color: 'var(--fl-primary)', cursor: 'pointer', fontSize: 12, fontWeight: 600, textAlign: 'left' }
+const snippetChip: CSSProperties = { padding: '2px 8px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-pill)', background: 'var(--fl-surface-2)', color: 'var(--fl-text)', cursor: 'pointer', fontSize: 11.5, fontFamily: 'var(--fl-font-mono)' }
 const advToggle: CSSProperties = { marginTop: 12, padding: '4px 0', border: 'none', background: 'transparent', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 12, fontWeight: 600, textAlign: 'left', width: '100%', display: 'block' }
 // 연결(바로가기) 이웃 노드 칩
 const navChip: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 5, padding: '4px 9px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-pill)', background: 'var(--fl-surface-2)', color: 'var(--fl-text)', cursor: 'pointer', fontSize: 12, maxWidth: 160 }
-function tabBtn(active: boolean): CSSProperties {
-  return { padding: '7px 12px', border: 'none', borderBottom: `2px solid ${active ? 'var(--fl-primary)' : 'transparent'}`, background: 'transparent', color: active ? 'var(--fl-text)' : 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 13, fontWeight: 600 }
+// HTTP 요청 3파트 통합 — 탭 대신 항상 보이는 접을 수 있는 섹션(쿼리/헤더/본문/응답)
+const secHeadBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, border: 'none', background: 'transparent', color: 'var(--fl-text)', cursor: 'pointer', fontSize: 12.5, fontWeight: 700, padding: 0 }
+const secBadge: CSSProperties = { marginLeft: 4, fontSize: 10.5, fontFamily: 'var(--fl-font-mono)', color: 'var(--fl-primary)', fontWeight: 600 }
+const ctChip: CSSProperties = { fontSize: 10, fontFamily: 'var(--fl-font-mono)', color: 'var(--fl-text-muted)', background: 'var(--fl-surface-2)', border: '1px solid var(--fl-border)', borderRadius: 5, padding: '2px 6px', whiteSpace: 'nowrap', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis' }
+function HttpSection({ title, badge, open, onToggle, right, children }: {
+  title: string; badge?: string; open: boolean; onToggle: () => void; right?: ReactNode; children: ReactNode
+}) {
+  return (
+    <div style={{ borderTop: '1px solid var(--fl-border)', marginTop: 10, paddingTop: 8 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, minHeight: 30 }}>
+        <button onClick={onToggle} aria-expanded={open} style={secHeadBtn}>
+          <span aria-hidden style={{ width: 10, display: 'inline-block', fontSize: 10, color: 'var(--fl-text-muted)' }}>{open ? '▾' : '▸'}</span>
+          {title}
+          {badge ? <span style={secBadge}>{badge === '•' ? '•' : `(${badge})`}</span> : null}
+        </button>
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>{right}</div>
+      </div>
+      {open && <div style={{ marginTop: 8 }}>{children}</div>}
+    </div>
+  )
 }
 const miniSeg: CSSProperties = { display: 'inline-flex', gap: 2, background: 'var(--fl-surface-2)', borderRadius: 7, padding: 2, flexShrink: 0 }
 function miniSegBtn(active: boolean): CSSProperties {

@@ -251,6 +251,7 @@ export type TriggerType = 'MANUAL' | 'SCHEDULE' | 'WEBHOOK' | 'EVENT'
 
 export interface RunRequest {
   input?: Record<string, unknown>
+  env?: Record<string, unknown>
   versionNo?: number
 }
 

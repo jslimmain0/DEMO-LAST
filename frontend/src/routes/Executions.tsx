@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { CSSProperties } from 'react'
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
@@ -6,6 +6,7 @@ import type { ExecutionStatus, ExecutionSummary } from '../api/types'
 import { runsApi } from '../api/client'
 import { AppShellTier1 } from '../app/AppShell'
 import { StatusBadge } from '../components/StatusBadge'
+import { toast } from '../components/toast'
 import { useEscapeClose } from '../components/useEscapeClose'
 import { duration, relTime } from '../lib/format'
 
@@ -25,13 +26,20 @@ function elapsed(e: ExecutionSummary): string | null {
 }
 
 export function Executions() {
-  const { data, isLoading, isError, refetch } = useQuery({ queryKey: ['executions', 'recent'], queryFn: () => runsApi.recent(50) })
+  const qc = useQueryClient()
+  const [limit, setLimit] = useState(50)
+  const { data, isLoading, isError, refetch } = useQuery({ queryKey: ['executions', 'recent', limit], queryFn: () => runsApi.recent(limit) })
   const all = data ?? []
   const okCount = all.filter((e) => e.status === 'SUCCEEDED').length
   const failCount = all.filter((e) => e.status === 'FAILED').length
   const [filter, setFilter] = useState<'all' | ExecutionStatus>('all')
   const [q, setQ] = useState('')
   const [openExec, setOpenExec] = useState<string | null>(null)
+  const reRun = useMutation({
+    mutationFn: (flowId: string) => runsApi.run(flowId),
+    onSuccess: () => { toast('재실행을 시작했습니다.', 'ok'); qc.invalidateQueries({ queryKey: ['executions', 'recent'] }) },
+    onError: () => toast('재실행에 실패했습니다.', 'error'),
+  })
   const query = q.trim().toLowerCase()
   const rows = all.filter((e) =>
     (filter === 'all' || e.status === filter)
@@ -100,12 +108,18 @@ export function Executions() {
                     <span style={metaMono}>{TRIGGER_LABEL[e.trigger] ?? e.trigger}</span>
                     {el && <span style={metaMono}>{el}</span>}
                     <span style={{ ...metaMono, minWidth: 56, textAlign: 'right' }}>{relTime(e.startedAt)}</span>
+                    <button onClick={(ev) => { ev.stopPropagation(); reRun.mutate(e.flowId) }} disabled={reRun.isPending} title="이 워크플로를 다시 실행" style={{ ...metaMono, color: 'var(--fl-ok)', background: 'transparent', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-pill)', padding: '3px 9px', cursor: 'pointer', fontWeight: 600 }}>↻ 재실행</button>
                     <Link to={`/flows/${e.flowId}`} onClick={(ev) => ev.stopPropagation()} title="에디터 열기" style={{ ...metaMono, color: 'var(--fl-primary)', textDecoration: 'none', fontWeight: 600 }}>편집 →</Link>
                   </div>
                 </div>
               )
             })}
           </div>
+          {data && all.length >= limit && limit < 200 && (
+            <div style={{ textAlign: 'center', marginTop: 16 }}>
+              <button onClick={() => setLimit((l) => Math.min(l + 50, 200))} style={ghostBtn}>더 보기 ({all.length}건)</button>
+            </div>
+          )}
         </div>
       </div>
       {openExec && <ExecutionDetailModal execId={openExec} onClose={() => setOpenExec(null)} />}

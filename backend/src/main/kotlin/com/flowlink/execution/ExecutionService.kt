@@ -576,13 +576,16 @@ class ExecutionService(
     }
 
     private fun seedInput(ctx: ExecutionContext, req: RunRequest?) {
-        val input = req?.input
-        if (input == null || !input.isObject) {
-            return
-        }
+        seedScope(ctx, req?.input, "input")
+        seedScope(ctx, req?.env, "env")
+    }
+
+    // 실행 입력(input)·선택 환경(env)의 변수 묶음을 소스 id 로 시드 → {{ key@input }} / {{ key@env }} 로 참조.
+    private fun seedScope(ctx: ExecutionContext, node: JsonNode?, sourceId: String) {
+        if (node == null || !node.isObject) return
         @Suppress("UNCHECKED_CAST")
-        val inputMap = mapper.convertValue(input, Map::class.java) as Map<String, Any?>
-        ctx.putOutput("input", inputMap)
+        val map = mapper.convertValue(node, Map::class.java) as Map<String, Any?>
+        ctx.putOutput(sourceId, map)
     }
 
     private fun detail(

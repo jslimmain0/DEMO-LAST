@@ -1,6 +1,7 @@
 // 선택 노드의 '상위(이전) 노드'들이 제공하는 바인딩 가능 항목(요청/응답 규격)을 계산.
 import type { Edge, Node } from '@xyflow/react'
 import { asGraphNode } from '../canvas/graphAdapter'
+import { activeEnvVars } from '../lib/environments'
 
 export interface BindableItem {
   key: string
@@ -85,6 +86,17 @@ function upstreamSources(nodes: Node[], edges: Edge[], targetId: string): Bindab
 export function bindableSources(nodes: Node[], edges: Edge[], targetId: string): BindableSource[] {
   const sources = upstreamSources(nodes, edges, targetId)
   const seen = new Set(sources.map((s) => s.id))
+  // 활성 환경(dev/staging/prod)의 변수 — 어느 노드에서나 `{{ 키@env }}` 로 꽂을 수 있다(실행 시 주입).
+  const envVars = activeEnvVars()
+  const envKeys = Object.keys(envVars)
+  if (envKeys.length) {
+    sources.unshift({
+      id: 'env',
+      name: '환경 변수',
+      type: 'env',
+      items: envKeys.map((k) => ({ key: k, type: '환경', scope: null, group: 'response' as const })),
+    })
+  }
   for (const rf of nodes) {
     if (rf.id === targetId || seen.has(rf.id)) continue
     const n = asGraphNode(rf.data)

@@ -17,6 +17,8 @@ import { InputPromptDialog } from '../components/InputPromptDialog'
 import { ResizeHandle } from '../components/ResizeHandle'
 import { ConflictDialog } from '../components/ConflictDialog'
 import { PresenceAvatars } from '../components/PresenceAvatars'
+import { EnvSwitcher } from '../components/EnvSwitcher'
+import { activeEnvVars } from '../lib/environments'
 import { toast } from '../components/toast'
 import { useAuth, usePermissions } from '../auth/AuthContext'
 import { getAccessToken } from '../auth/auth'
@@ -281,7 +283,9 @@ export function Editor() {
       // 비동기 실행: POST 는 즉시 RUNNING 을 반환하고, 이 루프가 폴링 드라이버가 된다 —
       // 폴링 스냅샷이 실행 경과 애니메이션(runView)도 함께 구동한다(별도 baseline 폴러 불필요).
       // pending(브라우저 협업 지점)을 만나면 처리 후 resume(즉시 반환) → 다시 폴링으로 다음 상태를 감지.
-      let detail = await runsApi.run(flowId)
+      // 활성 환경(dev/staging/prod)의 변수를 실행에 주입 — 백엔드가 `{{ 키@env }}` 로 해석한다.
+      const envVars = activeEnvVars()
+      let detail = await runsApi.run(flowId, Object.keys(envVars).length ? { env: envVars } : undefined)
       setExecution(detail)
       let guard = 0
       let waitBannerNode: string | null = null
@@ -421,6 +425,7 @@ export function Editor() {
         {copyNote && <span role="status" style={{ fontSize: 12, color: 'var(--fl-primary)', fontWeight: 600 }}>{copyNote}</span>}
         <span title="노드 수" style={{ fontSize: 11.5, color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)' }}>노드 {nodeCount}</span>
         <IssueBadge />
+        <EnvSwitcher />
         <PresenceAvatars />
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, position: 'relative' }}>
           <button onClick={undo} disabled={!canUndo} aria-label="되돌리기" title="되돌리기 (Ctrl+Z)" style={{ ...ghostBtn, padding: '8px 11px', opacity: canUndo ? 1 : 0.4 }}>↺</button>

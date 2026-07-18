@@ -12,3 +12,6 @@ uploads/
 # 배포 로컬 오버라이드(비밀 포함 가능) — .env.example 만 커밋
 deploy/.env
 .env
+
+# 앱 런타임 산출물(PID/로그)
+.run/

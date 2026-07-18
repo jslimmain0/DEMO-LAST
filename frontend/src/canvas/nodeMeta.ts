@@ -1,5 +1,8 @@
 import type { HttpMethod } from '../api/types'
 
+/** 캔버스 노드 고정 폭(px) — NodeCard·BranchNode·SwitchNode·fitBounds 가 공유. */
+export const NODE_W = 230
+
 export const CAT_COLOR: Record<string, string> = {
   auth: 'var(--fl-cat-auth)',
   bank: 'var(--fl-cat-bank)',

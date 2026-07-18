@@ -39,6 +39,8 @@ interface EditorState {
   addNode: (type: NodeType, pos: { x: number; y: number }) => string
   addNodeFromTemplate: (template: GraphNode, pos: { x: number; y: number }) => string
   updateNodeData: (id: string, patch: Partial<GraphNode>) => void
+  toggleNodeCollapse: (id: string) => void
+  setAllCollapsed: (collapsed: boolean) => void
   selectNode: (id: string | null) => void
   // 노드로 이동(바로가기) — 선택 + 캔버스 센터링 신호(FlowCanvas 가 focusTick 을 구독해 setCenter)
   focusNode: (id: string) => void
@@ -258,6 +260,28 @@ export const useEditorStore = create<EditorState>()((set, get) => {
       nodes: get().nodes.map((n) =>
         n.id === id ? { ...n, data: { ...n.data, ...patch } as Record<string, unknown> } : n,
       ),
+      dirty: true,
+    })
+  },
+
+  // 노드 접기/펴기 — data.collapsed 토글. dirty(저장·협업 반영)로 표시하되 undo 스택엔 안 쌓는다(편집 아님).
+  toggleNodeCollapse: (id) => {
+    set({
+      nodes: get().nodes.map((n) =>
+        n.id === id ? { ...n, data: { ...n.data, collapsed: !(n.data as { collapsed?: boolean }).collapsed } as Record<string, unknown> } : n,
+      ),
+      dirty: true,
+    })
+  },
+
+  // 모두 접기/펴기 — 주석(note/group)은 제외(본문이 콘텐츠라 접을 게 없음).
+  setAllCollapsed: (collapsed) => {
+    set({
+      nodes: get().nodes.map((n) => {
+        const t = (n.data as { type?: string }).type
+        if (t === 'note' || t === 'group') return n
+        return { ...n, data: { ...n.data, collapsed } as Record<string, unknown> }
+      }),
       dirty: true,
     })
   },

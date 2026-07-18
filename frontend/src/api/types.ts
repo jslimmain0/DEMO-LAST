@@ -110,6 +110,7 @@ export interface GraphNode {
   groupW?: number     // 영역 박스 폭(px, 그리드 22 배수)
   groupH?: number     // 영역 박스 높이(px)
   // canvas
+  collapsed?: boolean // 노드 접기(헤더만 표시 — 상세행/부라벨 숨김). raw 라운드트립, 실행 무관
   x?: number
   y?: number
 }

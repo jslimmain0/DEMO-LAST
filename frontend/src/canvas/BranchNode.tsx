@@ -2,7 +2,7 @@ import { Handle, Position } from '@xyflow/react'
 import type { NodeProps } from '@xyflow/react'
 import { useEditorStore } from '../store/editorStore'
 import { asGraphNode } from './graphAdapter'
-import { catColor, typeIcon } from './nodeMeta'
+import { NODE_W, catColor, typeIcon } from './nodeMeta'
 import { RunBadge } from './NodeCard'
 
 // IF 분기 노드 — true/false 두 source 핸들. fromPort='true'|'false' 라운드트립.
@@ -24,7 +24,7 @@ export function BranchNode({ data, selected }: NodeProps) {
     <div
       className={running ? 'fl-node-running' : undefined}
       style={{
-        width: 230, // NodeCard 와 동일 고정 폭
+        width: NODE_W, // NodeCard 와 동일 고정 폭
         background: 'var(--fl-surface)',
         border: `1px solid ${borderColor}`,
         borderRadius: 'var(--fl-radius)',

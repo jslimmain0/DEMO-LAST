@@ -111,6 +111,7 @@ export function Editor() {
   const [searchOpen, setSearchOpen] = useState(false)
   const [autosave, setAutosave] = useState(() => localStorage.getItem('fl:editor:autosave') === '1')
   const autoLayout = useEditorStore((s) => s.autoLayout)
+  const setAllCollapsed = useEditorStore((s) => s.setAllCollapsed)
   const nodeCount = useEditorStore((s) => s.nodes.length)
   const zen = paletteCollapsed && propCollapsed
   const toggleZen = () => {
@@ -456,6 +457,8 @@ export function Editor() {
               <div style={{ position: 'fixed', inset: 0, zIndex: 90 }} onClick={() => setToolsOpen(false)} />
               <div style={toolsMenu}>
                 <button style={toolItem} onClick={() => { autoLayout(); setToolsOpen(false) }}>⇥ 자동 정렬</button>
+                <button style={toolItem} onClick={() => { setAllCollapsed(true); setToolsOpen(false) }}>▸ 모두 접기</button>
+                <button style={toolItem} onClick={() => { setAllCollapsed(false); setToolsOpen(false) }}>▾ 모두 펴기</button>
                 <button style={{ ...toolItem, opacity: canEdit && !running ? 1 : 0.4 }} disabled={!canEdit || running} onClick={() => { onRun(); setToolsOpen(false) }}>▶ 재실행</button>
                 <button style={{ ...toolItem, opacity: canEdit && !running ? 1 : 0.4 }} disabled={!canEdit || running} onClick={() => { setRunInputOpen(true); setToolsOpen(false) }}>▶ 입력값과 실행</button>
                 <button style={toolItem} onClick={() => { toggleZen(); setToolsOpen(false) }}>{zen ? '◱ 집중 모드 끄기' : '⛶ 집중 모드'}</button>

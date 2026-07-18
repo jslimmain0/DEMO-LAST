@@ -15,7 +15,7 @@ import { NodeCard } from './NodeCard'
 import { NoteNode } from './NoteNode'
 import { PresenceOverlay } from './PresenceOverlay'
 import { SwitchNode } from './SwitchNode'
-import { catColor } from './nodeMeta'
+import { NODE_W, catColor } from './nodeMeta'
 
 const nodeTypes = { flnode: NodeCard, branch: BranchNode, switch: SwitchNode, note: NoteNode, annogroup: GroupNode }
 const edgeTypes = { deletable: DeletableEdge }
@@ -64,7 +64,7 @@ export function FlowCanvas() {
     const { focusId, nodes: ns } = useEditorStore.getState()
     const n = focusId ? ns.find((x) => x.id === focusId) : null
     if (!n) return
-    const w = n.measured?.width ?? 230
+    const w = n.measured?.width ?? NODE_W
     const h = n.measured?.height ?? 80
     setCenter(n.position.x + w / 2, n.position.y + h / 2, { zoom: Math.max(1, getZoom()), duration: 320 })
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -118,8 +118,7 @@ export function FlowCanvas() {
   useEffect(() => {
     if (nodes.length === 0 || didFit.current === flowId) return
     didFit.current = flowId // 플로우 전환 시(이전 노드 잔여 → 새 노드)마다 정확히 1회
-    const NODE_W = 230 // 노드 대략 크기(여유 포함) — 측정값 없이 bounds 를 잡기 위한 상수
-    const NODE_H = 96
+    const NODE_H = 96 // 높이만 근사 — 폭은 공유 NODE_W(고정)
     // 영역 박스는 groupW/groupH 만큼 차지 — bounds 에 실제 크기를 반영한다
     const dims = nodes.map((n) => {
       const d = n.data as { type?: string; groupW?: number; groupH?: number }
@@ -140,7 +139,7 @@ export function FlowCanvas() {
     if (!target.length) return
     const dims = target.map((n) => {
       const d = n.data as { type?: string; groupW?: number; groupH?: number }
-      return d.type === 'group' ? { w: d.groupW ?? 396, h: d.groupH ?? 264 } : { w: 230, h: 96 }
+      return d.type === 'group' ? { w: d.groupW ?? 396, h: d.groupH ?? 264 } : { w: NODE_W, h: 96 }
     })
     const minX = Math.min(...target.map((n) => n.position.x))
     const minY = Math.min(...target.map((n) => n.position.y))

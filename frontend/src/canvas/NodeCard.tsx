@@ -5,10 +5,12 @@ import { MethodTag } from '../components/MethodTag'
 import { getReachInfoCached } from '../lib/reachable'
 import { useEditorStore } from '../store/editorStore'
 import { asGraphNode } from './graphAdapter'
-import { catColor, typeIcon, typeLabel } from './nodeMeta'
+import { NODE_W, catColor, typeIcon, typeLabel } from './nodeMeta'
 
 export function NodeCard({ data, selected }: NodeProps) {
   const n = asGraphNode(data)
+  const collapsed = !!n.collapsed
+  const toggleCollapse = useEditorStore((s) => s.toggleNodeCollapse)
   const waitingId = useEditorStore((s) => s.waitingNodeId)
   const runState = useEditorStore((s) => s.runView?.nodeStates[n.id])
   // 시작에서 도달 못 하는 실행 노드 = 실행 시 건너뜀. 실행 전에 점선 테두리로 미리 표시.
@@ -45,7 +47,7 @@ export function NodeCard({ data, selected }: NodeProps) {
     <div
       className={running ? 'fl-node-running' : undefined}
       style={{
-        width: 230, // 고정 폭 — URL/이름이 길어도 늘어나지 않는다(말줄임). fitBounds NODE_W 와 일치
+        width: NODE_W, // 고정 폭 — URL/이름이 길어도 늘어나지 않는다(말줄임). fitBounds NODE_W 와 일치
         background: 'var(--fl-surface)',
         border: `1px ${showUnreachable ? 'dashed' : 'solid'} ${borderColor}`,
         borderRadius: 'var(--fl-radius)',
@@ -63,14 +65,24 @@ export function NodeCard({ data, selected }: NodeProps) {
           <div title={n.name ?? typeLabel(n.type)} style={{ fontSize: 13.5, fontWeight: 600, letterSpacing: '-.01em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {n.name ?? typeLabel(n.type)}
           </div>
-          <div style={{ fontSize: 11.5, color: showUnreachable ? 'var(--fl-put)' : 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)', fontWeight: showUnreachable ? 600 : 400 }}>
-            {waiting ? '콜백 대기 중…' : running ? '실행 중…' : runState === 'skipped' ? '건너뜀' : showUnreachable ? '⚠ 미연결' : typeLabel(n.type)}
-          </div>
+          {!collapsed && (
+            <div style={{ fontSize: 11.5, color: showUnreachable ? 'var(--fl-put)' : 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)', fontWeight: showUnreachable ? 600 : 400 }}>
+              {waiting ? '콜백 대기 중…' : running ? '실행 중…' : runState === 'skipped' ? '건너뜀' : showUnreachable ? '⚠ 미연결' : typeLabel(n.type)}
+            </div>
+          )}
         </div>
         <RunBadge state={waiting ? 'waiting' : runState} />
+        {/* 접기/펴기 — 상세행/부라벨을 숨겨 캔버스 정리. nodrag 로 드래그와 분리. */}
+        <button
+          className="nodrag"
+          onClick={(e) => { e.stopPropagation(); toggleCollapse(n.id) }}
+          title={collapsed ? '펴기' : '접기'}
+          aria-label={collapsed ? '노드 펴기' : '노드 접기'}
+          style={{ flexShrink: 0, width: 18, height: 18, padding: 0, border: 'none', background: 'transparent', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 10, lineHeight: 1 }}
+        >{collapsed ? '▸' : '▾'}</button>
       </div>
 
-      {isHttp && (
+      {!collapsed && isHttp && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 12px', borderTop: '1px solid var(--fl-border)', background: 'var(--fl-surface-2)' }}>
           <MethodTag method={(n.method ?? 'GET') as HttpMethod} />
           <span title={`${n.method ?? 'GET'} ${(n.baseUrl ?? '')}${n.path || '/'}`} style={{ flex: 1, minWidth: 0, fontFamily: 'var(--fl-font-mono)', fontSize: 11.5, color: 'var(--fl-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -104,7 +116,7 @@ export function NodeCard({ data, selected }: NodeProps) {
         </div>
       )}
 
-      {isTcp && (
+      {!collapsed && isTcp && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 12px', borderTop: '1px solid var(--fl-border)', background: 'var(--fl-surface-2)' }}>
           <span style={{ flexShrink: 0, fontSize: 9.5, fontWeight: 700, fontFamily: 'var(--fl-font-mono)', padding: '2px 5px', borderRadius: 'var(--fl-radius-pill)', color: 'var(--fl-primary)', background: 'rgba(97,85,245,.12)' }}>TCP</span>
           <span title={`${n.tcpHost ?? ''}:${n.tcpPort ?? ''} · 요청 ${(n.tcpRequest ?? []).length}필드 ${tcpReqLen}B`} style={{ flex: 1, minWidth: 0, fontFamily: 'var(--fl-font-mono)', fontSize: 11.5, color: 'var(--fl-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>

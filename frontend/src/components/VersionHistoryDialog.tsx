@@ -5,7 +5,7 @@ import { flowsApi } from '../api/client'
 import type { FlowGraph } from '../api/types'
 import { diffGraphs, diffSummary } from '../lib/graphDiff'
 import { toast } from './toast'
-import { useEscapeClose } from './useEscapeClose'
+import { Modal } from './Modal'
 
 /**
  * 버전 기록 — 저장 때마다 쌓인 불변 스냅샷(FlowVersion)을 열람·비교·복원.
@@ -25,7 +25,6 @@ export function VersionHistoryDialog({
 }) {
   const qc = useQueryClient()
   const [selected, setSelected] = useState<number | null>(null)
-  useEscapeClose(onClose)
 
   const versions = useQuery({ queryKey: ['flow-versions', flowId], queryFn: () => flowsApi.listVersions(flowId) })
   const preview = useQuery({
@@ -51,8 +50,7 @@ export function VersionHistoryDialog({
   const diff = preview.data ? diffGraphs(preview.data, currentGraph) : null
 
   return (
-    <div role="dialog" aria-modal="true" aria-label="버전 기록" style={overlay} onClick={onClose}>
-      <div style={card} onClick={(e) => e.stopPropagation()}>
+    <Modal onClose={onClose} ariaLabel="버전 기록" width={760} maxWidth="94vw" height="min(560px, 86vh)">
         <header style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '14px 18px', borderBottom: '1px solid var(--fl-border)' }}>
           <span aria-hidden>🕘</span>
           <strong style={{ flex: 1, fontFamily: 'var(--fl-font-head)', fontSize: 16 }}>버전 기록</strong>
@@ -130,8 +128,7 @@ export function VersionHistoryDialog({
             )}
           </div>
         </div>
-      </div>
-    </div>
+      </Modal>
   )
 }
 
@@ -142,8 +139,6 @@ function fmt(iso: string): string {
   } catch { return iso }
 }
 
-const overlay: CSSProperties = { position: 'fixed', inset: 0, background: 'rgba(26,29,39,.4)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }
-const card: CSSProperties = { width: 760, maxWidth: '94vw', height: 'min(560px, 86vh)', background: 'var(--fl-surface)', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-lg)', boxShadow: 'var(--fl-shadow-lg)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }
 const xBtn: CSSProperties = { width: 28, height: 28, borderRadius: 8, border: 'none', background: 'var(--fl-surface-2)', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 15 }
 const pad: CSSProperties = { padding: 16, fontSize: 12.5, color: 'var(--fl-text-muted)' }
 const row: CSSProperties = { display: 'block', width: '100%', textAlign: 'left', padding: '10px 14px', border: 'none', borderBottom: '1px solid var(--fl-border)', background: 'transparent', color: 'var(--fl-text)', cursor: 'pointer' }

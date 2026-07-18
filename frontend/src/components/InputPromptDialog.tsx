@@ -1,7 +1,7 @@
 import type { CSSProperties } from 'react'
 import { useState } from 'react'
 import type { PendingInputRequest } from '../api/types'
-import { useEscapeClose } from './useEscapeClose'
+import { Modal } from './Modal'
 
 /**
  * input(사용자 입력) 노드 모달 — 실행이 이 노드에서 멈추면 뜬다.
@@ -18,7 +18,6 @@ export function InputPromptDialog({
   onConfirm: (values: Record<string, unknown>) => void
   onCancel: () => void
 }) {
-  useEscapeClose(onCancel)
   // 필드 미정의 노드도 최소 한 칸은 받게 한다
   const fields = input.fields.length > 0 ? input.fields : [{ key: 'value', label: '값', type: 'string' }]
   const [values, setValues] = useState<Record<string, string>>(() =>
@@ -56,8 +55,8 @@ export function InputPromptDialog({
   }
 
   return (
-    <div role="dialog" aria-modal="true" aria-label="사용자 입력 대기" style={overlay}>
-      <div style={card} onKeyDown={(e) => { if (e.key === 'Enter' && !(e.target instanceof HTMLTextAreaElement)) { e.preventDefault(); confirm() } }}>
+    <Modal onClose={onCancel} ariaLabel="사용자 입력 대기" zIndex={220} closeOnBackdrop={false} width={420} maxWidth="100%" maxHeight="76vh"
+      onKeyDown={(e) => { if (e.key === 'Enter' && !(e.target instanceof HTMLTextAreaElement)) { e.preventDefault(); confirm() } }}>
         <header style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '14px 16px', borderBottom: '1px solid var(--fl-border)' }}>
           <span aria-hidden style={{ color: 'var(--fl-cat-input)', fontSize: 15 }}>⌨</span>
           <strong style={{ fontFamily: 'var(--fl-font-head)', fontSize: 15 }}>입력 대기 · {input.nodeName || input.nodeId}</strong>
@@ -112,13 +111,10 @@ export function InputPromptDialog({
           <button onClick={onCancel} style={ghostBtn}>취소</button>
           <button onClick={confirm} style={primaryBtn}>확인</button>
         </footer>
-      </div>
-    </div>
+    </Modal>
   )
 }
 
-const overlay: CSSProperties = { position: 'fixed', inset: 0, background: 'rgba(26,29,39,.34)', zIndex: 220, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }
-const card: CSSProperties = { width: 420, maxWidth: '100%', maxHeight: '76vh', background: 'var(--fl-surface)', borderRadius: 'var(--fl-radius-lg)', boxShadow: 'var(--fl-shadow-lg)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }
 const label: CSSProperties = { display: 'block', fontSize: 11.5, fontWeight: 600, color: 'var(--fl-text-muted)', marginBottom: 5 }
 const field: CSSProperties = { width: '100%', padding: '8px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 13 }
 const ghostBtn: CSSProperties = { padding: '8px 14px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }

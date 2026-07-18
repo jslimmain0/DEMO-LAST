@@ -1,4 +1,4 @@
-import type { CSSProperties, ReactNode } from 'react'
+import type { CSSProperties, KeyboardEvent, ReactNode } from 'react'
 import { useEscapeClose } from './useEscapeClose'
 
 /**
@@ -15,6 +15,8 @@ export function Modal({
   maxHeight = '90vh',
   zIndex = 200,
   card,
+  closeOnBackdrop = true,
+  onKeyDown,
   children,
 }: {
   onClose: () => void
@@ -25,12 +27,14 @@ export function Modal({
   maxHeight?: number | string
   zIndex?: number
   card?: CSSProperties // 카드 스타일 오버라이드(패딩·flex 등)
+  closeOnBackdrop?: boolean // 배경 클릭으로 닫기(기본 true). 입력 유실 방지가 필요하면 false.
+  onKeyDown?: (e: KeyboardEvent<HTMLDivElement>) => void // 카드 keydown(예: Enter 확인)
   children: ReactNode
 }) {
   useEscapeClose(onClose)
   return (
-    <div role="dialog" aria-modal="true" aria-label={ariaLabel} style={{ ...OVERLAY, zIndex }} onClick={onClose}>
-      <div style={{ ...CARD, width, maxWidth, height, maxHeight, ...card }} onClick={(e) => e.stopPropagation()}>
+    <div role="dialog" aria-modal="true" aria-label={ariaLabel} style={{ ...OVERLAY, zIndex }} onClick={closeOnBackdrop ? onClose : undefined}>
+      <div style={{ ...CARD, width, maxWidth, height, maxHeight, ...card }} onClick={(e) => e.stopPropagation()} onKeyDown={onKeyDown}>
         {children}
       </div>
     </div>

@@ -1,7 +1,7 @@
 import type { CSSProperties } from 'react'
 import { useState } from 'react'
 import type { FlowGraph, GraphNode, HttpMethod, PaletteGroup } from '../api/types'
-import { useEscapeClose } from '../components/useEscapeClose'
+import { Modal } from '../components/Modal'
 import { makeNode } from '../canvas/nodeFactory'
 import { parseCurl } from '../lib/curl'
 import { newId } from '../lib/ids'
@@ -30,11 +30,9 @@ export function ImportDialog({
   initialTab?: Tab
 }) {
   const [tab, setTab] = useState<Tab>(initialTab)
-  useEscapeClose(onClose)
 
   return (
-    <div role="dialog" aria-modal="true" aria-label="가져오기" style={overlay} onClick={onClose}>
-      <div style={card} onClick={(e) => e.stopPropagation()}>
+    <Modal onClose={onClose} ariaLabel="가져오기" width={820} maxWidth="94vw" height="min(680px, 88vh)">
         <header style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 18px', borderBottom: '1px solid var(--fl-border)' }}>
           <strong style={{ fontFamily: 'var(--fl-font-head)', fontSize: 16 }}>가져오기</strong>
           <div style={{ display: 'flex', gap: 4, marginLeft: 8 }}>
@@ -48,8 +46,7 @@ export function ImportDialog({
         {tab === 'workflow' && <WorkflowImportBody onImport={onImportGraph} onClose={onClose} />}
         {tab === 'openapi' && <OpenApiImportBody onImport={onImportPalette} onClose={onClose} />}
         {tab === 'curl' && <CurlImportBody onImport={onImportNode} onClose={onClose} />}
-      </div>
-    </div>
+      </Modal>
   )
 }
 
@@ -102,8 +99,6 @@ function CurlImportBody({ onImport, onClose }: { onImport: (template: GraphNode)
   )
 }
 
-const overlay: CSSProperties = { position: 'fixed', inset: 0, background: 'rgba(26,29,39,.4)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }
-const card: CSSProperties = { width: 820, maxWidth: '94vw', height: 'min(680px, 88vh)', background: 'var(--fl-surface)', borderRadius: 'var(--fl-radius-lg)', boxShadow: 'var(--fl-shadow-lg)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }
 const area: CSSProperties = { width: '100%', resize: 'none', fontFamily: 'var(--fl-font-mono)', fontSize: 12, padding: 12, border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', color: 'var(--fl-text)' }
 const primary: CSSProperties = { padding: '9px 18px', border: 'none', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-primary)', color: '#fff', fontWeight: 600, fontSize: 13, cursor: 'pointer' }
 function tabBtn(active: boolean): CSSProperties {

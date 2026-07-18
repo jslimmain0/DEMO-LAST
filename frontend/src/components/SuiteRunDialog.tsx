@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom'
 import { runsApi } from '../api/client'
 import type { SuiteRunItem } from '../api/client'
 import { StatusBadge } from './StatusBadge'
-import { useEscapeClose } from './useEscapeClose'
+import { Modal } from './Modal'
 
 /**
  * 스위트 일괄 실행 결과 매트릭스 — 각 워크플로 실행을 폴링해 성공/실패를 한눈에.
@@ -13,7 +13,6 @@ import { useEscapeClose } from './useEscapeClose'
 const TERMINAL = new Set(['SUCCEEDED', 'FAILED', 'CANCELLED'])
 
 export function SuiteRunDialog({ items, onClose }: { items: SuiteRunItem[]; onClose: () => void }) {
-  useEscapeClose(onClose)
   // 각 실행을 종료까지 폴링(종료면 refetch 중단)
   const results = useQueries({
     queries: items.map((it) => ({
@@ -35,8 +34,7 @@ export function SuiteRunDialog({ items, onClose }: { items: SuiteRunItem[]; onCl
   const failCount = items.filter((_, i) => { const s = statusOf(i); return s === 'FAILED' || s === 'REJECTED' }).length
 
   return (
-    <div role="dialog" aria-modal="true" aria-label="스위트 실행" style={overlay} onClick={onClose}>
-      <div style={card} onClick={(e) => e.stopPropagation()}>
+    <Modal onClose={onClose} ariaLabel="스위트 실행" width={560} maxWidth="96vw" maxHeight="82vh">
         <header style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 18px', borderBottom: '1px solid var(--fl-border)' }}>
           <strong style={{ flex: 1, fontFamily: 'var(--fl-font-head)', fontSize: 16 }}>스위트 실행 ({done}/{items.length})</strong>
           <span style={{ fontSize: 12, color: 'var(--fl-ok)', fontFamily: 'var(--fl-font-mono)' }}>✓ {okCount}</span>
@@ -63,12 +61,9 @@ export function SuiteRunDialog({ items, onClose }: { items: SuiteRunItem[]; onCl
           <Link to="/executions" style={{ fontSize: 12, color: 'var(--fl-text-muted)', textDecoration: 'none' }}>실행 이력에서 보기 →</Link>
           <button onClick={onClose} style={primary}>닫기</button>
         </footer>
-      </div>
-    </div>
+      </Modal>
   )
 }
 
-const overlay: CSSProperties = { position: 'fixed', inset: 0, background: 'rgba(26,29,39,.4)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }
-const card: CSSProperties = { width: 560, maxWidth: '96vw', maxHeight: '82vh', background: 'var(--fl-surface)', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-lg)', boxShadow: 'var(--fl-shadow-lg)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }
 const xBtn: CSSProperties = { width: 28, height: 28, borderRadius: 8, border: 'none', background: 'var(--fl-surface-2)', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 15 }
 const primary: CSSProperties = { padding: '8px 16px', border: 'none', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-primary)', color: '#fff', cursor: 'pointer', fontSize: 13, fontWeight: 600 }

@@ -8,7 +8,7 @@ import { AppShellTier1 } from '../app/AppShell'
 import { LogBlock } from '../components/NodeExecutionLog'
 import { StatusBadge } from '../components/StatusBadge'
 import { toast } from '../components/toast'
-import { useEscapeClose } from '../components/useEscapeClose'
+import { Modal } from '../components/Modal'
 import { duration, relTime } from '../lib/format'
 
 const STATUS_COLOR: Record<string, string> = {
@@ -158,7 +158,6 @@ function ExecutionDetailModal({ execId, onClose }: { execId: string; onClose: ()
   const { data, isLoading, isError, refetch } = useQuery({ queryKey: ['execution', execId], queryFn: () => runsApi.get(execId) })
   const [openNode, setOpenNode] = useState<string | null>(null)
   const [compare, setCompare] = useState(false)
-  useEscapeClose(onClose)
 
   // 같은 플로우의 '이 실행 직전' 실행을 찾아 그 상세를 가져온다(비교 켤 때만).
   const flowRuns = useQuery({
@@ -170,9 +169,7 @@ function ExecutionDetailModal({ execId, onClose }: { execId: string; onClose: ()
   const prev = useQuery({ queryKey: ['execution', prevId], queryFn: () => runsApi.get(prevId as string), enabled: !!prevId })
   const prevByNode = new Map((prev.data?.nodes ?? []).map((n) => [n.nodeId, n]))
   return (
-    <div role="dialog" aria-modal="true" aria-label="실행 상세" onClick={onClose}
-      style={{ position: 'fixed', inset: 0, background: 'rgba(26,29,39,.4)', zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ width: 720, maxWidth: '100%', maxHeight: '85vh', background: 'var(--fl-surface)', borderRadius: 'var(--fl-radius-lg)', boxShadow: 'var(--fl-shadow-lg)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+    <Modal onClose={onClose} ariaLabel="실행 상세" zIndex={300} width={720} maxWidth="100%" maxHeight="85vh">
         <header style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 16px', borderBottom: '1px solid var(--fl-border)' }}>
           <strong style={{ fontFamily: 'var(--fl-font-head)', fontSize: 15 }}>실행 상세</strong>
           {data && <StatusBadge status={data.status} />}
@@ -236,8 +233,7 @@ function ExecutionDetailModal({ execId, onClose }: { execId: string; onClose: ()
             )
           })}
         </div>
-      </div>
-    </div>
+    </Modal>
   )
 }
 

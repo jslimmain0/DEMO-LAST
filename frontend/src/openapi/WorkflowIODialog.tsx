@@ -1,7 +1,7 @@
 import type { ChangeEvent, CSSProperties } from 'react'
 import { useState } from 'react'
 import type { FlowGraph } from '../api/types'
-import { useEscapeClose } from '../components/useEscapeClose'
+import { Modal } from '../components/Modal'
 
 // 워크플로(그래프) 전체를 JSON 으로 내보내기/가져오기. 파일 또는 텍스트 붙여넣기 모두 지원.
 // 내보내기: 현재 그래프 JSON 을 복사/파일 저장. 가져오기: 파일·붙여넣기 JSON → 캔버스에 로드(교체).
@@ -19,13 +19,11 @@ export function WorkflowIODialog({
   initialTab?: 'export' | 'import'
 }) {
   const [tab, setTab] = useState<'export' | 'import'>(initialTab)
-  useEscapeClose(onClose)
   // 모달은 열 때마다 새로 마운트되므로 매 렌더 계산해도 항상 현재 그래프를 반영(메모이즈 불필요)
   const exportJson = JSON.stringify(getGraph(), null, 2)
 
   return (
-    <div role="dialog" aria-modal="true" aria-label="워크플로 가져오기/내보내기" style={overlay} onClick={onClose}>
-      <div style={card} onClick={(e) => e.stopPropagation()}>
+    <Modal onClose={onClose} ariaLabel="워크플로 가져오기/내보내기" width={820} maxWidth="94vw" height="min(680px, 88vh)">
         <header style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 18px', borderBottom: '1px solid var(--fl-border)' }}>
           <strong style={{ fontFamily: 'var(--fl-font-head)', fontSize: 16 }}>워크플로 JSON</strong>
           <div style={{ display: 'flex', gap: 4, marginLeft: 8 }}>
@@ -38,8 +36,7 @@ export function WorkflowIODialog({
         {tab === 'export'
           ? <ExportTab json={exportJson} flowName={flowName} />
           : <WorkflowImportBody onImport={onImport} onClose={onClose} />}
-      </div>
-    </div>
+      </Modal>
   )
 }
 
@@ -156,8 +153,6 @@ export function WorkflowImportBody({ onImport, onClose }: { onImport: (graph: Fl
   )
 }
 
-const overlay: CSSProperties = { position: 'fixed', inset: 0, background: 'rgba(26,29,39,.4)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }
-const card: CSSProperties = { width: 820, maxWidth: '94vw', height: 'min(680px, 88vh)', background: 'var(--fl-surface)', borderRadius: 'var(--fl-radius-lg)', boxShadow: 'var(--fl-shadow-lg)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }
 const area: CSSProperties = { width: '100%', resize: 'none', fontFamily: 'var(--fl-font-mono)', fontSize: 12, padding: 12, border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', color: 'var(--fl-text)' }
 const primary: CSSProperties = { padding: '9px 18px', border: 'none', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-primary)', color: '#fff', fontWeight: 600, fontSize: 13, cursor: 'pointer' }
 const ghost: CSSProperties = { padding: '9px 16px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 13, cursor: 'pointer' }

@@ -2,7 +2,7 @@ import type { ChangeEvent, CSSProperties } from 'react'
 import { useState } from 'react'
 import type { PaletteGroup } from '../api/types'
 import { MethodTag } from '../components/MethodTag'
-import { useEscapeClose } from '../components/useEscapeClose'
+import { Modal } from '../components/Modal'
 import { newId } from '../lib/ids'
 import { parseOpenApi } from './parseOpenApi'
 import type { ParsedOperation } from './parseOpenApi'
@@ -15,17 +15,14 @@ export function OpenApiImportDialog({
   onImport: (group: PaletteGroup) => void
   onClose: () => void
 }) {
-  useEscapeClose(onClose)
   return (
-    <div role="dialog" aria-modal="true" aria-label="OpenAPI 가져오기" style={overlay} onClick={onClose}>
-      <div style={card} onClick={(e) => e.stopPropagation()}>
+    <Modal onClose={onClose} ariaLabel="OpenAPI 가져오기" width={560} maxWidth="100%" maxHeight="80vh">
         <header style={{ display: 'flex', alignItems: 'center', padding: '16px 18px', borderBottom: '1px solid var(--fl-border)' }}>
           <strong style={{ fontFamily: 'var(--fl-font-head)', fontSize: 16 }}>OpenAPI / Swagger 가져오기</strong>
           <button onClick={onClose} aria-label="닫기" style={{ marginLeft: 'auto', border: 'none', background: 'transparent', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 18 }}>×</button>
         </header>
         <OpenApiImportBody onImport={onImport} onClose={onClose} />
-      </div>
-    </div>
+      </Modal>
   )
 }
 
@@ -158,7 +155,5 @@ export function OpenApiImportBody({
   )
 }
 
-const overlay: CSSProperties = { position: 'fixed', inset: 0, background: 'rgba(26,29,39,.4)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }
-const card: CSSProperties = { width: 560, maxWidth: '100%', maxHeight: '80vh', background: 'var(--fl-surface)', borderRadius: 'var(--fl-radius-lg)', boxShadow: 'var(--fl-shadow-lg)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }
 const primary: CSSProperties = { padding: '9px 18px', border: 'none', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-primary)', color: '#fff', fontWeight: 600, fontSize: 13, cursor: 'pointer' }
 const ghost: CSSProperties = { padding: '7px 12px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 12.5, cursor: 'pointer' }

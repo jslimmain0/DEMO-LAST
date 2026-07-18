@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent } from 'react'
 import type { Binding } from '../api/types'
 import { catColor, typeIcon, typeLabel } from '../canvas/nodeMeta'
-import { useEscapeClose } from '../components/useEscapeClose'
+import { Modal } from '../components/Modal'
 import type { BindableItem, BindableSource } from './upstream'
 
 // 상위 노드들의 요청/응답 규격을 블록으로 골라 바인딩을 삽입하는 모달 (UI/UX 스펙 §7.3).
@@ -15,7 +15,6 @@ export function BindingPicker({
   onPick: (binding: Binding) => void
   onClose: () => void
 }) {
-  useEscapeClose(onClose)
   const [q, setQ] = useState('')
   const filtered = useMemo(() => {
     const query = q.trim().toLowerCase()
@@ -42,8 +41,7 @@ export function BindingPicker({
   let gi = -1
 
   return (
-    <div role="dialog" aria-modal="true" aria-label="데이터 삽입" style={overlay} onClick={onClose}>
-      <div style={card} onClick={(e) => e.stopPropagation()}>
+    <Modal onClose={onClose} ariaLabel="데이터 삽입" width={520} maxWidth="100%" maxHeight="70vh">
         <header style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 16px', borderBottom: '1px solid var(--fl-border)' }}>
           <strong style={{ fontFamily: 'var(--fl-font-head)', fontSize: 15 }}>데이터 삽입</strong>
           <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={onKey} placeholder="키 검색… (↑↓ 이동, Enter 삽입)" style={search} />
@@ -89,13 +87,10 @@ export function BindingPicker({
             </section>
           ))}
         </div>
-      </div>
-    </div>
+      </Modal>
   )
 }
 
-const overlay: CSSProperties = { position: 'fixed', inset: 0, background: 'rgba(26,29,39,.34)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }
-const card: CSSProperties = { width: 520, maxWidth: '100%', maxHeight: '70vh', background: 'var(--fl-surface)', borderRadius: 'var(--fl-radius-lg)', boxShadow: 'var(--fl-shadow-lg)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }
 const search: CSSProperties = { flex: 1, padding: '7px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', color: 'var(--fl-text)', fontSize: 13 }
 function chipBtn(isResponse: boolean): CSSProperties {
   return {

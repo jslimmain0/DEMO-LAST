@@ -1,5 +1,6 @@
 import type { CSSProperties } from 'react'
 import { useEffect, useRef, useState } from 'react'
+import { Modal } from './Modal'
 
 /**
  * 앱 스타일의 입력/확인 다이얼로그 — 브라우저 prompt()/confirm() 대체.
@@ -24,9 +25,7 @@ export function AskDialog({ spec, onClose }: { spec: AskSpec; onClose: () => voi
     onClose()
   }
   return (
-    <div role="dialog" aria-modal="true" aria-label={spec.title} style={overlay} onClick={onClose}
-      onKeyDown={(e) => { if (e.key === 'Escape') onClose() }}>
-      <div style={card} onClick={(e) => e.stopPropagation()}>
+    <Modal onClose={onClose} ariaLabel={spec.title} zIndex={300} width={400} maxWidth="100%" card={{ padding: 20, display: 'block' }}>
         <div style={{ fontFamily: 'var(--fl-font-head)', fontWeight: 600, fontSize: 16, marginBottom: spec.message || spec.input ? 10 : 16 }}>{spec.title}</div>
         {spec.message && <p style={{ margin: '0 0 12px', fontSize: 13.5, color: 'var(--fl-text-muted)', lineHeight: 1.5 }}>{spec.message}</p>}
         {spec.input && (
@@ -41,13 +40,10 @@ export function AskDialog({ spec, onClose }: { spec: AskSpec; onClose: () => voi
           <button onClick={onClose} style={ghostBtn}>취소</button>
           <button onClick={confirm} style={spec.danger ? dangerBtn : primaryBtn}>{spec.confirmLabel ?? '확인'}</button>
         </div>
-      </div>
-    </div>
+    </Modal>
   )
 }
 
-const overlay: CSSProperties = { position: 'fixed', inset: 0, background: 'rgba(26,29,39,.4)', zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }
-const card: CSSProperties = { width: 400, maxWidth: '100%', background: 'var(--fl-surface)', borderRadius: 'var(--fl-radius-lg)', boxShadow: 'var(--fl-shadow-lg)', padding: 20 }
 const ghostBtn: CSSProperties = { padding: '8px 16px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', cursor: 'pointer', fontSize: 13, fontWeight: 500 }
 const primaryBtn: CSSProperties = { padding: '8px 16px', border: 'none', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-primary)', color: '#fff', cursor: 'pointer', fontSize: 13, fontWeight: 600 }
 const dangerBtn: CSSProperties = { ...primaryBtn, background: 'var(--fl-fail)' }

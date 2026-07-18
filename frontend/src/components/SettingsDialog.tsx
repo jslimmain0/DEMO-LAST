@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { CSSProperties } from 'react'
 import { useEffect, useState } from 'react'
 import { settingsApi } from '../api/client'
-import { useEscapeClose } from './useEscapeClose'
+import { Modal } from './Modal'
 
 /**
  * 설정 다이얼로그 — 콜백 수신 주소(relay base).
@@ -27,7 +27,6 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
     mutationFn: (value: string | null) => settingsApi.saveNotify(value),
     onSuccess: (data) => { qc.setQueryData(['settings', 'notify'], data); setNotifyDraft(null) },
   })
-  useEscapeClose(onClose)
   useEffect(() => setDraft(null), [q.data?.value])
   useEffect(() => setNotifyDraft(null), [notifyQ.data?.value])
   const notifyValue = notifyDraft ?? notifyQ.data?.value ?? ''
@@ -37,8 +36,7 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
   const dirty = draft != null && draft !== (q.data?.value ?? '')
 
   return (
-    <div style={overlay} onClick={onClose}>
-      <div role="dialog" aria-label="설정" style={card} onClick={(e) => e.stopPropagation()}>
+    <Modal onClose={onClose} ariaLabel="설정" width={520} card={{ padding: 18, display: 'block' }}>
         <header style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
           <span aria-hidden style={{ fontSize: 15 }}>⚙</span>
           <b style={{ flex: 1, fontSize: 15 }}>설정</b>
@@ -95,13 +93,10 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
             저장
           </button>
         </div>
-      </div>
-    </div>
+    </Modal>
   )
 }
 
-const overlay: CSSProperties = { position: 'fixed', inset: 0, background: 'rgba(26,29,39,.4)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }
-const card: CSSProperties = { width: 520, maxWidth: '100%', background: 'var(--fl-surface)', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius)', boxShadow: 'var(--fl-shadow-lg)', padding: 18 }
 const label: CSSProperties = { display: 'block', fontSize: 11.5, fontWeight: 600, color: 'var(--fl-text-muted)', margin: '10px 0 5px' }
 const mono: CSSProperties = { width: '100%', padding: '8px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 12.5, fontFamily: 'var(--fl-font-mono)' }
 const hint: CSSProperties = { fontSize: 11.5, color: 'var(--fl-text-muted)', marginTop: 8, lineHeight: 1.6 }

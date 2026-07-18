@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { triggersApi } from '../api/client'
 import type { TriggerView } from '../api/types'
 import { toast } from './toast'
-import { useEscapeClose } from './useEscapeClose'
+import { Modal } from './Modal'
 
 /**
  * 자동 실행 트리거 — 스케줄(cron) / 인바운드 웹훅. 야간 회귀·외부 이벤트 실행용.
@@ -20,7 +20,6 @@ const CRON_PRESETS: Array<[string, string]> = [
 
 export function TriggersDialog({ flowId, onClose }: { flowId: string; onClose: () => void }) {
   const qc = useQueryClient()
-  useEscapeClose(onClose)
   const q = useQuery({ queryKey: ['triggers', flowId], queryFn: () => triggersApi.list(flowId) })
   const [cron, setCron] = useState('0 0 3 * * *')
 
@@ -48,8 +47,7 @@ export function TriggersDialog({ flowId, onClose }: { flowId: string; onClose: (
   const origin = window.location.origin
 
   return (
-    <div role="dialog" aria-modal="true" aria-label="트리거" style={overlay} onClick={onClose}>
-      <div style={card} onClick={(e) => e.stopPropagation()}>
+    <Modal onClose={onClose} ariaLabel="트리거" width={620} maxWidth="96vw" maxHeight="88vh">
         <header style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '14px 18px', borderBottom: '1px solid var(--fl-border)' }}>
           <span aria-hidden>⏰</span>
           <strong style={{ flex: 1, fontFamily: 'var(--fl-font-head)', fontSize: 16 }}>자동 실행 트리거</strong>
@@ -102,8 +100,7 @@ export function TriggersDialog({ flowId, onClose }: { flowId: string; onClose: (
             </div>
           </div>
         </div>
-      </div>
-    </div>
+      </Modal>
   )
 }
 
@@ -116,8 +113,6 @@ function fmt(iso: string): string {
   try { const d = new Date(iso); return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}` } catch { return iso }
 }
 
-const overlay: CSSProperties = { position: 'fixed', inset: 0, background: 'rgba(26,29,39,.4)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }
-const card: CSSProperties = { width: 620, maxWidth: '96vw', maxHeight: '88vh', background: 'var(--fl-surface)', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-lg)', boxShadow: 'var(--fl-shadow-lg)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }
 const hint: CSSProperties = { fontSize: 11.5, color: 'var(--fl-text-muted)', lineHeight: 1.6, margin: 0 }
 const label: CSSProperties = { display: 'block', fontSize: 11.5, fontWeight: 600, color: 'var(--fl-text-muted)', margin: '0 0 5px' }
 const mono: CSSProperties = { flex: 1, padding: '8px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 12.5, fontFamily: 'var(--fl-font-mono)' }

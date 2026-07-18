@@ -20,12 +20,14 @@ import java.time.Instant
 @Service
 class SecretService(
     private val repo: SecretRepository,
+    private val vault: VaultSecretSource,
     props: ExecutionProperties,
 ) {
     private val crypto = StateCrypto(props.stateSecret)
 
     // environment: null=공통(COMMON). 화면엔 공통을 null 로 보여준다.
-    data class SecretView(val name: String, val environment: String?, val createdAt: Instant)
+    // source: "db"(볼트 DB, 편집 가능) | "vault"(HashiCorp Vault 에서 끌어옴, 읽기전용).
+    data class SecretView(val name: String, val environment: String?, val createdAt: Instant?, val source: String = "db")
 
     /** 기동 시 레거시 NULL environment 행을 공통('*')으로 백필(H2 dev 관용, Flyway DB 는 0건). */
     @EventListener(ApplicationReadyEvent::class)
@@ -35,8 +37,17 @@ class SecretService(
     }
 
     @Transactional(readOnly = true)
-    fun listNames(): List<SecretView> =
-        repo.findByTenantIdOrderByEnvironmentAscNameAsc(tenant()).map { SecretView(it.name, viewEnv(it.environment), it.createdAt) }
+    fun listNames(): List<SecretView> {
+        val db = repo.findByTenantIdOrderByEnvironmentAscNameAsc(tenant())
+            .map { SecretView(it.name, viewEnv(it.environment), it.createdAt, "db") }
+        // Vault 시크릿(공통, 읽기전용)은 목록·바인딩 피커에 노출 — 같은 이름을 DB 가 오버라이드하면 DB 것만.
+        val dbNames = db.map { it.name }.toSet()
+        val vaultViews = vault.secrets().keys
+            .filter { it !in dbNames }
+            .sorted()
+            .map { SecretView(it, null, null, "vault") }
+        return db + vaultViews
+    }
 
     @Transactional
     fun put(name: String, value: String, environment: String?) {
@@ -74,7 +85,12 @@ class SecretService(
                 env.isNotEmpty() && e == env -> scoped[s.name] = crypto.decrypt(s.encValue)
             }
         }
-        return LinkedHashMap(common).apply { putAll(scoped) }
+        // 우선순위(높을수록 승): 활성 환경 DB > 공통 DB > Vault(org 공통 기본층).
+        return LinkedHashMap<String, String>().apply {
+            putAll(vault.secrets())
+            putAll(common)
+            putAll(scoped)
+        }
     }
 
     private fun viewEnv(e: String?): String? = if (e.isNullOrEmpty() || e == Secret.COMMON) null else e

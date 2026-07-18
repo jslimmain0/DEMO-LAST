@@ -77,6 +77,16 @@ flowlink:
     model: ${FLOWLINK_ASSISTANT_MODEL:claude-sonnet-5}
     base-url: ${FLOWLINK_ASSISTANT_BASE_URL:https://api.anthropic.com}
     max-tokens: ${FLOWLINK_ASSISTANT_MAX_TOKENS:4096}
+  # HashiCorp Vault(KV v2) 연동 — enabled=true 면 Vault 시크릿을 시크릿 볼트에 오버레이(공통 기본층, DB 가 덮어씀).
+  # infra 도커의 Vault dev 서버(infra/docker-compose.yml)에 붙거나, 운영 Vault 로 env 를 바꾼다. 미설정이면 완전 비활성.
+  #   FLOWLINK_VAULT_ENABLED=true  FLOWLINK_VAULT_ADDRESS=http://localhost:8200  FLOWLINK_VAULT_TOKEN=<토큰>
+  vault:
+    enabled: ${FLOWLINK_VAULT_ENABLED:false}
+    address: ${FLOWLINK_VAULT_ADDRESS:http://localhost:8200}
+    token: ${FLOWLINK_VAULT_TOKEN:}                   # dev 루트 토큰 또는 AppRole 발급 토큰. 미설정이면 비활성
+    mount: ${FLOWLINK_VAULT_MOUNT:secret}             # KV v2 마운트
+    path: ${FLOWLINK_VAULT_PATH:flowlink}             # GET secret/data/flowlink
+    refresh-seconds: ${FLOWLINK_VAULT_REFRESH_SECONDS:60}
   # 보안 (IdP 비종속). 아무 인증도 활성 안 하면 dev permitAll(로컬).
   security:
     tenant-claim: tenant                 # JWT 에서 테넌트(팀) 식별자를 읽을 클레임 이름

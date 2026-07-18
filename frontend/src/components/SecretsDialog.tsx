@@ -63,15 +63,22 @@ export function SecretsDialog({ onClose }: { onClose: () => void }) {
 
         <div style={{ display: 'grid', gap: 6, margin: '12px 0' }}>
           {sorted.length === 0 && !q.isLoading && <p style={{ ...hint, color: 'var(--fl-text-muted)' }}>저장된 시크릿이 없습니다.</p>}
-          {sorted.map((s) => (
-            <div key={`${s.environment ?? '*'}:${s.name}`} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)' }}>
-              <span style={envBadge(s.environment)}>{s.environment ?? '공통'}</span>
+          {sorted.map((s) => {
+            const isVault = s.source === 'vault'
+            return (
+            <div key={`${s.source ?? 'db'}:${s.environment ?? '*'}:${s.name}`} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)' }}>
+              {isVault
+                ? <span title="HashiCorp Vault 에서 끌어온 읽기전용 시크릿" style={{ fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 999, background: 'rgba(255,209,102,.16)', color: '#e0a800', border: '1px solid rgba(255,209,102,.4)' }}>Vault</span>
+                : <span style={envBadge(s.environment)}>{s.environment ?? '공통'}</span>}
               <code style={{ flex: 1, fontFamily: 'var(--fl-font-mono)', fontSize: 12.5 }}>{s.name}</code>
               <span style={{ fontFamily: 'var(--fl-font-mono)', fontSize: 12, color: 'var(--fl-text-muted)', letterSpacing: 2 }}>••••••</span>
               <button onClick={() => copy(`{{ ${s.name}@secret }}`)} title="바인딩 토큰 복사" style={miniBtn}>토큰</button>
-              <button onClick={() => del.mutate({ name: s.name, environment: s.environment })} aria-label="삭제" style={miniBtn}>×</button>
+              {isVault
+                ? <span title="Vault 관리 — 여기서 삭제 불가" style={{ ...miniBtn, opacity: .4, cursor: 'default' }}>읽기전용</span>
+                : <button onClick={() => del.mutate({ name: s.name, environment: s.environment })} aria-label="삭제" style={miniBtn}>×</button>}
             </div>
-          ))}
+            )
+          })}
         </div>
 
         <div style={{ borderTop: '1px solid var(--fl-border)', paddingTop: 12 }}>

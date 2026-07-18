@@ -1,0 +1,58 @@
+# FlowLink 인프라(도커) — 앱이 의존하는 "지원 서비스"만 띄운다.
+#
+#   ⚠ 메인 앱(flowlink.jar)은 도커에 올리지 않는다 — EC2 등 실제 서버에서 scripts/start.sh 로 실행(단일 jar).
+#      여기 도커엔 Vault(시크릿 저장소)만 상시 뜨고, Oracle 은 나중에 별도/사내 서버로 붙일 예정이라
+#      기본 미기동(로컬 테스트용으로만 --profile oracle 로 켤 수 있게 남겨둠 — DDL 은 Flyway db/migration/oracle 이 소유).
+#
+#   Vault 기동:          docker compose -f infra/docker-compose.yml up -d
+#   (선택) 로컬 Oracle:   docker compose -f infra/docker-compose.yml --profile oracle up -d
+#   초기화(볼륨 삭제):    docker compose -f infra/docker-compose.yml down -v
+#
+# 값 오버라이드는 infra/.env (infra/.env.example 복사). 앱이 Vault 를 쓰게 하려면(EC2 앱 프로세스 env):
+#   FLOWLINK_VAULT_ENABLED=true  FLOWLINK_VAULT_ADDRESS=http://<vault호스트>:8200  FLOWLINK_VAULT_TOKEN=<토큰>
+name: flowlink-infra
+
+services:
+  # HashiCorp Vault — 앱이 시크릿을 끌어오는 곳. dev 모드: 인메모리(재시작 시 초기화), 고정 루트 토큰, KV v2 가 secret/ 에 자동 마운트.
+  #   시크릿 넣기:  docker exec flowlink-vault vault kv put -address=http://127.0.0.1:8200 secret/flowlink API_TOKEN=s3cr3t
+  #   ⚠ dev 모드는 비영속 — 운영은 파일/통합 스토리지 + unseal 구성으로 교체.
+  vault:
+    image: hashicorp/vault:1.17
+    container_name: flowlink-vault
+    cap_add:
+      - IPC_LOCK
+    ports:
+      - "8200:8200"
+    environment:
+      VAULT_DEV_ROOT_TOKEN_ID: ${VAULT_TOKEN:-flowlink-root}
+      VAULT_DEV_LISTEN_ADDRESS: 0.0.0.0:8200
+    healthcheck:
+      # dev 모드는 부팅 직후 active+unsealed → sys/health 200
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8200/v1/sys/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # (선택, --profile oracle) 로컬 테스트용 Oracle Free 23ai.
+  #   운영은 사내/별도 서버 Oracle 에 붙인다 — 앱 env 의 FLOWLINK_DB_URL 만 그쪽으로 바꾸면 되고
+  #   스키마는 Flyway(backend/src/main/resources/db/migration/oracle)가 자동 생성한다.
+  oracle:
+    image: gvenzl/oracle-free:23-slim
+    container_name: flowlink-oracle
+    profiles: ["oracle"]
+    environment:
+      ORACLE_PASSWORD: ${ORACLE_ADMIN_PASSWORD:-admin}
+      APP_USER: ${FLOWLINK_DB_USER:-flowlink}
+      APP_USER_PASSWORD: ${FLOWLINK_DB_PASSWORD:-flowlink}
+    ports:
+      - "1521:1521"
+    volumes:
+      - oracle-data:/opt/oracle/oradata
+    healthcheck:
+      test: ["CMD", "healthcheck.sh"]
+      interval: 10s
+      timeout: 5s
+      retries: 60
+
+volumes:
+  oracle-data:

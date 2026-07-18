@@ -71,8 +71,8 @@ export const triggersApi = {
     http.delete(`/flows/${flowId}/triggers/${id}`).then(() => undefined),
 }
 
-// environment: null=공통(전역), 그 외=해당 환경 전용
-export interface SecretView { name: string; environment: string | null; createdAt: string }
+// environment: null=공통(전역), 그 외=해당 환경 전용. source: 'db'(편집 가능) | 'vault'(Vault 에서 끌어옴, 읽기전용)
+export interface SecretView { name: string; environment: string | null; createdAt: string | null; source?: 'db' | 'vault' }
 export const secretsApi = {
   list: () => http.get<SecretView[]>('/secrets').then((r) => r.data),
   put: (name: string, value: string, environment?: string | null) =>

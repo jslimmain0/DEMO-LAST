@@ -77,22 +77,33 @@ flowlink:
     model: ${FLOWLINK_ASSISTANT_MODEL:claude-sonnet-5}
     base-url: ${FLOWLINK_ASSISTANT_BASE_URL:https://api.anthropic.com}
     max-tokens: ${FLOWLINK_ASSISTANT_MAX_TOKENS:4096}
-  # 보안 (IdP 비종속). issuer-uri 미설정 시 dev permitAll 로 동작.
+  # 보안 (IdP 비종속). 아무 인증도 활성 안 하면 dev permitAll(로컬).
   security:
     tenant-claim: tenant                 # JWT 에서 테넌트(팀) 식별자를 읽을 클레임 이름
-    client-id: flowlink-web              # 프론트(SPA)용 OIDC public 클라이언트 id — /api/v1/auth/config 로 노출
+    client-id: flowlink-web              # 프론트(SPA)용 클라이언트 id — /api/v1/auth/config 로 노출
     # cors-origins:                      # /api/** CORS 허용 오리진(미설정 시 localhost 5173/3000/18080)
     #   - https://flowlink.example.com
+  # 앱 인증 — GitHub 로그인(Copilot 과 동일한 디바이스 플로우). 로그인하면 앱이 자체 JWT(HMAC)를 발급하고,
+  # 그 JWT 를 리소스 서버로 검증 → 인증 필수 + RBAC + 테넌트 격리(Keycloak 없이 동작). 미설정이면 dev permitAll.
+  # 운영(EC2)에선 env 로 켠다:
+  #   FLOWLINK_AUTH_GITHUB_ENABLED=true
+  #   FLOWLINK_AUTH_JWT_SECRET=<강한 시크릿>            # JWT 서명키(SHA-256 파생). 미설정 시 dev 폴백 + WARN
+  #   FLOWLINK_AUTH_ALLOWED_LOGINS=alice,bob            # (선택) 허용 GitHub 로그인 화이트리스트. 비면 인증한 누구나
+  auth:
+    github-enabled: ${FLOWLINK_AUTH_GITHUB_ENABLED:false}
+    jwt-secret: ${FLOWLINK_AUTH_JWT_SECRET:}
+    token-ttl-hours: ${FLOWLINK_AUTH_TOKEN_TTL_HOURS:12}
+    # allowed-logins:                    # 비면 GitHub 인증한 누구나(dev). 운영은 화이트리스트 권장.
+    #   - your-github-login
 
-# 운영 전환 시 아래 주석을 풀어 OIDC 리소스 서버 + RBAC(admin/editor/viewer/platform-admin) 활성화.
-# issuer-uri 는 브라우저가 보는 주소(토큰 iss 와 일치해야 함), 컨테이너에서 IdP 도달 주소가 다르면 jwk-set-uri 를 별도 지정:
+# (대안) 표준 OIDC(Keycloak/Auth0/Entra 등)도 여전히 지원 — 아래 issuer-uri 를 설정하면
+# GitHub 로그인 대신 OIDC 리소스 서버로 동작한다(코드는 IdP 비종속, JwtDecoder 빈 유무로 자동 전환):
 # spring:
 #   security:
 #     oauth2:
 #       resourceserver:
 #         jwt:
-#           issuer-uri: http://localhost:8081/realms/flowlink
-#           # jwk-set-uri: http://keycloak:8080/realms/flowlink/protocol/openid-connect/certs
+#           issuer-uri: https://your-idp/realms/flowlink
 
 springdoc:
   swagger-ui:

@@ -1,36 +1,37 @@
 package com.flowlink.security
 
 import com.flowlink.common.tenant.TenantContext
-import org.springframework.beans.factory.annotation.Value
 import org.springframework.security.core.context.SecurityContextHolder
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken
 import org.springframework.web.bind.annotation.GetMapping
+import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestMapping
+import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
 
 /**
- * 인증 부트스트랩 API.
+ * 인증 부트스트랩 + GitHub 로그인 API.
  *
- * - `GET /auth/config` (public): 프론트(SPA)가 env 없이 인증 모드를 발견 — enabled=false 면
- *   로그인 없이 동작(dev 모드), true 면 issuer 로 OIDC PKCE 로그인.
- * - `GET /me` (인증): 현재 사용자 이름·팀(테넌트)·역할 — 프론트 UI 게이팅(viewer 읽기전용 등) 소스.
- *   dev 모드에선 전권(admin/editor/platform-admin) 가짜 사용자를 반환해 프론트 게이팅 경로를 단일화한다.
+ * - `GET /auth/config` (public): 인증 모드 발견 — "github"(GitHub 로그인) | "oidc"(레거시 issuer) | "none"(dev).
+ * - `GET /auth/me` (인증): 현재 사용자·팀·역할. dev 모드는 전권 가짜 사용자.
+ * - `POST /auth/github/device/start` + `GET /auth/github/device/poll` (public): GitHub 디바이스 로그인.
+ *   Copilot 과 동일한 device flow — 완료 시 앱 JWT 를 돌려준다.
  */
 @RestController
 @RequestMapping("/api/v1/auth")
 class AuthController(
     private val props: SecurityProperties,
-    @Value("\${spring.security.oauth2.resourceserver.jwt.issuer-uri:}") private val issuerUri: String,
+    private val authProps: AuthProperties,
+    private val githubAuth: GithubAuthService,
 ) {
 
-    data class AuthConfigResponse(val enabled: Boolean, val issuer: String?, val clientId: String)
-
+    data class AuthConfigResponse(val enabled: Boolean, val mode: String, val clientId: String)
     data class MeResponse(val username: String, val tenant: String, val roles: List<String>)
 
     @GetMapping("/config")
     fun config(): AuthConfigResponse {
-        val enabled = issuerUri.isNotBlank()
-        return AuthConfigResponse(enabled, if (enabled) issuerUri else null, props.clientId)
+        val mode = if (authProps.githubEnabled) "github" else "none"
+        return AuthConfigResponse(enabled = authProps.githubEnabled, mode = mode, clientId = props.clientId)
     }
 
     @GetMapping("/me")
@@ -40,7 +41,13 @@ class AuthController(
             val roles = auth.authorities.map { it.authority.removePrefix("ROLE_") }
             return MeResponse(auth.name, TenantContext.getTenantId(), roles)
         }
-        // dev 모드(permitAll): 전권 가짜 사용자 — viewer 게이팅이 걸리지 않게.
+        // dev 모드(permitAll): 전권 가짜 사용자
         return MeResponse("dev", TenantContext.DEFAULT_TENANT, listOf("admin", "editor", "platform-admin"))
     }
+
+    @PostMapping("/github/device/start")
+    fun deviceStart(): GithubAuthService.DeviceStart = githubAuth.startDevice()
+
+    @GetMapping("/github/device/poll")
+    fun devicePoll(@RequestParam session: String): GithubAuthService.PollResult = githubAuth.poll(session)
 }

@@ -1,7 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useEffect } from 'react'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
-import { AuthCallback } from './auth/AuthCallback'
 import { AuthProvider } from './auth/AuthContext'
 import { Toasts } from './components/toast'
 import { applyTheme, getTheme } from './design/theme'
@@ -26,7 +25,6 @@ export default function App() {
         <BrowserRouter>
           <Routes>
             <Route path="/" element={<Navigate to="/flows" replace />} />
-            <Route path="/auth/callback" element={<AuthCallback />} />
             <Route path="/flows" element={<Dashboard />} />
             <Route path="/flows/:id" element={<Editor />} />
             <Route path="/executions" element={<Executions />} />

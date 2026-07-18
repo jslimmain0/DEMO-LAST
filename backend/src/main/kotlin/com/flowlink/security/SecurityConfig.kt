@@ -46,8 +46,8 @@ class SecurityConfig {
                 .authorizeHttpRequests { auth ->
                     auth
                         .requestMatchers(*PUBLIC_PATHS).permitAll()
-                        // 프론트가 인증 모드를 발견하는 부트스트랩 엔드포인트(비밀 없음)
-                        .requestMatchers("/api/v1/auth/config").permitAll()
+                        // 프론트가 인증 모드를 발견하는 부트스트랩 + GitHub 로그인 엔드포인트(로그인 전이라 무인증)
+                        .requestMatchers("/api/v1/auth/config", "/api/v1/auth/github/**").permitAll()
                         // 플러그인 = 임의 JAR 실행 + 전역 레지스트리 → 팀 admin 도 불가, 전역 롤만.
                         // ⚠ 메서드 무관 + GET 조회 규칙보다 먼저 — 목록 조회(GET)도 platform-admin 만
                         // (매처는 선언 순서 우선매치라, 아래 GET /api/v1/** 보다 반드시 위에 있어야 한다)

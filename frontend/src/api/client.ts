@@ -8,10 +8,12 @@ import type {
   FlowSummary,
   FlowVersionSummary,
   FolderSummary,
+  GraphNode,
   ResumeRequest,
   RunRequest,
   SaveVersionRequest,
   SingleNodeRunResult,
+  TcpPreview,
 } from './types'
 
 // Vite 프록시(/api → 18080) 기준 동일 오리진 호출. (운영 절대경로 주입은 후속)
@@ -154,6 +156,9 @@ export const runsApi = {
   // 단일 노드 독립 실행 — 그 노드만 새 컨텍스트로 즉석 실행(이력 미저장, 상류 바인딩 null)
   runNode: (flowId: string, nodeId: string) =>
     http.post<SingleNodeRunResult>(`/flows/${flowId}/nodes/${nodeId}/run`, {}).then((r) => r.data),
+  // TCP 요청 전문 미리보기(전송 없음) — 편집 중 노드를 실어 미저장 편집을 실시간 반영
+  tcpPreview: (flowId: string, nodeId: string, node: GraphNode) =>
+    http.post<TcpPreview>(`/flows/${flowId}/nodes/${nodeId}/tcp-preview`, node).then((r) => r.data),
   recent: (limit = 50) =>
     http.get<ExecutionSummary[]>('/executions', { params: { limit } }).then((r) => r.data),
   // 서버측 필터/페이지네이션 — status/flowId/기간(epoch ms)/offset

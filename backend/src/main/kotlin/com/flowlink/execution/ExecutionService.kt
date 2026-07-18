@@ -140,6 +140,25 @@ class ExecutionService(
         return SingleNodeRunResult(r.ok, r.httpStatus, r.value, r.requestText, r.responseText)
     }
 
+    /**
+     * TCP 요청 전문 미리보기(전송 없음) — 조립 바이트/필드 오프셋/오버플로.
+     * [override] 가 있으면(편집 중 노드) 그걸 조립(순수 계산이라 안전), 없으면 저장된 그래프의 노드를 조립.
+     */
+    @Transactional(readOnly = true)
+    fun previewTcp(flowId: UUID, nodeId: String, override: com.flowlink.core.graph.GraphNode? = null): com.flowlink.execution.engine.TcpPreview {
+        val node = if (override != null) override else {
+            val tenant = TenantContext.getTenantId()
+            val flow = flowRepo.findByIdAndTenantId(flowId, tenant)
+                .orElseThrow { NotFoundException.of("Flow", flowId) }
+            val version = versionRepo.findByFlowIdAndVersionNo(flowId, flow.currentVersion)
+                .orElseThrow { NotFoundException.of("FlowVersion", "$flowId/v${flow.currentVersion}") }
+            val graph = json.parseGraph(version.graphJson)
+            graph.nodesOrEmpty().find { it.id == nodeId } ?: throw NotFoundException.of("Node", nodeId)
+        }
+        if (node.nodeType() != NodeType.TCP) throw BadRequestException("TCP 노드가 아닙니다.")
+        return flowExecutor.previewTcp(node)
+    }
+
     // trigger 는 실행을 시작시킨 종류(MANUAL/SCHEDULE/WEBHOOK). 스케줄러·웹훅은 호출 전 TenantContext 를 세팅한다.
     fun run(flowId: UUID, req: RunRequest?, trigger: TriggerType = TriggerType.MANUAL): ExecutionDetail {
         val tenant = TenantContext.getTenantId()

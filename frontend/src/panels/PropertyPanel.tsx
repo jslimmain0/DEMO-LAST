@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { pluginsApi, runsApi, secretsApi, settingsApi, transformsApi } from '../api/client'
 import { usePermissions } from '../auth/AuthContext'
 import { toast } from '../components/toast'
-import type { Binding, BodyType, GraphNode, HttpMethod, NodeField, NodeOutput, NodeVar, ReqMode, RespType, SingleNodeRunResult, TcpField, TcpRespField, WaitField as WaitFieldT } from '../api/types'
+import type { Binding, BodyType, GraphNode, HttpMethod, NodeField, NodeOutput, NodeVar, ReqMode, RespType, SingleNodeRunResult, TcpField, TcpPreview, TcpRespField, WaitField as WaitFieldT } from '../api/types'
 import { CopyIcon, DataInsertIcon } from '../components/icons'
 import { BindingChip } from '../binding/BindingChip'
 import { BindingPicker } from '../binding/BindingPicker'
@@ -82,6 +82,8 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
   const [bodyConvNote, setBodyConvNote] = useState<string | null>(null) // 필드↔Raw 변환 안내
   const [single, setSingle] = useState<SingleNodeRunResult | null>(null) // 이 노드만 실행 결과
   const [singleRunning, setSingleRunning] = useState(false)
+  const [tcpPrev, setTcpPrev] = useState<TcpPreview | null>(null) // TCP 전문 미리보기 결과
+  const [tcpPrevErr, setTcpPrevErr] = useState<string | null>(null)
   const [advOpen, setAdvOpen] = useState(false) // HTTP 고급(문자셋) 접기
   const [curlText, setCurlText] = useState<string | null>(null) // cURL 붙여넣기 입력창(열림=문자열)
   const [secOverride, setSecOverride] = useState<Record<string, boolean>>({}) // HTTP 요청 섹션 접기 오버라이드
@@ -95,6 +97,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
   useEffect(() => {
     setSingle(null); setSingleRunning(false)
     setCurlText(null); setSecOverride({}); setPreviewOpen(false); setAdvOpen(false)
+    setTcpPrev(null); setTcpPrevErr(null)
   }, [selectedId])
 
   // 이 노드만 실행 — 새 컨텍스트로 즉석 실행(상류 바인딩 null). 대기/폼/입력/client 는 백엔드가 거절.
@@ -104,6 +107,16 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
     try { setSingle(await runsApi.runNode(flowId, selectedId)) }
     catch (e) { setSingle({ ok: false, httpStatus: null, output: null, requestText: null, responseText: e instanceof Error ? e.message : String(e) }) }
     finally { setSingleRunning(false) }
+  }
+
+  // TCP 전문 미리보기 — 편집 중 노드를 실어 조립 바이트/오프셋/오버플로를 받아온다(전송·저장 없음).
+  const runTcpPreview = async () => {
+    if (!flowId || !selectedId) return
+    const n = nodes.find((x) => x.id === selectedId)
+    if (!n) return
+    setTcpPrevErr(null)
+    try { setTcpPrev(await runsApi.tcpPreview(flowId, selectedId, asGraphNode(n.data))) }
+    catch (e) { setTcpPrev(null); setTcpPrevErr(e instanceof Error ? e.message : String(e)) }
   }
 
   const node = useMemo<GraphNode | null>(() => {
@@ -1006,6 +1019,17 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
               })}
             />
             <p style={{ fontSize: 11.5, color: 'var(--fl-text-muted)', marginTop: 8 }}>응답 필드 이름이 그대로 출력 키가 되어 하위 노드에서 바인딩됩니다. 내장 Mock 서버의 TCP 탭으로 가짜 대상 시스템을 세울 수 있습니다.</p>
+
+            {canEdit && (
+              <div style={{ marginTop: 10, borderTop: '1px dashed var(--fl-border)', paddingTop: 10 }}>
+                <button onClick={runTcpPreview} style={singleBtn}
+                  title="전송 없이 요청 전문을 바이트 단위로 조립해 보여줍니다(EUC-KR 등 멀티바이트 길이 정확). 상류 바인딩은 빈 값.">
+                  🔍 전문 미리보기
+                </button>
+                {tcpPrevErr && <p style={{ fontSize: 11.5, color: 'var(--fl-fail)', marginTop: 6 }}>미리보기 실패: {tcpPrevErr}</p>}
+                {tcpPrev && <TcpPreviewBox p={tcpPrev} />}
+              </div>
+            )}
           </>
         )}
 
@@ -1030,6 +1054,32 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
               <button type="button" onClick={() => update(id, { formDisplay: 'popup' })} style={miniSegBtn((node.formDisplay ?? 'popup') === 'popup')}>팝업 창</button>
               <button type="button" onClick={() => update(id, { formDisplay: 'iframe' })} style={miniSegBtn(node.formDisplay === 'iframe')}>iframe 모달</button>
             </div>
+            {/* 콜백 URL 헬퍼 — 그래프의 콜백 대기 노드 수신 URL 을 returnUrl 필드로 자동 삽입(결제/인증 표준 패턴) */}
+            {(() => {
+              const waitNodes = nodes.map((x) => asGraphNode(x.data)).filter((g) => g.type === 'wait')
+              if (waitNodes.length === 0) {
+                return <p style={{ ...hintP, color: 'var(--fl-put)', marginTop: 8 }}>💡 콜백을 받으려면 이 뒤에 <b>콜백 대기</b> 노드를 두고, 그 수신 URL 을 아래 returnUrl 필드에 꽂으세요.</p>
+              }
+              const addReturnUrl = (waitId: string) => {
+                const token = `{{ url@${waitId} }}`
+                if (node.jsonRaw) {
+                  update(id, { rawBody: `${(node.rawBody ?? '').trim()}${(node.rawBody ?? '').trim() ? '&' : ''}returnUrl=${token}` })
+                } else {
+                  const body = node.fields?.body ?? []
+                  update(id, { fields: { params: fields.params ?? [], headers: fields.headers ?? [], body: [...body, { id: newId(), key: 'returnUrl', value: token }] } })
+                }
+              }
+              return (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: 11.5, color: 'var(--fl-text-muted)' }}>↩ 콜백 URL 필드 추가:</span>
+                  {waitNodes.map((w) => (
+                    <button key={w.id} style={ghostMini} title={`returnUrl = {{ url@${w.id} }} 필드를 추가합니다`} onClick={() => addReturnUrl(w.id!)}>
+                      {w.name || w.id}
+                    </button>
+                  ))}
+                </div>
+              )
+            })()}
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '12px 0 5px' }}>
               <label style={{ ...label, margin: 0 }}>Hidden 필드 (값마다 바인딩 가능)</label>
               <div style={miniSeg} role="group" aria-label="폼 데이터 입력 방식">
@@ -1078,6 +1128,12 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
               onChange={(e) => update(id, { callbackRespBody: e.target.value })}
               placeholder={node.callbackRespType === 'html' ? '<b>인증 완료 — 창을 닫으세요</b>' : 'OK'}
             />
+            {/* 자주 쓰는 콜백 응답 프리셋 — 형식+본문을 한 번에 채운다 */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 5 }}>
+              <button style={ghostMini} onClick={() => update(id, { callbackRespType: 'text', callbackRespBody: 'OK' })} title="노티(웹훅) 응답 — 평문 OK">OK(노티)</button>
+              <button style={ghostMini} onClick={() => update(id, { callbackRespType: 'html', callbackRespBody: '<script>window.close()</script><p style="font-family:sans-serif;text-align:center;margin-top:40px">완료되었습니다. 창을 닫아 주세요.</p>' })} title="인증/결제창 콜백 — 창 자동 닫기 HTML">창 닫기 HTML</button>
+              <button style={ghostMini} onClick={() => update(id, { callbackRespType: 'json', callbackRespBody: '{"status":"0000","message":"OK"}' })} title="JSON ACK">JSON 승인</button>
+            </div>
             <p style={{ ...hintP, marginTop: 6 }}>
               콜백(리다이렉트/노티)을 보낸 쪽이 받을 응답입니다. 인증 callback 이면 HTML("창을 닫으세요"),
               승인 알림 콜백이면 OK 같은 문자열. 콜백 수신 시 백엔드가 이 응답을 돌려줍니다.
@@ -1214,6 +1270,14 @@ function WaitReceiveUrl({ nodeId }: { nodeId: string }) {
           title={`바인딩 토큰 복사 — ${token}`}
           style={{ ...braceBtn, width: 'auto', padding: '0 10px', whiteSpace: 'nowrap' }}
         ><CopyIcon /></button>
+      </div>
+      <div style={{ display: 'flex', gap: 5, marginTop: 5 }}>
+        <button
+          style={ghostMini}
+          title="이 수신 URL로 콜백을 보내는 curl 예시를 복사합니다(실행ID는 실행 로그의 실제 주소로 교체)."
+          onClick={() => { void navigator.clipboard?.writeText(`curl -X POST '${pattern}' -H 'Content-Type: application/json' -d '{"resultCode":"0000","tid":"TEST-1"}'`).catch(() => {}) }}
+        >cURL 예시 복사</button>
+        <span style={{ fontSize: 10.5, color: 'var(--fl-text-muted)', alignSelf: 'center' }}>또는 실행 중 로그의 <b>🧪 테스트 콜백</b> 버튼</span>
       </div>
       <p style={{ ...hintP, marginTop: 6 }}>
         실행 시작 시 실행ID가 생성되어 URL 이 확정됩니다(정확한 주소는 실행 로그에 표시). 앞 노드(결제요청의 returnUrl/notiUrl 등)에서
@@ -1396,7 +1460,11 @@ function TcpReqEditor({ fields, sources, sourceType, onChange }: { fields: TcpFi
         </div>
       ) })}
       <div style={{ fontSize: 11, color: 'var(--fl-text-muted)', margin: '2px 0 6px', fontFamily: 'var(--fl-font-mono)' }}>총 {total} 바이트</div>
-      <button onClick={() => onChange([...fields, { id: newId(), name: '', length: 10, value: '', pad: 'right', padChar: ' ' }])} style={addDashed}>+ 요청 필드</button>
+      <div style={{ display: 'flex', gap: 6 }}>
+        {/* 문자=우측 공백패딩, 숫자=좌측 0패딩(금융 전문 관례) — 새 필드에 관례 기본값을 미리 채운다 */}
+        <button onClick={() => onChange([...fields, { id: newId(), name: '', length: 10, value: '', pad: 'right', padChar: ' ' }])} style={{ ...addDashed, flex: 1 }} title="우측 공백 패딩(문자 필드 관례)">+ 문자 필드</button>
+        <button onClick={() => onChange([...fields, { id: newId(), name: '', length: 8, value: '', pad: 'left', padChar: '0' }])} style={{ ...addDashed, flex: 1 }} title="좌측 0 패딩(숫자/금액 필드 관례)">+ 숫자 필드</button>
+      </div>
     </>
   )
 }
@@ -1423,6 +1491,41 @@ function TcpRespEditor({ fields, onChange }: { fields: TcpRespField[]; onChange:
     </>
   )
 }
+
+/** TCP 요청 전문 미리보기 렌더 — 조립 바이트(hex)·필드 오프셋·오버플로(절단)·패딩 경고. */
+function TcpPreviewBox({ p }: { p: TcpPreview }) {
+  const copyHex = () => { void navigator.clipboard?.writeText(p.hex).catch(() => {}) }
+  return (
+    <div style={{ marginTop: 8, border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', padding: 8 }}>
+      <div style={{ fontSize: 11.5, color: 'var(--fl-text-muted)', marginBottom: 6, fontFamily: 'var(--fl-font-mono)' }}>
+        {p.host || '(host)'}:{p.port} · {p.encoding} · <b style={{ color: 'var(--fl-text)' }}>총 {p.totalBytes}B</b>
+        {p.prefixLen > 0 && <> (프리픽스 {p.prefixLen}B{p.declaredPrefix != null ? `="${String(p.declaredPrefix).padStart(p.prefixLen, '0')}"` : ''} + 본문 {p.bodyBytes}B)</>}
+      </div>
+      {p.fields.length > 0 && (
+        <div style={{ display: 'grid', gap: 2, marginBottom: 6 }}>
+          {p.fields.map((f, i) => (
+            <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 11, fontFamily: 'var(--fl-font-mono)' }}>
+              <span style={offBadge}>@{f.offset}</span>
+              <span style={{ flex: 1, color: 'var(--fl-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.name || '(이름없음)'}</span>
+              <span style={{ color: 'var(--fl-text-muted)' }}>{f.actualBytes}/{f.declaredLen}B</span>
+              {f.truncated && <span title="값이 길이를 초과해 잘림" style={warnTag}>✂ 절단</span>}
+              {f.padded && <span title={`${f.pad === 'left' ? '좌측' : '우측'} 패딩으로 채움`} style={padTag}>{f.pad === 'left' ? '←' : '→'} 패딩</span>}
+            </div>
+          ))}
+        </div>
+      )}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+        <span style={{ fontSize: 10.5, color: 'var(--fl-text-muted)', fontWeight: 600 }}>HEX</span>
+        <button onClick={copyHex} style={{ ...ghostMini, padding: '1px 6px' }} title="hex 복사">복사</button>
+      </div>
+      <pre style={{ ...singlePre, maxHeight: 120, margin: 0 }}>{p.hex || '(빈 전문)'}</pre>
+      <div style={{ fontSize: 10.5, color: 'var(--fl-text-muted)', fontWeight: 600, margin: '6px 0 2px' }}>텍스트</div>
+      <pre style={{ ...singlePre, maxHeight: 80, margin: 0 }}>{p.printable}</pre>
+    </div>
+  )
+}
+const warnTag: CSSProperties = { fontSize: 9.5, fontWeight: 700, color: 'var(--fl-fail)', border: '1px solid var(--fl-fail)', borderRadius: 4, padding: '0 4px' }
+const padTag: CSSProperties = { fontSize: 9.5, fontWeight: 700, color: 'var(--fl-text-muted)', border: '1px solid var(--fl-border)', borderRadius: 4, padding: '0 4px' }
 
 const shell: CSSProperties = { flexShrink: 0, background: 'var(--fl-surface)', display: 'flex', flexDirection: 'column', height: '100%' }
 const closeBtn: CSSProperties = { width: 30, height: 30, borderRadius: 8, border: 'none', background: 'var(--fl-surface-2)', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 16 }

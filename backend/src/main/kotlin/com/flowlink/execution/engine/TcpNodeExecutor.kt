@@ -26,32 +26,70 @@ class TcpNodeExecutor(
     private val json: JsonService
 ) {
 
-    fun execute(node: GraphNode, ctx: ExecutionContext): NodeResult {
+    /**
+     * 조립된 요청 전문 + 필드별 분해 정보(미리보기/전송 공용).
+     * [slices] 는 프리픽스 이후 본문 기준 오프셋(프리픽스는 [prefixLen] 바이트로 앞에 붙음).
+     */
+    data class FieldSlice(
+        val name: String?,
+        val offset: Int,        // 본문 내 시작 오프셋(프리픽스 제외)
+        val declaredLen: Int,   // 선언 길이
+        val actualBytes: Int,   // 값의 원시 바이트 수(패딩/절단 전)
+        val truncated: Boolean, // actualBytes > declaredLen (초과 절단)
+        val padded: Boolean,    // actualBytes < declaredLen (패딩 채움)
+        val pad: String,        // left|right
+        val text: String,       // 해석된 값(표시용)
+        val encoding: String,
+    )
+
+    class Built(
+        val message: ByteArray,
+        val bodySize: Int,
+        val prefixLen: Int,
+        val declaredPrefix: Int?, // 프리픽스에 쓴 숫자(없으면 null)
+        val slices: List<FieldSlice>,
+        val reqValues: LinkedHashMap<String, Any?>,
+        val host: String,
+        val port: Int,
+        val encoding: Charset,
+        val reqText: String,
+    )
+
+    /** 요청 전문 조립(전송 없음) — execute/preview 공용. */
+    fun build(node: GraphNode, ctx: ExecutionContext): Built {
         val host = tokens.resolveTokens(node.tcpHost ?: "", ctx)
         val port = node.tcpPort ?: 0
         val nodeCs = charset(node.tcpEncoding, Charset.forName("EUC-KR"))
-        val timeout = if (node.tcpTimeoutMs == null || node.tcpTimeoutMs <= 0) 5000 else node.tcpTimeoutMs
         val prefixLen = node.tcpPrefixLength ?: 0
         val includesSelf = node.tcpPrefixIncludesSelf == true
 
-        // 1) 요청 전문 본문 조립(바이트 고정길이)
         val reqValues = LinkedHashMap<String, Any?>()
         val bodyBuf = ByteArrayOutputStream()
+        val slices = ArrayList<FieldSlice>()
+        var offset = 0
         for (f in node.tcpRequest ?: emptyList()) {
             val v = resolveField(f, ctx)
-            if (f.name != null && !f.name.isBlank()) {
-                reqValues[f.name] = v
-            }
+            if (f.name != null && !f.name.isBlank()) reqValues[f.name] = v
             val cs = charset(f.encoding, nodeCs)
-            val field = fixedField(v, f.lengthOrZero(), f.pad, f.padChar, cs)
+            val declared = f.lengthOrZero()
+            val actual = (v ?: "").toByteArray(cs).size
+            val field = fixedField(v, declared, f.pad, f.padChar, cs)
             bodyBuf.writeBytes(field)
+            slices.add(FieldSlice(
+                name = f.name, offset = offset, declaredLen = declared, actualBytes = actual,
+                truncated = actual > declared, padded = actual < declared,
+                pad = if ("left".equals(f.pad, ignoreCase = true)) "left" else "right",
+                text = v ?: "", encoding = cs.name(),
+            ))
+            offset += declared
         }
         val body = bodyBuf.toByteArray()
 
-        // 2) 길이 프리픽스
         val message: ByteArray
+        var declaredPrefix: Int? = null
         if (prefixLen > 0) {
             val declared = if (includesSelf) body.size + prefixLen else body.size
+            declaredPrefix = declared
             val prefix = prefix(declared, prefixLen)
             val m = ByteArray(prefix.size + body.size)
             System.arraycopy(prefix, 0, m, 0, prefix.size)
@@ -60,8 +98,34 @@ class TcpNodeExecutor(
         } else {
             message = body
         }
-
         val reqText = "TCP " + host + ":" + port + " (" + nodeCs.name() + ", " + message.size + "B)\n" + printable(message, nodeCs)
+        return Built(message, body.size, prefixLen, declaredPrefix, slices, reqValues, host, port, nodeCs, reqText)
+    }
+
+    /** 미리보기 — 전송 없이 조립 결과(hex/printable/필드 오프셋/오버플로)를 돌려준다. */
+    fun preview(node: GraphNode, ctx: ExecutionContext): TcpPreview {
+        val b = build(node, ctx)
+        return TcpPreview(
+            host = b.host, port = b.port, encoding = b.encoding.name(),
+            totalBytes = b.message.size, prefixLen = b.prefixLen, declaredPrefix = b.declaredPrefix,
+            bodyBytes = b.bodySize, hex = hexDump(b.message), printable = printable(b.message, b.encoding),
+            fields = b.slices.map {
+                TcpPreview.Field(it.name, it.offset + b.prefixLen, it.declaredLen, it.actualBytes, it.truncated, it.padded, it.pad, it.text, it.encoding)
+            },
+        )
+    }
+
+    fun execute(node: GraphNode, ctx: ExecutionContext): NodeResult {
+        val built = build(node, ctx)
+        val host = built.host
+        val port = built.port
+        val nodeCs = built.encoding
+        val timeout = if (node.tcpTimeoutMs == null || node.tcpTimeoutMs <= 0) 5000 else node.tcpTimeoutMs
+        val prefixLen = built.prefixLen
+        val includesSelf = node.tcpPrefixIncludesSelf == true
+        val reqValues = built.reqValues
+        val message = built.message
+        val reqText = built.reqText
 
         // 3) SSRF
         try {
@@ -196,5 +260,41 @@ class TcpNodeExecutor(
             }
             return sb.toString()
         }
+
+        /** 공백 구분 2자리 대문자 hex(바이트별). 미리보기용. */
+        private fun hexDump(bytes: ByteArray): String {
+            val sb = StringBuilder(bytes.size * 3)
+            for (i in bytes.indices) {
+                if (i > 0) sb.append(' ')
+                sb.append(String.format("%02X", bytes[i].toInt() and 0xFF))
+            }
+            return sb.toString()
+        }
     }
+}
+
+/** TCP 요청 전문 미리보기 결과(전송 없음) — 프론트가 조립 바이트/필드 오프셋/오버플로를 표시. */
+data class TcpPreview(
+    val host: String,
+    val port: Int,
+    val encoding: String,
+    val totalBytes: Int,
+    val prefixLen: Int,
+    val declaredPrefix: Int?,
+    val bodyBytes: Int,
+    val hex: String,
+    val printable: String,
+    val fields: List<Field>,
+) {
+    data class Field(
+        val name: String?,
+        val offset: Int,       // 전문 시작 기준 절대 오프셋(프리픽스 포함)
+        val declaredLen: Int,
+        val actualBytes: Int,
+        val truncated: Boolean,
+        val padded: Boolean,
+        val pad: String,
+        val text: String,
+        val encoding: String,
+    )
 }

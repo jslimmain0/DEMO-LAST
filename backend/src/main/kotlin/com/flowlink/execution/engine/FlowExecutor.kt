@@ -470,6 +470,9 @@ class FlowExecutor(
         }
     }
 
+    /** TCP 요청 전문 미리보기(전송 없음) — 상류 바인딩은 빈 컨텍스트라 리터럴/토큰만 해석. */
+    fun previewTcp(node: GraphNode): TcpPreview = tcpExecutor.preview(node, ExecutionContext())
+
     private fun processNode(node: GraphNode, ctx: ExecutionContext): NodeResult =
         when (node.nodeType()) {
             NodeType.START -> NodeResult.ok(null, "(시작)", "플로우 시작", emptyMap<String, Any?>())

@@ -148,14 +148,36 @@ export function RunPanel({
   )
 }
 
-/** 콜백 대기 배너 — 실시간 카운트다운(0.3초 갱신) + 수신 URL(클릭 전체선택·복사). */
+/** 콜백 대기 배너 — 실시간 카운트다운(0.3초 갱신) + 수신 URL(클릭 전체선택·복사) + 테스트 콜백. */
 function WaitBanner({ status }: { status: WaitStatus }) {
   const [now, setNow] = useState(() => Date.now())
+  const [testBody, setTestBody] = useState('{ "resultCode": "0000", "tid": "TEST-1" }')
+  const [testState, setTestState] = useState<'idle' | 'sending' | 'ok' | 'err'>('idle')
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 300)
     return () => clearInterval(t)
   }, [])
   const remain = Math.max(0, Math.ceil((status.deadline - now) / 1000))
+
+  // 테스트 콜백 — 외부 시스템 없이 수신 URL 로 샘플 콜백을 직접 쏴 대기 노드를 진행시킨다.
+  // 수신 URL 에서 경로(/relay/…)만 뽑아 동일 오리진으로 POST(vite 프록시·단일 jar 양쪽 동작).
+  const sendTest = async () => {
+    if (!status.receiveUrl) return
+    let path = status.receiveUrl
+    try { path = new URL(status.receiveUrl).pathname + (new URL(status.receiveUrl).search || '') } catch { /* 상대경로면 그대로 */ }
+    setTestState('sending')
+    try {
+      const isJson = testBody.trim().startsWith('{') || testBody.trim().startsWith('[')
+      const res = await fetch(path, {
+        method: 'POST',
+        headers: { 'Content-Type': isJson ? 'application/json' : 'application/x-www-form-urlencoded' },
+        body: testBody,
+      })
+      setTestState(res.ok ? 'ok' : 'err')
+    } catch { setTestState('err') }
+    setTimeout(() => setTestState('idle'), 2500)
+  }
+
   return (
     <div role="status" aria-live="polite" style={{ padding: '14px 16px', display: 'grid', gap: 8 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--fl-waiting)', fontWeight: 700 }}>
@@ -163,20 +185,38 @@ function WaitBanner({ status }: { status: WaitStatus }) {
         {status.nodeName || status.nodeId} — 대기 중 ({remain}초 남음)
       </div>
       {status.receiveUrl && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span style={{ fontSize: 11.5, color: 'var(--fl-text-muted)', flexShrink: 0 }}>이 URL로 콜백을 보내면 진행됩니다:</span>
-          <input
-            readOnly
-            value={status.receiveUrl}
-            onFocus={(e) => e.currentTarget.select()}
-            style={{ flex: 1, minWidth: 0, padding: '5px 8px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', color: 'var(--fl-text)', fontFamily: 'var(--fl-font-mono)', fontSize: 11.5 }}
-          />
-          <button
-            onClick={() => { void navigator.clipboard?.writeText(status.receiveUrl ?? '').catch(() => {}) }}
-            title="수신 URL 복사"
-            style={{ flexShrink: 0, width: 28, height: 28, border: '1px solid var(--fl-border)', borderRadius: 6, background: 'var(--fl-surface)', color: 'var(--fl-primary)', cursor: 'pointer' }}
-          >⧉</button>
-        </div>
+        <>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ fontSize: 11.5, color: 'var(--fl-text-muted)', flexShrink: 0 }}>이 URL로 콜백을 보내면 진행됩니다:</span>
+            <input
+              readOnly
+              value={status.receiveUrl}
+              onFocus={(e) => e.currentTarget.select()}
+              style={{ flex: 1, minWidth: 0, padding: '5px 8px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', color: 'var(--fl-text)', fontFamily: 'var(--fl-font-mono)', fontSize: 11.5 }}
+            />
+            <button
+              onClick={() => { void navigator.clipboard?.writeText(status.receiveUrl ?? '').catch(() => {}) }}
+              title="수신 URL 복사"
+              style={{ flexShrink: 0, width: 28, height: 28, border: '1px solid var(--fl-border)', borderRadius: 6, background: 'var(--fl-surface)', color: 'var(--fl-primary)', cursor: 'pointer' }}
+            >⧉</button>
+          </div>
+          {/* 테스트 콜백 — 외부 게이트웨이 없이 이 대기를 진행시켜 흐름을 검증 */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span title="JSON 또는 a=1&b=2 형식. 콜백 본문의 키가 이 노드 출력이 됩니다." style={{ fontSize: 11.5, color: 'var(--fl-text-muted)', flexShrink: 0 }}>🧪 테스트 콜백:</span>
+            <input
+              value={testBody}
+              onChange={(e) => setTestBody(e.target.value)}
+              placeholder='{ "resultCode": "0000" } 또는 a=1&b=2'
+              style={{ flex: 1, minWidth: 0, padding: '5px 8px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontFamily: 'var(--fl-font-mono)', fontSize: 11.5 }}
+            />
+            <button
+              onClick={sendTest}
+              disabled={testState === 'sending'}
+              title="이 대기 노드에 샘플 콜백을 보내 진행시킵니다(외부 시스템 불필요)."
+              style={{ flexShrink: 0, padding: '5px 10px', border: '1px solid var(--fl-primary)', borderRadius: 6, background: testState === 'ok' ? 'var(--fl-ok)' : 'transparent', color: testState === 'ok' ? '#fff' : 'var(--fl-primary)', cursor: 'pointer', fontSize: 11.5, fontWeight: 600, whiteSpace: 'nowrap' }}
+            >{testState === 'sending' ? '보내는 중…' : testState === 'ok' ? '✓ 전송' : testState === 'err' ? '✕ 실패' : '보내기'}</button>
+          </div>
+        </>
       )}
     </div>
   )

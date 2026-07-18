@@ -46,6 +46,18 @@ class ExecutionController(private val service: ExecutionService) {
         @PathVariable nodeId: String
     ): SingleNodeRunResult = service.runSingleNode(flowId, nodeId)
 
+    /**
+     * TCP 요청 전문 미리보기(전송 없음) — 조립 바이트(hex)·필드 오프셋·오버플로.
+     * 본문에 편집 중 노드를 실으면(미저장 편집 실시간 반영) 그걸, 없으면 저장된 그래프의 노드를 조립한다.
+     * 순수 계산(SSRF/네트워크/DB 쓰기 없음)이라 본문 노드는 그대로 조립한다.
+     */
+    @PostMapping("/flows/{flowId}/nodes/{nodeId}/tcp-preview")
+    fun tcpPreview(
+        @PathVariable flowId: UUID,
+        @PathVariable nodeId: String,
+        @RequestBody(required = false) node: com.flowlink.core.graph.GraphNode?
+    ): com.flowlink.execution.engine.TcpPreview = service.previewTcp(flowId, nodeId, node)
+
     /** 브라우저 협업 노드(client HTTP / form / wait)에서 중단된 실행을 재개한다. */
     @PostMapping("/executions/{id}/resume")
     fun resume(

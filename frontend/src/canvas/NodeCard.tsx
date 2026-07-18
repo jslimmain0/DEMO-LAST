@@ -23,6 +23,8 @@ export function NodeCard({ data, selected }: NodeProps) {
   const isStart = n.type === 'start'
   const isEnd = n.type === 'end'
   const isHttp = n.type === 'http'
+  const isTcp = n.type === 'tcp'
+  const tcpReqLen = (n.tcpRequest ?? []).reduce((a, f) => a + (f.length ?? 0), 0)
 
   const showUnreachable = unreachable && !selected && !runState && !waiting && !running
   const borderColor = waiting
@@ -99,6 +101,16 @@ export function NodeCard({ data, selected }: NodeProps) {
               </span>
             )
           })()}
+        </div>
+      )}
+
+      {isTcp && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 12px', borderTop: '1px solid var(--fl-border)', background: 'var(--fl-surface-2)' }}>
+          <span style={{ flexShrink: 0, fontSize: 9.5, fontWeight: 700, fontFamily: 'var(--fl-font-mono)', padding: '2px 5px', borderRadius: 'var(--fl-radius-pill)', color: 'var(--fl-primary)', background: 'rgba(97,85,245,.12)' }}>TCP</span>
+          <span title={`${n.tcpHost ?? ''}:${n.tcpPort ?? ''} · 요청 ${(n.tcpRequest ?? []).length}필드 ${tcpReqLen}B`} style={{ flex: 1, minWidth: 0, fontFamily: 'var(--fl-font-mono)', fontSize: 11.5, color: 'var(--fl-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {(n.tcpHost || '(host)') + (n.tcpPort ? ':' + n.tcpPort : '')}
+          </span>
+          <span title={`요청 전문 ${tcpReqLen}바이트`} style={{ flexShrink: 0, fontSize: 10, fontFamily: 'var(--fl-font-mono)', color: 'var(--fl-text-muted)' }}>{tcpReqLen}B</span>
         </div>
       )}
 

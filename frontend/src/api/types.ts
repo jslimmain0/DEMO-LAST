@@ -370,6 +370,31 @@ export interface SingleNodeRunResult {
   responseText: string | null
 }
 
+// TCP 요청 전문 미리보기(전송 없음) — 백엔드가 바이트 단위로 조립한 결과
+export interface TcpPreviewField {
+  name?: string | null
+  offset: number       // 전문 시작 기준 절대 오프셋(프리픽스 포함)
+  declaredLen: number
+  actualBytes: number  // 값의 원시 바이트 수(패딩/절단 전)
+  truncated: boolean   // 초과 절단됨
+  padded: boolean      // 패딩으로 채움
+  pad: 'left' | 'right'
+  text: string
+  encoding: string
+}
+export interface TcpPreview {
+  host: string
+  port: number
+  encoding: string
+  totalBytes: number
+  prefixLen: number
+  declaredPrefix: number | null
+  bodyBytes: number
+  hex: string          // 공백 구분 2자리 hex
+  printable: string
+  fields: TcpPreviewField[]
+}
+
 export interface ExecutionDetail {
   id: string
   flowId: string

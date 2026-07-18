@@ -26,7 +26,8 @@ class SuiteController(
 
     @PostMapping("/run")
     fun run(@RequestBody req: SuiteRunRequest): List<SuiteRunItem> {
-        val tenant = TenantContext.getTenantId()
+        // flow 는 전역 공유 — 공유 테넌트로 조회. 실행(run)은 내부에서 실제 사용자 테넌트로 이력 기록.
+        val tenant = TenantContext.SHARED_FLOW_TENANT
         val flows = when {
             !req.flowIds.isNullOrEmpty() -> req.flowIds.mapNotNull { flowRepo.findByIdAndTenantId(it, tenant).orElse(null) }
             req.folderId != null -> flowRepo.findByTenantIdAndFolderIdAndArchivedFalse(tenant, req.folderId)

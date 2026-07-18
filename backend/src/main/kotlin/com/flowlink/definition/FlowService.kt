@@ -221,7 +221,8 @@ class FlowService(
             return if (v != null && v.isTextual && !v.asText().isBlank()) v.asText() else fallback
         }
 
-        private fun tenant(): String = TenantContext.getTenantId()
+        // 워크플로우(flow/flow_version)는 전역 공유 — 로그인 테넌트가 아니라 공유 테넌트로 저장·조회.
+        private fun tenant(): String = TenantContext.SHARED_FLOW_TENANT
 
         // OIDC 모드면 name=preferred_username(없으면 sub), dev 모드는 null — 버전 작성자 기록용.
         private fun currentUser(): String? {

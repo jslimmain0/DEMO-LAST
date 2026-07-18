@@ -141,23 +141,29 @@ export interface TcpRespField {
 export interface TransformParam {
   key: string
   label: string
-  type: string
+  type: string // string | number | select | textarea
   defaultValue: string
+  options?: string[]     // select 일 때 선택지
+  placeholder?: string
 }
 
 export interface TransformIo {
   key: string
   label: string
-  type: string
+  type: string // string | number | boolean | json | array
+  example?: string
 }
 
 export interface TransformInfo {
   id: string
   label: string
+  description?: string
   inputs: TransformIo[]
   outputs: TransformIo[]
   params: TransformParam[]
 }
+
+export interface TransformPreviewResponse { ok: boolean; outputs: Record<string, unknown>; error?: string }
 
 export interface GraphEdge {
   id: string
@@ -192,12 +198,36 @@ export interface FlowGraph {
 
 // --- AI 어시스턴트(자연어 → 플로우) ---
 export interface AssistantMessage { role: 'user' | 'assistant'; content: string }
-export interface AssistantChatRequest { messages: AssistantMessage[]; graph?: FlowGraph | null }
+export interface AssistantChatRequest { messages: AssistantMessage[]; graph?: FlowGraph | null; model?: string }
 export interface AssistantChatResponse { reply: string; graph: FlowGraph | null; stub: boolean; model: string }
 export interface AssistantConfig { available: boolean; usingRealLlm: boolean; model: string; authMode: 'oauth' | 'key' | 'stub' }
 // AI 어시스턴트 GitHub Copilot 연결(디바이스 플로우 — 확장과 동일)
 export interface OAuthStatus { connected: boolean; pending: boolean; error: string | null }
 export interface DeviceStart { userCode: string; verificationUri: string; expiresIn: number; intervalSec: number }
+// Copilot 모델 선택 — premium=프리미엄 요청 쿼터 필요(계정에 없으면 429)
+export interface CopilotModel { id: string; name: string; premium: boolean; recommended?: boolean; vendor?: string; contextTokens?: number; vision?: boolean; preview?: boolean }
+export interface ModelsView { models: CopilotModel[]; current: string }
+// VS Code 확장 수준 종합 정보 — 계정·요금제·쿼터 사용량
+export interface CopilotQuota { id: string; label: string; unlimited: boolean; percentRemaining: number; remaining: number; entitlement: number; used: number; overagePermitted: boolean }
+export interface CopilotInfo {
+  connected: boolean
+  login: string | null
+  avatarUrl: string | null
+  plan: string | null
+  sku: string | null
+  chatEnabled: boolean
+  agentEnabled: boolean
+  quotaResetDate: string | null
+  quotas: CopilotQuota[]
+  currentModel: string
+  tokenExpiresAt: number | null
+  error?: string | null
+}
+// AI 어시스턴트 대화 세션(사용자별 저장·이어하기)
+export interface SavedTurn { role: 'user' | 'assistant'; content: string; graph?: FlowGraph | null; stub?: boolean }
+export interface SessionSummary { id: string; title: string; updatedAt: string; messageCount: number }
+export interface SessionDetail { id: string; title: string; messages: SavedTurn[]; updatedAt: string }
+export interface SaveSessionRequest { title?: string; messages: SavedTurn[] }
 // 스킬 = 재사용 프롬프트(awesome-copilot 스타일). 클릭해 어시스턴트에 적용.
 export interface Skill { id?: string; name: string; description?: string; prompt: string }
 export interface SkillsView { instructions: string; user: Skill[] }
@@ -494,7 +524,8 @@ export interface MockServerSpec {
   tcp?: MockTcpSpec | null
 }
 
-export type MockKind = 'CUSTOM'
+// CUSTOM=레거시(HTTP·TCP 둘 다) · HTTP=경로/응답 · TCP=소켓 전문
+export type MockKind = 'CUSTOM' | 'HTTP' | 'TCP'
 
 export interface MockServerSummary {
   id: string
@@ -509,4 +540,8 @@ export interface MockServerDetail extends MockServerSummary {
   spec: MockServerSpec
   createdAt: string | null
 }
+
+// Mock AI 어시스턴트 — 자연어로 mock spec 생성/수정 (플로우 어시스턴트의 mock 판, Copilot 자격 공유)
+export interface MockAssistantChatRequest { messages: AssistantMessage[]; spec?: MockServerSpec | null; mockId?: string; model?: string }
+export interface MockAssistantChatResponse { reply: string; spec: MockServerSpec | null; stub: boolean; model: string }
 

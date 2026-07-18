@@ -97,12 +97,17 @@ async function main() {
   ok('triggeredBy=bob', run.data?.triggeredBy === 'bob', `=${run.data?.triggeredBy}`)
   ok('carol 실행 403', (await C('POST', `/flows/${flowId}/runs`, {})).status === 403)
 
-  console.log('== ⑤ 테넌트 격리 (team-b 의 dave) ==')
+  console.log('== ⑤ 워크플로우 전역 공유 + 실행이력은 팀별 격리 (team-b 의 dave) ==')
   const daveFlows = await D('GET', '/flows')
-  ok('dave 목록에 team-a 플로우 없음', daveFlows.status === 200 && !daveFlows.data?.some((f) => f.id === flowId))
-  ok('dave GET team-a 플로우 404', (await D('GET', `/flows/${flowId}`)).status === 404)
-  ok('dave GET team-a 실행목록 404 (구멍 수정)', (await D('GET', `/flows/${flowId}/runs?limit=5`)).status === 404)
-  ok('carol(같은 팀) GET 실행목록 200', (await C('GET', `/flows/${flowId}/runs?limit=5`)).status === 200)
+  // 플로우는 전역 공유 → 다른 팀(dave)도 목록/조회/실행 가능
+  ok('공유 플로우가 dave(team-b) 목록에 보임', daveFlows.status === 200 && daveFlows.data?.some((f) => f.id === flowId))
+  ok('dave GET 공유 플로우 200', (await D('GET', `/flows/${flowId}`)).status === 200)
+  // 하지만 실행 이력(execution)은 여전히 팀별 격리 — dave 는 team-a(bob)의 실행을 못 봄
+  const daveRuns = await D('GET', `/flows/${flowId}/runs?limit=5`)
+  ok('dave 공유 플로우 실행목록 200', daveRuns.status === 200, JSON.stringify(daveRuns.status))
+  ok('dave 실행목록에 bob(team-a) 실행 유출 없음', !daveRuns.data?.some((e) => e.id === run.data.id))
+  const carolRuns = await C('GET', `/flows/${flowId}/runs?limit=5`)
+  ok('carol(같은 팀) 실행목록에 bob 실행 보임', carolRuns.status === 200 && carolRuns.data?.some((e) => e.id === run.data.id))
 
   console.log('== ⑥ 플러그인 platform-admin 게이트 ==')
   const fd = new FormData()

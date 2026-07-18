@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { CSSProperties } from 'react'
 import { useEffect, useRef, useState } from 'react'
 import { assistantApi } from '../api/client'
@@ -6,6 +6,8 @@ import type { AssistantMessage, FlowGraph } from '../api/types'
 import { usePermissions } from '../auth/AuthContext'
 import { hasStartNode, validateGraphShape } from '../lib/graphValidate'
 import { useEditorStore } from '../store/editorStore'
+import { CopilotStatusDialog } from './CopilotStatusDialog'
+import { SessionsDialog } from './SessionsDialog'
 import { SkillsDialog } from './SkillsDialog'
 import { toast } from './toast'
 
@@ -30,11 +32,7 @@ export function AssistantPanel({ width, onClose }: { width: number; onClose: () 
   // 디바이스 인증 중이면 상태를 주기적으로 폴링(사용자가 코드 입력 완료를 감지)
   const oauthQ = useQuery({ queryKey: ['assistant', 'oauth', 'status'], queryFn: assistantApi.oauthStatus, refetchInterval: device ? 3000 : false })
   const connected = oauthQ.data?.connected === true
-  const disconnect = useMutation({
-    mutationFn: assistantApi.oauthDisconnect,
-    onSuccess: () => { toast('Copilot 연결을 해제했습니다.', 'ok'); qc.invalidateQueries({ queryKey: ['assistant'] }) },
-    onError: (e: unknown) => toast((e as { response?: { data?: { message?: string } } })?.response?.data?.message || '연결 해제 실패', 'error'),
-  })
+  const [statusOpen, setStatusOpen] = useState(false)
   // GitHub Copilot 연결 — 디바이스 플로우(확장과 동일). 코드 발급 → 사용자가 github.com/login/device 에서 입력 → 폴링.
   const connect = async () => {
     try {
@@ -57,9 +55,45 @@ export function AssistantPanel({ width, onClose }: { width: number; onClose: () 
   const [input, setInput] = useState('')
   const [pending, setPending] = useState(false)
   const [skillsOpen, setSkillsOpen] = useState(false)
+  const [sessionsOpen, setSessionsOpen] = useState(false)
+  const [sessionId, setSessionId] = useState<string | null>(null) // 현재 저장 중인 세션(없으면 첫 대화에서 생성)
+  const sessionIdRef = useRef<string | null>(null)
+  sessionIdRef.current = sessionId
   const listRef = useRef<HTMLDivElement>(null)
 
+  // 연결 시 모델 목록 조회 + 선택. current(서버 저장, 기본 gpt-4.1)를 단일 진실원으로 — 헤더 드롭다운과 상태 다이얼로그가 공유.
+  const modelsQ = useQuery({ queryKey: ['assistant', 'oauth', 'models'], queryFn: assistantApi.models, enabled: connected, staleTime: 5 * 60_000 })
+  const model = modelsQ.data?.current ?? ''
+  const changeModel = async (m: string) => {
+    qc.setQueryData(['assistant', 'oauth', 'models'], (prev: typeof modelsQ.data) => (prev ? { ...prev, current: m } : prev)) // 낙관적
+    try { await assistantApi.setModel(m); qc.invalidateQueries({ queryKey: ['assistant', 'config'] }) } catch { /* ignore */ }
+  }
+
   useEffect(() => { listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: 'smooth' }) }, [turns, pending])
+
+  // 대화 자동 저장(사용자별) — 첫 저장은 생성, 이후 갱신. 저장 실패는 조용히(대화는 유지).
+  const persist = async (allTurns: Turn[]) => {
+    if (allTurns.length === 0) return
+    const messages = allTurns.map((t) => ({ role: t.role, content: t.content, graph: t.graph ?? null, stub: t.stub }))
+    try {
+      if (sessionIdRef.current) {
+        await assistantApi.updateSession(sessionIdRef.current, { messages })
+      } else {
+        const s = await assistantApi.createSession({ messages })
+        setSessionId(s.id)
+      }
+      qc.invalidateQueries({ queryKey: ['assistant', 'sessions'] })
+    } catch { /* 저장 실패는 무시 — 대화 흐름 우선 */ }
+  }
+
+  const newChat = () => { setTurns([]); setSessionId(null); setInput('') }
+  const loadSession = async (id: string) => {
+    try {
+      const s = await assistantApi.getSession(id)
+      setTurns((s.messages ?? []).map((m) => ({ role: m.role, content: m.content, graph: m.graph ?? undefined, stub: m.stub })))
+      setSessionId(id)
+    } catch { toast('세션을 불러오지 못했습니다.', 'error') }
+  }
 
   const send = async (text: string) => {
     const msg = text.trim()
@@ -72,8 +106,11 @@ export function AssistantPanel({ width, onClose }: { width: number; onClose: () 
       const res = await assistantApi.chat({
         messages: history.map((t) => ({ role: t.role, content: t.content })),
         graph: getGraph(),
+        model: connected && model ? model : undefined,
       })
-      setTurns((prev) => [...prev, { role: 'assistant', content: res.reply, graph: res.graph, stub: res.stub }])
+      const final: Turn[] = [...history, { role: 'assistant', content: res.reply, graph: res.graph, stub: res.stub }]
+      setTurns(final)
+      void persist(final)
     } catch (e) {
       const detail = (e as { response?: { data?: { message?: string } } })?.response?.data?.message
       setTurns((prev) => [...prev, { role: 'assistant', content: `⚠ 오류: ${detail || (e instanceof Error ? e.message : String(e))}` }])
@@ -100,7 +137,7 @@ export function AssistantPanel({ width, onClose }: { width: number; onClose: () 
         <span aria-hidden>✨</span>
         <b style={{ flex: 1, fontSize: 13.5 }}>AI 어시스턴트</b>
         {connected ? (
-          <button onClick={() => disconnect.mutate()} title="GitHub Copilot 연결됨 — 클릭해 연결 해제" style={{ ...badge(true), cursor: 'pointer', border: '1px solid var(--fl-ok)', color: 'var(--fl-ok)' }}>🔗 Copilot</button>
+          <button onClick={() => setStatusOpen(true)} title="GitHub Copilot 연결됨 — 클릭해 사용량·모델·연결 상태 보기" style={{ ...badge(true), cursor: 'pointer', border: '1px solid var(--fl-ok)', color: 'var(--fl-ok)' }}>🔗 Copilot</button>
         ) : device ? (
           <span style={badge(false)} title="인증 대기 중">인증 대기…</span>
         ) : canConnect && canEdit ? (
@@ -110,10 +147,54 @@ export function AssistantPanel({ width, onClose }: { width: number; onClose: () 
             {cfg.data?.usingRealLlm ? cfg.data?.model : 'stub'}
           </span>
         )}
+        {canEdit && turns.length > 0 && <button onClick={newChat} aria-label="새 대화" title="새 대화 시작(현재 대화는 기록에 저장됨)" style={xBtn}>＋</button>}
+        {canEdit && <button onClick={() => setSessionsOpen(true)} aria-label="대화 기록" title="저장된 대화 목록 · 이어하기" style={xBtn}>🕘</button>}
         {canEdit && <button onClick={() => setSkillsOpen(true)} aria-label="프롬프트·지침" title="프롬프트 라이브러리 · 팀 지침" style={xBtn}>💬</button>}
         <button onClick={onClose} aria-label="닫기" style={xBtn}>×</button>
       </header>
+
+      {/* 모델 선택 — 연결 시 표시. 포함(base)/프리미엄 구분. 프리미엄은 계정에 프리미엄 요청 쿼터가 있어야 동작(없으면 429). */}
+      {connected && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderBottom: '1px solid var(--fl-border)', background: 'var(--fl-surface-2)' }}>
+          <span aria-hidden style={{ fontSize: 11, color: 'var(--fl-text-muted)' }}>모델</span>
+          <select
+            value={model}
+            onChange={(e) => void changeModel(e.target.value)}
+            disabled={!canEdit || !modelsQ.data?.models?.length}
+            title="AI 모델 선택 — 포함 모델은 무료, 프리미엄은 Copilot 프리미엄 요청 쿼터 필요"
+            style={{ flex: 1, minWidth: 0, padding: '4px 8px', fontSize: 12, borderRadius: 6, border: '1px solid var(--fl-border)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontFamily: 'var(--fl-font-mono)' }}
+          >
+            {!modelsQ.data?.models?.length && <option value={model}>{model || '불러오는 중…'}</option>}
+            {(() => {
+              // 헤더 드롭다운은 권장 모델만(+현재 선택) — 레거시/스냅샷은 🔗 Copilot 상태창 '더보기'에서.
+              const ms = (modelsQ.data?.models ?? []).filter((m) => m.recommended !== false || m.id === model)
+              const base = ms.filter((m) => !m.premium)
+              const prem = ms.filter((m) => m.premium)
+              return (
+                <>
+                  {base.length > 0 && (
+                    <optgroup label="포함(무료)">
+                      {base.map((m) => <option key={m.id} value={m.id}>{m.id}</option>)}
+                    </optgroup>
+                  )}
+                  {prem.length > 0 && (
+                    <optgroup label="프리미엄(쿼터 필요)">
+                      {prem.map((m) => <option key={m.id} value={m.id}>{m.id} · 프리미엄</option>)}
+                    </optgroup>
+                  )}
+                </>
+              )
+            })()}
+          </select>
+          {modelsQ.data?.models?.find((m) => m.id === model)?.premium && (
+            <span title="이 모델은 Copilot 프리미엄 요청 쿼터가 필요합니다. 없으면 429가 납니다." style={{ fontSize: 10, color: 'var(--fl-warn, #b8860b)', whiteSpace: 'nowrap' }}>⚠ 프리미엄</span>
+          )}
+        </div>
+      )}
+
       {skillsOpen && <SkillsDialog onClose={() => setSkillsOpen(false)} onApplyPrompt={(p) => void send(p)} />}
+      {statusOpen && <CopilotStatusDialog onClose={() => setStatusOpen(false)} canEdit={canEdit} />}
+      {sessionsOpen && <SessionsDialog currentId={sessionId} onClose={() => setSessionsOpen(false)} onLoad={(id) => void loadSession(id)} onNew={newChat} />}
 
       {/* 디바이스 인증 안내 카드 */}
       {device && (

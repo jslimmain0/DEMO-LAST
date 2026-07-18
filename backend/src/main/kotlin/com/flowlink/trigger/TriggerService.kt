@@ -144,7 +144,8 @@ class TriggerService(
     }
 
     private fun requireFlow(flowId: UUID) {
-        flowRepo.findByIdAndTenantId(flowId, tenant())
+        // flow 는 전역 공유 — 공유 테넌트로 존재 확인(트리거 행 자체는 아래 load() 처럼 사용자 테넌트 유지).
+        flowRepo.findByIdAndTenantId(flowId, TenantContext.SHARED_FLOW_TENANT)
             .orElseThrow { NotFoundException.of("Flow", flowId) }
     }
 

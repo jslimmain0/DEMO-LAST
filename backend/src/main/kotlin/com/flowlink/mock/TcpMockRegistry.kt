@@ -74,21 +74,21 @@ class TcpMockRegistry(
             throw BadRequestException("TCP 포트는 1024~65535 여야 합니다: $port")
         }
         val cur = listeners[m.id]
-        if (cur != null) {
-            if (cur.port == port) {
-                cur.tcp = tcp // 같은 포트 — 규칙/문자셋만 핫스왑
-                return
-            }
-            stop(m.id) // 포트 변경 — 새로 연다
+        if (cur != null && cur.port == port) {
+            cur.tcp = tcp // 같은 포트 — 규칙/문자셋만 핫스왑
+            return
         }
-        listeners.entries.find { it.value.port == port }?.let {
+        // 포트 변경/신규: **새 소켓을 먼저 확보한 뒤에야** 기존 리스너를 닫는다.
+        // (구현: 먼저 stop 하면 바인딩 실패 시 @Transactional 롤백돼도 기존 포트 리스너가 닫힌 채 남아 mock 이 조용히 죽는다.)
+        listeners.entries.find { it.key != m.id && it.value.port == port }?.let {
             throw BadRequestException("TCP 포트 $port 는 다른 mock 서버가 사용 중입니다.")
         }
         val ss = try {
             ServerSocket(port)
         } catch (e: IOException) {
-            throw BadRequestException("TCP 포트 $port 바인딩 실패: ${e.message}")
+            throw BadRequestException("TCP 포트 $port 바인딩 실패: ${e.message}") // 기존 리스너 그대로 — 롤백과 정합
         }
+        if (cur != null) stop(m.id) // 새 소켓 확보 성공 후에만 기존 포트 리스너 종료
         val listener = Listener(port, ss, tcp)
         listeners[m.id] = listener
         Thread({ acceptLoop(m.slug, listener) }, "tcp-mock-$port").apply {
@@ -103,6 +103,22 @@ class TcpMockRegistry(
             runCatching { it.socket.close() }
             log.info("TCP mock 중지: port={}", it.port)
         }
+    }
+
+    /**
+     * TCP mock 생성 시 쓸 빈 포트 하나 — 현재 리스너가 쓰지 않고 실제 바인딩 가능한 포트를 [start]부터 탐색.
+     * 새 TCP mock 을 만들자마자 켜도 포트 충돌로 create 가 롤백되지 않게 한다. 못 찾으면 start 반환(sync 가 실패 표면화).
+     */
+    fun pickFreePort(start: Int = 9091): Int {
+        val used = listeners.values.mapTo(HashSet()) { it.port }
+        var p = start.coerceIn(1024, 65535)
+        while (p <= 65535) {
+            if (p !in used) {
+                try { ServerSocket(p).use { } ; return p } catch (e: IOException) { /* 사용 중 — 다음 */ }
+            }
+            p++
+        }
+        return start
     }
 
     fun parseTcp(specJson: String?): MockSpec.MockTcp? {

@@ -22,6 +22,7 @@ import { bindingToToken, isTokenizable } from '../lib/tokenGrammar'
 import { newId } from '../lib/ids'
 import { useEditorStore } from '../store/editorStore'
 import { KeyValueEditor } from './KeyValueEditor'
+import { TransformPreview } from './TransformPreview'
 
 const label: CSSProperties = { display: 'block', fontSize: 11.5, fontWeight: 600, color: 'var(--fl-text-muted)', margin: '10px 0 4px' }
 const field: CSSProperties = { width: '100%', padding: '8px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 13, fontFamily: 'var(--fl-font-ui)' }
@@ -913,6 +914,12 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
               {(transforms.data ?? []).map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
             </select>
             {!node.transformId && <p style={{ ...hintP, color: 'var(--fl-put)', marginTop: 6 }}>⚠ 변환을 선택하세요 — 미선택이면 실행 시 실패합니다.</p>}
+            {selectedTransform?.description && (
+              <p style={{ fontSize: 11.5, color: 'var(--fl-text-muted)', marginTop: 6, lineHeight: 1.5, padding: '6px 8px', background: 'var(--fl-surface-2)', borderRadius: 6 }}>
+                {selectedTransform.description}
+                {selectedTransform.inputs.length > 0 && <><br /><span style={{ opacity: 0.85 }}>입력값은 아래 <b>입력</b> 칸(이 노드의 body 필드)에 넣거나 상위 노드에서 바인딩합니다.</span></>}
+              </p>
+            )}
             {canPlatformAdmin && (
               <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 8, fontSize: 12, color: 'var(--fl-primary)', cursor: 'pointer' }}>
                 ⬆ JAR 플러그인 업로드
@@ -957,18 +964,36 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
               )
             })}
 
-            {selectedTransform?.params.map((p) => (
-              <div key={p.key}>
-                <label style={label}>{p.label}</label>
-                <input style={field} value={node.config?.[p.key] ?? p.defaultValue} onChange={(e) => update(id, { config: { ...(node.config ?? {}), [p.key]: e.target.value } })} />
-              </div>
-            ))}
+            {selectedTransform?.params.map((p) => {
+              const val = node.config?.[p.key] ?? p.defaultValue
+              const set = (v: string) => update(id, { config: { ...(node.config ?? {}), [p.key]: v } })
+              return (
+                <div key={p.key}>
+                  <label style={label}>{p.label}</label>
+                  {p.type === 'select' && (p.options?.length ?? 0) > 0 ? (
+                    <select style={field} value={val} onChange={(e) => set(e.target.value)}>
+                      {p.options!.map((o) => <option key={o} value={o}>{o}</option>)}
+                    </select>
+                  ) : p.type === 'number' ? (
+                    <input type="number" style={field} value={val} placeholder={p.placeholder} onChange={(e) => set(e.target.value)} />
+                  ) : p.type === 'textarea' ? (
+                    <textarea style={{ ...field, minHeight: 60, resize: 'vertical' }} value={val} placeholder={p.placeholder} onChange={(e) => set(e.target.value)} />
+                  ) : (
+                    <input style={field} value={val} placeholder={p.placeholder} onChange={(e) => set(e.target.value)} />
+                  )}
+                </div>
+              )
+            })}
 
             {selectedTransform && selectedTransform.outputs.length > 0 && (
               <p style={{ fontSize: 11.5, color: 'var(--fl-text-muted)', marginTop: 10 }}>
-                출력: <code style={{ fontFamily: 'var(--fl-font-mono)' }}>{selectedTransform.outputs.map((o) => o.key).join(', ')}</code> — 하위 노드에서 바인딩됩니다.
+                출력: {selectedTransform.outputs.map((o) => (
+                  <code key={o.key} style={{ fontFamily: 'var(--fl-font-mono)', marginRight: 6 }}>{o.key}{o.type !== 'string' ? `:${o.type}` : ''}</code>
+                ))} — 하위 노드에서 <code style={{ fontFamily: 'var(--fl-font-mono)' }}>{`{{ ${selectedTransform.outputs[0].key}@${node.name || node.id} }}`}</code> 로 바인딩.
               </p>
             )}
+
+            {selectedTransform && <TransformPreview transform={selectedTransform} config={node.config ?? {}} />}
           </>
         )}
 

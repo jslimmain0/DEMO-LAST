@@ -9,6 +9,11 @@ version = "0.1.0-SNAPSHOT"
 
 kotlin {
     jvmToolchain(21)
+    // 인터페이스 default 메서드를 진짜 JVM default 로 방출(+DefaultImpls 유지) — SPI 에 default 메서드(description() 등)를
+    // 추가해도 **구 버전으로 컴파일된 플러그인 JAR** 가 AbstractMethodError 없이 상속하도록(바이너리 호환 = "기존 JAR 호환" 계약).
+    compilerOptions {
+        freeCompilerArgs.add("-Xjvm-default=all-compatibility")
+    }
 }
 
 repositories {

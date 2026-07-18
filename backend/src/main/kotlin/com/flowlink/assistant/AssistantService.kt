@@ -75,22 +75,42 @@ class AssistantService(
         return AssistantConfig(available = true, usingRealLlm = real, model = model, authMode = mode)
     }
 
-    fun chat(req: AssistantChatRequest): AssistantChatResponse {
-        val messages = req.messages.filter { it.role == "user" || it.role == "assistant" }
-            .dropWhile { it.role != "user" } // Anthropic: 첫 메시지는 user 여야
-        if (messages.isEmpty() || messages.last().role != "user") {
-            throw BadRequestException("보낼 메시지가 없습니다.")
-        }
-        val plan = resolvePlan() ?: return stub(messages, req.graph)
-        // 벌크헤드 — 동시 호출 상한 초과면 429(요청 스레드가 느린 업스트림에 고갈되지 않게)
+    /** 대화 정리(첫 user 부터, user 로 끝) — flow·mock 어시스턴트 공용. */
+    fun normalizeMessages(raw: List<ChatMessage>): List<ChatMessage> {
+        val messages = raw.filter { it.role == "user" || it.role == "assistant" }.dropWhile { it.role != "user" }
+        if (messages.isEmpty() || messages.last().role != "user") throw BadRequestException("보낼 메시지가 없습니다.")
+        return messages
+    }
+
+    /** LLM 자격이 있는지(Copilot 또는 키). 없으면 도메인별 stub. */
+    fun canComplete(): Boolean = resolvePlan() != null
+
+    data class Completion(val text: String, val model: String)
+
+    /**
+     * **스키마 무관 LLM 코어** — 시스템 프롬프트 + 대화를 넣어 모델 원문 텍스트를 받는다(flow·mock 공용).
+     * 자격 없으면 null(호출자가 stub). 벌크헤드·SSRF·429/쿼터·Copilot 헤더는 여기서 처리.
+     */
+    fun complete(messages: List<ChatMessage>, system: String, modelOverride: String?): Completion? {
+        var plan = resolvePlan() ?: return null
+        if (plan.openai && !modelOverride.isNullOrBlank()) plan = plan.copy(model = modelOverride.trim())
         if (!gate.tryAcquire(2, TimeUnit.SECONDS)) {
             throw TooManyRequestsException("AI 요청이 많습니다. 잠시 후 다시 시도하세요.")
         }
         try {
-            return callLlm(plan, messages, req.graph)
+            return Completion(callLlmText(plan, messages, system), plan.model)
         } finally {
             gate.release()
         }
+    }
+
+    fun chat(req: AssistantChatRequest): AssistantChatResponse {
+        val messages = normalizeMessages(req.messages)
+        // 시크릿 마스킹 — SET 노드의 secret=true 변수 값을 외부 LLM 에 평문으로 보내지 않는다.
+        val system = buildSystemPrompt(redactSecrets(req.graph))
+        val completion = complete(messages, system, req.model) ?: return stub(messages, req.graph)
+        val (reply, graph) = parseModelJson(completion.text, "graph")
+        return AssistantChatResponse(reply = reply, graph = graph, stub = false, model = completion.model)
     }
 
     // --- 실제 LLM 호출 (Anthropic Messages / OpenAI-호환 chat/completions) ---
@@ -102,13 +122,11 @@ class AssistantService(
         append(if (graph == null || graph.isNull) "(빈 캔버스)" else clip(json.toJson(graph), 24000))
     }
 
-    private fun callLlm(plan: Plan, messages: List<ChatMessage>, graph: JsonNode?): AssistantChatResponse {
+    private fun callLlmText(plan: Plan, messages: List<ChatMessage>, system: String): String {
         val path = if (plan.openai) "/chat/completions" else "/v1/messages"
         val uri = URI.create(plan.baseUrl + path)
         try { ssrfGuard.check(uri) } catch (e: Exception) { throw BadRequestException("AI 엔드포인트가 차단됐습니다: ${e.message}") }
 
-        // 시크릿 마스킹 — SET 노드의 secret=true 변수 값을 외부 LLM 에 평문으로 보내지 않는다.
-        val system = buildSystemPrompt(redactSecrets(graph))
         val body = if (plan.openai) openAiBody(mapper, plan.model, props.maxTokens, system, messages)
                    else anthropicBody(mapper, plan.model, props.maxTokens, system, messages)
 
@@ -126,36 +144,51 @@ class AssistantService(
         } catch (e: Exception) {
             throw BadRequestException("AI 호출 실패: ${e.message}")
         }
-        if (res.statusCode() == 429) throw TooManyRequestsException("AI 요청이 많습니다. 잠시 후 다시 시도하세요.")
+        if (res.statusCode() == 429) {
+            // Copilot 프리미엄 모델 쿼터 초과도 429 로 온다 — 업스트림 메시지를 그대로 전달(단순 rate-limit 과 구분).
+            log.warn("LLM 429 [{}] : {}", plan.model, clip(res.body(), 500))
+            // 업스트림 사유: JSON error.message → 없으면 짧은 평문 본문(Copilot 은 "quota exceeded" 를 평문으로 준다)
+            val up = extractErr(res.body()) ?: res.body().trim().takeIf { it.isNotBlank() && it.length < 200 && !it.startsWith("{") }
+            val quota = up?.contains("quota", ignoreCase = true) == true
+            throw TooManyRequestsException(
+                when {
+                    quota -> "‘${plan.model}’ 모델은 Copilot 프리미엄 요청 쿼터가 필요합니다(현재 소진/미포함). gpt-4o·gpt-4.1 등 포함 모델을 사용하세요."
+                    up != null -> "AI 호출 제한(${plan.model}): $up"
+                    else -> "AI 요청이 많습니다. 잠시 후 다시 시도하세요."
+                },
+            )
+        }
         if (res.statusCode() >= 400) {
             log.warn("LLM {} : {}", res.statusCode(), clip(res.body(), 500))
             throw BadRequestException("AI 호출 실패: " + (extractErr(res.body()) ?: "상태 ${res.statusCode()}"))
         }
 
-        val text = if (plan.openai) extractOpenAiText(mapper, res.body()) else extractAnthropicText(mapper, res.body())
-        val parsed = parseModelJson(text)
-        return AssistantChatResponse(reply = parsed.first, graph = parsed.second, stub = false, model = plan.model)
+        return if (plan.openai) extractOpenAiText(mapper, res.body()) else extractAnthropicText(mapper, res.body())
     }
 
     private fun extractErr(bodyJson: String): String? =
         try { mapper.readTree(bodyJson).path("error").path("message").asText(null) } catch (e: Exception) { null }
 
     /**
-     * 모델 텍스트에서 {reply, graph} JSON 을 추출. **균형 중괄호 스캐너**(문자열/이스케이프 인지)로
-     * 첫 '{' 에서 짝이 맞는 '}' 까지만 잘라 중첩/문자열 내 중괄호에 견고. 코드펜스도 벗긴다.
-     * 파싱 실패 시 전체 텍스트를 reply 로(그래프 없음) — 최소한 대화는 되게.
+     * 모델 텍스트에서 {reply, <payloadKey>} JSON 을 추출(payloadKey=graph 는 flow, spec 은 mock). **균형 중괄호 스캐너**
+     * (문자열/이스케이프 인지)로 첫 '{' 에서 짝이 맞는 '}' 까지만 잘라 중첩/문자열 내 중괄호에 견고. 코드펜스도 벗긴다.
+     * 파싱 실패 시 전체 텍스트를 reply 로(payload 없음) — 최소한 대화는 되게.
      */
-    private fun parseModelJson(text: String): Pair<String, JsonNode?> {
+    fun parseModelJson(text: String, payloadKey: String = "graph"): Pair<String, JsonNode?> {
         val cleaned = text.trim().removePrefix("```json").removePrefix("```").removeSuffix("```").trim()
         val jsonStr = extractJsonObject(cleaned)
         if (jsonStr != null) {
             try {
                 val obj = mapper.readTree(jsonStr)
-                val reply = obj.path("reply").asText("").ifBlank { "플로우를 준비했습니다." }
-                val g = obj.get("graph")
-                val graph = if (g == null || g.isNull || !g.isObject) null else g
-                return reply to graph
+                val reply = obj.path("reply").asText("").ifBlank { "준비했습니다." }
+                val g = obj.get(payloadKey)
+                val payload = if (g == null || g.isNull || !g.isObject) null else g
+                return reply to payload
             } catch (e: Exception) { /* fall through */ }
+        }
+        // 균형 JSON 을 못 찾음: payload 응답이 잘렸을(토큰 초과) 가능성 → 원문 대신 안내(raw JSON 덤프 방지).
+        if (cleaned.startsWith("{") && cleaned.contains("\"$payloadKey\"")) {
+            return "응답이 너무 커서 중간에 잘렸습니다. 단계를 나눠 요청하거나(예: 앞부분 먼저) 다시 시도해 주세요." to null
         }
         return (text.ifBlank { "응답을 이해하지 못했습니다." }) to null
     }

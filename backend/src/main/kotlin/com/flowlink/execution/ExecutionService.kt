@@ -128,8 +128,8 @@ class ExecutionService(
      */
     @Transactional(readOnly = true)
     fun runSingleNode(flowId: UUID, nodeId: String): SingleNodeRunResult {
-        val tenant = TenantContext.getTenantId()
-        val flow = flowRepo.findByIdAndTenantId(flowId, tenant)
+        // flow 는 전역 공유 — 공유 테넌트로 조회(로그인 테넌트 무관).
+        val flow = flowRepo.findByIdAndTenantId(flowId, TenantContext.SHARED_FLOW_TENANT)
             .orElseThrow { NotFoundException.of("Flow", flowId) }
         val version = versionRepo.findByFlowIdAndVersionNo(flowId, flow.currentVersion)
             .orElseThrow { NotFoundException.of("FlowVersion", "$flowId/v${flow.currentVersion}") }
@@ -147,8 +147,8 @@ class ExecutionService(
     @Transactional(readOnly = true)
     fun previewTcp(flowId: UUID, nodeId: String, override: com.flowlink.core.graph.GraphNode? = null): com.flowlink.execution.engine.TcpPreview {
         val node = if (override != null) override else {
-            val tenant = TenantContext.getTenantId()
-            val flow = flowRepo.findByIdAndTenantId(flowId, tenant)
+            // flow 는 전역 공유 — 공유 테넌트로 조회.
+            val flow = flowRepo.findByIdAndTenantId(flowId, TenantContext.SHARED_FLOW_TENANT)
                 .orElseThrow { NotFoundException.of("Flow", flowId) }
             val version = versionRepo.findByFlowIdAndVersionNo(flowId, flow.currentVersion)
                 .orElseThrow { NotFoundException.of("FlowVersion", "$flowId/v${flow.currentVersion}") }
@@ -165,8 +165,9 @@ class ExecutionService(
 
     // trigger 는 실행을 시작시킨 종류(MANUAL/SCHEDULE/WEBHOOK). 스케줄러·웹훅은 호출 전 TenantContext 를 세팅한다.
     fun run(flowId: UUID, req: RunRequest?, trigger: TriggerType = TriggerType.MANUAL): ExecutionDetail {
-        val tenant = TenantContext.getTenantId()
-        val flow = flowRepo.findByIdAndTenantId(flowId, tenant)
+        val tenant = TenantContext.getTenantId() // 실행(Execution) 행은 사용자별 — 아래 Execution.start·워커 전파에 사용
+        // flow 는 전역 공유 — 조회만 공유 테넌트로(실행 이력은 위 tenant 로 격리 유지).
+        val flow = flowRepo.findByIdAndTenantId(flowId, TenantContext.SHARED_FLOW_TENANT)
             .orElseThrow { NotFoundException.of("Flow", flowId) }
 
         val versionNo = req?.versionNo ?: flow.currentVersion
@@ -416,10 +417,12 @@ class ExecutionService(
 
     @Transactional(readOnly = true)
     fun listForFlow(flowId: UUID, limit: Int): List<ExecutionSummary> {
-        // 테넌트 스코프 소유 확인 선행 — flowId 만 알면 타 테넌트 실행 요약이 새던 구멍 방지.
-        flowRepo.findByIdAndTenantId(flowId, TenantContext.getTenantId())
+        // flow 존재 확인(공유 풀) — 없는 flowId 는 404.
+        flowRepo.findByIdAndTenantId(flowId, TenantContext.SHARED_FLOW_TENANT)
             .orElseThrow { NotFoundException.of("Flow", flowId) }
-        val execs = executionRepo.findByFlowIdOrderByStartedAtDesc(flowId, PageRequest.of(0, clamp(limit)))
+        // 실행 이력은 사용자별 격리 유지 — 공유 flow 라도 내 실행만 반환(타 팀 실행 유출 방지).
+        val execs = executionRepo.findByFlowIdAndTenantIdOrderByStartedAtDesc(
+            flowId, TenantContext.getTenantId(), PageRequest.of(0, clamp(limit)))
         return withFlowNames(execs)
     }
 

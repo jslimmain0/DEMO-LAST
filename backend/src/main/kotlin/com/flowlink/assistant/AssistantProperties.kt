@@ -19,7 +19,8 @@ class AssistantProperties(
     val apiKey: String? = if (apiKey.isNullOrBlank()) null else apiKey.trim()
     val model: String = if (model.isNullOrBlank()) "claude-sonnet-5" else model.trim()
     val baseUrl: String = if (baseUrl.isNullOrBlank()) "https://api.anthropic.com" else baseUrl.trim().trimEnd('/')
-    val maxTokens: Int = if (maxTokens == null || maxTokens <= 0) 4096 else maxTokens
+    // 대형 플로우(20~30+ 노드) 그래프 JSON 이 잘리지 않게 넉넉히. 4096→22노드 빠듯, 8192→verbose 24노드에서 잘림 관측 → 16384.
+    val maxTokens: Int = if (maxTokens == null || maxTokens <= 0) 16384 else maxTokens
     /** 동시 LLM 호출 상한(벌크헤드) — 초과 시 429. 요청 스레드가 느린 업스트림에 고갈되지 않게. */
     val maxConcurrent: Int = if (maxConcurrent == null || maxConcurrent <= 0) 4 else maxConcurrent
 }

@@ -22,7 +22,8 @@ import java.util.UUID
  * default 테넌트는 레거시 `/mock/{slug}/…` 로도 서빙(하위호환, MockPathResolver).
  * 서빙은 무인증(외부 시스템 흉내), 관리 API 만 테넌트 스코프.
  *
- * `kind` 는 향후 프리셋 확장 여지를 위해 남긴 컬럼으로, 현재는 CUSTOM 하나뿐이다.
+ * `kind` 는 mock 유형 — **HTTP**(경로·응답·콜백)와 **TCP**(포트·고정길이 전문)를 나눠 생성. 편집기가 유형에 맞는
+ * 섹션만 노출한다. **CUSTOM 은 레거시**(HTTP·TCP 둘 다 편집) — 기존 데이터 후방호환용으로 반드시 유지(제거 금지).
  */
 @Entity
 @Table(
@@ -31,7 +32,8 @@ import java.util.UUID
 )
 class MockServer {
 
-    enum class Kind { CUSTOM }
+    // CUSTOM=레거시(둘 다), HTTP=경로/응답, TCP=소켓 전문. CUSTOM 은 기존 행 역직렬화 위해 절대 제거 금지.
+    enum class Kind { CUSTOM, HTTP, TCP }
 
     @Id
     @Column(nullable = false, updatable = false)

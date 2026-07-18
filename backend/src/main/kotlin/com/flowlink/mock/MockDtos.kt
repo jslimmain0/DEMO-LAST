@@ -36,7 +36,9 @@ object MockDtos {
         @field:NotBlank @field:Pattern(
             regexp = "[a-z0-9-]{3,40}",
             message = "slug 는 소문자·숫자·하이픈 3~40자"
-        ) val slug: String
+        ) val slug: String,
+        // 유형 — "HTTP"(경로·응답) | "TCP"(소켓 전문). 미지정/그 외는 HTTP. (@get:JvmName 금지 규칙 준수)
+        val type: String? = null
     )
 
     data class UpdateMockServerRequest(

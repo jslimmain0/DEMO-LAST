@@ -41,12 +41,15 @@ class MockServerService(
         if (repository.existsByTenantIdAndSlug(tenant(), slug)) {
             throw BadRequestException("이미 사용 중인 slug 입니다: $slug")
         }
+        // 유형 선택 — TCP 면 tcp 섹션만, 그 외(기본)는 HTTP 라우트만. CUSTOM(둘 다)은 레거시 데이터 전용.
+        val kind = if (req.type?.uppercase(Locale.ROOT) == "TCP") MockServer.Kind.TCP else MockServer.Kind.HTTP
+        val spec = if (kind == MockServer.Kind.TCP) defaultTcpSpec(tcpRegistry.pickFreePort()) else defaultCustomSpec()
         // saveAndFlush: 신규 엔티티라 @CreationTimestamp lateinit createdAt/updatedAt 가 flush 후 채워진다
         // (toDetail 이 이를 읽으므로 flush 전 접근하면 UninitializedPropertyAccessException). FlowService.createInternal 과 동일.
         val saved = repository.saveAndFlush(
-            MockServer.create(tenant(), req.name, slug, MockServer.Kind.CUSTOM, defaultCustomSpec())
+            MockServer.create(tenant(), req.name, slug, kind, spec)
         )
-        tcpRegistry.sync(saved)
+        tcpRegistry.sync(saved) // TCP 면 pickFreePort 로 고른 빈 포트에 바인딩(충돌 없음)
         return toDetail(saved)
     }
 
@@ -151,12 +154,17 @@ class MockServerService(
         )
     }
 
-    /** 새 CUSTOM 서버의 시작 예시 — 편집기에서 바로 고쳐 쓰는 안내 겸용. */
+    /** 새 HTTP 서버의 시작 예시 — 편집기에서 바로 고쳐 쓰는 안내 겸용. */
     private fun defaultCustomSpec(): String = """
         {"routes":[{"id":"r1","method":"GET","path":"/hello","rules":[
           {"id":"u1","status":200,"contentType":"json",
            "body":"{\"message\":\"안녕하세요 {{query.name}}\",\"seq\":\"{{seq}}\"}"}
         ]}]}""".trimIndent()
+
+    /** 새 TCP 서버의 시작 예시 — 빈 포트에 4자리 길이 프리픽스 EUC-KR 전문. 앞 4바이트가 응답코드가 되게 에코. */
+    private fun defaultTcpSpec(port: Int): String = """
+        {"tcp":{"enabled":true,"port":$port,"charset":"EUC-KR","prefixLength":4,"prefixIncludesSelf":false,
+          "rules":[{"id":"t1","contains":"","response":"0000{{req:4:20}}"}]}}""".trimIndent()
 
     companion object {
         private val SLUG: Pattern = Pattern.compile("[a-z0-9-]{3,40}")

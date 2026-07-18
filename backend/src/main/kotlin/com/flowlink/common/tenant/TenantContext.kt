@@ -12,6 +12,13 @@ object TenantContext {
     /** dev 모드(인증 미설정) 기본 테넌트. */
     const val DEFAULT_TENANT = "default"
 
+    /**
+     * 워크플로우(flow/flow_version/folder)는 **전 사용자/팀 공통(전역 공유)** 이다 — 로그인 테넌트와 무관하게
+     * 이 고정 테넌트로 저장·조회한다. (execution·mock·secret·assistant_session 은 여전히 getTenantId() 로 사용자별 격리.)
+     * dev 모드의 DEFAULT_TENANT 와 같은 값이라 dev 데이터(기존 flow)도 그대로 공유 풀이 된다.
+     */
+    const val SHARED_FLOW_TENANT = DEFAULT_TENANT
+
     private val CURRENT: ThreadLocal<String> = ThreadLocal.withInitial { DEFAULT_TENANT }
 
     @JvmStatic

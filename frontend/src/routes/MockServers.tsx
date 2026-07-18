@@ -24,14 +24,15 @@ export function MockServers() {
   const [ask, setAsk] = useState<AskSpec | null>(null)
   const [name, setName] = useState('')
   const [slug, setSlug] = useState('')
+  const [type, setType] = useState<'HTTP' | 'TCP'>('HTTP')
   const [error, setError] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ['mock-servers'] })
 
   const create = useMutation({
-    mutationFn: () => mocksApi.create({ name: name.trim() || slug.trim(), slug: slug.trim() }),
-    onSuccess: (d) => { setName(''); setSlug(''); setError(null); setCreating(false); void invalidate(); navigate(`/mocks/${d.id}`) },
+    mutationFn: () => mocksApi.create({ name: name.trim() || slug.trim(), slug: slug.trim(), type }),
+    onSuccess: (d) => { setName(''); setSlug(''); setType('HTTP'); setError(null); setCreating(false); void invalidate(); navigate(`/mocks/${d.id}`) },
     onError: (e) => setError(apiErrorMessage(e)),
   })
   const toggle = useMutation({ mutationFn: (s: MockServerSummary) => mocksApi.update(s.id, { enabled: !s.enabled }), onSuccess: invalidate })
@@ -58,10 +59,18 @@ export function MockServers() {
 
         {creating && (
           <div style={createRow}>
+            {/* 유형 — HTTP(경로·응답) / TCP(소켓 전문) */}
+            <div style={{ display: 'inline-flex', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', overflow: 'hidden', height: 38 }}>
+              {(['HTTP', 'TCP'] as const).map((t) => (
+                <button key={t} onClick={() => setType(t)} title={t === 'HTTP' ? '경로·응답·콜백' : '포트·고정길이 전문'}
+                  style={{ padding: '0 14px', border: 'none', cursor: 'pointer', fontSize: 12.5, fontWeight: 600, fontFamily: 'var(--fl-font-mono)', background: type === t ? 'var(--fl-primary)' : 'transparent', color: type === t ? '#fff' : 'var(--fl-text-muted)' }}>{t}</button>
+              ))}
+            </div>
             <input style={input} placeholder="이름 (예: 결제 게이트웨이)" value={name} onChange={(e) => setName(e.target.value)} autoFocus />
             <input style={{ ...input, fontFamily: 'var(--fl-font-mono)' }} placeholder="slug (예: pay-mock)" value={slug} onChange={(e) => setSlug(e.target.value.toLowerCase())} onKeyDown={(e) => { if (e.key === 'Enter' && slugOk) create.mutate() }} />
             <button style={{ ...primaryBtn, opacity: slugOk ? 1 : 0.5 }} disabled={!slugOk || create.isPending} onClick={() => create.mutate()}>만들기</button>
             <button style={ghostBtn} onClick={() => { setCreating(false); setError(null) }}>취소</button>
+            <span style={{ flexBasis: '100%', fontSize: 11.5, color: 'var(--fl-text-muted)' }}>{type === 'HTTP' ? 'HTTP: 경로마다 JSON/HTML/XML 응답·조건 분기·콜백 발사' : 'TCP: 빈 포트에 고정길이 전문(길이 프리픽스) 리스너 — 워크플로 TCP 노드 대상'}</span>
           </div>
         )}
         {error && <p style={{ color: 'var(--fl-fail)', fontSize: 12.5, marginTop: 8 }}>{error}</p>}
@@ -90,6 +99,8 @@ function MockCard({ server: s, tenant, readOnly, onToggle, onRemove }: { server:
   const navigate = useNavigate()
   const detail = useQuery({ queryKey: ['mock-server', s.id], queryFn: () => mocksApi.get(s.id) })
   const routeCount = detail.data?.spec?.routes?.length
+  const tcpPort = detail.data?.spec?.tcp?.port
+  const isTcp = s.kind === 'TCP'
   const spine = s.enabled ? 'var(--fl-cat-wait)' : 'var(--fl-border)'
   const open = () => navigate(`/mocks/${s.id}`)
   return (
@@ -102,16 +113,23 @@ function MockCard({ server: s, tenant, readOnly, onToggle, onRemove }: { server:
       style={{ ...card, borderLeft: `3px solid ${spine}`, cursor: 'pointer' }}
     >
       <div style={{ minWidth: 0, flex: 1 }}>
-        <span style={{ fontFamily: 'var(--fl-font-head)', fontWeight: 600, fontSize: 15, color: 'var(--fl-text)', textDecoration: 'none' }}>{s.name}</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontFamily: 'var(--fl-font-head)', fontWeight: 600, fontSize: 15, color: 'var(--fl-text)', textDecoration: 'none' }}>{s.name}</span>
+          {s.kind !== 'CUSTOM' && <span style={{ ...kindBadge, color: isTcp ? 'var(--fl-cat-tcp, #7c5cff)' : 'var(--fl-primary)' }}>{s.kind}</span>}
+        </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 5, minWidth: 0 }}>
-          <button
-            title="base URL 복사"
-            onClick={(e) => { e.stopPropagation(); void navigator.clipboard?.writeText(mockBaseUrl(s.slug, tenant)).catch(() => {}) }}
-            style={{ ...metaMono, display: 'inline-flex', alignItems: 'center', gap: 5, border: 'none', background: 'transparent', cursor: 'pointer', padding: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 360 }}
-          >
-            {mockBaseUrl(s.slug, tenant)} <span aria-hidden style={{ color: 'var(--fl-primary)' }}>⧉</span>
-          </button>
-          {routeCount != null && <span style={metaMono}>· 라우트 {routeCount}</span>}
+          {isTcp ? (
+            <span style={metaMono}>{tcpPort != null ? `TCP :${tcpPort}` : 'TCP (포트 미설정)'}</span>
+          ) : (
+            <button
+              title="base URL 복사"
+              onClick={(e) => { e.stopPropagation(); void navigator.clipboard?.writeText(mockBaseUrl(s.slug, tenant)).catch(() => {}) }}
+              style={{ ...metaMono, display: 'inline-flex', alignItems: 'center', gap: 5, border: 'none', background: 'transparent', cursor: 'pointer', padding: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 360 }}
+            >
+              {mockBaseUrl(s.slug, tenant)} <span aria-hidden style={{ color: 'var(--fl-primary)' }}>⧉</span>
+            </button>
+          )}
+          {!isTcp && routeCount != null && <span style={metaMono}>· 라우트 {routeCount}</span>}
         </div>
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
@@ -134,3 +152,4 @@ const card: CSSProperties = { display: 'flex', alignItems: 'center', justifyCont
 const pill: CSSProperties = { padding: '5px 11px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-pill)', background: 'var(--fl-surface)', fontSize: 12, cursor: 'pointer' }
 const emptyBox: CSSProperties = { border: '1.5px dashed var(--fl-border)', borderRadius: 16, padding: '48px 40px', textAlign: 'center', color: 'var(--fl-text-muted)' }
 const codeChip: CSSProperties = { fontFamily: 'var(--fl-font-mono)', fontSize: 11.5, background: 'var(--fl-surface-2)', padding: '1px 6px', borderRadius: 5 }
+const kindBadge: CSSProperties = { fontSize: 9.5, fontWeight: 700, fontFamily: 'var(--fl-font-mono)', padding: '1px 6px', borderRadius: 999, border: '1px solid currentColor' }

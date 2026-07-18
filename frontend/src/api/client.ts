@@ -3,6 +3,7 @@ import type {
   AssistantChatRequest,
   AssistantChatResponse,
   AssistantConfig,
+  CopilotInfo,
   CreateFlowRequest,
   ExecutionDetail,
   ExecutionSummary,
@@ -15,7 +16,11 @@ import type {
   ResumeRequest,
   DeviceStart,
   InstructionsUpdateRequest,
+  ModelsView,
   OAuthStatus,
+  SaveSessionRequest,
+  SessionDetail,
+  SessionSummary,
   RunRequest,
   SaveVersionRequest,
   SingleNodeRunResult,
@@ -84,6 +89,9 @@ export const suitesApi = {
 
 export const transformsApi = {
   list: () => http.get<import('./types').TransformInfo[]>('/transforms').then((r) => r.data),
+  // 미리보기 — 샘플 입력/설정으로 변환 결과를 즉시 확인(순수 계산)
+  preview: (id: string, body: { inputs: Record<string, string>; config: Record<string, string> }) =>
+    http.post<import('./types').TransformPreviewResponse>(`/transforms/${id}/preview`, body).then((r) => r.data),
 }
 
 export const pluginsApi = {
@@ -108,7 +116,7 @@ export const foldersApi = {
 export const mocksApi = {
   list: () => http.get<import('./types').MockServerSummary[]>('/mock-servers').then((r) => r.data),
   get: (id: string) => http.get<import('./types').MockServerDetail>(`/mock-servers/${id}`).then((r) => r.data),
-  create: (body: { name: string; slug: string }) =>
+  create: (body: { name: string; slug: string; type?: 'HTTP' | 'TCP' }) =>
     http.post<import('./types').MockServerDetail>('/mock-servers', body).then((r) => r.data),
   update: (id: string, body: { name?: string; enabled?: boolean }) =>
     http.patch<import('./types').MockServerDetail>(`/mock-servers/${id}`, body).then((r) => r.data),
@@ -188,4 +196,18 @@ export const assistantApi = {
   oauthStatus: () => http.get<OAuthStatus>('/assistant/oauth/status').then((r) => r.data),
   oauthDeviceStart: () => http.post<DeviceStart>('/assistant/oauth/device/start', {}).then((r) => r.data),
   oauthDisconnect: () => http.post('/assistant/oauth/disconnect', {}).then(() => undefined),
+  // 모델 선택 — 사용 가능한 Copilot 모델(premium 플래그) + 현재 선택
+  models: () => http.get<ModelsView>('/assistant/oauth/models').then((r) => r.data),
+  setModel: (model: string) => http.put<{ current: string }>('/assistant/oauth/model', { model }).then((r) => r.data),
+  // VS Code 수준 종합 정보 — 계정·요금제·쿼터 사용량
+  info: () => http.get<CopilotInfo>('/assistant/oauth/info').then((r) => r.data),
+  // Mock 어시스턴트 — 자연어로 mock spec 생성/수정
+  mockChat: (body: import('./types').MockAssistantChatRequest) =>
+    http.post<import('./types').MockAssistantChatResponse>('/assistant/mock', body).then((r) => r.data),
+  // 대화 세션 — 사용자별 저장·목록·이어하기
+  sessions: () => http.get<SessionSummary[]>('/assistant/sessions').then((r) => r.data),
+  getSession: (id: string) => http.get<SessionDetail>(`/assistant/sessions/${id}`).then((r) => r.data),
+  createSession: (body: SaveSessionRequest) => http.post<SessionDetail>('/assistant/sessions', body).then((r) => r.data),
+  updateSession: (id: string, body: SaveSessionRequest) => http.put<SessionDetail>(`/assistant/sessions/${id}`, body).then((r) => r.data),
+  deleteSession: (id: string) => http.delete(`/assistant/sessions/${id}`).then(() => undefined),
 }

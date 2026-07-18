@@ -12,6 +12,7 @@ data class ChatMessage(val role: String, val content: String)
 data class AssistantChatRequest(
     val messages: List<ChatMessage> = emptyList(),
     val graph: JsonNode? = null,
+    val model: String? = null, // Copilot 모델 오버라이드(없으면 선택된 기본)
 )
 
 /**

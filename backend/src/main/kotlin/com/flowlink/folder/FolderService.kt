@@ -82,5 +82,6 @@ class FolderService(
         folderRepo.findByIdAndTenantId(id, tenant())
             .orElseThrow { NotFoundException.of("Folder", id) }
 
-    private fun tenant(): String = TenantContext.getTenantId()
+    // 폴더는 워크플로우 컨테이너 계층 — flow 와 함께 전역 공유(로그인 테넌트 무관, 공유 테넌트로).
+    private fun tenant(): String = TenantContext.SHARED_FLOW_TENANT
 }

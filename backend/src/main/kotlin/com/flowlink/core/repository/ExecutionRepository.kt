@@ -16,6 +16,12 @@ interface ExecutionRepository : JpaRepository<Execution, UUID> {
 
     fun findByFlowIdOrderByStartedAtDesc(flowId: UUID, pageable: Pageable): List<Execution>
 
+    /**
+     * 특정 flow 의 실행 이력을 **테넌트 스코프**로 — flow 는 전역 공유이므로(모두가 같은 flow 를 실행)
+     * GET /flows/{id}/runs 는 호출자 자신의 실행만 보여줘야 한다(타 팀 실행 유출 방지).
+     */
+    fun findByFlowIdAndTenantIdOrderByStartedAtDesc(flowId: UUID, tenantId: String, pageable: Pageable): List<Execution>
+
     fun findByIdAndTenantId(id: UUID, tenantId: String): Optional<Execution>
 
     /** 기동 복구용 — 진행 중(RUNNING/WAITING) 실행 전체(테넌트 무관, 서버 수준 reconcile). */

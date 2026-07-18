@@ -7,6 +7,7 @@ import { mockBaseUrl, mocksApi } from '../api/client'
 import { AppShellTier1 } from '../app/AppShell'
 import { useAuth, usePermissions } from '../auth/AuthContext'
 import { METHOD_COLOR } from '../canvas/nodeMeta'
+import { MockAssistantPanel } from '../components/MockAssistantPanel'
 import { toast } from '../components/toast'
 import { apiErrorMessage } from '../lib/apiError'
 import { useReadableInk } from '../lib/contrast'
@@ -33,6 +34,7 @@ export function MockServerEditor() {
   const [name, setName] = useState('')
   const [dirty, setDirty] = useState(false)
   const [note, setNote] = useState<string | null>(null)
+  const [aiOpen, setAiOpen] = useState(false)
 
   const invalidate = () => {
     void qc.invalidateQueries({ queryKey: ['mock-server', id] })
@@ -97,7 +99,7 @@ export function MockServerEditor() {
                 style={{ ...input, fontSize: 17, fontWeight: 700, minWidth: 240 }}
                 aria-label="이름"
               />
-              <span style={{ ...badge, background: 'var(--fl-cat-generic)', color: badgeInk }}>Mock</span>
+              <span style={{ ...badge, background: 'var(--fl-cat-generic)', color: badgeInk }}>{d.kind === 'CUSTOM' ? 'Mock' : `${d.kind} Mock`}</span>
               <button
                 style={{ ...miniBtn, color: d.enabled ? 'var(--fl-ok)' : 'var(--fl-text-muted)', opacity: canEdit ? 1 : 0.5 }}
                 disabled={!canEdit}
@@ -106,7 +108,12 @@ export function MockServerEditor() {
               >
                 {d.enabled ? '● 서빙 중' : '○ 꺼짐'}
               </button>
-              <button style={{ ...primaryBtn, marginLeft: 'auto', opacity: dirty && canEdit ? 1 : 0.55 }} disabled={!dirty || save.isPending || !canEdit} title={canEdit ? undefined : 'viewer 역할은 저장할 수 없습니다'} onClick={() => save.mutate()}>
+              {canEdit && (
+                <button style={{ ...miniBtn, marginLeft: 'auto', border: '1px solid var(--fl-primary)', color: 'var(--fl-primary)' }} title="AI 로 mock 만들기/고치기" onClick={() => setAiOpen((v) => !v)}>
+                  ✨ AI
+                </button>
+              )}
+              <button style={{ ...primaryBtn, marginLeft: canEdit ? 8 : 'auto', opacity: dirty && canEdit ? 1 : 0.55 }} disabled={!dirty || save.isPending || !canEdit} title={canEdit ? undefined : 'viewer 역할은 저장할 수 없습니다'} onClick={() => save.mutate()}>
                 저장
               </button>
             </div>
@@ -118,21 +125,35 @@ export function MockServerEditor() {
             </div>
             {note && <p style={{ fontSize: 12.5, marginTop: 8, color: note.startsWith('저장됨') ? 'var(--fl-ok)' : 'var(--fl-fail)' }}>{note}</p>}
 
-            <RoutesEditor
-              base={base}
-              ensureSaved={ensureSaved}
-              routes={spec.routes ?? []}
-              onChange={(routes) => mutate((s) => ({ ...s, routes }))}
-            />
+            {/* 유형별 편집 UI — HTTP=라우트, TCP=전문, CUSTOM(레거시)=둘 다 */}
+            {d.kind !== 'TCP' && (
+              <RoutesEditor
+                base={base}
+                ensureSaved={ensureSaved}
+                routes={spec.routes ?? []}
+                onChange={(routes) => mutate((s) => ({ ...s, routes }))}
+              />
+            )}
 
-            <TcpEditor
-              tcp={spec.tcp ?? null}
-              onChange={(tcp) => mutate((s) => ({ ...s, tcp }))}
-            />
+            {d.kind !== 'HTTP' && (
+              <TcpEditor
+                tcp={spec.tcp ?? null}
+                onChange={(tcp) => mutate((s) => ({ ...s, tcp }))}
+              />
+            )}
 
-            <TestPanel base={base} ensureSaved={ensureSaved} />
+            {d.kind !== 'TCP' && <TestPanel base={base} ensureSaved={ensureSaved} />}
 
             <RuntimePanel id={id} canEdit={canEdit} />
+
+            {aiOpen && (
+              <MockAssistantPanel
+                spec={spec}
+                mockId={id}
+                onApply={(newSpec) => mutate(() => newSpec)}
+                onClose={() => setAiOpen(false)}
+              />
+            )}
           </>
         )}
       </div>

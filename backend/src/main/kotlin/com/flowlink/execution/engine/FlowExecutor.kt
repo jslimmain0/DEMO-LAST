@@ -580,8 +580,19 @@ class FlowExecutor(
             return NodeResult.fail(0, "transform " + transform.id(),
                 "변환 실패: " + (e.message ?: e.toString()))
         }
-        val value = LinkedHashMap<String, Any?>(out ?: emptyMap())
+        // 출력 타입 코어션 — number/boolean/json 출력은 네이티브로 실어 assert 숫자비교·JSON 재추출이 성립.
+        // string(기본)은 무변경(무회귀). 선언 안 된 키는 문자열 그대로.
+        val outTypes = transform.outputs().associate { it.key to it.type }
+        val value = LinkedHashMap<String, Any?>()
+        for ((k, v) in (out ?: emptyMap())) value[k] = coerceTransformOut(v, outTypes[k] ?: "string")
         return NodeResult.ok(null, "transform " + transform.id() + " in=" + inputs, json.toJson(value), value)
+    }
+
+    private fun coerceTransformOut(v: String, type: String): Any? = when (type) {
+        "number" -> v.trim().toLongOrNull() ?: v.trim().toDoubleOrNull() ?: v
+        "boolean" -> when (v.trim().lowercase()) { "true" -> true; "false" -> false; else -> v }
+        "json", "array", "object" -> try { json.mapper().readTree(v) } catch (e: Exception) { v }
+        else -> v
     }
 
     // --- 위상정렬 (Kahn) ---

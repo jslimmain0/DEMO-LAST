@@ -1,6 +1,6 @@
 # FlowLink — 프로젝트 가이드 (유지보수용)
 
-REST API 워크플로 오케스트레이션 플랫폼. 클라이언트 전용 프로토타입(`legacy/FlowBuilder.dc.html`)을
+REST API 워크플로 오케스트레이션 플랫폼. 클라이언트 전용 프로토타입을
 엔터프라이즈 플랫폼으로 고도화한 것. 백엔드/프론트 모두 **모듈러 모놀리스**(향후 워커 분리 대비
 패키지 경계). UI 텍스트는 전부 한국어.
 
@@ -397,7 +397,7 @@ design/   theme(라이트/다크) · index.css(CSS 변수)
 ## 최근 변경 (2026-07-05)
 
 ### 전체 Kotlin 이관 · TCP 노드 제거 · relay/mock 프로세스 백엔드 통합
-- **백엔드 전체 Kotlin 이관**(Java 0): `src/main/kotlin`·`src/test/kotlin`만 존재. 스택 = Kotlin 1.9(Java 21 toolchain). 상세는 위 "백엔드 구조" 노트 + [docs/코틀린-이관-검토.md](docs/코틀린-이관-검토.md).
+- **백엔드 전체 Kotlin 이관**(Java 0): `src/main/kotlin`·`src/test/kotlin`만 존재. 스택 = Kotlin 1.9(Java 21 toolchain). 상세는 위 "백엔드 구조" 노트.
 - **(2026-07-06 TCP 부활로 대체)** ~~TCP 노드 완전 제거~~: `TcpNodeExecutor`·`TcpField`/`TcpRespField`·고정길이 금융 전문(BAL1) 삭제. 노드 타입 = start/end/set/if/assert/http/form/wait/input/transform (TCP 없음). SSRF 가드도 HTTP 전용.
 - **relay.js → 백엔드 통합**: 구 relay.js(:8787) 프로세스 폐기. `wait` 노드 콜백을 백엔드가 `/relay/{execId}/cb/{nodeId}`([RelayController](backend/src/main/kotlin/com/flowlink/execution/RelayController.kt))로 직접 받아 자동 재개하고, 타임아웃도 백엔드 스케줄러가 구동 → **브라우저 없이 wait 완결**. 별도 프로세스·:8787 없음.
 - **mock-server.js → 내장 Mock 흡수**: 구 mock-server.js(:9090/:9091) 폐기. `demos/*.json` 은 내장 Mock(base `http://localhost:18080/mock/demo`)을 쓰고 `node demos/seed-mock.mjs` 로 라우트를 시드. demo-05(TCP)·`/openapi.json` 데모는 제외.

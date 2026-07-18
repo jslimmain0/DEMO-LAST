@@ -4,7 +4,6 @@ import { http, uploadHttp } from '../api/client'
 export interface AuthConfig {
   enabled: boolean
   mode: string
-  clientId: string
 }
 
 /** 백엔드 /auth/me — dev 모드에선 전권 가짜 사용자(dev/default). */

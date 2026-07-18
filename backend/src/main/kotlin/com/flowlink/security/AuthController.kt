@@ -20,18 +20,17 @@ import org.springframework.web.bind.annotation.RestController
 @RestController
 @RequestMapping("/api/v1/auth")
 class AuthController(
-    private val props: SecurityProperties,
     private val authProps: AuthProperties,
     private val githubAuth: GithubAuthService,
 ) {
 
-    data class AuthConfigResponse(val enabled: Boolean, val mode: String, val clientId: String)
+    data class AuthConfigResponse(val enabled: Boolean, val mode: String)
     data class MeResponse(val username: String, val tenant: String, val roles: List<String>)
 
     @GetMapping("/config")
     fun config(): AuthConfigResponse {
         val mode = if (authProps.githubEnabled) "github" else "none"
-        return AuthConfigResponse(enabled = authProps.githubEnabled, mode = mode, clientId = props.clientId)
+        return AuthConfigResponse(enabled = authProps.githubEnabled, mode = mode)
     }
 
     @GetMapping("/me")

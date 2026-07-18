@@ -1,95 +1,67 @@
 # FlowLink
 
-REST API 워크플로 오케스트레이션 플랫폼. HTTP·폼·콜백·변환 노드로 워크플로를 그려 실행하고,
-미완성 API 는 내장 **Mock 서버**로 세워 전체 흐름을 먼저 테스트한다. UI 는 전부 한국어.
+REST API 워크플로 오케스트레이션 플랫폼. HTTP·폼·콜백·입력·변환·TCP 노드로 워크플로를 그려 실행하고,
+미완성 API 는 내장 **Mock 서버**로 세워 전체 흐름을 먼저 테스트한다. 자연어로 플로우를 만드는 **AI 어시스턴트**도 내장. UI 는 전부 한국어.
 
-## 빠른 시작 (Windows / PowerShell)
+- **Backend** — Spring Boot 3.3 / Kotlin 1.9 (Java 21) / JPA + Flyway / PostgreSQL·Oracle (dev 는 H2 파일)
+- **Frontend** — React 19 / Vite / @xyflow/react / Zustand / React Query — **빌드하면 백엔드 jar 에 동봉**되어 한 프로세스로 서빙
 
-가장 쉬운 방법 — 전체 스택을 한 번에 띄운다(각자 창으로):
+## 빠른 시작 — 단일 jar (화면+API 한 프로세스 :18080)
 
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts\dev-all.ps1    # 기동
-powershell -ExecutionPolicy Bypass -File scripts\dev-stop.ps1   # 종료
-```
-
-준비되면 **http://localhost:5173** 를 연다.
-
-## 띄우는 프로세스는 2개
-
-**backend + frontend** 둘이면 모든 기능이 돈다. 콜백 수신(구 relay)과 Mock 대상 시스템은 **백엔드에 통합**돼
-별도 프로세스가 없다.
-
-| 서비스 | 주소 | 필요 시점 |
-|---|---|---|
-| **backend** | http://localhost:18080 | **항상 필수** — API + 실행 엔진 + wait 콜백 수신 + 내장 Mock (H2 파일 DB, Postgres/Docker 불필요) |
-| **vite** | http://localhost:5173 | **항상 필수** — 프론트 UI (`/api` → :18080 프록시) |
-
-- **워크플로를 만들고 HTTP/SET/IF/검증/변환을 실행** → backend + vite 면 끝.
-- **결제창 → 콜백 → 재개** 흐름도 그대로 → `wait` 노드 콜백은 **백엔드가 `/relay/{execId}/cb/{nodeId}` 로 직접 받아** 자동 재개한다(별도 relay 프로세스 불필요).
-- **`demos/*.json` 데모**를 재현하려면 → 한 번 `node demos/seed-mock.mjs` 로 내장 Mock(slug `demo`)에 대상 라우트를 심는다.
-- 미완성 API 흉내는 UI 상단 **"Mock 서버"** 탭(백엔드 내장, `/mock/{slug}/**`)으로 별도 프로세스 없이 만든다.
-
-### 개별 실행
-
-```powershell
-# backend (H2 파일 DB — 재시작해도 데이터 유지)
-powershell -ExecutionPolicy Bypass -File scripts\start.ps1 -H2
-
-# 프론트 (frontend/)
-npm install; npm run dev            # http://localhost:5173
-
-# (데모만) 내장 Mock 에 대상 라우트 시드 — 1회, 의존성 0
-node demos/seed-mock.mjs            # 백엔드(:18080)에 slug `demo` mock 생성/갱신
-```
-
-## 말로 워크플로 만들기 (AI 스킬)
-
-자연어로 설명하면 워크플로(노드 그래프)를 만들어 등록하는 도구가 함께 들어 있다.
-같은 기능을 **Claude Code**(플러그인)와 **GitHub Copilot**(지침/프롬프트) 양쪽에서 쓸 수 있다.
-> 전제: backend(18080)가 떠 있어야 등록/실행이 된다.
-
-### Claude Code — `flowlink-workflow` 플러그인
+프론트(dist)가 jar 안에 들어가므로 **프로세스 하나**면 화면과 API 가 모두 뜬다(nginx·별도 프론트 서버 불필요).
 
 ```bash
-claude --plugin-dir ./flowlink-workflow      # 플러그인 로드
+# Linux / macOS / Git Bash — 기본 프로파일 h2(로컬 파일 DB, 인증 없음)
+bash scripts/start.sh --build     # 최초 1회: 프론트+백엔드 빌드 후 실행. 이후엔 --build 없이
+bash scripts/status.sh
+bash scripts/stop.sh
 ```
+```powershell
+# Windows (PowerShell) — 같은 lifecycle
+powershell -ExecutionPolicy Bypass -File scripts\start.ps1 -Build
+powershell -ExecutionPolicy Bypass -File scripts\status.ps1
+powershell -ExecutionPolicy Bypass -File scripts\stop.ps1
+```
+준비되면 **http://localhost:18080** 를 연다. (⚠ `.sh` 와 `.ps1` 은 세트로 — PID 규약이 달라 섞으면 안 됨)
 
-로드한 뒤 대화로 요청하면 `make-workflow` 스킬이 자동 발동한다:
+## 프론트엔드 개발 (핫리로드)
 
-> **"결제창 띄우고 콜백 받아서 승인 검증하는 워크플로 만들어줘"**
-> **"로그인해서 토큰 받고 주문 넣는 플로우 짜줘"**
-> **"OTP 발송하고 사용자한테 입력받아 검증하는 워크플로"**
-
-동작: ① 흐름 파악 → ② `{name, nodes, edges}` 그래프 설계(노드 스키마·토큰 문법 근거) →
-③ REST API 로 등록(`POST /flows` → `POST /flows/{id}/versions`) → ④ **에디터 URL**(`/flows/{id}`) 안내.
-에디터에서 **▶ 실행**하면 팝업·콜백·입력을 거쳐 완결된다.
-
-### GitHub Copilot
-
-Claude 와 **같은 `make-workflow` 스킬**을 Copilot 에서도 쓴다(SKILL.md 는 Claude·Copilot 공통 표준이라 본문이 공유된다). 세 방식:
-
-- **Agent Skill** (권장): [`.github/skills/make-workflow/`](.github/skills/make-workflow/SKILL.md) — **Copilot CLI · VS Code/JetBrains 에이전트 모드 · 클라우드 에이전트 · 코드 검토**가 워크플로 생성 요청을 감지하면 `SKILL.md`(+ `reference/`·`scripts/`)를 컨텍스트에 자동 로드한다([Agent Skills](https://docs.github.com/en/copilot/concepts/agents/about-agent-skills), 2025-12+). `gh skill` 로 관리·공유도 가능.
-- **자동 지침**: [`.github/copilot-instructions.md`](.github/copilot-instructions.md) — 리포에서 작업할 때 Copilot Chat 이 자동으로 읽는 지침(워크플로 생성 규칙 요약).
-- **슬래시 명령**: [`.github/prompts/make-workflow.prompt.md`](.github/prompts/make-workflow.prompt.md) — Copilot Chat 에서 `/make-workflow`(VS Code 설정 `chat.promptFiles: true`).
-
-### 등록 헬퍼 단독 사용
-
-스킬 없이 그래프 JSON 을 직접 등록할 수도 있다:
+프론트를 고치며 개발할 때만 vite dev 서버를 따로 띄운다(그 외엔 위 단일 jar 로 충분):
 
 ```bash
-node flowlink-workflow/skills/make-workflow/scripts/register-flow.mjs graph.json          # 등록
-node flowlink-workflow/skills/make-workflow/scripts/register-flow.mjs graph.json --run     # 등록 + 실행
-node flowlink-workflow/skills/make-workflow/scripts/register-flow.mjs graph.json --import  # 한 방(v1)
-# → { flowId, editorUrl } 출력
+# 1) 백엔드 실행 (위 scripts/start.sh 또는)  cd backend && sh gradlew bootRun
+# 2) 프론트 dev 서버
+cd frontend && npm install && npm run dev    # http://localhost:5173  (/api·/relay·/mock·/ws → :18080 프록시)
 ```
 
-노드 타입·토큰 문법·API 상세는 [`flowlink-workflow/README.md`](flowlink-workflow/README.md)와
-그 안의 `skills/make-workflow/reference/` 참고.
+## 무엇이 되나
+
+- **워크플로**: START→…→END 그래프. HTTP(서버/클라이언트)·SET·IF·SWITCH·ASSERT·FORM·WAIT(콜백)·INPUT·TRANSFORM·TCP 노드. `{{ 키@노드 }}` 토큰 바인딩.
+- **콜백 대기**: `wait` 노드 콜백을 **백엔드가 `/relay/{execId}/cb/{nodeId}` 로 직접 받아** 자동 재개(별도 프로세스 없음, 탭 닫아도 완결).
+- **내장 Mock 서버**: 상단 "Mock 서버" 탭에서 가짜 대상 시스템(HTTP/TCP)을 정의·서빙(`/mock/{slug}/**`). 상태·순차응답·요청로그 지원.
+- **AI 어시스턴트**: 에디터 우측 ✨ AI 패널에서 자연어로 플로우 생성/수정. 키 없이 stub 모드, 또는 GitHub Copilot·Anthropic 키 연동.
+- **실행 정확성**: 비동기 워커 풀 + 내구 재개(서버 재시작 생존), 트리거(cron·webhook), 버전 히스토리, 시크릿 볼트, 환경(dev/staging/prod).
+
+## 운영 배포 (선택 기능은 env 로)
+
+메인 앱은 도커가 아니라 서버(EC2 등)에서 `scripts/` 로 뜬다. 지원 인프라(Vault)만 도커로 띄운다.
+
+```bash
+# GitHub 로그인 + Vault 시크릿 + Oracle 을 켜서 기동(예)
+export FLOWLINK_AUTH_GITHUB_ENABLED=true FLOWLINK_AUTH_JWT_SECRET=<시크릿>
+export FLOWLINK_VAULT_ENABLED=true FLOWLINK_VAULT_ADDRESS=http://<vault>:8200 FLOWLINK_VAULT_TOKEN=<토큰>
+export SPRING_PROFILES_ACTIVE=oracle FLOWLINK_DB_URL='jdbc:oracle:thin:@//<host>:1521/FREEPDB1'
+bash scripts/start.sh
+
+docker compose -f infra/docker-compose.yml up -d      # Vault(시크릿 저장소)
+```
+- **로그인**: 미설정이면 dev(로그인 없음). `FLOWLINK_AUTH_GITHUB_ENABLED=true` 면 GitHub 계정(디바이스 플로우)으로 로그인 → **같은 로그인이 어시스턴트 Copilot 연결까지 이어짐**. 표준 OIDC(Auth0/Entra 등)도 issuer-uri 로 지원.
+- 상세 런북: **[infra/README.md](infra/README.md)**.
 
 ## 더 보기
 
 - **[CLAUDE.md](CLAUDE.md)** — 아키텍처·구조·최근 변경 상세 (유지보수 진실원)
-- **[backend/README.md](backend/README.md)** — 백엔드 구현 범위·API·실행
-- **[demos/README.md](demos/README.md)** — 데모 워크플로 · [demos/pay-mock](demos/pay-mock/README.md)(내장 Mock + 검증 노드)
-- **[flowlink-workflow/](flowlink-workflow/README.md)** — 자연어→워크플로 AI 스킬(플러그인)
-- **[docs/](docs/)** — 설계 문서·토론 로그 · `legacy/` — 동결된 원본 프로토타입
+- **[backend/README.md](backend/README.md)** — 백엔드 구조·API·설정
+- **[frontend/README.md](frontend/README.md)** — 프론트 구조·개발
+- **[infra/README.md](infra/README.md)** — 배포(앱=서버, Vault=도커, GitHub 로그인, Oracle)
+- **[docs/사용가이드.md](docs/사용가이드.md)** — 실사용자(개발자/QA)용 사용 가이드

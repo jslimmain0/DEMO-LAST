@@ -90,7 +90,6 @@ flowlink:
   # 보안 (IdP 비종속). 아무 인증도 활성 안 하면 dev permitAll(로컬).
   security:
     tenant-claim: tenant                 # JWT 에서 테넌트(팀) 식별자를 읽을 클레임 이름
-    client-id: flowlink-web              # 프론트(SPA)용 클라이언트 id — /api/v1/auth/config 로 노출
     # cors-origins:                      # /api/** CORS 허용 오리진(미설정 시 localhost 5173/3000/18080)
     #   - https://flowlink.example.com
   # 앱 인증 — GitHub 로그인(Copilot 과 동일한 디바이스 플로우). 로그인하면 앱이 자체 JWT(HMAC)를 발급하고,

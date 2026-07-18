@@ -190,6 +190,6 @@ export const assistantApi = {
   oauthStatus: () => http.get<OAuthStatus>('/assistant/oauth/status').then((r) => r.data),
   oauthConfig: () => http.get<OAuthProviderConfig>('/assistant/oauth/config').then((r) => r.data),
   updateOAuthConfig: (body: OAuthProviderUpdate) => http.put<OAuthProviderConfig>('/assistant/oauth/config', body).then((r) => r.data),
-  oauthAuthorize: (origin: string) => http.get<AuthorizeUrlResponse>('/assistant/oauth/authorize', { params: { origin } }).then((r) => r.data),
+  oauthAuthorize: (returnPath: string) => http.get<AuthorizeUrlResponse>('/assistant/oauth/authorize', { params: { returnPath } }).then((r) => r.data),
   oauthDisconnect: () => http.post('/assistant/oauth/disconnect', {}).then(() => undefined),
 }

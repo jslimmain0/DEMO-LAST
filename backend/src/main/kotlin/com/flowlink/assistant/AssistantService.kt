@@ -50,9 +50,13 @@ class AssistantService(
         return key?.let { "x-api-key" to it }
     }
 
+    private fun hasApiKey(): Boolean =
+        props.apiKey != null || try { !secretService.activeSecrets(null)["anthropic-api-key"].isNullOrBlank() } catch (e: Exception) { false }
+
     fun config(): AssistantConfig {
+        // 읽기 전용 — refresh 부작용 없이 상태만(connected 는 loadToken, 갱신 안 함)
         val oauthConnected = try { oauth.connected() } catch (e: Exception) { false }
-        val real = resolveAuth() != null
+        val real = oauthConnected || hasApiKey()
         val mode = if (oauthConnected) "oauth" else if (real) "key" else "stub"
         return AssistantConfig(available = true, usingRealLlm = real, model = if (real) props.model else "stub", authMode = mode)
     }

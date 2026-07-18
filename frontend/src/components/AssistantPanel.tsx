@@ -37,10 +37,12 @@ export function AssistantPanel({ width, onClose }: { width: number; onClose: () 
   const disconnect = useMutation({
     mutationFn: assistantApi.oauthDisconnect,
     onSuccess: () => { toast('AI 연결을 해제했습니다.', 'ok'); qc.invalidateQueries({ queryKey: ['assistant'] }) },
+    onError: (e: unknown) => toast((e as { response?: { data?: { message?: string } } })?.response?.data?.message || '연결 해제 실패', 'error'),
   })
   const connect = async () => {
     try {
-      const { url } = await assistantApi.oauthAuthorize(window.location.origin)
+      // 로그인 후 지금 보던 플로우로 복귀(상대 경로). 오리진은 서버가 헤더로 확정.
+      const { url } = await assistantApi.oauthAuthorize(window.location.pathname + window.location.search)
       window.location.href = url // provider 로그인 → 콜백이 앱으로 되돌림(?ai=connected)
     } catch (e) {
       toast((e as { response?: { data?: { message?: string } } })?.response?.data?.message || 'AI 연결 시작 실패', 'error')

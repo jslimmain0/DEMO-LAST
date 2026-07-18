@@ -18,12 +18,15 @@ const queryClient = new QueryClient({
 export default function App() {
   useEffect(() => {
     applyTheme(getTheme())
-    // AI OAuth 연결 콜백 복귀(?ai=connected|error) — 토스트 + URL 정리
+    // AI OAuth 연결 콜백 복귀(?ai=connected|error) — 토스트 + URL 정리.
+    // 토스트는 <Toasts/> 구독이 붙은 뒤 발화하도록 지연(마운트 시점 경쟁 방지 — 안 그러면 조용히 유실).
     const p = new URLSearchParams(window.location.search)
     const ai = p.get('ai')
-    if (ai === 'connected') toast('AI 를 연결했습니다.', 'ok')
-    else if (ai === 'error') toast('AI 연결에 실패했습니다. 설정을 확인하세요.', 'error')
     if (ai) {
+      setTimeout(() => {
+        if (ai === 'connected') toast('AI 를 연결했습니다.', 'ok')
+        else if (ai === 'error') toast('AI 연결에 실패했습니다. 설정을 확인하세요.', 'error')
+      }, 0)
       p.delete('ai')
       const qs = p.toString()
       window.history.replaceState({}, '', window.location.pathname + (qs ? `?${qs}` : ''))

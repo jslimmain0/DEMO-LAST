@@ -13,23 +13,29 @@ REST API 워크플로 오케스트레이션 플랫폼. 클라이언트 전용 �
 
 ## 실행 방법
 
-### Backend (`backend/`)
+### 앱 실행 — 리포 루트 `scripts/` (단일 jar, 화면+API 한 프로세스 :18080)
+```bash
+# Linux/macOS/Git Bash — 기본 프로파일 h2(로컬 파일 DB). 없으면 --build 로 빌드 후 실행.
+bash scripts/start.sh            # (또는 --build)
+bash scripts/status.sh           # PID 생존 + /actuator/health
+bash scripts/stop.sh
+```
 ```powershell
-# H2 파일(영속, Postgres/Docker 불필요) — 재시작해도 데이터 유지
-powershell -ExecutionPolicy Bypass -File scripts\start.ps1 -H2
-# Postgres + 앱 (백그라운드, 헬스 대기)
-powershell -ExecutionPolicy Bypass -File scripts\start.ps1
+# Windows (PowerShell) — 같은 lifecycle
+powershell -ExecutionPolicy Bypass -File scripts\start.ps1        # (또는 -Build)
+powershell -ExecutionPolicy Bypass -File scripts\status.ps1
 powershell -ExecutionPolicy Bypass -File scripts\stop.ps1
 ```
+> ⚠️ 스크립트는 세트로 써야 한다(.sh 는 .sh 끼리, .ps1 은 .ps1 끼리) — .sh 는 Git Bash PID 를, .ps1 은 Windows PID 를 PID 파일에 쓰므로 섞으면 stop/status 가 서로의 프로세스를 못 찾는다.
 - Swagger UI: `http://localhost:18080/swagger-ui.html`
 - Health: `http://localhost:18080/actuator/health` · Prometheus: `/actuator/prometheus`
-- DB 접속 override: `FLOWLINK_DB_URL`, `FLOWLINK_DB_USER`, `FLOWLINK_DB_PASSWORD`
+- DB 접속 override: `FLOWLINK_DB_URL`, `FLOWLINK_DB_USER`, `FLOWLINK_DB_PASSWORD` · 포트: `FLOWLINK_PORT`
+- 프로파일/인증/Vault 는 env 로 주입(운영): `SPRING_PROFILES_ACTIVE=oracle`, `FLOWLINK_AUTH_GITHUB_ENABLED=true`, `FLOWLINK_VAULT_ENABLED=true` — 하단 "최근 변경 (2026-07-19)" 섹션 참조.
 - **H2 파일 위치**: 기본 `~/flowlink-h2db/flowlink.mv.db` (사용자 홈). 변경: `FLOWLINK_H2_FILE`. 초기화: 그 `.mv.db` 삭제.
-  Hibernate `ddl-auto: update`(스키마 생성/갱신, 데이터 보존). 검증: 플로우 생성→재시작→유지 확인.
-- 백그라운드 PID/로그: `backend/.run/`
+- 백그라운드 PID/로그: 리포 루트 `.run/`(gitignore)
 - **내부 서버 배포(단일 jar)**: `npm run build` → `gradle bootJar` 하면 **frontend/dist 가 flowlink.jar 에 동봉**되어
   내장 톰캣이 화면+API 를 :18080 한 프로세스로 서빙([SpaStaticConfig](backend/src/main/kotlin/com/flowlink/common/web/SpaStaticConfig.kt)
-  — SPA fallback, api/mock/relay 제외). wait 콜백 수신 주소는 **접속 오리진 자동**(⚙ 설정에서 저장 가능 — 아래 RelayBaseResolver). 절차: [deploy/README.md](deploy/README.md)
+  — SPA fallback, api/mock/relay 제외). 앱은 도커에 안 올리고 서버(EC2)에서 scripts/ 로 실행. 절차: [infra/README.md](infra/README.md)
 
 ### Frontend (`frontend/`)
 ```
@@ -51,21 +57,16 @@ FlowLink 안에서 **가짜 대상 시스템을 만들고 켜는 1급 기능**. 
 - 응답 `contentType: html` + `{{body.returnUrl}}` 템플릿으로 **결제창 같은 웹페이지가 뜨고 콜백하는** 흐름도 만든다.
 - 워크플로 HTTP/폼 노드의 baseUrl 에 mock base URL 을 넣어 호출. 미완성 시스템을 mock 으로 세워 전체 흐름을 먼저 검증.
 - **TCP 전문 mock**(2026-07-06): spec 의 `tcp` 섹션(포트·문자셋·길이 프리픽스·contains 규칙)을 저장하면 백엔드가 그 포트에 TCP 리스너를 연다 — 워크플로 TCP 노드의 가짜 대상 시스템. 응답 템플릿 `{{req}}`/`{{req:오프셋:길이}}`.
-- 상세: [docs/superpowers/specs/2026-07-04-mock-server-builder-design.md](docs/superpowers/specs/2026-07-04-mock-server-builder-design.md), 결제창+콜백 데모 [demos/pay-mock/README.md](demos/pay-mock/README.md).
+- 상세: [docs/superpowers/specs/2026-07-04-mock-server-builder-design.md](docs/superpowers/specs/2026-07-04-mock-server-builder-design.md).
 - ⚠️ 상태 관리(부분취소 잔액 원장 등)는 범위 밖(범용 무상태 목) — 상태 있는 시뮬레이터가 필요하면 별도 프로세스로 세워 baseUrl 로 호출.
 
-### 데모 워크플로 (리포 루트 · `demos/`)
-```
-node demos/seed-mock.mjs   # 백엔드(:18080)에 slug `demo` mock 을 생성/갱신(1회) — 의존성 0
-```
-- `demos/demo-01~04·06-*.json` 은 위 **내장 Mock**(base `http://localhost:18080/mock/demo`)을 대상으로 한다.
-  seed 스크립트가 결제 게이트웨이·REST API·레거시 EUC-KR 라우트를 백엔드에 심는다(별도 mock 프로세스 불필요).
-  내장 Mock 서버 편집기로 세우는 데모는 `demos/pay-mock/*.json`(slug `pay-mock`). 상세: [demos/README.md](demos/README.md).
+> ⚠️ **`demos/`·`e2e/`·구 `.github`/`flowlink-workflow` 스킬은 제거됨**(2026-07-19 정리). 데모 워크플로 시드/e2e 스크립트는
+> 더 이상 리포에 없다 — 아래 "최근 변경" 섹션들에서 `demos/*.json`·`node e2e/*.mjs`·`node demos/seed-mock.mjs` 언급은 당시 기록(현재 파일 없음).
 
 ### 테스트
 ```powershell
 $env:JAVA_HOME="C:\Users\jslim\.jdks\corretto-21.0.10"
-./gradlew test   # 단위 테스트 4개 (DB 불필요)
+./gradlew test   # 백엔드 단위 테스트 전종 (DB 불필요, H2 인메모리)
 ```
 ⚠️ **Gradle 포크 테스트 워커가 한글/비ASCII 경로를 cp949로 잘못 디코딩하는 알려진 이슈**가 있음.
 `build.gradle.kts`에 `-Dfile.encoding=UTF-8 -Dsun.jnu.encoding=UTF-8` 회피책 적용됨.
@@ -865,6 +866,45 @@ design/   theme(라이트/다크) · index.css(CSS 변수)
 - 검증: 백엔드 단위(AssistantFormat 5·포맷) + copilot-device e2e 12/12(**device/start=실제 GitHub 코드**·pending·disconnect·프롬프트 CRUD) + assistant 21/21·secret 16/16 무회귀 + 브라우저(Copilot 연결 버튼·디바이스 코드 카드·속성 빈상태 접기) + tsc/build/oxlint.
 - ⚠ **Copilot 구독 필요**. `copilot_internal/v2/token`·`api.githubcopilot.com` 은 **비공식 내부 엔드포인트**(확장이 쓰는 것과 동일) — GitHub 이 바꾸면 헤더/URL(EDITOR_VERSION 등) 조정 필요. e2e 는 디바이스 코드 발급까지(실제 인증·Copilot 호출은 사용자 계정으로).
 - **속성 패널 빈 상태 정리**: 노드 미선택 시 큰 안내문 대신 한 줄 + **접기 버튼**([PropertyPanel](frontend/src/panels/PropertyPanel.tsx) — 이전엔 접을 수 없었음). 어시스턴트 빈 화면 샘플 프롬프트 칩 제거(프롬프트는 💬 라이브러리).
+
+## 최근 변경 (2026-07-19) — GitHub 로그인(Keycloak 대체) · deploy→infra 재편 · Vault 시크릿 · 리포 정리
+"메인 앱은 도커 대신 서버(EC2)에서, 도커엔 Keycloak 말고 Vault, 로그인은 우리 Copilot GitHub 로그인으로, 안 쓰는 것 정리" 요청. **이 섹션이 배포/인증/시크릿의 현재 소스 오브 트루스 — 아래 P1(Keycloak)·P4(deploy compose) 섹션은 당시 기록(대체됨).**
+
+### 앱 인증 = GitHub 로그인 (Keycloak/OIDC 대체)
+- **동작**: `FLOWLINK_AUTH_GITHUB_ENABLED=true` 면 GitHub 계정(어시스턴트 Copilot 연결과 동일한 **디바이스 플로우**)으로 로그인 →
+  앱이 **자체 JWT(HS256)** 를 발급하고 그 JWT 를 리소스 서버로 검증. 클레임 구조를 Keycloak JWT 와 동일하게
+  (`preferred_username`·`tenant`·`realm_access.roles`) 맞춰 기존 [JwtRoleConverter](backend/src/main/kotlin/com/flowlink/security/JwtRoleConverter.kt)·
+  TenantClaimFilter·[SecurityConfig](backend/src/main/kotlin/com/flowlink/security/SecurityConfig.kt) OIDC 브랜치를 **무변경 재사용**.
+- **코드**: [AuthProperties](backend/src/main/kotlin/com/flowlink/security/AuthProperties.kt)(`flowlink.auth.*`) ·
+  [AppJwt](backend/src/main/kotlin/com/flowlink/security/AppJwt.kt)(Nimbus HS256 발급 `issue()` + 검증 `decoder()`, 키=SHA-256(secret) 32B) ·
+  [GithubAuthService](backend/src/main/kotlin/com/flowlink/security/GithubAuthService.kt)(device/code → 백그라운드 폴 → `api.github.com/user` → `allows()` 화이트리스트 → appJwt) ·
+  [AuthConfig](backend/src/main/kotlin/com/flowlink/security/AuthConfig.kt)(`github-enabled=true` 일 때만 `JwtDecoder` 빈 등록 → 인증 브랜치 활성) ·
+  [AuthController](backend/src/main/kotlin/com/flowlink/security/AuthController.kt)(`/auth/config` mode=github|none · `/me` · `/github/device/start` · `/github/device/poll`, 전자 3개 permitAll).
+- **프론트**([auth/](frontend/src/auth/)): oidc-client-ts 제거 → localStorage 토큰([auth.ts](frontend/src/auth/auth.ts)) + [GitHubLogin](frontend/src/auth/GitHubLogin.tsx)(디바이스 코드 카드·폴링) +
+  [AuthContext](frontend/src/auth/AuthContext.tsx) github 모드. axios Bearer + 401 시 토큰 폐기·재로그인. `usePermissions()` 게이팅 불변.
+- **env**: `FLOWLINK_AUTH_GITHUB_ENABLED`(기본 false=dev permitAll) · `FLOWLINK_AUTH_JWT_SECRET`(미설정 시 dev 폴백+WARN) · `FLOWLINK_AUTH_ALLOWED_LOGINS`(비면 인증한 누구나).
+  client_id 는 Copilot 공개 client 기본(`AuthProperties.clientId`). 표준 OIDC(Auth0/Entra 등)도 여전히 지원 — `application.yml` issuer-uri 설정 시 그쪽으로(IdP 비종속).
+- 검증: 자체서명 HS256 토큰으로 `/me`·`/flows` 인증 통과·역할 매핑·위조서명 401·무토큰 401·실제 GitHub device 코드 발급·브라우저 로그인 화면 렌더.
+
+### 배포 재편: `deploy/` → `infra/`, 앱은 도커 밖, Vault 인프라
+- **메인 앱은 도커에 안 올린다** — 서버(EC2)에서 `scripts/start.sh`(위 실행 방법)로 단일 jar 실행. [infra/Dockerfile](infra/) 제거.
+- **[infra/docker-compose.yml](infra/docker-compose.yml)** = 지원 인프라만: **Vault**(dev, KV v2, :8200) + **Oracle**(`--profile oracle`, 로컬 테스트용).
+  Keycloak 서비스·realm·`keycloak-dev.compose.yml` 전부 제거. 앱 서비스도 제거. `docker compose -f infra/docker-compose.yml up -d`.
+- **Oracle 은 나중에 별도/사내 서버로 연결** — 앱 env `FLOWLINK_DB_URL` + `SPRING_PROFILES_ACTIVE=oracle` 만 그쪽으로. **DDL 은 유지**(Flyway `db/migration/oracle`).
+- [infra/README.md](infra/README.md)·`.env.example`·SERVER-DEVELOPMENT.md 를 새 구조로 재작성. 구 lifecycle(flowlink-start/stop·server-rebuild)은 `scripts/` 로 통합.
+
+### HashiCorp Vault 시크릿 연동 (시크릿 볼트에 오버레이)
+- **[VaultProperties](backend/src/main/kotlin/com/flowlink/secret/VaultProperties.kt)**(`flowlink.vault.*`: enabled/address/token/mount/path/refresh-seconds) +
+  **[VaultSecretSource](backend/src/main/kotlin/com/flowlink/secret/VaultSecretSource.kt)**: `GET {addr}/v1/{mount}/data/{path}`(X-Vault-Token, KV v2 봉투 `data.data`) → 시크릿 맵. TTL 캐시(3초 타임아웃, 실패 시 이전 캐시 유지 → 실행 무중단).
+- **[SecretService](backend/src/main/kotlin/com/flowlink/secret/SecretService.kt)**: `activeSecrets` 가 Vault 를 **공통 기본층**으로 오버레이(우선순위: 활성환경 DB > 공통 DB > Vault). 단일 choke point 라 시드+마스킹 자동 적용.
+  `listNames` 에 Vault 이름을 `source=vault`(읽기전용)로 노출 → 바인딩 피커/시크릿 볼트 다이얼로그에 자동. 프론트 `SecretView.source` + [SecretsDialog](frontend/src/components/SecretsDialog.tsx) `Vault` 배지·삭제 비활성.
+- 기본 비활성(무회귀). enabled=true(+token) 일 때만 조회. env: `FLOWLINK_VAULT_ENABLED`·`FLOWLINK_VAULT_ADDRESS`·`FLOWLINK_VAULT_TOKEN`.
+- 검증(라이브): Vault dev(도커)에 시크릿 시드 → 목록 `source=vault` → `{{ CLEANKEY@secret }}` 실행 SUCCEEDED(다운스트림 assert 비교까지 정확)·로그 마스킹(••••••)·원문 미노출·음성대조 FAILED. 백엔드 test 전종 PASS·프론트 tsc/build. 브라우저에서 `Vault` 배지·읽기전용 렌더 확인.
+
+### 리포 정리 (test-as-you-go)
+- 제거: `demos/`(데모 워크플로/seed) · `e2e/`(테스트 스크립트) · 구 `.github`/`flowlink-workflow` 스킬 · `backend/scripts`(구 backend 기동). 삭제 후 빌드/테스트 통과 확인.
+- `scripts/`(리포 루트)에 앱 lifecycle 통합: `start`/`stop`/`status` × (`.sh` Linux·`.ps1` Windows). ⚠ 두 세트는 PID 파일 규약(Git Bash PID vs Windows PID)이 달라 섞어 쓰면 안 됨.
+- ⚠ Vault dev 서버는 인메모리(재시작 시 초기화). GitHub 로그인 미설정 시 dev permitAll(로컬). 앱 JWT 시크릿·Vault 토큰은 운영 전 반드시 교체.
 
 ## 참고 문서
 - `backend/README.md` — Phase 1 구현 범위 표, API 요약, 실행 가이드

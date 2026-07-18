@@ -848,6 +848,15 @@ design/   theme(라이트/다크) · index.css(CSS 변수)
 - 검증: 백엔드 단위 무회귀 + secret-env e2e 16/16 + tcp/callback e2e 12/12(미리보기 바이트/오프셋/절단/패딩/프리픽스/hex — 브라우저 실측 hex `30 30 31 32|C8 AB B1 E6|30 30 30 30 31 35 30 30` = "0012"+"홍길"(EUC-KR 절단)+"00001500" 일치 · 콜백 흐름 wait→테스트콜백→resume→SUCCEEDED) + tsc/build/oxlint.
 - ⚠ TCP 미리보기 상류 바인딩은 빈 컨텍스트(리터럴/토큰만). 테스트 콜백은 대기 중(WAITING)에만 노출. 시크릿 환경 오버레이는 이름 단위(같은 이름 환경값이 공통 덮음). H2 dev 는 (tenant,env,name) DB 유니크 없음(앱 레벨 보장) — 운영 DB(Flyway)만 유니크 인덱스.
 
+## 최근 변경 (2026-07-18) — 노드 고정 폭·접기 + AI 채팅 어시스턴트(자연어 → 플로우)
+- **노드 고정 폭 + 접기/펴기**: 폭 230px 를 공유 상수 [NODE_W](frontend/src/canvas/nodeMeta.ts)로 통일(NodeCard·BranchNode·SwitchNode·FlowCanvas). 노드 헤더 셰브런(▾/▸)으로 상세행(HTTP/TCP 요약)+부라벨을 접어 캔버스 정리 — 핸들 유지(엣지 불변), 상태 `node.collapsed`(raw 그래프 라운드트립). 도구(⋯) '모두 접기/펴기'(주석 제외). [editorStore](frontend/src/store/editorStore.ts) `toggleNodeCollapse`/`setAllCollapsed`(dirty 표시·undo 미적재).
+- **AI 채팅 어시스턴트(Copilot 스타일)**: 에디터 우측 ✨ AI 패널([AssistantPanel](frontend/src/components/AssistantPanel.tsx)) — 자연어로 플로우 생성/수정. 현재 캔버스(`getGraph()`)를 맥락으로 보내 제안 그래프를 받고 '캔버스에 적용'([importGraph](frontend/src/store/editorStore.ts), Ctrl+Z 되돌리기).
+  - 백엔드 `com.flowlink.assistant`: `POST /api/v1/assistant/chat`([AssistantController](backend/src/main/kotlin/com/flowlink/assistant/AssistantController.kt)) → [AssistantService](backend/src/main/kotlin/com/flowlink/assistant/AssistantService.kt) 가 Claude(Anthropic Messages API) 호출. 시스템 프롬프트=[FlowSchemaPrompt](backend/src/main/kotlin/com/flowlink/assistant/FlowSchemaPrompt.kt)(노드 타입·엣지 `{from,to,fromPort}`·토큰 문법·레이아웃) + 현재 그래프. 응답 `{reply, graph}` 는 **균형 중괄호 스캐너**(문자열/이스케이프 인지)로 파싱. `GET /assistant/config`(stub/실제·모델).
+  - **키 해석**: env `FLOWLINK_ASSISTANT_API_KEY`/yml → 시크릿 볼트 `anthropic-api-key`. 둘 다 없으면 **stub 모드**(키워드 기반 결정적 샘플: http/otp/결제/tcp) — 키 없이도 기능 완결. [AssistantProperties](backend/src/main/kotlin/com/flowlink/assistant/AssistantProperties.kt)(`flowlink.assistant.*`).
+  - **하드닝**(적대적 리뷰 7건): LLM 컨텍스트로 보내기 전 **SET secret=true 변수 값 마스킹**(하드코딩 토큰은 감지 불가 → 시크릿 볼트 권장) · 동시 호출 **벌크헤드**(Semaphore, `max-concurrent`=4, 초과 429) · 적용 전 크래시 안전 검증([graphValidate](frontend/src/lib/graphValidate.ts), 수동 가져오기와 공용) · Enter 전송 **IME 가드**(한글 조합 중 오전송 방지) · 좁은 화면 자동 속성패널 접기 · 깨진 JSON 본문 400([GlobalExceptionHandler](backend/src/main/kotlin/com/flowlink/common/error/GlobalExceptionHandler.kt), 앱 전역). SsrfGuard 는 api.anthropic.com 통과. RBAC=editor 이상.
+- 검증: 단위(AssistantJsonTest 6·백엔드 무회귀) + assistant e2e 21/21(config·인텐트별 그래프 유효성(START·엣지 포맷·IF포트)·제안 그래프 저장/실행 터미널 도달·멀티턴·깨진본문 400) + 브라우저 실측(✨열기→제안→적용 3→8노드 교체·노드 접기 85→39px·폭 230 고정) + tsc/build/oxlint.
+- ⚠ 어시스턴트는 사용자 그래프를 외부 LLM(Anthropic)에 보냄(키 설정 시) — 시크릿 볼트 토큰은 이름만, SET 시크릿 값은 마스킹, 그 외 하드코딩 값은 그대로 전송(옵트인 전제). LLM 호출은 요청 스레드 동기(벌크헤드로 상한). 키 없으면 외부 호출 없음(stub 로컬).
+
 ## 참고 문서
 - `backend/README.md` — Phase 1 구현 범위 표, API 요약, 실행 가이드
 - `docs/` — UI/UX 멀티에이전트 설계 토론 로그, 엔터프라이즈 고도화 설계

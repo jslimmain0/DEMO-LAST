@@ -68,12 +68,13 @@ export function RunPanel({
         height,
         flexShrink: 0,
         background: 'var(--fl-surface)',
+        color: 'var(--fl-text)',
         display: 'flex',
         flexDirection: 'column',
       }}
     >
       <header style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 14px', borderBottom: '1px solid var(--fl-border)' }}>
-        <strong style={{ fontSize: 13 }}>실행 로그</strong>
+        <strong style={{ fontSize: 13, color: 'var(--fl-text)' }}>실행 로그</strong>
         {execution && <StatusBadge status={execution.status} />}
         {execution?.error && <span style={{ fontSize: 12, color: 'var(--fl-fail)' }}>{execution.error}</span>}
         {running && onStop && (

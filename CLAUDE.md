@@ -882,7 +882,7 @@ design/   theme(라이트/다크) · index.css(CSS 변수)
   [AuthController](backend/src/main/kotlin/com/flowlink/security/AuthController.kt)(`/auth/config` mode=github|none · `/me` · `/github/device/start` · `/github/device/poll`, 전자 3개 permitAll).
 - **프론트**([auth/](frontend/src/auth/)): oidc-client-ts 제거 → localStorage 토큰([auth.ts](frontend/src/auth/auth.ts)) + [GitHubLogin](frontend/src/auth/GitHubLogin.tsx)(디바이스 코드 카드·폴링) +
   [AuthContext](frontend/src/auth/AuthContext.tsx) github 모드. axios Bearer + 401 시 토큰 폐기·재로그인. `usePermissions()` 게이팅 불변.
-- **env**: `FLOWLINK_AUTH_GITHUB_ENABLED`(기본 false=dev permitAll) · `FLOWLINK_AUTH_JWT_SECRET`(미설정 시 dev 폴백+WARN) · `FLOWLINK_AUTH_ALLOWED_LOGINS`(비면 인증한 누구나).
+- **env**: `FLOWLINK_AUTH_GITHUB_ENABLED`(기본 false=dev permitAll). **github-enabled=true 면 fail-closed** — `FLOWLINK_AUTH_JWT_SECRET`(없으면 토큰 위조 가능)과 `FLOWLINK_AUTH_ALLOWED_LOGINS`(허용 GitHub 로그인 목록, 없으면 누구나 admin) 둘 다 필수([GithubAuthStartupValidator](backend/src/main/kotlin/com/flowlink/security/AuthConfig.kt) 가 미설정 시 기동 실패시킴).
   client_id 는 Copilot 공개 client 기본(`AuthProperties.clientId`). 표준 OIDC(Auth0/Entra 등)도 여전히 지원 — `application.yml` issuer-uri 설정 시 그쪽으로(IdP 비종속).
 - 검증: 자체서명 HS256 토큰으로 `/me`·`/flows` 인증 통과·역할 매핑·위조서명 401·무토큰 401·실제 GitHub device 코드 발급·브라우저 로그인 화면 렌더.
 
@@ -902,10 +902,21 @@ design/   theme(라이트/다크) · index.css(CSS 변수)
 - 검증(라이브): Vault dev(도커)에 시크릿 시드 → 목록 `source=vault` → `{{ CLEANKEY@secret }}` 실행 SUCCEEDED(다운스트림 assert 비교까지 정확)·로그 마스킹(••••••)·원문 미노출·음성대조 FAILED. 백엔드 test 전종 PASS·프론트 tsc/build. 브라우저에서 `Vault` 배지·읽기전용 렌더 확인.
 
 ### 리포 정리 (test-as-you-go)
-- 제거: `demos/`(데모 워크플로/seed) · `e2e/`(테스트 스크립트) · 구 `.github`/`flowlink-workflow` 스킬 · `backend/scripts`(구 backend 기동). 삭제 후 빌드/테스트 통과 확인.
+- 제거: `demos/`(데모 워크플로/seed) · `e2e/`(테스트 스크립트) · 구 `.github`/`flowlink-workflow` 스킬 · `backend/scripts`(구 backend 기동) · `legacy/`(동결 프로토타입) · docs 구 설계문서 5종(초기 Jul-10). 삭제 후 빌드/테스트 통과 확인.
 - `scripts/`(리포 루트)에 앱 lifecycle 통합: `start`/`stop`/`status` × (`.sh` Linux·`.ps1` Windows). ⚠ 두 세트는 PID 파일 규약(Git Bash PID vs Windows PID)이 달라 섞어 쓰면 안 됨.
+- 단일 프로세스 정리: 죽은 `flowlink.security.client-id`(구 OIDC PKCE 잔재) 제거. README(루트/frontend/backend/infra) 전면 재작성.
 - ⚠ Vault dev 서버는 인메모리(재시작 시 초기화). GitHub 로그인 미설정 시 dev permitAll(로컬). 앱 JWT 시크릿·Vault 토큰은 운영 전 반드시 교체.
 
+### 앱 GitHub 로그인 = Copilot 연결 통합 + 적대적 리뷰 반영
+- **통합**: 앱 로그인과 어시스턴트 Copilot 연결이 같은 계정·client_id(Copilot 공개)·scope(read:user)라, 로그인 때 받은 GitHub 토큰을
+  [GithubLoginEvent](backend/src/main/kotlin/com/flowlink/security/GithubLoginEvent.kt) 로 발행 → [AssistantOAuthService.onGithubLogin](backend/src/main/kotlin/com/flowlink/assistant/AssistantOAuthService.kt) 이
+  어시스턴트 토큰 저장소(AES-GCM)에 넣어 **한 번 로그인 = 앱 접속 + Copilot 연결**. Copilot client 일 때만 채택, 폴 스레드에서 event.tenant 스코프 세팅/복원.
+- **적대적 멀티에이전트 리뷰(4관점 → 발견별 검증, 7건 확정) 반영**:
+  (1)[high] github-enabled + jwt-secret 미설정 → 공개 dev 키로 토큰 위조 → **fail-closed 기동 실패**(GithubAuthStartupValidator). (2)[high] 빈 allowed-logins → 누구나 admin → **필수화(기동 실패)**.
+  (3)[med] 무인증 device/start 남용 → 폴러 스레드 폭주 → **동시 세션 상한(MAX_SESSIONS=20)**. (4)[med] issuer-uri OIDC 인데 config 가 mode=none 반환 → **`oidc` 모드 반환**(JwtDecoder 유무).
+  (5)[med] Vault 블로킹 호출이 @Transactional 안 → DB 커넥션 점유 → **activeSecrets/listNames 트랜잭션 밖으로**. (6)[med] 프론트 일시 /me 실패에 유효 토큰 폐기 → **401/403 일 때만 폐기**. (7)[med] OIDC 모드 프론트가 dev 로 오인 → **oidc 안내 화면**.
+- 검증: 백엔드 test 전종(GithubAuthStartupValidatorTest·AssistantOAuthLinkTest 포함) + fail-closed 라이브(allowed-logins 없이 github 기동 시 IllegalStateException 으로 중단) + tsc/build.
+
 ## 참고 문서
-- `backend/README.md` — Phase 1 구현 범위 표, API 요약, 실행 가이드
-- `docs/` — UI/UX 멀티에이전트 설계 토론 로그, 엔터프라이즈 고도화 설계
+- `backend/README.md` — 백엔드 구조·설정·API 요약 · `frontend/README.md` · `infra/README.md`(배포)
+- `docs/사용가이드.md` — 실사용자 가이드 · `docs/superpowers/` — 구현 계획/설계 스펙

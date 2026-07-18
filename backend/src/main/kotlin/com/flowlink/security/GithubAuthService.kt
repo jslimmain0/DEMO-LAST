@@ -46,6 +46,11 @@ class GithubAuthService(
     data class PollResult(val status: String, val token: String? = null, val login: String? = null, val error: String? = null)
 
     fun startDevice(): DeviceStart {
+        // 무인증 엔드포인트 — 만료 세션 정리 후 동시 세션 상한으로 폴러 스레드/외부 폴링 폭주를 막는다.
+        cleanup()
+        if (sessions.size >= MAX_SESSIONS) {
+            throw BadRequestException("동시 로그인 시도가 너무 많습니다. 잠시 후 다시 시도하세요.")
+        }
         val body = "client_id=${props.clientId}&scope=" + enc("read:user")
         val root = postForm(DEVICE_CODE_URL, body)
         val deviceCode = root.path("device_code").asText(null) ?: throw BadRequestException("device_code 를 받지 못했습니다.")
@@ -57,7 +62,6 @@ class GithubAuthService(
         val session = Session(deadline = Instant.now().plusSeconds(expiresIn.toLong()))
         sessions[sessionId] = session
         pollers.submit { pollLoop(sessionId, deviceCode, interval, session) }
-        cleanup()
         return DeviceStart(sessionId, userCode, verify, interval, expiresIn)
     }
 
@@ -141,5 +145,7 @@ class GithubAuthService(
     companion object {
         const val DEVICE_CODE_URL = "https://github.com/login/device/code"
         const val TOKEN_URL = "https://github.com/login/oauth/access_token"
+        /** 동시 진행 디바이스 로그인 세션 상한 — 무인증 device/start 남용으로 인한 폴러 스레드/외부 폴링 폭주 방지. */
+        const val MAX_SESSIONS = 20
     }
 }

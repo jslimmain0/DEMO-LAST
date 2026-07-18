@@ -1,7 +1,9 @@
 package com.flowlink.security
 
 import com.flowlink.common.tenant.TenantContext
+import org.springframework.beans.factory.ObjectProvider
 import org.springframework.security.core.context.SecurityContextHolder
+import org.springframework.security.oauth2.jwt.JwtDecoder
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PostMapping
@@ -22,6 +24,7 @@ import org.springframework.web.bind.annotation.RestController
 class AuthController(
     private val authProps: AuthProperties,
     private val githubAuth: GithubAuthService,
+    private val jwtDecoder: ObjectProvider<JwtDecoder>,
 ) {
 
     data class AuthConfigResponse(val enabled: Boolean, val mode: String)
@@ -29,8 +32,13 @@ class AuthController(
 
     @GetMapping("/config")
     fun config(): AuthConfigResponse {
-        val mode = if (authProps.githubEnabled) "github" else "none"
-        return AuthConfigResponse(enabled = authProps.githubEnabled, mode = mode)
+        // github > oidc(issuer-uri 로 JwtDecoder 자동등록) > none(dev). oidc 는 SPA 셀프 로그인이 없어 외부 토큰이 필요하다.
+        val mode = when {
+            authProps.githubEnabled -> "github"
+            jwtDecoder.ifAvailable != null -> "oidc"
+            else -> "none"
+        }
+        return AuthConfigResponse(enabled = mode != "none", mode = mode)
     }
 
     @GetMapping("/me")

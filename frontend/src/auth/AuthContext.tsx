@@ -5,7 +5,7 @@ import { GitHubLogin } from './GitHubLogin'
 interface AuthState {
   /** 부트스트랩 완료 여부 — false 동안은 화면을 그리지 않는다. */
   ready: boolean
-  /** 인증 모드 여부(GitHub 로그인 활성). false=dev(로그인 없음). */
+  /** 인증 모드 여부(로그인 필요). false=dev(로그인 없음). */
   enabled: boolean
   me: Me | null
   logout: () => void
@@ -13,34 +13,56 @@ interface AuthState {
 
 const AuthContext = createContext<AuthState>({ ready: false, enabled: false, me: null, logout: () => {} })
 
-/** StrictMode 이중 이펙트에도 부트스트랩은 1회만. */
-let bootPromise: Promise<{ enabled: boolean; me: Me | null; needsLogin: boolean }> | null = null
+interface Boot {
+  mode: string
+  me: Me | null
+  needsLogin: boolean
+  /** OIDC 등 SPA 셀프 로그인이 없는 인증 모드인데 유효 토큰이 없음 — 로그인 화면 대신 안내. */
+  blockedOidc?: boolean
+}
 
-async function boot(): Promise<{ enabled: boolean; me: Me | null; needsLogin: boolean }> {
+/** StrictMode 이중 이펙트에도 부트스트랩은 1회만. */
+let bootPromise: Promise<Boot> | null = null
+
+function errStatus(e: unknown): number | undefined {
+  return (e as { response?: { status?: number } })?.response?.status
+}
+
+async function boot(): Promise<Boot> {
   const cfg = await authApi.config()
-  if (cfg.mode !== 'github') {
+  if (cfg.mode === 'none') {
     // dev 모드 — 로그인 없음. /me 는 전권 가짜 사용자(게이팅 단일 경로).
     const me = await authApi.me().catch(() => null)
-    return { enabled: false, me, needsLogin: false }
+    return { mode: 'none', me, needsLogin: false }
   }
-  // GitHub 로그인 모드
+  // 인증 필수 모드(github | oidc)
   attachAuthInterceptors()
   if (getAccessToken()) {
-    const me = await authApi.me().catch(() => null)
-    if (me) return { enabled: true, me, needsLogin: false }
-    setToken(null) // 만료/무효 토큰
+    try {
+      const me = await authApi.me()
+      return { mode: cfg.mode, me, needsLogin: false }
+    } catch (e) {
+      const status = errStatus(e)
+      if (status === 401 || status === 403) {
+        setToken(null) // 무효/만료 토큰만 폐기 → 재로그인
+      } else {
+        // 일시 오류(5xx/네트워크/타임아웃)엔 유효 토큰을 버리지 않는다 — 로그아웃 없이 진행(me 는 다음 새로고침에 재조회).
+        return { mode: cfg.mode, me: null, needsLogin: false }
+      }
+    }
   }
-  return { enabled: true, me: null, needsLogin: true }
+  // 토큰 없음(또는 방금 폐기)
+  if (cfg.mode === 'github') return { mode: 'github', me: null, needsLogin: true }
+  // oidc — SPA 셀프 로그인 흐름이 없다(외부 IdP 토큰 필요). 조용히 깨지지 않게 안내 화면.
+  return { mode: 'oidc', me: null, needsLogin: false, blockedOidc: true }
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<{ ready: boolean; enabled: boolean; me: Me | null; needsLogin: boolean }>({
-    ready: false, enabled: false, me: null, needsLogin: false,
-  })
+  const [state, setState] = useState<{ ready: boolean; boot: Boot | null }>({ ready: false, boot: null })
 
   useEffect(() => {
     if (!bootPromise) bootPromise = boot()
-    bootPromise.then((r) => setState({ ready: true, enabled: r.enabled, me: r.me, needsLogin: r.needsLogin }))
+    bootPromise.then((b) => setState({ ready: true, boot: b }))
   }, [])
 
   const logout = () => {
@@ -48,15 +70,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (typeof window !== 'undefined') window.location.reload()
   }
 
-  if (!state.ready) {
-    return <div style={{ display: 'grid', placeItems: 'center', height: '100vh', color: 'var(--fl-text-muted)' }}>로그인 확인 중…</div>
+  if (!state.ready || !state.boot) {
+    return <div style={centered}>로그인 확인 중…</div>
   }
-  if (state.needsLogin) {
+  const b = state.boot
+  if (b.needsLogin) {
     // 로그인 성공 → 리로드로 재부트(토큰으로 /me 조회 → 인증 상태)
     return <GitHubLogin onSuccess={() => window.location.reload()} />
   }
-  return <AuthContext.Provider value={{ ready: state.ready, enabled: state.enabled, me: state.me, logout }}>{children}</AuthContext.Provider>
+  if (b.blockedOidc) {
+    return (
+      <div style={centered}>
+        <div style={{ maxWidth: 420, textAlign: 'center', lineHeight: 1.6 }}>
+          <div style={{ fontWeight: 800, fontSize: 20, marginBottom: 8 }}>외부 IdP 인증 필요</div>
+          이 인스턴스는 OIDC(외부 IdP) 토큰 인증 모드입니다. 화면 자체 로그인은 제공되지 않습니다 —
+          유효한 액세스 토큰으로 API 를 호출하거나, GitHub 로그인 모드로 전환하세요.
+        </div>
+      </div>
+    )
+  }
+  return (
+    <AuthContext.Provider value={{ ready: true, enabled: b.mode !== 'none', me: b.me, logout }}>{children}</AuthContext.Provider>
+  )
 }
+
+const centered = { display: 'grid', placeItems: 'center', height: '100vh', color: 'var(--fl-text-muted)', padding: 24 } as const
 
 export function useAuth(): AuthState {
   return useContext(AuthContext)

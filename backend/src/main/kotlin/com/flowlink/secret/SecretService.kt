@@ -36,13 +36,14 @@ class SecretService(
         try { repo.backfillNullEnvironment(Secret.COMMON) } catch (e: Exception) { /* 백필 실패는 무해 — 무시 */ }
     }
 
-    @Transactional(readOnly = true)
+    // ⚠ @Transactional 없음(의도) — vault.secrets() 가 블로킹 HTTP 라, 트랜잭션 안이면 그 네트워크 I/O 동안
+    // DB 커넥션을 붙잡아 Vault 지연 시 풀이 고갈된다. repo.findBy 는 List 를 즉시 materialize 하므로 tx 불필요.
     fun listNames(): List<SecretView> {
         val db = repo.findByTenantIdOrderByEnvironmentAscNameAsc(tenant())
             .map { SecretView(it.name, viewEnv(it.environment), it.createdAt, "db") }
         // Vault 시크릿(공통, 읽기전용)은 목록·바인딩 피커에 노출 — 같은 이름을 DB 가 오버라이드하면 DB 것만.
         val dbNames = db.map { it.name }.toSet()
-        val vaultViews = vault.secrets().keys
+        val vaultViews = vault.secrets().keys       // DB 조회 후(커넥션 반환됨) 네트워크 호출
             .filter { it !in dbNames }
             .sorted()
             .map { SecretView(it, null, null, "vault") }
@@ -72,8 +73,9 @@ class SecretService(
     /**
      * 실행 시 복호화 머지 맵 — 공통(common) 위에 활성 환경(envName)을 이름 단위로 오버레이. 시드 + 마스킹 소스.
      * envName 미정의/미전송이면 공통만. 다른 환경 전용 시크릿은 복호화조차 안 함.
+     *
+     * ⚠ @Transactional 없음(의도, [listNames] 와 동일) — vault.secrets() 블로킹 HTTP 가 DB 커넥션을 붙잡지 않게.
      */
-    @Transactional(readOnly = true)
     fun activeSecrets(envName: String?): Map<String, String> {
         val env = envName?.trim().orEmpty()
         val common = LinkedHashMap<String, String>()

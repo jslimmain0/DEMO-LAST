@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { CSSProperties } from 'react'
 import { useEffect, useRef, useState } from 'react'
 import { assistantApi } from '../api/client'
@@ -31,7 +31,23 @@ export function AssistantPanel({ width, onClose }: { width: number; onClose: () 
   const getGraph = useEditorStore((s) => s.getGraph)
   const importGraph = useEditorStore((s) => s.importGraph)
   const { canEdit } = usePermissions()
+  const qc = useQueryClient()
   const cfg = useQuery({ queryKey: ['assistant', 'config'], queryFn: assistantApi.config })
+  const oauthQ = useQuery({ queryKey: ['assistant', 'oauth', 'status'], queryFn: assistantApi.oauthStatus })
+  const disconnect = useMutation({
+    mutationFn: assistantApi.oauthDisconnect,
+    onSuccess: () => { toast('AI 연결을 해제했습니다.', 'ok'); qc.invalidateQueries({ queryKey: ['assistant'] }) },
+  })
+  const connect = async () => {
+    try {
+      const { url } = await assistantApi.oauthAuthorize(window.location.origin)
+      window.location.href = url // provider 로그인 → 콜백이 앱으로 되돌림(?ai=connected)
+    } catch (e) {
+      toast((e as { response?: { data?: { message?: string } } })?.response?.data?.message || 'AI 연결 시작 실패', 'error')
+    }
+  }
+  const connected = oauthQ.data?.connected === true
+  const canConnect = oauthQ.data?.providerConfigured === true && !connected
   const [turns, setTurns] = useState<Turn[]>([])
   const [input, setInput] = useState('')
   const [pending, setPending] = useState(false)
@@ -78,10 +94,16 @@ export function AssistantPanel({ width, onClose }: { width: number; onClose: () 
       <header style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', borderBottom: '1px solid var(--fl-border)' }}>
         <span aria-hidden>✨</span>
         <b style={{ flex: 1, fontSize: 13.5 }}>AI 어시스턴트</b>
-        <span style={badge(cfg.data?.usingRealLlm)} title={cfg.data?.usingRealLlm ? `모델: ${cfg.data?.model}` : 'API 키 미설정 — 샘플(stub) 모드. 시크릿 볼트에 anthropic-api-key 추가 시 실제 AI'}>
-          {cfg.data?.usingRealLlm ? cfg.data?.model : 'stub'}
-        </span>
-        {canEdit && <button onClick={() => setSkillsOpen(true)} aria-label="지침·스킬" title="지침 · 스킬 관리" style={xBtn}>🧠</button>}
+        {connected ? (
+          <button onClick={() => disconnect.mutate()} title="AI 연결됨 — 클릭해 연결 해제" style={{ ...badge(true), cursor: 'pointer', border: '1px solid var(--fl-ok)', color: 'var(--fl-ok)' }}>🔗 연결됨</button>
+        ) : canConnect && canEdit ? (
+          <button onClick={connect} title="OAuth 로그인으로 AI 연결" style={connectBtn}>AI 연결</button>
+        ) : (
+          <span style={badge(cfg.data?.usingRealLlm)} title={cfg.data?.usingRealLlm ? `모델: ${cfg.data?.model}` : 'API 키/OAuth 미설정 — 샘플(stub) 모드'}>
+            {cfg.data?.usingRealLlm ? cfg.data?.model : 'stub'}
+          </span>
+        )}
+        {canEdit && <button onClick={() => setSkillsOpen(true)} aria-label="지침·스킬" title="지침 · 스킬 · AI 연결 설정" style={xBtn}>🧠</button>}
         <button onClick={onClose} aria-label="닫기" style={xBtn}>×</button>
       </header>
       {skillsOpen && <SkillsDialog onClose={() => setSkillsOpen(false)} />}
@@ -149,6 +171,7 @@ function bubble(role: string): CSSProperties {
   return { padding: '8px 11px', borderRadius: 12, fontSize: 12.5, lineHeight: 1.55, whiteSpace: 'pre-wrap', wordBreak: 'break-word', background: role === 'user' ? 'var(--fl-primary)' : 'var(--fl-surface-2)', color: role === 'user' ? '#fff' : 'var(--fl-text)', border: role === 'user' ? 'none' : '1px solid var(--fl-border)' }
 }
 const xBtn: CSSProperties = { width: 26, height: 26, borderRadius: 7, border: 'none', background: 'var(--fl-surface-2)', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 15 }
+const connectBtn: CSSProperties = { padding: '4px 10px', borderRadius: 999, border: 'none', background: 'var(--fl-primary)', color: '#fff', cursor: 'pointer', fontSize: 11, fontWeight: 700 }
 const sendBtn: CSSProperties = { flexShrink: 0, padding: '8px 12px', border: 'none', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-primary)', color: '#fff', cursor: 'pointer', fontSize: 12.5, fontWeight: 600 }
 const applyBtn: CSSProperties = { padding: '6px 12px', border: '1px solid var(--fl-primary)', borderRadius: 'var(--fl-radius-sm)', background: 'transparent', color: 'var(--fl-primary)', cursor: 'pointer', fontSize: 12, fontWeight: 600 }
 const suggestBtn: CSSProperties = { textAlign: 'left', padding: '7px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', color: 'var(--fl-text)', cursor: 'pointer', fontSize: 12, lineHeight: 1.4 }

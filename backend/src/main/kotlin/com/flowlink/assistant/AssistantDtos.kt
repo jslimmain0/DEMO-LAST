@@ -26,9 +26,10 @@ data class AssistantChatResponse(
     val model: String,
 )
 
-/** 어시스턴트 가용 상태 — 프론트 패널이 stub/실제 여부·모델을 표시. */
+/** 어시스턴트 가용 상태 — 프론트 패널이 stub/실제 여부·모델·인증 방식을 표시. */
 data class AssistantConfig(
     val available: Boolean, // 항상 true(stub 폴백) — 패널을 열 수 있는지
-    val usingRealLlm: Boolean, // 실제 LLM 키가 설정됐는지
+    val usingRealLlm: Boolean, // 실제 LLM 자격(OAuth 또는 키)이 있는지
     val model: String,
+    val authMode: String, // "oauth" | "key" | "stub"
 )

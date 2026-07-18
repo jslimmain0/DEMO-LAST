@@ -1,8 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { CSSProperties } from 'react'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { assistantApi } from '../api/client'
-import type { Skill } from '../api/types'
+import type { OAuthProviderUpdate, Skill } from '../api/types'
 import { usePermissions } from '../auth/AuthContext'
 import { newId } from '../lib/ids'
 import { useEditorStore } from '../store/editorStore'
@@ -108,7 +108,48 @@ export function SkillsDialog({ onClose }: { onClose: () => void }) {
           </div>
         )}
       </div>
+
+      {/* AI 연결(OAuth) provider 설정 — admin */}
+      {canAdmin && <OAuthProviderSection />}
     </Modal>
+  )
+}
+
+/** AI 연결(OAuth) provider 설정 — admin. 설정하면 어시스턴트 패널에 'AI 연결' 버튼이 뜬다. */
+function OAuthProviderSection() {
+  const qc = useQueryClient()
+  const cfg = useQuery({ queryKey: ['assistant', 'oauth', 'config'], queryFn: assistantApi.oauthConfig })
+  const [form, setForm] = useState<OAuthProviderUpdate>({})
+  const loaded = useRef(false)
+  useEffect(() => {
+    if (cfg.data && !loaded.current) {
+      loaded.current = true
+      setForm({ authorizeUrl: cfg.data.authorizeUrl, tokenUrl: cfg.data.tokenUrl, clientId: cfg.data.clientId, scope: cfg.data.scope, clientSecret: '' })
+    }
+  }, [cfg.data])
+  const save = useMutation({
+    mutationFn: () => assistantApi.updateOAuthConfig({ ...form, clientSecret: form.clientSecret || undefined }),
+    onSuccess: () => { toast('AI 연결(OAuth) 설정을 저장했습니다.', 'ok'); qc.invalidateQueries({ queryKey: ['assistant'] }) },
+    onError: (e: unknown) => toast(errMsg(e, '저장 실패(admin 권한 필요)'), 'error'),
+  })
+  const upd = (patch: OAuthProviderUpdate) => setForm((f) => ({ ...f, ...patch }))
+  const redirect = `${window.location.origin}/api/v1/assistant/oauth/callback`
+  return (
+    <div style={{ marginTop: 18, borderTop: '1px solid var(--fl-border)', paddingTop: 14 }}>
+      <label style={secLabel}>AI 연결 (OAuth) — GitHub Copilot 식 로그인 · admin</label>
+      <p style={{ ...hint, marginBottom: 8 }}>제공자 OAuth 를 설정하면 어시스턴트 패널에 <b>AI 연결</b> 버튼이 뜹니다. 사용자가 로그인하면 그 토큰으로 AI 를 호출합니다(관리자 API 키 대신). 제공자에 아래 <b>redirect URI</b> 를 등록하세요.</p>
+      <div style={{ display: 'grid', gap: 6 }}>
+        <input value={form.authorizeUrl ?? ''} onChange={(e) => upd({ authorizeUrl: e.target.value })} placeholder="Authorize URL (예: https://idp.example.com/authorize)" style={mono} />
+        <input value={form.tokenUrl ?? ''} onChange={(e) => upd({ tokenUrl: e.target.value })} placeholder="Token URL (예: https://idp.example.com/token)" style={mono} />
+        <div style={{ display: 'flex', gap: 6 }}>
+          <input value={form.clientId ?? ''} onChange={(e) => upd({ clientId: e.target.value })} placeholder="client_id" style={{ ...mono, flex: 1 }} />
+          <input value={form.scope ?? ''} onChange={(e) => upd({ scope: e.target.value })} placeholder="scope (선택)" style={{ ...mono, flex: 1 }} />
+        </div>
+        <input value={form.clientSecret ?? ''} onChange={(e) => upd({ clientSecret: e.target.value })} type="password" placeholder={cfg.data?.hasSecret ? 'client_secret (저장됨 — 바꿀 때만 입력)' : 'client_secret'} style={mono} />
+        <div style={{ fontSize: 10.5, color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)', wordBreak: 'break-all' }}>redirect URI: {redirect}</div>
+        <div><button onClick={() => save.mutate()} disabled={save.isPending} style={primary}>연결 설정 저장</button></div>
+      </div>
+    </div>
   )
 }
 

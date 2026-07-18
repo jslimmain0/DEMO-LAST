@@ -13,7 +13,11 @@ import type {
   FolderSummary,
   GraphNode,
   ResumeRequest,
+  AuthorizeUrlResponse,
   InstructionsUpdateRequest,
+  OAuthProviderConfig,
+  OAuthProviderUpdate,
+  OAuthStatus,
   RunRequest,
   SaveVersionRequest,
   SingleNodeRunResult,
@@ -182,4 +186,10 @@ export const assistantApi = {
   skills: () => http.get<SkillsView>('/assistant/skills').then((r) => r.data),
   updateSkills: (body: SkillsUpdateRequest) => http.put<SkillsView>('/assistant/skills', body).then((r) => r.data),
   updateInstructions: (body: InstructionsUpdateRequest) => http.put<SkillsView>('/assistant/instructions', body).then((r) => r.data),
+  // OAuth 연결(Copilot 식)
+  oauthStatus: () => http.get<OAuthStatus>('/assistant/oauth/status').then((r) => r.data),
+  oauthConfig: () => http.get<OAuthProviderConfig>('/assistant/oauth/config').then((r) => r.data),
+  updateOAuthConfig: (body: OAuthProviderUpdate) => http.put<OAuthProviderConfig>('/assistant/oauth/config', body).then((r) => r.data),
+  oauthAuthorize: (origin: string) => http.get<AuthorizeUrlResponse>('/assistant/oauth/authorize', { params: { origin } }).then((r) => r.data),
+  oauthDisconnect: () => http.post('/assistant/oauth/disconnect', {}).then(() => undefined),
 }

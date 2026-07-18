@@ -33,6 +33,7 @@ class AssistantService(
     private val secretService: SecretService,
     private val ssrfGuard: SsrfGuard,
     private val skills: SkillService,
+    private val oauth: AssistantOAuthService,
 ) {
     private val log = LoggerFactory.getLogger(AssistantService::class.java)
     private val mapper: ObjectMapper = json.mapper()
@@ -40,19 +41,20 @@ class AssistantService(
     /** 동시 LLM 호출 벌크헤드 — 느린 업스트림이 Tomcat 요청 스레드를 고갈시키지 않게 상한. */
     private val gate = Semaphore(props.maxConcurrent)
 
-    /** env/yml 우선, 없으면 시크릿 볼트의 anthropic-api-key. 요청 스레드(TenantContext)에서만 호출. */
-    private fun resolveKey(): String? {
-        props.apiKey?.let { return it }
-        return try {
-            secretService.activeSecrets(null)["anthropic-api-key"]?.takeIf { it.isNotBlank() }
-        } catch (e: Exception) {
-            log.debug("시크릿 볼트 키 조회 실패(무시): {}", e.message); null
-        }
+    /** LLM 호출 자격 — 헤더(이름,값). OAuth 연결 토큰 우선 → env/시크릿 api-key. 없으면 null(stub). */
+    private fun resolveAuth(): Pair<String, String>? {
+        // ① OAuth 연결 토큰(Copilot 식 로그인) — Authorization: Bearer
+        try { oauth.accessToken()?.let { return "Authorization" to "Bearer $it" } } catch (e: Exception) { log.debug("OAuth 토큰 조회 실패(무시): {}", e.message) }
+        // ② env/yml api-key 또는 시크릿 볼트 anthropic-api-key — x-api-key
+        val key = props.apiKey ?: try { secretService.activeSecrets(null)["anthropic-api-key"]?.takeIf { it.isNotBlank() } } catch (e: Exception) { null }
+        return key?.let { "x-api-key" to it }
     }
 
     fun config(): AssistantConfig {
-        val real = resolveKey() != null
-        return AssistantConfig(available = true, usingRealLlm = real, model = if (real) props.model else "stub")
+        val oauthConnected = try { oauth.connected() } catch (e: Exception) { false }
+        val real = resolveAuth() != null
+        val mode = if (oauthConnected) "oauth" else if (real) "key" else "stub"
+        return AssistantConfig(available = true, usingRealLlm = real, model = if (real) props.model else "stub", authMode = mode)
     }
 
     fun chat(req: AssistantChatRequest): AssistantChatResponse {
@@ -61,25 +63,25 @@ class AssistantService(
         if (messages.isEmpty() || messages.last().role != "user") {
             throw BadRequestException("보낼 메시지가 없습니다.")
         }
-        val key = resolveKey() ?: return stub(messages, req.graph)
-        return callAnthropic(key, messages, req.graph)
+        val auth = resolveAuth() ?: return stub(messages, req.graph)
+        return callAnthropic(auth, messages, req.graph)
     }
 
     // --- 실제 LLM 호출 ---
 
-    private fun callAnthropic(key: String, messages: List<ChatMessage>, graph: JsonNode?): AssistantChatResponse {
+    private fun callAnthropic(auth: Pair<String, String>, messages: List<ChatMessage>, graph: JsonNode?): AssistantChatResponse {
         // 벌크헤드 — 동시 호출 상한 초과면 429(요청 스레드가 느린 업스트림에 고갈되지 않게)
         if (!gate.tryAcquire(2, TimeUnit.SECONDS)) {
             throw TooManyRequestsException("AI 요청이 많습니다. 잠시 후 다시 시도하세요.")
         }
         try {
-            return callAnthropicInner(key, messages, graph)
+            return callAnthropicInner(auth, messages, graph)
         } finally {
             gate.release()
         }
     }
 
-    private fun callAnthropicInner(key: String, messages: List<ChatMessage>, graph: JsonNode?): AssistantChatResponse {
+    private fun callAnthropicInner(auth: Pair<String, String>, messages: List<ChatMessage>, graph: JsonNode?): AssistantChatResponse {
         val uri = URI.create(props.baseUrl + "/v1/messages")
         try { ssrfGuard.check(uri) } catch (e: Exception) { throw BadRequestException("AI 엔드포인트가 차단됐습니다: ${e.message}") }
 
@@ -102,7 +104,7 @@ class AssistantService(
         val request = HttpRequest.newBuilder(uri)
             .timeout(Duration.ofSeconds(90))
             .header("content-type", "application/json")
-            .header("x-api-key", key)
+            .header(auth.first, auth.second) // OAuth: Authorization: Bearer, 아니면 x-api-key
             .header("anthropic-version", "2023-06-01")
             .POST(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(body)))
             .build()

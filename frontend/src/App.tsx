@@ -3,7 +3,7 @@ import { useEffect } from 'react'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { AuthCallback } from './auth/AuthCallback'
 import { AuthProvider } from './auth/AuthContext'
-import { Toasts } from './components/toast'
+import { Toasts, toast } from './components/toast'
 import { applyTheme, getTheme } from './design/theme'
 import { Dashboard } from './routes/Dashboard'
 import { Editor } from './routes/Editor'
@@ -18,6 +18,16 @@ const queryClient = new QueryClient({
 export default function App() {
   useEffect(() => {
     applyTheme(getTheme())
+    // AI OAuth 연결 콜백 복귀(?ai=connected|error) — 토스트 + URL 정리
+    const p = new URLSearchParams(window.location.search)
+    const ai = p.get('ai')
+    if (ai === 'connected') toast('AI 를 연결했습니다.', 'ok')
+    else if (ai === 'error') toast('AI 연결에 실패했습니다. 설정을 확인하세요.', 'error')
+    if (ai) {
+      p.delete('ai')
+      const qs = p.toString()
+      window.history.replaceState({}, '', window.location.pathname + (qs ? `?${qs}` : ''))
+    }
   }, [])
 
   return (

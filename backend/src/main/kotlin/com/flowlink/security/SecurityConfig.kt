@@ -61,10 +61,6 @@ class SecurityConfig {
                         .requestMatchers("/api/v1/flows/*/triggers/**").hasAnyRole("editor", "admin")
                         // 시크릿 볼트는 write-only(값 미노출)지만 이름 목록도 editor 이상으로 제한
                         .requestMatchers("/api/v1/secrets/**").hasAnyRole("editor", "admin")
-                        // OAuth 콜백은 provider 가 브라우저를 리다이렉트(Bearer 없음) → 무인증(state 로 자체 검증)
-                        .requestMatchers(HttpMethod.GET, "/api/v1/assistant/oauth/callback").permitAll()
-                        // OAuth provider 설정은 admin(client_secret 등)
-                        .requestMatchers("/api/v1/assistant/oauth/config").hasRole("admin")
                         // 팀 지침은 전 팀원 프롬프트에 주입되는 스토어드 텍스트 → admin 만(프롬프트 인젝션 방지)
                         .requestMatchers("/api/v1/assistant/instructions").hasRole("admin")
                         // AI 어시스턴트(플로우 생성/수정·스킬)는 editor 이상. GET /config 도 포함(가용상태만이지만 쓰기 도구)

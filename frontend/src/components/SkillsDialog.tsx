@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { CSSProperties } from 'react'
 import { useEffect, useRef, useState } from 'react'
 import { assistantApi } from '../api/client'
-import type { OAuthProviderUpdate, Skill } from '../api/types'
+import type { Skill } from '../api/types'
 import { usePermissions } from '../auth/AuthContext'
 import { newId } from '../lib/ids'
 import { Modal } from './Modal'
@@ -87,42 +87,7 @@ export function SkillsDialog({ onClose, onApplyPrompt }: { onClose: () => void; 
         )}
       </div>
 
-      {canAdmin && <GitHubOAuthSection />}
     </Modal>
-  )
-}
-
-/** GitHub 연결(OAuth) 설정 — admin. client_id/secret 만(엔드포인트는 GitHub 고정). */
-function GitHubOAuthSection() {
-  const qc = useQueryClient()
-  const cfg = useQuery({ queryKey: ['assistant', 'oauth', 'config'], queryFn: assistantApi.oauthConfig })
-  const [form, setForm] = useState<OAuthProviderUpdate>({})
-  const loaded = useRef(false)
-  useEffect(() => {
-    if (cfg.data && !loaded.current) { loaded.current = true; setForm({ clientId: cfg.data.clientId, scope: cfg.data.scope, clientSecret: '', gatewayBaseUrl: cfg.data.gatewayBaseUrl, gatewayModel: cfg.data.gatewayModel }) }
-  }, [cfg.data])
-  const save = useMutation({
-    mutationFn: () => assistantApi.updateOAuthConfig({ ...form, clientSecret: form.clientSecret || undefined }),
-    onSuccess: () => { toast('GitHub 연결 설정을 저장했습니다.', 'ok'); qc.invalidateQueries({ queryKey: ['assistant'] }) },
-    onError: (e: unknown) => toast(errMsg(e, '저장 실패(admin 권한 필요)'), 'error'),
-  })
-  const upd = (patch: OAuthProviderUpdate) => setForm((f) => ({ ...f, ...patch }))
-  const redirect = `${window.location.origin}/api/v1/assistant/oauth/callback`
-  return (
-    <div style={{ marginTop: 18, borderTop: '1px solid var(--fl-border)', paddingTop: 14 }}>
-      <label style={secLabel}>GitHub 연결 (OAuth) · admin</label>
-      <p style={{ ...hint, marginBottom: 8 }}>GitHub OAuth App 을 만들고 <b>client_id / client_secret</b> 을 넣으면, 어시스턴트에 <b>GitHub 연결</b> 버튼이 뜹니다. 로그인하면 그 GitHub 토큰으로 아래 <b>AI 게이트웨이</b>(기본 <a href="https://github.com/marketplace/models" target="_blank" rel="noreferrer" style={{ color: 'var(--fl-primary)' }}>GitHub Models</a>)를 호출합니다. GitHub App 의 <b>Authorization callback URL</b> 에 아래 값을 등록하세요.</p>
-      <div style={{ display: 'grid', gap: 6 }}>
-        <input value={form.clientId ?? ''} onChange={(e) => upd({ clientId: e.target.value })} placeholder="client_id (GitHub OAuth App)" style={mono} />
-        <input value={form.clientSecret ?? ''} onChange={(e) => upd({ clientSecret: e.target.value })} type="password" placeholder={cfg.data?.hasSecret ? 'client_secret (저장됨 — 바꿀 때만 입력)' : 'client_secret'} style={mono} />
-        <input value={form.scope ?? ''} onChange={(e) => upd({ scope: e.target.value })} placeholder="scope (예: models · read:user)" style={mono} />
-        <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--fl-text-muted)', marginTop: 4 }}>AI 게이트웨이 (OpenAI 호환)</div>
-        <input value={form.gatewayBaseUrl ?? ''} onChange={(e) => upd({ gatewayBaseUrl: e.target.value })} placeholder="게이트웨이 URL (기본 https://models.github.ai/inference)" style={mono} />
-        <input value={form.gatewayModel ?? ''} onChange={(e) => upd({ gatewayModel: e.target.value })} placeholder="모델 (기본 openai/gpt-4o)" style={mono} />
-        <div style={{ fontSize: 10.5, color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)', wordBreak: 'break-all' }}>callback URL: {redirect}</div>
-        <div><button onClick={() => save.mutate()} disabled={save.isPending} style={primary}>GitHub 설정 저장</button></div>
-      </div>
-    </div>
   )
 }
 

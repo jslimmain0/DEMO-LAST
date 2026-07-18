@@ -26,35 +26,33 @@ export function AssistantPanel({ width, onClose }: { width: number; onClose: () 
   const { canEdit } = usePermissions()
   const qc = useQueryClient()
   const cfg = useQuery({ queryKey: ['assistant', 'config'], queryFn: assistantApi.config })
-  const oauthQ = useQuery({ queryKey: ['assistant', 'oauth', 'status'], queryFn: assistantApi.oauthStatus })
+  const [device, setDevice] = useState<{ userCode: string; verificationUri: string } | null>(null)
+  // 디바이스 인증 중이면 상태를 주기적으로 폴링(사용자가 코드 입력 완료를 감지)
+  const oauthQ = useQuery({ queryKey: ['assistant', 'oauth', 'status'], queryFn: assistantApi.oauthStatus, refetchInterval: device ? 3000 : false })
+  const connected = oauthQ.data?.connected === true
   const disconnect = useMutation({
     mutationFn: assistantApi.oauthDisconnect,
-    onSuccess: () => { toast('AI 연결을 해제했습니다.', 'ok'); qc.invalidateQueries({ queryKey: ['assistant'] }) },
+    onSuccess: () => { toast('Copilot 연결을 해제했습니다.', 'ok'); qc.invalidateQueries({ queryKey: ['assistant'] }) },
     onError: (e: unknown) => toast((e as { response?: { data?: { message?: string } } })?.response?.data?.message || '연결 해제 실패', 'error'),
   })
-  // GitHub 로그인 — 팝업을 열어 로그인·토큰 취득. 팝업이 콜백에서 postMessage 로 결과를 알려주면 상태 갱신.
+  // GitHub Copilot 연결 — 디바이스 플로우(확장과 동일). 코드 발급 → 사용자가 github.com/login/device 에서 입력 → 폴링.
   const connect = async () => {
     try {
-      const { url } = await assistantApi.oauthAuthorize()
-      window.open(url, 'flowlink-github-oauth', 'width=620,height=760,menubar=no,toolbar=no')
+      const d = await assistantApi.oauthDeviceStart()
+      setDevice({ userCode: d.userCode, verificationUri: d.verificationUri })
+      try { await navigator.clipboard?.writeText(d.userCode) } catch { /* ignore */ }
+      window.open(d.verificationUri, '_blank', 'noopener')
     } catch (e) {
-      toast((e as { response?: { data?: { message?: string } } })?.response?.data?.message || 'GitHub 연결 시작 실패', 'error')
+      toast((e as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Copilot 연결 시작 실패', 'error')
     }
   }
+  // 인증 완료(connected) 또는 대기 종료(에러) 감지
   useEffect(() => {
-    const onMsg = (ev: MessageEvent) => {
-      if (ev.origin !== window.location.origin) return
-      const d = ev.data as { flowlink?: string; result?: string }
-      if (d?.flowlink !== 'ai-oauth') return
-      if (d.result === 'connected') toast('GitHub 를 연결했습니다.', 'ok')
-      else toast('GitHub 연결에 실패했습니다.', 'error')
-      qc.invalidateQueries({ queryKey: ['assistant'] })
-    }
-    window.addEventListener('message', onMsg)
-    return () => window.removeEventListener('message', onMsg)
-  }, [qc])
-  const connected = oauthQ.data?.connected === true
-  const canConnect = oauthQ.data?.providerConfigured === true && !connected
+    if (!device) return
+    if (connected) { toast('GitHub Copilot 를 연결했습니다.', 'ok'); setDevice(null); qc.invalidateQueries({ queryKey: ['assistant'] }) }
+    else if (oauthQ.data && oauthQ.data.pending === false) { toast(oauthQ.data.error ? `연결 실패: ${oauthQ.data.error}` : '연결이 취소/만료됐습니다.', 'error'); setDevice(null) }
+  }, [connected, oauthQ.data, device, qc])
+  const canConnect = !connected
   const [turns, setTurns] = useState<Turn[]>([])
   const [input, setInput] = useState('')
   const [pending, setPending] = useState(false)
@@ -102,18 +100,32 @@ export function AssistantPanel({ width, onClose }: { width: number; onClose: () 
         <span aria-hidden>✨</span>
         <b style={{ flex: 1, fontSize: 13.5 }}>AI 어시스턴트</b>
         {connected ? (
-          <button onClick={() => disconnect.mutate()} title="GitHub 연결됨 — 클릭해 연결 해제" style={{ ...badge(true), cursor: 'pointer', border: '1px solid var(--fl-ok)', color: 'var(--fl-ok)' }}>🔗 연결됨</button>
+          <button onClick={() => disconnect.mutate()} title="GitHub Copilot 연결됨 — 클릭해 연결 해제" style={{ ...badge(true), cursor: 'pointer', border: '1px solid var(--fl-ok)', color: 'var(--fl-ok)' }}>🔗 Copilot</button>
+        ) : device ? (
+          <span style={badge(false)} title="인증 대기 중">인증 대기…</span>
         ) : canConnect && canEdit ? (
-          <button onClick={connect} title="GitHub 로그인으로 연결(팝업)" style={connectBtn}>GitHub 연결</button>
+          <button onClick={connect} title="GitHub 로그인으로 Copilot 연결(디바이스 코드)" style={connectBtn}>Copilot 연결</button>
         ) : (
-          <span style={badge(cfg.data?.usingRealLlm)} title={cfg.data?.usingRealLlm ? `모델: ${cfg.data?.model}` : 'API 키/OAuth 미설정 — 샘플(stub) 모드'}>
+          <span style={badge(cfg.data?.usingRealLlm)} title={cfg.data?.usingRealLlm ? `모델: ${cfg.data?.model}` : 'Copilot/API 키 미설정 — 샘플(stub) 모드'}>
             {cfg.data?.usingRealLlm ? cfg.data?.model : 'stub'}
           </span>
         )}
-        {canEdit && <button onClick={() => setSkillsOpen(true)} aria-label="프롬프트·지침" title="프롬프트 라이브러리 · 팀 지침 · GitHub 연결" style={xBtn}>💬</button>}
+        {canEdit && <button onClick={() => setSkillsOpen(true)} aria-label="프롬프트·지침" title="프롬프트 라이브러리 · 팀 지침" style={xBtn}>💬</button>}
         <button onClick={onClose} aria-label="닫기" style={xBtn}>×</button>
       </header>
       {skillsOpen && <SkillsDialog onClose={() => setSkillsOpen(false)} onApplyPrompt={(p) => void send(p)} />}
+
+      {/* 디바이스 인증 안내 카드 */}
+      {device && (
+        <div style={{ margin: 12, padding: 12, border: '1px solid var(--fl-primary)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', fontSize: 12.5, lineHeight: 1.6 }}>
+          <b>GitHub Copilot 연결</b> — 열린 GitHub 페이지에 아래 코드를 입력하세요(복사됨):
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '8px 0' }}>
+            <code style={{ fontSize: 18, fontWeight: 700, letterSpacing: 2, fontFamily: 'var(--fl-font-mono)', background: 'var(--fl-surface)', padding: '4px 10px', borderRadius: 6 }}>{device.userCode}</code>
+            <a href={device.verificationUri} target="_blank" rel="noreferrer" style={{ color: 'var(--fl-primary)', fontSize: 12 }}>페이지 다시 열기 ↗</a>
+          </div>
+          <div style={{ color: 'var(--fl-text-muted)' }}>인증하면 자동으로 연결됩니다… <button onClick={() => setDevice(null)} style={{ ...connectBtn, background: 'transparent', color: 'var(--fl-text-muted)', border: '1px solid var(--fl-border)' }}>취소</button></div>
+        </div>
+      )}
 
       <div ref={listRef} style={{ flex: 1, overflow: 'auto', padding: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
         {turns.length === 0 && (

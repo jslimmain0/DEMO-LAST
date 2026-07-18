@@ -45,16 +45,15 @@ class AssistantService(
      * LLM 호출 계획 — 자격/엔드포인트/포맷. OAuth(GitHub) 연결 시 **GitHub Models 게이트웨이(OpenAI 호환, Bearer)**,
      * 아니면 env/시크릿 api-key(Anthropic, x-api-key). 둘 다 없으면 null(stub).
      */
-    private data class Plan(val header: String, val value: String, val baseUrl: String, val model: String, val openai: Boolean)
+    private data class Plan(val header: String, val value: String, val baseUrl: String, val model: String, val openai: Boolean, val extraHeaders: Map<String, String> = emptyMap())
 
     private fun resolvePlan(): Plan? {
-        // ① GitHub OAuth 토큰 → GitHub Models(또는 설정한 게이트웨이) — OpenAI 호환, Authorization: Bearer
+        // ① GitHub Copilot 연결 → Copilot 채팅 API(OpenAI 호환, Bearer + 확장 헤더)
         try {
-            oauth.accessToken()?.let { tok ->
-                val (gwUrl, gwModel) = oauth.gateway()
-                return Plan("Authorization", "Bearer $tok", gwUrl, gwModel, openai = true)
+            oauth.copilotBearer()?.let { bearer ->
+                return Plan("Authorization", "Bearer $bearer", oauth.copilotChatBase(), oauth.copilotModel(), openai = true, extraHeaders = oauth.copilotHeaders())
             }
-        } catch (e: Exception) { log.debug("OAuth 토큰 조회 실패(무시): {}", e.message) }
+        } catch (e: Exception) { log.debug("Copilot 토큰 조회 실패(무시): {}", e.message) }
         // ② env/yml api-key 또는 시크릿 볼트 anthropic-api-key — Anthropic, x-api-key
         val key = props.apiKey ?: try { secretService.activeSecrets(null)["anthropic-api-key"]?.takeIf { it.isNotBlank() } } catch (e: Exception) { null }
         return key?.let { Plan("x-api-key", it, props.baseUrl, props.model, openai = false) }
@@ -68,7 +67,7 @@ class AssistantService(
         val oauthConnected = try { oauth.connected() } catch (e: Exception) { false }
         val real = oauthConnected || hasApiKey()
         val model = when {
-            oauthConnected -> try { oauth.gateway().second } catch (e: Exception) { props.model }
+            oauthConnected -> "copilot/" + try { oauth.copilotModel() } catch (e: Exception) { "gpt-4o" }
             real -> props.model
             else -> "stub"
         }
@@ -118,6 +117,7 @@ class AssistantService(
             .header("content-type", "application/json")
             .header("accept", "application/json")
             .header(plan.header, plan.value)
+        for ((k, v) in plan.extraHeaders) reqB = reqB.header(k, v) // Copilot: Editor-Version 등
         if (!plan.openai) reqB = reqB.header("anthropic-version", "2023-06-01")
         val request = reqB.POST(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(body))).build()
 

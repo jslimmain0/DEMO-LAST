@@ -13,10 +13,8 @@ import type {
   FolderSummary,
   GraphNode,
   ResumeRequest,
-  AuthorizeUrlResponse,
+  DeviceStart,
   InstructionsUpdateRequest,
-  OAuthProviderConfig,
-  OAuthProviderUpdate,
   OAuthStatus,
   RunRequest,
   SaveVersionRequest,
@@ -186,10 +184,8 @@ export const assistantApi = {
   skills: () => http.get<SkillsView>('/assistant/skills').then((r) => r.data),
   updateSkills: (body: SkillsUpdateRequest) => http.put<SkillsView>('/assistant/skills', body).then((r) => r.data),
   updateInstructions: (body: InstructionsUpdateRequest) => http.put<SkillsView>('/assistant/instructions', body).then((r) => r.data),
-  // OAuth 연결(Copilot 식)
+  // GitHub Copilot 연결(디바이스 플로우)
   oauthStatus: () => http.get<OAuthStatus>('/assistant/oauth/status').then((r) => r.data),
-  oauthConfig: () => http.get<OAuthProviderConfig>('/assistant/oauth/config').then((r) => r.data),
-  updateOAuthConfig: (body: OAuthProviderUpdate) => http.put<OAuthProviderConfig>('/assistant/oauth/config', body).then((r) => r.data),
-  oauthAuthorize: () => http.get<AuthorizeUrlResponse>('/assistant/oauth/authorize').then((r) => r.data),
+  oauthDeviceStart: () => http.post<DeviceStart>('/assistant/oauth/device/start', {}).then((r) => r.data),
   oauthDisconnect: () => http.post('/assistant/oauth/disconnect', {}).then(() => undefined),
 }

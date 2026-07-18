@@ -165,17 +165,14 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
   useEffect(() => setBodyConvNote(null), [selectedId])
 
   if (!node) {
+    // 선택된 노드가 없을 때 — 큰 안내문 대신 접기 버튼만(모달에선 아무것도 안 그림).
+    if (modal) return null
     return (
       <aside aria-label="속성" style={{ ...shell, width }}>
-        <div style={{ padding: '18px 16px', display: 'grid', gap: 14 }}>
-          <p style={{ color: 'var(--fl-text)', fontSize: 13.5, fontWeight: 600, margin: 0 }}>노드를 클릭하면 여기서 설정합니다.</p>
-          <ol style={{ margin: 0, paddingLeft: 18, display: 'grid', gap: 7, color: 'var(--fl-text-muted)', fontSize: 12.5, lineHeight: 1.5 }}>
-            <li>왼쪽 팔레트에서 노드를 캔버스로 끌어다 놓으세요.</li>
-            <li>노드의 핸들(●)을 드래그해 다음 노드와 연결하세요.</li>
-            <li>노드를 클릭하면 이 패널에서 편집합니다.</li>
-          </ol>
-          <p style={{ margin: 0, color: 'var(--fl-text-muted)', fontSize: 12 }}>선택한 노드는 <kbd style={{ fontFamily: 'var(--fl-font-mono)', fontSize: 11, padding: '1px 5px', background: 'var(--fl-surface-2)', border: '1px solid var(--fl-border)', borderRadius: 4 }}>Delete</kbd> 로 삭제합니다.</p>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6, padding: '8px 10px', borderBottom: '1px solid var(--fl-border)' }}>
+          {onCollapse && <button onClick={onCollapse} aria-label="속성 패널 접기" title="접기" style={iconBtn}>»</button>}
         </div>
+        <p style={{ padding: '14px 16px', margin: 0, color: 'var(--fl-text-muted)', fontSize: 12 }}>노드를 선택하면 여기서 설정합니다.</p>
       </aside>
     )
   }

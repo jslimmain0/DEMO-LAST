@@ -1,15 +1,18 @@
 package com.flowlink.assistant
 
+import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.kotlin.readValue
+import com.flowlink.common.error.BadRequestException
 import com.flowlink.common.json.JsonService
 import com.flowlink.settings.SettingsService
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 
 /**
- * 어시스턴트 지식 — 커스텀 인스트럭션 + 스킬(내장 + 사용자). 테넌트 설정(JSON)에 저장.
- * [promptBlock] 이 활성 지식을 시스템 프롬프트 블록으로 조립한다.
+ * 어시스턴트 지식 — 팀 지침(인스트럭션) + **스킬(재사용 플로우 조각)**.
+ * 스킬은 캔버스에 삽입하거나 AI 가 조합해 플로우를 만든다. [promptBlock] 이 시스템 프롬프트 블록으로 조립(길이 상한).
+ * 설정(JSON)에 저장 — 마이그레이션 없음.
  */
 @Service
 class SkillService(
@@ -19,54 +22,71 @@ class SkillService(
     private val log = LoggerFactory.getLogger(SkillService::class.java)
     private val mapper: ObjectMapper = json.mapper()
 
-    fun view(): SkillsView = SkillsView(instructions(), BuiltinSkills.ALL, userSkills())
+    fun view(): SkillsView = SkillsView(instructions(), builtinSkills(), userSkills())
 
     fun instructions(): String = settings.get(KEY_INSTRUCTIONS) ?: ""
+
+    fun builtinSkills(): List<Skill> = BuiltinSkills.RAW.map { r ->
+        Skill(id = r.id, name = r.name, description = r.description, nodeTypes = r.nodeTypes,
+            graph = parseGraph(r.graphJson), builtin = true)
+    }
 
     fun userSkills(): List<Skill> {
         val raw = settings.get(KEY_SKILLS) ?: return emptyList()
         return try {
             mapper.readValue<List<Skill>>(raw).map { it.copy(builtin = false) }
         } catch (e: Exception) {
-            log.warn("사용자 스킬 JSON 파싱 실패(무시): {}", e.message); emptyList()
+            // 파싱 실패는 조용히 버리지 않고 로그 — 손상 시 UI 는 빈 목록이 되지만 원인 기록.
+            log.warn("사용자 스킬 JSON 파싱 실패(빈 목록으로 처리): {}", e.message); emptyList()
         }
     }
 
-    fun update(req: SkillsUpdateRequest) {
-        // instructions: null=변경 없음, ""=삭제(설정 규약), 그 외 저장
+    /** 사용자 스킬 저장(editor). name 없는 스킬은 거절(조용한 유실 방지). */
+    fun updateSkills(req: SkillsUpdateRequest) {
+        if (req.user == null) return
+        val cleaned = req.user.map { it.copy(builtin = false) }
+        cleaned.firstOrNull { it.name.isBlank() }?.let { throw BadRequestException("이름 없는 스킬이 있습니다.") }
+        settings.put(KEY_SKILLS, mapper.writeValueAsString(cleaned))
+    }
+
+    /** 팀 지침 저장(admin — 스토어드 프롬프트 인젝션 방지 위해 상위 권한). */
+    fun updateInstructions(req: InstructionsUpdateRequest) {
         if (req.instructions != null) settings.put(KEY_INSTRUCTIONS, req.instructions)
-        if (req.user != null) {
-            val sanitized = req.user.map { it.copy(builtin = false) }
-            settings.put(KEY_SKILLS, mapper.writeValueAsString(sanitized))
-        }
     }
 
-    /** LLM 시스템 프롬프트에 얹을 지침 + 활성 스킬 블록(없으면 빈 문자열). */
-    fun promptBlock(): String = buildPromptBlock(instructions(), BuiltinSkills.ALL + userSkills())
+    /**
+     * LLM 시스템 프롬프트에 얹을 지침 + 스킬 조각 목록(총 길이 상한 PROMPT_CAP).
+     * 스킬은 이름·설명·조각 그래프를 제공해 어시스턴트가 재사용·조합하게 한다.
+     */
+    fun promptBlock(): String {
+        val instr = instructions().trim()
+        val skills = builtinSkills() + userSkills()
+        if (instr.isEmpty() && skills.isEmpty()) return ""
+        val sb = StringBuilder()
+        if (instr.isNotEmpty()) {
+            sb.append("\n\n## ORG INSTRUCTIONS (팀 지침 — 항상 우선 준수)\n").append(clip(instr, INSTR_CAP))
+        }
+        if (skills.isNotEmpty()) {
+            sb.append("\n\n## SKILLS (재사용 가능한 플로우 조각 — 요청에 맞으면 이 조각을 그대로/변형해 조합)\n")
+            for (s in skills) {
+                if (sb.length > PROMPT_CAP) { sb.append("\n…(스킬 일부 생략)\n"); break }
+                sb.append("\n### ").append(s.name)
+                if (s.nodeTypes.isNotEmpty()) sb.append(" [노드: ").append(s.nodeTypes.joinToString(",")).append("]")
+                if (s.description.isNotBlank()) sb.append(" — ").append(s.description)
+                sb.append("\n")
+                s.graph?.let { sb.append(clip(mapper.writeValueAsString(it), 2000)).append("\n") }
+            }
+        }
+        return clip(sb.toString(), PROMPT_CAP)
+    }
+
+    private fun parseGraph(s: String): JsonNode? = try { mapper.readTree(s) } catch (e: Exception) { null }
+    private fun clip(s: String, max: Int): String = if (s.length <= max) s else s.substring(0, max) + "…"
 
     companion object {
         const val KEY_INSTRUCTIONS = "assistant.instructions"
         const val KEY_SKILLS = "assistant.skills"
-
-        /** 순수 조립(테스트용) — 지침 + 활성·비어있지 않은 스킬을 프롬프트 블록으로. */
-        fun buildPromptBlock(instructions: String, skills: List<Skill>): String {
-            val instr = instructions.trim()
-            val active = skills.filter { it.enabled && it.instruction.isNotBlank() }
-            if (instr.isEmpty() && active.isEmpty()) return ""
-            return buildString {
-                if (instr.isNotEmpty()) {
-                    append("\n\n## ORG INSTRUCTIONS (팀 지침 — 항상 우선 준수)\n")
-                    append(instr)
-                }
-                if (active.isNotEmpty()) {
-                    append("\n\n## AVAILABLE SKILLS (관련될 때 적용)\n")
-                    for (s in active) {
-                        append("\n### ").append(s.name)
-                        if (s.nodeTypes.isNotEmpty()) append(" [노드: ").append(s.nodeTypes.joinToString(",")).append("]")
-                        append("\n").append(s.instruction.trim()).append("\n")
-                    }
-                }
-            }
-        }
+        private const val INSTR_CAP = 4000
+        private const val PROMPT_CAP = 16000
     }
 }

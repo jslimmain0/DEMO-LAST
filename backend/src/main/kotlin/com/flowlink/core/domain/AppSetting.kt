@@ -27,7 +27,8 @@ class AppSetting {
     lateinit var key: String
         private set
 
-    @Column(name = "setting_value")
+    // text — 스킬(플로우 조각) JSON 등 긴 값 저장. Flyway DB 는 이미 text/clob, H2 ddl-auto 도 이 정의로 무제한.
+    @Column(name = "setting_value", columnDefinition = "text")
     var value: String? = null
 
     @UpdateTimestamp

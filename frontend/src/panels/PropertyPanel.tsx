@@ -1454,7 +1454,10 @@ function HttpAuthEditor({ auth, sources, onChange, clientMode }: { auth?: HttpAu
           <div><label style={label}>client_id</label>
             <TokenInput ariaLabel="client_id" value={a.clientId ?? ''} onChange={(v) => upd({ clientId: v })} sources={sources} placeholder="my-client 또는 { } 삽입" /></div>
           <div><label style={label}>client_secret <span style={{ color: 'var(--fl-text-muted)', fontWeight: 400 }}>({'{{ 이름@secret }}'} 권장)</span></label>
-            <TokenInput ariaLabel="client_secret" value={a.clientSecret ?? ''} onChange={(v) => upd({ clientSecret: v })} sources={sources} placeholder="{{ MY_SECRET@secret }}" /></div>
+            <TokenInput ariaLabel="client_secret" value={a.clientSecret ?? ''} onChange={(v) => upd({ clientSecret: v })} sources={sources} placeholder="{{ MY_SECRET@secret }}" />
+            {(a.clientSecret ?? '').trim() !== '' && !(a.clientSecret ?? '').includes('{{') && (
+              <p style={{ ...hintP, color: 'var(--fl-put)', margin: '4px 0 0' }}>⚠ 시크릿을 <b>평문</b>으로 넣었습니다 — 그래프에 그대로 저장됩니다. 시크릿 볼트에 넣고 <code style={{ fontFamily: 'var(--fl-font-mono)' }}>{'{{ 이름@secret }}'}</code> 로 참조하세요(마스킹됨).</p>
+            )}</div>
           <div style={{ display: 'flex', gap: 6 }}>
             <div style={{ flex: 1 }}><label style={label}>scope (선택)</label>
               <input style={mono} value={a.scope ?? ''} onChange={(e) => upd({ scope: e.target.value })} placeholder="read write" /></div>

@@ -56,6 +56,8 @@ interface EditorState {
   // 노드 복사/붙여넣기 — localStorage 클립보드라 A 워크플로 → B 워크플로 붙여넣기도 된다
   copySelection: () => number
   pasteClipboard: () => number
+  insertFragment: (graph: FlowGraph) => number
+  selectionFragment: () => FlowGraph | null
   duplicateSelection: () => number
   autoLayout: () => void
   // 엣지 재연결(리라우트) — 끝점을 다른 노드/핸들로 옮김. sourceHandle(분기 포트) 승계.
@@ -392,6 +394,57 @@ export const useEditorStore = create<EditorState>()((set, get) => {
   duplicateSelection: () => {
     if (get().copySelection() === 0) return 0
     return get().pasteClipboard()
+  },
+
+  // 플로우 조각(스킬) 삽입 — 붙여넣기와 동일(새 id·토큰 재매핑·오프셋·선택). 캔버스 좌상단 근처에 배치.
+  insertFragment: (graph) => {
+    const gnodes = (graph?.nodes ?? []) as GraphNode[]
+    if (gnodes.length === 0) return 0
+    const gedges = (graph?.edges ?? []) as Array<{ from: string; to: string; fromPort?: string }>
+    pushHistory()
+    const idMap = new Map<string, string>()
+    for (const n of gnodes) idMap.set(n.id, newId())
+    // 삽입 기준점 — 기존 노드 최대 x 우측(겹침 최소화). 조각 자체 좌표는 상대로 유지.
+    const baseX = get().nodes.length ? Math.max(...get().nodes.map((n) => n.position.x)) + 260 : 80
+    const minFx = Math.min(...gnodes.map((n) => n.x ?? 0))
+    const minFy = Math.min(...gnodes.map((n) => n.y ?? 0))
+    const rfNodes: Node[] = gnodes.map((gn) => {
+      const remapped = remapNodeRefs(gn, idMap)
+      const nid = idMap.get(gn.id)!
+      const pos = { x: baseX + ((gn.x ?? 0) - minFx), y: 120 + ((gn.y ?? 0) - minFy) }
+      return {
+        id: nid,
+        type: rfNodeType(remapped.type),
+        position: pos,
+        data: { ...remapped, id: nid, x: pos.x, y: pos.y } as unknown as Record<string, unknown>,
+        selected: true,
+        ...rfExtras(remapped.type),
+      }
+    })
+    const rfEdges: Edge[] = gedges
+      .filter((e) => idMap.has(e.from) && idMap.has(e.to))
+      .map((e) => ({ id: 'e' + newId(), source: idMap.get(e.from)!, target: idMap.get(e.to)!, sourceHandle: e.fromPort ?? 'out', type: 'deletable' }))
+    set({
+      nodes: [...get().nodes.map((n) => ({ ...n, selected: false })), ...rfNodes],
+      edges: [...get().edges, ...rfEdges],
+      selectedId: rfNodes[0]?.id ?? get().selectedId,
+      dirty: true,
+    })
+    return rfNodes.length
+  },
+
+  // 현재 선택(없으면 전체)을 플로우 조각(스킬용)으로 추출 — {nodes, edges}(도메인 포맷).
+  selectionFragment: () => {
+    const selected = get().nodes.filter((n) => n.selected)
+    const picked = selected.length > 0 ? selected : get().nodes
+    if (picked.length === 0) return null
+    const ids = new Set(picked.map((n) => n.id))
+    return {
+      nodes: picked.map((n) => ({ ...asGraphNode(n.data), id: n.id, x: Math.round(n.position.x), y: Math.round(n.position.y) })),
+      edges: get().edges
+        .filter((e) => ids.has(e.source) && ids.has(e.target))
+        .map((e) => ({ id: 'e' + newId(), from: e.source, to: e.target, fromPort: e.sourceHandle ?? 'out' })),
+    }
   },
 
   // 자동 정렬 — 위상 레벨(진입차수 BFS)로 좌→우, 같은 레벨은 세로로. 주석 노드는 그대로 둔다.

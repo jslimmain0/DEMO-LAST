@@ -13,6 +13,7 @@ import type {
   FolderSummary,
   GraphNode,
   ResumeRequest,
+  InstructionsUpdateRequest,
   RunRequest,
   SaveVersionRequest,
   SingleNodeRunResult,
@@ -180,4 +181,5 @@ export const assistantApi = {
   chat: (body: AssistantChatRequest) => http.post<AssistantChatResponse>('/assistant/chat', body).then((r) => r.data),
   skills: () => http.get<SkillsView>('/assistant/skills').then((r) => r.data),
   updateSkills: (body: SkillsUpdateRequest) => http.put<SkillsView>('/assistant/skills', body).then((r) => r.data),
+  updateInstructions: (body: InstructionsUpdateRequest) => http.put<SkillsView>('/assistant/instructions', body).then((r) => r.data),
 }

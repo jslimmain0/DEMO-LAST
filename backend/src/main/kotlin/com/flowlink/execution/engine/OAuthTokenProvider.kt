@@ -2,6 +2,7 @@ package com.flowlink.execution.engine
 
 import com.flowlink.common.error.BadRequestException
 import com.flowlink.common.json.JsonService
+import com.flowlink.common.tenant.TenantContext
 import com.flowlink.core.graph.HttpAuth
 import com.flowlink.execution.config.HttpClientConfig
 import org.springframework.beans.factory.annotation.Qualifier
@@ -11,6 +12,7 @@ import org.springframework.web.client.RestClient
 import java.net.URI
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
+import java.security.MessageDigest
 import java.time.Instant
 import java.util.Base64
 import java.util.concurrent.ConcurrentHashMap
@@ -40,9 +42,12 @@ class OAuthTokenProvider(
         if (tokenUrl.isBlank()) throw BadRequestException("OAuth 토큰 URL 이 비어 있습니다.")
         if (clientId.isBlank()) throw BadRequestException("OAuth client_id 가 비어 있습니다.")
 
-        val key = "$tokenUrl|$clientId|$scope|${clientSecret.hashCode()}"
+        // 캐시 키 = 테넌트 + tokenUrl + clientId + scope + 시크릿 SHA-256(무손실 — hashCode 충돌로 잘못된 토큰 서빙 방지).
+        val tenant = try { TenantContext.getTenantId() } catch (e: Exception) { "-" }
+        val key = "$tenant|$tokenUrl|$clientId|$scope|${sha256(clientSecret)}"
         val now = Instant.now()
         cache[key]?.let { if (it.expiresAt.isAfter(now.plusSeconds(5))) return it.token }
+        if (cache.size > MAX_CACHE) evictExpired(now) // 만료 항목 정리(무한 성장 방지)
 
         val uri = try { URI.create(tokenUrl) } catch (e: Exception) { throw BadRequestException("OAuth 토큰 URL 이 올바르지 않습니다.") }
         try { ssrfGuard.check(uri) } catch (e: Exception) { throw BadRequestException("OAuth 토큰 URL 차단됨(SSRF): ${e.message}") }
@@ -66,7 +71,9 @@ class OAuthTokenProvider(
             }
             spec.body(form.toByteArray(StandardCharsets.UTF_8))
                 .exchange { _, response ->
-                    val body = response.body.readBytes().toString(StandardCharsets.UTF_8)
+                    // 응답 본문 상한(무제한 readBytes 로 인한 OOM 방지 — 토큰 응답은 작다)
+                    val bytes = response.body.readNBytes(MAX_TOKEN_RESPONSE)
+                    val body = bytes.toString(StandardCharsets.UTF_8)
                     if (response.statusCode.isError) throw BadRequestException("토큰 발급 실패 ${response.statusCode.value()}: ${body.take(200)}")
                     body
                 } ?: ""
@@ -90,4 +97,17 @@ class OAuthTokenProvider(
     }
 
     private fun enc(s: String): String = URLEncoder.encode(s, StandardCharsets.UTF_8)
+
+    private fun sha256(s: String): String =
+        MessageDigest.getInstance("SHA-256").digest(s.toByteArray(StandardCharsets.UTF_8))
+            .joinToString("") { "%02x".format(it) }
+
+    private fun evictExpired(now: Instant) {
+        cache.entries.removeIf { it.value.expiresAt.isBefore(now) }
+    }
+
+    companion object {
+        private const val MAX_TOKEN_RESPONSE = 1 shl 20 // 1MB
+        private const val MAX_CACHE = 500
+    }
 }

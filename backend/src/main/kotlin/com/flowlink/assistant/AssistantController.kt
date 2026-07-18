@@ -26,14 +26,21 @@ class AssistantController(
     @PostMapping("/chat")
     fun chat(@RequestBody req: AssistantChatRequest): AssistantChatResponse = service.chat(req)
 
-    /** 지침 + 스킬(내장/사용자) 조회. */
+    /** 지침 + 스킬(내장/사용자 플로우 조각) 조회. */
     @GetMapping("/skills")
     fun skills(): SkillsView = skills.view()
 
-    /** 지침/사용자 스킬 저장(준 것만 반영). */
+    /** 사용자 스킬(플로우 조각) 저장 — editor. */
     @PutMapping("/skills")
     fun updateSkills(@RequestBody req: SkillsUpdateRequest): SkillsView {
-        skills.update(req)
+        skills.updateSkills(req)
+        return skills.view()
+    }
+
+    /** 팀 지침 저장 — admin(스토어드 프롬프트 인젝션 방지 위해 상위 권한). */
+    @PutMapping("/instructions")
+    fun updateInstructions(@RequestBody req: InstructionsUpdateRequest): SkillsView {
+        skills.updateInstructions(req)
         return skills.view()
     }
 }

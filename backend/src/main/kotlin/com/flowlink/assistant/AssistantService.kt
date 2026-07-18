@@ -169,13 +169,16 @@ class AssistantService(
         val nodes = copy.get("nodes")
         if (nodes != null && nodes.isArray) {
             for (node in nodes) {
-                if (node.path("type").asText() != "set") continue
-                val vars = node.get("vars") ?: continue
-                if (!vars.isArray) continue
-                for (v in vars) {
-                    if (v is ObjectNode && v.path("secret").asBoolean(false) && v.has("value")) {
-                        v.put("value", "***")
+                // SET secret=true 변수 값
+                if (node.path("type").asText() == "set") {
+                    (node.get("vars"))?.takeIf { it.isArray }?.forEach { v ->
+                        if (v is ObjectNode && v.path("secret").asBoolean(false) && v.has("value")) v.put("value", "***")
                     }
+                }
+                // OAuth client_secret 리터럴(토큰 {{@secret}} 이 아니면 마스킹)
+                (node.get("auth") as? ObjectNode)?.let { auth ->
+                    val cs = auth.path("clientSecret").asText("")
+                    if (cs.isNotBlank() && !cs.contains("{{")) auth.put("clientSecret", "***")
                 }
             }
         }

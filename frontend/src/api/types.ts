@@ -207,9 +207,11 @@ export interface AssistantMessage { role: 'user' | 'assistant'; content: string 
 export interface AssistantChatRequest { messages: AssistantMessage[]; graph?: FlowGraph | null }
 export interface AssistantChatResponse { reply: string; graph: FlowGraph | null; stub: boolean; model: string }
 export interface AssistantConfig { available: boolean; usingRealLlm: boolean; model: string }
-export interface Skill { name: string; description?: string; instruction: string; nodeTypes?: string[]; enabled?: boolean; builtin?: boolean }
+// 스킬 = 재사용 플로우 조각(그래프). 캔버스 삽입 + AI 조합.
+export interface Skill { id?: string; name: string; description?: string; nodeTypes?: string[]; graph?: FlowGraph; builtin?: boolean }
 export interface SkillsView { instructions: string; builtin: Skill[]; user: Skill[] }
-export interface SkillsUpdateRequest { instructions?: string | null; user?: Skill[] }
+export interface SkillsUpdateRequest { user: Skill[] }
+export interface InstructionsUpdateRequest { instructions: string }
 
 // --- 정의 DTO ---
 export interface FlowSummary {

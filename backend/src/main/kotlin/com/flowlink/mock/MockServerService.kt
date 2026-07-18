@@ -23,7 +23,8 @@ import java.util.regex.Pattern
 class MockServerService(
     private val repository: MockServerRepository,
     private val json: JsonService,
-    private val tcpRegistry: TcpMockRegistry
+    private val tcpRegistry: TcpMockRegistry,
+    private val store: MockRuntimeStore
 ) {
 
     @Transactional(readOnly = true)
@@ -86,6 +87,31 @@ class MockServerService(
         val m = find(id)
         repository.delete(m)
         tcpRegistry.stop(m.id)
+        store.forget(m.id)
+    }
+
+    /** 요청 기록(journal, 최신순) — 테넌트 소유 확인 후. */
+    @Transactional(readOnly = true)
+    fun requests(id: UUID): List<MockDtos.MockRequestLog> {
+        find(id)
+        return store.journal(id).map {
+            MockDtos.MockRequestLog(it.at, it.method, it.path, it.query, it.headers, it.bodyText, it.matchedRuleId, it.status, it.delayMs, it.callbackFired)
+        }
+    }
+
+    @Transactional(readOnly = true)
+    fun clearRequests(id: UUID) { find(id); store.clearJournal(id) }
+
+    /** 런타임 상태 초기화(state·seq·hits·journal) — 재시작 없이 깨끗한 상태로. */
+    @Transactional(readOnly = true)
+    fun reset(id: UUID) { find(id); store.reset(id) }
+
+    /** 현재 런타임 상태 스냅샷(state·seq·hits·요청수). */
+    @Transactional(readOnly = true)
+    fun runtimeState(id: UUID): MockDtos.MockStateView {
+        find(id)
+        val s = store.snapshot(id)
+        return MockDtos.MockStateView(s.state, s.seq, s.hits, s.requestCount)
     }
 
     /** 게이트웨이 서빙용 — 무인증. tenant 는 경로 세그먼트에서 온다(레거시 경로는 default 테넌트). */

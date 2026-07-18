@@ -83,8 +83,8 @@ export function makeNode(type: NodeType, x: number, y: number): GraphNode {
 export const PALETTE: Array<{ type: NodeType; label: string; cat: string; group: string }> = [
   { type: 'start', label: '시작', cat: 'start', group: '기본' },
   { type: 'end', label: '끝', cat: 'end', group: '기본' },
-  { type: 'http', label: 'API 호출', cat: 'generic', group: '요청·연동' },
-  { type: 'tcp', label: 'TCP 전문', cat: 'tcp', group: '요청·연동' },
+  { type: 'http', label: 'API 호출', cat: 'generic', group: 'API·REST' },
+  { type: 'tcp', label: 'TCP 전문', cat: 'tcp', group: '소켓·전문' },
   { type: 'if', label: '조건 분기', cat: 'if', group: '흐름 제어' },
   { type: 'switch', label: '경로 전환', cat: 'switch', group: '흐름 제어' },
   { type: 'assert', label: '값 검증', cat: 'assert', group: '흐름 제어' },
@@ -98,4 +98,4 @@ export const PALETTE: Array<{ type: NodeType; label: string; cat: string; group:
 ]
 
 /** 팔레트 섹션 표시 순서. */
-export const PALETTE_GROUPS = ['기본', '요청·연동', '흐름 제어', '데이터', '대기·입력', '주석']
+export const PALETTE_GROUPS = ['기본', 'API·REST', '소켓·전문', '흐름 제어', '데이터', '대기·입력', '주석']

@@ -47,4 +47,26 @@ object MockDtos {
     data class UpdateMockSpecRequest(
         val spec: JsonNode?
     )
+
+    /** 요청 기록 1건 — mock 에 온 실제 요청(디버깅·검증용). */
+    data class MockRequestLog(
+        val at: java.time.Instant,
+        val method: String,
+        val path: String,
+        val query: Map<String, String>,
+        val headers: Map<String, String>,
+        val bodyText: String,
+        val matchedRuleId: String?,
+        val status: Int,
+        val delayMs: Int,
+        val callbackFired: Boolean,
+    )
+
+    /** 런타임 상태 스냅샷 — 상태 있는 목 디버깅용. */
+    data class MockStateView(
+        val state: Map<String, String>,
+        val seq: Long,
+        val hits: Map<String, Int>,
+        val requestCount: Int,
+    )
 }

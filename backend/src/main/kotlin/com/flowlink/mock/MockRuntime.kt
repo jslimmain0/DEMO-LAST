@@ -30,7 +30,7 @@ class MockRuntime {
     data class Match(val rule: MockRule, val pathParams: Map<String, String>)
 
     /** 정의 순서대로 method+경로 첫 매칭 라우트, 그 안에서 조건 만족 첫 규칙. */
-    fun match(routes: List<MockRoute>, req: MockRequest, state: Map<String, String> = emptyMap()): Optional<Match> {
+    fun match(routes: List<MockRoute>, req: MockRequest, state: Map<String, String> = emptyMap(), hits: Map<String, Int> = emptyMap()): Optional<Match> {
         for (route in routes) {
             val params = matchPath(route.path, req.path) ?: continue
             val m = if (route.method == null) "ANY" else route.method.uppercase(Locale.ROOT)
@@ -38,6 +38,10 @@ class MockRuntime {
                 continue
             }
             for (rule in route.rulesOrEmpty()) {
+                // 순차 응답: repeat 소진(처음 N회 매칭 후)이면 이 규칙은 건너뛰고 다음 규칙으로 폴스루
+                if (rule.repeat != null && rule.id != null && (hits[rule.id] ?: 0) >= rule.repeat) {
+                    continue
+                }
                 if (conditionsPass(rule.whenOrEmpty(), req, params, state)) {
                     return Optional.of(Match(rule, params))
                 }
@@ -58,11 +62,16 @@ class MockRuntime {
                 headers[kv.key] = template(if (kv.value == null) "" else kv.value, req, pathParams, seq, state)
             }
         }
-        // 상태 있는 목: setState 의 값을 템플릿 해석해 서버 상태에 반영할 맵으로(게이트웨이가 적용)
+        // 상태 있는 목: setState 의 값을 템플릿 해석해 서버 상태에 반영할 맵으로(게이트웨이가 적용).
+        // op=incr/decr 은 현재 상태값을 숫자로 누산(재고·잔액 원장 시뮬레이션). set(기본)은 대입.
         val newState = LinkedHashMap<String, String>()
         for (kv in rule.setState ?: emptyList()) {
-            if (kv.key != null && kv.key.isNotBlank()) {
-                newState[kv.key] = template(if (kv.value == null) "" else kv.value, req, pathParams, seq, state)
+            if (kv.key == null || kv.key.isBlank()) continue
+            val v = template(if (kv.value == null) "" else kv.value, req, pathParams, seq, state)
+            newState[kv.key] = when (kv.op?.lowercase(Locale.ROOT)) {
+                "incr" -> ((state[kv.key]?.toLongOrNull() ?: 0L) + (v.toLongOrNull() ?: 1L)).toString()
+                "decr" -> ((state[kv.key]?.toLongOrNull() ?: 0L) - (v.toLongOrNull() ?: 1L)).toString()
+                else -> v
             }
         }
         val delay = if (rule.delayMs == null) 0 else Math.max(0, Math.min(rule.delayMs, MAX_DELAY_MS))
@@ -180,11 +189,16 @@ class MockRuntime {
             for (c in conds) {
                 val actual = valueOf(c.source, c.key, req, pathParams, state)
                 val op = if (c.op == null) "eq" else c.op.lowercase(Locale.ROOT)
+                val cv = c.value ?: ""
                 val pass = when (op) {
-                    "eq" -> actual != null && actual == (c.value ?: "")
-                    "ne" -> actual == null || actual != (c.value ?: "")
+                    "eq" -> actual != null && actual == cv
+                    "ne" -> actual == null || actual != cv
                     "exists" -> actual != null && actual.isNotEmpty()
-                    "contains" -> actual != null && actual.contains(c.value ?: "")
+                    "contains" -> actual != null && actual.contains(cv)
+                    "startswith" -> actual != null && actual.startsWith(cv)
+                    "endswith" -> actual != null && actual.endsWith(cv)
+                    "gt", "gte", "lt", "lte" -> numCompare(actual, cv, op)
+                    "regex" -> actual != null && try { Regex(cv).containsMatchIn(actual) } catch (e: Exception) { false }
                     else -> false
                 }
                 if (!pass) {
@@ -192,6 +206,13 @@ class MockRuntime {
                 }
             }
             return true
+        }
+
+        /** 숫자 비교(gt/gte/lt/lte) — 양변이 숫자가 아니면 false. */
+        private fun numCompare(actual: String?, value: String, op: String): Boolean {
+            val a = actual?.toDoubleOrNull() ?: return false
+            val b = value.toDoubleOrNull() ?: return false
+            return when (op) { "gt" -> a > b; "gte" -> a >= b; "lt" -> a < b; "lte" -> a <= b; else -> false }
         }
 
         private fun valueOf(source: String?, key: String?, req: MockRequest, pathParams: Map<String, String>, state: Map<String, String> = emptyMap()): String? {

@@ -102,6 +102,10 @@ export const mocksApi = {
   updateSpec: (id: string, spec: import('./types').MockServerSpec) =>
     http.put<import('./types').MockServerDetail>(`/mock-servers/${id}/spec`, { spec }).then((r) => r.data),
   remove: (id: string) => http.delete(`/mock-servers/${id}`).then(() => undefined),
+  requests: (id: string) => http.get<import('./types').MockRequestLog[]>(`/mock-servers/${id}/requests`).then((r) => r.data),
+  clearRequests: (id: string) => http.delete(`/mock-servers/${id}/requests`).then(() => undefined),
+  reset: (id: string) => http.post(`/mock-servers/${id}/reset`).then(() => undefined),
+  state: (id: string) => http.get<import('./types').MockStateView>(`/mock-servers/${id}/state`).then((r) => r.data),
 }
 
 /**

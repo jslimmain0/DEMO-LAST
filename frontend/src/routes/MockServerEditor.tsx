@@ -18,7 +18,7 @@ const methodColor = (m: string): string => METHOD_COLOR[m as HttpMethod] ?? 'var
 const CONTENT_TYPES = ['json', 'text', 'html', 'xml', 'urlencoded']
 const CHARSETS = ['UTF-8', 'EUC-KR', 'MS949']
 const COND_SOURCES = ['body', 'query', 'header', 'path', 'state'] as const
-const COND_OPS = ['eq', 'ne', 'exists', 'contains'] as const
+const COND_OPS = ['eq', 'ne', 'exists', 'contains', 'gt', 'gte', 'lt', 'lte', 'regex', 'startswith', 'endswith'] as const
 
 /** Mock 서버 편집기 — 경로별 라우트/규칙(응답 템플릿·조건·콜백)을 정의하고 바로 보내본다. */
 export function MockServerEditor() {
@@ -131,12 +131,77 @@ export function MockServerEditor() {
             />
 
             <TestPanel base={base} ensureSaved={ensureSaved} />
+
+            <RuntimePanel id={id} canEdit={canEdit} />
           </>
         )}
       </div>
     </AppShellTier1>
   )
 }
+
+// ---------- 요청 기록 + 상태(상태 있는 목 디버깅) ----------
+function RuntimePanel({ id, canEdit }: { id: string; canEdit: boolean }) {
+  const qc = useQueryClient()
+  const [open, setOpen] = useState(false)
+  const reqs = useQuery({ queryKey: ['mock-requests', id], queryFn: () => mocksApi.requests(id), enabled: open, refetchInterval: open ? 3000 : false })
+  const st = useQuery({ queryKey: ['mock-state', id], queryFn: () => mocksApi.state(id), enabled: open, refetchInterval: open ? 3000 : false })
+  const reset = useMutation({ mutationFn: () => mocksApi.reset(id), onSuccess: () => { toast('상태·기록을 초기화했습니다.', 'ok'); qc.invalidateQueries({ queryKey: ['mock-requests', id] }); qc.invalidateQueries({ queryKey: ['mock-state', id] }) } })
+  const clear = useMutation({ mutationFn: () => mocksApi.clearRequests(id), onSuccess: () => qc.invalidateQueries({ queryKey: ['mock-requests', id] }) })
+  const [openReq, setOpenReq] = useState<number | null>(null)
+  const stateKeys = Object.keys(st.data?.state ?? {})
+
+  return (
+    <section style={{ marginTop: 22 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <button style={{ ...miniBtn, fontWeight: 700 }} onClick={() => setOpen((v) => !v)}>{open ? '▾' : '▸'} 요청 기록 · 상태</button>
+        {open && <>
+          <span style={{ fontSize: 11.5, color: 'var(--fl-text-muted)' }}>mock 에 온 실제 요청과 상태 있는 목의 현재 상태(3초 갱신)</span>
+          {canEdit && <button style={{ ...miniBtn, marginLeft: 'auto', color: 'var(--fl-fail)' }} onClick={() => reset.mutate()} title="state·seq·hits·요청기록 전부 초기화">↺ 상태 초기화</button>}
+        </>}
+      </div>
+      {open && (
+        <div style={{ marginTop: 10, display: 'grid', gap: 14 }}>
+          {/* 현재 상태 */}
+          <div style={{ border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', padding: 12, background: 'var(--fl-surface-2)' }}>
+            <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--fl-text-muted)', marginBottom: 6 }}>현재 상태 · seq {st.data?.seq ?? '—'} · 요청 {st.data?.requestCount ?? 0}건</div>
+            {stateKeys.length === 0 ? <span style={{ fontSize: 12, color: 'var(--fl-text-muted)' }}>상태 없음(setState 규칙 실행 전).</span>
+              : <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>{stateKeys.map((k) => (
+                  <code key={k} style={{ fontFamily: 'var(--fl-font-mono)', fontSize: 11.5, background: 'var(--fl-surface)', border: '1px solid var(--fl-border)', borderRadius: 6, padding: '2px 7px' }}>{k} = {st.data!.state[k]}</code>
+                ))}</div>}
+          </div>
+          {/* 요청 기록 */}
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+              <span style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--fl-text-muted)' }}>요청 기록 (최신 {reqs.data?.length ?? 0})</span>
+              {(reqs.data?.length ?? 0) > 0 && canEdit && <button style={miniBtn} onClick={() => clear.mutate()}>기록 비우기</button>}
+            </div>
+            {(reqs.data?.length ?? 0) === 0 ? <span style={{ fontSize: 12, color: 'var(--fl-text-muted)' }}>아직 요청이 없습니다. mock URL 을 호출하면 여기에 기록됩니다.</span>
+              : <div style={{ display: 'grid', gap: 4 }}>{reqs.data!.map((r, i) => (
+                  <div key={i} style={{ border: '1px solid var(--fl-border)', borderRadius: 6, overflow: 'hidden' }}>
+                    <button style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '7px 10px', background: 'transparent', border: 'none', cursor: 'pointer', textAlign: 'left', color: 'var(--fl-text)' }} onClick={() => setOpenReq(openReq === i ? null : i)}>
+                      <span style={{ fontSize: 10.5, fontWeight: 700, color: METHOD_COLOR[r.method as HttpMethod] ?? 'var(--fl-text-muted)', minWidth: 44 }}>{r.method}</span>
+                      <code style={{ fontFamily: 'var(--fl-font-mono)', fontSize: 12, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.path}</code>
+                      <span style={{ fontSize: 11, color: r.status >= 400 ? 'var(--fl-fail)' : 'var(--fl-ok)', fontFamily: 'var(--fl-font-mono)' }}>{r.status}</span>
+                      {r.matchedRuleId == null && <span style={{ fontSize: 10, color: 'var(--fl-fail)' }}>무매칭</span>}
+                    </button>
+                    {openReq === i && (
+                      <div style={{ padding: '0 10px 10px', display: 'grid', gap: 6 }}>
+                        {Object.keys(r.query).length > 0 && <pre style={reqPre}>query: {JSON.stringify(r.query)}</pre>}
+                        {r.bodyText && <pre style={reqPre}>body: {r.bodyText}</pre>}
+                        <div style={{ fontSize: 10.5, color: 'var(--fl-text-muted)' }}>{r.matchedRuleId ? `규칙 ${r.matchedRuleId}` : '매칭 규칙 없음(404)'}{r.callbackFired ? ' · 콜백 발사' : ''}{r.delayMs ? ` · 지연 ${r.delayMs}ms` : ''}</div>
+                      </div>
+                    )}
+                  </div>
+                ))}</div>}
+          </div>
+        </div>
+      )}
+    </section>
+  )
+}
+
+const reqPre: CSSProperties = { margin: 0, padding: '6px 8px', fontSize: 11, fontFamily: 'var(--fl-font-mono)', color: 'var(--fl-text)', background: 'var(--fl-surface-2)', borderRadius: 5, whiteSpace: 'pre-wrap', wordBreak: 'break-all', maxHeight: 140, overflow: 'auto' }
 
 // ---------- 커스텀 라우트 편집 ----------
 
@@ -343,9 +408,16 @@ function RuleCard({ rule, index, total, onChange, onDup, onRemove }: {
         </select>
         <span style={{ fontSize: 12 }}>지연(ms)</span>
         <input
-          style={{ ...input, width: 84, fontFamily: 'var(--fl-font-mono)' }}
+          style={{ ...input, width: 76, fontFamily: 'var(--fl-font-mono)' }}
           value={rule.delayMs ?? 0}
           onChange={(e) => onChange({ ...rule, delayMs: Number(e.target.value) || 0 })}
+        />
+        <span style={{ fontSize: 12 }} title="이 규칙을 처음 N회 매칭까지만 적용(순차 응답). 비우면 무제한">N회만</span>
+        <input
+          style={{ ...input, width: 56, fontFamily: 'var(--fl-font-mono)' }}
+          value={rule.repeat ?? ''}
+          placeholder="∞"
+          onChange={(e) => { const n = Number(e.target.value); onChange({ ...rule, repeat: e.target.value.trim() && n > 0 ? n : undefined }) }}
         />
         <button style={miniBtn} onClick={onDup} title="규칙 복제">복제</button>
         <button style={{ ...miniBtn, color: 'var(--fl-fail)' }} onClick={onRemove}>규칙 삭제</button>
@@ -388,7 +460,10 @@ function RuleCard({ rule, index, total, onChange, onDup, onRemove }: {
           <div key={i} style={{ display: 'flex', gap: 6, marginBottom: 4 }}>
             <span style={{ fontSize: 11, color: 'var(--fl-text-muted)', alignSelf: 'center' }}>state.</span>
             <input style={{ ...input, flex: 1 }} value={s.key} placeholder="키(예: status)" onChange={(e) => onChange({ ...rule, setState: (rule.setState ?? []).map((x, xi) => xi === i ? { ...x, key: e.target.value } : x) })} />
-            <input style={{ ...input, flex: 1.4 }} value={s.value} placeholder="값(템플릿, 예: approved)" onChange={(e) => onChange({ ...rule, setState: (rule.setState ?? []).map((x, xi) => xi === i ? { ...x, value: e.target.value } : x) })} />
+            <select style={{ ...input, width: 78 }} value={s.op ?? 'set'} title="대입/증가/감소(증감은 숫자 누산기)" onChange={(e) => onChange({ ...rule, setState: (rule.setState ?? []).map((x, xi) => xi === i ? { ...x, op: e.target.value as 'set' | 'incr' | 'decr' } : x) })}>
+              <option value="set">대입</option><option value="incr">증가</option><option value="decr">감소</option>
+            </select>
+            <input style={{ ...input, flex: 1.4 }} value={s.value} placeholder={s.op === 'incr' || s.op === 'decr' ? '증감량(기본 1)' : '값(템플릿, 예: approved)'} onChange={(e) => onChange({ ...rule, setState: (rule.setState ?? []).map((x, xi) => xi === i ? { ...x, value: e.target.value } : x) })} />
             <button style={miniBtn} onClick={() => onChange({ ...rule, setState: (rule.setState ?? []).filter((_, xi) => xi !== i) })}>×</button>
           </div>
         ))}

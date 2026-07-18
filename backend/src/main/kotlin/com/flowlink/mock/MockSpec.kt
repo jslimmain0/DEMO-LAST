@@ -67,17 +67,28 @@ data class MockSpec(
         val callback: MockCallback?,
         // 상태 있는 목: 응답 후 서버(slug)별 상태를 설정(값은 템플릿). 조건/템플릿에서 {{state.KEY}}·source=state 로 읽는다.
         // 예: 1차 호출이 setState status=approved → 2차 호출 when source=state key=status value=approved 로 다른 응답.
-        val setState: List<KV>? = null
+        val setState: List<MockSetOp>? = null,
+        // 순차 응답: 이 규칙을 처음 N회 매칭까지만 적용하고 이후엔 다음 매칭 규칙으로 폴스루(id 필요).
+        // 예: A(repeat=1) pending → B(기본) approved → 1차 A, 이후 B.
+        val repeat: Int? = null
     ) {
         fun whenOrEmpty(): List<MockCond> = `when` ?: emptyList()
     }
+
+    /** 상태 설정 항목 — op: set(기본,대입) | incr(증가) | decr(감소). incr/decr 은 숫자 누산기. */
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    data class MockSetOp(
+        val key: String?,
+        val value: String?,
+        val op: String? = null
+    )
 
     /** 조건 — 요청의 query/header/body/path/state 값 비교. */
     @JsonIgnoreProperties(ignoreUnknown = true)
     data class MockCond(
         val source: String?,
         val key: String?,
-        val op: String?,
+        val op: String?,       // eq|ne|exists|contains|gt|gte|lt|lte|regex|startswith|endswith
         val value: String?
     )
 

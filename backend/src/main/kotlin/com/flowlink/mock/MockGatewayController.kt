@@ -12,12 +12,12 @@ import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
 import java.nio.charset.Charset
 import java.nio.charset.StandardCharsets
+import java.time.Instant
 import java.util.ArrayList
 import java.util.LinkedHashMap
 import java.util.Locale
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.atomic.AtomicLong
 
 /**
  * Mock 서빙 게이트웨이 — `/mock/{slug}` 이하 전 메서드 캐치올.
@@ -30,17 +30,15 @@ class MockGatewayController(
     private val service: MockServerService,
     private val runtime: MockRuntime,
     private val dispatcher: MockCallbackDispatcher,
+    private val store: MockRuntimeStore,
     private val json: JsonService
 ) {
 
-    /** 템플릿 {{seq}} 용 서버별 카운터(인메모리 — 재시작 시 리셋). */
-    private val seqs: MutableMap<UUID, AtomicLong> = ConcurrentHashMap()
-
-    /** 상태 있는 목 — 서버(slug)별 KV 상태(인메모리, 재시작 리셋). setState 로 쓰고 {{state.KEY}}/source=state 로 읽는다. */
-    private val states: MutableMap<UUID, MutableMap<String, String>> = ConcurrentHashMap()
-
     /** 서버별 파싱된 spec 캐시(raw JSON 이 그대로면 재파싱 생략 — mock 은 반복 호출되는 경로). */
     private val specCache: MutableMap<UUID, Pair<String, MockSpec>> = ConcurrentHashMap()
+
+    /** handleCustom 결과 — 응답 + 요청 기록(journal)용 매칭 규칙 id. */
+    private data class Served(val response: MockResponse, val matchedRuleId: String?)
 
     @RequestMapping(path = ["/mock/{first}", "/mock/{first}/**"])
     fun handle(@PathVariable first: String, request: HttpServletRequest): ResponseEntity<ByteArray> {
@@ -56,7 +54,17 @@ class MockGatewayController(
             val req = parse(resolved.pathPrefix, request)
             log.info("[mock:{}/{}] {} {}", server.tenantId, server.slug, req.method, req.path)
 
-            val res = handleCustom(server, req)
+            val served = handleCustom(server, req)
+            val res = served.response
+
+            // 요청 기록(journal) — /__routes 등 인트로스펙션은 제외
+            if (req.path != "/__routes" && req.path != "/__requests") {
+                store.record(server.id, MockRuntimeStore.JournalEntry(
+                    Instant.now(), req.method, req.path, req.query, req.headers,
+                    req.bodyText.take(MockRuntimeStore.BODY_CAP), served.matchedRuleId,
+                    res.status, res.delayMs, res.callback != null,
+                ))
+            }
 
             if (res.delayMs > 0) {
                 try {
@@ -78,7 +86,7 @@ class MockGatewayController(
         }
     }
 
-    private fun handleCustom(server: MockServer, req: MockRequest): MockResponse {
+    private fun handleCustom(server: MockServer, req: MockRequest): Served {
         val spec = cachedSpec(server)
         if ("/__routes" == req.path) {
             val routes = spec.routesOrEmpty().map { r ->
@@ -88,26 +96,29 @@ class MockGatewayController(
                     "rules" to r.rulesOrEmpty().size
                 )
             }
-            return MockResponse.of(
+            return Served(MockResponse.of(
                 200, "application/json; charset=UTF-8",
                 json.toJson(mapOf("kind" to "CUSTOM", "routes" to routes)).toByteArray(StandardCharsets.UTF_8)
-            )
+            ), null)
         }
-        // 상태 있는 목: 서버(slug)별 상태 맵 — 조건/템플릿에서 {{state.KEY}}·source=state 로 읽고, setState 로 갱신.
-        val state = states.computeIfAbsent(server.id) { ConcurrentHashMap() }
-        val match = runtime.match(spec.routesOrEmpty(), req, state)
+        // 상태 있는 목: 서버(slug)별 상태 맵 + 규칙 히트수(순차 응답)를 store 에서 — 조건/템플릿에서 {{state.KEY}}·source=state.
+        val state = store.state(server.id)
+        val hits = store.hitsSnapshot(server.id)
+        val match = runtime.match(spec.routesOrEmpty(), req, state, hits)
         if (match.isEmpty) {
-            return MockResponse.of(
+            return Served(MockResponse.of(
                 404, "application/json; charset=UTF-8",
                 json.toJson(mapOf("error" to "매칭되는 mock 라우트가 없습니다: " + req.method + " " + req.path))
                     .toByteArray(StandardCharsets.UTF_8)
-            )
+            ), null)
         }
-        val seq = seqs.computeIfAbsent(server.id) { AtomicLong(1000) }.incrementAndGet()
-        val resp = runtime.render(match.get().rule, req, match.get().pathParams, seq, state)
+        val rule = match.get().rule
+        rule.id?.let { store.recordHit(server.id, it) } // repeat(순차 응답) 판정용
+        val seq = store.seqNext(server.id)
+        val resp = runtime.render(rule, req, match.get().pathParams, seq, state)
         // 렌더가 반환한 setState 를 서버 상태에 반영(다음 호출의 조건/템플릿에 보임)
         if (resp.setState.isNotEmpty()) state.putAll(resp.setState)
-        return resp
+        return Served(resp, rule.id)
     }
 
     /** raw spec JSON 이 캐시된 것과 같으면 파싱 결과 재사용, 아니면 재파싱(저장 즉시 반영 유지). */

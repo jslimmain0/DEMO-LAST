@@ -391,7 +391,7 @@ export interface ExecutionDetail {
 export interface MockCond {
   source: 'query' | 'header' | 'body' | 'path' | 'state'
   key: string
-  op: 'eq' | 'ne' | 'exists' | 'contains'
+  op: 'eq' | 'ne' | 'exists' | 'contains' | 'gt' | 'gte' | 'lt' | 'lte' | 'regex' | 'startswith' | 'endswith'
   value?: string
 }
 
@@ -415,8 +415,14 @@ export interface MockRuleSpec {
   body?: string        // 템플릿: {{path.x}} {{query.x}} {{body.x}} {{header.x}} {{state.x}} {{uuid}} {{seq}} {{now}}
   delayMs?: number
   callback?: MockCallbackSpec | null
-  setState?: Array<{ key: string; value: string }> // 상태 있는 목: 응답 후 서버 상태 갱신(값은 템플릿)
+  setState?: Array<{ key: string; value: string; op?: 'set' | 'incr' | 'decr' }> // 상태 갱신(op: 대입/증가/감소)
+  repeat?: number      // 순차 응답: 이 규칙을 처음 N회 매칭까지만(이후 다음 규칙으로 폴스루)
 }
+export interface MockRequestLog {
+  at: string; method: string; path: string; query: Record<string, string>; headers: Record<string, string>
+  bodyText: string; matchedRuleId: string | null; status: number; delayMs: number; callbackFired: boolean
+}
+export interface MockStateView { state: Record<string, string>; seq: number; hits: Record<string, number>; requestCount: number }
 
 export interface MockRouteSpec {
   id: string

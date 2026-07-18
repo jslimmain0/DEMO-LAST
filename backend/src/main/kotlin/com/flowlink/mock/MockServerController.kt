@@ -47,4 +47,20 @@ class MockServerController(private val service: MockServerService) {
     fun delete(@PathVariable id: UUID) {
         service.delete(id)
     }
+
+    // 요청 기록(journal) — mock 에 온 실제 요청 조회/비우기(디버깅·검증)
+    @GetMapping("/{id}/requests")
+    fun requests(@PathVariable id: UUID): List<MockDtos.MockRequestLog> = service.requests(id)
+
+    @DeleteMapping("/{id}/requests")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    fun clearRequests(@PathVariable id: UUID) = service.clearRequests(id)
+
+    // 런타임 상태(상태 있는 목) 초기화 / 조회
+    @PostMapping("/{id}/reset")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    fun reset(@PathVariable id: UUID) = service.reset(id)
+
+    @GetMapping("/{id}/state")
+    fun state(@PathVariable id: UUID): MockDtos.MockStateView = service.runtimeState(id)
 }

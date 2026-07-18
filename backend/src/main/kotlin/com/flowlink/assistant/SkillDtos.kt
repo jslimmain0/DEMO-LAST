@@ -1,36 +1,31 @@
 package com.flowlink.assistant
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties
-import com.fasterxml.jackson.databind.JsonNode
 
 /**
- * 스킬 = **재사용 가능한 플로우 조각**. [graph] 는 {nodes, edges} 서브그래프로, 캔버스에 삽입해 플로우를 조립한다.
- * AI 어시스턴트도 이 조각들을 알고 조합해 플로우를 만든다. [builtin] 은 코드 내장(수정 불가).
- * [nodeTypes] 는 조각에 든 노드 타입(프론트가 저장 시 계산 — "노드별" 표시/필터용).
+ * 스킬 = **재사용 프롬프트**(awesome-copilot 스타일). 이름·설명·프롬프트 본문으로,
+ * 어시스턴트에 클릭 한 번으로 적용(전송)한다. 자동 주입이 아니라 사용자가 불러 쓴다.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 data class Skill(
     val id: String = "",
     val name: String = "",
     val description: String = "",
-    val nodeTypes: List<String> = emptyList(),
-    val graph: JsonNode? = null,
-    val builtin: Boolean = false,
+    val prompt: String = "",
 )
 
-/** 스킬 라이브러리 + 팀 지침(인스트럭션). */
+/** 프롬프트 라이브러리 + 팀 지침(인스트럭션 — 자동 주입). */
 data class SkillsView(
     val instructions: String,
-    val builtin: List<Skill>,
     val user: List<Skill>,
 )
 
-/** 사용자 스킬 저장(전체 교체). */
+/** 사용자 프롬프트 저장(전체 교체, editor). */
 data class SkillsUpdateRequest(
     val user: List<Skill>? = null,
 )
 
-/** 팀 지침 저장(빈 문자열=삭제). admin 전용. */
+/** 팀 지침 저장(admin). */
 data class InstructionsUpdateRequest(
     val instructions: String? = null,
 )

@@ -5,28 +5,30 @@ import { assistantApi } from '../api/client'
 import type { OAuthProviderUpdate, Skill } from '../api/types'
 import { usePermissions } from '../auth/AuthContext'
 import { newId } from '../lib/ids'
-import { useEditorStore } from '../store/editorStore'
 import { Modal } from './Modal'
 import { toast } from './toast'
 
 /**
- * 스킬 라이브러리 — 재사용 **플로우 조각**(nodes+edges)을 캔버스에 삽입하거나, 현재 선택을 스킬로 저장.
- * 내장 스킬은 읽기전용. AI 어시스턴트도 이 조각들을 알고 조합한다. + 팀 지침(admin).
+ * 어시스턴트 프롬프트 라이브러리(awesome-copilot 스타일) — 자주 쓰는 프롬프트를 저장해 두고 클릭 한 번으로 적용.
+ * + 팀 지침(admin, 항상 주입) + GitHub 연결(OAuth) 설정(admin).
  */
-export function SkillsDialog({ onClose }: { onClose: () => void }) {
+export function SkillsDialog({ onClose, onApplyPrompt }: { onClose: () => void; onApplyPrompt?: (prompt: string) => void }) {
   const qc = useQueryClient()
   const q = useQuery({ queryKey: ['assistant', 'skills'], queryFn: assistantApi.skills })
   const { canAdmin } = usePermissions()
-  const insertFragment = useEditorStore((s) => s.insertFragment)
-  const selectionFragment = useEditorStore((s) => s.selectionFragment)
-  const [saveName, setSaveName] = useState('')
-  const [instrEdit, setInstrEdit] = useState<string | null>(null) // null=미편집(서버값 표시)
+  const [user, setUser] = useState<Skill[]>([])
+  const [instrEdit, setInstrEdit] = useState<string | null>(null)
+  const loaded = useRef(false)
+
+  useEffect(() => {
+    if (q.data && !loaded.current) { loaded.current = true; setUser(q.data.user ?? []) }
+  }, [q.data])
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ['assistant', 'skills'] })
-  const saveUser = useMutation({
-    mutationFn: (user: Skill[]) => assistantApi.updateSkills({ user }),
-    onSuccess: () => { toast('스킬을 저장했습니다.', 'ok'); invalidate() },
-    onError: (e: unknown) => toast(errMsg(e, '스킬 저장 실패'), 'error'),
+  const savePrompts = useMutation({
+    mutationFn: (u: Skill[]) => assistantApi.updateSkills({ user: u.filter((s) => s.name.trim()) }),
+    onSuccess: () => { toast('프롬프트를 저장했습니다.', 'ok'); invalidate() },
+    onError: (e: unknown) => toast(errMsg(e, '저장 실패'), 'error'),
   })
   const saveInstr = useMutation({
     mutationFn: (instructions: string) => assistantApi.updateInstructions({ instructions }),
@@ -34,73 +36,49 @@ export function SkillsDialog({ onClose }: { onClose: () => void }) {
     onError: (e: unknown) => toast(errMsg(e, '지침 저장 실패(admin 권한 필요)'), 'error'),
   })
 
-  const user = q.data?.user ?? []
-  const builtin = q.data?.builtin ?? []
-
-  const insert = (s: Skill) => {
-    if (!s.graph) { toast('조각이 비어 있습니다.', 'error'); return }
-    const n = insertFragment(s.graph)
-    if (n > 0) { toast(`"${s.name}" ${n}개 노드를 캔버스에 삽입했습니다.`, 'ok'); onClose() }
-  }
-
-  const saveSelection = () => {
-    const name = saveName.trim()
-    if (!name) { toast('스킬 이름을 입력하세요.', 'error'); return }
-    const frag = selectionFragment()
-    if (!frag || frag.nodes.length === 0) { toast('캔버스에서 노드를 선택하세요(없으면 전체).', 'error'); return }
-    const nodeTypes = Array.from(new Set(frag.nodes.map((n) => n.type as string).filter(Boolean)))
-    const skill: Skill = { id: newId(), name, description: '', nodeTypes, graph: frag }
-    saveUser.mutate([...user, skill])
-    setSaveName('')
-  }
-
-  const del = (id?: string) => saveUser.mutate(user.filter((s) => s.id !== id))
+  const add = () => setUser((u) => [...u, { id: newId(), name: '', description: '', prompt: '' }])
+  const upd = (i: number, patch: Partial<Skill>) => setUser((u) => u.map((s, j) => (j === i ? { ...s, ...patch } : s)))
+  const del = (i: number) => setUser((u) => u.filter((_, j) => j !== i))
+  const apply = (s: Skill) => { if (s.prompt.trim() && onApplyPrompt) { onApplyPrompt(s.prompt); onClose() } }
 
   const serverInstr = q.data?.instructions ?? ''
   const instrValue = instrEdit ?? serverInstr
 
   return (
-    <Modal onClose={onClose} ariaLabel="스킬 라이브러리" width={660} card={{ padding: 18, display: 'block', overflowY: 'auto', maxHeight: '86vh' }}>
+    <Modal onClose={onClose} ariaLabel="프롬프트 라이브러리" width={660} card={{ padding: 18, display: 'block', overflowY: 'auto', maxHeight: '86vh' }}>
       <header style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-        <span aria-hidden>🧩</span>
-        <b style={{ flex: 1, fontSize: 15 }}>스킬 — 재사용 플로우 조각</b>
+        <span aria-hidden>💬</span>
+        <b style={{ flex: 1, fontSize: 15 }}>프롬프트 라이브러리</b>
+        <button onClick={() => savePrompts.mutate(user)} disabled={savePrompts.isPending} style={primary}>저장</button>
         <button onClick={onClose} aria-label="닫기" style={xBtn}>×</button>
       </header>
-      <p style={hint}>자주 쓰는 <b>플로우 조각</b>(노드+연결)을 저장해 두고 <b>＋ 삽입</b>으로 어느 플로우에나 붙여 조립합니다. AI 어시스턴트도 이 조각들을 조합해 플로우를 만듭니다.</p>
+      <p style={hint}>자주 쓰는 프롬프트(예: "결제 플로우 만들어줘", "에러 처리 추가")를 저장해 두고 <b>적용</b>으로 어시스턴트에 바로 보냅니다. <a href="https://awesome-copilot.github.com/" target="_blank" rel="noreferrer" style={{ color: 'var(--fl-primary)' }}>awesome-copilot</a> 처럼요.</p>
 
-      {/* 현재 선택을 스킬로 저장 */}
-      <div style={{ display: 'flex', gap: 6, alignItems: 'center', margin: '12px 0' }}>
-        <input value={saveName} onChange={(e) => setSaveName(e.target.value)} placeholder="현재 캔버스 선택을 스킬로 저장 — 이름 입력" style={{ ...mono, flex: 1 }} />
-        <button onClick={saveSelection} disabled={saveUser.isPending} style={primary}>＋ 선택을 스킬로</button>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '12px 0 6px' }}>
+        <label style={{ ...secLabel, margin: 0, flex: 1 }}>내 프롬프트</label>
+        <button onClick={add} style={ghostMini}>+ 프롬프트 추가</button>
       </div>
-
-      {/* 사용자 스킬 */}
-      <label style={secLabel}>내 스킬</label>
-      {user.length === 0 && <p style={{ ...hint, color: 'var(--fl-text-muted)' }}>저장한 스킬이 없습니다. 캔버스에서 노드를 선택하고 위에 이름을 넣어 저장하세요.</p>}
-      <div style={{ display: 'grid', gap: 6, marginBottom: 12 }}>
-        {user.map((s) => (
-          <SkillRow key={s.id} skill={s} onInsert={() => insert(s)} onDelete={() => del(s.id)} />
-        ))}
-      </div>
-
-      {/* 내장 스킬 */}
-      <label style={secLabel}>내장 스킬 (항상 사용 가능)</label>
-      <div style={{ display: 'grid', gap: 6 }}>
-        {builtin.map((s) => (
-          <SkillRow key={s.id ?? s.name} skill={s} onInsert={() => insert(s)} />
+      {user.length === 0 && <p style={{ ...hint, color: 'var(--fl-text-muted)' }}>저장한 프롬프트가 없습니다. 추가해 보세요.</p>}
+      <div style={{ display: 'grid', gap: 8 }}>
+        {user.map((s, i) => (
+          <div key={s.id} style={card}>
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 6 }}>
+              <input value={s.name} onChange={(e) => upd(i, { name: e.target.value })} placeholder="이름 (예: 결제 플로우 생성)" style={{ ...mono, flex: 1, fontWeight: 600 }} />
+              {onApplyPrompt && <button onClick={() => apply(s)} disabled={!s.prompt.trim()} style={applyBtn} title="이 프롬프트를 어시스턴트에 보냅니다">▶ 적용</button>}
+              <button onClick={() => del(i)} aria-label="삭제" style={xBtnSm}>×</button>
+            </div>
+            <input value={s.description ?? ''} onChange={(e) => upd(i, { description: e.target.value })} placeholder="한 줄 설명(선택)" style={{ ...mono, width: '100%', marginBottom: 6, fontSize: 12 }} />
+            <textarea value={s.prompt} onChange={(e) => upd(i, { prompt: e.target.value })} placeholder="프롬프트 본문 — 어시스턴트에 보낼 내용" style={{ ...mono, minHeight: 64, resize: 'vertical', width: '100%', fontSize: 12 }} />
+          </div>
         ))}
       </div>
 
       {/* 팀 지침 (admin) */}
       <div style={{ marginTop: 18, borderTop: '1px solid var(--fl-border)', paddingTop: 14 }}>
         <label style={secLabel}>팀 지침 (AI 가 항상 준수 · admin){!canAdmin && <span style={{ fontWeight: 400, color: 'var(--fl-text-muted)' }}> — 읽기전용</span>}</label>
-        <textarea
-          value={instrValue}
-          onChange={(e) => setInstrEdit(e.target.value)}
-          disabled={!canAdmin}
+        <textarea value={instrValue} onChange={(e) => setInstrEdit(e.target.value)} disabled={!canAdmin}
           placeholder="예: 기본 API 는 https://api.acme.com. 인증 헤더는 Authorization: Bearer {{ TOKEN@secret }}. HTTP 는 서버 모드."
-          style={{ ...mono, minHeight: 72, resize: 'vertical', width: '100%', opacity: canAdmin ? 1 : 0.6 }}
-        />
+          style={{ ...mono, minHeight: 72, resize: 'vertical', width: '100%', opacity: canAdmin ? 1 : 0.6 }} />
         {canAdmin && (
           <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
             <button onClick={() => saveInstr.mutate(instrValue)} disabled={saveInstr.isPending || instrEdit === null} style={primary}>지침 저장</button>
@@ -109,64 +87,38 @@ export function SkillsDialog({ onClose }: { onClose: () => void }) {
         )}
       </div>
 
-      {/* AI 연결(OAuth) provider 설정 — admin */}
-      {canAdmin && <OAuthProviderSection />}
+      {canAdmin && <GitHubOAuthSection />}
     </Modal>
   )
 }
 
-/** AI 연결(OAuth) provider 설정 — admin. 설정하면 어시스턴트 패널에 'AI 연결' 버튼이 뜬다. */
-function OAuthProviderSection() {
+/** GitHub 연결(OAuth) 설정 — admin. client_id/secret 만(엔드포인트는 GitHub 고정). */
+function GitHubOAuthSection() {
   const qc = useQueryClient()
   const cfg = useQuery({ queryKey: ['assistant', 'oauth', 'config'], queryFn: assistantApi.oauthConfig })
   const [form, setForm] = useState<OAuthProviderUpdate>({})
   const loaded = useRef(false)
   useEffect(() => {
-    if (cfg.data && !loaded.current) {
-      loaded.current = true
-      setForm({ authorizeUrl: cfg.data.authorizeUrl, tokenUrl: cfg.data.tokenUrl, clientId: cfg.data.clientId, scope: cfg.data.scope, clientSecret: '' })
-    }
+    if (cfg.data && !loaded.current) { loaded.current = true; setForm({ clientId: cfg.data.clientId, scope: cfg.data.scope, clientSecret: '' }) }
   }, [cfg.data])
   const save = useMutation({
     mutationFn: () => assistantApi.updateOAuthConfig({ ...form, clientSecret: form.clientSecret || undefined }),
-    onSuccess: () => { toast('AI 연결(OAuth) 설정을 저장했습니다.', 'ok'); qc.invalidateQueries({ queryKey: ['assistant'] }) },
+    onSuccess: () => { toast('GitHub 연결 설정을 저장했습니다.', 'ok'); qc.invalidateQueries({ queryKey: ['assistant'] }) },
     onError: (e: unknown) => toast(errMsg(e, '저장 실패(admin 권한 필요)'), 'error'),
   })
   const upd = (patch: OAuthProviderUpdate) => setForm((f) => ({ ...f, ...patch }))
   const redirect = `${window.location.origin}/api/v1/assistant/oauth/callback`
   return (
     <div style={{ marginTop: 18, borderTop: '1px solid var(--fl-border)', paddingTop: 14 }}>
-      <label style={secLabel}>AI 연결 (OAuth) — GitHub Copilot 식 로그인 · admin</label>
-      <p style={{ ...hint, marginBottom: 8 }}>제공자 OAuth 를 설정하면 어시스턴트 패널에 <b>AI 연결</b> 버튼이 뜹니다. 사용자가 로그인하면 그 토큰으로 AI 를 호출합니다(관리자 API 키 대신). 제공자에 아래 <b>redirect URI</b> 를 등록하세요.</p>
+      <label style={secLabel}>GitHub 연결 (OAuth) · admin</label>
+      <p style={{ ...hint, marginBottom: 8 }}>GitHub OAuth App 을 만들고 <b>client_id / client_secret</b> 을 넣으면, 어시스턴트에 <b>GitHub 연결</b> 버튼이 뜹니다. GitHub App 의 <b>Authorization callback URL</b> 에 아래 값을 등록하세요.</p>
       <div style={{ display: 'grid', gap: 6 }}>
-        <input value={form.authorizeUrl ?? ''} onChange={(e) => upd({ authorizeUrl: e.target.value })} placeholder="Authorize URL (예: https://idp.example.com/authorize)" style={mono} />
-        <input value={form.tokenUrl ?? ''} onChange={(e) => upd({ tokenUrl: e.target.value })} placeholder="Token URL (예: https://idp.example.com/token)" style={mono} />
-        <div style={{ display: 'flex', gap: 6 }}>
-          <input value={form.clientId ?? ''} onChange={(e) => upd({ clientId: e.target.value })} placeholder="client_id" style={{ ...mono, flex: 1 }} />
-          <input value={form.scope ?? ''} onChange={(e) => upd({ scope: e.target.value })} placeholder="scope (선택)" style={{ ...mono, flex: 1 }} />
-        </div>
+        <input value={form.clientId ?? ''} onChange={(e) => upd({ clientId: e.target.value })} placeholder="client_id (GitHub OAuth App)" style={mono} />
         <input value={form.clientSecret ?? ''} onChange={(e) => upd({ clientSecret: e.target.value })} type="password" placeholder={cfg.data?.hasSecret ? 'client_secret (저장됨 — 바꿀 때만 입력)' : 'client_secret'} style={mono} />
-        <div style={{ fontSize: 10.5, color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)', wordBreak: 'break-all' }}>redirect URI: {redirect}</div>
-        <div><button onClick={() => save.mutate()} disabled={save.isPending} style={primary}>연결 설정 저장</button></div>
+        <input value={form.scope ?? ''} onChange={(e) => upd({ scope: e.target.value })} placeholder="scope (선택 · 예: read:user)" style={mono} />
+        <div style={{ fontSize: 10.5, color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)', wordBreak: 'break-all' }}>callback URL: {redirect}</div>
+        <div><button onClick={() => save.mutate()} disabled={save.isPending} style={primary}>GitHub 설정 저장</button></div>
       </div>
-    </div>
-  )
-}
-
-function SkillRow({ skill, onInsert, onDelete }: { skill: Skill; onInsert: () => void; onDelete?: () => void }) {
-  const nodeCount = (skill.graph?.nodes ?? []).length
-  return (
-    <div style={row}>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 12.5, fontWeight: 600 }}>
-          {skill.name}
-          {(skill.nodeTypes ?? []).length > 0 && <span style={{ marginLeft: 6, fontSize: 10, color: 'var(--fl-primary)', fontFamily: 'var(--fl-font-mono)' }}>[{(skill.nodeTypes ?? []).join(',')}]</span>}
-          <span style={{ marginLeft: 6, fontWeight: 400, fontSize: 11, color: 'var(--fl-text-muted)' }}>· 노드 {nodeCount}</span>
-        </div>
-        {skill.description && <div style={{ fontSize: 11.5, color: 'var(--fl-text-muted)', marginTop: 2 }}>{skill.description}</div>}
-      </div>
-      <button onClick={onInsert} style={insertBtn} title="이 조각을 캔버스에 삽입">＋ 삽입</button>
-      {onDelete && <button onClick={onDelete} aria-label="삭제" style={xBtnSm}>×</button>}
     </div>
   )
 }
@@ -179,9 +131,9 @@ function errMsg(e: unknown, fallback: string): string {
 const hint: CSSProperties = { fontSize: 11.5, color: 'var(--fl-text-muted)', lineHeight: 1.6, margin: 0 }
 const secLabel: CSSProperties = { display: 'block', fontSize: 12, fontWeight: 700, color: 'var(--fl-text)', margin: '0 0 6px' }
 const mono: CSSProperties = { padding: '7px 9px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 12.5, fontFamily: 'var(--fl-font-mono)', boxSizing: 'border-box' }
-const row: CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)' }
+const card: CSSProperties = { border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', padding: 10 }
 const xBtn: CSSProperties = { width: 28, height: 28, borderRadius: 8, border: 'none', background: 'var(--fl-surface-2)', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 15 }
 const xBtnSm: CSSProperties = { width: 24, height: 24, flexShrink: 0, borderRadius: 6, border: '1px solid var(--fl-border)', background: 'var(--fl-surface)', color: 'var(--fl-text-muted)', cursor: 'pointer' }
 const primary: CSSProperties = { padding: '7px 12px', border: 'none', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-primary)', color: '#fff', cursor: 'pointer', fontSize: 12.5, fontWeight: 600, whiteSpace: 'nowrap' }
-const insertBtn: CSSProperties = { flexShrink: 0, padding: '5px 11px', border: '1px solid var(--fl-primary)', borderRadius: 'var(--fl-radius-sm)', background: 'transparent', color: 'var(--fl-primary)', cursor: 'pointer', fontSize: 12, fontWeight: 600 }
+const applyBtn: CSSProperties = { flexShrink: 0, padding: '5px 11px', border: '1px solid var(--fl-primary)', borderRadius: 'var(--fl-radius-sm)', background: 'transparent', color: 'var(--fl-primary)', cursor: 'pointer', fontSize: 12, fontWeight: 600 }
 const ghostMini: CSSProperties = { padding: '5px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 12 }

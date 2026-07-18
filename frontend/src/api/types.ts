@@ -195,14 +195,14 @@ export interface AssistantMessage { role: 'user' | 'assistant'; content: string 
 export interface AssistantChatRequest { messages: AssistantMessage[]; graph?: FlowGraph | null }
 export interface AssistantChatResponse { reply: string; graph: FlowGraph | null; stub: boolean; model: string }
 export interface AssistantConfig { available: boolean; usingRealLlm: boolean; model: string; authMode: 'oauth' | 'key' | 'stub' }
-// AI 어시스턴트 OAuth 연결(Copilot 식)
+// AI 어시스턴트 GitHub OAuth 연결(팝업 로그인)
 export interface OAuthStatus { providerConfigured: boolean; connected: boolean; expiresAt: number | null }
-export interface OAuthProviderConfig { authorizeUrl: string; tokenUrl: string; clientId: string; scope: string; hasSecret: boolean; configured: boolean }
-export interface OAuthProviderUpdate { authorizeUrl?: string; tokenUrl?: string; clientId?: string; clientSecret?: string; scope?: string }
+export interface OAuthProviderConfig { clientId: string; scope: string; hasSecret: boolean; configured: boolean }
+export interface OAuthProviderUpdate { clientId?: string; clientSecret?: string; scope?: string }
 export interface AuthorizeUrlResponse { url: string }
-// 스킬 = 재사용 플로우 조각(그래프). 캔버스 삽입 + AI 조합.
-export interface Skill { id?: string; name: string; description?: string; nodeTypes?: string[]; graph?: FlowGraph; builtin?: boolean }
-export interface SkillsView { instructions: string; builtin: Skill[]; user: Skill[] }
+// 스킬 = 재사용 프롬프트(awesome-copilot 스타일). 클릭해 어시스턴트에 적용.
+export interface Skill { id?: string; name: string; description?: string; prompt: string }
+export interface SkillsView { instructions: string; user: Skill[] }
 export interface SkillsUpdateRequest { user: Skill[] }
 export interface InstructionsUpdateRequest { instructions: string }
 

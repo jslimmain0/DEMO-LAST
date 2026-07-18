@@ -39,15 +39,27 @@ export function AssistantPanel({ width, onClose }: { width: number; onClose: () 
     onSuccess: () => { toast('AI 연결을 해제했습니다.', 'ok'); qc.invalidateQueries({ queryKey: ['assistant'] }) },
     onError: (e: unknown) => toast((e as { response?: { data?: { message?: string } } })?.response?.data?.message || '연결 해제 실패', 'error'),
   })
+  // GitHub 로그인 — 팝업을 열어 로그인·토큰 취득. 팝업이 콜백에서 postMessage 로 결과를 알려주면 상태 갱신.
   const connect = async () => {
     try {
-      // 로그인 후 지금 보던 플로우로 복귀(상대 경로). 오리진은 서버가 헤더로 확정.
-      const { url } = await assistantApi.oauthAuthorize(window.location.pathname + window.location.search)
-      window.location.href = url // provider 로그인 → 콜백이 앱으로 되돌림(?ai=connected)
+      const { url } = await assistantApi.oauthAuthorize()
+      window.open(url, 'flowlink-github-oauth', 'width=620,height=760,menubar=no,toolbar=no')
     } catch (e) {
-      toast((e as { response?: { data?: { message?: string } } })?.response?.data?.message || 'AI 연결 시작 실패', 'error')
+      toast((e as { response?: { data?: { message?: string } } })?.response?.data?.message || 'GitHub 연결 시작 실패', 'error')
     }
   }
+  useEffect(() => {
+    const onMsg = (ev: MessageEvent) => {
+      if (ev.origin !== window.location.origin) return
+      const d = ev.data as { flowlink?: string; result?: string }
+      if (d?.flowlink !== 'ai-oauth') return
+      if (d.result === 'connected') toast('GitHub 를 연결했습니다.', 'ok')
+      else toast('GitHub 연결에 실패했습니다.', 'error')
+      qc.invalidateQueries({ queryKey: ['assistant'] })
+    }
+    window.addEventListener('message', onMsg)
+    return () => window.removeEventListener('message', onMsg)
+  }, [qc])
   const connected = oauthQ.data?.connected === true
   const canConnect = oauthQ.data?.providerConfigured === true && !connected
   const [turns, setTurns] = useState<Turn[]>([])
@@ -97,18 +109,18 @@ export function AssistantPanel({ width, onClose }: { width: number; onClose: () 
         <span aria-hidden>✨</span>
         <b style={{ flex: 1, fontSize: 13.5 }}>AI 어시스턴트</b>
         {connected ? (
-          <button onClick={() => disconnect.mutate()} title="AI 연결됨 — 클릭해 연결 해제" style={{ ...badge(true), cursor: 'pointer', border: '1px solid var(--fl-ok)', color: 'var(--fl-ok)' }}>🔗 연결됨</button>
+          <button onClick={() => disconnect.mutate()} title="GitHub 연결됨 — 클릭해 연결 해제" style={{ ...badge(true), cursor: 'pointer', border: '1px solid var(--fl-ok)', color: 'var(--fl-ok)' }}>🔗 연결됨</button>
         ) : canConnect && canEdit ? (
-          <button onClick={connect} title="OAuth 로그인으로 AI 연결" style={connectBtn}>AI 연결</button>
+          <button onClick={connect} title="GitHub 로그인으로 연결(팝업)" style={connectBtn}>GitHub 연결</button>
         ) : (
           <span style={badge(cfg.data?.usingRealLlm)} title={cfg.data?.usingRealLlm ? `모델: ${cfg.data?.model}` : 'API 키/OAuth 미설정 — 샘플(stub) 모드'}>
             {cfg.data?.usingRealLlm ? cfg.data?.model : 'stub'}
           </span>
         )}
-        {canEdit && <button onClick={() => setSkillsOpen(true)} aria-label="지침·스킬" title="지침 · 스킬 · AI 연결 설정" style={xBtn}>🧠</button>}
+        {canEdit && <button onClick={() => setSkillsOpen(true)} aria-label="프롬프트·지침" title="프롬프트 라이브러리 · 팀 지침 · GitHub 연결" style={xBtn}>💬</button>}
         <button onClick={onClose} aria-label="닫기" style={xBtn}>×</button>
       </header>
-      {skillsOpen && <SkillsDialog onClose={() => setSkillsOpen(false)} />}
+      {skillsOpen && <SkillsDialog onClose={() => setSkillsOpen(false)} onApplyPrompt={(p) => void send(p)} />}
 
       <div ref={listRef} style={{ flex: 1, overflow: 'auto', padding: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
         {turns.length === 0 && (

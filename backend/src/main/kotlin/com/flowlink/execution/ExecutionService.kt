@@ -156,7 +156,11 @@ class ExecutionService(
             graph.nodesOrEmpty().find { it.id == nodeId } ?: throw NotFoundException.of("Node", nodeId)
         }
         if (node.nodeType() != NodeType.TCP) throw BadRequestException("TCP 노드가 아닙니다.")
-        return flowExecutor.previewTcp(node)
+        return try {
+            flowExecutor.previewTcp(node)
+        } catch (e: IllegalArgumentException) {
+            throw BadRequestException(e.message ?: "TCP 전문 조립 실패")
+        }
     }
 
     // trigger 는 실행을 시작시킨 종류(MANUAL/SCHEDULE/WEBHOOK). 스케줄러·웹훅은 호출 전 TenantContext 를 세팅한다.

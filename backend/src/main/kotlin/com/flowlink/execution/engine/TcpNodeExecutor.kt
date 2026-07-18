@@ -63,6 +63,17 @@ class TcpNodeExecutor(
         val prefixLen = node.tcpPrefixLength ?: 0
         val includesSelf = node.tcpPrefixIncludesSelf == true
 
+        // 고정길이 필드가 ByteArray(length) 를 직접 할당하므로, 과대 길이(오타/악의)로 OOM 되지 않게 상한.
+        // (금융 전문은 KB 단위 — preview 엔드포인트가 임의 노드를 받으니 반드시 가드) 프리픽스 폭도 상한.
+        if (prefixLen < 0 || prefixLen > MAX_PREFIX_WIDTH) throw IllegalArgumentException("길이 프리픽스 폭이 범위를 벗어났습니다: $prefixLen")
+        var declaredTotal = 0L
+        for (f in node.tcpRequest ?: emptyList()) {
+            val len = f.lengthOrZero()
+            if (len < 0) throw IllegalArgumentException("필드 길이는 음수일 수 없습니다: ${f.name}=$len")
+            declaredTotal += len
+            if (declaredTotal > MAX_TCP_MESSAGE) throw IllegalArgumentException("요청 전문 총 길이가 상한(${MAX_TCP_MESSAGE}B)을 초과했습니다.")
+        }
+
         val reqValues = LinkedHashMap<String, Any?>()
         val bodyBuf = ByteArrayOutputStream()
         val slices = ArrayList<FieldSlice>()
@@ -116,7 +127,11 @@ class TcpNodeExecutor(
     }
 
     fun execute(node: GraphNode, ctx: ExecutionContext): NodeResult {
-        val built = build(node, ctx)
+        val built = try {
+            build(node, ctx)
+        } catch (e: IllegalArgumentException) {
+            return NodeResult.fail(0, "", "⚠ TCP 전문 조립 실패: " + (e.message ?: e.toString()))
+        }
         val host = built.host
         val port = built.port
         val nodeCs = built.encoding
@@ -192,6 +207,11 @@ class TcpNodeExecutor(
     }
 
     companion object {
+        /** 요청 전문 총 길이 상한(선언 길이 합) — OOM 방지. 금융 전문은 KB 단위라 1MB 로도 넉넉. */
+        const val MAX_TCP_MESSAGE = 1 shl 20 // 1MB
+        /** 길이 프리픽스 폭 상한(자리수) — `%0Nd` 포맷·ByteArray(N) 방어. */
+        const val MAX_PREFIX_WIDTH = 20
+
         private fun readN(input: InputStream, n: Int): ByteArray {
             val buf = input.readNBytes(n)
             if (buf.size < n) {

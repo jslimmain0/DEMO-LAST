@@ -272,6 +272,7 @@ export interface CreateTriggerRequest {
 export interface RunRequest {
   input?: Record<string, unknown>
   env?: Record<string, unknown>
+  envName?: string | null // 활성 환경 이름 — 시크릿 환경 스코프 선택(null/미전송=공통만)
   versionNo?: number
 }
 

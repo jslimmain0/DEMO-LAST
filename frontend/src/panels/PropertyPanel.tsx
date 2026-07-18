@@ -116,8 +116,17 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
   const envStore = useEnvStore()
   const runInput = useRunInput()
   // 시크릿 이름을 바인딩 소스로 노출({{ 이름@secret }}) — 값은 서버에만(write-only).
+  // 활성 환경에서 적용될 것만 보여준다: 공통 + 활성 환경(백엔드 activeSecrets 오버레이 규칙과 동일, 이름으로 dedupe).
   const secretsQ = useQuery({ queryKey: ['secrets'], queryFn: secretsApi.list })
-  const secretNames = secretsQ.data?.map((s) => s.name) ?? []
+  const secretNames = useMemo(() => {
+    const active = envStore.active
+    const seen = new Set<string>()
+    for (const s of secretsQ.data ?? []) {
+      const common = !s.environment
+      if (common || s.environment === active) seen.add(s.name)
+    }
+    return Array.from(seen)
+  }, [secretsQ.data, envStore.active])
   // env/input 을 시그니처로 참조 — bindableSources 가 activeEnvVars/activeInputVars 를 명령형으로 읽으므로,
   // 변경 시 재계산되도록 memo 입력에 포함(린트가 '미사용'으로 오인하지 않게 실제 값으로 참조).
   const envSig = JSON.stringify(envStore.active ? envStore.envs[envStore.active] ?? {} : {}) + '|' + JSON.stringify(runInput) + '|' + secretNames.join(',')

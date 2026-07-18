@@ -56,11 +56,14 @@ export const triggersApi = {
     http.delete(`/flows/${flowId}/triggers/${id}`).then(() => undefined),
 }
 
-export interface SecretView { name: string; createdAt: string }
+// environment: null=공통(전역), 그 외=해당 환경 전용
+export interface SecretView { name: string; environment: string | null; createdAt: string }
 export const secretsApi = {
   list: () => http.get<SecretView[]>('/secrets').then((r) => r.data),
-  put: (name: string, value: string) => http.put<SecretView>(`/secrets/${encodeURIComponent(name)}`, { value }).then((r) => r.data),
-  remove: (name: string) => http.delete(`/secrets/${encodeURIComponent(name)}`).then(() => undefined),
+  put: (name: string, value: string, environment?: string | null) =>
+    http.put<SecretView>(`/secrets/${encodeURIComponent(name)}`, { value, environment: environment || null }).then((r) => r.data),
+  remove: (name: string, environment?: string | null) =>
+    http.delete(`/secrets/${encodeURIComponent(name)}`, { params: environment ? { environment } : undefined }).then(() => undefined),
 }
 
 export interface SuiteRunItem { flowId: string; flowName: string; executionId: string | null; status: string; error: string | null }

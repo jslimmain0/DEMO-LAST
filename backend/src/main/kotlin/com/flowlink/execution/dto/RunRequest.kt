@@ -12,6 +12,7 @@ import com.fasterxml.jackson.databind.JsonNode
  */
 data class RunRequest(
     val input: JsonNode?,
-    val env: JsonNode?,
+    val env: JsonNode?,        // {{ key@env }} 변수 묶음
+    val envName: String?,      // 활성 환경 이름 — 시크릿 환경 스코프 선택(null/blank=공통만)
     val versionNo: Int?,
 )

@@ -22,7 +22,7 @@ import { VersionHistoryDialog } from '../components/VersionHistoryDialog'
 import { RunInputDialog } from '../components/RunInputDialog'
 import { TriggersDialog } from '../components/TriggersDialog'
 import { SecretsDialog } from '../components/SecretsDialog'
-import { activeEnvVars } from '../lib/environments'
+import { activeEnvVars, activeEnvName } from '../lib/environments'
 import { activeInputVars, loadRunInput } from '../lib/runInput'
 import { toast } from '../components/toast'
 import { useAuth, usePermissions } from '../auth/AuthContext'
@@ -300,9 +300,11 @@ export function Editor() {
       // 활성 환경(dev/staging/prod)의 변수 + 실행 입력을 주입 — 백엔드가 `{{ 키@env }}`/`{{ 키@input }}` 로 해석한다.
       const envVars = activeEnvVars()
       const inputVars = activeInputVars()
+      const envName = activeEnvName()
       const body: RunRequest = {}
       if (Object.keys(envVars).length) body.env = envVars
       if (Object.keys(inputVars).length) body.input = inputVars
+      if (envName) body.envName = envName // 시크릿 환경 스코프 선택(공통 위에 오버레이)
       let detail = await runsApi.run(flowId, Object.keys(body).length ? body : undefined)
       setExecution(detail)
       let guard = 0

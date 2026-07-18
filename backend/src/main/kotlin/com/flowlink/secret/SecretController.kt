@@ -6,6 +6,7 @@ import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PutMapping
 import org.springframework.web.bind.annotation.RequestBody
+import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.ResponseStatus
 import org.springframework.web.bind.annotation.RestController
@@ -18,18 +19,20 @@ import org.springframework.web.bind.annotation.RestController
 @RequestMapping("/api/v1/secrets")
 class SecretController(private val service: SecretService) {
 
-    data class PutSecretRequest(val value: String)
+    data class PutSecretRequest(val value: String, val environment: String? = null)
 
     @GetMapping
     fun list(): List<SecretService.SecretView> = service.listNames()
 
     @PutMapping("/{name}")
     fun put(@PathVariable name: String, @RequestBody req: PutSecretRequest): SecretService.SecretView {
-        service.put(name, req.value)
-        return service.listNames().first { it.name == name.trim() }
+        service.put(name, req.value, req.environment)
+        val env = req.environment?.trim().takeUnless { it.isNullOrEmpty() }
+        return service.listNames().first { it.name == name.trim() && it.environment == env }
     }
 
     @DeleteMapping("/{name}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    fun delete(@PathVariable name: String) = service.delete(name)
+    fun delete(@PathVariable name: String, @RequestParam(required = false) environment: String?) =
+        service.delete(name, environment)
 }

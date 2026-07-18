@@ -125,7 +125,7 @@ class TriggerService(
         val input = spec.inputJson?.let { json.readTree(it) }
         TenantContext.setTenantId(spec.tenantId)
         try {
-            return executionService.run(spec.flowId, RunRequest(input, null, spec.versionNo), trigger).id
+            return executionService.run(spec.flowId, RunRequest(input, null, null, spec.versionNo), trigger).id
         } finally {
             TenantContext.clear()
         }

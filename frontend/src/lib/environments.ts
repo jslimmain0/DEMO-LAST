@@ -42,6 +42,12 @@ export function activeEnvVars(): Record<string, string> {
   return out
 }
 
+/** 활성 환경 이름 — 실행 요청 envName 으로 전송돼 시크릿 환경 스코프를 선택한다(없으면 공통만). */
+export function activeEnvName(): string | null {
+  const s = read()
+  return (s.active && s.envs[s.active]) ? s.active : null
+}
+
 export function setActiveEnv(name: string | null): void {
   const s = read()
   write({ ...s, active: name && s.envs[name] ? name : null })

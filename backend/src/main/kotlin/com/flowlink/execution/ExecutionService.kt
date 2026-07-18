@@ -167,7 +167,8 @@ class ExecutionService(
         seedInput(ctx, req)
         // 시크릿 볼트 시드 — putSeed 로 넣어 **명시 스코프 {{ 이름@secret }} 로만** 보이게 한다(bare {{키}} 의
         // nearest-upstream 오염/input·env 가림 방지 — wait URL 시드와 동일 격리). 값은 캡처 로그에서 마스킹(recorder).
-        val secrets = secretMap()
+        // 활성 환경(envName)의 시크릿을 공통 위에 오버레이해 시드. 없으면 공통만.
+        val secrets = secretMap(req?.envName?.trim()?.takeIf { it.isNotEmpty() })
         if (secrets.isNotEmpty()) ctx.putSeed("secret", secrets)
 
         // wait(콜백 대기) 노드 수신 URL 시드 — 실행 시작 시점에 모든 wait 노드의 url 출력을 미리 확정해
@@ -288,7 +289,7 @@ class ExecutionService(
             outcome = flowExecutor.resume(
                 suspended.state, toResumeInput(req),
                 req?.durationMs ?: 0L,
-                recorder(executionId, secretMap().values)
+                recorder(executionId, secretValuesOf(suspended.state))
             )
         } catch (e: Exception) {
             val execution = executionRepo.findById(executionId).orElse(null) ?: return
@@ -432,7 +433,7 @@ class ExecutionService(
             .orElseThrow { NotFoundException.of("Execution", execId) }
         val versionNo = versionRepo.findById(src.flowVersionId).map { it.versionNo }.orElse(null)
         val input = src.inputJson?.let { json.readTree(it) }
-        return run(src.flowId, RunRequest(input, null, versionNo))
+        return run(src.flowId, RunRequest(input, null, null, versionNo))
     }
 
     /** 실행 목록에 워크플로 이름을 채운다(삭제/보관된 플로우도 이름 조회 — UUID 노출 방지). */
@@ -450,11 +451,18 @@ class ExecutionService(
      * redaction deny-by-default: HTTP 노드의 요청/응답 본문(토큰·시크릿 섞일 수 있음)은
      * capture 가 켜진 경우에만 저장하고, 제어 노드(start/if/set 등)의 무해한 표시는 그대로 둔다.
      */
-    /** 실행 시작 시점의 시크릿 맵(테넌트). 실패해도 실행은 진행(빈 맵). */
-    private fun secretMap(): Map<String, String> =
-        try { secretService.activeSecrets() } catch (e: Exception) {
+    /** 실행 시작 시점의 시크릿 맵(테넌트 + 활성 환경 오버레이). 실패해도 실행은 진행(빈 맵). */
+    private fun secretMap(envName: String?): Map<String, String> =
+        try { secretService.activeSecrets(envName) } catch (e: Exception) {
             log.warn("시크릿 로드 실패(시드/마스킹 생략): {}", e.message); emptyMap()
         }
+
+    /**
+     * 재개 시 마스킹 소스 — 실행 시작 시 ctx 에 시드한 시크릿 맵(활성 환경 반영)의 값들.
+     * 재개엔 RunRequest.envName 이 없으므로 재조회하지 않고 시드된 값을 그대로 읽는다.
+     */
+    private fun secretValuesOf(state: FlowExecutor.RunState): Collection<String> =
+        (state.context().raw("secret") as? Map<*, *>)?.values?.mapNotNull { it as? String } ?: emptyList()
 
     private fun recorder(execId: UUID, secretValues: Collection<String> = emptyList()): NodeRecorder {
         val captureBodies = props.capture.requestResponseBodies

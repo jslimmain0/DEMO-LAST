@@ -34,19 +34,27 @@ class Secret {
     @Column(name = "enc_value", columnDefinition = "text", nullable = false)
     lateinit var encValue: String
 
+    // 환경(dev/staging/prod) 스코프. COMMON("*")=공통(전역). JPA nullable — H2 dev legacy 행의 NULL 관용(공통 취급).
+    @Column(name = "environment", length = 120)
+    var environment: String? = null
+        private set
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     lateinit var createdAt: Instant
         private set
 
     companion object {
+        const val COMMON = "*" // 공통(전역) 환경 센티넬 — NULL/빈 문자열 대신(3 DB 균일 + 유니크 정합)
+
         @JvmStatic
-        fun create(tenantId: String, name: String, encValue: String): Secret {
+        fun create(tenantId: String, name: String, encValue: String, environment: String): Secret {
             val s = Secret()
             s.id = UUID.randomUUID()
             s.tenantId = tenantId
             s.name = name
             s.encValue = encValue
+            s.environment = environment
             return s
         }
     }

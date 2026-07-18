@@ -378,32 +378,11 @@ design/   theme(라이트/다크) · index.css(CSS 변수)
   응답레벨 $ref·qty=number 필드 타입).
 - ⚠️ mock 상태(주문/tid) 인메모리 — 재시작 시 소실. OpenAPI 임포트는 붙여넣기 전용(다이얼로그가 URL 페치 미지원).
 
-## 이전 변경 (2026-06-29) — ⚠ 아래 3개 콜백 섹션은 2026-07-03 재설계로 **대체됨** (역사 기록용)
+## 이전 변경 (2026-06-29) — 콜백 초기 설계 3종 (relay 통합으로 폐기, 역사 기록)
 
-### (대체됨) 폼 전송 노드(WAIT type) — 새 창(팝업)으로 form target 제출
-- WAIT 노드를 **`폼 전송`으로 재정의**(결제/인증창 패턴): 실행 시 **새 팝업 창**을 열고 `<form action method target=팝업>`을
-  그 창으로 제출 → 대상 페이지가 팝업에 렌더. 팝업이 `postMessage`로 결과를 보내거나 **창이 닫히면**(`{closed:true}`) 재개.
-  결과값이 노드 출력이 되어 다운스트림 바인딩. ([FormPopupDialog](frontend/src/components/FormPopupDialog.tsx))
-- 노드 설정: `formAction`(URL, 토큰/바인딩), `formMethod`(POST/GET), **폼 데이터는 `fields.body`**(KeyValueEditor, 바인딩). `outputs`로 결과 키 선언.
-- 백엔드: WAIT 중단 시 `formAction`(토큰 해석)·필드 값(바인딩 해석)을 서버에서 완성해 `PendingForm{action,method,fields}` 반환.
-  `FlowExecutor.resume`은 노드 타입 분기(HTTP=브라우저응답 / WAIT=formValues를 출력으로). `RunState.pendingNodeId` HTTP/WAIT 공용.
-- 프론트: 팝업 차단 대비 **버튼 클릭(제스처)으로 창 열기** → 폼 제출 → `postMessage`/창닫힘 대기(언마운트 시 리스너 정리).
-- 검증: H2 e2e — action 토큰 해석(`{{url@s}}/pay`)·필드 바인딩(tok=TOK-9)·결과 재개(ok→APPROVED 다운스트림) PASS, client 모드 회귀 없음.
-- ⚠️ 인메모리 보관(세션 한정). client 모드 charset처럼 팝업 결과는 대상/콜백이 `window.opener.postMessage` 해야 구조화 값 수신(아니면 창 닫힘만 감지).
-
-### (대체됨) 게이트웨이 콜백 URL — 결제/인증 리다이렉트 결과 캡처 (`{{ __callbackUrl }}`)
-결제/인증 게이트웨이는 폼에 **콜백(리턴) URL**을 받아, 처리 후 그 URL로 **결과 파라미터를 실어 리다이렉트**한다(이니시스/나이스페이/KCP 등은 대개 merchant returnUrl로 **POST 자동전송**). 그 결과를 워크플로로 되먹인다. **널 두세명(프론트-수신/백엔드-엔드포인트/PG-호환)으로 나눠 설계 토론** 후 합성한 결론을 구현.
-- **자동 발급 + 사용자 필드명 매핑**: `{{ __callbackUrl }}`(특수 토큰)을 게이트웨이가 요구하는 **필드명(returnUrl/ret_url/ReturnURL 등)** 의 폼 데이터 값으로 넣으면, 실행 시 서버가 **추측 불가능한 토큰 URL**(`{base}/api/v1/executions/callback/{token}`)로 치환. 필드명은 게이트웨이마다 달라 하드코딩 대신 폼 행으로 매핑(신규 GraphNode 필드 없음). PropertyPanel wait 섹션에 복사/삽입 버튼 + 안내.
-- **수신 엔드포인트(백엔드, 신규)**: [ExecutionController](backend/src/main/java/com/flowlink/execution/ExecutionController.java) `@RequestMapping(GET+POST) /executions/callback/{token}`. `request.getParameterMap()`으로 **쿼리(GET)·폼바디(POST 자동전송) 모두** 병합 수신 → 파라미터를 재개 상태에 저장(authoritative) → **브리지 HTML**(text/html) 반환. 브리지가 `window.opener.postMessage({__flcallback:true, ...params})` + `window.close()`.
-- **기존 재개 루프 재사용(제로 변경)**: 리다이렉트 후 팝업이 **우리 오리진**으로 돌아오므로 기존 [FormPopupDialog](frontend/src/components/FormPopupDialog.tsx)의 `message`(`e.source===popup`) 핸들러가 그대로 수신 → 기존 `resume({formValues})` 경로로 재개. `__flcallback` 마커는 제거 후 전달.
-- **방어적 폴백**: postMessage 유실/차단 시에도, 게이트웨이가 이미 콜백을 때린 순간 백엔드에 결과가 저장됨 → **WAIT 재개 시 formValues가 비면 저장된 콜백 파라미터를 노드 출력으로**(`FlowExecutor.resume`). 
-- **필터링 안 함**: 선언 `outputs`는 바인딩 픽커 칩만 구동. PG가 주는 **모든** 파라미터(resultCode/tid/authToken/MOID…)를 노드 출력 맵으로 → 선언 안 한 키도 `{{ key@노드 }}`로 바인딩(HTTP `body` 수동바인딩 패턴과 동일).
-- **토큰 기반 테넌트**: 인증 없는(permitAll) 엔드포인트라 JWT 없음 → `callbackTokens`(token→execId) 역인덱스로 실행/테넌트 복원, `recordCallback`이 `TenantContext`를 수동 set/clear(try-finally). SecurityConfig `PUBLIC_PATHS`에 `/api/v1/executions/callback/**` 추가.
-- 설정: `flowlink.execution.callback.base-url`(기본 `http://localhost:18080`). 외부 게이트웨이는 override(터널) 필요.
-- 백엔드 변경: `ExecutionProperties.Callback`, `FlowExecutor`(RunState `callbackToken/Url/Params` + `{{ __callbackUrl }}` 치환 + `recordCallback` + WAIT 폴백), `PendingForm.callbackToken`(서버 내부, DTO 미노출), `ExecutionService`(콜백 토큰 레지스트리 + `recordCallback` + 파라미터 평탄화=parseForm 중복키 규약).
-- 검증: H2 e2e — (A) 게이트웨이 POST 콜백→브리지 HTML(마커+파라미터)→**빈 formValues 폴백**으로 모든 콜백 파라미터가 노드 출력, (B) 명시 formValues 정상 경로+실행마다 새 토큰, (C) 콜백 미사용 일반 폼 무회귀, (D) **팝업 닫힘 신호 `{closed:true}`도 저장된 콜백 파라미터로 폴백**(센티넬 미유출) — 모두 PASS.
-- **적대적 멀티에이전트 리뷰(6건 확정) 반영**: (1)(3) 팝업 닫힘 `{closed:true}`는 non-empty라 기존 `isEmpty()` 폴백을 못 타 콜백 결과가 유실되던 버그 → `isNoFormInput`(빈 값 또는 `{closed:true}`만)로 판정해 authoritative 콜백 파라미터 우선. (2) 콜백 스레드(`recordCallback`)와 재개 스레드(`resume`)가 `RunState`를 비동기화로 접근하던 데이터 레이스 → `synchronized(st)` 로 `callbackParams` 쓰기/읽기 happens-before. (4) `FormPopupDialog.onMsg` 가 `e.source===popup` 만 검사해 게이트웨이 페이지 SDK/애널리틱스의 임의 `postMessage` 로 조기 재개되던 문제 → **마커(`__flcallback`) 또는 동일 출처**만 인정(교차출처 잡음 거부, 브리지·커스텀 target 둘 다 보존). (5) `resume` 예외 경로에서 `callbackTokens` 토큰 미정리(누수) → catch 에서 정리. (6) 팝업 '다시 열기' 시 이전 리스너/타이머 누수 → `openPopup` 진입 시 이전 cleanup 선실행.
-- ⚠️ **데모 범위**: 서명/해시 위변조 검증·본인인증 EncodeData 복호화·리플레이 방지(토큰 단일사용 외)·내구성 보관(인메모리 한계 상속)·외부 도달성(localhost는 동일 호스트 목 게이트웨이만, 실 게이트웨이는 base-url 터널)은 후속 과제. 실제 결제망용 하드닝 아님. POST charset이 비UTF-8(EUC-KR)이면 서블릿 디코딩 모지바케 가능(UTF-8 게이트웨이 무영향).
+> 결제/인증 콜백을 초기엔 세 방식으로 처리했다 — ① 팝업 폼전송(WAIT type) · ② per-run 토큰 URL `{{ __callbackUrl }}` · ③ 고정 URL+상관키 `{{ __notiUrl }}`/`{{ __corrId }}`.
+> **2026-07-03 재설계로 전부 폐기**되고 `wait` 노드 + 백엔드 직접 수신(`/relay/{execId}/cb/{nodeId}`, [RelayController](backend/src/main/kotlin/com/flowlink/execution/RelayController.kt))으로 통합됐다.
+> 이 토큰(`{{ __callbackUrl }}` 등)·엔드포인트(`/executions/callback/{token}`·`/api/v1/callbacks`)는 **현재 코드에 없다**(신규 작업 시 혼동 주의). 상세 역사: [form-wait-relay 설계 스펙](docs/superpowers/specs/2026-07-03-form-wait-relay-design.md).
 
 ### [필드 ↔ Raw] 전환 범위 확대 — Params·Headers·폼 데이터(WAIT)
 기존엔 HTTP **Body** 만 [필드↔Raw] 토글이 있었음. "raw로 볼 수 있는 건 왠만해서는 전환 가능하게, url encoding도" 요청 반영 → 키-값을 다루는 나머지 영역에도 동일 토글 추가([bodyConvert.ts](frontend/src/lib/bodyConvert.ts) 재사용).
@@ -413,17 +392,6 @@ design/   theme(라이트/다크) · index.css(CSS 변수)
 - 전환은 비파괴적 양방향 변환(치환): 필드→Raw 는 직렬화, Raw→필드 는 파싱(실패 시 원문 유지 + 경고). 바인딩은 토큰으로 직렬화. `switchKvRaw`(params/headers)·`switchFormRaw`(WAIT) [PropertyPanel](frontend/src/panels/PropertyPanel.tsx).
 - 검증: bodyConvert 단위(Node 타입스트리핑, 헤더+urlencoded 라운드트립) 13케이스 PASS. H2 e2e — (R1) HTTP raw params→쿼리·raw headers→요청헤더(server 모드), (R2) WAIT raw 폼(`a=1&b=2`)→팝업 필드 분해, (R3) WAIT raw 폼+`{{ __callbackUrl }}`+게이트웨이 콜백 폴백 — 모두 PASS. 콜백/폼 필드모드 무회귀 확인.
 - ⚠️ Raw 모드 req: 스코프는 필드가 비어 파싱값이 안 실림(바디 raw 와 동일 한계). Headers Raw 값 토큰에 개행 포함 시 줄 분해가 먼저라 영향 없음. Params/폼 Raw 는 토큰 해석 결과에 `&`/`=` 가 섞이면 분해가 흐트러질 수 있음(엣지, 바디 raw 와 동일).
-
-### (대체됨) 고정(사전등록) 콜백 + 상관키 + 서버 노티 (`{{ __notiUrl }}` · `{{ __corrId }}`)
-동적 콜백(`{{ __callbackUrl }}`, per-run 토큰 URL + 브라우저 팝업 복귀)에 더해, **서버가 소유하는 고정 콜백 URL**을 추가. 게이트웨이 콘솔에 미리 등록하거나 **서버 간 노티(웹훅)** 로 쓴다. "URL 전달=둘 다 / 성공·실패=단일 콜백+응답예상값 선언(별도 URL 안 나눔)/때리는 주체=브라우저·노티 둘 다" 설계 토론 결론 반영.
-- **고정 URL은 실행마다 안 바뀜 → 상관키로 매칭**: `{{ __corrId }}`(추측 불가 UUID)를 게이트웨이가 echo 하는 필드(oid/MOID 등)에 넣으면, 콜백이 그 값을 되돌려줄 때 서버가 **파라미터 값 스캔으로 대기 실행을 찾음**(필드명 무관 — `{{ __callbackUrl }}` 필드명 철학과 동일). 안정 URL은 `{{ __notiUrl }}`(= `{base}/api/v1/callbacks`, 폼에 실을 때) 또는 PropertyPanel 복사(콘솔 등록용).
-- **서버 사이드 재개**: 고정 콜백은 브라우저가 없을 수 있어(순수 노티), 수신 엔드포인트 [ExecutionController](backend/src/main/java/com/flowlink/execution/ExecutionController.java) `@RequestMapping(GET+POST) /api/v1/callbacks` 가 `recordFixedCallback` → **서버가 직접 재개**(`doResume`). Accept 에 `text/html`(브라우저 팝업)이면 브리지 HTML, 아니면 게이트웨이용 `OK` 평문 ACK.
-- **멱등 재개**: 팝업과 노티가 병행돼도 안전 — `resume()` 은 서스펜션이 없으면(이미 재개됨) 에러 대신 현재 상태 반환. 재개 로직은 `doResume` 로 공통화(브라우저 resume / 노티 공유).
-- 백엔드: `FlowExecutor`(RunState `corrId/notiUrl` + `{{ __notiUrl }}`/`{{ __corrId }}` 치환 + `referencesToken` 일반화, `PendingForm.corrId`), `ExecutionService`(`corrIds` 역인덱스 + `recordFixedCallback`(값 스캔 매칭) + `doResume`/멱등 `resume` + `cleanupSuspension`), `SecurityConfig` `PUBLIC_PATHS` 에 `/api/v1/callbacks` 추가.
-- 검증: H2 e2e — (F1) 서버 노티(브라우저 없이) 고정URL+corrId 매칭→서버 재개, 모든 파라미터→출력, `OK` ACK, (F2) 노티 완료 후 늦은 브라우저 resume 멱등(에러 없음), (F3) 브라우저가 고정URL 히트→브리지 HTML+재개, (F4) 미매칭 corrId→400 — 모두 PASS. 동적 콜백(A~D)·raw(R1~R3) 무회귀.
-- ⚠️ **데모 한계 상속**: 인메모리 레지스트리(재시작 시 소실)·서명 위변조 미검증·상관키 단일 매칭(게이트웨이가 corrId 를 echo 안 하면 매칭 불가 — 대부분 merchant 파라미터 echo). 노티 ACK 는 평문 `OK`(PG 별 규격 상이 — 실연동 시 조정). base-url 은 `flowlink.execution.callback.base-url`(기본 localhost) override 필요.
-
----
 
 ## 최근 변경 (2026-07-05)
 

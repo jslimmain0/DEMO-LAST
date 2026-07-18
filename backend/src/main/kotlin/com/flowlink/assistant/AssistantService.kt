@@ -16,6 +16,8 @@ import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.time.Duration
+import java.util.concurrent.Semaphore
+import java.util.concurrent.TimeUnit
 
 /**
  * 자연어 → 플로우 어시스턴트. Claude(Anthropic Messages API)에 현재 그래프 + 스키마 프롬프트를 주고
@@ -34,6 +36,8 @@ class AssistantService(
     private val log = LoggerFactory.getLogger(AssistantService::class.java)
     private val mapper: ObjectMapper = json.mapper()
     private val http: HttpClient = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build()
+    /** 동시 LLM 호출 벌크헤드 — 느린 업스트림이 Tomcat 요청 스레드를 고갈시키지 않게 상한. */
+    private val gate = Semaphore(props.maxConcurrent)
 
     /** env/yml 우선, 없으면 시크릿 볼트의 anthropic-api-key. 요청 스레드(TenantContext)에서만 호출. */
     private fun resolveKey(): String? {
@@ -63,13 +67,27 @@ class AssistantService(
     // --- 실제 LLM 호출 ---
 
     private fun callAnthropic(key: String, messages: List<ChatMessage>, graph: JsonNode?): AssistantChatResponse {
+        // 벌크헤드 — 동시 호출 상한 초과면 429(요청 스레드가 느린 업스트림에 고갈되지 않게)
+        if (!gate.tryAcquire(2, TimeUnit.SECONDS)) {
+            throw TooManyRequestsException("AI 요청이 많습니다. 잠시 후 다시 시도하세요.")
+        }
+        try {
+            return callAnthropicInner(key, messages, graph)
+        } finally {
+            gate.release()
+        }
+    }
+
+    private fun callAnthropicInner(key: String, messages: List<ChatMessage>, graph: JsonNode?): AssistantChatResponse {
         val uri = URI.create(props.baseUrl + "/v1/messages")
         try { ssrfGuard.check(uri) } catch (e: Exception) { throw BadRequestException("AI 엔드포인트가 차단됐습니다: ${e.message}") }
 
+        // 시크릿 마스킹 — SET 노드의 secret=true 변수 값을 외부 LLM 에 평문으로 보내지 않는다.
+        val ctxGraph = redactSecrets(graph)
         val system = buildString {
             append(FlowSchemaPrompt.SYSTEM)
             append("\n\n## CURRENT CANVAS (the user's current graph — edit this, keep ids)\n")
-            append(if (graph == null || graph.isNull) "(빈 캔버스)" else clip(json.toJson(graph), 24000))
+            append(if (ctxGraph == null || ctxGraph.isNull) "(빈 캔버스)" else clip(json.toJson(ctxGraph), 24000))
         }
         val body: ObjectNode = mapper.createObjectNode().apply {
             put("model", props.model)
@@ -120,16 +138,16 @@ class AssistantService(
         try { mapper.readTree(bodyJson).path("error").path("message").asText(null) } catch (e: Exception) { null }
 
     /**
-     * 모델 텍스트에서 {reply, graph} JSON 을 추출. 코드펜스/앞뒤 잡음에 견고하게 첫 '{'~마지막 '}' 슬라이스.
+     * 모델 텍스트에서 {reply, graph} JSON 을 추출. **균형 중괄호 스캐너**(문자열/이스케이프 인지)로
+     * 첫 '{' 에서 짝이 맞는 '}' 까지만 잘라 중첩/문자열 내 중괄호에 견고. 코드펜스도 벗긴다.
      * 파싱 실패 시 전체 텍스트를 reply 로(그래프 없음) — 최소한 대화는 되게.
      */
     private fun parseModelJson(text: String): Pair<String, JsonNode?> {
         val cleaned = text.trim().removePrefix("```json").removePrefix("```").removeSuffix("```").trim()
-        val start = cleaned.indexOf('{')
-        val end = cleaned.lastIndexOf('}')
-        if (start >= 0 && end > start) {
+        val jsonStr = extractJsonObject(cleaned)
+        if (jsonStr != null) {
             try {
-                val obj = mapper.readTree(cleaned.substring(start, end + 1))
+                val obj = mapper.readTree(jsonStr)
                 val reply = obj.path("reply").asText("").ifBlank { "플로우를 준비했습니다." }
                 val g = obj.get("graph")
                 val graph = if (g == null || g.isNull || !g.isObject) null else g
@@ -137,6 +155,29 @@ class AssistantService(
             } catch (e: Exception) { /* fall through */ }
         }
         return (text.ifBlank { "응답을 이해하지 못했습니다." }) to null
+    }
+
+    /**
+     * 외부 LLM 컨텍스트에서 SET 노드의 secret=true 변수 값을 마스킹(딥카피 후 변형 — 원본 불변).
+     * ⚠ HTTP 헤더 등에 하드코딩한 토큰은 자동 감지 불가 — 시크릿 볼트(`{{ 이름@secret }}`) 사용 권장.
+     */
+    private fun redactSecrets(graph: JsonNode?): JsonNode? {
+        if (graph == null || graph.isNull || !graph.isObject) return graph
+        val copy = graph.deepCopy<JsonNode>()
+        val nodes = copy.get("nodes")
+        if (nodes != null && nodes.isArray) {
+            for (node in nodes) {
+                if (node.path("type").asText() != "set") continue
+                val vars = node.get("vars") ?: continue
+                if (!vars.isArray) continue
+                for (v in vars) {
+                    if (v is ObjectNode && v.path("secret").asBoolean(false) && v.has("value")) {
+                        v.put("value", "***")
+                    }
+                }
+            }
+        }
+        return copy
     }
 
     private fun clip(s: String, max: Int): String = if (s.length <= max) s else s.substring(0, max) + "…(생략)"
@@ -166,6 +207,32 @@ class AssistantService(
     private fun has(q: String, vararg keys: String): Boolean = keys.any { q.contains(it) }
 
     companion object {
+        /** 첫 '{' 에서 균형이 맞는 '}' 까지의 부분 문자열(문자열 리터럴·이스케이프 인지). 없으면 null. 순수·테스트용 internal. */
+        internal fun extractJsonObject(text: String): String? {
+            val start = text.indexOf('{')
+            if (start < 0) return null
+            var depth = 0
+            var inStr = false
+            var esc = false
+            for (i in start until text.length) {
+                val c = text[i]
+                if (inStr) {
+                    when {
+                        esc -> esc = false
+                        c == '\\' -> esc = true
+                        c == '"' -> inStr = false
+                    }
+                } else {
+                    when (c) {
+                        '"' -> inStr = true
+                        '{' -> depth++
+                        '}' -> { depth--; if (depth == 0) return text.substring(start, i + 1) }
+                    }
+                }
+            }
+            return null
+        }
+
         private val STUB_HTTP = """
         {"name":"HTTP 호출 샘플","nodes":[
           {"id":"start1","name":"시작","type":"start","cat":"start","x":40,"y":180},

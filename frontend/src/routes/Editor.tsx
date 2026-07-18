@@ -455,7 +455,13 @@ export function Editor() {
         <EnvSwitcher />
         <PresenceAvatars />
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, position: 'relative' }}>
-          <button onClick={() => setAssistantOpen((v) => { persistUI('fl:editor:assistant', v ? '0' : '1'); return !v })} title="AI 어시스턴트 — 자연어로 플로우 만들기" aria-label="AI 어시스턴트" style={{ ...ghostBtn, padding: '8px 11px', color: assistantOpen ? 'var(--fl-primary)' : undefined }}>✨ AI</button>
+          <button onClick={() => setAssistantOpen((v) => {
+            const next = !v
+            persistUI('fl:editor:assistant', next ? '1' : '0')
+            // 좁은 화면에서 팔레트+속성+어시스턴트 3열이 캔버스를 0으로 짓누르지 않게, 열 때 속성 패널 자동 접기
+            if (next && !propCollapsed && vp.w < 1200) { setPropCollapsed(true); persistUI('fl:editor:propColl', '1') }
+            return next
+          })} title="AI 어시스턴트 — 자연어로 플로우 만들기" aria-label="AI 어시스턴트" style={{ ...ghostBtn, padding: '8px 11px', color: assistantOpen ? 'var(--fl-primary)' : undefined }}>✨ AI</button>
           <button onClick={undo} disabled={!canUndo} aria-label="되돌리기" title="되돌리기 (Ctrl+Z)" style={{ ...ghostBtn, padding: '8px 11px', opacity: canUndo ? 1 : 0.4 }}>↺</button>
           <button onClick={redo} disabled={!canRedo} aria-label="다시 실행" title="다시 실행 (Ctrl+Shift+Z)" style={{ ...ghostBtn, padding: '8px 11px', opacity: canRedo ? 1 : 0.4 }}>↻</button>
           <button onClick={() => setToolsOpen((v) => !v)} title="도구" aria-label="도구 메뉴" style={{ ...ghostBtn, padding: '8px 11px' }}>⋯ 도구</button>

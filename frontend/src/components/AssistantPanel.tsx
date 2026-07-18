@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { assistantApi } from '../api/client'
 import type { AssistantMessage, FlowGraph } from '../api/types'
 import { usePermissions } from '../auth/AuthContext'
+import { hasStartNode, validateGraphShape } from '../lib/graphValidate'
 import { useEditorStore } from '../store/editorStore'
 import { toast } from './toast'
 
@@ -60,9 +61,14 @@ export function AssistantPanel({ width, onClose }: { width: number; onClose: () 
 
   const apply = (idx: number, graph: FlowGraph) => {
     if (!canEdit) return
+    // 크래시 안전 검증(수동 가져오기와 동일) — 잘못된 LLM 그래프가 React Flow 를 깨뜨리지 않게
+    const err = validateGraphShape(graph)
+    if (err) { toast(`적용할 수 없는 그래프입니다: ${err}`, 'error'); return }
     importGraph(graph)
     setTurns((prev) => prev.map((t, i) => (i === idx ? { ...t, applied: true } : t)))
-    toast('플로우를 캔버스에 적용했습니다 (Ctrl+Z 로 되돌리기).', 'ok')
+    toast(hasStartNode(graph)
+      ? '플로우를 캔버스에 적용했습니다 (Ctrl+Z 로 되돌리기).'
+      : '적용했습니다. ⚠ START 노드가 없어 실행하려면 시작 노드를 추가하세요.', 'ok')
   }
 
   return (
@@ -101,7 +107,7 @@ export function AssistantPanel({ width, onClose }: { width: number; onClose: () 
         <textarea
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send(input) } }}
+          onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); void send(input) } }}
           placeholder={canEdit ? '예: 로그인하고 주문 생성하는 플로우 만들어줘 (Enter 전송)' : '보기 전용'}
           disabled={!canEdit || pending}
           rows={2}

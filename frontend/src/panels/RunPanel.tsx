@@ -121,7 +121,7 @@ export function RunPanel({
             <div key={nd.id} style={{ borderBottom: '1px solid var(--fl-border)' }}>
               <button
                 onClick={() => setOpenId(open ? null : nd.id)}
-                style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '9px 14px', border: 'none', background: 'transparent', cursor: 'pointer', textAlign: 'left' }}
+                style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '9px 14px', border: 'none', background: 'transparent', color: 'var(--fl-text)', cursor: 'pointer', textAlign: 'left' }}
               >
                 <span style={{ width: 18, color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)', fontSize: 11 }}>{nd.seq}</span>
                 <StatusBadge status={nd.status} />

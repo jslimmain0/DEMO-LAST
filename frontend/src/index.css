@@ -95,7 +95,9 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 a { color: inherit; }
-button { font-family: inherit; }
+/* 버튼은 기본적으로 브라우저 시스템 색(ButtonText=검정)을 쓰므로, 색 미지정 버튼이 다크모드에서
+   검게 보이지 않도록 부모(테마) 색을 상속받게 한다. 명시 color 를 준 버튼은 그대로 우선. */
+button { font-family: inherit; color: inherit; }
 
 /* 포커스 가시성 (WCAG 2.4.7) */
 :focus-visible { outline: 2px solid var(--fl-focus); outline-offset: 2px; border-radius: 4px; }

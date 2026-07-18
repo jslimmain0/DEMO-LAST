@@ -203,7 +203,7 @@ function ExecutionDetailModal({ execId, onClose }: { execId: string; onClose: ()
             const isNew = compare && prev.data != null && !p
             return (
               <div key={nd.id} style={{ borderBottom: '1px solid var(--fl-border)' }}>
-                <button onClick={() => setOpenNode(open ? null : nd.id)} style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '9px 14px', border: 'none', background: 'transparent', cursor: 'pointer', textAlign: 'left' }}>
+                <button onClick={() => setOpenNode(open ? null : nd.id)} style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '9px 14px', border: 'none', background: 'transparent', color: 'var(--fl-text)', cursor: 'pointer', textAlign: 'left' }}>
                   <span style={{ fontSize: 12, fontWeight: 700, color: nd.status === 'FAILED' ? 'var(--fl-fail)' : nd.status === 'SKIPPED' ? 'var(--fl-text-muted)' : 'var(--fl-ok)' }}>{nd.status === 'FAILED' ? '✕' : nd.status === 'SKIPPED' ? '⊘' : '✓'}</span>
                   <span style={{ fontSize: 13.5, fontWeight: 600 }}>{nd.nodeName || nd.nodeId}</span>
                   {changed && <span style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--fl-put)', border: '1px solid var(--fl-put)', borderRadius: 8, padding: '0 6px' }}>변경</span>}

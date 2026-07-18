@@ -16,21 +16,11 @@ export function Palette({ width = 200, onCollapse }: { width?: number; onCollaps
   const { screenToFlowPosition } = useReactFlow()
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
   const [q, setQ] = useState('')
-  const [recent, setRecent] = useState<NodeType[]>(() => {
-    try { return JSON.parse(localStorage.getItem('fl:palette:recent') ?? '[]') as NodeType[] } catch { return [] }
-  })
   const shownPalette = useMemo(() => {
     const query = q.trim().toLowerCase()
     return PALETTE.filter((p) => !query || p.label.toLowerCase().includes(query) || p.type.includes(query))
   }, [q])
-  const addWithRecent = (type: NodeType) => {
-    addNode(type, center())
-    setRecent((prev) => {
-      const next = [type, ...prev.filter((t) => t !== type)].slice(0, 4)
-      try { localStorage.setItem('fl:palette:recent', JSON.stringify(next)) } catch { /* 프라이빗 모드 무시 */ }
-      return next
-    })
-  }
+  const addWithRecent = (type: NodeType) => addNode(type, center())
   const toggleGroup = (id: string) =>
     setCollapsed((prev) => {
       const next = new Set(prev)
@@ -73,19 +63,6 @@ export function Palette({ width = 200, onCollapse }: { width?: number; onCollaps
       </div>
       <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="노드 검색…"
         style={{ width: '100%', padding: '6px 9px', marginBottom: 4, border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', color: 'var(--fl-text)', fontSize: 12.5, outline: 'none' }} />
-      {recent.length > 0 && !q && (
-        <div style={{ marginBottom: 4 }}>
-          <div style={{ ...groupTitle, padding: '2px 2px 4px', fontSize: 10.5 }}>최근</div>
-          {recent.map((rt) => {
-            const p = PALETTE.find((x) => x.type === rt); if (!p) return null
-            return (
-              <button key={'r-' + rt} draggable onDragStart={(e) => onDragStart(e, p.type)} onClick={() => addWithRecent(p.type)} title={`${p.label} 추가`} style={paletteBtn}>
-                <span aria-hidden style={{ color: catColor(p.cat), fontSize: 15, width: 18, textAlign: 'center' }}>{typeIcon(p.type)}</span>{p.label}
-              </button>
-            )
-          })}
-        </div>
-      )}
       {/* 검색 중엔 평면 목록, 아니면 카테고리 섹션으로(클러터 축소) */}
       {q.trim()
         ? shownPalette.map((p) => (

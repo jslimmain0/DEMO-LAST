@@ -79,19 +79,23 @@ export function makeNode(type: NodeType, x: number, y: number): GraphNode {
   }
 }
 
-export const PALETTE: Array<{ type: NodeType; label: string; cat: string }> = [
-  { type: 'start', label: '시작', cat: 'start' },
-  { type: 'http', label: 'HTTP 요청', cat: 'generic' },
-  { type: 'if', label: 'IF 조건', cat: 'if' },
-  { type: 'switch', label: '스위치(선로)', cat: 'switch' },
-  { type: 'assert', label: '검증', cat: 'assert' },
-  { type: 'set', label: '변수', cat: 'set' },
-  { type: 'transform', label: '변환', cat: 'transform' },
-  { type: 'tcp', label: 'TCP 전문', cat: 'tcp' },
-  { type: 'form', label: '폼 전송(팝업)', cat: 'form' },
-  { type: 'input', label: '사용자 입력', cat: 'input' },
-  { type: 'wait', label: '콜백 대기', cat: 'wait' },
-  { type: 'end', label: '끝', cat: 'end' },
-  { type: 'note', label: '메모', cat: 'note' },
-  { type: 'group', label: '영역 박스', cat: 'group' },
+// group = 팔레트 섹션(클러터 축소). label = 사용자 친화 이름(카드/노드메뉴와 typeLabel 일치).
+export const PALETTE: Array<{ type: NodeType; label: string; cat: string; group: string }> = [
+  { type: 'start', label: '시작', cat: 'start', group: '기본' },
+  { type: 'end', label: '끝', cat: 'end', group: '기본' },
+  { type: 'http', label: 'API 호출', cat: 'generic', group: '요청·연동' },
+  { type: 'tcp', label: 'TCP 전문', cat: 'tcp', group: '요청·연동' },
+  { type: 'if', label: '조건 분기', cat: 'if', group: '흐름 제어' },
+  { type: 'switch', label: '경로 전환', cat: 'switch', group: '흐름 제어' },
+  { type: 'assert', label: '값 검증', cat: 'assert', group: '흐름 제어' },
+  { type: 'set', label: '변수 지정', cat: 'set', group: '데이터' },
+  { type: 'transform', label: '데이터 변환', cat: 'transform', group: '데이터' },
+  { type: 'form', label: '폼·결제창 열기', cat: 'form', group: '대기·입력' },
+  { type: 'wait', label: '콜백 대기', cat: 'wait', group: '대기·입력' },
+  { type: 'input', label: '사용자 입력', cat: 'input', group: '대기·입력' },
+  { type: 'note', label: '메모', cat: 'note', group: '주석' },
+  { type: 'group', label: '영역 박스', cat: 'group', group: '주석' },
 ]
+
+/** 팔레트 섹션 표시 순서. */
+export const PALETTE_GROUPS = ['기본', '요청·연동', '흐름 제어', '데이터', '대기·입력', '주석']

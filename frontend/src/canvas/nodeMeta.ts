@@ -70,18 +70,18 @@ export function typeLabel(type: string): string {
   switch (type) {
     case 'start': return '시작'
     case 'end': return '끝'
-    case 'set': return '변수'
-    case 'if': return '조건'
-    case 'assert': return '검증'
-    case 'form': return '폼 전송'
+    case 'set': return '변수 지정'
+    case 'if': return '조건 분기'
+    case 'assert': return '값 검증'
+    case 'form': return '폼·결제창'
     case 'input': return '사용자 입력'
     case 'wait': return '콜백 대기'
-    case 'transform': return '변환'
-    case 'tcp': return 'TCP'
-    case 'switch': return '스위치'
+    case 'transform': return '데이터 변환'
+    case 'tcp': return 'TCP 전문'
+    case 'switch': return '경로 전환'
     case 'note': return '메모'
     case 'group': return '영역 박스'
-    case 'http': return 'HTTP'
+    case 'http': return 'API 호출'
     default: return type
   }
 }

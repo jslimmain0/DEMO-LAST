@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react'
 import type { GraphNode, HttpMethod, NodeType } from '../api/types'
 import { MethodTag } from '../components/MethodTag'
 import { useEditorStore } from '../store/editorStore'
-import { PALETTE } from './nodeFactory'
+import { PALETTE, PALETTE_GROUPS } from './nodeFactory'
 import { catColor, typeIcon } from './nodeMeta'
 
 export function Palette({ width = 200, onCollapse }: { width?: number; onCollapse?: () => void }) {
@@ -86,22 +86,28 @@ export function Palette({ width = 200, onCollapse }: { width?: number; onCollaps
           })}
         </div>
       )}
-      {shownPalette.map((p) => (
-        <button
-          key={p.type}
-          draggable
-          onDragStart={(e) => onDragStart(e, p.type)}
-          onClick={() => addWithRecent(p.type)}
-          title={`${p.label} 추가 (클릭 또는 드래그)`}
-          style={paletteBtn}
-        >
-          <span aria-hidden style={{ color: catColor(p.cat), fontSize: 15, width: 18, textAlign: 'center' }}>
-            {typeIcon(p.type)}
-          </span>
-          {p.label}
-        </button>
-      ))}
-      {shownPalette.length === 0 && <div style={{ padding: 8, fontSize: 12, color: 'var(--fl-text-muted)' }}>일치하는 노드 없음</div>}
+      {/* 검색 중엔 평면 목록, 아니면 카테고리 섹션으로(클러터 축소) */}
+      {q.trim()
+        ? shownPalette.map((p) => (
+            <button key={p.type} draggable onDragStart={(e) => onDragStart(e, p.type)} onClick={() => addWithRecent(p.type)} title={`${p.label} 추가 (클릭 또는 드래그)`} style={paletteBtn}>
+              <span aria-hidden style={{ color: catColor(p.cat), fontSize: 15, width: 18, textAlign: 'center' }}>{typeIcon(p.type)}</span>{p.label}
+            </button>
+          ))
+        : PALETTE_GROUPS.map((g) => {
+            const items = shownPalette.filter((p) => p.group === g)
+            if (items.length === 0) return null
+            return (
+              <div key={g} style={{ marginBottom: 2 }}>
+                <div style={{ ...groupTitle, padding: '6px 2px 4px', fontSize: 10, opacity: 0.85 }}>{g}</div>
+                {items.map((p) => (
+                  <button key={p.type} draggable onDragStart={(e) => onDragStart(e, p.type)} onClick={() => addWithRecent(p.type)} title={`${p.label} 추가 (클릭 또는 드래그)`} style={{ ...paletteBtn, marginBottom: 4 }}>
+                    <span aria-hidden style={{ color: catColor(p.cat), fontSize: 15, width: 18, textAlign: 'center' }}>{typeIcon(p.type)}</span>{p.label}
+                  </button>
+                ))}
+              </div>
+            )
+          })}
+      {q.trim() && shownPalette.length === 0 && <div style={{ padding: 8, fontSize: 12, color: 'var(--fl-text-muted)' }}>일치하는 노드 없음</div>}
 
       {palette.map((group) => {
         const isCollapsed = collapsed.has(group.id)

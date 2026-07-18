@@ -41,13 +41,23 @@ class AssistantService(
     /** 동시 LLM 호출 벌크헤드 — 느린 업스트림이 Tomcat 요청 스레드를 고갈시키지 않게 상한. */
     private val gate = Semaphore(props.maxConcurrent)
 
-    /** LLM 호출 자격 — 헤더(이름,값). OAuth 연결 토큰 우선 → env/시크릿 api-key. 없으면 null(stub). */
-    private fun resolveAuth(): Pair<String, String>? {
-        // ① OAuth 연결 토큰(Copilot 식 로그인) — Authorization: Bearer
-        try { oauth.accessToken()?.let { return "Authorization" to "Bearer $it" } } catch (e: Exception) { log.debug("OAuth 토큰 조회 실패(무시): {}", e.message) }
-        // ② env/yml api-key 또는 시크릿 볼트 anthropic-api-key — x-api-key
+    /**
+     * LLM 호출 계획 — 자격/엔드포인트/포맷. OAuth(GitHub) 연결 시 **GitHub Models 게이트웨이(OpenAI 호환, Bearer)**,
+     * 아니면 env/시크릿 api-key(Anthropic, x-api-key). 둘 다 없으면 null(stub).
+     */
+    private data class Plan(val header: String, val value: String, val baseUrl: String, val model: String, val openai: Boolean)
+
+    private fun resolvePlan(): Plan? {
+        // ① GitHub OAuth 토큰 → GitHub Models(또는 설정한 게이트웨이) — OpenAI 호환, Authorization: Bearer
+        try {
+            oauth.accessToken()?.let { tok ->
+                val (gwUrl, gwModel) = oauth.gateway()
+                return Plan("Authorization", "Bearer $tok", gwUrl, gwModel, openai = true)
+            }
+        } catch (e: Exception) { log.debug("OAuth 토큰 조회 실패(무시): {}", e.message) }
+        // ② env/yml api-key 또는 시크릿 볼트 anthropic-api-key — Anthropic, x-api-key
         val key = props.apiKey ?: try { secretService.activeSecrets(null)["anthropic-api-key"]?.takeIf { it.isNotBlank() } } catch (e: Exception) { null }
-        return key?.let { "x-api-key" to it }
+        return key?.let { Plan("x-api-key", it, props.baseUrl, props.model, openai = false) }
     }
 
     private fun hasApiKey(): Boolean =
@@ -57,8 +67,13 @@ class AssistantService(
         // 읽기 전용 — refresh 부작용 없이 상태만(connected 는 loadToken, 갱신 안 함)
         val oauthConnected = try { oauth.connected() } catch (e: Exception) { false }
         val real = oauthConnected || hasApiKey()
+        val model = when {
+            oauthConnected -> try { oauth.gateway().second } catch (e: Exception) { props.model }
+            real -> props.model
+            else -> "stub"
+        }
         val mode = if (oauthConnected) "oauth" else if (real) "key" else "stub"
-        return AssistantConfig(available = true, usingRealLlm = real, model = if (real) props.model else "stub", authMode = mode)
+        return AssistantConfig(available = true, usingRealLlm = real, model = model, authMode = mode)
     }
 
     fun chat(req: AssistantChatRequest): AssistantChatResponse {
@@ -67,51 +82,44 @@ class AssistantService(
         if (messages.isEmpty() || messages.last().role != "user") {
             throw BadRequestException("보낼 메시지가 없습니다.")
         }
-        val auth = resolveAuth() ?: return stub(messages, req.graph)
-        return callAnthropic(auth, messages, req.graph)
-    }
-
-    // --- 실제 LLM 호출 ---
-
-    private fun callAnthropic(auth: Pair<String, String>, messages: List<ChatMessage>, graph: JsonNode?): AssistantChatResponse {
+        val plan = resolvePlan() ?: return stub(messages, req.graph)
         // 벌크헤드 — 동시 호출 상한 초과면 429(요청 스레드가 느린 업스트림에 고갈되지 않게)
         if (!gate.tryAcquire(2, TimeUnit.SECONDS)) {
             throw TooManyRequestsException("AI 요청이 많습니다. 잠시 후 다시 시도하세요.")
         }
         try {
-            return callAnthropicInner(auth, messages, graph)
+            return callLlm(plan, messages, req.graph)
         } finally {
             gate.release()
         }
     }
 
-    private fun callAnthropicInner(auth: Pair<String, String>, messages: List<ChatMessage>, graph: JsonNode?): AssistantChatResponse {
-        val uri = URI.create(props.baseUrl + "/v1/messages")
+    // --- 실제 LLM 호출 (Anthropic Messages / OpenAI-호환 chat/completions) ---
+
+    fun buildSystemPrompt(graph: JsonNode?): String = buildString {
+        append(FlowSchemaPrompt.SYSTEM)
+        append(skills.promptBlock()) // 팀 지침 주입
+        append("\n\n## CURRENT CANVAS (the user's current graph — edit this, keep ids)\n")
+        append(if (graph == null || graph.isNull) "(빈 캔버스)" else clip(json.toJson(graph), 24000))
+    }
+
+    private fun callLlm(plan: Plan, messages: List<ChatMessage>, graph: JsonNode?): AssistantChatResponse {
+        val path = if (plan.openai) "/chat/completions" else "/v1/messages"
+        val uri = URI.create(plan.baseUrl + path)
         try { ssrfGuard.check(uri) } catch (e: Exception) { throw BadRequestException("AI 엔드포인트가 차단됐습니다: ${e.message}") }
 
         // 시크릿 마스킹 — SET 노드의 secret=true 변수 값을 외부 LLM 에 평문으로 보내지 않는다.
-        val ctxGraph = redactSecrets(graph)
-        val system = buildString {
-            append(FlowSchemaPrompt.SYSTEM)
-            append(skills.promptBlock()) // 팀 지침 + 활성 스킬(내장·사용자) 주입
-            append("\n\n## CURRENT CANVAS (the user's current graph — edit this, keep ids)\n")
-            append(if (ctxGraph == null || ctxGraph.isNull) "(빈 캔버스)" else clip(json.toJson(ctxGraph), 24000))
-        }
-        val body: ObjectNode = mapper.createObjectNode().apply {
-            put("model", props.model)
-            put("max_tokens", props.maxTokens)
-            put("system", system)
-            val arr: ArrayNode = putArray("messages")
-            for (m in messages) arr.add(mapper.createObjectNode().put("role", m.role).put("content", m.content))
-        }
+        val system = buildSystemPrompt(redactSecrets(graph))
+        val body = if (plan.openai) openAiBody(mapper, plan.model, props.maxTokens, system, messages)
+                   else anthropicBody(mapper, plan.model, props.maxTokens, system, messages)
 
-        val request = HttpRequest.newBuilder(uri)
+        var reqB = HttpRequest.newBuilder(uri)
             .timeout(Duration.ofSeconds(90))
             .header("content-type", "application/json")
-            .header(auth.first, auth.second) // OAuth: Authorization: Bearer, 아니면 x-api-key
-            .header("anthropic-version", "2023-06-01")
-            .POST(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(body)))
-            .build()
+            .header("accept", "application/json")
+            .header(plan.header, plan.value)
+        if (!plan.openai) reqB = reqB.header("anthropic-version", "2023-06-01")
+        val request = reqB.POST(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(body))).build()
 
         val res: HttpResponse<String> = try {
             http.send(request, HttpResponse.BodyHandlers.ofString())
@@ -120,26 +128,13 @@ class AssistantService(
         }
         if (res.statusCode() == 429) throw TooManyRequestsException("AI 요청이 많습니다. 잠시 후 다시 시도하세요.")
         if (res.statusCode() >= 400) {
-            log.warn("Anthropic {} : {}", res.statusCode(), clip(res.body(), 500))
-            val msg = extractErr(res.body()) ?: "상태 ${res.statusCode()}"
-            throw BadRequestException("AI 호출 실패: $msg")
+            log.warn("LLM {} : {}", res.statusCode(), clip(res.body(), 500))
+            throw BadRequestException("AI 호출 실패: " + (extractErr(res.body()) ?: "상태 ${res.statusCode()}"))
         }
 
-        val text = extractText(res.body())
+        val text = if (plan.openai) extractOpenAiText(mapper, res.body()) else extractAnthropicText(mapper, res.body())
         val parsed = parseModelJson(text)
-        return AssistantChatResponse(reply = parsed.first, graph = parsed.second, stub = false, model = props.model)
-    }
-
-    /** Anthropic 응답 content[].text 를 이어붙인다. */
-    private fun extractText(bodyJson: String): String {
-        return try {
-            val root = mapper.readTree(bodyJson)
-            val sb = StringBuilder()
-            root.path("content").forEach { block ->
-                if (block.path("type").asText() == "text") sb.append(block.path("text").asText())
-            }
-            sb.toString()
-        } catch (e: Exception) { bodyJson }
+        return AssistantChatResponse(reply = parsed.first, graph = parsed.second, stub = false, model = plan.model)
     }
 
     private fun extractErr(bodyJson: String): String? =
@@ -211,6 +206,34 @@ class AssistantService(
     private fun has(q: String, vararg keys: String): Boolean = keys.any { q.contains(it) }
 
     companion object {
+        /** Anthropic Messages 요청 본문. */
+        internal fun anthropicBody(mapper: ObjectMapper, model: String, maxTokens: Int, system: String, messages: List<ChatMessage>): ObjectNode =
+            mapper.createObjectNode().apply {
+                put("model", model); put("max_tokens", maxTokens); put("system", system)
+                val arr: ArrayNode = putArray("messages")
+                for (m in messages) arr.add(mapper.createObjectNode().put("role", m.role).put("content", m.content))
+            }
+
+        /** OpenAI 호환(GitHub Models 등) 요청 본문 — system 을 첫 메시지로. */
+        internal fun openAiBody(mapper: ObjectMapper, model: String, maxTokens: Int, system: String, messages: List<ChatMessage>): ObjectNode =
+            mapper.createObjectNode().apply {
+                put("model", model); put("max_tokens", maxTokens)
+                val arr: ArrayNode = putArray("messages")
+                arr.add(mapper.createObjectNode().put("role", "system").put("content", system))
+                for (m in messages) arr.add(mapper.createObjectNode().put("role", m.role).put("content", m.content))
+            }
+
+        /** Anthropic 응답 content[].text 이어붙이기. */
+        internal fun extractAnthropicText(mapper: ObjectMapper, bodyJson: String): String = try {
+            val sb = StringBuilder()
+            mapper.readTree(bodyJson).path("content").forEach { b -> if (b.path("type").asText() == "text") sb.append(b.path("text").asText()) }
+            sb.toString()
+        } catch (e: Exception) { bodyJson }
+
+        /** OpenAI 호환 응답 choices[0].message.content. */
+        internal fun extractOpenAiText(mapper: ObjectMapper, bodyJson: String): String =
+            try { mapper.readTree(bodyJson).path("choices").path(0).path("message").path("content").asText("") } catch (e: Exception) { bodyJson }
+
         /** 첫 '{' 에서 균형이 맞는 '}' 까지의 부분 문자열(문자열 리터럴·이스케이프 인지). 없으면 null. 순수·테스트용 internal. */
         internal fun extractJsonObject(text: String): String? {
             val start = text.indexOf('{')

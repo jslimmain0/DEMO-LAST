@@ -16,13 +16,6 @@ interface Turn extends AssistantMessage {
   applied?: boolean
 }
 
-const SUGGESTIONS = [
-  'REST API 호출하고 상태 검증하는 플로우 만들어줘',
-  '결제창 열고 콜백 기다렸다가 승인 분기하는 플로우',
-  'OTP 입력받아 검증하는 플로우',
-  'TCP 전문 보내고 응답 자르는 플로우',
-]
-
 /**
  * AI 어시스턴트 채팅 패널 — 자연어로 플로우를 만들고 고친다.
  * 현재 캔버스 그래프를 맥락으로 보내고, 제안 그래프는 '적용'으로 importGraph(교체, Ctrl+Z 되돌리기).
@@ -125,12 +118,7 @@ export function AssistantPanel({ width, onClose }: { width: number; onClose: () 
       <div ref={listRef} style={{ flex: 1, overflow: 'auto', padding: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
         {turns.length === 0 && (
           <div style={{ color: 'var(--fl-text-muted)', fontSize: 12.5, lineHeight: 1.6 }}>
-            <p style={{ margin: '0 0 10px' }}>만들고 싶은 플로우를 한국어로 말해 보세요. 현재 캔버스를 이어서 고칠 수도 있습니다.</p>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {SUGGESTIONS.map((s) => (
-                <button key={s} onClick={() => send(s)} disabled={!canEdit} style={suggestBtn}>{s}</button>
-              ))}
-            </div>
+            <p style={{ margin: 0 }}>만들고 싶은 플로우를 한국어로 말해 보세요. 현재 캔버스를 이어서 고칠 수도 있습니다. 자주 쓰는 프롬프트는 💬 에서 저장·적용하세요.</p>
             {!canEdit && <p style={{ marginTop: 10, color: 'var(--fl-put)' }}>보기 전용 권한이라 플로우를 만들 수 없습니다(editor 이상 필요).</p>}
           </div>
         )}
@@ -188,4 +176,3 @@ const xBtn: CSSProperties = { width: 26, height: 26, borderRadius: 7, border: 'n
 const connectBtn: CSSProperties = { padding: '4px 10px', borderRadius: 999, border: 'none', background: 'var(--fl-primary)', color: '#fff', cursor: 'pointer', fontSize: 11, fontWeight: 700 }
 const sendBtn: CSSProperties = { flexShrink: 0, padding: '8px 12px', border: 'none', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-primary)', color: '#fff', cursor: 'pointer', fontSize: 12.5, fontWeight: 600 }
 const applyBtn: CSSProperties = { padding: '6px 12px', border: '1px solid var(--fl-primary)', borderRadius: 'var(--fl-radius-sm)', background: 'transparent', color: 'var(--fl-primary)', cursor: 'pointer', fontSize: 12, fontWeight: 600 }
-const suggestBtn: CSSProperties = { textAlign: 'left', padding: '7px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', color: 'var(--fl-text)', cursor: 'pointer', fontSize: 12, lineHeight: 1.4 }

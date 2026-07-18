@@ -59,15 +59,25 @@ class AssistantOAuthService(
     fun providerConfig(): OAuthProviderConfig {
         val cid = settings.get(K_CLIENT_ID).orEmpty()
         val hasSecret = !settings.get(K_CLIENT_SECRET).isNullOrBlank()
+        val (gwUrl, gwModel) = gateway()
         return OAuthProviderConfig(cid, settings.get(K_SCOPE).orEmpty(), hasSecret,
-            configured = cid.isNotBlank() && hasSecret)
+            configured = cid.isNotBlank() && hasSecret, gatewayBaseUrl = gwUrl, gatewayModel = gwModel)
     }
 
     fun updateProvider(req: OAuthProviderUpdate) {
         req.clientId?.let { settings.put(K_CLIENT_ID, it.trim()) }
         req.scope?.let { settings.put(K_SCOPE, it.trim()) }
+        req.gatewayBaseUrl?.let { settings.put(K_GATEWAY_URL, it.trim()) }
+        req.gatewayModel?.let { settings.put(K_GATEWAY_MODEL, it.trim()) }
         // clientSecret: null=변경 없음, ""=삭제, 그 외=암호화 저장
         req.clientSecret?.let { settings.put(K_CLIENT_SECRET, if (it.isBlank()) null else crypto.encrypt(it)) }
+    }
+
+    /** GitHub 토큰으로 호출할 AI 게이트웨이 (baseUrl, model). 기본 = GitHub Models(OpenAI 호환). */
+    fun gateway(): Pair<String, String> {
+        val url = settings.get(K_GATEWAY_URL)?.takeIf { it.isNotBlank() } ?: DEFAULT_GATEWAY_URL
+        val model = settings.get(K_GATEWAY_MODEL)?.takeIf { it.isNotBlank() } ?: DEFAULT_GATEWAY_MODEL
+        return url.trimEnd('/') to model
     }
 
     // --- 연결 상태 ---
@@ -243,5 +253,10 @@ class AssistantOAuthService(
         const val K_CLIENT_SECRET = "assistant.oauth.clientSecret"
         const val K_SCOPE = "assistant.oauth.scope"
         const val K_TOKEN = "assistant.oauth.token"
+        const val K_GATEWAY_URL = "assistant.oauth.gatewayUrl"
+        const val K_GATEWAY_MODEL = "assistant.oauth.gatewayModel"
+        // GitHub Models — GitHub 토큰(Bearer)으로 호출하는 OpenAI 호환 추론 API.
+        const val DEFAULT_GATEWAY_URL = "https://models.github.ai/inference"
+        const val DEFAULT_GATEWAY_MODEL = "openai/gpt-4o"
     }
 }

@@ -197,8 +197,8 @@ export interface AssistantChatResponse { reply: string; graph: FlowGraph | null;
 export interface AssistantConfig { available: boolean; usingRealLlm: boolean; model: string; authMode: 'oauth' | 'key' | 'stub' }
 // AI 어시스턴트 GitHub OAuth 연결(팝업 로그인)
 export interface OAuthStatus { providerConfigured: boolean; connected: boolean; expiresAt: number | null }
-export interface OAuthProviderConfig { clientId: string; scope: string; hasSecret: boolean; configured: boolean }
-export interface OAuthProviderUpdate { clientId?: string; clientSecret?: string; scope?: string }
+export interface OAuthProviderConfig { clientId: string; scope: string; hasSecret: boolean; configured: boolean; gatewayBaseUrl: string; gatewayModel: string }
+export interface OAuthProviderUpdate { clientId?: string; clientSecret?: string; scope?: string; gatewayBaseUrl?: string; gatewayModel?: string }
 export interface AuthorizeUrlResponse { url: string }
 // 스킬 = 재사용 프롬프트(awesome-copilot 스타일). 클릭해 어시스턴트에 적용.
 export interface Skill { id?: string; name: string; description?: string; prompt: string }

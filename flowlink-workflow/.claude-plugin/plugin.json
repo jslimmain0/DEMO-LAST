@@ -1,7 +1,0 @@
-{
-  "name": "flowlink-workflow",
-  "description": "자연어 설명으로 FlowLink 워크플로(노드 그래프)를 생성해 REST API로 등록하고 실행한다. '결제창 띄우고 콜백 받아 검증하는 워크플로 만들어줘' 같은 요청을 노드/엣지 그래프로 변환.",
-  "version": "0.1.0",
-  "author": { "name": "jslim" },
-  "license": "MIT"
-}

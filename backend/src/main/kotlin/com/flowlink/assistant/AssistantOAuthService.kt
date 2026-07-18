@@ -7,8 +7,10 @@ import com.flowlink.common.tenant.TenantContext
 import com.flowlink.execution.config.ExecutionProperties
 import com.flowlink.execution.engine.SsrfGuard
 import com.flowlink.execution.engine.StateCrypto
+import com.flowlink.security.GithubLoginEvent
 import com.flowlink.settings.SettingsService
 import org.slf4j.LoggerFactory
+import org.springframework.context.event.EventListener
 import org.springframework.security.core.context.SecurityContextHolder
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken
 import org.springframework.stereotype.Service
@@ -313,6 +315,28 @@ class AssistantOAuthService(
         }
     }
     private fun saveGithubToken(user: String, t: String) = settings.put(tokenKey(user), crypto.encrypt(t))
+
+    /**
+     * 앱 GitHub 로그인 통합 — 로그인 때 받은 GitHub 토큰을 Copilot 연결로 재사용한다(같은 계정·client·scope).
+     * Copilot 공개 client 로 로그인한 경우에만 채택(다른 client 토큰은 Copilot API 에 무효). 로그인 스레드(요청 아님)에서
+     * 동기 호출되므로 저장 대상 테넌트를 이벤트 값으로 명시 세팅한 뒤 복원한다. 이미 연결돼 있으면 새 토큰으로 갱신.
+     */
+    @EventListener
+    fun onGithubLogin(e: GithubLoginEvent) {
+        if (e.clientId != COPILOT_CLIENT_ID) return
+        val prev = TenantContext.getTenantId()
+        try {
+            TenantContext.setTenantId(e.tenant)
+            saveGithubToken(e.login, e.githubToken)
+            copilotCache.remove(scopeKey(e.tenant, e.login)) // 옛 Copilot 토큰 캐시 무효화 → 새 GitHub 토큰으로 재발급
+            infoCache.remove(scopeKey(e.tenant, e.login))
+            log.info("앱 GitHub 로그인 → Copilot 연결 통합: {}", e.login)
+        } catch (ex: Exception) {
+            log.warn("Copilot 연결 통합 저장 실패(로그인은 정상): {}", ex.message)
+        } finally {
+            TenantContext.setTenantId(prev)
+        }
+    }
 
     private fun postForm(url: String, form: String, auth: String?): com.fasterxml.jackson.databind.JsonNode {
         val uri = URI.create(url)

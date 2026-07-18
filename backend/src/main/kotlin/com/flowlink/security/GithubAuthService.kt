@@ -3,8 +3,10 @@ package com.flowlink.security
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.flowlink.common.error.BadRequestException
+import com.flowlink.common.tenant.TenantContext
 import com.flowlink.execution.engine.SsrfGuard
 import org.slf4j.LoggerFactory
+import org.springframework.context.ApplicationEventPublisher
 import org.springframework.stereotype.Service
 import java.net.URI
 import java.net.URLEncoder
@@ -28,6 +30,7 @@ class GithubAuthService(
     private val props: AuthProperties,
     private val appJwt: AppJwt,
     private val ssrfGuard: SsrfGuard,
+    private val events: ApplicationEventPublisher,
 ) {
     private val log = LoggerFactory.getLogger(GithubAuthService::class.java)
     private val mapper = ObjectMapper()
@@ -94,6 +97,13 @@ class GithubAuthService(
             s.token = appJwt.issue(login)
             s.status = "ready"
             log.info("GitHub 로그인 성공: {}", login)
+            // 통합: 같은 GitHub 토큰을 어시스턴트 Copilot 연결로도 재사용(같은 계정·client·scope). 로그인은 이미 성공했으니
+            // 이벤트 발행/구독 실패가 로그인을 막지 않도록 격리한다. Copilot client 로 로그인한 경우에만 채택(수신 측 판정).
+            try {
+                events.publishEvent(GithubLoginEvent(login, ghToken, TenantContext.DEFAULT_TENANT, props.clientId))
+            } catch (e: Exception) {
+                log.warn("Copilot 연결 통합 이벤트 발행 실패(로그인은 정상): {}", e.message)
+            }
         } catch (e: Exception) {
             s.status = "error"; s.error = "신원 확인 실패: ${e.message}"
         }

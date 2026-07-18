@@ -9,9 +9,10 @@ export default defineConfig({
     proxy: {
       '/api': { target: 'http://localhost:18080', changeOrigin: true },
       '/ws': { target: 'ws://localhost:18080', ws: true },
-      // wait 콜백 수신(테스트 콜백 버튼)·내장 Mock 서빙도 백엔드로 — 동일 오리진처럼 동작
-      '/relay': { target: 'http://localhost:18080', changeOrigin: true },
-      '/mock': { target: 'http://localhost:18080', changeOrigin: true },
+      // wait 콜백 수신(테스트 콜백 버튼)·내장 Mock 서빙도 백엔드로 — 동일 오리진처럼 동작.
+      // 트레일링 슬래시: 프론트 SPA 라우트 '/mocks'(startsWith 매칭)를 삼키지 않게 '/mock/'·'/relay/' 만 프록시.
+      '/relay/': { target: 'http://localhost:18080', changeOrigin: true },
+      '/mock/': { target: 'http://localhost:18080', changeOrigin: true },
     },
   },
 })

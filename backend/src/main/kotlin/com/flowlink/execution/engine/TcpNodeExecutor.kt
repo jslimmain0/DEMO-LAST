@@ -281,12 +281,16 @@ class TcpNodeExecutor(
             return sb.toString()
         }
 
-        /** 공백 구분 2자리 대문자 hex(바이트별). 미리보기용. */
+        private val HEX = "0123456789ABCDEF".toCharArray()
+
+        /** 공백 구분 2자리 대문자 hex(바이트별). 미리보기용 — 룩업 테이블(바이트당 String.format 회피, CPU 증폭 방지). */
         private fun hexDump(bytes: ByteArray): String {
+            if (bytes.isEmpty()) return ""
             val sb = StringBuilder(bytes.size * 3)
             for (i in bytes.indices) {
                 if (i > 0) sb.append(' ')
-                sb.append(String.format("%02X", bytes[i].toInt() and 0xFF))
+                val v = bytes[i].toInt() and 0xFF
+                sb.append(HEX[v ushr 4]).append(HEX[v and 0x0F])
             }
             return sb.toString()
         }

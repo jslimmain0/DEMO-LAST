@@ -55,6 +55,7 @@ export function SecretsDialog({ onClose }: { onClose: () => void }) {
         <p style={hint}>
           Bearer 토큰·API 키 등을 저장하고 <code style={code}>{'{{ 이름@secret }}'}</code> 로 씁니다.
           값은 암호화 저장되고 실행 로그/DB 에는 <b>마스킹(••••••)</b> 됩니다. 저장된 값은 다시 볼 수 없습니다.
+          시크릿은 <b>서버(S→S) 모드</b> HTTP 노드에서 쓰세요 — 클라이언트(C→S) 모드는 값이 브라우저로 전달돼 대기 상태(미마스킹)에 남을 수 있습니다.
           {envStore.active
             ? <> 현재 활성 환경은 <b>{envStore.active}</b> — 실행 시 이 환경의 시크릿이 공통 위에 겹쳐집니다.</>
             : <> 활성 환경이 없어 <b>공통</b> 시크릿만 적용됩니다(환경 스위처에서 전환).</>}

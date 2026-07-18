@@ -190,6 +190,12 @@ export interface FlowGraph {
   palette?: PaletteGroup[]
 }
 
+// --- AI 어시스턴트(자연어 → 플로우) ---
+export interface AssistantMessage { role: 'user' | 'assistant'; content: string }
+export interface AssistantChatRequest { messages: AssistantMessage[]; graph?: FlowGraph | null }
+export interface AssistantChatResponse { reply: string; graph: FlowGraph | null; stub: boolean; model: string }
+export interface AssistantConfig { available: boolean; usingRealLlm: boolean; model: string }
+
 // --- 정의 DTO ---
 export interface FlowSummary {
   id: string

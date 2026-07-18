@@ -1,5 +1,8 @@
 import axios from 'axios'
 import type {
+  AssistantChatRequest,
+  AssistantChatResponse,
+  AssistantConfig,
   CreateFlowRequest,
   ExecutionDetail,
   ExecutionSummary,
@@ -167,4 +170,10 @@ export const runsApi = {
   // 같은 조건(원본 버전+입력)으로 재실행
   rerun: (executionId: string) =>
     http.post<ExecutionDetail>(`/executions/${executionId}/rerun`, {}).then((r) => r.data),
+}
+
+// AI 어시스턴트 — 자연어로 플로우 생성/수정
+export const assistantApi = {
+  config: () => http.get<AssistantConfig>('/assistant/config').then((r) => r.data),
+  chat: (body: AssistantChatRequest) => http.post<AssistantChatResponse>('/assistant/chat', body).then((r) => r.data),
 }

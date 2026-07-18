@@ -22,6 +22,7 @@ import { VersionHistoryDialog } from '../components/VersionHistoryDialog'
 import { RunInputDialog } from '../components/RunInputDialog'
 import { TriggersDialog } from '../components/TriggersDialog'
 import { SecretsDialog } from '../components/SecretsDialog'
+import { AssistantPanel } from '../components/AssistantPanel'
 import { activeEnvVars, activeEnvName } from '../lib/environments'
 import { activeInputVars, loadRunInput } from '../lib/runInput'
 import { toast } from '../components/toast'
@@ -95,6 +96,9 @@ export function Editor() {
   const [paletteW, setPaletteW] = useState(() => loadSize('paletteW', 200, 160, 420))
   const [propertyW, setPropertyW] = useState(() => loadSize('propertyW', 330, 300, 560))
   const [runH, setRunH] = useState(() => loadSize('runH', 260, 120, 600))
+  // AI 어시스턴트 패널(오른쪽 채팅) — 너비 + 열림 상태 지속
+  const [assistantW, setAssistantW] = useState(() => loadSize('assistantW', 360, 300, 560))
+  const [assistantOpen, setAssistantOpen] = useState(() => localStorage.getItem('fl:editor:assistant') === '1')
   // 사이드바 접기 + 속성 패널 넓게 편집(모달) (localStorage 지속)
   const [paletteCollapsed, setPaletteCollapsed] = useState(() => localStorage.getItem('fl:editor:palColl') === '1')
   const [propCollapsed, setPropCollapsed] = useState(() => localStorage.getItem('fl:editor:propColl') === '1')
@@ -144,9 +148,11 @@ export function Editor() {
   }, [])
   const maxPaletteW = Math.max(160, Math.min(420, Math.round(vp.w * 0.35)))
   const maxPropertyW = Math.max(300, Math.min(560, Math.round(vp.w * 0.45)))
+  const maxAssistantW = Math.max(300, Math.min(560, Math.round(vp.w * 0.45)))
   const maxRunH = Math.max(120, Math.min(600, vp.h - 160))
   useEffect(() => { setPaletteW((w) => Math.min(w, maxPaletteW)) }, [maxPaletteW])
   useEffect(() => { setPropertyW((w) => Math.min(w, maxPropertyW)) }, [maxPropertyW])
+  useEffect(() => { setAssistantW((w) => Math.min(w, maxAssistantW)) }, [maxAssistantW])
   useEffect(() => { setRunH((h) => Math.min(h, maxRunH)) }, [maxRunH])
 
   const flowQuery = useQuery({ queryKey: ['flow', flowId], queryFn: () => flowsApi.get(flowId), enabled: !!flowId })
@@ -449,6 +455,7 @@ export function Editor() {
         <EnvSwitcher />
         <PresenceAvatars />
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, position: 'relative' }}>
+          <button onClick={() => setAssistantOpen((v) => { persistUI('fl:editor:assistant', v ? '0' : '1'); return !v })} title="AI 어시스턴트 — 자연어로 플로우 만들기" aria-label="AI 어시스턴트" style={{ ...ghostBtn, padding: '8px 11px', color: assistantOpen ? 'var(--fl-primary)' : undefined }}>✨ AI</button>
           <button onClick={undo} disabled={!canUndo} aria-label="되돌리기" title="되돌리기 (Ctrl+Z)" style={{ ...ghostBtn, padding: '8px 11px', opacity: canUndo ? 1 : 0.4 }}>↺</button>
           <button onClick={redo} disabled={!canRedo} aria-label="다시 실행" title="다시 실행 (Ctrl+Shift+Z)" style={{ ...ghostBtn, padding: '8px 11px', opacity: canRedo ? 1 : 0.4 }}>↻</button>
           <button onClick={() => setToolsOpen((v) => !v)} title="도구" aria-label="도구 메뉴" style={{ ...ghostBtn, padding: '8px 11px' }}>⋯ 도구</button>
@@ -502,6 +509,12 @@ export function Editor() {
               <PropertyPanel width={propertyW}
                 onExpand={() => setPropModal(true)}
                 onCollapse={() => { setPropCollapsed(true); persistUI('fl:editor:propColl', '1') }} />
+            </>
+          )}
+          {assistantOpen && (
+            <>
+              <ResizeHandle axis="x" sign={-1} size={assistantW} min={300} max={maxAssistantW} defaultSize={360} onResize={setAssistantW} onResizeEnd={(n) => saveSize('assistantW', n)} ariaLabel="어시스턴트 패널 너비 조절" />
+              <AssistantPanel width={assistantW} onClose={() => { setAssistantOpen(false); persistUI('fl:editor:assistant', '0') }} />
             </>
           )}
         </div>

@@ -70,6 +70,13 @@ flowlink:
       # 미설정 시: 화면 설정(설정 다이얼로그)에 저장한 값 → 접속한 주소(오리진) 자동 순으로 결정(RelayBaseResolver).
       # env FLOWLINK_EXECUTION_RELAY_BASEURL 또는 아래 값으로 명시하면 자동보다 우선한다.
       base-url: ${FLOWLINK_EXECUTION_RELAY_BASEURL:}
+  # AI 어시스턴트(자연어 → 플로우). api-key 없으면 stub 모드(샘플 그래프)로 동작.
+  # 키는 여기(env) 또는 시크릿 볼트의 `anthropic-api-key` 로 설정.
+  assistant:
+    api-key: ${FLOWLINK_ASSISTANT_API_KEY:}          # 비면 시크릿 볼트 → 둘 다 없으면 stub
+    model: ${FLOWLINK_ASSISTANT_MODEL:claude-sonnet-5}
+    base-url: ${FLOWLINK_ASSISTANT_BASE_URL:https://api.anthropic.com}
+    max-tokens: ${FLOWLINK_ASSISTANT_MAX_TOKENS:4096}
   # 보안 (IdP 비종속). issuer-uri 미설정 시 dev permitAll 로 동작.
   security:
     tenant-claim: tenant                 # JWT 에서 테넌트(팀) 식별자를 읽을 클레임 이름

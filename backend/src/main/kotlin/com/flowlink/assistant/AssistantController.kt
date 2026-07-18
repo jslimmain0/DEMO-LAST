@@ -2,6 +2,7 @@ package com.flowlink.assistant
 
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PostMapping
+import org.springframework.web.bind.annotation.PutMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
@@ -12,7 +13,10 @@ import org.springframework.web.bind.annotation.RestController
  */
 @RestController
 @RequestMapping("/api/v1/assistant")
-class AssistantController(private val service: AssistantService) {
+class AssistantController(
+    private val service: AssistantService,
+    private val skills: SkillService,
+) {
 
     /** 가용 상태(패널이 stub/실제 표시). */
     @GetMapping("/config")
@@ -21,4 +25,15 @@ class AssistantController(private val service: AssistantService) {
     /** 대화 한 번 — 이력 + 현재 그래프를 받아 답변 + (선택)제안 그래프를 반환. */
     @PostMapping("/chat")
     fun chat(@RequestBody req: AssistantChatRequest): AssistantChatResponse = service.chat(req)
+
+    /** 지침 + 스킬(내장/사용자) 조회. */
+    @GetMapping("/skills")
+    fun skills(): SkillsView = skills.view()
+
+    /** 지침/사용자 스킬 저장(준 것만 반영). */
+    @PutMapping("/skills")
+    fun updateSkills(@RequestBody req: SkillsUpdateRequest): SkillsView {
+        skills.update(req)
+        return skills.view()
+    }
 }

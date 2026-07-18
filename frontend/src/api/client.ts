@@ -16,6 +16,8 @@ import type {
   RunRequest,
   SaveVersionRequest,
   SingleNodeRunResult,
+  SkillsUpdateRequest,
+  SkillsView,
   TcpPreview,
 } from './types'
 
@@ -176,4 +178,6 @@ export const runsApi = {
 export const assistantApi = {
   config: () => http.get<AssistantConfig>('/assistant/config').then((r) => r.data),
   chat: (body: AssistantChatRequest) => http.post<AssistantChatResponse>('/assistant/chat', body).then((r) => r.data),
+  skills: () => http.get<SkillsView>('/assistant/skills').then((r) => r.data),
+  updateSkills: (body: SkillsUpdateRequest) => http.put<SkillsView>('/assistant/skills', body).then((r) => r.data),
 }

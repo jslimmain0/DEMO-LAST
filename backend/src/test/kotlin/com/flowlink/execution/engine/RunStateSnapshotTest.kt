@@ -25,7 +25,7 @@ class RunStateSnapshotTest {
     private val ssrf = SsrfGuard(props)
     private val executor = FlowExecutor(
         tokens, ExpressionEvaluator(tokens),
-        HttpNodeExecutor(RestClient.create(), tokens, ssrf, json, props),
+        HttpNodeExecutor(RestClient.create(), tokens, ssrf, json, OAuthTokenProvider(RestClient.create(), ssrf, tokens, json), props),
         json, TransformRegistry("build/tmp/no-plugins"), TcpNodeExecutor(tokens, ssrf, json)
     )
     private val mapper = jacksonObjectMapper()

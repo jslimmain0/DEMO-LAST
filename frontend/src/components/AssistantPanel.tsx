@@ -6,6 +6,7 @@ import type { AssistantMessage, FlowGraph } from '../api/types'
 import { usePermissions } from '../auth/AuthContext'
 import { hasStartNode, validateGraphShape } from '../lib/graphValidate'
 import { useEditorStore } from '../store/editorStore'
+import { SkillsDialog } from './SkillsDialog'
 import { toast } from './toast'
 
 /** 대화에 붙은 제안 그래프(적용 가능) — assistant 메시지에만. */
@@ -34,6 +35,7 @@ export function AssistantPanel({ width, onClose }: { width: number; onClose: () 
   const [turns, setTurns] = useState<Turn[]>([])
   const [input, setInput] = useState('')
   const [pending, setPending] = useState(false)
+  const [skillsOpen, setSkillsOpen] = useState(false)
   const listRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => { listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: 'smooth' }) }, [turns, pending])
@@ -79,8 +81,10 @@ export function AssistantPanel({ width, onClose }: { width: number; onClose: () 
         <span style={badge(cfg.data?.usingRealLlm)} title={cfg.data?.usingRealLlm ? `모델: ${cfg.data?.model}` : 'API 키 미설정 — 샘플(stub) 모드. 시크릿 볼트에 anthropic-api-key 추가 시 실제 AI'}>
           {cfg.data?.usingRealLlm ? cfg.data?.model : 'stub'}
         </span>
+        {canEdit && <button onClick={() => setSkillsOpen(true)} aria-label="지침·스킬" title="지침 · 스킬 관리" style={xBtn}>🧠</button>}
         <button onClick={onClose} aria-label="닫기" style={xBtn}>×</button>
       </header>
+      {skillsOpen && <SkillsDialog onClose={() => setSkillsOpen(false)} />}
 
       <div ref={listRef} style={{ flex: 1, overflow: 'auto', padding: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
         {turns.length === 0 && (

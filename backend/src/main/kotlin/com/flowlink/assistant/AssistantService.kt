@@ -32,6 +32,7 @@ class AssistantService(
     private val json: JsonService,
     private val secretService: SecretService,
     private val ssrfGuard: SsrfGuard,
+    private val skills: SkillService,
 ) {
     private val log = LoggerFactory.getLogger(AssistantService::class.java)
     private val mapper: ObjectMapper = json.mapper()
@@ -86,6 +87,7 @@ class AssistantService(
         val ctxGraph = redactSecrets(graph)
         val system = buildString {
             append(FlowSchemaPrompt.SYSTEM)
+            append(skills.promptBlock()) // 팀 지침 + 활성 스킬(내장·사용자) 주입
             append("\n\n## CURRENT CANVAS (the user's current graph — edit this, keep ids)\n")
             append(if (ctxGraph == null || ctxGraph.isNull) "(빈 캔버스)" else clip(json.toJson(ctxGraph), 24000))
         }

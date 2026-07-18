@@ -93,9 +93,6 @@ export function NodeCard({ data, selected }: NodeProps) {
               {(n.bodyType === 'form' || n.bodyType === 'urlencoded') ? 'FORM' : (n.bodyType ?? 'json').toUpperCase()}
             </span>
           )}
-          {n.auth?.type === 'oauth2_cc' && (
-            <span title="OAuth2 Client Credentials 인증" aria-label="OAuth" style={{ flexShrink: 0, fontSize: 10 }}>🔒</span>
-          )}
           {(() => {
             const client = n.reqMode === 'client'
             return (

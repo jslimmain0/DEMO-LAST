@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { pluginsApi, runsApi, secretsApi, settingsApi, transformsApi } from '../api/client'
 import { usePermissions } from '../auth/AuthContext'
 import { toast } from '../components/toast'
-import type { Binding, BodyType, GraphNode, HttpAuth, HttpMethod, NodeField, NodeOutput, NodeVar, ReqMode, RespType, SingleNodeRunResult, TcpField, TcpPreview, TcpRespField, WaitField as WaitFieldT } from '../api/types'
+import type { Binding, BodyType, GraphNode, HttpMethod, NodeField, NodeOutput, NodeVar, ReqMode, RespType, SingleNodeRunResult, TcpField, TcpPreview, TcpRespField, WaitField as WaitFieldT } from '../api/types'
 import { CopyIcon, DataInsertIcon } from '../components/icons'
 import { BindingChip } from '../binding/BindingChip'
 import { BindingPicker } from '../binding/BindingPicker'
@@ -85,7 +85,6 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
   const [tcpPrev, setTcpPrev] = useState<TcpPreview | null>(null) // TCP 전문 미리보기 결과
   const [tcpPrevErr, setTcpPrevErr] = useState<string | null>(null)
   const [advOpen, setAdvOpen] = useState(false) // HTTP 고급(문자셋) 접기
-  const [authOpen, setAuthOpen] = useState(false) // HTTP 인증(OAuth) 접기
   const [curlText, setCurlText] = useState<string | null>(null) // cURL 붙여넣기 입력창(열림=문자열)
   const [secOverride, setSecOverride] = useState<Record<string, boolean>>({}) // HTTP 요청 섹션 접기 오버라이드
   const [previewOpen, setPreviewOpen] = useState(false) // 요청 미리보기 접기
@@ -733,16 +732,6 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
                   </p>
                 )}
                 <ReqModeToggle mode={node.reqMode} onChange={(m) => update(id, { reqMode: m })} />
-              </div>
-            )}
-
-            {/* 인증 — OAuth2 등(server 모드). 실행 직전 백엔드가 토큰을 취득·주입 */}
-            <button onClick={() => setAuthOpen((v) => !v)} style={advToggle} aria-expanded={authOpen}>
-              {authOpen ? '▾' : '▸'} 인증 {node.auth?.type === 'oauth2_cc' ? '— 🔒 OAuth2' : '(없음)'}
-            </button>
-            {authOpen && (
-              <div style={{ borderLeft: '2px solid var(--fl-border)', paddingLeft: 10, marginTop: 4 }}>
-                <HttpAuthEditor auth={node.auth} sources={sources} onChange={(a) => update(id, { auth: a })} clientMode={node.reqMode === 'client'} />
               </div>
             )}
 
@@ -1431,46 +1420,6 @@ function RowMove({ i, len, onMove }: { i: number; len: number; onMove: (dir: -1 
       <button onClick={() => onMove(-1)} disabled={i === 0} aria-label="위로" title="위로" style={rowMoveBtn(i === 0)}>▲</button>
       <button onClick={() => onMove(1)} disabled={i === len - 1} aria-label="아래로" title="아래로" style={rowMoveBtn(i === len - 1)}>▼</button>
     </span>
-  )
-}
-
-/** HTTP 인증 편집기 — OAuth2 Client Credentials. clientSecret 은 {{ 이름@secret }} 권장. */
-function HttpAuthEditor({ auth, sources, onChange, clientMode }: { auth?: HttpAuth; sources: BindableSource[]; onChange: (a: HttpAuth) => void; clientMode: boolean }) {
-  const a = auth ?? {}
-  const type = a.type ?? 'none'
-  const upd = (patch: Partial<HttpAuth>) => onChange({ ...a, ...patch })
-  return (
-    <>
-      <label style={label}>인증 방식</label>
-      <select style={field} value={type} onChange={(e) => upd({ type: e.target.value as HttpAuth['type'] })}>
-        <option value="none">없음</option>
-        <option value="oauth2_cc">OAuth2 — Client Credentials (M2M)</option>
-      </select>
-      {type === 'oauth2_cc' && (
-        <div style={{ display: 'grid', gap: 6, marginTop: 6 }}>
-          {clientMode && <p style={{ ...hintP, color: 'var(--fl-put)', margin: 0 }}>⚠ OAuth 는 <b>서버(S→S) 모드</b>에서만 동작합니다(토큰을 브라우저로 넘기지 않음). 고급에서 요청 방식을 서버로 두세요.</p>}
-          <div><label style={label}>토큰 URL (token endpoint)</label>
-            <TokenInput ariaLabel="토큰 URL" value={a.tokenUrl ?? ''} onChange={(v) => upd({ tokenUrl: v })} sources={sources} placeholder="https://idp.example.com/oauth/token" /></div>
-          <div><label style={label}>client_id</label>
-            <TokenInput ariaLabel="client_id" value={a.clientId ?? ''} onChange={(v) => upd({ clientId: v })} sources={sources} placeholder="my-client 또는 { } 삽입" /></div>
-          <div><label style={label}>client_secret <span style={{ color: 'var(--fl-text-muted)', fontWeight: 400 }}>({'{{ 이름@secret }}'} 권장)</span></label>
-            <TokenInput ariaLabel="client_secret" value={a.clientSecret ?? ''} onChange={(v) => upd({ clientSecret: v })} sources={sources} placeholder="{{ MY_SECRET@secret }}" />
-            {(a.clientSecret ?? '').trim() !== '' && !(a.clientSecret ?? '').includes('{{') && (
-              <p style={{ ...hintP, color: 'var(--fl-put)', margin: '4px 0 0' }}>⚠ 시크릿을 <b>평문</b>으로 넣었습니다 — 그래프에 그대로 저장됩니다. 시크릿 볼트에 넣고 <code style={{ fontFamily: 'var(--fl-font-mono)' }}>{'{{ 이름@secret }}'}</code> 로 참조하세요(마스킹됨).</p>
-            )}</div>
-          <div style={{ display: 'flex', gap: 6 }}>
-            <div style={{ flex: 1 }}><label style={label}>scope (선택)</label>
-              <input style={mono} value={a.scope ?? ''} onChange={(e) => upd({ scope: e.target.value })} placeholder="read write" /></div>
-            <div><label style={label}>자격 전달</label>
-              <select style={field} value={a.clientAuth ?? 'body'} onChange={(e) => upd({ clientAuth: e.target.value as 'body' | 'basic' })}>
-                <option value="body">본문(body)</option>
-                <option value="basic">Basic 헤더</option>
-              </select></div>
-          </div>
-          <p style={{ ...hintP, margin: 0 }}>실행 직전 백엔드가 <code style={{ fontFamily: 'var(--fl-font-mono)' }}>grant_type=client_credentials</code> 로 토큰을 받아 <b>Authorization: Bearer</b> 로 주입하고, 만료 전까지 캐시합니다(중복 발급 방지). 토큰은 로그에 남지 않습니다.</p>
-        </div>
-      )}
-    </>
   )
 }
 

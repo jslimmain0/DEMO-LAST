@@ -269,12 +269,6 @@ class FlowExecutor(
 
             // client 모드 HTTP 노드: 서버가 호출하지 않고 브라우저로 위임 → WAITING 으로 중단
             if (et == NodeType.HTTP && isClientMode(node)) {
-                // OAuth 는 서버가 토큰을 취득·주입하므로 client 모드에선 무의미(무인증 전송 방지) → 노드 실패
-                if (node.auth?.isOAuthCc() == true) {
-                    val fail = NodeResult.fail(0, "", "⚠ OAuth 인증은 서버(S→S) 모드에서만 동작합니다. 요청 방식을 서버로 바꾸세요.")
-                    recorder.record(node, st.seq++, fail, NodeExecutionStatus.FAILED, 0)
-                    return Outcome.failed("노드 실패: " + node.name + " — OAuth 는 서버 모드 전용")
-                }
                 val req = httpExecutor.build(node, st.ctx)
                 st.pendingNodeId = id
                 val pc = PendingClient(id, node.name, req.method, req.url,

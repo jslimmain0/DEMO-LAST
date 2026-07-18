@@ -10,13 +10,13 @@ object BuiltinSkills {
     data class Raw(val id: String, val name: String, val description: String, val nodeTypes: List<String>, val graphJson: String)
 
     val RAW: List<Raw> = listOf(
-        Raw("bi-oauth", "OAuth2 인증 호출", "OAuth2 client_credentials 로 보호된 API 호출", listOf("http"),
+        Raw("bi-bearer", "토큰 발급 + Bearer 호출", "토큰 API 로 access_token 을 받아 다음 호출 헤더에 Bearer 로 사용", listOf("http"),
             """{"nodes":[
-              {"id":"oauthcall","name":"보호 API 호출","type":"http","cat":"generic","x":80,"y":80,
-               "method":"GET","baseUrl":"https://api.example.com","path":"/me","bodyType":"json","respType":"json","reqMode":"server","charset":"UTF-8",
-               "auth":{"type":"oauth2_cc","tokenUrl":"https://idp.example.com/oauth/token","clientId":"my-client","clientSecret":"{{ CLIENT_SECRET@secret }}","scope":"read","clientAuth":"body"},
-               "fields":{"params":[],"headers":[],"body":[]},"outputs":[{"key":"data","type":"object"}]}
-            ],"edges":[]}"""),
+              {"id":"tokreq","name":"토큰 발급","type":"http","cat":"generic","x":80,"y":80,"method":"POST","baseUrl":"https://idp.example.com","path":"/oauth/token","bodyType":"urlencoded","respType":"json","reqMode":"server","charset":"UTF-8",
+               "fields":{"params":[],"headers":[],"body":[{"id":"g1","key":"grant_type","value":"client_credentials"},{"id":"g2","key":"client_id","value":"my-client"},{"id":"g3","key":"client_secret","value":"{{ CLIENT_SECRET@secret }}"}]},"outputs":[{"key":"access_token","type":"string"}]},
+              {"id":"apicall","name":"보호 API 호출","type":"http","cat":"generic","x":320,"y":80,"method":"GET","baseUrl":"https://api.example.com","path":"/me","bodyType":"json","respType":"json","reqMode":"server","charset":"UTF-8",
+               "fields":{"params":[],"headers":[{"id":"h1","key":"Authorization","value":"Bearer {{ access_token@tokreq }}"}],"body":[]},"outputs":[{"key":"data","type":"object"}]}
+            ],"edges":[{"id":"be1","from":"tokreq","to":"apicall"}]}"""),
         Raw("bi-pay", "결제창 + 콜백", "결제창(폼 팝업) → 콜백 대기 → 승인 여부 분기", listOf("form", "wait", "if"),
             """{"nodes":[
               {"id":"payform","name":"결제창 열기","type":"form","cat":"form","x":80,"y":80,"formAction":"https://pg.example.com/pay","formMethod":"POST","formDisplay":"popup",

@@ -30,7 +30,6 @@ data class GraphNode(
     val rawHeaders: String?,
     val reqMode: String?,         // server | client
     val charset: String?,         // 요청 인코딩·응답 디코딩 문자셋(UTF-8 기본 · EUC-KR/MS949/US-ASCII). server 모드에 적용
-    val auth: HttpAuth?,          // OAuth2 등 인증(server 모드) — 실행 직전 토큰 취득·주입
     val fields: NodeFields?,
     val outputs: List<NodeOutput>?,
 

@@ -72,7 +72,6 @@ export interface GraphNode {
   rawHeaders?: string  // headersRaw=true 일 때 헤더 원문(Key: Value 줄바꿈)
   reqMode?: ReqMode
   charset?: string // 요청 인코딩·응답 디코딩 문자셋(UTF-8 기본 · EUC-KR/MS949/US-ASCII)
-  auth?: HttpAuth  // OAuth2 등 인증(server 모드)
   fields?: NodeFields
   outputs?: NodeOutput[]
   // set
@@ -119,17 +118,6 @@ export interface GraphNode {
 export interface SwitchPort {
   id: string
   label?: string
-}
-
-// HTTP 노드 인증(server 모드). type: 'none' | 'oauth2_cc'(Client Credentials)
-export interface HttpAuth {
-  type?: 'none' | 'oauth2_cc'
-  tokenUrl?: string
-  clientId?: string
-  clientSecret?: string // {{ 이름@secret }} 권장
-  scope?: string
-  clientAuth?: 'body' | 'basic'
-  cacheSeconds?: number
 }
 
 export interface TcpField {

@@ -34,7 +34,6 @@ class HttpNodeExecutor(
     private val tokens: TokenResolver,
     private val ssrfGuard: SsrfGuard,
     private val json: JsonService,
-    private val oauth: OAuthTokenProvider,
     props: ExecutionProperties
 ) {
 
@@ -207,18 +206,9 @@ class HttpNodeExecutor(
             return NodeResult.fail(0, req.requestText, "⚠ 차단됨(SSRF 가드): " + e.message)
         }
 
-        // OAuth2 인증(server 모드) — 실행 직전 토큰 취득·캐시 후 Authorization 헤더 주입.
-        // 실패는 노드 실패로(토큰 없이 보내지 않음). 토큰은 requestText 에 안 실려 로그 유출 없음.
-        val finalHeaders: Map<String, String> = if (node.auth?.isOAuthCc() == true) {
-            try {
-                LinkedHashMap(req.headers).apply { put("Authorization", "Bearer " + oauth.bearer(node.auth, ctx)) }
-            } catch (e: Exception) {
-                return NodeResult.fail(0, req.requestText, "⚠ OAuth 인증 실패: " + (e.message ?: e.toString()))
-            }
-        } else req.headers
-
         return try {
             val cs = charsetOf(node.charset)
+            val finalHeaders = req.headers
             val spec = restClient.method(HttpMethod.valueOf(req.method)).uri(uri)
                 .headers { h -> finalHeaders.forEach { (k, v) -> h.set(k, v) } }
             // 본문은 선택 문자셋으로 인코딩한 바이트로 전송(UTF-8이면 기존과 동일). 응답도 같은 문자셋으로 디코딩.

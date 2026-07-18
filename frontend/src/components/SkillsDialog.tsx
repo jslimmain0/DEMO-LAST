@@ -98,7 +98,7 @@ export function SkillsDialog({ onClose }: { onClose: () => void }) {
           value={instrValue}
           onChange={(e) => setInstrEdit(e.target.value)}
           disabled={!canAdmin}
-          placeholder="예: 기본 API 는 https://api.acme.com. 인증은 OAuth2, client_secret 은 {{ ACME@secret }}. HTTP 는 서버 모드."
+          placeholder="예: 기본 API 는 https://api.acme.com. 인증 헤더는 Authorization: Bearer {{ TOKEN@secret }}. HTTP 는 서버 모드."
           style={{ ...mono, minHeight: 72, resize: 'vertical', width: '100%', opacity: canAdmin ? 1 : 0.6 }}
         />
         {canAdmin && (

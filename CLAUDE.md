@@ -882,7 +882,7 @@ design/   theme(라이트/다크) · index.css(CSS 변수)
   [AuthController](backend/src/main/kotlin/com/flowlink/security/AuthController.kt)(`/auth/config` mode=github|none · `/me` · `/github/device/start` · `/github/device/poll`, 전자 3개 permitAll).
 - **프론트**([auth/](frontend/src/auth/)): oidc-client-ts 제거 → localStorage 토큰([auth.ts](frontend/src/auth/auth.ts)) + [GitHubLogin](frontend/src/auth/GitHubLogin.tsx)(디바이스 코드 카드·폴링) +
   [AuthContext](frontend/src/auth/AuthContext.tsx) github 모드. axios Bearer + 401 시 토큰 폐기·재로그인. `usePermissions()` 게이팅 불변.
-- **env**: `FLOWLINK_AUTH_GITHUB_ENABLED`(기본 false=dev permitAll). github-enabled=true 면 `FLOWLINK_AUTH_JWT_SECRET` **필수**(없으면 공개 dev 키로 토큰 위조 가능 → [GithubAuthStartupValidator](backend/src/main/kotlin/com/flowlink/security/AuthConfig.kt) 가 기동 실패). `FLOWLINK_AUTH_ALLOWED_LOGINS` 는 **선택**(비우면 GitHub 인증한 누구나 로그인/전권 — 전체 허용, 기동 WARN. 특정 계정만 허용하려면 목록 지정).
+- **env**: `FLOWLINK_AUTH_GITHUB_ENABLED`(기본 false=dev permitAll). github-enabled=true 면 **서명 시크릿 필수**(없으면 공개 dev 키로 토큰 위조 → [GithubAuthStartupValidator](backend/src/main/kotlin/com/flowlink/security/AuthConfig.kt) 가 기동 실패). 서명 시크릿은 **로컬 env `FLOWLINK_AUTH_JWT_SECRET`, 운영 Vault**([AppJwt](backend/src/main/kotlin/com/flowlink/security/AppJwt.kt) 가 env 우선 → 없으면 Vault `flowlink-config` 경로 key `jwt-secret` — 워크플로에 미노출). `FLOWLINK_AUTH_ALLOWED_LOGINS` 는 **선택**(비우면 GitHub 인증한 누구나 로그인/전권 — 전체 허용, 기동 WARN).
   client_id 는 Copilot 공개 client 기본(`AuthProperties.clientId`). 표준 OIDC(Auth0/Entra 등)도 여전히 지원 — `application.yml` issuer-uri 설정 시 그쪽으로(IdP 비종속).
 - 검증: 자체서명 HS256 토큰으로 `/me`·`/flows` 인증 통과·역할 매핑·위조서명 401·무토큰 401·실제 GitHub device 코드 발급·브라우저 로그인 화면 렌더.
 
@@ -896,11 +896,11 @@ design/   theme(라이트/다크) · index.css(CSS 변수)
 - [infra/README.md](infra/README.md)·`.env.example`·SERVER-DEVELOPMENT.md 를 새 구조로 재작성. 구 lifecycle(flowlink-start/stop·server-rebuild)은 `scripts/` 로 통합.
 
 ### HashiCorp Vault 시크릿 연동 (시크릿 볼트에 오버레이)
-- **[VaultProperties](backend/src/main/kotlin/com/flowlink/secret/VaultProperties.kt)**(`flowlink.vault.*`: enabled/address/token/mount/path/refresh-seconds) +
-  **[VaultSecretSource](backend/src/main/kotlin/com/flowlink/secret/VaultSecretSource.kt)**: `GET {addr}/v1/{mount}/data/{path}`(X-Vault-Token, KV v2 봉투 `data.data`) → 시크릿 맵. TTL 캐시(3초 타임아웃, 실패 시 이전 캐시 유지 → 실행 무중단).
-- **[SecretService](backend/src/main/kotlin/com/flowlink/secret/SecretService.kt)**: `activeSecrets` 가 Vault 를 **공통 기본층**으로 오버레이(우선순위: 활성환경 DB > 공통 DB > Vault). 단일 choke point 라 시드+마스킹 자동 적용.
-  `listNames` 에 Vault 이름을 `source=vault`(읽기전용)로 노출 → 바인딩 피커/시크릿 볼트 다이얼로그에 자동. 프론트 `SecretView.source` + [SecretsDialog](frontend/src/components/SecretsDialog.tsx) `Vault` 배지·삭제 비활성.
-- 기본 비활성(무회귀). enabled=true(+token) 일 때만 조회. env: `FLOWLINK_VAULT_ENABLED`·`FLOWLINK_VAULT_ADDRESS`·`FLOWLINK_VAULT_TOKEN`.
+- **[VaultProperties](backend/src/main/kotlin/com/flowlink/secret/VaultProperties.kt)**(`flowlink.vault.*`: enabled/address/token/mount/path/**config-path**/refresh-seconds) +
+  **[VaultSecretSource](backend/src/main/kotlin/com/flowlink/secret/VaultSecretSource.kt)**: `GET {addr}/v1/{mount}/data/{path}`(X-Vault-Token, KV v2 봉투 `data.data`) → 시크릿 맵. **경로별 TTL 캐시**(3초 타임아웃, 실패 시 이전 캐시 유지 → 무중단). `secrets()`=워크플로 경로, `appSecret(key)`=**config 경로**(앱 설정 비밀).
+- **두 경로 분리**: (a) 워크플로 시크릿 `path`(기본 flowlink) → [SecretService](backend/src/main/kotlin/com/flowlink/secret/SecretService.kt) `activeSecrets` 가 **공통 기본층**으로 오버레이(우선순위: 활성환경 DB > 공통 DB > Vault), `listNames` 에 `source=vault`(읽기전용) 노출 → 피커/다이얼로그(`SecretView.source`, [SecretsDialog](frontend/src/components/SecretsDialog.tsx) `Vault` 배지). (b) 앱 설정 비밀 `config-path`(기본 flowlink-config) → **워크플로에 미노출**. 서명키 등 앱 내부 비밀을 바인딩과 분리.
+- **jwt-secret 을 Vault 에서**: [AppJwt](backend/src/main/kotlin/com/flowlink/security/AppJwt.kt) 가 env `FLOWLINK_AUTH_JWT_SECRET`(로컬) **우선 → 없으면** `vault.appSecret("jwt-secret")`(config 경로, 운영). GithubAuthStartupValidator 는 [AppJwt.hasSecret](backend/src/main/kotlin/com/flowlink/security/AppJwt.kt)(env·Vault 어느 쪽이든)로 가드. 라이브 검증: config 경로에 jwt-secret 시드 → env 없이 github 모드 bootRun 기동 성공(health 200).
+- 기본 비활성(무회귀). enabled=true(+token) 일 때만 조회. env: `FLOWLINK_VAULT_ENABLED`·`FLOWLINK_VAULT_ADDRESS`·`FLOWLINK_VAULT_TOKEN`·`FLOWLINK_VAULT_CONFIG_PATH`.
 - 검증(라이브): Vault dev(도커)에 시크릿 시드 → 목록 `source=vault` → `{{ CLEANKEY@secret }}` 실행 SUCCEEDED(다운스트림 assert 비교까지 정확)·로그 마스킹(••••••)·원문 미노출·음성대조 FAILED. 백엔드 test 전종 PASS·프론트 tsc/build. 브라우저에서 `Vault` 배지·읽기전용 렌더 확인.
 
 ### 리포 정리 (test-as-you-go)

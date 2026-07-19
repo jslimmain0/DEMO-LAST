@@ -5,6 +5,7 @@ import org.slf4j.LoggerFactory
 import org.springframework.http.client.SimpleClientHttpRequestFactory
 import org.springframework.stereotype.Component
 import org.springframework.web.client.RestClient
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicReference
 
 /**
@@ -26,33 +27,42 @@ class VaultSecretSource(private val props: VaultProperties) {
         })
         .build()
 
-    // at=0 → 첫 호출은 now-0 이 TTL 보다 커 반드시 fetch (Long.MIN_VALUE 로 두면 뺄셈이 오버플로해 "항상 신선"으로 오판).
-    private val cache = AtomicReference(Cached(0L, emptyMap<String, String>()))
+    // 경로별 캐시. at=0 → 첫 호출은 now-0 이 TTL 보다 커 반드시 fetch (Long.MIN_VALUE 로 두면 뺄셈 오버플로로 "항상 신선" 오판).
+    private val caches = ConcurrentHashMap<String, AtomicReference<Cached>>()
     private data class Cached(val at: Long, val map: Map<String, String>)
 
     val enabled: Boolean get() = props.enabled && props.token != null
 
-    /** 캐시된 Vault 공통 시크릿. TTL 만료 시 1회 갱신 시도(실패 시 이전 캐시 유지). */
-    fun secrets(): Map<String, String> {
+    /** 캐시된 Vault 워크플로 시크릿(`{{ 이름@secret }}`). TTL 만료 시 1회 갱신 시도(실패 시 이전 캐시 유지). */
+    fun secrets(): Map<String, String> = read(props.path)
+
+    /**
+     * 앱 설정 비밀(jwt-secret 등) — **별도 config 경로**에서 읽는다(워크플로 시크릿과 분리, 피커/해석에 미노출).
+     * 없으면 null. env 로 이미 설정됐으면 호출자가 이 함수를 안 부르는 게 정상(env 우선).
+     */
+    fun appSecret(key: String): String? = read(props.configPath)[key]?.takeIf { it.isNotBlank() }
+
+    private fun read(path: String): Map<String, String> {
         if (!enabled) return emptyMap()
+        val ref = caches.computeIfAbsent(path) { AtomicReference(Cached(0L, emptyMap())) }
         val now = System.currentTimeMillis()
-        val cached = cache.get()
+        val cached = ref.get()
         if (now - cached.at < props.refreshSeconds * 1000L) return cached.map
         return try {
-            val fresh = fetch()
-            cache.set(Cached(now, fresh))
+            val fresh = fetch(path)
+            ref.set(Cached(now, fresh))
             fresh
         } catch (e: Exception) {
-            log.warn("Vault 시크릿 조회 실패({} {}/{}): {} — 이전 캐시 유지({}건)",
-                props.address, props.mount, props.path, e.message, cached.map.size)
-            cache.set(Cached(now, cached.map)) // 백오프: 실패도 TTL 갱신해 매 실행 재시도를 막음
+            log.warn("Vault 조회 실패({} {}/{}): {} — 이전 캐시 유지({}건)",
+                props.address, props.mount, path, e.message, cached.map.size)
+            ref.set(Cached(now, cached.map)) // 백오프: 실패도 TTL 갱신해 매 호출 재시도를 막음
             cached.map
         }
     }
 
-    private fun fetch(): Map<String, String> {
+    private fun fetch(path: String): Map<String, String> {
         val resp = client.get()
-            .uri("/v1/{mount}/data/{path}", props.mount, props.path)
+            .uri("/v1/{mount}/data/{path}", props.mount, path)
             .header("X-Vault-Token", props.token!!)
             .retrieve()
             .body(VaultKvV2Response::class.java)

@@ -12,7 +12,9 @@ import org.springframework.boot.context.properties.ConfigurationProperties
  * @property address Vault 주소(기본 http://localhost:8200 — infra 도커 dev 서버).
  * @property token Vault 토큰(dev 루트 토큰 또는 AppRole 발급 토큰). 미설정이면 비활성.
  * @property mount KV v2 시크릿 엔진 마운트 경로(기본 secret).
- * @property path 시크릿이 담긴 KV 경로(기본 flowlink → GET secret/data/flowlink).
+ * @property path 워크플로 시크릿(`{{ 이름@secret }}`)이 담긴 KV 경로(기본 flowlink → GET secret/data/flowlink).
+ * @property configPath 앱 설정 비밀(jwt-secret 등)이 담긴 KV 경로(기본 flowlink-config). **워크플로에 노출되지 않는다** —
+ *   서명키 등 앱 내부 비밀을 워크플로 바인딩과 분리하기 위한 별도 경로.
  * @property refreshSeconds 캐시 TTL(초, 기본 60) — 실행마다 네트워크 호출을 피한다.
  */
 @ConfigurationProperties(prefix = "flowlink.vault")
@@ -22,6 +24,7 @@ class VaultProperties(
     token: String? = null,
     mount: String? = null,
     path: String? = null,
+    configPath: String? = null,
     refreshSeconds: Long? = null,
 ) {
     val enabled: Boolean = enabled ?: false
@@ -29,5 +32,6 @@ class VaultProperties(
     val token: String? = token?.takeIf { it.isNotBlank() }
     val mount: String = mount?.trim('/')?.takeIf { it.isNotBlank() } ?: "secret"
     val path: String = path?.trim('/')?.takeIf { it.isNotBlank() } ?: "flowlink"
+    val configPath: String = configPath?.trim('/')?.takeIf { it.isNotBlank() } ?: "flowlink-config"
     val refreshSeconds: Long = if (refreshSeconds == null || refreshSeconds <= 0) 60L else refreshSeconds
 }

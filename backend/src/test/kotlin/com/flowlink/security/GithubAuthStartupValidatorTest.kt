@@ -1,39 +1,51 @@
 package com.flowlink.security
 
+import com.flowlink.secret.VaultProperties
+import com.flowlink.secret.VaultSecretSource
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 
 /**
- * GitHub 로그인 기동 가드 — jwt-secret 은 필수(없으면 토큰 위조 → 기동 실패), allowed-logins 는 옵션(비면 전체 허용).
- * 검증기 생성이 곧 검증(init 블록)이다.
+ * GitHub 로그인 기동 가드 — 서명 시크릿(env FLOWLINK_AUTH_JWT_SECRET 또는 Vault flowlink-config/jwt-secret)이
+ * 없으면 기동 실패(토큰 위조 방지). allowed-logins 는 옵션(비면 전체 허용). 검증기 생성이 곧 검증(init 블록)이다.
  */
 class GithubAuthStartupValidatorTest {
 
     private fun props(secret: String?, logins: List<String>?) =
         AuthProperties(githubEnabled = true, jwtSecret = secret, tokenTtlHours = null, allowedLogins = logins, clientId = null)
 
-    @Test
-    fun `jwt-secret 과 allowed-logins 가 모두 있으면 통과`() {
-        GithubAuthStartupValidator(props("strong-secret", listOf("alice")))
+    /** Vault 비활성(appSecret 항상 null). */
+    private fun vaultOff() = VaultSecretSource(VaultProperties(enabled = false, address = null, token = null, mount = null, path = null, configPath = null, refreshSeconds = null))
+
+    /** Vault 가 config 경로에 jwt-secret 을 제공. */
+    private fun vaultWith(secret: String) = object : VaultSecretSource(VaultProperties(false, null, null, null, null, null, null)) {
+        override fun appSecret(key: String): String? = if (key == AppJwt.VAULT_JWT_KEY) secret else null
     }
 
     @Test
-    fun `jwt-secret 미설정이면 기동 실패`() {
-        assertThatThrownBy { GithubAuthStartupValidator(props(null, listOf("alice"))) }
+    fun `env 시크릿 있으면 통과`() {
+        GithubAuthStartupValidator(AppJwt(props("strong-secret", listOf("alice")), vaultOff()), props("strong-secret", listOf("alice")))
+    }
+
+    @Test
+    fun `env 없고 Vault 에 시크릿 있으면 통과`() {
+        val p = props(null, listOf("alice"))
+        GithubAuthStartupValidator(AppJwt(p, vaultWith("from-vault")), p)
+    }
+
+    @Test
+    fun `env·Vault 둘 다 없으면 기동 실패`() {
+        val p = props(null, listOf("alice"))
+        assertThatThrownBy { GithubAuthStartupValidator(AppJwt(p, vaultOff()), p) }
             .isInstanceOf(IllegalStateException::class.java)
             .hasMessageContaining("FLOWLINK_AUTH_JWT_SECRET")
     }
 
     @Test
     fun `allowed-logins 비어도(전체 허용) 기동 성공`() {
-        // 예외 없이 생성되면 OK — 화이트리스트 미설정은 "전체 허용"(의도된 기본, WARN 만).
-        GithubAuthStartupValidator(props("strong-secret", emptyList()))
-    }
-
-    @Test
-    fun `allowed-logins null 도 전체 허용으로 기동 성공`() {
-        GithubAuthStartupValidator(props("strong-secret", null))
+        val p = props("strong-secret", emptyList())
+        GithubAuthStartupValidator(AppJwt(p, vaultOff()), p)
     }
 
     @Test
@@ -42,8 +54,6 @@ class GithubAuthStartupValidatorTest {
         assertThat(restricted.allows("alice")).isTrue()
         assertThat(restricted.allows("BOB")).isTrue()      // 대소문자 무시
         assertThat(restricted.allows("mallory")).isFalse()
-
-        val open = props("s", emptyList())
-        assertThat(open.allows("anyone")).isTrue()          // 화이트리스트 비면 전체 허용
+        assertThat(props("s", emptyList()).allows("anyone")).isTrue()   // 화이트리스트 비면 전체 허용
     }
 }

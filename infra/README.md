@@ -45,7 +45,7 @@ powershell -ExecutionPolicy Bypass -File scripts\stop.ps1
 ```bash
 # GitHub 로그인 (Keycloak 대체)
 export FLOWLINK_AUTH_GITHUB_ENABLED=true
-export FLOWLINK_AUTH_JWT_SECRET=<강한 시크릿>              # 앱 JWT 서명키. 미설정 시 dev 폴백 + WARN
+export FLOWLINK_AUTH_JWT_SECRET=<강한 시크릿>              # 앱 JWT 서명키(로컬). 운영은 env 대신 Vault 권장(아래 §4)
 export FLOWLINK_AUTH_ALLOWED_LOGINS=alice,bob             # 선택. 허용 GitHub 로그인 목록(비우면 전체 허용, 기동 시 WARN)
 
 # Vault 시크릿 끌어오기
@@ -69,7 +69,7 @@ bash scripts/start.sh
 Keycloak/OIDC 대신 **GitHub 계정으로 로그인**한다(어시스턴트 Copilot 연결과 동일한 device flow).
 로그인하면 앱이 자체 JWT(HMAC)를 발급하고 그 JWT 를 검증 → 인증 필수 + 팀(tenant) 격리.
 
-1. 앱을 `FLOWLINK_AUTH_GITHUB_ENABLED=true` + `FLOWLINK_AUTH_JWT_SECRET=<시크릿>` 으로 기동.
+1. 앱을 `FLOWLINK_AUTH_GITHUB_ENABLED=true` + 서명 시크릿(**로컬** `FLOWLINK_AUTH_JWT_SECRET` / **운영** Vault `flowlink-config/jwt-secret`, §4)으로 기동.
 2. 브라우저로 접속 → **GitHub 로 로그인** 버튼 → 표시된 코드로 github.com/login/device 인증 → 자동 로그인.
 3. (선택) `FLOWLINK_AUTH_ALLOWED_LOGINS` 로 허용 계정을 제한(비우면 전체 허용). ⚠ github 모드는 `jwt-secret` 이 없으면 기동 실패(토큰 위조 방지).
 - 미설정(기본)이면 dev 모드(로그인 없음, permitAll) — 로컬 개발용.
@@ -81,14 +81,18 @@ Keycloak/OIDC 대신 **GitHub 계정으로 로그인**한다(어시스턴트 Cop
 
 ```bash
 docker compose -f infra/docker-compose.yml up -d          # Vault(:8200) 기동
-# 시크릿 넣기 (KV v2, secret/ 마운트)
-docker exec -e VAULT_ADDR=http://127.0.0.1:8200 -e VAULT_TOKEN=flowlink-root \
-  flowlink-vault vault kv put secret/flowlink API_TOKEN=s3cr3t DB_PASS=...
+DEX="docker exec -e VAULT_ADDR=http://127.0.0.1:8200 -e VAULT_TOKEN=flowlink-root flowlink-vault"
+# ① 워크플로 시크릿 (secret/flowlink) — {{ 이름@secret }} 로 워크플로에서 참조
+$DEX vault kv put secret/flowlink API_TOKEN=s3cr3t DB_PASS=...
+# ② 앱 설정 비밀 (secret/flowlink-config) — jwt-secret 등. 워크플로엔 노출 안 됨
+$DEX vault kv put secret/flowlink-config jwt-secret=<강한 서명 시크릿>
 docker compose -f infra/docker-compose.yml down -v         # 초기화
 ```
-- 앱은 위 2번의 `FLOWLINK_VAULT_*` env 로 붙는다 → Vault 키가 **시크릿 볼트에 오버레이**(공통 기본층, DB 시크릿이 덮어씀).
-  워크플로에서 `{{ 이름@secret }}` 로 참조(바인딩 피커에 `Vault` 배지, 읽기전용). 실행 로그는 값 마스킹(••••••).
-- `secret/flowlink` 경로·`secret` 마운트는 `FLOWLINK_VAULT_PATH`·`FLOWLINK_VAULT_MOUNT` 로 변경.
+- **워크플로 시크릿**(`secret/flowlink`): 앱이 `FLOWLINK_VAULT_*` env 로 붙어 **시크릿 볼트에 오버레이**(공통 기본층, DB 가 덮어씀).
+  `{{ 이름@secret }}` 로 참조(피커에 `Vault` 배지·읽기전용, 로그 마스킹 ••••••).
+- **앱 서명 시크릿**(`secret/flowlink-config` key `jwt-secret`): GitHub 로그인 JWT 서명키를 **운영에선 env 대신 여기서** 끌어온다
+  (우선순위: env `FLOWLINK_AUTH_JWT_SECRET` > Vault). 워크플로 피커엔 안 보인다(서명키 노출 방지). 경로 변경: `FLOWLINK_VAULT_CONFIG_PATH`.
+- `secret/flowlink`·`secret` 마운트는 `FLOWLINK_VAULT_PATH`·`FLOWLINK_VAULT_MOUNT` 로 변경.
 - ⚠ dev 모드 Vault 는 인메모리(재시작 시 초기화). 운영은 파일/통합 스토리지 + unseal 구성으로 교체.
 
 ## 5. Oracle (나중에 연결)

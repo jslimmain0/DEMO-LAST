@@ -21,12 +21,21 @@ import javax.crypto.spec.SecretKeySpec
  * [JwtRoleConverter]·[TenantClaimFilter] 를 그대로 재사용한다.
  */
 @Component
-class AppJwt(props: AuthProperties) {
+class AppJwt(props: AuthProperties, vault: com.flowlink.secret.VaultSecretSource) {
     private val log = LoggerFactory.getLogger(AppJwt::class.java)
+
+    // 서명 시크릿 해석 — env(FLOWLINK_AUTH_JWT_SECRET, 로컬) 우선, 없으면 Vault config 경로(flowlink-config/jwt-secret, 운영).
+    // env 가 있으면 Vault 를 아예 조회하지 않는다(?: 단락). 둘 다 없으면 null.
+    private val resolvedSecret: String? = props.jwtSecret
+        ?: try { vault.appSecret(VAULT_JWT_KEY) } catch (e: Exception) { log.warn("Vault jwt-secret 조회 실패: {}", e.message); null }
+
+    /** env 또는 Vault 로 서명 시크릿이 실제로 설정됐는지 — [GithubAuthStartupValidator] 가 github 모드 기동 가드에 사용. */
+    val hasSecret: Boolean get() = resolvedSecret != null
+
     // HS256 은 256bit 키 필요 — 설정 시크릿을 SHA-256 으로 32B 파생(StateCrypto 와 동일 방식)
     private val keyBytes: ByteArray = MessageDigest.getInstance("SHA-256")
-        .digest((props.jwtSecret ?: run {
-            log.warn("flowlink.auth.jwt-secret 미설정 — dev 폴백 키 사용(운영에선 반드시 설정)")
+        .digest((resolvedSecret ?: run {
+            log.warn("jwt-secret 미설정(env·Vault 모두) — dev 폴백 키 사용. github 모드는 기동 가드가 막음(dev 모드 전용 폴백).")
             "flowlink-dev-app-jwt-secret"
         }).toByteArray(Charsets.UTF_8))
     private val ttl = props.tokenTtlHours
@@ -56,5 +65,6 @@ class AppJwt(props: AuthProperties) {
 
     companion object {
         val FULL_ROLES = listOf("admin", "editor", "platform-admin") // 자기 도구 — GitHub 인증 사용자에게 전권
+        const val VAULT_JWT_KEY = "jwt-secret" // Vault config 경로(flowlink-config)의 서명 시크릿 키
     }
 }

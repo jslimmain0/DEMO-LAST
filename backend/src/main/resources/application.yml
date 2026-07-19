@@ -89,7 +89,10 @@ flowlink:
     address: ${FLOWLINK_VAULT_ADDRESS:http://localhost:8200}
     token: ${FLOWLINK_VAULT_TOKEN:}                   # dev 루트 토큰 또는 AppRole 발급 토큰. 미설정이면 비활성
     mount: ${FLOWLINK_VAULT_MOUNT:secret}             # KV v2 마운트
-    path: ${FLOWLINK_VAULT_PATH:flowlink}             # GET secret/data/flowlink
+    path: ${FLOWLINK_VAULT_PATH:flowlink}             # 워크플로 시크릿({{ 이름@secret }}): GET secret/data/flowlink
+    # 앱 설정 비밀(jwt-secret 등) 전용 경로 — 워크플로에 노출 안 됨. 운영 jwt-secret 은 여기 key=jwt-secret 로 둔다:
+    #   vault kv put secret/flowlink-config jwt-secret=<강한 시크릿>
+    config-path: ${FLOWLINK_VAULT_CONFIG_PATH:flowlink-config}   # GET secret/data/flowlink-config
     refresh-seconds: ${FLOWLINK_VAULT_REFRESH_SECONDS:60}
   # 보안 (IdP 비종속). 아무 인증도 활성 안 하면 dev permitAll(로컬).
   security:
@@ -98,10 +101,11 @@ flowlink:
     #   - https://flowlink.example.com
   # 앱 인증 — GitHub 로그인(Copilot 과 동일한 디바이스 플로우). 로그인하면 앱이 자체 JWT(HMAC)를 발급하고,
   # 그 JWT 를 리소스 서버로 검증 → 인증 필수 + RBAC + 테넌트 격리(Keycloak 없이 동작). 미설정이면 dev permitAll.
-  # ⚠ github-enabled=true 면 jwt-secret 은 **필수**(없으면 토큰 위조 가능 → 기동 실패). allowed-logins 는 선택.
+  # ⚠ github-enabled=true 면 서명 시크릿 **필수**(없으면 토큰 위조 가능 → 기동 실패). allowed-logins 는 선택.
+  #   서명 시크릿: **로컬은 env FLOWLINK_AUTH_JWT_SECRET, 운영은 Vault**(flowlink-config 경로 key=jwt-secret) — env 우선, 없으면 Vault.
   # 운영(EC2)에선 env 로 켠다:
   #   FLOWLINK_AUTH_GITHUB_ENABLED=true
-  #   FLOWLINK_AUTH_JWT_SECRET=<강한 시크릿>            # 필수. JWT 서명키(SHA-256 파생) — 없으면 토큰 위조 가능
+  #   FLOWLINK_AUTH_JWT_SECRET=<강한 시크릿>            # 로컬. 운영은 이걸 비우고 Vault(flowlink-config/jwt-secret)에서 끌어옴
   #   FLOWLINK_AUTH_ALLOWED_LOGINS=alice,bob            # 선택. 허용 GitHub 로그인 화이트리스트 — 비우면 전체 허용(WARN)
   auth:
     github-enabled: ${FLOWLINK_AUTH_GITHUB_ENABLED:false}

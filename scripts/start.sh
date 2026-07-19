@@ -47,8 +47,13 @@ fi
 # 기본 H2(로컬) — env 로 프로파일/DB 를 안 주면 h2
 export SPRING_PROFILES_ACTIVE="${SPRING_PROFILES_ACTIVE:-h2}"
 
+# 추가 JVM 옵션(공백 구분). 사내 TLS 가로채기 프록시 환경이면 커스텀 truststore 를 여기로:
+#   FLOWLINK_JAVA_OPTS="-Djavax.net.ssl.trustStore=/etc/pki/corp.jks -Djavax.net.ssl.trustStorePassword=..."
+JVM_OPTS="${FLOWLINK_JAVA_OPTS:-}"
+
 echo "▶ FlowLink 기동 (profile=$SPRING_PROFILES_ACTIVE, port=$PORT)…"
-nohup env FLOWLINK_PORT="$PORT" java -jar "$JAR" >> "$LOG" 2>&1 < /dev/null &
+# shellcheck disable=SC2086
+nohup env FLOWLINK_PORT="$PORT" java $JVM_OPTS -jar "$JAR" >> "$LOG" 2>&1 < /dev/null &
 echo $! > "$PID_FILE"
 
 for _ in $(seq 1 60); do

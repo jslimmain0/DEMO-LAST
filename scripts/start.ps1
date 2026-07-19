@@ -48,8 +48,16 @@ if (-not (Test-Path $Jar)) { Write-Host "ERROR: jar missing: $Jar - run start.ps
 if (-not $env:SPRING_PROFILES_ACTIVE) { $env:SPRING_PROFILES_ACTIVE = 'h2' } # default H2 (local)
 $env:FLOWLINK_PORT = $Port
 
+# JVM args. On Windows, trust the Windows certificate store so outbound TLS (AI/Copilot, etc.) works even
+# behind a corporate TLS-intercepting proxy/VPN (whose CA is in the Windows store but not Java cacerts).
+# Opt out with FLOWLINK_WINROOT=0. Extra opts via FLOWLINK_JAVA_OPTS (space-separated).
+$jvmArgs = @()
+if ($env:FLOWLINK_WINROOT -ne '0') { $jvmArgs += '-Djavax.net.ssl.trustStoreType=WINDOWS-ROOT' }
+if ($env:FLOWLINK_JAVA_OPTS) { $jvmArgs += ($env:FLOWLINK_JAVA_OPTS -split ' ' | Where-Object { $_ }) }
+$jvmArgs += @('-jar', $Jar)
+
 Write-Host "> Starting FlowLink (profile=$($env:SPRING_PROFILES_ACTIVE), port=$Port)..."
-$p = Start-Process -FilePath 'java' -ArgumentList '-jar', $Jar -RedirectStandardOutput $Log -RedirectStandardError "$Log.err" -WindowStyle Hidden -PassThru
+$p = Start-Process -FilePath 'java' -ArgumentList $jvmArgs -RedirectStandardOutput $Log -RedirectStandardError "$Log.err" -WindowStyle Hidden -PassThru
 $p.Id | Out-File -Encoding ascii $PidFile
 
 for ($i = 0; $i -lt 60; $i++) {

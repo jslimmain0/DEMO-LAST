@@ -1,8 +1,10 @@
 spring:
   application:
     name: flowlink
+  # 기본 DB = Oracle. 로컬 개발은 h2 프로파일(application-h2.yml, scripts 기본)로 오버라이드.
+  # 사내/별도 서버 Oracle 로는 FLOWLINK_DB_URL 만 그쪽으로 바꾸면 된다(스키마는 Flyway 가 생성).
   datasource:
-    url: ${FLOWLINK_DB_URL:jdbc:postgresql://localhost:5432/flowlink}
+    url: ${FLOWLINK_DB_URL:jdbc:oracle:thin:@//localhost:1521/FREEPDB1}
     username: ${FLOWLINK_DB_USER:flowlink}
     password: ${FLOWLINK_DB_PASSWORD:flowlink}
     hikari:
@@ -10,15 +12,17 @@ spring:
       pool-name: flowlink-pool
   jpa:
     hibernate:
-      ddl-auto: validate        # 스키마 소유권은 Flyway. JPA는 검증만.
+      # Oracle: 엔티티 columnDefinition="text"(PG 문법) 12곳이 validate 와 충돌 → Flyway 가 스키마 단독 소유.
+      ddl-auto: none
     open-in-view: false
     properties:
       hibernate.jdbc.time_zone: UTC
       hibernate.format_sql: false
+      hibernate.type.preferred_uuid_jdbc_type: CHAR   # uuid → varchar2(36) 문자열 바인딩
   flyway:
     enabled: true
     baseline-on-migrate: true
-    # vendor 별 마이그레이션 디렉터리 — PG=postgresql/(기존 V1~V8 이동), Oracle=oracle/(통합 V1)
+    # vendor 별 마이그레이션 디렉터리 — Oracle=oracle/(통합 V1 + V9~). h2 프로파일은 flyway off.
     locations: classpath:db/migration/{vendor}
   mvc:
     servlet:
@@ -55,7 +59,7 @@ flowlink:
     ssrf:
       enabled: true
       block-private-networks: true       # RFC1918/loopback/link-local 차단
-      allow-loopback: false              # 로컬 배포 시 true → localhost/127.0.0.1/::1 허용(사설망은 여전히 차단). h2 프로파일은 true
+      allow-loopback: true               # 앱이 자기 내장 mock(/mock/**)을 localhost 로 호출 → 허용(사설망은 여전히 차단). h2 프로파일은 ssrf 전체 off
       blocked-hosts:                     # 클라우드 메타데이터 등 명시 차단
         - 169.254.169.254
         - metadata.google.internal

@@ -3,7 +3,7 @@
 REST API 워크플로 오케스트레이션 플랫폼. HTTP·폼·콜백·입력·변환·TCP 노드로 워크플로를 그려 실행하고,
 미완성 API 는 내장 **Mock 서버**로 세워 전체 흐름을 먼저 테스트한다. 자연어로 플로우를 만드는 **AI 어시스턴트**도 내장. UI 는 전부 한국어.
 
-- **Backend** — Spring Boot 3.3 / Kotlin 1.9 (Java 21) / JPA + Flyway / PostgreSQL·Oracle (dev 는 H2 파일)
+- **Backend** — Spring Boot 3.3 / Kotlin 1.9 (Java 21) / JPA + Flyway / **Oracle**(기본, 로컬 dev 는 H2 파일)
 - **Frontend** — React 19 / Vite / @xyflow/react / Zustand / React Query — **빌드하면 백엔드 jar 에 동봉**되어 한 프로세스로 서빙
 
 ## 빠른 시작 — 단일 jar (화면+API 한 프로세스 :18080)

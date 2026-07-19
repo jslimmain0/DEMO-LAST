@@ -1,7 +1,7 @@
 # FlowLink Backend (Spring Boot · Kotlin)
 
 REST API 워크플로 오케스트레이션 플랫폼의 백엔드. **모듈러 모놀리스**(패키지 경계로 향후 워커 분리 대비).
-Spring Boot 3.3.5 / Kotlin 1.9(Java 21 toolchain) / JPA + Flyway / PostgreSQL·Oracle(dev 는 H2 파일).
+Spring Boot 3.3.5 / Kotlin 1.9(Java 21 toolchain) / JPA + Flyway / **Oracle**(기본, 로컬 dev 는 H2 파일).
 프론트(`frontend/dist`)는 `bootJar` 시 jar 에 동봉되어 **화면+API 한 프로세스(:18080)**로 서빙된다.
 
 > 이 파일은 구조·실행·설정 요약이다. **아키텍처·기능·변경 이력의 진실원은 리포 루트 [CLAUDE.md](../CLAUDE.md)**.
@@ -17,7 +17,7 @@ bash scripts/start.sh --build      # 또는 Windows: powershell -File scripts\st
 # 백엔드만 (프론트 dist 없이 API 개발용)
 cd backend && sh gradlew bootRun   # http://localhost:18080/swagger-ui.html
 ```
-- **프로파일**: 기본 `h2`(H2 파일 DB, Flyway off·`ddl-auto: update`, SSRF allow-loopback, 인증 permitAll). 운영은 `SPRING_PROFILES_ACTIVE=oracle`(또는 PG 기본).
+- **DB**: 프로파일 미지정이면 **Oracle**(base `application.yml`). **로컬 dev 는 `h2` 프로파일**(scripts 기본 — H2 파일 DB, Flyway off·`ddl-auto: update`, SSRF off). 운영 Oracle 기동은 `SPRING_PROFILES_ACTIVE=oracle`(scripts 의 h2 기본을 벗어나는 스위치 — Oracle 설정은 base 에 있음) + `FLOWLINK_DB_URL`.
 - **DB override**: `FLOWLINK_DB_URL`·`FLOWLINK_DB_USER`·`FLOWLINK_DB_PASSWORD` · 포트 `FLOWLINK_PORT`.
 - **H2 파일**: 기본 `~/flowlink-h2db/flowlink.mv.db`(변경 `FLOWLINK_H2_FILE`, 초기화=그 파일 삭제).
 
@@ -68,8 +68,8 @@ JWT 클레임(`preferred_username`·`tenant`·`realm_access.roles`) → [JwtRole
 
 ## DB 마이그레이션
 
-`spring.flyway.locations: classpath:db/migration/{vendor}` — **PostgreSQL**(`postgresql/` V1~V12) / **Oracle**(`oracle/` 통합 V1).
-h2 프로파일은 Flyway off + `ddl-auto: update`. `ddl-auto: validate`(PG)/`none`(Oracle) — 스키마 소유권은 Flyway.
+`spring.flyway.locations: classpath:db/migration/{vendor}` → **Oracle**(`oracle/` 통합 V1 + V9~V12). 기본 `ddl-auto: none` — 스키마 소유권은 Flyway.
+로컬 dev 의 h2 프로파일은 Flyway off + `ddl-auto: update`(Hibernate 가 스키마 생성). (Postgres 지원은 제거 — Oracle 로 통합.)
 
 ## API 요약 (베이스 `/api/v1`)
 

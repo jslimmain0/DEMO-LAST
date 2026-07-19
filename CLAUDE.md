@@ -890,7 +890,9 @@ design/   theme(라이트/다크) · index.css(CSS 변수)
 - **메인 앱은 도커에 안 올린다** — 서버(EC2)에서 `scripts/start.sh`(위 실행 방법)로 단일 jar 실행. [infra/Dockerfile](infra/) 제거.
 - **[infra/docker-compose.yml](infra/docker-compose.yml)** = 지원 인프라만: **Vault**(dev, KV v2, :8200) + **Oracle**(`--profile oracle`, 로컬 테스트용).
   Keycloak 서비스·realm·`keycloak-dev.compose.yml` 전부 제거. 앱 서비스도 제거. `docker compose -f infra/docker-compose.yml up -d`.
-- **Oracle 은 나중에 별도/사내 서버로 연결** — 앱 env `FLOWLINK_DB_URL` + `SPRING_PROFILES_ACTIVE=oracle` 만 그쪽으로. **DDL 은 유지**(Flyway `db/migration/oracle`).
+- **기본 DB = Oracle**(Postgres 지원 제거) — base `application.yml` 이 Oracle(ddl-auto none·uuid CHAR·flyway {vendor}=oracle·ssrf allow-loopback).
+  구 `application-oracle.yml`·`db/migration/postgresql/`·PG 드라이버/flyway-pg/testcontainers-pg 제거. **로컬 dev 는 h2 프로파일**(scripts 기본).
+  Oracle 로 기동: `SPRING_PROFILES_ACTIVE=oracle`(scripts h2 기본을 벗어나는 스위치 — 설정은 base) + `FLOWLINK_DB_URL`. 사내/별도 Oracle 로는 URL 만 교체(스키마는 Flyway `db/migration/oracle` 통합 V1+V9~V12 가 생성).
 - [infra/README.md](infra/README.md)·`.env.example`·SERVER-DEVELOPMENT.md 를 새 구조로 재작성. 구 lifecycle(flowlink-start/stop·server-rebuild)은 `scripts/` 로 통합.
 
 ### HashiCorp Vault 시크릿 연동 (시크릿 볼트에 오버레이)

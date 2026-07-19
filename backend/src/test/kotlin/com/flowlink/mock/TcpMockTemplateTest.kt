@@ -33,6 +33,14 @@ class TcpMockTemplateTest {
     }
 
     @Test
+    fun `MockSchemaPrompt 잔액조회 예시가 올바른 본문을 렌더한다`() {
+        // 프롬프트 예시: 요청 본문 "0200"+계좌10 → 응답 "0210"+계좌에코+잔액12+코드"0000" (프리픽스는 서버 자동, 템플릿엔 없음)
+        val req = "02001234567890".toByteArray(eucKr) // 전문코드(4) + 계좌(10)
+        val body = TcpMockRegistry.renderTemplate("0210{{req:4:10}}0000001500000000", req, eucKr)
+        assertEquals("021012345678900000001500000000", body) // 4+10+16 = 30바이트, 길이프리픽스는 서버가 "0030" 자동 부착
+    }
+
+    @Test
     fun plainTemplateAndDefaultCharset() {
         assertEquals("0000정상", TcpMockRegistry.renderTemplate("0000정상", ByteArray(0), eucKr))
         assertEquals("EUC-KR", TcpMockRegistry.charsetOf(null).name())

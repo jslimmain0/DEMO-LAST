@@ -1,5 +1,6 @@
 package com.flowlink.security
 
+import org.slf4j.LoggerFactory
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
@@ -20,9 +21,10 @@ class AuthConfig {
 }
 
 /**
- * GitHub 로그인 모드 **fail-closed 가드** — 활성 시 필수 설정을 강제해 안전하지 않은 기본값으로의 기동을 막는다.
- * (검증 없이 켜면: 미설정 jwt-secret → 공개 dev 키로 토큰 위조 가능 / 빈 화이트리스트 → 인증한 누구나 전권 admin.)
- * 하나라도 빠지면 기동을 **명시적으로 실패**시켜 운영 오설정을 배포 시점에 잡는다.
+ * GitHub 로그인 모드 기동 가드.
+ * - **jwt-secret 은 필수(fail-closed)** — 미설정 시 공개 dev 키로 서명돼 로그인 없이도 admin 토큰 위조가 가능하므로 기동을 막는다.
+ * - **allowed-logins 는 옵션** — 비우면 GitHub 인증한 **누구나** 로그인/전권(의도된 기본: 전체 허용). 다만 조용한 fail-open 이
+ *   되지 않게 **눈에 띄는 WARN** 을 남긴다. 특정 계정만 허용하려면 FLOWLINK_AUTH_ALLOWED_LOGINS 로 화이트리스트를 준다.
  */
 @Component
 @ConditionalOnProperty(prefix = "flowlink.auth", name = ["github-enabled"], havingValue = "true")
@@ -32,9 +34,11 @@ class GithubAuthStartupValidator(props: AuthProperties) {
             "GitHub 로그인 활성(FLOWLINK_AUTH_GITHUB_ENABLED=true) 시 FLOWLINK_AUTH_JWT_SECRET 이 필수입니다 " +
                 "— 미설정 시 공개된 dev 폴백 키로 서명돼 누구나 관리자 토큰을 위조할 수 있습니다."
         }
-        check(props.allowedLogins.isNotEmpty()) {
-            "GitHub 로그인 활성 시 FLOWLINK_AUTH_ALLOWED_LOGINS 이 필수입니다(허용 GitHub 로그인 목록) " +
-                "— 비우면 인증한 누구나 전권(admin+platform-admin)을 받습니다. 예: FLOWLINK_AUTH_ALLOWED_LOGINS=alice,bob"
+        if (props.allowedLogins.isEmpty()) {
+            LoggerFactory.getLogger(GithubAuthStartupValidator::class.java).warn(
+                "⚠ FLOWLINK_AUTH_ALLOWED_LOGINS 미설정 — GitHub 인증한 모든 계정이 로그인/전권(admin+platform-admin)이 됩니다. " +
+                    "특정 계정만 허용하려면 예: FLOWLINK_AUTH_ALLOWED_LOGINS=alice,bob",
+            )
         }
     }
 }

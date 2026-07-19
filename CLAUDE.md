@@ -882,7 +882,7 @@ design/   theme(라이트/다크) · index.css(CSS 변수)
   [AuthController](backend/src/main/kotlin/com/flowlink/security/AuthController.kt)(`/auth/config` mode=github|none · `/me` · `/github/device/start` · `/github/device/poll`, 전자 3개 permitAll).
 - **프론트**([auth/](frontend/src/auth/)): oidc-client-ts 제거 → localStorage 토큰([auth.ts](frontend/src/auth/auth.ts)) + [GitHubLogin](frontend/src/auth/GitHubLogin.tsx)(디바이스 코드 카드·폴링) +
   [AuthContext](frontend/src/auth/AuthContext.tsx) github 모드. axios Bearer + 401 시 토큰 폐기·재로그인. `usePermissions()` 게이팅 불변.
-- **env**: `FLOWLINK_AUTH_GITHUB_ENABLED`(기본 false=dev permitAll). **github-enabled=true 면 fail-closed** — `FLOWLINK_AUTH_JWT_SECRET`(없으면 토큰 위조 가능)과 `FLOWLINK_AUTH_ALLOWED_LOGINS`(허용 GitHub 로그인 목록, 없으면 누구나 admin) 둘 다 필수([GithubAuthStartupValidator](backend/src/main/kotlin/com/flowlink/security/AuthConfig.kt) 가 미설정 시 기동 실패시킴).
+- **env**: `FLOWLINK_AUTH_GITHUB_ENABLED`(기본 false=dev permitAll). github-enabled=true 면 `FLOWLINK_AUTH_JWT_SECRET` **필수**(없으면 공개 dev 키로 토큰 위조 가능 → [GithubAuthStartupValidator](backend/src/main/kotlin/com/flowlink/security/AuthConfig.kt) 가 기동 실패). `FLOWLINK_AUTH_ALLOWED_LOGINS` 는 **선택**(비우면 GitHub 인증한 누구나 로그인/전권 — 전체 허용, 기동 WARN. 특정 계정만 허용하려면 목록 지정).
   client_id 는 Copilot 공개 client 기본(`AuthProperties.clientId`). 표준 OIDC(Auth0/Entra 등)도 여전히 지원 — `application.yml` issuer-uri 설정 시 그쪽으로(IdP 비종속).
 - 검증: 자체서명 HS256 토큰으로 `/me`·`/flows` 인증 통과·역할 매핑·위조서명 401·무토큰 401·실제 GitHub device 코드 발급·브라우저 로그인 화면 렌더.
 
@@ -914,7 +914,7 @@ design/   theme(라이트/다크) · index.css(CSS 변수)
   [GithubLoginEvent](backend/src/main/kotlin/com/flowlink/security/GithubLoginEvent.kt) 로 발행 → [AssistantOAuthService.onGithubLogin](backend/src/main/kotlin/com/flowlink/assistant/AssistantOAuthService.kt) 이
   어시스턴트 토큰 저장소(AES-GCM)에 넣어 **한 번 로그인 = 앱 접속 + Copilot 연결**. Copilot client 일 때만 채택, 폴 스레드에서 event.tenant 스코프 세팅/복원.
 - **적대적 멀티에이전트 리뷰(4관점 → 발견별 검증, 7건 확정) 반영**:
-  (1)[high] github-enabled + jwt-secret 미설정 → 공개 dev 키로 토큰 위조 → **fail-closed 기동 실패**(GithubAuthStartupValidator). (2)[high] 빈 allowed-logins → 누구나 admin → **필수화(기동 실패)**.
+  (1)[high] github-enabled + jwt-secret 미설정 → 공개 dev 키로 토큰 위조 → **fail-closed 기동 실패**(GithubAuthStartupValidator). (2)[high] 빈 allowed-logins → 누구나 admin: 초기엔 필수화했으나 **사용자 결정으로 선택 유지**(비면 전체 허용 + 기동 WARN) — jwt-secret 강제는 유지.
   (3)[med] 무인증 device/start 남용 → 폴러 스레드 폭주 → **동시 세션 상한(MAX_SESSIONS=20)**. (4)[med] issuer-uri OIDC 인데 config 가 mode=none 반환 → **`oidc` 모드 반환**(JwtDecoder 유무).
   (5)[med] Vault 블로킹 호출이 @Transactional 안 → DB 커넥션 점유 → **activeSecrets/listNames 트랜잭션 밖으로**. (6)[med] 프론트 일시 /me 실패에 유효 토큰 폐기 → **401/403 일 때만 폐기**. (7)[med] OIDC 모드 프론트가 dev 로 오인 → **oidc 안내 화면**.
 - 검증: 백엔드 test 전종(GithubAuthStartupValidatorTest·AssistantOAuthLinkTest 포함) + fail-closed 라이브(allowed-logins 없이 github 기동 시 IllegalStateException 으로 중단) + tsc/build.

@@ -46,7 +46,7 @@ powershell -ExecutionPolicy Bypass -File scripts\stop.ps1
 # GitHub 로그인 (Keycloak 대체)
 export FLOWLINK_AUTH_GITHUB_ENABLED=true
 export FLOWLINK_AUTH_JWT_SECRET=<강한 시크릿>              # 앱 JWT 서명키. 미설정 시 dev 폴백 + WARN
-export FLOWLINK_AUTH_ALLOWED_LOGINS=alice,bob             # 필수. 허용 GitHub 로그인 목록(비우고 켜면 기동 실패 — fail-closed)
+export FLOWLINK_AUTH_ALLOWED_LOGINS=alice,bob             # 선택. 허용 GitHub 로그인 목록(비우면 전체 허용, 기동 시 WARN)
 
 # Vault 시크릿 끌어오기
 export FLOWLINK_VAULT_ENABLED=true
@@ -71,7 +71,7 @@ Keycloak/OIDC 대신 **GitHub 계정으로 로그인**한다(어시스턴트 Cop
 
 1. 앱을 `FLOWLINK_AUTH_GITHUB_ENABLED=true` + `FLOWLINK_AUTH_JWT_SECRET=<시크릿>` 으로 기동.
 2. 브라우저로 접속 → **GitHub 로 로그인** 버튼 → 표시된 코드로 github.com/login/device 인증 → 자동 로그인.
-3. `FLOWLINK_AUTH_ALLOWED_LOGINS` 로 허용 계정을 지정(github 모드 **필수** — jwt-secret·allowed-logins 없이 켜면 기동 실패).
+3. (선택) `FLOWLINK_AUTH_ALLOWED_LOGINS` 로 허용 계정을 제한(비우면 전체 허용). ⚠ github 모드는 `jwt-secret` 이 없으면 기동 실패(토큰 위조 방지).
 - 미설정(기본)이면 dev 모드(로그인 없음, permitAll) — 로컬 개발용.
 - 표준 OIDC IdP(Auth0/Entra/Keycloak)를 쓰고 싶으면 `application.yml` 의 issuer-uri 를 설정하면 그쪽으로 동작(코드 IdP 비종속).
 

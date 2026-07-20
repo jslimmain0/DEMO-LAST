@@ -35,6 +35,24 @@ class TokenResolverTest {
         assertEquals("x=", resolver.resolveTokens("x={{ nope@nX }}", ctx))
     }
 
+    /** URL(base+path) — 리터럴 + 이전 노드 토큰 + env 토큰 + 다중 토큰 혼합이 모두 문자열 치환된다. */
+    @Test
+    fun urlBasePathMixedTokens() {
+        val ctx = ExecutionContext()
+        ctx.putOutput("s1", mapOf("ver" to "v2", "oid" to 12345))
+        ctx.putOutput("env", mapOf("host" to "https://api.example.com")) // {{ 키@env }} 는 env 스코프 시드
+
+        // baseUrl: env 토큰 + 리터럴
+        assertEquals("https://api.example.com/api", resolver.resolveTokens("{{ host@env }}/api", ctx))
+        // path: 리터럴 + 이전 노드 토큰 2개 이상 혼합
+        assertEquals("/orders/v2/12345", resolver.resolveTokens("/orders/{{ ver@s1 }}/{{ oid@s1 }}", ctx))
+        // 하드코딩 + 토큰이 한 세그먼트에 붙어도 치환
+        assertEquals("https://api.example.com/v2-x", resolver.resolveTokens("{{ host@env }}/{{ ver@s1 }}-x", ctx))
+        // build() 가 이어붙이는 base+path 최종 결과
+        val url = resolver.resolveTokens("{{ host@env }}/api", ctx) + resolver.resolveTokens("/orders/{{ ver@s1 }}/{{ oid@s1 }}", ctx)
+        assertEquals("https://api.example.com/api/orders/v2/12345", url)
+    }
+
     @Test
     fun boundFieldResolvesObjectValue() {
         val ctx = ExecutionContext()

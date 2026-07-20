@@ -200,9 +200,10 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
   }
   const copyText = (t: string, msg: string) => { void navigator.clipboard?.writeText(t).then(() => toast(msg, 'ok')).catch(() => {}) }
 
-  // URL = Base URL + Path 병합(백엔드는 base+path 이므로 전체를 baseUrl 로 쓰고 path 는 비운다 — 무변경 호환)
-  const mergedUrl = (node.baseUrlBound ? bindingToToken(node.baseUrlBound) : (node.baseUrl ?? '')) + (node.path ?? '')
-  const setMergedUrl = (v: string) => update(id, { baseUrl: v, path: '', baseUrlBound: null })
+  // Base URL 과 Path 는 분리 입력(백엔드 build() 가 base+path 를 이어붙임). 각각 토큰({{ 키@노드 }}) 혼합 가능.
+  // baseUrlValue = base 부분만(토큰화 가능한 구 bound 는 토큰 문자열로 표시). mergedUrl = base+path 파생값(cURL·미리보기·쿼리분리용).
+  const baseUrlValue = node.baseUrlBound ? bindingToToken(node.baseUrlBound) : (node.baseUrl ?? '')
+  const mergedUrl = baseUrlValue + (node.path ?? '')
 
   // URL 의 ?쿼리 → Params 필드로 분리(스마트)
   const urlQuery = (() => {
@@ -661,35 +662,35 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
 
         {node.type === 'http' && (
           <>
-            {/* URL 한 줄 — [메서드▾][주소]. Base URL·Path 는 하나로 합쳤다(안에서 https://.../{{ id }}/ 처럼 토큰으로). */}
-            <label style={label}>URL (메서드 · 주소)</label>
-            {node.baseUrlBound && !isTokenizable(node.baseUrlBound) ? (
-              // 토큰 문법 밖 키/id 의 구(舊) bound — 이관하면 조용히 깨지므로 구조적 바인딩 칩 + Path 유지
-              <>
-                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                  <select aria-label="메서드" style={methodSel(node.method)} value={node.method ?? 'GET'} onChange={(e) => update(id, { method: e.target.value as HttpMethod })}>
-                    {METHODS.map((m) => <option key={m} value={m}>{m}</option>)}
-                  </select>
-                  <div style={{ flex: 1, minWidth: 0 }}><BindingChip binding={node.baseUrlBound} sourceType={sourceType(node.baseUrlBound)} onRemove={() => update(id, { baseUrlBound: null })} /></div>
-                </div>
-                <TokenInput ariaLabel="Path" value={node.path ?? ''} onChange={(v) => update(id, { path: v })} sources={sources} placeholder="/resource — { } 로 데이터 삽입" />
-              </>
-            ) : (
-              <div style={{ display: 'flex', gap: 6, alignItems: 'stretch' }}>
-                <select aria-label="메서드" style={methodSel(node.method)} value={node.method ?? 'GET'} onChange={(e) => update(id, { method: e.target.value as HttpMethod })}>
-                  {METHODS.map((m) => <option key={m} value={m}>{m}</option>)}
-                </select>
+            {/* Base URL 과 Path 분리. 각 필드 안에서 리터럴 + 토큰({{ 키@노드 }}·{{ 키@env }}) 자유 혼합·다중 가능. */}
+            <label style={label}>메서드 · Base URL</label>
+            <div style={{ display: 'flex', gap: 6, alignItems: 'stretch' }}>
+              <select aria-label="메서드" style={methodSel(node.method)} value={node.method ?? 'GET'} onChange={(e) => update(id, { method: e.target.value as HttpMethod })}>
+                {METHODS.map((m) => <option key={m} value={m}>{m}</option>)}
+              </select>
+              {node.baseUrlBound && !isTokenizable(node.baseUrlBound) ? (
+                // 토큰 문법 밖 키/id 의 구(舊) bound — 이관하면 조용히 깨지므로 구조적 바인딩 칩 유지
+                <div style={{ flex: 1, minWidth: 0 }}><BindingChip binding={node.baseUrlBound} sourceType={sourceType(node.baseUrlBound)} onRemove={() => update(id, { baseUrlBound: null })} /></div>
+              ) : (
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <TokenInput
-                    ariaLabel="URL"
-                    value={mergedUrl}
-                    onChange={setMergedUrl}
+                    ariaLabel="Base URL"
+                    value={baseUrlValue}
+                    onChange={(v) => update(id, { baseUrl: v, baseUrlBound: null })}
                     sources={sources}
-                    placeholder="https://api.example.com/{{ id }}/detail — { } 로 데이터 삽입"
+                    placeholder="https://api.example.com — { } 로 데이터 삽입"
                   />
                 </div>
-              </div>
-            )}
+              )}
+            </div>
+            <label style={{ ...label, marginTop: 8 }}>Path</label>
+            <TokenInput
+              ariaLabel="Path"
+              value={node.path ?? ''}
+              onChange={(v) => update(id, { path: v })}
+              sources={sources}
+              placeholder="/orders/{{ id@prev }} — { } 로 데이터 삽입"
+            />
 
             {!mergedUrl.trim() && !node.baseUrlBound && (
               <p style={{ ...hintP, color: 'var(--fl-put)', marginTop: 6 }}>⚠ URL 이 비어 있습니다 — 호출할 주소를 입력하세요.</p>

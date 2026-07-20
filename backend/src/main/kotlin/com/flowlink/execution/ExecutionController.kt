@@ -43,8 +43,9 @@ class ExecutionController(private val service: ExecutionService) {
     @PostMapping("/flows/{flowId}/nodes/{nodeId}/run")
     fun runNode(
         @PathVariable flowId: UUID,
-        @PathVariable nodeId: String
-    ): SingleNodeRunResult = service.runSingleNode(flowId, nodeId)
+        @PathVariable nodeId: String,
+        @RequestBody(required = false) req: RunRequest?
+    ): SingleNodeRunResult = service.runSingleNode(flowId, nodeId, req)
 
     /**
      * TCP 요청 전문 미리보기(전송 없음) — 조립 바이트(hex)·필드 오프셋·오버플로.

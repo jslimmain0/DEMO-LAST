@@ -169,9 +169,9 @@ export const runsApi = {
     http.get<ExecutionSummary[]>(`/flows/${flowId}/runs`, { params: { limit } }).then((r) => r.data),
   resume: (executionId: string, body: ResumeRequest) =>
     http.post<ExecutionDetail>(`/executions/${executionId}/resume`, body).then((r) => r.data),
-  // 단일 노드 독립 실행 — 그 노드만 새 컨텍스트로 즉석 실행(이력 미저장, 상류 바인딩 null)
-  runNode: (flowId: string, nodeId: string) =>
-    http.post<SingleNodeRunResult>(`/flows/${flowId}/nodes/${nodeId}/run`, {}).then((r) => r.data),
+  // 단일 노드 독립 실행 — 그 노드만 즉석 실행(이력 미저장). body 로 env/envName/input 을 실어 {{키@env}}·{{이름@secret}} 해석
+  runNode: (flowId: string, nodeId: string, body?: { env?: Record<string, string>; envName?: string | null; input?: unknown }) =>
+    http.post<SingleNodeRunResult>(`/flows/${flowId}/nodes/${nodeId}/run`, body ?? {}).then((r) => r.data),
   // TCP 요청 전문 미리보기(전송 없음) — 편집 중 노드를 실어 미저장 편집을 실시간 반영
   tcpPreview: (flowId: string, nodeId: string, node: GraphNode) =>
     http.post<TcpPreview>(`/flows/${flowId}/nodes/${nodeId}/tcp-preview`, node).then((r) => r.data),

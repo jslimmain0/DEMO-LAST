@@ -16,7 +16,7 @@ import { ANNO_COLORS, catColor, METHOD_COLOR, typeIcon, typeLabel } from '../can
 import { fieldsToRaw, rawToFields, headersToRaw, rawToHeaders } from '../lib/bodyConvert'
 import { parseCurl, toCurl } from '../lib/curl'
 import { computeReachInfo, isUnreachableExecutable } from '../lib/reachable'
-import { useEnvStore } from '../lib/environments'
+import { useEnvStore, activeEnvVars, activeEnvName } from '../lib/environments'
 import { useRunInput } from '../lib/runInput'
 import { bindingToToken, isTokenizable } from '../lib/tokenGrammar'
 import { newId } from '../lib/ids'
@@ -101,11 +101,13 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
     setTcpPrev(null); setTcpPrevErr(null)
   }, [selectedId])
 
-  // 이 노드만 실행 — 새 컨텍스트로 즉석 실행(상류 바인딩 null). 대기/폼/입력/client 는 백엔드가 거절.
+  // 이 노드만 실행 — 즉석 실행. 활성 환경(env)·시크릿은 전달돼 {{키@env}}·{{이름@secret}}는 해석됨(상류 노드 값만 빈 값).
   const runSingle = async () => {
     if (!flowId || !selectedId) return
     setSingleRunning(true)
-    try { setSingle(await runsApi.runNode(flowId, selectedId)) }
+    const env = activeEnvVars()
+    const body = { envName: activeEnvName(), ...(Object.keys(env).length ? { env } : {}) }
+    try { setSingle(await runsApi.runNode(flowId, selectedId, body)) }
     catch (e) { setSingle({ ok: false, httpStatus: null, output: null, requestText: null, responseText: e instanceof Error ? e.message : String(e) }) }
     finally { setSingleRunning(false) }
   }
@@ -508,7 +510,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
         {SINGLE_RUNNABLE.has(node.type) && canEdit && (
           <div style={{ marginTop: 10 }}>
             <button onClick={runSingle} disabled={singleRunning} style={singleBtn}
-              title="이 노드만 새 컨텍스트로 즉석 실행합니다(상류 바인딩은 값이 없어 빈 값). 전체 실행과 별개.">
+              title="이 노드만 즉석 실행합니다. 활성 환경변수({{키@env}})·시크릿({{이름@secret}})은 적용되고, 이전 노드에서 오는 값({{키@노드}})만 빈 값입니다.">
               {singleRunning ? '실행 중…' : '▶ 이 노드만 실행'}
             </button>
             {single && (

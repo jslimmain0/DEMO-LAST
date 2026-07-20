@@ -123,11 +123,12 @@ class ExecutionService(
     }
 
     /**
-     * 단일 노드 독립 실행 — 그 노드 하나만 새 컨텍스트로 즉석 실행하고 결과를 돌려준다(이력 미저장).
-     * 상류 바인딩은 null. HTTP/TCP/SET/IF/SWITCH/ASSERT/TRANSFORM 지원, 대기/폼/입력/client 는 미지원.
+     * 단일 노드 독립 실행 — 그 노드 하나만 즉석 실행하고 결과를 돌려준다(이력 미저장).
+     * **env/secret/input 은 시드**해 `{{ 키@env }}`·`{{ 이름@secret }}`·`{{ 키@input }}` 가 해석된다(전체 실행과 동일).
+     * 상류 노드 출력(`{{ 키@노드 }}`)만 단독 실행이라 비어 있다. HTTP/TCP/SET/IF/SWITCH/ASSERT/TRANSFORM 지원, 대기/폼/입력/client 는 미지원.
      */
     @Transactional(readOnly = true)
-    fun runSingleNode(flowId: UUID, nodeId: String): SingleNodeRunResult {
+    fun runSingleNode(flowId: UUID, nodeId: String, req: RunRequest? = null): SingleNodeRunResult {
         // flow 는 전역 공유 — 공유 테넌트로 조회(로그인 테넌트 무관).
         val flow = flowRepo.findByIdAndTenantId(flowId, TenantContext.SHARED_FLOW_TENANT)
             .orElseThrow { NotFoundException.of("Flow", flowId) }
@@ -136,7 +137,14 @@ class ExecutionService(
         val graph = json.parseGraph(version.graphJson)
         val node = graph.nodesOrEmpty().find { it.id == nodeId }
             ?: throw NotFoundException.of("Node", nodeId)
-        val r = flowExecutor.runSingleNode(node)
+
+        // 전체 실행과 동일하게 input/env 시드 + 활성 환경 시크릿 오버레이 시드(명시 스코프에만 보이는 putSeed).
+        val ctx = ExecutionContext()
+        seedInput(ctx, req)
+        val secrets = secretMap(req?.envName?.trim()?.takeIf { it.isNotEmpty() })
+        if (secrets.isNotEmpty()) ctx.putSeed("secret", secrets)
+
+        val r = flowExecutor.runSingleNode(node, ctx)
         return SingleNodeRunResult(r.ok, r.httpStatus, r.value, r.requestText, r.responseText)
     }
 

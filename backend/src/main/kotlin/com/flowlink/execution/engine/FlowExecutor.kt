@@ -457,14 +457,16 @@ class FlowExecutor(
      * 값이 없어 null 로 풀린다(노드 자체 로직·리터럴 검증용). 브라우저 협업 노드(대기/폼/입력/client HTTP)는
      * 콜백/모달이 필요해 단독 실행을 지원하지 않는다.
      */
-    fun runSingleNode(node: GraphNode): NodeResult {
+    fun runSingleNode(node: GraphNode, ctx: ExecutionContext = ExecutionContext()): NodeResult {
         val et = node.effectiveType()
         if (et == NodeType.FORM || et == NodeType.WAIT || et == NodeType.INPUT ||
             (et == NodeType.HTTP && isClientMode(node))) {
             return NodeResult.fail(0, "", "단독 실행 미지원 노드(대기/폼/입력/클라이언트 모드) — 전체 실행을 쓰세요.")
         }
         return try {
-            processNode(node, ExecutionContext())
+            // ctx 에 env/secret/input 이 시드돼 있으면 {{ 키@env }}·{{ 이름@secret }}·{{ 키@input }} 는 해석된다.
+            // 상류 노드 출력({{ 키@노드 }})은 단독 실행이라 비어 있다(전체 실행 필요).
+            processNode(node, ctx)
         } catch (e: Exception) {
             NodeResult.fail(0, "", "⚠ " + (e.message ?: e.toString()))
         }

@@ -40,7 +40,7 @@ if ($Build -or -not (Test-Path $Jar)) {
   Pop-Location
   Write-Host "> Building backend bootJar..."
   Push-Location (Join-Path $Root 'backend')
-  & sh gradlew bootJar -q
+  & (Join-Path (Get-Location) 'gradlew.bat') bootJar -q
   Pop-Location
 }
 if (-not (Test-Path $Jar)) { Write-Host "ERROR: jar missing: $Jar - run start.ps1 -Build"; exit 1 }

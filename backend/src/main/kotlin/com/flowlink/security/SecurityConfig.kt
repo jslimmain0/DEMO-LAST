@@ -22,6 +22,8 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource
  * - **운영(issuer-uri 설정 시)**: OIDC JWT 리소스 서버로 동작 — `/api` 이하는 인증 필수,
  *   [TenantClaimFilter] 가 JWT 테넌트 클레임을 [com.flowlink.common.tenant.TenantContext] 에 주입.
  *   어떤 OIDC IdP(Auth0/Cognito/Entra/Keycloak)와도 호환.
+ * - **GitHub 게스트 모드(flowlink.auth.github-enabled=true)**: 앱은 로그인 없이 개방(게스트 전권),
+ *   assistant API(AI, 로그인 사용자 전용)만 로그인 필수. 로그인=AI 사용+신원 표시 게이트.
  * - **개발(issuer-uri 미설정)**: 모든 요청 허용(permitAll) + 기본 테넌트. 로컬 개발 편의.
  *
  * 아직 보류(타깃 시장 확정 후): IdP 선택, RBAC 역할 정의, RLS 행 수준 격리, 시크릿 볼트.
@@ -33,14 +35,32 @@ class SecurityConfig {
     @Bean
     fun securityFilterChain(http: HttpSecurity,
                             jwtDecoder: ObjectProvider<JwtDecoder>,
-                            props: SecurityProperties): SecurityFilterChain {
+                            props: SecurityProperties,
+                            authProps: AuthProperties): SecurityFilterChain {
         http
             .csrf { it.disable() }          // 상태 비저장 토큰 인증
             .cors(Customizer.withDefaults())
             // form 노드가 mock 게이트웨이 결제창을 iframe 으로 임베드하므로 X-Frame-Options(기본 DENY) 해제(내부망 도구)
             .headers { h -> h.frameOptions { frame -> frame.disable() } }
 
-        if (jwtDecoder.getIfAvailable() != null) {
+        if (jwtDecoder.getIfAvailable() != null && authProps.githubEnabled) {
+            // github 게스트 모드(2026-07-28): 앱은 로그인 없이 개방(게스트 전권 — 사용자 결정, 사내망 전제),
+            // AI(/api/v1/assistant/**)만 로그인 필수 — Copilot 이 사용자 GitHub 토큰을 쓰는 본질적 게이트.
+            // Bearer 를 실은 로그인 사용자는 리소스 서버가 계속 신원 인식(triggeredBy·Copilot 연결·presence 이름).
+            // 무효/만료 Bearer 는 permitAll 경로에서도 401(리소스 서버 규약) → 프론트가 토큰 폐기 후 게스트 재부트.
+            http
+                .authorizeHttpRequests { auth ->
+                    auth
+                        .requestMatchers("/api/v1/assistant/**").authenticated()
+                        .anyRequest().permitAll()
+                }
+                .oauth2ResourceServer { oauth ->
+                    oauth.jwt { jwt -> jwt.jwtAuthenticationConverter(JwtRoleConverter()) }
+                }
+                .addFilterAfter(TenantClaimFilter(props.tenantClaim),
+                    BearerTokenAuthenticationFilter::class.java)
+            log.info("보안: GitHub 게스트 모드 — 앱 개방(로그인 선택), /api/v1/assistant/** 만 로그인 필수")
+        } else if (jwtDecoder.getIfAvailable() != null) {
             // 운영: OIDC 리소스 서버 + URL RBAC (admin/editor/viewer + 전역 platform-admin)
             http
                 .authorizeHttpRequests { auth ->

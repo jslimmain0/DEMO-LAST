@@ -48,8 +48,9 @@ class AuthController(
             val roles = auth.authorities.map { it.authority.removePrefix("ROLE_") }
             return MeResponse(auth.name, TenantContext.getTenantId(), roles)
         }
-        // dev 모드(permitAll): 전권 가짜 사용자
-        return MeResponse("dev", TenantContext.DEFAULT_TENANT, listOf("admin", "editor", "platform-admin"))
+        // 비인증: github 게스트 모드는 "guest", dev 모드는 "dev" — 양쪽 다 전권 가짜 사용자(프론트 게이팅 단일 경로)
+        val fallback = if (authProps.githubEnabled) "guest" else "dev"
+        return MeResponse(fallback, TenantContext.DEFAULT_TENANT, listOf("admin", "editor", "platform-admin"))
     }
 
     @PostMapping("/github/device/start")

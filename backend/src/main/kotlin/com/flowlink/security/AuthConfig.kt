@@ -25,7 +25,8 @@ class AuthConfig {
  * - **jwt-secret 은 필수(fail-closed)** — 미설정 시 공개 dev 키로 서명돼 로그인 없이도 admin 토큰 위조가 가능하므로 기동을 막는다.
  *   시크릿은 env(FLOWLINK_AUTH_JWT_SECRET, 로컬) 또는 Vault(flowlink-config/jwt-secret, 운영) 어느 쪽이든 되며([AppJwt.hasSecret]),
  *   둘 다 없으면 기동을 실패시킨다.
- * - **allowed-logins 는 옵션** — 비우면 GitHub 인증한 **누구나** 로그인/전권(의도된 기본: 전체 허용). 다만 조용한 fail-open 이
+ * - **allowed-logins 는 옵션** — 비우면 GitHub 인증한 **누구나** 로그인/전권(의도된 기본: 전체 허용,
+ *   앱은 게스트 개방 — 로그인은 AI 게이트). 다만 조용한 fail-open 이
  *   되지 않게 **눈에 띄는 WARN** 을 남긴다. 특정 계정만 허용하려면 FLOWLINK_AUTH_ALLOWED_LOGINS 로 화이트리스트를 준다.
  */
 @Component
@@ -39,7 +40,8 @@ class GithubAuthStartupValidator(appJwt: AppJwt, props: AuthProperties) {
         }
         if (props.allowedLogins.isEmpty()) {
             LoggerFactory.getLogger(GithubAuthStartupValidator::class.java).warn(
-                "⚠ FLOWLINK_AUTH_ALLOWED_LOGINS 미설정 — GitHub 인증한 모든 계정이 로그인/전권(admin+platform-admin)이 됩니다. " +
+                "⚠ FLOWLINK_AUTH_ALLOWED_LOGINS 미설정 — GitHub 인증한 모든 계정이 로그인할 수 있습니다" +
+                    "(로그인=AI 사용·신원 표시. 앱 자체는 게스트에게 항상 개방). " +
                     "특정 계정만 허용하려면 예: FLOWLINK_AUTH_ALLOWED_LOGINS=alice,bob",
             )
         }

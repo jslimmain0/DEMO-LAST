@@ -2,6 +2,7 @@ package com.flowlink.presence
 
 import com.flowlink.common.tenant.TenantContext
 import com.flowlink.core.repository.FlowRepository
+import com.flowlink.security.AuthProperties
 import com.flowlink.security.SecurityProperties
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.context.annotation.Configuration
@@ -17,13 +18,14 @@ class PresenceConfig(
     private val handler: PresenceHandler,
     private val decoderProvider: ObjectProvider<JwtDecoder>,
     private val props: SecurityProperties,
+    private val authProps: AuthProperties,
     private val flowRepository: FlowRepository,
 ) : WebSocketConfigurer {
 
     override fun registerWebSocketHandlers(registry: WebSocketHandlerRegistry) {
         // flow 는 전역 공유 — 핸드셰이크는 "flow 존재" 만 확인(공유 테넌트). 인증·테넌트 클레임 검증은 인터셉터가 유지.
         val interceptor = PresenceHandshakeInterceptor(
-            decoderProvider.getIfAvailable(), props.tenantClaim,
+            decoderProvider.getIfAvailable(), props.tenantClaim, authProps.githubEnabled,
         ) { id, _ -> flowRepository.findByIdAndTenantId(id, TenantContext.SHARED_FLOW_TENANT).isPresent }
         registry.addHandler(handler, "/ws/presence")
             .addInterceptors(interceptor)

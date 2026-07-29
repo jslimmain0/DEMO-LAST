@@ -55,8 +55,11 @@ export function attachAuthInterceptors() {
         // /auth/** 자체(로그인 폴링 등)의 401 은 무시 — 무한 리로드 방지
         const url: string = error?.config?.url ?? ''
         if (status === 401 && !url.includes('/auth/')) {
-          setToken(null)
-          if (typeof window !== 'undefined') window.location.reload() // 세션 만료 → 로그인 화면 재부트
+          // 게스트(무토큰)의 401 은 정상(AI 게이트) — 리로드 루프를 만들지 않는다. 토큰이 있었을 때만 폐기·재부트.
+          if (getAccessToken()) {
+            setToken(null)
+            if (typeof window !== 'undefined') window.location.reload() // 세션 만료 → 게스트/로그인 재부트
+          }
         }
         throw error
       },

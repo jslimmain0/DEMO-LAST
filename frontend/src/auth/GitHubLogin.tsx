@@ -6,7 +6,7 @@ import { authApi, setToken, type DeviceStart } from './auth'
  * GitHub 로그인 화면 — Copilot 과 동일한 디바이스 플로우. 코드를 표시하고 github.com/login/device 를 열어
  * 사용자가 입력하면 백엔드가 신원 확인 후 앱 JWT 를 발급한다. 폴링으로 완료를 감지한다.
  */
-export function GitHubLogin({ onSuccess }: { onSuccess: () => void }) {
+export function GitHubLogin({ onSuccess, onCancel }: { onSuccess: () => void; onCancel?: () => void }) {
   const [device, setDevice] = useState<DeviceStart | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -37,7 +37,10 @@ export function GitHubLogin({ onSuccess }: { onSuccess: () => void }) {
 
   return (
     <div style={overlay}>
-      <div style={card}>
+      <div style={{ ...card, position: 'relative' }}>
+        {onCancel && (
+          <button onClick={onCancel} aria-label="닫기" style={closeBtn}>×</button>
+        )}
         <div style={{ fontFamily: 'var(--fl-font-head, sans-serif)', fontSize: 26, fontWeight: 800, letterSpacing: '-.02em', marginBottom: 4 }}>FlowLink</div>
         <div style={{ color: 'var(--fl-text-muted)', fontSize: 13.5, marginBottom: 22 }}>GitHub 계정으로 로그인</div>
 
@@ -70,3 +73,4 @@ const overlay: CSSProperties = { position: 'fixed', inset: 0, display: 'grid', p
 const card: CSSProperties = { width: 360, maxWidth: '90vw', padding: 32, borderRadius: 14, background: 'var(--fl-surface, #1a1d27)', border: '1px solid var(--fl-border, #2a2e3a)', boxShadow: '0 20px 60px rgba(0,0,0,.4)', textAlign: 'center' }
 const ghBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 18px', border: 'none', borderRadius: 10, background: 'var(--fl-primary, #6155f5)', color: '#fff', fontSize: 14, fontWeight: 700, cursor: 'pointer' }
 const codeBox: CSSProperties = { display: 'inline-block', fontSize: 24, fontWeight: 700, letterSpacing: 3, fontFamily: 'var(--fl-font-mono, monospace)', background: 'var(--fl-surface-2, #22262f)', padding: '8px 16px', borderRadius: 8 }
+const closeBtn: CSSProperties = { position: 'absolute', top: 10, right: 10, width: 28, height: 28, borderRadius: 8, border: 'none', background: 'var(--fl-surface-2)', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 16 }

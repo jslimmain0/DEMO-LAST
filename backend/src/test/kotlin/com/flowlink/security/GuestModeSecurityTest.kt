@@ -76,4 +76,21 @@ class GuestModeSecurityTest {
             .andExpect(jsonPath("$.username").value("guest"))
             .andExpect(jsonPath("$.roles[?(@=='editor')]").exists())
     }
+
+    @Test
+    fun `게스트 - 플러그인 업로드는 인증 게이트에 안 걸림(401 아님)`() {
+        // 멀티파트 없이 보내 415 등 4xx 가 나더라도, 핵심은 permitAll 이라 401(인증 게이트)이 아니라는 것.
+        val result = mvc.perform(post("/api/v1/plugins")).andReturn()
+        assert(result.response.status != 401) {
+            "게스트 업로드가 인증 게이트에 걸렸다 (status=${result.response.status})"
+        }
+    }
+
+    @Test
+    fun `로그인 - auth me 는 JWT 사용자명 유지(개방 경로에서도 신원 인식)`() {
+        val token = appJwt.issue("alice")
+        mvc.perform(get("/api/v1/auth/me").header("Authorization", "Bearer $token"))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.username").value("alice"))
+    }
 }

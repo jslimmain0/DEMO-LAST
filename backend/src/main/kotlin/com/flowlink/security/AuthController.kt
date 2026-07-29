@@ -15,7 +15,8 @@ import org.springframework.web.bind.annotation.RestController
  * 인증 부트스트랩 + GitHub 로그인 API.
  *
  * - `GET /auth/config` (public): 인증 모드 발견 — "github"(GitHub 로그인) | "oidc"(레거시 issuer) | "none"(dev).
- * - `GET /auth/me` (인증): 현재 사용자·팀·역할. dev 모드는 전권 가짜 사용자.
+ * - `GET /auth/me` (github 게스트 모드·dev 모드는 무인증도 허용): 현재 사용자·팀·역할.
+ *   인증된 요청은 JWT 클레임을 쓰고, 비인증 요청은 github 게스트 모드에서 "guest", dev 모드에서 "dev" 전권 가짜 사용자를 반환한다.
  * - `POST /auth/github/device/start` + `GET /auth/github/device/poll` (public): GitHub 디바이스 로그인.
  *   Copilot 과 동일한 device flow — 완료 시 앱 JWT 를 돌려준다.
  */

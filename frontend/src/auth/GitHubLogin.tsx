@@ -1,6 +1,7 @@
 import type { CSSProperties } from 'react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { authApi, setToken, type DeviceStart } from './auth'
+import { useEscapeClose } from '../components/useEscapeClose'
 
 /**
  * GitHub 로그인 화면 — Copilot 과 동일한 디바이스 플로우. 코드를 표시하고 github.com/login/device 를 열어
@@ -34,6 +35,9 @@ export function GitHubLogin({ onSuccess, onCancel }: { onSuccess: () => void; on
   }, [onSuccess])
 
   useEffect(() => () => stopPoll(), [])
+
+  // 다른 다이얼로그와 동일 관례 — 취소 가능(onCancel 있음)할 때만 Esc 로 닫기.
+  useEscapeClose(useCallback(() => { if (onCancel) onCancel() }, [onCancel]))
 
   return (
     <div style={overlay}>

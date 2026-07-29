@@ -93,6 +93,18 @@ class PresenceHandshakeInterceptorTest {
     }
 
     @Test
+    fun `게스트 허용 - name 파라미터 없음 또는 빈값이면 기본값 게스트`() {
+        val dec = JwtDecoder { jwt("default") }
+        val i = PresenceHandshakeInterceptor(dec, "tenant", guestAllowed = true) { _, _ -> true }
+        val (ok1, attrs1, _) = run(i, "flowId=$flowId")
+        assertTrue(ok1)
+        assertEquals("게스트", attrs1["name"])
+        val (ok2, attrs2, _) = run(i, "flowId=$flowId&name=")
+        assertTrue(ok2)
+        assertEquals("게스트", attrs2["name"])
+    }
+
+    @Test
     fun `게스트 허용 - 무효 토큰은 여전히 401(조용한 다운그레이드 금지)`() {
         val bad = JwtDecoder { throw JwtException("bad") }
         val i = PresenceHandshakeInterceptor(bad, "tenant", guestAllowed = true) { _, _ -> true }

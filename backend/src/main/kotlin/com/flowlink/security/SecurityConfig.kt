@@ -4,6 +4,7 @@ import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
+import org.springframework.core.env.Environment
 import org.springframework.http.HttpMethod
 import org.springframework.security.config.Customizer
 import org.springframework.security.config.annotation.web.builders.HttpSecurity
@@ -36,7 +37,8 @@ class SecurityConfig {
     fun securityFilterChain(http: HttpSecurity,
                             jwtDecoder: ObjectProvider<JwtDecoder>,
                             props: SecurityProperties,
-                            authProps: AuthProperties): SecurityFilterChain {
+                            authProps: AuthProperties,
+                            env: Environment): SecurityFilterChain {
         http
             .csrf { it.disable() }          // 상태 비저장 토큰 인증
             .cors(Customizer.withDefaults())
@@ -60,6 +62,9 @@ class SecurityConfig {
                 .addFilterAfter(TenantClaimFilter(props.tenantClaim),
                     BearerTokenAuthenticationFilter::class.java)
             log.info("보안: GitHub 게스트 모드 — 앱 개방(로그인 선택), /api/v1/assistant/** 만 로그인 필수")
+            if (!env.getProperty("spring.security.oauth2.resourceserver.jwt.issuer-uri").isNullOrBlank()) {
+                log.warn("issuer-uri 설정은 무시되고 GitHub 게스트 모드로 동작 — 앱이 게스트에게 개방됩니다")
+            }
         } else if (jwtDecoder.getIfAvailable() != null) {
             // 운영: OIDC 리소스 서버 + URL RBAC (admin/editor/viewer + 전역 platform-admin)
             http

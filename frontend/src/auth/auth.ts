@@ -6,7 +6,7 @@ export interface AuthConfig {
   mode: string
 }
 
-/** 백엔드 /auth/me — dev 모드에선 전권 가짜 사용자(dev/default). */
+/** 백엔드 /auth/me — dev 모드는 전권 가짜 사용자(dev/default), github 게스트 모드(무인증)는 "guest" 전권 사용자. */
 export interface Me {
   username: string
   tenant: string
@@ -36,7 +36,7 @@ export const authApi = {
 let interceptorsAttached = false
 
 /**
- * axios 인터셉터 — Bearer(앱 JWT) 부착 + 401 시 토큰 폐기 후 로그인 화면으로.
+ * axios 인터셉터 — Bearer(앱 JWT) 부착 + 401 시 토큰이 있었을 때만 폐기 후 재부트(게스트 무토큰 401 은 무시).
  * GitHub 로그인 모드에서만 부착(dev 모드는 무회귀).
  */
 export function attachAuthInterceptors() {

@@ -23,6 +23,7 @@ import { RunInputDialog } from '../components/RunInputDialog'
 import { TriggersDialog } from '../components/TriggersDialog'
 import { SecretsDialog } from '../components/SecretsDialog'
 import { AssistantPanel } from '../components/AssistantPanel'
+import { AssistantLoginGate } from '../components/AssistantLoginGate'
 import { activeEnvVars, activeEnvName } from '../lib/environments'
 import { activeInputVars, loadRunInput } from '../lib/runInput'
 import { toast } from '../components/toast'
@@ -51,21 +52,21 @@ export function Editor() {
   const focusNode = useEditorStore((s) => s.focusNode)
 
   const { canEdit, isViewer } = usePermissions()
-  const { me, enabled: authEnabled } = useAuth()
+  const { me, enabled: authEnabled, isGuest } = useAuth()
 
   // presence — 같은 플로우를 연 사람들끼리 커서/편집중/저장 알림(별도 presenceStore, 그래프 불변)
   useEffect(() => {
     if (!id) return
-    // 이름: OIDC 면 로그인 사용자명, dev 면 브라우저별 닉네임(dev 모드 /me 는 전원 "dev" 라 devNickname 사용)
-    const displayName = authEnabled ? (me?.username ?? devNickname()) : devNickname()
-    presence.connect(id, displayName, authEnabled ? getAccessToken : undefined)
+    // 이름: 로그인 사용자명, 게스트/dev 는 브라우저별 닉네임(게스트 /me 는 전원 "guest" 라 devNickname 사용)
+    const displayName = authEnabled && !isGuest ? (me?.username ?? devNickname()) : devNickname()
+    presence.connect(id, displayName, authEnabled && !isGuest ? getAccessToken : undefined)
     startCollab() // 실시간 공동 편집(그래프 변경 중계·적용)
     // 선택 노드 변경 → 편집중 신호(속성 패널이 그 노드를 편집 중)
     const unsub = useEditorStore.subscribe((s, prev) => {
       if (s.selectedId !== prev.selectedId) presence.sendEditing(s.selectedId)
     })
     return () => { unsub(); stopCollab(); presence.close() }
-  }, [id, me?.username, authEnabled])
+  }, [id, me?.username, authEnabled, isGuest])
 
   const [execution, setExecution] = useState<ExecutionDetail | null>(null)
   const [running, setRunning] = useState(false)
@@ -520,7 +521,9 @@ export function Editor() {
           {assistantOpen && (
             <>
               <ResizeHandle axis="x" sign={-1} size={assistantW} min={300} max={maxAssistantW} defaultSize={360} onResize={setAssistantW} onResizeEnd={(n) => saveSize('assistantW', n)} ariaLabel="어시스턴트 패널 너비 조절" />
-              <AssistantPanel width={assistantW} onClose={() => { setAssistantOpen(false); persistUI('fl:editor:assistant', '0') }} />
+              {isGuest
+                ? <AssistantLoginGate width={assistantW} onClose={() => { setAssistantOpen(false); persistUI('fl:editor:assistant', '0') }} />
+                : <AssistantPanel width={assistantW} onClose={() => { setAssistantOpen(false); persistUI('fl:editor:assistant', '0') }} />}
             </>
           )}
         </div>

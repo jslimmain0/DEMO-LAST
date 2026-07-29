@@ -8,6 +8,7 @@ import { AppShellTier1 } from '../app/AppShell'
 import { useAuth, usePermissions } from '../auth/AuthContext'
 import { METHOD_COLOR } from '../canvas/nodeMeta'
 import { MockAssistantPanel } from '../components/MockAssistantPanel'
+import { AssistantLoginGate } from '../components/AssistantLoginGate'
 import { toast } from '../components/toast'
 import { apiErrorMessage } from '../lib/apiError'
 import { useReadableInk } from '../lib/contrast'
@@ -26,7 +27,7 @@ export function MockServerEditor() {
   const { id = '' } = useParams()
   const qc = useQueryClient()
   const { canEdit } = usePermissions()
-  const { me } = useAuth()
+  const { me, isGuest } = useAuth()
   const badgeInk = useReadableInk('var(--fl-cat-generic)')
   const detail = useQuery({ queryKey: ['mock-server', id], queryFn: () => mocksApi.get(id), enabled: !!id })
 
@@ -146,14 +147,14 @@ export function MockServerEditor() {
 
             <RuntimePanel id={id} canEdit={canEdit} />
 
-            {aiOpen && (
-              <MockAssistantPanel
-                spec={spec}
-                mockId={id}
-                onApply={(newSpec) => mutate(() => newSpec)}
-                onClose={() => setAiOpen(false)}
-              />
-            )}
+            {aiOpen && (isGuest
+              ? <AssistantLoginGate variant="overlay" onClose={() => setAiOpen(false)} />
+              : <MockAssistantPanel
+                  spec={spec}
+                  mockId={id}
+                  onApply={(newSpec) => mutate(() => newSpec)}
+                  onClose={() => setAiOpen(false)}
+                />)}
           </>
         )}
       </div>

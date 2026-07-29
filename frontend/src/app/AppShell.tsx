@@ -17,7 +17,7 @@ export function AppShellTier1({ children, sidebarExtra }: { children: ReactNode;
   const [theme, setTheme] = useState<Theme>(getTheme())
   const [settingsOpen, setSettingsOpen] = useState(false)
   const loc = useLocation()
-  const { enabled: authEnabled, me, logout } = useAuth()
+  const { enabled: authEnabled, me, logout, isGuest, requestLogin } = useAuth()
 
   const navItem = (to: string): CSSProperties => {
     const active = loc.pathname.startsWith(to)
@@ -59,15 +59,19 @@ export function AppShellTier1({ children, sidebarExtra }: { children: ReactNode;
         {sidebarExtra && <div style={{ marginTop: 8, overflowY: 'auto', flex: '0 1 auto' }}>{sidebarExtra}</div>}
 
         {authEnabled && me && (
-          <div style={{ ...userChip, marginTop: 'auto' }} title={`${me.username} · ${me.tenant} · ${me.roles.join(', ')}`}>
-            <span aria-hidden style={avatar}>{me.username.slice(0, 1).toUpperCase()}</span>
+          <div style={{ ...userChip, marginTop: 'auto' }} title={isGuest ? '게스트 — GitHub 로그인하면 AI 를 쓸 수 있습니다' : `${me.username} · ${me.tenant} · ${me.roles.join(', ')}`}>
+            <span aria-hidden style={avatar}>{isGuest ? 'G' : me.username.slice(0, 1).toUpperCase()}</span>
             <span style={{ minWidth: 0, flex: 1 }}>
-              <span style={{ display: 'block', fontSize: 12.5, fontWeight: 600, color: 'var(--fl-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{me.username}</span>
+              <span style={{ display: 'block', fontSize: 12.5, fontWeight: 600, color: 'var(--fl-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{isGuest ? '게스트' : me.username}</span>
               <span style={{ display: 'block', fontSize: 11, color: 'var(--fl-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {me.tenant} · {primaryRole(me.roles)}
+                {isGuest ? 'AI 는 로그인 필요' : `${me.tenant} · ${primaryRole(me.roles)}`}
               </span>
             </span>
-            <button onClick={logout} aria-label="로그아웃" title="로그아웃" style={logoutBtn}>⎋</button>
+            {isGuest ? (
+              <button onClick={requestLogin} title="GitHub 로그인" style={loginChipBtn}>로그인</button>
+            ) : (
+              <button onClick={logout} aria-label="로그아웃" title="로그아웃" style={logoutBtn}>⎋</button>
+            )}
           </div>
         )}
         <button onClick={() => setSettingsOpen(true)} aria-label="설정" style={{ ...themeBtn, marginTop: authEnabled && me ? 0 : 'auto' }}>
@@ -148,6 +152,7 @@ const logoutBtn: CSSProperties = {
   fontSize: 14,
   padding: 4,
 }
+const loginChipBtn: CSSProperties = { flexShrink: 0, border: '1px solid var(--fl-primary)', background: 'transparent', color: 'var(--fl-primary)', cursor: 'pointer', fontSize: 11.5, fontWeight: 700, padding: '4px 9px', borderRadius: 999 }
 const themeBtn: CSSProperties = {
   marginTop: 'auto',
   display: 'flex',

@@ -6,7 +6,7 @@ REST API 워크플로 오케스트레이션 플랫폼. 클라이언트 전용 �
 
 | | 스택 | 포트 |
 |---|---|---|
-| **Backend** | Spring Boot 3.3.5 / **Kotlin 1.9**(Java 21 toolchain) / JPA + Flyway / PostgreSQL(H2 dev) / SpEL | 18080 |
+| **Backend** | Spring Boot 3.3.5 / **Kotlin 1.9**(Java 21 toolchain) / JPA + Flyway / **Oracle**(기본, dev 는 H2 파일) / SpEL | 18080 |
 | **Frontend** | React 19 / Vite 8 / @xyflow/react / Zustand / React Query / axios | 5173 |
 
 ---
@@ -932,6 +932,16 @@ design/   theme(라이트/다크) · index.css(CSS 변수)
 - ⚠ **github 모드는 더 이상 앱 잠금이 아니다**(앱 접근 잠금은 레거시 OIDC 뿐). **플러그인 JAR 업로드도 게스트 가능**(dev 모드와 동일 수준 — 사내망 전제, 사용자 승인). 게스트 실행은 triggeredBy 미기록.
   블랭킷 `permitAll` 이라 `/actuator/metrics`·(h2 프로파일의) `/h2-console` 등 나머지 비-assistant 경로도 함께 무인증 개방된다.
 
+## 최근 변경 (2026-08-12) — 스크린샷 사용가이드 세트 (`docs/guide/`)
+
+실사용자용 가이드를 **심플가이드(10분 코스) + 심화 15챕터 + 실제 화면 스크린샷 62장**으로 재구성.
+설계: [docs/superpowers/specs/2026-08-12-user-guide-screenshots-design.md](docs/superpowers/specs/2026-08-12-user-guide-screenshots-design.md).
+- 구조: [docs/guide/README.md](docs/guide/README.md)(허브) + 심플가이드 + 01~13(시작하기/에디터/노드 레퍼런스 14종/토큰 바인딩/실행·디버깅/환경·시크릿/트리거/이력·스위트/버전·협업/Mock/IO/AI/FAQ) + 14(편의기능 — 프론트 전수 스캔 231건) + 15(폼·콜백 연동 심층 — relay 계약/멱등/재시작 복구). 기존 `docs/사용가이드.md` 는 요약본으로 유지.
+- 스크린샷 제작: 격리 H2(`FLOWLINK_H2_FILE`) + 데모 데이터 시딩(Mock pay/corebank·플로우 4종·이력) 후 playwright-core(시스템 Chrome, 1440×900 DSF2, 라이트 테마 고정)로 촬영. 재촬영 시 같은 패턴(시딩→촬영→이미지 검수) 재사용.
+- 정확성: 코드 대조 적대 리뷰 2회(확정 19건+6건) 반영 — 단축키·검색 범위·⏹ 중단 시맨틱·통짜형 httpStatus·SET 🔒 값 내보내기 평문 포함 경고·mock 비활성 404·멱등 콜백 평문 OK 등.
+- 루트 README 를 가이드 중심으로 갱신(히어로 스크린샷 + 가이드 표). ⚠ 문서가 기능 라벨을 인용하므로 **UI 라벨 변경 시 해당 챕터 갱신 필요**.
+
 ## 참고 문서
 - `backend/README.md` — 백엔드 구조·설정·API 요약 · `frontend/README.md` · `infra/README.md`(배포)
-- `docs/사용가이드.md` — 실사용자 가이드 · `docs/superpowers/` — 구현 계획/설계 스펙
+- **`docs/guide/`** — 실사용자 가이드(심플+심화 15챕터, 스크린샷) · `docs/사용가이드.md` — 한 페이지 요약본
+- `docs/superpowers/` — 구현 계획/설계 스펙

@@ -18,3 +18,4 @@ infra/.env
 
 # 멀티에이전트 프로젝트 평가 문서 — 커밋 제외(로컬 전용)
 docs/flowlink-user-critique.md
+site/

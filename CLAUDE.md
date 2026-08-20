@@ -944,4 +944,5 @@ design/   theme(라이트/다크) · index.css(CSS 변수)
 ## 참고 문서
 - `backend/README.md` — 백엔드 구조·설정·API 요약 · `frontend/README.md` · `infra/README.md`(배포)
 - **`docs/guide/`** — 실사용자 가이드(심플+심화 15챕터, 스크린샷) · `docs/사용가이드.md` — 한 페이지 요약본
+- **`docs/운영가이드.md`** — 운영자 가이드(yml/env 전체 설정 레퍼런스·인증 모드·암호화 키·체크리스트)
 - `docs/superpowers/` — 구현 계획/설계 스펙

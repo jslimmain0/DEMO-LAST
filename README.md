@@ -76,6 +76,7 @@ docker compose -f infra/docker-compose.yml up -d      # Vault(시크릿 저장�
 ## 더 보기
 
 - **[docs/guide/](docs/guide/README.md)** — 사용 가이드 (심플 + 심화 15챕터, 스크린샷)
+- **[docs/운영가이드.md](docs/운영가이드.md)** — 운영자 가이드 (전체 설정 레퍼런스·보안·체크리스트·트러블슈팅)
 - **[CLAUDE.md](CLAUDE.md)** — 아키텍처·구조·최근 변경 상세 (유지보수 진실원)
 - **[backend/README.md](backend/README.md)** — 백엔드 구조·API·설정
 - **[frontend/README.md](frontend/README.md)** — 프론트 구조·개발

@@ -14,7 +14,7 @@ import javax.crypto.spec.SecretKeySpec
  * 키 = SHA-256(secret). secret 미설정 시 dev 고정키([DEV_SECRET]) — 로컬 개발 편의용이며
  * OIDC(공유) 모드에선 ExecutionService 가 기동 시 WARN 을 남긴다. 포맷: base64(iv(12) || ciphertext+tag).
  */
-class StateCrypto(secret: String?) {
+class StateCrypto(secret: String?) : com.flowlink.common.crypto.CryptoProvider {
 
     val isDevKey: Boolean = secret.isNullOrBlank()
     private val key = SecretKeySpec(
@@ -23,7 +23,7 @@ class StateCrypto(secret: String?) {
     )
     private val random = SecureRandom()
 
-    fun encrypt(plain: String): String {
+    override fun encrypt(plain: String): String {
         val iv = ByteArray(IV_LEN).also { random.nextBytes(it) }
         val cipher = Cipher.getInstance(TRANSFORM)
         cipher.init(Cipher.ENCRYPT_MODE, key, GCMParameterSpec(TAG_BITS, iv))
@@ -32,7 +32,7 @@ class StateCrypto(secret: String?) {
     }
 
     /** 복호화 — 키 불일치/변조 시 AEADBadTagException 등 예외를 그대로 던진다(호출부가 실패 처리). */
-    fun decrypt(encoded: String): String {
+    override fun decrypt(encoded: String): String {
         val raw = Base64.getDecoder().decode(encoded)
         require(raw.size > IV_LEN) { "암호문이 너무 짧습니다" }
         val cipher = Cipher.getInstance(TRANSFORM)

@@ -941,6 +941,21 @@ design/   theme(라이트/다크) · index.css(CSS 변수)
 - 정확성: 코드 대조 적대 리뷰 2회(확정 19건+6건) 반영 — 단축키·검색 범위·⏹ 중단 시맨틱·통짜형 httpStatus·SET 🔒 값 내보내기 평문 포함 경고·mock 비활성 404·멱등 콜백 평문 OK 등.
 - 루트 README 를 가이드 중심으로 갱신(히어로 스크린샷 + 가이드 표). ⚠ 문서가 기능 라벨을 인용하므로 **UI 라벨 변경 시 해당 챕터 갱신 필요**.
 
+## 최근 변경 (2026-08-20) — Vault Transit(KEK) 봉투 암호화 (`feat/transit-kek` 브랜치)
+
+앱 저장 암호화(DB 시크릿·재개 스냅샷·Copilot 토큰)를 **Vault Transit 엔진으로 전면 위임**하는 옵션 —
+켜면 암호화 키가 서버 env 에 평문으로 존재하지 않는다(사용자 결정: 부팅 시 DEK 언랩안이 아닌 "전부 Transit"안).
+- **[CryptoProvider](backend/src/main/kotlin/com/flowlink/common/crypto/CryptoProvider.kt)** 인터페이스로 암호화 계약 추출 — 구현:
+  기존 [StateCrypto](backend/src/main/kotlin/com/flowlink/execution/engine/StateCrypto.kt)(로컬 AES-GCM) ·
+  [TransitCrypto](backend/src/main/kotlin/com/flowlink/common/crypto/TransitCrypto.kt)(`POST /v1/{mount}/encrypt|decrypt/{key}`, batch_input 지원) ·
+  [RoutingCrypto](backend/src/main/kotlin/com/flowlink/common/crypto/RoutingCrypto.kt)(쓰기=Transit, 읽기=`vault:` 접두사 라우팅+레거시 폴백).
+  [CryptoConfig](backend/src/main/kotlin/com/flowlink/common/crypto/CryptoConfig.kt) 가 단일 빈 선택(3곳 자가 생성 제거) + 기동 헬스체크(encrypt→decrypt 왕복, **fail-closed**) + dev 키 WARN 이관.
+- 설정: `flowlink.vault.transit.{enabled,mount,key}`(env `FLOWLINK_VAULT_TRANSIT_*`, 기본 transit/flowlink) — address/token 은 기존 vault 설정 재사용. 토큰 없이 켜면 기동 실패.
+- **자동 이관**: 기동 시 `secret` 테이블 레거시 행 일괄 재암호화([SecretService.reencryptLegacyOnStartup](backend/src/main/kotlin/com/flowlink/secret/SecretService.kt)) → 이후 `FLOWLINK_EXECUTION_STATE_SECRET` 제거 가능. suspension 은 단명이라 읽기 폴백으로 충분, Copilot 토큰은 재저장 시 이관.
+- **성능**: `activeSecrets` 복호화를 `decryptAll`(Transit batch 1회)로 묶음. KEK 로테이션은 `transit/keys/{key}/rotate` — 데이터 재암호화 불필요.
+- 검증: 단위 15종(Transit 프로토콜/배치/오류 전파·Routing 접두사/순서 보존·Config 빈 선택/fail-closed·@DataJpaTest 재암호화 이관) + 전체 스위트 그린 + **라이브**(도커 Vault transit 실키): 기동 3로그(Transit 활성·헬스체크 OK·시크릿 2건 재암호화) → `{{ payApiKey@secret }}` 실행 SUCCEEDED + `Bearer ••••••` 마스킹 → Vault 다운 상태 기동 = Connection refused 로 부팅 실패(fail-closed) 확인.
+- ⚠ Transit 모드는 Vault **상시 의존**(다운 시 시크릿 실행·재개·재시작 불가 — HA 권장). 상세: [docs/운영가이드.md](docs/운영가이드.md) §6.
+
 ## 참고 문서
 - `backend/README.md` — 백엔드 구조·설정·API 요약 · `frontend/README.md` · `infra/README.md`(배포)
 - **`docs/guide/`** — 실사용자 가이드(심플+심화 15챕터, 스크린샷) · `docs/사용가이드.md` — 한 페이지 요약본

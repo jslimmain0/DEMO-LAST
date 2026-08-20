@@ -26,6 +26,7 @@ class VaultProperties(
     path: String? = null,
     configPath: String? = null,
     refreshSeconds: Long? = null,
+    transit: Transit? = null,
 ) {
     val enabled: Boolean = enabled ?: false
     val address: String = address?.trimEnd('/')?.takeIf { it.isNotBlank() } ?: "http://localhost:8200"
@@ -34,4 +35,15 @@ class VaultProperties(
     val path: String = path?.trim('/')?.takeIf { it.isNotBlank() } ?: "flowlink"
     val configPath: String = configPath?.trim('/')?.takeIf { it.isNotBlank() } ?: "flowlink-config"
     val refreshSeconds: Long = if (refreshSeconds == null || refreshSeconds <= 0) 60L else refreshSeconds
+    val transit: Transit = transit ?: Transit()
+
+    /**
+     * Vault Transit(KEK) 봉투 암호화 — enabled=true 면 앱 암호화(시크릿·재개 스냅샷·토큰)를
+     * Transit `encrypt/decrypt/{key}` 로 위임한다(키는 Vault 밖으로 안 나옴). address/token 은 위 공용값 재사용.
+     */
+    class Transit(enabled: Boolean? = null, mount: String? = null, key: String? = null) {
+        val enabled: Boolean = enabled ?: false
+        val mount: String = mount?.trim('/')?.takeIf { it.isNotBlank() } ?: "transit"
+        val key: String = key?.trim('/')?.takeIf { it.isNotBlank() } ?: "flowlink"
+    }
 }

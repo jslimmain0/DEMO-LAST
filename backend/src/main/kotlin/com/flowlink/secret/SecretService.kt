@@ -1,12 +1,13 @@
 package com.flowlink.secret
 
+import com.flowlink.common.crypto.CryptoProvider
+import com.flowlink.common.crypto.RoutingCrypto
 import com.flowlink.common.error.BadRequestException
 import com.flowlink.common.error.NotFoundException
 import com.flowlink.common.tenant.TenantContext
 import com.flowlink.core.domain.Secret
 import com.flowlink.core.repository.SecretRepository
-import com.flowlink.execution.config.ExecutionProperties
-import com.flowlink.execution.engine.StateCrypto
+import org.slf4j.LoggerFactory
 import org.springframework.boot.context.event.ApplicationReadyEvent
 import org.springframework.context.event.EventListener
 import org.springframework.stereotype.Service
@@ -14,16 +15,16 @@ import org.springframework.transaction.annotation.Transactional
 import java.time.Instant
 
 /**
- * 시크릿 볼트 — 값은 AES-GCM(StateCrypto)으로 암호화 저장. API 는 write-only(이름만 조회).
- * 실행 시 [activeSecrets] 로 복호화해 `{{ 이름@secret }}` 스코프에 시드하고, 캡처 로그는 NodeRecorder 가 마스킹한다.
+ * 시크릿 볼트 — 값은 [CryptoProvider](로컬 AES-GCM 또는 Vault Transit KEK)로 암호화 저장.
+ * API 는 write-only(이름만 조회). 실행 시 [activeSecrets] 로 복호화해 `{{ 이름@secret }}` 스코프에
+ * 시드하고, 캡처 로그는 NodeRecorder 가 마스킹한다.
  */
 @Service
 class SecretService(
     private val repo: SecretRepository,
     private val vault: VaultSecretSource,
-    props: ExecutionProperties,
+    private val crypto: CryptoProvider,
 ) {
-    private val crypto = StateCrypto(props.stateSecret)
 
     // environment: null=공통(COMMON). 화면엔 공통을 null 로 보여준다.
     // source: "db"(볼트 DB, 편집 가능) | "vault"(HashiCorp Vault 에서 끌어옴, 읽기전용).
@@ -34,6 +35,25 @@ class SecretService(
     @Transactional
     fun backfillEnvironmentOnStartup() {
         try { repo.backfillNullEnvironment(Secret.COMMON) } catch (e: Exception) { /* 백필 실패는 무해 — 무시 */ }
+    }
+
+    /**
+     * Transit(KEK) 전환 기동 시 레거시(비 `vault:` 형식) 행을 일괄 재암호화 — 한 번 부팅하면
+     * 모든 시크릿이 KEK 로 열려 이후 `FLOWLINK_EXECUTION_STATE_SECRET` env 를 제거할 수 있다.
+     * 실패는 예외로 전파해 기동을 막는다(반쯤 이관된 채 조용히 뜨는 것 방지).
+     */
+    @EventListener(ApplicationReadyEvent::class)
+    @Transactional
+    fun reencryptLegacyOnStartup() {
+        if (crypto !is RoutingCrypto) return
+        var migrated = 0
+        for (s in repo.findAll()) {
+            if (!RoutingCrypto.isTransitFormat(s.encValue)) {
+                s.encValue = crypto.encrypt(crypto.decrypt(s.encValue))
+                migrated++
+            }
+        }
+        if (migrated > 0) log.info("시크릿 {}건을 Vault Transit(KEK) 형식으로 재암호화", migrated)
     }
 
     // ⚠ @Transactional 없음(의도) — vault.secrets() 가 블로킹 HTTP 라, 트랜잭션 안이면 그 네트워크 I/O 동안
@@ -78,20 +98,23 @@ class SecretService(
      */
     fun activeSecrets(envName: String?): Map<String, String> {
         val env = envName?.trim().orEmpty()
-        val common = LinkedHashMap<String, String>()
-        val scoped = LinkedHashMap<String, String>()
+        val commonRows = ArrayList<Secret>()
+        val scopedRows = ArrayList<Secret>()
         for (s in repo.findByTenantIdOrderByEnvironmentAscNameAsc(tenant())) {
             val e = s.environment
             when {
-                e.isNullOrEmpty() || e == Secret.COMMON -> common[s.name] = crypto.decrypt(s.encValue)
-                env.isNotEmpty() && e == env -> scoped[s.name] = crypto.decrypt(s.encValue)
+                e.isNullOrEmpty() || e == Secret.COMMON -> commonRows.add(s)
+                env.isNotEmpty() && e == env -> scopedRows.add(s)
             }
         }
+        // 복호화는 한 번에(decryptAll) — Transit 모드에선 실행당 Vault 왕복 1회(batch)로 묶인다.
+        val rows = commonRows + scopedRows
+        val plains = crypto.decryptAll(rows.map { it.encValue })
         // 우선순위(높을수록 승): 활성 환경 DB > 공통 DB > Vault(org 공통 기본층).
+        // rows 가 공통 → 활성환경 순이라, 순서대로 put 하면 같은 이름은 환경값이 덮는다.
         return LinkedHashMap<String, String>().apply {
             putAll(vault.secrets())
-            putAll(common)
-            putAll(scoped)
+            rows.forEachIndexed { i, s -> put(s.name, plains[i]) }
         }
     }
 
@@ -101,6 +124,7 @@ class SecretService(
     private fun tenant(): String = TenantContext.getTenantId()
 
     companion object {
+        private val log = LoggerFactory.getLogger(SecretService::class.java)
         private val NAME = Regex("^[\\w.-]+$")
     }
 }

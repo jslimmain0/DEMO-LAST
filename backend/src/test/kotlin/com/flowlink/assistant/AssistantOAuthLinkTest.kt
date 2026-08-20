@@ -34,9 +34,8 @@ class AssistantOAuthLinkTest {
     }
 
     private fun newService(settings: SettingsService): AssistantOAuthService {
-        val props = ExecutionProperties(null, null, null, null, 0, secret, null)
         val ssrf = Mockito.mock(SsrfGuard::class.java)
-        return AssistantOAuthService(settings, JsonService(ObjectMapper()), ssrf, props)
+        return AssistantOAuthService(settings, JsonService(ObjectMapper()), ssrf, StateCrypto(secret))
     }
 
     @AfterEach

@@ -34,7 +34,6 @@ import com.flowlink.execution.engine.ExecutionContext
 import com.flowlink.execution.engine.FlowExecutor
 import com.flowlink.execution.engine.NodeRecorder
 import com.flowlink.execution.engine.RunStateSnapshot
-import com.flowlink.execution.engine.StateCrypto
 import com.flowlink.settings.RelayBaseResolver
 import org.slf4j.LoggerFactory
 import org.springframework.boot.context.event.ApplicationReadyEvent
@@ -79,15 +78,13 @@ class ExecutionService(
     private val relayResolver: RelayBaseResolver,
     private val notifier: com.flowlink.notify.NotificationService,
     private val secretService: com.flowlink.secret.SecretService,
+    private val crypto: com.flowlink.common.crypto.CryptoProvider,
     txManager: PlatformTransactionManager,
 ) {
     private val mapper: ObjectMapper = json.mapper()
 
     /** claim(조건부 DELETE)·suspension upsert 용 프로그램적 트랜잭션 — 서비스 메서드가 비트랜잭션이라 프록시 자기호출 문제를 피한다. */
     private val tx = TransactionTemplate(txManager)
-
-    /** suspension run_state 암호화(ctx 에 SET 시크릿 비마스킹 값이 있어 평문 저장 금지). */
-    private val crypto = StateCrypto(props.stateSecret)
 
     /**
      * 중단(WAITING) 실행의 재개 상태 **라이브 캐시** — 진실원은 DB([ExecutionSuspension]).
@@ -654,9 +651,7 @@ class ExecutionService(
         if (orphans.isNotEmpty() || rows.isNotEmpty() || reconciled > 0) {
             log.info("기동 복구: suspension {}건 재무장, RUNNING→WAITING 화해 {}건, 고아 {}건 FAILED", rows.size, reconciled, orphans.size)
         }
-        if (crypto.isDevKey) {
-            log.warn("suspension 암호화가 dev 고정키로 동작 중 — 공유 배포에선 FLOWLINK_EXECUTION_STATE_SECRET 설정 권장")
-        }
+        // dev 고정키 경고는 CryptoConfig(공용 빈 생성 시점)로 이동
     }
 
     /**

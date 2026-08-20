@@ -4,9 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.flowlink.common.error.BadRequestException
 import com.flowlink.common.json.JsonService
 import com.flowlink.common.tenant.TenantContext
-import com.flowlink.execution.config.ExecutionProperties
 import com.flowlink.execution.engine.SsrfGuard
-import com.flowlink.execution.engine.StateCrypto
 import com.flowlink.security.GithubLoginEvent
 import com.flowlink.settings.SettingsService
 import org.slf4j.LoggerFactory
@@ -35,11 +33,10 @@ class AssistantOAuthService(
     private val settings: SettingsService,
     private val json: JsonService,
     private val ssrfGuard: SsrfGuard,
-    props: ExecutionProperties,
+    private val crypto: com.flowlink.common.crypto.CryptoProvider,
 ) {
     private val log = LoggerFactory.getLogger(AssistantOAuthService::class.java)
     private val mapper: ObjectMapper = json.mapper()
-    private val crypto = StateCrypto(props.stateSecret)
     private val http: HttpClient = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build()
 
     private data class Pending(@Volatile var error: String?)

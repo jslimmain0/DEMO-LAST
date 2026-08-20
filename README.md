@@ -4,6 +4,8 @@ REST API 워크플로 오케스트레이션 플랫폼. HTTP·조건분기·폼(�
 워크플로를 그려 실행하고, 미완성 API 는 내장 **Mock 서버**로 세워 전체 흐름을 먼저 테스트한다.
 자연어로 플로우를 만드는 **AI 어시스턴트** 내장. UI 는 전부 한국어.
 
+> 📖 **문서 사이트: https://jslimmain0.github.io/DEMO-LAST/** — 아래 가이드들을 검색·사이드바와 함께 볼 수 있습니다.
+
 ![FlowLink 에디터](docs/guide/images/editor-overview.png)
 
 - **Backend** — Spring Boot 3.3 / Kotlin 1.9 (Java 21) / JPA + Flyway / **Oracle**(기본, 로컬 dev 는 H2 파일)

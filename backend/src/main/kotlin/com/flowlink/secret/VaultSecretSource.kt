@@ -16,7 +16,10 @@ import java.util.concurrent.atomic.AtomicReference
  * **마지막 성공 캐시**를 유지 → 일시적 Vault 장애가 실행 시드/마스킹을 깨지 않는다(3초 타임아웃).
  */
 @Component
-class VaultSecretSource(private val props: VaultProperties) {
+class VaultSecretSource(
+    private val props: VaultProperties,
+    private val tokens: VaultTokenSource = VaultTokenSource.of(props),
+) {
     private val log = LoggerFactory.getLogger(VaultSecretSource::class.java)
 
     private val client: RestClient = RestClient.builder()
@@ -31,7 +34,7 @@ class VaultSecretSource(private val props: VaultProperties) {
     private val caches = ConcurrentHashMap<String, AtomicReference<Cached>>()
     private data class Cached(val at: Long, val map: Map<String, String>)
 
-    val enabled: Boolean get() = props.enabled && props.token != null
+    val enabled: Boolean get() = props.enabled && tokens.available
 
     /** 캐시된 Vault 워크플로 시크릿(`{{ 이름@secret }}`). TTL 만료 시 1회 갱신 시도(실패 시 이전 캐시 유지). */
     fun secrets(): Map<String, String> = read(props.path)
@@ -63,7 +66,7 @@ class VaultSecretSource(private val props: VaultProperties) {
     private fun fetch(path: String): Map<String, String> {
         val resp = client.get()
             .uri("/v1/{mount}/data/{path}", props.mount, path)
-            .header("X-Vault-Token", props.token!!)
+            .header("X-Vault-Token", tokens.token())
             .retrieve()
             .body(VaultKvV2Response::class.java)
         val data = resp?.data?.data ?: emptyMap()

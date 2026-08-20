@@ -3,6 +3,7 @@ package com.flowlink.common.crypto
 import com.flowlink.execution.config.ExecutionProperties
 import com.flowlink.execution.engine.StateCrypto
 import com.flowlink.secret.VaultProperties
+import com.flowlink.secret.VaultTokenSource
 import org.slf4j.LoggerFactory
 import org.springframework.boot.ApplicationRunner
 import org.springframework.context.annotation.Bean
@@ -19,8 +20,12 @@ import org.springframework.context.annotation.Configuration
 @Configuration
 class CryptoConfig {
 
+    /** Vault 인증 토큰 소스 단일 빈 — KV 조회와 Transit 이 같은 로그인 상태를 공유한다(AppRole 이중 로그인 방지). */
     @Bean
-    fun cryptoProvider(vault: VaultProperties, exec: ExecutionProperties): CryptoProvider {
+    fun vaultTokenSource(vault: VaultProperties): VaultTokenSource = VaultTokenSource.of(vault)
+
+    @Bean
+    fun cryptoProvider(vault: VaultProperties, exec: ExecutionProperties, tokens: VaultTokenSource): CryptoProvider {
         val local = StateCrypto(exec.stateSecret)
         if (!vault.transit.enabled) {
             if (local.isDevKey) {
@@ -28,11 +33,11 @@ class CryptoConfig {
             }
             return local
         }
-        checkNotNull(vault.token) {
-            "Vault Transit 이 켜져 있는데 Vault 토큰이 없습니다 — FLOWLINK_VAULT_TOKEN 을 설정하세요(fail-closed)"
+        check(tokens.available) {
+            "Vault Transit 이 켜져 있는데 Vault 인증이 없습니다 — FLOWLINK_VAULT_TOKEN 또는 AppRole(role_id/secret_id)을 설정하세요(fail-closed)"
         }
         log.info("앱 암호화 = Vault Transit (mount={}, key={}) + 레거시 폴백", vault.transit.mount, vault.transit.key)
-        return RoutingCrypto(TransitCrypto(vault), local)
+        return RoutingCrypto(TransitCrypto(vault, tokens), local)
     }
 
     /** transit 모드 기동 헬스체크 — encrypt→decrypt 왕복 1회. 실패 시 기동 중단(늦은 런타임 실패 방지). */

@@ -1,4 +1,4 @@
-package com.flowlink.common.crypto
+﻿package com.flowlink.common.crypto
 
 import com.flowlink.secret.VaultProperties
 import org.assertj.core.api.Assertions.assertThat
@@ -40,7 +40,7 @@ class TransitCryptoTest {
             .andExpect(jsonPath("$.plaintext").value(b64("s3cret")))
             .andRespond(withSuccess("""{"data":{"ciphertext":"vault:v1:AbC"}}""", MediaType.APPLICATION_JSON))
 
-        val crypto = TransitCrypto(props(), builder)
+        val crypto = TransitCrypto(props(), com.flowlink.secret.StaticTokenSource("tkn"), builder)
         assertThat(crypto.encrypt("s3cret")).isEqualTo("vault:v1:AbC")
         server.verify()
     }
@@ -54,7 +54,7 @@ class TransitCryptoTest {
             .andExpect(jsonPath("$.ciphertext").value("vault:v1:AbC"))
             .andRespond(withSuccess("""{"data":{"plaintext":"${b64("s3cret")}"}}""", MediaType.APPLICATION_JSON))
 
-        val crypto = TransitCrypto(props(), builder)
+        val crypto = TransitCrypto(props(), com.flowlink.secret.StaticTokenSource("tkn"), builder)
         assertThat(crypto.decrypt("vault:v1:AbC")).isEqualTo("s3cret")
         server.verify()
     }
@@ -74,7 +74,7 @@ class TransitCryptoTest {
                 )
             )
 
-        val crypto = TransitCrypto(props(), builder)
+        val crypto = TransitCrypto(props(), com.flowlink.secret.StaticTokenSource("tkn"), builder)
         assertThat(crypto.decryptAll(listOf("vault:v1:AAA", "vault:v1:BBB"))).containsExactly("one", "two")
         server.verify()
     }
@@ -83,7 +83,7 @@ class TransitCryptoTest {
     fun `decryptAll 빈 목록은 Vault 호출 없이 빈 결과`() {
         val builder = RestClient.builder()
         val server = MockRestServiceServer.bindTo(builder).build()
-        val crypto = TransitCrypto(props(), builder)
+        val crypto = TransitCrypto(props(), com.flowlink.secret.StaticTokenSource("tkn"), builder)
         assertThat(crypto.decryptAll(emptyList())).isEmpty()
         server.verify() // 기대 요청 0건 — 호출이 있었으면 실패
     }
@@ -95,7 +95,7 @@ class TransitCryptoTest {
         server.expect(requestTo("http://vault.test:8200/v1/transit/decrypt/flowlink-kek"))
             .andRespond(withServerError())
 
-        val crypto = TransitCrypto(props(), builder)
+        val crypto = TransitCrypto(props(), com.flowlink.secret.StaticTokenSource("tkn"), builder)
         assertThatThrownBy { crypto.decrypt("vault:v1:AbC") }.isInstanceOf(Exception::class.java)
     }
 
@@ -111,7 +111,7 @@ class TransitCryptoTest {
                 )
             )
 
-        val crypto = TransitCrypto(props(), builder)
+        val crypto = TransitCrypto(props(), com.flowlink.secret.StaticTokenSource("tkn"), builder)
         assertThatThrownBy { crypto.decryptAll(listOf("vault:v1:AAA", "vault:v1:BAD")) }
             .hasMessageContaining("invalid ciphertext")
     }

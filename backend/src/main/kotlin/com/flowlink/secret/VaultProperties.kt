@@ -27,6 +27,7 @@ class VaultProperties(
     configPath: String? = null,
     refreshSeconds: Long? = null,
     transit: Transit? = null,
+    approle: AppRole? = null,
 ) {
     val enabled: Boolean = enabled ?: false
     val address: String = address?.trimEnd('/')?.takeIf { it.isNotBlank() } ?: "http://localhost:8200"
@@ -36,6 +37,7 @@ class VaultProperties(
     val configPath: String = configPath?.trim('/')?.takeIf { it.isNotBlank() } ?: "flowlink-config"
     val refreshSeconds: Long = if (refreshSeconds == null || refreshSeconds <= 0) 60L else refreshSeconds
     val transit: Transit = transit ?: Transit()
+    val approle: AppRole = approle ?: AppRole()
 
     /**
      * Vault Transit(KEK) 봉투 암호화 — enabled=true 면 앱 암호화(시크릿·재개 스냅샷·토큰)를
@@ -45,5 +47,16 @@ class VaultProperties(
         val enabled: Boolean = enabled ?: false
         val mount: String = mount?.trim('/')?.takeIf { it.isNotBlank() } ?: "transit"
         val key: String = key?.trim('/')?.takeIf { it.isNotBlank() } ?: "flowlink"
+    }
+
+    /**
+     * AppRole 인증 — role_id/secret_id 를 두면 static 토큰 대신 `auth/{mount}/login` 으로
+     * 단명 토큰을 자동 발급·갱신한다(정석: 고정 토큰을 서버에 두지 않음). 둘 다 있어야 활성.
+     */
+    class AppRole(roleId: String? = null, secretId: String? = null, mount: String? = null) {
+        val roleId: String? = roleId?.takeIf { it.isNotBlank() }
+        val secretId: String? = secretId?.takeIf { it.isNotBlank() }
+        val mount: String = mount?.trim('/')?.takeIf { it.isNotBlank() } ?: "approle"
+        val configured: Boolean get() = roleId != null && secretId != null
     }
 }

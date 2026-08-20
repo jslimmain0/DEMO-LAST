@@ -13,6 +13,7 @@ import java.util.Base64
  */
 class TransitCrypto(
     private val props: VaultProperties,
+    private val tokens: com.flowlink.secret.VaultTokenSource = com.flowlink.secret.VaultTokenSource.of(props),
     builder: RestClient.Builder = RestClient.builder().requestFactory(
         SimpleClientHttpRequestFactory().apply { setConnectTimeout(3000); setReadTimeout(3000) }
     ),
@@ -50,7 +51,7 @@ class TransitCrypto(
     private fun post(op: String, body: Map<String, Any>): TransitResponse? =
         client.post()
             .uri("/v1/{mount}/{op}/{key}", props.transit.mount, op, props.transit.key)
-            .header("X-Vault-Token", props.token ?: throw IllegalStateException("Vault 토큰 미설정 — Transit 사용 불가"))
+            .header("X-Vault-Token", tokens.token())
             .body(body)
             .retrieve()
             .body(TransitResponse::class.java)

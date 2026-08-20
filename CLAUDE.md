@@ -956,6 +956,12 @@ design/   theme(라이트/다크) · index.css(CSS 변수)
 - 검증: 단위 15종(Transit 프로토콜/배치/오류 전파·Routing 접두사/순서 보존·Config 빈 선택/fail-closed·@DataJpaTest 재암호화 이관) + 전체 스위트 그린 + **라이브**(도커 Vault transit 실키): 기동 3로그(Transit 활성·헬스체크 OK·시크릿 2건 재암호화) → `{{ payApiKey@secret }}` 실행 SUCCEEDED + `Bearer ••••••` 마스킹 → Vault 다운 상태 기동 = Connection refused 로 부팅 실패(fail-closed) 확인.
 - ⚠ Transit 모드는 Vault **상시 의존**(다운 시 시크릿 실행·재개·재시작 불가 — HA 권장). 상세: [docs/운영가이드.md](docs/운영가이드.md) §6.
 
+### AppRole 인증 (후속 — `feat/vault-approle` 브랜치)
+static 토큰 대신 **AppRole 로그인 + 자동 갱신**(정석). [VaultTokenSource](backend/src/main/kotlin/com/flowlink/secret/VaultTokenSource.kt) —
+선택 규칙: `approle.role-id`+`secret-id` 설정 시 [AppRoleTokenSource](backend/src/main/kotlin/com/flowlink/secret/VaultTokenSource.kt)(`auth/{mount}/login` → 수명 절반에 `renew-self` → 실패/만료 시 재로그인, 게으른 갱신·synchronized), 아니면 StaticTokenSource(기존 env 토큰, 무회귀).
+KV([VaultSecretSource](backend/src/main/kotlin/com/flowlink/secret/VaultSecretSource.kt))와 Transit([TransitCrypto](backend/src/main/kotlin/com/flowlink/common/crypto/TransitCrypto.kt))이 **단일 빈을 공유**(이중 로그인 방지, CryptoConfig 등록). env: `FLOWLINK_VAULT_APPROLE_ROLE_ID`/`SECRET_ID`/`MOUNT`(기본 approle).
+fail-closed 메시지가 "토큰 또는 AppRole" 로 확장. 검증: 단위 10종(로그인/캐시/절반 갱신/실패 재로그인/만료 직행 재로그인/전파·선택 규칙 4종) + 라이브(도커 Vault: approle 활성 + **스코프 정책 flowlink-app**(4경로) + token_period=180 role) — 토큰 env 없이 기동(AppRole 로그인 → Transit 헬스체크 OK) → 시크릿 플로우 SUCCEEDED+마스킹 → **만료 후 접근에서 자동 재로그인** 로그 실측. 운영가이드 §6 AppRole 준비 절차 추가.
+
 ## 참고 문서
 - `backend/README.md` — 백엔드 구조·설정·API 요약 · `frontend/README.md` · `infra/README.md`(배포)
 - **`docs/guide/`** — 실사용자 가이드(심플+심화 15챕터, 스크린샷) · `docs/사용가이드.md` — 한 페이지 요약본

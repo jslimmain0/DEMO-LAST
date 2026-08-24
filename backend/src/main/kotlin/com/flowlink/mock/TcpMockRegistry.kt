@@ -41,6 +41,9 @@ class TcpMockRegistry(
 
     private val listeners = ConcurrentHashMap<UUID, Listener>() // mock 서버 id → 리스너
 
+    /** 현재 열려 있는 TCP mock 포트 목록(기동 요약 로그·상태 점검용). */
+    fun activePorts(): List<Int> = listeners.values.map { it.port }.sorted()
+
     @EventListener(ApplicationReadyEvent::class)
     fun startAll() {
         for (m in repository.findAll()) {

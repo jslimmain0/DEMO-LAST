@@ -123,6 +123,27 @@ flowlink:
 #         jwt:
 #           issuer-uri: https://your-idp/realms/flowlink
 
+# 로깅 — 기본 INFO. 상세 추적이 필요하면 FLOWLINK_LOG_LEVEL=DEBUG 로 띄운다
+# (노드별 실행 시작/완료·그래프 위상정렬·접근 로그의 GET 요청까지 보인다).
+#   요약: 기동 시 StartupSummaryLogger 가 "무엇을 물고 올라왔는지"(DB·인증·Vault·실행 정책·Mock/트리거)를 한 블록으로 남긴다.
+logging:
+  level:
+    root: INFO
+    com.flowlink: ${FLOWLINK_LOG_LEVEL:INFO}
+    # 아웃바운드 HTTP 와이어 로그가 필요할 때만(요청/응답 헤더까지 — 시크릿 노출 주의)
+    org.springframework.web.client.RestTemplate: WARN
+  pattern:
+    # 요청(r:xxx)/워크플로 실행(x:xxxxxxxx) 상관관계 키 — 한 요청·한 실행이 남긴 줄을 grep 으로 모을 수 있다.
+    correlation: "%X{reqId:-}%X{execId:-} "
+  file:
+    # 파일 로그는 선택 — FLOWLINK_LOG_FILE=/var/log/flowlink/app.log 처럼 주면 켜진다(미설정이면 콘솔만).
+    name: ${FLOWLINK_LOG_FILE:}
+  logback:
+    rollingpolicy:
+      max-file-size: ${FLOWLINK_LOG_MAX_SIZE:50MB}
+      max-history: ${FLOWLINK_LOG_MAX_HISTORY:14}
+      total-size-cap: ${FLOWLINK_LOG_TOTAL_CAP:2GB}
+
 springdoc:
   swagger-ui:
     path: /swagger-ui.html

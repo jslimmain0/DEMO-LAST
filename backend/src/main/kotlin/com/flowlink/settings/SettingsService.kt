@@ -10,6 +10,8 @@ import org.springframework.transaction.annotation.Transactional
 @Service
 class SettingsService(private val repo: AppSettingRepository) {
 
+    private val log = org.slf4j.LoggerFactory.getLogger(SettingsService::class.java)
+
     @Transactional(readOnly = true)
     fun get(key: String): String? =
         repo.findByTenantIdAndKey(TenantContext.getTenantId(), key)
@@ -24,6 +26,7 @@ class SettingsService(private val repo: AppSettingRepository) {
         if (value.isNullOrBlank()) {
             if (existing != null) {
                 repo.delete(existing)
+                log.info("설정 삭제(기본값으로 복귀): key='{}' tenant={}", key, tenant)
             }
             return
         }
@@ -32,6 +35,9 @@ class SettingsService(private val repo: AppSettingRepository) {
         } else {
             existing.value = value.trim()
         }
+        // 알림 웹훅 URL 은 그 자체가 채널 쓰기 자격증명 → 값 대신 설정 여부만 남긴다.
+        val shown = if (key == KEY_NOTIFY_WEBHOOK) "(설정됨 — 값 미기록)" else value.trim()
+        log.info("설정 저장: key='{}' value={} tenant={}", key, shown, tenant)
     }
 
     /** wait 콜백 수신 base URL — 화면에서 저장한 값(없으면 null). */

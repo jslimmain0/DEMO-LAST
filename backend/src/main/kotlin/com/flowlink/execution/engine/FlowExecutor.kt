@@ -12,6 +12,7 @@ import com.flowlink.core.graph.NodeVar
 import com.flowlink.core.graph.WaitField
 import com.flowlink.transform.FlowTransform
 import com.flowlink.transform.TransformRegistry
+import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Component
 import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
@@ -134,6 +135,12 @@ class FlowExecutor(
         nodes.forEach { n -> byId[n.id!!] = n }
         val order = topoOrder(nodes, edges)
         val active = initialActive(nodes, edges)
+        if (log.isDebugEnabled) {
+            log.debug(
+                "그래프 준비: 실행 노드 {}개(주석 제외) · 연결 {}개 · 실행 순서=[{}] · 시작점=[{}]",
+                nodes.size, edges.size, order.joinToString(","), active.joinToString(","),
+            )
+        }
         return RunState(edges, byId, order, active, ctx, relayBase, relayRunId)
     }
 
@@ -172,9 +179,14 @@ class FlowExecutor(
      * client HTTP → 브라우저가 돌려준 응답이 결과가 된다.
      */
     fun resume(st: RunState, input: ResumeInput?, durationMs: Long, recorder: NodeRecorder): Outcome {
-        val pid = st.pendingNodeId ?: return drive(st, recorder) // 중단 상태가 아니면 방어적으로 계속 진행
+        val pid = st.pendingNodeId ?: run {
+            log.debug("재개 호출이지만 중단 상태가 아님 — 남은 노드를 계속 진행")
+            return drive(st, recorder)
+        }
         val node = st.byId[pid]!!
         val et = node.effectiveType()
+        log.debug("노드 재개: {}('{}' {}) 입력=(status={}, error={}, callback={})",
+            pid, node.name, et, input?.httpStatus, input?.error, input?.callback != null)
         val result: NodeResult = if (et == NodeType.FORM) {
             formResumeResult(st, input)
         } else if (et == NodeType.WAIT) {
@@ -200,6 +212,7 @@ class FlowExecutor(
         st.pendingNodeId = null
 
         if (!result.ok) {
+            log.warn("재개 노드 실패로 실행 중단: {}('{}' {}) — {}", nid, node.name, et, truncate(result.responseText))
             return Outcome.failed("노드 실패: " + node.name + " — " + truncate(result.responseText))
         }
         activateDownstream(st, node, null)
@@ -211,6 +224,7 @@ class FlowExecutor(
         // 실행할 노드가 있는데 활성 시작점(START)이 하나도 없으면 명확히 실패시킨다 —
         // START 없는 그래프에서 떠 있는 노드가 멋대로 실행되지 않도록(재개 중엔 active 가 채워져 있어 무해).
         if (st.active.isEmpty() && st.index == 0 && st.order.any { st.byId[it] != null }) {
+            log.warn("실행 중단: START 노드가 없어 시작점을 찾지 못했습니다(노드 {}개)", st.byId.size)
             return Outcome.failed("실행하려면 시작(START) 노드가 필요합니다 — 시작 노드를 추가해 흐름을 연결하세요.")
         }
         while (st.index < st.order.size) {
@@ -221,6 +235,7 @@ class FlowExecutor(
                 continue
             }
             if (!st.active.contains(id)) {
+                log.debug("노드 건너뜀(SKIPPED): {}('{}' {}) — 분기 미선택/미연결", id, node.name, node.effectiveType())
                 recorder.record(node, st.seq++, NodeResult.ok(null, "(미실행)", "분기 미선택으로 건너뜀", null),
                     NodeExecutionStatus.SKIPPED, 0)
                 st.index++
@@ -235,11 +250,13 @@ class FlowExecutor(
                 val action = tokens.resolveTokens(node.formAction ?: "", st.ctx).trim()
                 val ff = formFields(node, st)
                 if (action.isEmpty()) {
+                    log.warn("form 노드 실패: {}('{}') — 팝업 URL 이 비어 있습니다", id, node.name)
                     val result = NodeResult.fail(0, "$method (팝업 URL 없음)", "팝업 URL이 비어 있습니다.")
                     recorder.record(node, st.seq++, result, NodeExecutionStatus.FAILED, 0)
                     return Outcome.failed("노드 실패: " + node.name + " — 팝업 URL이 비어 있습니다.")
                 }
                 st.pendingNodeId = id
+                log.info("노드 중단(form 팝업): {}('{}') {} {} 필드 {}개", id, node.name, method, action, ff.size)
                 val spec = PendingForm(id, node.name, action, method, ff)
                 st.pendingFormSpec = spec
                 return Outcome.pendingForm(spec)
@@ -249,8 +266,9 @@ class FlowExecutor(
             if (et == NodeType.WAIT) {
                 st.pendingNodeId = id
                 val timeout = if (node.waitTimeoutSec == null || node.waitTimeoutSec <= 0) 120 else node.waitTimeoutSec
-                return Outcome.pendingWait(PendingWait(id, node.name, timeout,
-                    receiveUrl(st.relayBase, st.relayRunId, id)))
+                val url = receiveUrl(st.relayBase, st.relayRunId, id)
+                log.info("노드 중단(wait 콜백 대기): {}('{}') 타임아웃 {}초 · 수신 URL={}", id, node.name, timeout, url)
+                return Outcome.pendingWait(PendingWait(id, node.name, timeout, url))
             }
 
             // input(사용자 입력) 노드: 브라우저 모달로 값을 받도록 중단 — confirm 값이 노드 출력이 된다
@@ -264,6 +282,7 @@ class FlowExecutor(
                         fs.add(PendingInput.Field(f.key, f.label, f.type))
                     }
                 }
+                log.info("노드 중단(input 사용자 입력): {}('{}') 필드 {}개", id, node.name, fs.size)
                 return Outcome.pendingInput(PendingInput(id, node.name, msg, fs))
             }
 
@@ -273,16 +292,21 @@ class FlowExecutor(
                 st.pendingNodeId = id
                 val pc = PendingClient(id, node.name, req.method, req.url,
                     req.headers, req.body, node.respType ?: "json")
+                log.info("노드 중단(client HTTP — 브라우저 호출 위임): {}('{}') {} {}", id, node.name, req.method, req.url)
                 return Outcome.pendingClient(pc)
             }
 
             val t0 = System.nanoTime()
+            log.debug("노드 실행 시작: {}('{}' {})", id, node.name, et)
             val result: NodeResult = try {
                 processNode(node, st.ctx)
             } catch (e: Exception) {
+                log.warn("노드 처리 중 예외: {}('{}' {}) — {}", id, node.name, et, e.message ?: e.toString(), e)
                 NodeResult.fail(0, "", "⚠ " + (e.message ?: e.toString()))
             }
             val durationMs = (System.nanoTime() - t0) / 1_000_000
+            log.debug("노드 실행 완료: {}('{}' {}) → {} status={} ({}ms)",
+                id, node.name, et, if (result.ok) "성공" else "실패", result.httpStatus, durationMs)
 
             st.ctx.putOutput(id, result.value)
             if (result.reqValues != null) {
@@ -293,6 +317,7 @@ class FlowExecutor(
                 if (result.ok) NodeExecutionStatus.SUCCEEDED else NodeExecutionStatus.FAILED, durationMs)
 
             if (!result.ok) {
+                log.warn("노드 실패로 실행 중단: {}('{}' {}) — {}", id, node.name, et, truncate(result.responseText))
                 return Outcome.failed("노드 실패: " + node.name + " — " + truncate(result.responseText))
             }
 
@@ -525,6 +550,7 @@ class FlowExecutor(
      */
     private fun switchNode(node: GraphNode): NodeResult {
         val branch = if (node.switchActive.isNullOrBlank()) "1" else node.switchActive
+        log.debug("스위치 분기: {}('{}') → 트랙 {}", node.id, node.name, branch)
         val value = LinkedHashMap<String, Any?>()
         value["branch"] = branch
         return NodeResult.ok(null, "switch → 트랙 $branch", json.toJson(value), value).withBranch(branch)
@@ -533,6 +559,7 @@ class FlowExecutor(
     private fun ifNode(node: GraphNode, ctx: ExecutionContext): NodeResult {
         val result = evaluator.evaluateBoolean(node.condition, ctx)
         val branch = if (result) "true" else "false"
+        log.debug("IF 분기: {}('{}') 조건=[{}] → {}", node.id, node.name, node.condition, branch)
         val value = LinkedHashMap<String, Any?>()
         value["result"] = result
         value["branch"] = branch
@@ -552,6 +579,7 @@ class FlowExecutor(
         }
         val passed = evaluator.evaluateBoolean(cond, ctx)
         if (!passed) {
+            log.warn("검증(assert) 실패: {}('{}') 조건=[{}] 이 거짓", node.id, node.name, cond)
             return NodeResult.fail(0, reqText, "⚠ 검증 실패: 조건이 거짓입니다 — $cond")
         }
         val value = mapOf<String, Any?>("result" to true)
@@ -560,7 +588,10 @@ class FlowExecutor(
 
     private fun transformNode(node: GraphNode, ctx: ExecutionContext): NodeResult {
         val transform = transformRegistry.get(node.transformId ?: "").orElse(null)
-            ?: return NodeResult.fail(0, "transform " + node.transformId, "알 수 없는 변환: " + node.transformId)
+            ?: run {
+                log.warn("변환 노드 실패: {}('{}') — 등록되지 않은 변환 id='{}'", node.id, node.name, node.transformId)
+                return NodeResult.fail(0, "transform " + node.transformId, "알 수 없는 변환: " + node.transformId)
+            }
 
         // 선언된 입력 포트별로 fields.body 의 동일 key 행을 찾아 값(바인딩/리터럴)을 해석
         val byKey = HashMap<String, NodeField>()
@@ -579,6 +610,8 @@ class FlowExecutor(
         val out: Map<String, String>? = try {
             transform.apply(inputs, config)
         } catch (e: Exception) {
+            // 플러그인 JAR 은 샌드박스가 없으므로 스택까지 남긴다(장애 원인 추적).
+            log.warn("변환 실행 실패: {} (노드 {}): {}", transform.id(), node.id, e.message ?: e.toString(), e)
             return NodeResult.fail(0, "transform " + transform.id(),
                 "변환 실패: " + (e.message ?: e.toString()))
         }
@@ -652,6 +685,8 @@ class FlowExecutor(
         HashSet(nodes.filter { it.nodeType() == NodeType.START }.mapNotNull { it.id })
 
     companion object {
+        private val log = LoggerFactory.getLogger(FlowExecutor::class.java)
+
         /**
          * wait 노드의 콜백 수신 URL — {relayBase}/relay/{execId}/cb/{nodeId}.
          * 백엔드가 이 경로로 콜백을 직접 받아 실행을 재개한다(RelayController). base 미설정이면 null.

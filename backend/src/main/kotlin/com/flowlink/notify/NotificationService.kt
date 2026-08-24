@@ -52,6 +52,7 @@ class NotificationService(
                     .build()
                 val res = http.send(req, HttpResponse.BodyHandlers.discarding())
                 if (res.statusCode() >= 300) log.warn("알림 발송 비정상 응답 {}", res.statusCode())
+                else log.info("실패 알림 발송 완료: exec={} (응답 {})", execId, res.statusCode())
             } catch (e: Exception) {
                 log.warn("실패 알림 발송 오류: {}", e.message)
             } finally {

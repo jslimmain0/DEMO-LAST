@@ -95,8 +95,14 @@ class GithubAuthService(
         try {
             val user = getWithAuth("https://api.github.com/user", "token $ghToken")
             val login = user.path("login").asText(null)
-            if (login.isNullOrBlank()) { s.status = "error"; s.error = "GitHub 사용자 정보를 못 읽었습니다."; return }
-            if (!props.allows(login)) { s.status = "error"; s.error = "접근 권한이 없는 계정입니다: $login"; return }
+            if (login.isNullOrBlank()) {
+                log.warn("GitHub 로그인 실패: 사용자 정보를 읽지 못했습니다")
+                s.status = "error"; s.error = "GitHub 사용자 정보를 못 읽었습니다."; return
+            }
+            if (!props.allows(login)) {
+                log.warn("GitHub 로그인 거부: '{}' 은 허용 목록(FLOWLINK_AUTH_ALLOWED_LOGINS)에 없습니다", login)
+                s.status = "error"; s.error = "접근 권한이 없는 계정입니다: $login"; return
+            }
             s.login = login
             s.token = appJwt.issue(login)
             s.status = "ready"
@@ -109,6 +115,7 @@ class GithubAuthService(
                 log.warn("Copilot 연결 통합 이벤트 발행 실패(로그인은 정상): {}", e.message)
             }
         } catch (e: Exception) {
+            log.warn("GitHub 신원 확인 실패: {}", e.message ?: e.toString())
             s.status = "error"; s.error = "신원 확인 실패: ${e.message}"
         }
     }

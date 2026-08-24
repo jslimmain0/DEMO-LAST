@@ -27,6 +27,8 @@ class MockServerService(
     private val store: MockRuntimeStore
 ) {
 
+    private val log = org.slf4j.LoggerFactory.getLogger(MockServerService::class.java)
+
     @Transactional(readOnly = true)
     fun list(): List<MockServerSummary> =
         repository.findByTenantIdOrderByUpdatedAtDesc(tenant())
@@ -50,6 +52,7 @@ class MockServerService(
             MockServer.create(tenant(), req.name, slug, kind, spec)
         )
         tcpRegistry.sync(saved) // TCP 면 pickFreePort 로 고른 빈 포트에 바인딩(충돌 없음)
+        log.info("Mock 서버 생성: id={} slug='{}' kind={} (base=/mock/{}/{})", saved.id, slug, kind, tenant(), slug)
         return toDetail(saved)
     }
 
@@ -67,6 +70,7 @@ class MockServerService(
         }
         val saved = repository.save(m)
         tcpRegistry.sync(saved) // enabled 토글에 맞춰 TCP 리스너 열기/닫기
+        log.info("Mock 서버 설정 변경: id={} slug='{}' name='{}' 활성={}", id, saved.slug, saved.name, saved.isEnabled)
         return toDetail(saved)
     }
 
@@ -82,6 +86,7 @@ class MockServerService(
         m.specJson = raw
         val saved = repository.save(m)
         tcpRegistry.sync(saved) // 포트 바인딩 실패/충돌은 BadRequest → 저장 롤백
+        log.info("Mock spec 저장: id={} slug='{}' ({}바이트)", id, saved.slug, raw.length)
         return toDetail(saved)
     }
 
@@ -91,6 +96,7 @@ class MockServerService(
         repository.delete(m)
         tcpRegistry.stop(m.id)
         store.forget(m.id)
+        log.info("Mock 서버 삭제: id={} slug='{}'", id, m.slug)
     }
 
     /** 요청 기록(journal, 최신순) — 테넌트 소유 확인 후. */
@@ -107,7 +113,10 @@ class MockServerService(
 
     /** 런타임 상태 초기화(state·seq·hits·journal) — 재시작 없이 깨끗한 상태로. */
     @Transactional(readOnly = true)
-    fun reset(id: UUID) { find(id); store.reset(id) }
+    fun reset(id: UUID) {
+        val m = find(id); store.reset(id)
+        log.info("Mock 런타임 초기화(상태·seq·hits): id={} slug='{}'", id, m.slug)
+    }
 
     /** 현재 런타임 상태 스냅샷(state·seq·hits·요청수). */
     @Transactional(readOnly = true)

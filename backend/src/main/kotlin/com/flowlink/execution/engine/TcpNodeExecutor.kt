@@ -26,6 +26,8 @@ class TcpNodeExecutor(
     private val json: JsonService
 ) {
 
+    private val log = org.slf4j.LoggerFactory.getLogger(TcpNodeExecutor::class.java)
+
     /**
      * 조립된 요청 전문 + 필드별 분해 정보(미리보기/전송 공용).
      * [slices] 는 프리픽스 이후 본문 기준 오프셋(프리픽스는 [prefixLen] 바이트로 앞에 붙음).
@@ -130,6 +132,7 @@ class TcpNodeExecutor(
         val built = try {
             build(node, ctx)
         } catch (e: IllegalArgumentException) {
+            log.warn("TCP 노드 {}: 전문 조립 실패 — {}", node.id, e.message ?: e.toString())
             return NodeResult.fail(0, "", "⚠ TCP 전문 조립 실패: " + (e.message ?: e.toString()))
         }
         val host = built.host
@@ -146,10 +149,14 @@ class TcpNodeExecutor(
         try {
             ssrfGuard.checkHostPort(host, port)
         } catch (e: SsrfBlockedException) {
+            log.warn("TCP 노드 {}: SSRF 가드 차단 — {}:{} ({})", node.id, host, port, e.message)
             return NodeResult.fail(0, reqText, "⚠ 차단됨(SSRF 가드): " + e.message)
         }
 
         // 4) 송수신
+        log.info("→ TCP {}:{} 전송 {}바이트 (노드 {}, 인코딩={}, 타임아웃 {}ms)",
+            host, port, message.size, node.id, nodeCs, timeout)
+        val startedNs = System.nanoTime()
         return try {
             Socket().use { socket ->
                 socket.connect(InetSocketAddress(host, port), timeout)
@@ -190,9 +197,13 @@ class TcpNodeExecutor(
                     offset += len
                 }
                 val resText = "응답 " + respBody.size + "B\n" + printable(respBody, nodeCs)
+                log.info("← TCP {}:{} 수신 {}바이트 ({}ms, 필드 {}개 파싱)",
+                    host, port, respBody.size, (System.nanoTime() - startedNs) / 1_000_000, value.size)
                 NodeResult(true, null, reqText, resText, value, value, reqValues, null)
             }
         } catch (e: Exception) {
+            log.warn("✕ TCP {}:{} 실패 ({}ms, 노드 {}): {}",
+                host, port, (System.nanoTime() - startedNs) / 1_000_000, node.id, e.message ?: e.toString())
             NodeResult.fail(0, reqText, "⚠ TCP 요청 실패: " + (e.message ?: e.toString()))
         }
     }

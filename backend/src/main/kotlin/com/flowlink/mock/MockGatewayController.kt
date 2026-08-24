@@ -56,6 +56,9 @@ class MockGatewayController(
 
             val served = handleCustom(server, req)
             val res = served.response
+            log.info("[mock:{}/{}] {} {} → {} (규칙={}, 지연 {}ms, 콜백 발사={})",
+                server.tenantId, server.slug, req.method, req.path, res.status,
+                served.matchedRuleId ?: "기본", res.delayMs, res.callback != null)
 
             // 요청 기록(journal) — /__routes 등 인트로스펙션은 제외
             if (req.path != "/__routes" && req.path != "/__requests") {

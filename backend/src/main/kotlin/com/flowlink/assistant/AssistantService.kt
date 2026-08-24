@@ -108,7 +108,10 @@ class AssistantService(
         val messages = normalizeMessages(req.messages)
         // 시크릿 마스킹 — SET 노드의 secret=true 변수 값을 외부 LLM 에 평문으로 보내지 않는다.
         val system = buildSystemPrompt(redactSecrets(req.graph))
-        val completion = complete(messages, system, req.model) ?: return stub(messages, req.graph)
+        val completion = complete(messages, system, req.model) ?: run {
+            log.info("AI 자격 없음(Copilot 미연결·키 미설정) → stub 모드로 응답")
+            return stub(messages, req.graph)
+        }
         val (reply, graph) = parseModelJson(completion.text, "graph")
         return AssistantChatResponse(reply = reply, graph = graph, stub = false, model = completion.model)
     }
@@ -137,11 +140,18 @@ class AssistantService(
             .header(plan.header, plan.value)
         for ((k, v) in plan.extraHeaders) reqB = reqB.header(k, v) // Copilot: Editor-Version 등
         if (!plan.openai) reqB = reqB.header("anthropic-version", "2023-06-01")
-        val request = reqB.POST(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(body))).build()
+        val payload = mapper.writeValueAsString(body)
+        val request = reqB.POST(HttpRequest.BodyPublishers.ofString(payload)).build()
+
+        // 사용자 그래프가 외부 LLM 으로 나가는 지점 — 무엇이 어디로 갔는지는 남긴다(내용은 남기지 않음).
+        log.info("→ AI 호출: {} model={} 메시지 {}턴 · 시스템 {}자 · 요청 {}바이트",
+            uri, plan.model, messages.size, system.length, payload.toByteArray().size)
+        val startedNs = System.nanoTime()
 
         val res: HttpResponse<String> = try {
             http.send(request, HttpResponse.BodyHandlers.ofString())
         } catch (e: Exception) {
+            log.warn("✕ AI 호출 실패({}): {}", plan.model, e.message ?: e.toString())
             throw BadRequestException("AI 호출 실패: ${e.message}")
         }
         if (res.statusCode() == 429) {
@@ -163,6 +173,8 @@ class AssistantService(
             throw BadRequestException("AI 호출 실패: " + (extractErr(res.body()) ?: "상태 ${res.statusCode()}"))
         }
 
+        log.info("← AI 응답: model={} {} ({}ms, {}바이트)",
+            plan.model, res.statusCode(), (System.nanoTime() - startedNs) / 1_000_000, res.body().length)
         return if (plan.openai) extractOpenAiText(mapper, res.body()) else extractAnthropicText(mapper, res.body())
     }
 

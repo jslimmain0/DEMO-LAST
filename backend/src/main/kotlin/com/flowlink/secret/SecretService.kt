@@ -80,6 +80,8 @@ class SecretService(
         val existing = repo.findByTenantIdAndEnvironmentAndName(tenant(), env, n).orElse(null)
         if (existing == null) repo.save(Secret.create(tenant(), n, enc, env))
         else existing.encValue = enc
+        // ⚠ 값은 절대 로그에 남기지 않는다 — 이름·환경·신규/갱신만.
+        log.info("시크릿 {}: name='{}' env={} tenant={}", if (existing == null) "등록" else "갱신", n, env, tenant())
     }
 
     @Transactional
@@ -88,6 +90,7 @@ class SecretService(
         val s = repo.findByTenantIdAndEnvironmentAndName(tenant(), env, name.trim())
             .orElseThrow { NotFoundException.of("Secret", "$name@$env") }
         repo.delete(s)
+        log.info("시크릿 삭제: name='{}' env={} tenant={}", s.name, env, tenant())
     }
 
     /**

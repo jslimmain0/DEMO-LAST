@@ -58,7 +58,10 @@ class TriggerService(
         }
         // 할당식 UUID 엔티티는 save 가 merge 로 동작 → @CreationTimestamp createdAt 은 saveAndFlush 가 반환한
         // 관리 인스턴스에만 채워진다(FlowVersion 과 동일 이유). 원본 t 를 읽으면 lateinit 미초기화 예외.
-        return TriggerView.from(triggerRepo.saveAndFlush(t))
+        val saved = triggerRepo.saveAndFlush(t)
+        log.info("트리거 생성: id={} flow={} type={} 활성={} {}", saved.id, flowId, saved.type, saved.enabled,
+            if (saved.type == TriggerType.SCHEDULE) "cron='${saved.cron}' 다음실행=${saved.nextRunAt}" else "webhook /hooks/{token}")
+        return TriggerView.from(saved)
     }
 
     @Transactional
@@ -75,12 +78,15 @@ class TriggerService(
                 t.nextRunAt = computeNext(t.cron.orEmpty(), Instant.now())
             }
         }
+        log.info("트리거 변경: id={} type={} 활성={} cron='{}' 다음실행={}", id, t.type, t.enabled, t.cron, t.nextRunAt)
         return TriggerView.from(t)
     }
 
     @Transactional
     fun delete(id: UUID) {
-        triggerRepo.delete(load(id))
+        val t = load(id)
+        triggerRepo.delete(t)
+        log.info("트리거 삭제: id={} flow={} type={}", id, t.flowId, t.type)
     }
 
     /** 발화 스펙 — claim(트랜잭션) 이 확정해 run(비트랜잭션) 으로 넘긴다. */
@@ -92,8 +98,15 @@ class TriggerService(
      */
     @Transactional
     fun claimWebhookFire(token: String, body: com.fasterxml.jackson.databind.JsonNode?): FireSpec? {
-        val t = triggerRepo.findByWebhookToken(token).orElse(null) ?: return null
-        if (!t.enabled) return null
+        val t = triggerRepo.findByWebhookToken(token).orElse(null) ?: run {
+            log.warn("웹훅 거절: 알 수 없는 토큰(…{})", token.takeLast(6))
+            return null
+        }
+        if (!t.enabled) {
+            log.info("웹훅 거절: 비활성 트리거 id={} flow={}", t.id, t.flowId)
+            return null
+        }
+        log.info("웹훅 수신 → 실행: 트리거 id={} flow={} (본문 input={})", t.id, t.flowId, body != null && body.isObject)
         t.lastRunAt = Instant.now()
         // 본문(JSON object)이 있으면 그걸 input 으로, 없으면 트리거 저장 input
         val inputJson = if (body != null && !body.isNull && body.isObject) json.toJson(body) else t.inputJson
@@ -117,6 +130,7 @@ class TriggerService(
         if (!t.enabled || t.type != TriggerType.SCHEDULE) return null
         t.lastRunAt = now
         t.nextRunAt = computeNext(t.cron.orEmpty(), now)
+        log.info("스케줄 발화: 트리거 id={} flow={} cron='{}' → 다음 실행 {}", t.id, t.flowId, t.cron, t.nextRunAt)
         return FireSpec(t.tenantId, t.flowId, t.versionNo, t.inputJson)
     }
 
@@ -125,7 +139,9 @@ class TriggerService(
         val input = spec.inputJson?.let { json.readTree(it) }
         TenantContext.setTenantId(spec.tenantId)
         try {
-            return executionService.run(spec.flowId, RunRequest(input, null, null, spec.versionNo), trigger).id
+            val execId = executionService.run(spec.flowId, RunRequest(input, null, null, spec.versionNo), trigger).id
+            log.info("{} 트리거 실행 시작: exec={} flow={} tenant={}", trigger, execId, spec.flowId, spec.tenantId)
+            return execId
         } finally {
             TenantContext.clear()
         }

@@ -198,14 +198,20 @@ class HttpNodeExecutor(
         val uri: URI = try {
             URI.create(req.url)
         } catch (e: IllegalArgumentException) {
+            log.warn("HTTP 노드 {}: 잘못된 URL '{}' — {}", node.id, req.url, e.message)
             return NodeResult.fail(0, req.requestText, "⚠ 잘못된 URL: " + e.message)
         }
         try {
             ssrfGuard.check(uri)
         } catch (e: SsrfBlockedException) {
+            log.warn("HTTP 노드 {}: SSRF 가드 차단 — {} ({})", node.id, req.url, e.message)
             return NodeResult.fail(0, req.requestText, "⚠ 차단됨(SSRF 가드): " + e.message)
         }
 
+        // 아웃바운드 호출 = 이 앱이 외부로 나가는 지점. URL·상태·소요시간은 항상 남긴다(본문은 캡처 설정 소관).
+        log.info("→ HTTP {} {} (노드 {}, 본문 {}바이트, 헤더 {}개)",
+            req.method, req.url, node.id, req.body?.toByteArray()?.size ?: 0, req.headers.size)
+        val startedNs = System.nanoTime()
         return try {
             val cs = charsetOf(node.charset)
             val finalHeaders = req.headers
@@ -216,8 +222,19 @@ class HttpNodeExecutor(
                 .exchange { _, response -> readRaw(response, cs) }
 
             val value = withStatus(parseResponse(node.respType, raw, cs), raw.status)
+            val ms = (System.nanoTime() - startedNs) / 1_000_000
+            if (raw.status >= 400) {
+                log.warn("← HTTP {} {} → {} ({}ms, {}바이트) 노드 {}", req.method, req.url, raw.status, ms, raw.byteLength, node.id)
+            } else {
+                log.info("← HTTP {} {} → {} ({}ms, {}바이트, respType={})",
+                    req.method, req.url, raw.status, ms, raw.byteLength, node.respType ?: "json")
+            }
             NodeResult.okHttp(raw.status, req.requestText, raw.text, value, req.reqValues)
         } catch (e: Exception) {
+            val ms = (System.nanoTime() - startedNs) / 1_000_000
+            log.warn("✕ HTTP {} {} 실패 ({}ms, 노드 {}): {}",
+                req.method, req.url, ms, node.id, e.message ?: e.toString())
+            log.debug("HTTP 호출 예외 상세(노드 {})", node.id, e)
             NodeResult.fail(0, req.requestText, "⚠ 요청 실패: " + (e.message ?: e.toString()))
         }
     }
@@ -240,6 +257,8 @@ class HttpNodeExecutor(
      * 서버는 전송하지 않으므로 SSRF 가드 대상이 아니다(브라우저의 동일출처/CORS 정책이 적용됨).
      */
     fun clientResult(node: GraphNode, req: BuiltRequest, status: Int, body: String?, error: String?): NodeResult {
+        log.info("← HTTP(client 모드 — 브라우저가 수행) {} {} → {} 노드 {}{}",
+            req.method, req.url, status, node.id, if (error.isNullOrBlank()) "" else " 오류=$error")
         if (error != null && !error.isBlank()) {
             return NodeResult.fail(if (status > 0) status else 0, req.requestText, "⚠ 클라이언트 요청 실패: $error")
         }
@@ -256,6 +275,9 @@ class HttpNodeExecutor(
             val cap = Math.min(maxResponseBytes + 1, Integer.MAX_VALUE.toLong()).toInt()
             var bytes = input.readNBytes(cap)
             val truncated = bytes.size > maxResponseBytes
+            if (truncated) {
+                log.warn("응답이 상한({}바이트)을 넘어 잘렸습니다 — flowlink.execution.http.max-response-bytes 조정 검토", maxResponseBytes)
+            }
             if (truncated) {
                 bytes = Arrays.copyOf(bytes, maxResponseBytes.toInt())
             }
@@ -465,6 +487,8 @@ class HttpNodeExecutor(
     )
 
     companion object {
+        private val log = org.slf4j.LoggerFactory.getLogger(HttpNodeExecutor::class.java)
+
         /** RFC 7230 토큰 — 유효한 HTTP 헤더 이름만 허용(나머지는 무시). */
         private val HEADER_NAME: Pattern = Pattern.compile("^[!#$%&'*+.^_`|~0-9A-Za-z-]+$")
 

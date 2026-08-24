@@ -75,12 +75,14 @@ class FlowService(
     @Transactional
     fun create(req: CreateFlowRequest): FlowDetail {
         val flow = createInternal(req.name, req.description, emptyGraph(req.name), "초기 버전", req.folderId)
+        log.info("워크플로 생성: id={} name='{}' folder={} by={}", flow.id, flow.name, req.folderId, currentUser() ?: "-")
         return toDetail(flow)
     }
 
     @Transactional
     fun moveToFolder(id: UUID, folderId: UUID?) {
         loadFlow(id).folderId = folderId
+        log.info("워크플로 폴더 이동: id={} → folder={}", id, folderId ?: "(미분류)")
     }
 
     @Transactional
@@ -88,12 +90,15 @@ class FlowService(
         val flow = loadFlow(id)
         name?.takeIf { it.isNotBlank() }?.let { flow.name = it }
         if (description != null) flow.description = description
+        log.info("워크플로 정보 변경: id={} name='{}'", id, flow.name)
         return toDetail(flow)
     }
 
     @Transactional
     fun archive(id: UUID) {
-        loadFlow(id).archived = true
+        val flow = loadFlow(id)
+        flow.archived = true
+        log.info("워크플로 보관(삭제): id={} name='{}' by={}", id, flow.name, currentUser() ?: "-")
     }
 
     @Transactional
@@ -115,6 +120,9 @@ class FlowService(
 
         flow.name = name
         flow.currentVersion = nextNo
+        log.info("워크플로 저장: id={} name='{}' v{} 노드 {}개 · 연결 {}개 by={}{}",
+            id, name, nextNo, parsed.nodesOrEmpty().size, parsed.edgesOrEmpty().size,
+            currentUser() ?: "-", if (note.isNullOrBlank()) "" else " note='$note'")
         return FlowVersionSummary.from(saved)
     }
 
@@ -149,6 +157,7 @@ class FlowService(
         val saved = versionRepo.saveAndFlush(restored)
         flow.name = src.name
         flow.currentVersion = nextNo
+        log.info("워크플로 버전 복원: id={} v{} → 새 v{} by={}", id, versionNo, nextNo, currentUser() ?: "-")
         return FlowVersionSummary.from(saved)
     }
 
@@ -165,6 +174,7 @@ class FlowService(
         validator.validate(parsed)
 
         val flow = createInternal(name, textOr(export, "desc", ""), json.toJson(graph), "가져오기", null)
+        log.info("워크플로 가져오기: id={} name='{}' 노드 {}개", flow.id, name, parsed.nodesOrEmpty().size)
         return toDetail(flow)
     }
 
@@ -214,6 +224,8 @@ class FlowService(
     }
 
     companion object {
+        private val log = org.slf4j.LoggerFactory.getLogger(FlowService::class.java)
+
         // 노드 내용 검색 대상 필드 — 이름/URL/경로/폼URL/변환/조건
         private val SEARCH_FIELDS = listOf("name", "baseUrl", "path", "formAction", "transformId", "condition")
         private fun textOr(node: JsonNode, field: String, fallback: String): String {

@@ -31,3 +31,8 @@ flowlink:
       allow-loopback: true               # (참고) enabled=false 면 무의미 — 켤 때만 localhost 허용에 사용
     capture:
       request-response-bodies: true      # 실행 로그에 HTTP 요청/응답 본문 그대로 표시(디버그)
+
+# 로컬 개발은 앱 로그를 상세하게(노드별 실행/조회 요청까지). 운영 프로파일은 INFO 유지.
+logging:
+  level:
+    com.flowlink: ${FLOWLINK_LOG_LEVEL:DEBUG}

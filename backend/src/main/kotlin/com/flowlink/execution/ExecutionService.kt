@@ -36,6 +36,7 @@ import com.flowlink.execution.engine.NodeRecorder
 import com.flowlink.execution.engine.RunStateSnapshot
 import com.flowlink.settings.RelayBaseResolver
 import org.slf4j.LoggerFactory
+import org.slf4j.MDC
 import org.springframework.boot.context.event.ApplicationReadyEvent
 import org.springframework.context.event.EventListener
 import org.springframework.data.domain.PageRequest
@@ -141,7 +142,11 @@ class ExecutionService(
         val secrets = secretMap(req?.envName?.trim()?.takeIf { it.isNotEmpty() })
         if (secrets.isNotEmpty()) ctx.putSeed("secret", secrets)
 
+        val t0 = System.nanoTime()
         val r = flowExecutor.runSingleNode(node, ctx)
+        log.info("단일 노드 실행: flow={} node={}('{}' {}) → {} status={} ({}ms)",
+            flowId, nodeId, node.name, node.effectiveType(), if (r.ok) "성공" else "실패",
+            r.httpStatus, (System.nanoTime() - t0) / 1_000_000)
         return SingleNodeRunResult(r.ok, r.httpStatus, r.value, r.requestText, r.responseText)
     }
 
@@ -217,6 +222,12 @@ class ExecutionService(
 
         val state = flowExecutor.newRun(graph, ctx, relayBase, relayRunId)
 
+        log.info(
+            "실행 시작: exec={} flow={}('{}') v{} trigger={} user={} 노드 {}개 (시드: input={}, env={}, secret {}건, relayBase={})",
+            execId, flowId, flow.name, versionNo, trigger, currentUser() ?: "-",
+            graph.nodesOrEmpty().size, req?.input != null, req?.env != null, secrets.size, relayBase,
+        )
+
         // 비동기: 실행은 워커 풀에서, 응답은 즉시(RUNNING). 프론트는 GET 폴링으로 pending/종료를 감지한다.
         // tenant/user/relayBase 는 위에서 요청 스레드에 이미 캡처됨(RelayBaseResolver 는 요청 스레드 전용 오리진 자동을 씀).
         try {
@@ -237,6 +248,8 @@ class ExecutionService(
     /** 워커 공통 래퍼 — TenantContext 수동 전파 + 미처리 예외는 실행 FAILED 로 마감. */
     private fun inWorker(execId: UUID, tenant: String, body: () -> Unit) {
         TenantContext.setTenantId(tenant)
+        // 워커 스레드의 모든 로그 줄에 실행 ID 를 달아 한 실행의 흐름을 추적할 수 있게 한다(요청 스레드의 reqId 와 동일 역할).
+        MDC.put(MDC_EXEC_ID, "x:" + execId.toString().take(8))
         try {
             body()
         } catch (e: Throwable) {
@@ -258,6 +271,7 @@ class ExecutionService(
             }
             if (e is VirtualMachineError) throw e // OOM 등은 삼키지 않고 재던짐
         } finally {
+            MDC.remove(MDC_EXEC_ID)
             TenantContext.clear()
         }
     }
@@ -276,9 +290,35 @@ class ExecutionService(
         }
         rememberIfPending(execId, outcome, state, tenant)
         executionRepo.save(execution)
+        logSettled(execution, outcome, execId)
         // 실행 실패(사용자 중단 제외) 시 설정된 웹훅으로 비동기 알림 — 무인 실행(스케줄/웹훅)에서 특히 유용.
         if (execution.status == ExecutionStatus.FAILED) {
             notifier.notifyFailure(tenant, execId, execution.flowId, execution.error)
+        }
+    }
+
+    /** 실행 종료/중단 한 줄 요약 — 대기면 무엇을 기다리는지, 끝났으면 결과와 소요시간. */
+    private fun logSettled(execution: Execution, outcome: FlowExecutor.Outcome, execId: UUID) {
+        val elapsedMs = java.time.Duration.between(
+            execution.startedAt, execution.finishedAt ?: Instant.now()
+        ).toMillis()
+        if (outcome.isPending()) {
+            val what = when {
+                outcome.pendingWait != null ->
+                    "wait(콜백 대기) node=${outcome.pendingWait.nodeId} 타임아웃 ${outcome.pendingWait.timeoutSec}초 수신URL=${outcome.pendingWait.receiveUrl}"
+                outcome.pendingClient != null ->
+                    "client HTTP node=${outcome.pendingClient.nodeId} ${outcome.pendingClient.method} ${outcome.pendingClient.url}"
+                outcome.pendingForm != null ->
+                    "form(팝업) node=${outcome.pendingForm.nodeId} ${outcome.pendingForm.method} ${outcome.pendingForm.action}"
+                else -> "input(사용자 입력) node=${outcome.pendingInput?.nodeId}"
+            }
+            log.info("실행 대기(WAITING): exec={} — {} ({}ms 경과)", execId, what, elapsedMs)
+            return
+        }
+        when (execution.status) {
+            ExecutionStatus.SUCCEEDED -> log.info("실행 성공: exec={} ({}ms)", execId, elapsedMs)
+            ExecutionStatus.CANCELLED -> log.info("실행 취소(사용자 중단): exec={} ({}ms)", execId, elapsedMs)
+            else -> log.warn("실행 실패: exec={} ({}ms) — {}", execId, elapsedMs, execution.error)
         }
     }
 
@@ -294,8 +334,12 @@ class ExecutionService(
         val nodeId = req?.nodeId
         val suspended = if (nodeId == null) null else claim(executionId, nodeId)
         if (suspended == null || suspended.tenant != tenant) {
+            log.info("재개 무시(멱등): exec={} node={} — 이미 재개/완료됐거나 대기 노드가 다릅니다(현재 {})",
+                executionId, nodeId, execution.status)
             return detail(execution, null, null, null, null) // 멱등
         }
+        log.info("재개 요청: exec={} node={} (중단={}, 소요 {}ms, 브라우저 상태={})",
+            executionId, nodeId, req?.aborted == true, req?.durationMs ?: 0L, req?.status ?: "-")
         submitResume(executionId, suspended, req)
         return detail(execution, null, null, null, null)
     }
@@ -321,6 +365,7 @@ class ExecutionService(
                 recorder(executionId, secretValuesOf(suspended.state))
             )
         } catch (e: Exception) {
+            log.error("재개 중 오류(exec={}): {}", executionId, msg(e), e)
             val execution = executionRepo.findById(executionId).orElse(null) ?: return
             execution.markFailed("재개 중 오류: " + msg(e))
             executionRepo.save(execution)
@@ -464,6 +509,7 @@ class ExecutionService(
             .orElseThrow { NotFoundException.of("Execution", execId) }
         val versionNo = versionRepo.findById(src.flowVersionId).map { it.versionNo }.orElse(null)
         val input = src.inputJson?.let { json.readTree(it) }
+        log.info("재실행: 원본 exec={} → flow={} v{} (입력 재현={})", execId, src.flowId, versionNo, input != null)
         return run(src.flowId, RunRequest(input, null, null, versionNo))
     }
 
@@ -605,7 +651,11 @@ class ExecutionService(
      * 이미 콜백/완료됐거나 다른 wait 로 교체된 경우 claim 이 실패해 멱등하게 무시된다.
      */
     private fun onWaitTimeout(execId: UUID, nodeId: String, secs: Long) {
-        val claimed = claim(execId, nodeId) ?: return
+        val claimed = claim(execId, nodeId) ?: run {
+            log.debug("wait 타임아웃 무시(exec={}, node={}) — 콜백/재개가 먼저 선점", execId, nodeId)
+            return
+        }
+        log.warn("wait 타임아웃 발화: exec={} node={} — {}초 동안 콜백 없음 → 실행 실패 처리", execId, nodeId, secs)
         val req = ResumeRequest(
             nodeId, null, null,
             "콜백 대기 타임아웃 — ${secs}초 동안 콜백이 오지 않았습니다.",
@@ -666,7 +716,12 @@ class ExecutionService(
         headers: Map<String, String>, bodyText: String?
     ): RelayResponse {
         // claim(조건부 DELETE CAS) — 교체/완료/타임아웃 선점이면 멱등 OK. 재시작 후엔 DB 스냅샷 재수화.
-        val claimed = claim(execId, nodeId) ?: return RelayResponse.plainOk()
+        val claimed = claim(execId, nodeId) ?: run {
+            log.info("wait 콜백 무시(멱등): exec={} node={} {} — 이미 재개/타임아웃/완료됨", execId, nodeId, method)
+            return RelayResponse.plainOk()
+        }
+        log.info("wait 콜백 수신: exec={} node={} {} 본문 {}바이트 헤더 {}개 → 재개",
+            execId, nodeId, method, bodyText?.toByteArray()?.size ?: 0, headers.size)
         val resp = waitResponseFor(claimed.state, nodeId) // 재개 전(state 접근 가능) 응답 산출
         // 수신 URL 은 콜백 요청 스레드에서 확정(오리진 자동이 가장 정확) 후, 재개는 워커로 — ACK 는 즉시.
         val cb = CallbackPayload(
@@ -767,6 +822,9 @@ class ExecutionService(
     companion object {
         private val log = LoggerFactory.getLogger(ExecutionService::class.java)
         private val WORKER_SEQ = java.util.concurrent.atomic.AtomicInteger()
+
+        /** 워커 스레드 로그 상관관계 키 — 로그 패턴의 `%X{execId}` 로 출력된다. */
+        const val MDC_EXEC_ID = "execId"
 
         private fun waitSecs(timeoutSec: Int): Long = if (timeoutSec <= 0) 120L else timeoutSec.toLong()
 

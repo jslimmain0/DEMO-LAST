@@ -1,11 +1,13 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { CSSProperties, ReactNode } from 'react'
-import { useEffect, useMemo, useState } from 'react'
+import { Suspense, lazy, useEffect, useMemo, useState } from 'react'
 import { pluginsApi, runsApi, secretsApi, settingsApi, transformsApi } from '../api/client'
 import { usePermissions } from '../auth/AuthContext'
 import { toast } from '../components/toast'
 import type { Binding, BodyType, GraphNode, HttpMethod, NodeField, NodeOutput, NodeVar, ReqMode, RespType, SingleNodeRunResult, TcpField, TcpPreview, TcpRespField, WaitField as WaitFieldT } from '../api/types'
 import { BigTextEditor, ExpandCorner } from '../components/BigTextEditor'
+// 워크벤치(전체화면 모달)의 인라인 코드 편집기 — 열 때만 로드(BigTextEditor 와 같은 청크)
+const CodeEditorLazy = lazy(() => import('../components/CodeEditor'))
 import { CopyIcon, DataInsertIcon } from '../components/icons'
 import { BindingChip } from '../binding/BindingChip'
 import { BindingPicker } from '../binding/BindingPicker'
@@ -301,7 +303,8 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
     : key === 'body' ? true
     : key === 'resp' ? false
     : false
-  const secIsOpen = (key: string): boolean => secOverride[key] ?? secDefault(key)
+  // 전체화면 모달에선 공간이 충분하니 섹션을 기본 펼침(수동 접기는 존중)
+  const secIsOpen = (key: string): boolean => secOverride[key] ?? (modal ? true : secDefault(key))
   const toggleSec = (key: string) => setSecOverride((p) => ({ ...p, [key]: !secIsOpen(key) }))
 
   // 단일 실행 응답에서 출력 키 자동 채우기
@@ -454,29 +457,32 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
     setPick(null)
   }
 
-  // 모달(전체화면)에서 2단 레이아웃을 쓰는 타입 — 요청 구성(좌) | 응답·확인(우)
+  // 모달(전체화면)에서 2단 레이아웃을 쓰는 타입 — 요청(좌) | 응답(우) 워크벤치
   const twoCol = modal && (node.type === 'http' || node.type === 'tcp')
   const modalColW = twoCol ? 1380 : 940
-  // ▶ 이 노드만 실행 + 결과 — 도킹에선 상단, 모달 2단에선 오른쪽 '확인' 칼럼으로 이동
+  // 단일 실행 결과 박스 — 도킹에선 버튼 아래, 모달 워크벤치에선 오른쪽 '응답' 패널의 본체
+  const bigResult = twoCol // 워크벤치에선 응답을 크게
+  const runResultBox = single ? (
+    <div style={{ marginTop: bigResult ? 0 : 8, border: `1px solid ${single.ok ? 'var(--fl-ok)' : 'var(--fl-fail)'}`, borderRadius: 'var(--fl-radius-sm)', overflow: 'hidden' }}>
+      <div style={{ padding: bigResult ? '8px 12px' : '6px 10px', fontSize: bigResult ? 12.5 : 12, fontWeight: 600, background: 'var(--fl-surface-2)', color: single.ok ? 'var(--fl-ok)' : 'var(--fl-fail)' }}>
+        {single.ok ? '✓ 성공' : '✕ 실패'}{single.httpStatus != null ? ` · HTTP ${single.httpStatus}` : ''}
+      </div>
+      {single.output != null && (
+        <pre style={{ ...singlePre, ...(bigResult ? { maxHeight: '38vh', fontSize: 12 } : null) }}>{typeof single.output === 'string' ? single.output : JSON.stringify(single.output, null, 2)}</pre>
+      )}
+      {single.responseText && (!single.ok || single.output == null) && (
+        <pre style={{ ...singlePre, ...(bigResult ? { maxHeight: '38vh', fontSize: 12 } : null), color: single.ok ? 'var(--fl-text)' : 'var(--fl-fail)' }}>{single.responseText}</pre>
+      )}
+    </div>
+  ) : null
+  // ▶ 이 노드만 실행 + 결과 — 도킹 상단용(모달 워크벤치는 URL 바의 ▶ 실행 + 오른쪽 응답 패널로 대체)
   const singleRunBlock = SINGLE_RUNNABLE.has(node.type) && canEdit ? (
     <div style={{ marginTop: 10 }}>
       <button onClick={runSingle} disabled={singleRunning} style={singleBtn}
         title="이 노드만 즉석 실행합니다. 활성 환경변수({{키@env}})·시크릿({{이름@secret}})은 적용되고, 이전 노드에서 오는 값({{키@노드}})만 빈 값입니다.">
         {singleRunning ? '실행 중…' : '▶ 이 노드만 실행'}
       </button>
-      {single && (
-        <div style={{ marginTop: 8, border: `1px solid ${single.ok ? 'var(--fl-ok)' : 'var(--fl-fail)'}`, borderRadius: 'var(--fl-radius-sm)', overflow: 'hidden' }}>
-          <div style={{ padding: '6px 10px', fontSize: 12, fontWeight: 600, background: 'var(--fl-surface-2)', color: single.ok ? 'var(--fl-ok)' : 'var(--fl-fail)' }}>
-            {single.ok ? '✓ 성공' : '✕ 실패'}{single.httpStatus != null ? ` · HTTP ${single.httpStatus}` : ''}
-          </div>
-          {single.output != null && (
-            <pre style={singlePre}>{typeof single.output === 'string' ? single.output : JSON.stringify(single.output, null, 2)}</pre>
-          )}
-          {single.responseText && (!single.ok || single.output == null) && (
-            <pre style={{ ...singlePre, color: single.ok ? 'var(--fl-text)' : 'var(--fl-fail)' }}>{single.responseText}</pre>
-          )}
-        </div>
-      )}
+      {runResultBox}
     </div>
   ) : null
 
@@ -677,30 +683,25 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
         })()}
 
         {node.type === 'http' && (() => {
-          const reqCol = (
-          <>
-            {/* Base URL 과 Path 분리. 각 필드 안에서 리터럴 + 토큰({{ 키@노드 }}·{{ 키@env }}) 자유 혼합·다중 가능. */}
-            <label style={label}>메서드 · Base URL</label>
-            <div style={{ display: 'flex', gap: 6, alignItems: 'stretch' }}>
-              <select aria-label="메서드" style={methodSel(node.method)} value={node.method ?? 'GET'} onChange={(e) => update(id, { method: e.target.value as HttpMethod })}>
-                {METHODS.map((m) => <option key={m} value={m}>{m}</option>)}
-              </select>
-              {node.baseUrlBound && !isTokenizable(node.baseUrlBound) ? (
-                // 토큰 문법 밖 키/id 의 구(舊) bound — 이관하면 조용히 깨지므로 구조적 바인딩 칩 유지
-                <div style={{ flex: 1, minWidth: 0 }}><BindingChip binding={node.baseUrlBound} sourceType={sourceType(node.baseUrlBound)} onRemove={() => update(id, { baseUrlBound: null })} /></div>
-              ) : (
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <TokenInput
-                    ariaLabel="Base URL"
-                    value={baseUrlValue}
-                    onChange={(v) => update(id, { baseUrl: v, baseUrlBound: null })}
-                    sources={sources}
-                    placeholder="https://api.example.com — { } 로 데이터 삽입"
-                  />
-                </div>
-              )}
-            </div>
-            <label style={{ ...label, marginTop: 8 }}>Path</label>
+          // URL 을 이루는 요소들 — 도킹(세로 흐름)과 모달(워크벤치 바)에서 배치만 달리 재사용
+          const methodEl = (
+            <select aria-label="메서드" style={methodSel(node.method)} value={node.method ?? 'GET'} onChange={(e) => update(id, { method: e.target.value as HttpMethod })}>
+              {METHODS.map((m) => <option key={m} value={m}>{m}</option>)}
+            </select>
+          )
+          const baseUrlEl = node.baseUrlBound && !isTokenizable(node.baseUrlBound) ? (
+            // 토큰 문법 밖 키/id 의 구(舊) bound — 이관하면 조용히 깨지므로 구조적 바인딩 칩 유지
+            <BindingChip binding={node.baseUrlBound} sourceType={sourceType(node.baseUrlBound)} onRemove={() => update(id, { baseUrlBound: null })} />
+          ) : (
+            <TokenInput
+              ariaLabel="Base URL"
+              value={baseUrlValue}
+              onChange={(v) => update(id, { baseUrl: v, baseUrlBound: null })}
+              sources={sources}
+              placeholder="https://api.example.com — { } 로 데이터 삽입"
+            />
+          )
+          const pathEl = (
             <TokenInput
               ariaLabel="Path"
               value={node.path ?? ''}
@@ -708,7 +709,9 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
               sources={sources}
               placeholder="/orders/{{ id@prev }} — { } 로 데이터 삽입"
             />
-
+          )
+          const urlExtras = (
+          <>
             {!mergedUrl.trim() && !node.baseUrlBound && (
               <p style={{ ...hintP, color: 'var(--fl-put)', marginTop: 6 }}>⚠ URL 이 비어 있습니다 — 호출할 주소를 입력하세요.</p>
             )}
@@ -717,6 +720,10 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
                 ↳ 쿼리 {urlQuery.split('&').filter(Boolean).length}개를 Params 로 분리
               </button>
             )}
+          </>
+          )
+          const reqRest = (
+          <>
 
             <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
               <button onClick={() => setCurlText(curlText === null ? '' : null)} style={ghostMini} title="curl 명령을 붙여넣어 이 노드를 채웁니다">cURL 붙여넣기</button>
@@ -812,10 +819,22 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
                 )}
                 {(bodyKind === 'raw' || bodyKind === 'xml' || (STRUCTURED_BODY.includes(bodyKind) && !!node.jsonRaw)) ? (
                   <div>
-                    <div style={{ position: 'relative' }}>
-                      <textarea style={{ ...mono, minHeight: 130, resize: 'vertical' }} value={node.rawBody ?? ''} onChange={(e) => update(id, { rawBody: e.target.value })} placeholder={rawBodyPlaceholder(bodyKind)} />
-                      <ExpandCorner onClick={() => setBigEdit('rawBody')} />
-                    </div>
+                    {modal && (bodyKind === 'json' || bodyKind === 'xml') ? (
+                      // 워크벤치: 본문을 인라인 코드 편집기(하이라이트·문법 체크)로 — 넓어진 공간을 실제로 쓴다
+                      <div style={{ position: 'relative' }}>
+                        <Suspense fallback={<textarea style={{ ...mono, minHeight: 240 }} value={node.rawBody ?? ''} onChange={(e) => update(id, { rawBody: e.target.value })} placeholder={rawBodyPlaceholder(bodyKind)} />}>
+                          <div style={{ height: 260, display: 'flex', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', overflow: 'hidden' }}>
+                            <CodeEditorLazy value={node.rawBody ?? ''} onChange={(v) => update(id, { rawBody: v })} language={bodyKind === 'xml' ? 'xml' : 'json'} />
+                          </div>
+                        </Suspense>
+                        <ExpandCorner onClick={() => setBigEdit('rawBody')} />
+                      </div>
+                    ) : (
+                      <div style={{ position: 'relative' }}>
+                        <textarea style={{ ...mono, minHeight: 130, resize: 'vertical' }} value={node.rawBody ?? ''} onChange={(e) => update(id, { rawBody: e.target.value })} placeholder={rawBodyPlaceholder(bodyKind)} />
+                        <ExpandCorner onClick={() => setBigEdit('rawBody')} />
+                      </div>
+                    )}
                     <button onClick={() => setPick('rawBody')} style={{ ...braceBtn, width: 'auto', padding: '0 10px', marginTop: 4 }} title="데이터 삽입"><DataInsertIcon /></button>
                   </div>
                 ) : (
@@ -828,9 +847,8 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
 
           </>
           )
-          const respCol = (
+          const respCfg = (
           <>
-            {twoCol && singleRunBlock}
             {/* 응답 섹션 */}
             <HttpSection title="응답 (Response)" badge={normRespType(node.respType)} open={secIsOpen('resp')} onToggle={() => toggleSec('resp')}
               right={<select style={{ ...field, width: 'auto', padding: '5px 6px', fontSize: 12 }} value={normRespType(node.respType)} onChange={(e) => update(id, { respType: e.target.value as RespType })} aria-label="응답 타입">
@@ -870,14 +888,52 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
             )}
           </>
           )
-          // 전체화면 모달: 요청 구성(좌) | 응답·확인(우) 2단 — 도킹 사이드에선 기존 세로 흐름 그대로
-          return twoCol ? (
-            <div style={twoColGrid}>
-              <div style={{ minWidth: 0 }}><div style={colHead}>요청 구성</div>{reqCol}</div>
-              <div style={{ minWidth: 0 }}><div style={colHead}>응답 · 확인</div>{respCol}</div>
-            </div>
-          ) : (
-            <>{reqCol}{respCol}</>
+          // 도킹(사이드): 기존 세로 흐름 그대로
+          if (!twoCol) return (
+            <>
+              <label style={label}>메서드 · Base URL</label>
+              <div style={{ display: 'flex', gap: 6, alignItems: 'stretch' }}>
+                {methodEl}
+                <div style={{ flex: 1, minWidth: 0 }}>{baseUrlEl}</div>
+              </div>
+              <label style={{ ...label, marginTop: 8 }}>Path</label>
+              {pathEl}
+              {urlExtras}
+              {reqRest}
+              {respCfg}
+            </>
+          )
+          // 전체화면 모달: API 워크벤치 — 상단 [메서드|URL|Path|▶실행] 바, 좌 요청 구성 / 우 실행 응답+출력 매핑
+          return (
+            <>
+              <div style={wbBar}>
+                {methodEl}
+                <div style={{ flex: 1.6, minWidth: 0 }}>{baseUrlEl}</div>
+                <div style={{ flex: 1, minWidth: 0 }}>{pathEl}</div>
+                {canEdit && (
+                  <button onClick={runSingle} disabled={singleRunning} style={wbRunBtn}
+                    title="이 노드만 즉석 실행 — 응답이 오른쪽 패널에 표시됩니다. 환경변수·시크릿 적용, 이전 노드 값만 빈 값.">
+                    {singleRunning ? '실행 중…' : '▶ 실행'}
+                  </button>
+                )}
+              </div>
+              {urlExtras}
+              <div style={twoColGrid}>
+                <div style={{ minWidth: 0 }}><div style={colHead}>요청</div>{reqRest}</div>
+                <div style={{ minWidth: 0 }}>
+                  <div style={colHead}>응답</div>
+                  <div style={{ margin: '12px 0 4px' }}>
+                    {runResultBox ?? (
+                      <div style={respEmpty}>
+                        {singleRunning ? '실행 중…' : '위의 ▶ 실행 을 누르면 실제 응답이 여기에 표시됩니다.'}
+                        <div style={{ fontSize: 11, marginTop: 6, opacity: .75 }}>환경변수({'{{ 키@env }}'})·시크릿({'{{ 이름@secret }}'})은 적용되고, 이전 노드 값({'{{ 키@노드 }}'})만 빈 값으로 호출합니다.</div>
+                      </div>
+                    )}
+                  </div>
+                  {respCfg}
+                </div>
+              </div>
+            </>
           )
         })()}
 
@@ -1072,7 +1128,16 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
           )
           const respCol = (
           <>
-            {twoCol && singleRunBlock}
+            {twoCol && (
+              <>
+                {singleRunBlock}
+                {!single && (
+                  <div style={{ ...respEmpty, marginTop: 8 }}>
+                    ▶ 실행하면 실제 전문 응답(응답 필드로 슬라이싱된 값)이 여기에 표시됩니다.
+                  </div>
+                )}
+              </>
+            )}
             <label style={label}>응답 필드 (고정길이 → 출력)</label>
             <TcpRespEditor
               fields={node.tcpResponse ?? []}
@@ -1665,9 +1730,14 @@ const warnTag: CSSProperties = { fontSize: 9.5, fontWeight: 700, color: 'var(--f
 const padTag: CSSProperties = { fontSize: 9.5, fontWeight: 700, color: 'var(--fl-text-muted)', border: '1px solid var(--fl-border)', borderRadius: 4, padding: '0 4px' }
 
 const shell: CSSProperties = { flexShrink: 0, background: 'var(--fl-surface)', display: 'flex', flexDirection: 'column', height: '100%' }
-// 전체화면 모달 2단 레이아웃 — 요청 구성(좌) | 응답·확인(우)
-const twoColGrid: CSSProperties = { display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', columnGap: 36, alignItems: 'start', marginTop: 4 }
+// 전체화면 모달 2단 레이아웃 — 요청(좌) | 응답(우) 워크벤치
+const twoColGrid: CSSProperties = { display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', columnGap: 44, alignItems: 'start', marginTop: 8 }
 const colHead: CSSProperties = { fontSize: 11, fontWeight: 700, color: 'var(--fl-text-muted)', textTransform: 'uppercase', letterSpacing: '.07em', paddingBottom: 8, marginTop: 10, borderBottom: '1px solid var(--fl-border)' }
+// 워크벤치 URL 바 — [메서드 | Base URL | Path | ▶ 실행] 한 줄(포스트맨 어휘)
+const wbBar: CSSProperties = { display: 'flex', gap: 8, alignItems: 'stretch', margin: '12px 0 4px' }
+const wbRunBtn: CSSProperties = { flexShrink: 0, minWidth: 96, padding: '0 18px', border: 'none', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-primary)', color: '#fff', cursor: 'pointer', fontSize: 13.5, fontWeight: 700 }
+// 응답 패널 빈 상태 — 아직 실행 전
+const respEmpty: CSSProperties = { padding: '22px 16px', border: '1px dashed var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', color: 'var(--fl-text-muted)', fontSize: 12.5, textAlign: 'center', lineHeight: 1.6 }
 const closeBtn: CSSProperties = { width: 30, height: 30, borderRadius: 8, border: 'none', background: 'var(--fl-surface-2)', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 16 }
 const iconBtn: CSSProperties = { width: 30, height: 30, flexShrink: 0, borderRadius: 8, border: '1px solid var(--fl-border)', background: 'var(--fl-surface)', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 14 }
 const singleBtn: CSSProperties = { width: '100%', padding: '8px 10px', border: '1px solid var(--fl-primary)', borderRadius: 'var(--fl-radius-sm)', background: 'transparent', color: 'var(--fl-primary)', cursor: 'pointer', fontSize: 12.5, fontWeight: 600 }

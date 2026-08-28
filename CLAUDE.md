@@ -998,11 +998,12 @@ tcp-preview 는 시크릿 미시드라 무관. 단위 5종 + 라이브(단일 �
 - 라이브 확인 중 이 브라우저의 `fl:editor:propertyW=560`(과대 저장값)이 캔버스를 압박 → 380 으로 리셋(코드 무관, "이상해 보임"의 한 원인).
 - 검증: tsc/build/oxlint + 실브라우저(:18080 dark) — 전체화면 속성 모달·Mock 결제창 HTML 1,490자 큰 편집기·시크릿 볼트 새 레이아웃 실측.
 
-### 6차 — 전체화면 모달 2단 레이아웃 (사용자: "전체화면이니까 레이아웃을 완전히 더 사용자 친화적으로")
-- 5차의 "1080px 로 조이기"를 대체 — 모달을 다시 **96vw(min 1500px)×92vh** 로 벌리고, [PropertyPanel](frontend/src/panels/PropertyPanel.tsx) 이 모달에서 **2단 그리드**로 폭을 실제로 쓴다:
-  **HTTP** = 요청 구성(메서드·URL·cURL·고급·프리셋·쿼리·헤더·본문) | 응답·확인(▶ 단일 실행+결과·응답 섹션·요청 미리보기) · **TCP** = 요청 전문 구성(대상·인코딩·프리픽스·요청 필드) | 응답·확인(단일 실행·응답 필드·전문 미리보기).
-- 구현: 노드 블록을 IIFE 로 `reqCol`/`respCol` JSX 변수로 분리해 `twoCol ? grid : 세로 흐름` — **도킹 사이드는 기존 렌더 그대로**(JSX 중복 없음). 단일 실행 블록은 `singleRunBlock` 변수로 추출해 도킹=상단/모달 2단=우측 칼럼. 기타 노드 타입 모달은 중앙 940px 칼럼 유지(`modalColW`). 칼럼 제목 `colHead`(요청 구성/응답·확인).
-- 실측: TCP·HTTP 모달 2단 렌더 확인(:18080). ⚠ 스테일 페이지(재기동 전 로드)가 남아 있으면 이전 UI 로 보임 — 새로고침 필요.
+### 6차 — 전체화면 모달 = API 워크벤치 (사용자: "좌우만 바꾼다고 편해지냐, 넓어진 걸 잘 써라" 재설계)
+- 단순 2단 재배치(1차안)를 버리고 **포스트맨 어휘의 워크벤치**로 재설계([PropertyPanel](frontend/src/panels/PropertyPanel.tsx), 모달 96vw×92vh):
+  - **HTTP**: 상단 **URL 바 [메서드|Base URL|Path|▶ 실행]** 한 줄 → 좌 "요청"(cURL·프리셋·고급·쿼리/헤더/본문 — **모달에선 섹션 기본 펼침**, json/xml raw 본문은 **인라인 CodeMirror**(260px, `CodeEditorLazy` 재사용)) | 우 "응답"(**실행 응답이 크게** — 상태칩+본문 38vh, 실행 전엔 점선 빈 상태 안내 → 아래에 출력 키 매핑·'이 응답에서 키 채우기'·요청 미리보기). **작성→실행→응답→키 매핑이 한 화면에서 좌→우로 흐른다.**
+  - **TCP**: 좌 "요청 전문 구성" | 우 단일 실행+응답(빈 상태 안내 포함)+응답 필드+전문 미리보기.
+- 구현: http 블록을 IIFE 안에서 `methodEl/baseUrlEl/pathEl/urlExtras/reqRest/respCfg` JSX 조각으로 분해 — **도킹은 기존 세로 흐름을 같은 조각으로 조립**(JSX 중복 없음). `runResultBox`(결과)와 `singleRunBlock`(버튼+결과, 도킹용) 분리. `secIsOpen` 이 모달에선 기본 true. 스타일 `wbBar/wbRunBtn/respEmpty/twoColGrid/colHead`.
+- 실측(:18080): URL 바 ▶ 실행 → 우측 응답 패널 ✓ 성공·HTTP 200 + JSON(김철수/VIP/52000) 크게 표시 → 바로 아래 키 채우기. ⚠ 스테일 페이지(재기동 전 로드)는 새로고침 필요.
 
 ### 5차 — 코드 편집기(문법 체크)·트랙 칩 가림·모달 미관 (2026-08-29, 사용자 피드백 3건)
 - **[CodeEditor](frontend/src/components/CodeEditor.tsx)**(신규, CodeMirror 6): BigTextEditor 가 HTML/JSON/XML 일 때 textarea 대신 —

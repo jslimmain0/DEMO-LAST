@@ -3,8 +3,9 @@ import type { CSSProperties, ReactNode } from 'react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import type { ExecutionSummary, FlowSummary, FolderSummary } from '../api/types'
-import { flowsApi, foldersApi, runsApi, suitesApi } from '../api/client'
+import { flowsApi, foldersApi, runsApi, suitesApi, workspacesApi } from '../api/client'
 import type { SuiteRunItem } from '../api/client'
+import { WorkspaceDialog } from '../components/WorkspaceDialog'
 import { AppShellTier1 } from '../app/AppShell'
 import { usePermissions } from '../auth/AuthContext'
 import { AskDialog } from '../components/AskDialog'
@@ -21,9 +22,23 @@ type Sort = 'recent' | 'name'
 export function Dashboard() {
   const qc = useQueryClient()
   const navigate = useNavigate()
-  const { canEdit } = usePermissions()
-  const flows = useQuery({ queryKey: ['flows'], queryFn: flowsApi.list })
-  const folders = useQuery({ queryKey: ['folders'], queryFn: foldersApi.list })
+  const { canEdit: canEditGlobal } = usePermissions()
+
+  // ---- 워크스페이스(폴더 위 최상위 스코프) ----
+  const [wsId, setWsIdRaw] = useState<string>(() => { try { return localStorage.getItem('fl:workspace') ?? 'public' } catch { return 'public' } })
+  const workspaces = useQuery({ queryKey: ['workspaces'], queryFn: workspacesApi.list })
+  // 저장된 워크스페이스가 사라졌으면(삭제/권한 상실) 공용으로 복귀.
+  // isFetching 중엔 판정하지 않는다 — 새 워크스페이스 생성 직후 stale 목록으로 되돌리는 레이스 방지.
+  useEffect(() => {
+    if (workspaces.data && !workspaces.isFetching && !workspaces.data.some((w) => w.id === wsId)) setWsIdRaw('public')
+  }, [workspaces.data, workspaces.isFetching, wsId])
+  const currentWs = workspaces.data?.find((w) => w.id === wsId)
+  const wsRole = currentWs?.myRole ?? 'EDITOR'
+  const canEdit = canEditGlobal && wsRole !== 'VIEWER' // VIEWER 롤은 조회만
+  const [wsDialog, setWsDialog] = useState(false)
+
+  const flows = useQuery({ queryKey: ['flows', wsId], queryFn: () => flowsApi.list(wsId) })
+  const folders = useQuery({ queryKey: ['folders', wsId], queryFn: () => foldersApi.list(wsId) })
   const runs = useQuery({ queryKey: ['executions', 'recent'], queryFn: () => runsApi.recent(50) })
 
   // 현재 위치(홈/폴더)는 URL(?folder=id)이 진실원 — 에디터에서 ←/브라우저 뒤로가기로 돌아와도
@@ -31,6 +46,15 @@ export function Dashboard() {
   const [params, setParams] = useSearchParams()
   const sel: Sel = params.get('folder') ?? 'all'
   const setSel = (s: Sel) => setParams(s === 'all' || s === 'none' ? {} : { folder: s })
+  // 워크스페이스 전환 — 위치/검색/선택 초기화 + localStorage 지속
+  const setWsId = (id: string) => {
+    setWsIdRaw(id)
+    try { localStorage.setItem('fl:workspace', id) } catch { /* 프라이빗 모드 */ }
+    setParams({}, { replace: true })
+    setSearch('')
+    setSelectMode(false)
+    setSelectedIds(new Set())
+  }
   const [search, setSearch] = useState('')
   const [sort, setSort] = useState<Sort>('recent')
   const [selectMode, setSelectMode] = useState(false)
@@ -51,14 +75,14 @@ export function Dashboard() {
   }, [folders.data, sel])
 
   const createFlow = useMutation({
-    mutationFn: () => flowsApi.create({ name: '새 워크플로', folderId: isFolderId(sel) ? sel : null }),
+    mutationFn: () => flowsApi.create({ name: '새 워크플로', folderId: isFolderId(sel) ? sel : null, workspaceId: wsId === 'public' ? null : wsId }),
     onSuccess: (flow) => navigate(`/flows/${flow.id}`),
   })
   const removeFlow = useMutation({ mutationFn: (id: string) => flowsApi.remove(id), onSuccess: invalidate })
   const duplicateFlow = useMutation({
     mutationFn: async (f: FlowSummary) => {
       const detail = await flowsApi.get(f.id)
-      const created = await flowsApi.importFlow({ name: `${f.name} 복제본`, nodes: detail.graph.nodes, edges: detail.graph.edges })
+      const created = await flowsApi.importFlow({ name: `${f.name} 복제본`, nodes: detail.graph.nodes, edges: detail.graph.edges, workspaceId: wsId === 'public' ? undefined : wsId })
       // 폴더 안에서 복제하면 같은 폴더에 복제본이 생긴다(탐색기 규칙)
       if (f.folderId) await flowsApi.move(created.id, f.folderId)
       return created
@@ -67,7 +91,7 @@ export function Dashboard() {
   })
   const moveFlow = useMutation({ mutationFn: (v: { id: string; folderId: string | null }) => flowsApi.move(v.id, v.folderId), onSuccess: invalidate })
   const moveFolder = useMutation({ mutationFn: (v: { id: string; parentId: string | null }) => foldersApi.move(v.id, v.parentId), onSuccess: invalidate })
-  const createFolder = useMutation({ mutationFn: (v: { name: string; parentId: string | null }) => foldersApi.create(v.name, v.parentId), onSuccess: invalidate })
+  const createFolder = useMutation({ mutationFn: (v: { name: string; parentId: string | null }) => foldersApi.create(v.name, v.parentId, wsId), onSuccess: invalidate })
   const renameFolder = useMutation({ mutationFn: (v: { id: string; name: string }) => foldersApi.rename(v.id, v.name), onSuccess: invalidate })
   const removeFolder = useMutation({ mutationFn: (id: string) => foldersApi.remove(id), onSuccess: invalidate })
   const renameFlow = useMutation({ mutationFn: (v: { id: string; name: string }) => flowsApi.updateMeta(v.id, { name: v.name }), onSuccess: invalidate })
@@ -123,6 +147,14 @@ export function Dashboard() {
     walk(null, 0)
     return out
   }, [folderList])
+
+  const createWs = useMutation({
+    mutationFn: (name: string) => workspacesApi.create(name),
+    // 목록 refetch 완료 후 전환 — stale 목록 기준의 자동 복귀 레이스 방지(이중 안전망)
+    onSuccess: async (ws) => { await qc.invalidateQueries({ queryKey: ['workspaces'] }); setWsId(ws.id); toast(`워크스페이스 "${ws.name}" 생성됨`, 'ok') },
+    onError: (e) => toast((e as { response?: { data?: { message?: string } } })?.response?.data?.message ?? '워크스페이스 생성에 실패했습니다.', 'error'),
+  })
+  const newTeamWs = () => setAsk({ title: '새 팀 워크스페이스', input: { label: '워크스페이스 이름', placeholder: '예: 결제팀' }, confirmLabel: '만들기', onConfirm: (name) => createWs.mutate(name) })
 
   const newFolderIn = (parentId: string | null) => {
     setAsk({ title: parentId ? '새 하위 폴더' : '새 폴더', input: { label: '폴더 이름', placeholder: '폴더 이름' }, confirmLabel: '만들기', onConfirm: (name) => createFolder.mutate({ name, parentId }) })
@@ -280,8 +312,25 @@ export function Dashboard() {
       </div>
     ))
 
+  const wsGlyph = (kind: string) => (kind === 'PERSONAL' ? '🔒' : kind === 'TEAM' ? '👥' : '🌐')
   const folderNav = (
     <>
+      <div style={sidebarLabel}>워크스페이스</div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '0 10px 4px' }}>
+        <select
+          aria-label="워크스페이스 선택"
+          value={wsId}
+          onChange={(e) => { if (e.target.value === '@new') { newTeamWs() } else { setWsId(e.target.value) } }}
+          style={wsSelect}
+        >
+          {(workspaces.data ?? [{ id: 'public', name: '공용', kind: 'PUBLIC', myRole: 'EDITOR', canManage: false } as const]).map((w) => (
+            <option key={w.id} value={w.id}>{wsGlyph(w.kind)} {w.name}{w.myRole === 'VIEWER' ? ' (읽기전용)' : ''}</option>
+          ))}
+          <option value="@new">＋ 새 팀 워크스페이스…</option>
+        </select>
+        <button onClick={() => setWsDialog(true)} title="워크스페이스 관리(멤버·롤)" aria-label="워크스페이스 관리" style={wsGearBtn}>⚙</button>
+      </div>
+      {wsRole === 'VIEWER' && <div style={{ padding: '0 12px 6px', fontSize: 11.5, color: 'var(--fl-text-muted)' }}>읽기전용 — 조회만 가능합니다</div>}
       <div style={sidebarLabel}>워크플로</div>
       {/* 홈 = 탐색기 루트: 폴더 타일 + 미분류 워크플로. 여기로 드롭하면 폴더 밖(미분류)으로 꺼낸다. */}
       <SidebarItem label="홈" count={noneCount} active={sel === 'all'} onClick={() => setSel('all')} glyph="▤" drop={dropTo(null)} />
@@ -472,6 +521,13 @@ export function Dashboard() {
         </div>
       {ask && <AskDialog spec={ask} onClose={() => setAsk(null)} />}
       {suiteItems && <SuiteRunDialog items={suiteItems} onClose={() => setSuiteItems(null)} />}
+      {wsDialog && (
+        <WorkspaceDialog
+          current={currentWs ?? { id: 'public', name: '공용', kind: 'PUBLIC', myRole: 'EDITOR', canManage: false }}
+          onClose={() => setWsDialog(false)}
+          onDeleted={() => { setWsDialog(false); setWsId('public'); qc.invalidateQueries({ queryKey: ['workspaces'] }) }}
+        />
+      )}
     </AppShellTier1>
   )
 }
@@ -799,6 +855,8 @@ const dropActive: CSSProperties = { border: '1.5px dashed var(--fl-primary)', ba
 const bulkMoveSel: CSSProperties = { height: 32, padding: '0 8px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 12.5, cursor: 'pointer' }
 const newFolderTile: CSSProperties = { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, minHeight: 58, border: '1.5px dashed var(--fl-border)', borderRadius: 'var(--fl-radius-lg)', background: 'transparent', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 13 }
 const newFolderBtn: CSSProperties = { width: '100%', marginTop: 8, padding: '8px', border: '1px dashed var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'transparent', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 13 }
+const wsSelect: CSSProperties = { flex: 1, minWidth: 0, padding: '7px 8px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 12.5, cursor: 'pointer' }
+const wsGearBtn: CSSProperties = { flexShrink: 0, width: 30, height: 30, border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 14, lineHeight: 1 }
 const heroBand: CSSProperties = { padding: '24px 28px', borderRadius: 'var(--fl-radius-lg)', background: 'var(--fl-surface)', border: '1px solid var(--fl-border)' }
 const heroOpenBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: 'var(--fl-primary)', color: '#fff', border: 'none', padding: '9px 16px', borderRadius: 10, fontWeight: 600, fontSize: 13.5, textDecoration: 'none' }
 const primaryBtn: CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, background: 'var(--fl-primary)', color: '#fff', border: 'none', padding: '9px 16px', borderRadius: 10, fontWeight: 600, fontSize: 13.5, cursor: 'pointer', height: 38 }

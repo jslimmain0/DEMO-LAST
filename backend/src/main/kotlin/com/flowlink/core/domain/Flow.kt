@@ -45,6 +45,10 @@ class Flow {
     @Column(name = "folder_id")
     var folderId: UUID? = null
 
+    /** 소속 워크스페이스(null = 공용 — 레거시 데이터 호환). */
+    @Column(name = "workspace_id")
+    var workspaceId: UUID? = null
+
     /** 낙관적 잠금 — 동시 편집 lost-update 방지(저장 충돌 시 409로 매핑). */
     @Version
     @Column(nullable = false)

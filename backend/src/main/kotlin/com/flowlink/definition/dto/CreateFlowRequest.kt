@@ -12,5 +12,8 @@ data class CreateFlowRequest(
     @field:Size(max = 2000)
     val description: String?,
 
-    val folderId: UUID?
+    val folderId: UUID?,
+
+    /** 소속 워크스페이스 — 'public'/null=공용, UUID=팀/개인. */
+    val workspaceId: String? = null,
 )

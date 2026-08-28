@@ -31,6 +31,10 @@ class Folder {
     @Column(name = "parent_id")
     var parentId: UUID? = null
 
+    /** 소속 워크스페이스(null = 공용 — 레거시 데이터 호환). */
+    @Column(name = "workspace_id")
+    var workspaceId: UUID? = null
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     lateinit var createdAt: Instant

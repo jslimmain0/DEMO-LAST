@@ -16,7 +16,9 @@ object FolderDtos {
     /** 생성/이름변경 공용 — parentId 는 생성 시 상위 폴더 지정(중첩), 이름변경에선 무시. */
     data class FolderRequest(
         @field:NotBlank @field:Size(max = 255) val name: String,
-        val parentId: UUID? = null
+        val parentId: UUID? = null,
+        /** 소속 워크스페이스 — 'public'/null=공용, UUID=팀/개인(생성 시만 사용). */
+        val workspaceId: String? = null
     )
 
     data class FolderSummary(

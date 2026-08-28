@@ -14,21 +14,29 @@ import java.util.UUID
 @Service
 class FolderService(
     private val folderRepo: FolderRepository,
-    private val flowRepo: FlowRepository
+    private val flowRepo: FlowRepository,
+    private val workspace: com.flowlink.workspace.WorkspaceService,
 ) {
 
     @Transactional(readOnly = true)
-    fun list(): List<FolderSummary> {
+    fun list(workspaceIdRaw: String? = null): List<FolderSummary> {
         val tenant = tenant()
+        val wsId = workspace.resolveId(workspaceIdRaw)
+        workspace.requireRead(workspace.currentUsername(), wsId)
         return folderRepo.findByTenantIdOrderByNameAsc(tenant)
+            .filter { it.workspaceId == wsId }
             .map { FolderSummary.from(it, flowRepo.countByTenantIdAndFolderIdAndArchivedFalse(tenant, it.id)) }
     }
 
     @Transactional
-    fun create(name: String, parentId: UUID?): FolderSummary {
+    fun create(name: String, parentId: UUID?, workspaceIdRaw: String? = null): FolderSummary {
+        val wsId = workspace.resolveId(workspaceIdRaw)
+        workspace.requireWrite(workspace.currentUsername(), wsId)
         // 상위 폴더는 존재+테넌트 검증(다른 테넌트/삭제된 폴더 아래 생성 방지). null = 루트.
         val parent = parentId?.let { load(it) }
-        val f = folderRepo.saveAndFlush(Folder.create(tenant(), name, parent?.id))
+        val entity = Folder.create(tenant(), name, parent?.id)
+        entity.workspaceId = parent?.workspaceId ?: wsId // 하위 폴더는 상위의 워크스페이스 승계
+        val f = folderRepo.saveAndFlush(entity)
         return FolderSummary.from(f, 0L)
     }
 
@@ -54,6 +62,9 @@ class FolderService(
             }
             val byId = folderRepo.findByTenantIdOrderByNameAsc(tenant()).associateBy { it.id }
             val parent = byId[parentId] ?: throw NotFoundException.of("Folder", parentId)
+            if (parent.workspaceId != f.workspaceId) {
+                throw BadRequestException("다른 워크스페이스의 폴더 아래로는 옮길 수 없습니다.")
+            }
             var cur: Folder? = parent
             var guard = 0
             while (cur != null && guard++ < 100) {
@@ -78,9 +89,12 @@ class FolderService(
         folderRepo.delete(f)
     }
 
-    private fun load(id: UUID): Folder =
-        folderRepo.findByIdAndTenantId(id, tenant())
+    private fun load(id: UUID): Folder {
+        val f = folderRepo.findByIdAndTenantId(id, tenant())
             .orElseThrow { NotFoundException.of("Folder", id) }
+        workspace.requireWrite(workspace.currentUsername(), f.workspaceId) // 폴더 조작은 전부 쓰기 성격
+        return f
+    }
 
     // 폴더는 워크플로우 컨테이너 계층 — flow 와 함께 전역 공유(로그인 테넌트 무관, 공유 테넌트로).
     private fun tenant(): String = TenantContext.SHARED_FLOW_TENANT

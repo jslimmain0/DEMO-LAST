@@ -40,7 +40,8 @@ export const http = axios.create({
 export const uploadHttp = axios.create({ baseURL: '/api/v1' })
 
 export const flowsApi = {
-  list: () => http.get<FlowSummary[]>('/flows').then((r) => r.data),
+  list: (workspaceId?: string) =>
+    http.get<FlowSummary[]>('/flows', { params: workspaceId && workspaceId !== 'public' ? { workspaceId } : undefined }).then((r) => r.data),
   get: (id: string) => http.get<FlowDetail>(`/flows/${id}`).then((r) => r.data),
   create: (body: CreateFlowRequest) => http.post<FlowDetail>('/flows', body).then((r) => r.data),
   remove: (id: string) => http.delete(`/flows/${id}`).then(() => undefined),
@@ -103,14 +104,40 @@ export const pluginsApi = {
 }
 
 export const foldersApi = {
-  list: () => http.get<FolderSummary[]>('/folders').then((r) => r.data),
-  create: (name: string, parentId: string | null = null) =>
-    http.post<FolderSummary>('/folders', { name, parentId }).then((r) => r.data),
+  list: (workspaceId?: string) =>
+    http.get<FolderSummary[]>('/folders', { params: workspaceId && workspaceId !== 'public' ? { workspaceId } : undefined }).then((r) => r.data),
+  create: (name: string, parentId: string | null = null, workspaceId?: string) =>
+    http.post<FolderSummary>('/folders', { name, parentId, workspaceId: workspaceId && workspaceId !== 'public' ? workspaceId : null }).then((r) => r.data),
   // 폴더 재배치(드래그 이동) — parentId=null 은 루트로. 자기/하위 아래로는 400.
   move: (id: string, parentId: string | null) =>
     http.put<FolderSummary>(`/folders/${id}/parent`, { parentId }).then((r) => r.data),
   rename: (id: string, name: string) => http.patch<FolderSummary>(`/folders/${id}`, { name }).then((r) => r.data),
   remove: (id: string) => http.delete(`/folders/${id}`).then(() => undefined),
+}
+
+// ── 워크스페이스(폴더 위 최상위 그룹) + 롤 ──────────────────────────────
+export interface WorkspaceView { id: string; name: string; kind: 'PUBLIC' | 'PERSONAL' | 'TEAM'; myRole: 'OWNER' | 'EDITOR' | 'VIEWER'; canManage: boolean }
+export interface WorkspaceMemberView { username: string; role: 'OWNER' | 'EDITOR' | 'VIEWER' }
+export const workspacesApi = {
+  list: () => http.get<WorkspaceView[]>('/workspaces').then((r) => r.data),
+  create: (name: string) => http.post<WorkspaceView>('/workspaces', { name }).then((r) => r.data),
+  remove: (id: string) => http.delete(`/workspaces/${id}`).then(() => undefined),
+  members: (id: string) => http.get<WorkspaceMemberView[]>(`/workspaces/${id}/members`).then((r) => r.data),
+  putMember: (id: string, username: string, role: string) =>
+    http.put<WorkspaceMemberView[]>(`/workspaces/${id}/members`, { username, role }).then((r) => r.data),
+  removeMember: (id: string, username: string) =>
+    http.delete<WorkspaceMemberView[]>(`/workspaces/${id}/members/${encodeURIComponent(username)}`).then((r) => r.data),
+}
+
+export interface AdminMeView { username: string; admin: boolean; authenticated: boolean }
+export interface AdminUserView { username: string; globalRole: 'ADMIN' | 'MEMBER'; lastSeenAt: string | null }
+export const adminApi = {
+  me: () => http.get<AdminMeView>('/admin/me').then((r) => r.data),
+  users: () => http.get<AdminUserView[]>('/admin/users').then((r) => r.data),
+  putUser: (username: string, globalRole: string) =>
+    http.put<AdminUserView>(`/admin/users/${encodeURIComponent(username)}`, { globalRole }).then((r) => r.data),
+  removeUser: (username: string) =>
+    http.delete(`/admin/users/${encodeURIComponent(username)}`).then(() => undefined),
 }
 
 export const mocksApi = {

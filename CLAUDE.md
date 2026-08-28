@@ -1046,6 +1046,23 @@ API 도구 UX·비주얼/IA·플로우 통합 3관점 병렬 비평 → 확정 �
 ### 3차 디테일 패치("10개 이상" 추가 발굴, 15건)
 키보드·일관성 마이크로 UX — 전부 프론트: ① 피커 헤더 **모두 펼치기 ⇄ 모두 접기** 토글 버튼(기본 접힘의 짝) ② 피커 섹션 헤더 키보드 접근(tabIndex·Enter/Space·aria-expanded) ③ [NodeAddMenu](frontend/src/canvas/NodeAddMenu.tsx) ↑↓ 활성 이동+하이라이트+Enter 선택·빈 상태 문구 ④ 대시보드 검색 **Esc=지우기 + × 버튼** ⑤ 실행 이력 검색 Esc=지우기 ⑥ 팔레트 검색 Esc=지우기 ⑦ 에디터 워크플로 이름 Enter/Esc=확정(blur) ⑧ Mock 보내보기 경로 Enter=전송 ⑨ 시크릿 이름/값 Enter=저장 ⑩ EnvSwitcher 드롭다운 Esc 닫기 ⑪ 도구(⋯) 메뉴 Esc 닫기 ⑫ 전역 `accent-color`(체크박스/라디오 브랜드 색) ⑬ 전역 `::selection` 브랜드 틴트 ⑭ 전역 버튼 커서(enabled=pointer·disabled=not-allowed+opacity .6) ⑮ 입력 크기 리듬 통일(KeyValueEditor·Env/Secrets 다이얼로그 8×10px·12.5px + KVE 행 버튼 높이 32). 검증: tsc/build/oxlint + 브라우저(펼치기/접기 토글·검색 ×/Esc 클리어·포커스 링).
 
+## 최근 변경 (2026-08-29) — 워크스페이스(폴더 상위 뎁스) + 롤 기반 접근 제어 + admin 계정 관리 (`feat/workspaces-rbac`)
+"admin 계정 관리(팀/롤 베이스) + 롤 기반 워크플로 접근 + 폴더 위 상위 뎁스(워크스페이스, 개인 기본 제공)" 요청.
+- **모델**: `workspace/` 모듈 — [Workspace](backend/src/main/kotlin/com/flowlink/core/domain/Workspace.kt)(PERSONAL|TEAM) ·
+  [WorkspaceMember](backend/src/main/kotlin/com/flowlink/core/domain/WorkspaceMember.kt)(OWNER/EDITOR/VIEWER, (ws,username) 유니크) ·
+  [AppUser](backend/src/main/kotlin/com/flowlink/core/domain/AppUser.kt)(전역 롤 ADMIN|MEMBER, 사용자 레지스트리). `flow`/`folder` 에 `workspace_id`(V13 oracle, h2 는 ddl-auto).
+  **공용 = DB 행 없는 가상 워크스페이스**(workspace_id NULL, API 표현 `'public'`) — 모두(게스트 포함) EDITOR 라 기존 데이터/동작 100% 호환.
+- **롤 판정**([WorkspaceService](backend/src/main/kotlin/com/flowlink/workspace/WorkspaceService.kt)): 공용=모두 EDITOR ·
+  개인=소유자 OWNER(로그인 사용자마다 `listMine` 시 자동 생성 "개인 — {user}") · 팀=멤버십 · **전역 ADMIN=모든 워크스페이스 OWNER 격**.
+  ADMIN 판정 = dev 모드 'dev'(항상) OR env `FLOWLINK_AUTH_ADMIN_LOGINS`(부트스트랩) OR AppUser.globalRole. 사용자명=JWT `preferred_username`(github 게스트=guest).
+  403 은 신규 [ForbiddenException](backend/src/main/kotlin/com/flowlink/common/error/ForbiddenException.kt)+핸들러.
+- **강제 지점 = definition 레이어**: [FlowService](backend/src/main/kotlin/com/flowlink/definition/FlowService.kt) `readable()/writable()`(loadFlow 가 requireRead, 쓰기 경로 전부 requireWrite — VIEWER 조회만) + `list(workspaceId)` 스코프 목록(레포 파생 쿼리 2종) + create/import 가 workspaceId 배정. [FolderService](backend/src/main/kotlin/com/flowlink/folder/FolderService.kt) 동일(하위 폴더는 상위 워크스페이스 승계, 교차 워크스페이스 이동 400). **워크스페이스 삭제 = 안의 플로우/폴더 공용 승격**(`clearWorkspace` @Modifying — 데이터 유실 방지), 개인은 삭제 불가, 마지막 OWNER 내보내기 400.
+- **API**: `GET/POST/DELETE /api/v1/workspaces` + `/{id}/members`(GET/PUT/DELETE) · `GET /api/v1/admin/me`(admin 여부 — 프론트 관리 메뉴 게이트) · `/admin/users`(GET/PUT/DELETE, ADMIN 전용). flows/folders 의 GET `?workspaceId=`, 생성 body `workspaceId`('public'/null=공용).
+- **프론트**: [Dashboard](frontend/src/routes/Dashboard.tsx) 사이드바 **워크스페이스 스위처**(select 🌐공용/🔒개인/👥팀 + "＋ 새 팀…" + ⚙관리, localStorage `fl:workspace`, 전환 시 위치/검색/선택 초기화, 사라진 ws 는 공용 복귀) — flows/folders 쿼리·생성·복제가 현재 ws 스코프. **VIEWER 면 편집 UI 전체 숨김**(기존 canEdit 합성). [WorkspaceDialog](frontend/src/components/WorkspaceDialog.tsx) — [멤버] 탭(롤 select·내보내기·워크스페이스 삭제 2단계 확인) + [사용자(admin)] 탭(전역 롤 토글). AppShell 네비 라벨 "워크스페이스"→"메뉴"(신규 스위처와 용어 충돌 해소).
+- **노드 복사 시간 경과 후 죽는 버그 수정**(b97cb2d, 선행 커밋): RF 의 preventDefault 로 낡은 텍스트 선택/포커스가 남아 Ctrl+C/V 가드에 걸리던 것 — [FlowCanvas](frontend/src/canvas/FlowCanvas.tsx) `reclaimCanvasFocus()`(노드/캔버스 클릭·드래그 시 입력 blur+선택 해제).
+- 검증: [WorkspaceRbacTest](backend/src/test/kotlin/com/flowlink/workspace/WorkspaceRbacTest.kt) 6종(@SpringBootTest — JWT 심어 non-admin 경로: 개인 타인 403·VIEWER 쓰기 403·비멤버 조회 403·마지막 OWNER 보호·삭제 시 공용 승격·resolveId) + 전체 스위트 그린 + 라이브 API e2e(공용+개인 자동생성·팀 생성/멤버·플로우/폴더 워크스페이스 격리·admin users) + 브라우저 실측. 프론트 tsc/build/oxlint.
+- ⚠ **MVP 경계**: 실행 레이어(runs/executions/트리거/스위트)는 아직 워크스페이스 게이트 미적용(definition 만) — flow id 를 아는 사용자는 실행 이력 조회 가능(사내 도구 전제, 후속). 게스트(github 모드 비로그인)는 공용만(개인 워크스페이스 없음). Mock 서버·시크릿·환경은 워크스페이스 무관(기존 테넌트 스코프).
+
 ## 참고 문서
 - `backend/README.md` — 백엔드 구조·설정·API 요약 · `frontend/README.md` · `infra/README.md`(배포)
 - **`docs/guide/`** — 실사용자 가이드(심플+심화 15챕터, 스크린샷) · `docs/사용가이드.md` — 한 페이지 요약본

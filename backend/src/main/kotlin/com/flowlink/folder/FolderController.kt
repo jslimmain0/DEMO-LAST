@@ -22,11 +22,12 @@ import java.util.UUID
 class FolderController(private val service: FolderService) {
 
     @GetMapping
-    fun list(): List<FolderSummary> = service.list()
+    fun list(@org.springframework.web.bind.annotation.RequestParam(required = false) workspaceId: String?): List<FolderSummary> =
+        service.list(workspaceId)
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    fun create(@Valid @RequestBody req: FolderRequest): FolderSummary = service.create(req.name, req.parentId)
+    fun create(@Valid @RequestBody req: FolderRequest): FolderSummary = service.create(req.name, req.parentId, req.workspaceId)
 
     @PatchMapping("/{id}")
     fun rename(@PathVariable id: UUID, @Valid @RequestBody req: FolderRequest): FolderSummary =

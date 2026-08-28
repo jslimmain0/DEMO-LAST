@@ -18,6 +18,10 @@ class GlobalExceptionHandler {
     fun handleNotFound(ex: NotFoundException, req: HttpServletRequest): ResponseEntity<ApiError> =
         build(HttpStatus.NOT_FOUND, ex.message, req, listOf())
 
+    @ExceptionHandler(ForbiddenException::class)
+    fun forbidden(ex: ForbiddenException, req: jakarta.servlet.http.HttpServletRequest) =
+        build(HttpStatus.FORBIDDEN, ex.message, req, listOf())
+
     @ExceptionHandler(BadRequestException::class)
     fun handleBadRequest(ex: BadRequestException, req: HttpServletRequest): ResponseEntity<ApiError> =
         build(HttpStatus.BAD_REQUEST, ex.message, req, listOf())

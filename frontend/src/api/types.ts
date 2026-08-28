@@ -280,6 +280,8 @@ export interface CreateFlowRequest {
   name: string
   description?: string
   folderId?: string | null
+  /** 소속 워크스페이스 — 'public'/미지정=공용, UUID=팀/개인. */
+  workspaceId?: string | null
 }
 
 export interface SaveVersionRequest {

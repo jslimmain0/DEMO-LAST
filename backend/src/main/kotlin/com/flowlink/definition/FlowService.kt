@@ -27,14 +27,25 @@ class FlowService(
     private val flowRepo: FlowRepository,
     private val versionRepo: FlowVersionRepository,
     private val json: JsonService,
-    private val validator: GraphValidator
+    private val validator: GraphValidator,
+    private val workspace: com.flowlink.workspace.WorkspaceService,
 ) {
     private val mapper: ObjectMapper = json.mapper()
 
+    // 워크스페이스 롤 게이트 — 읽기(VIEWER+)/쓰기(EDITOR+). 공용(null)은 모두 편집 가능(기존 호환).
+    private fun readable(flow: Flow): Flow { workspace.requireRead(workspace.currentUsername(), flow.workspaceId); return flow }
+    private fun writable(flow: Flow): Flow { workspace.requireWrite(workspace.currentUsername(), flow.workspaceId); return flow }
+
     @Transactional(readOnly = true)
-    fun list(): List<FlowSummary> =
-        flowRepo.findByTenantIdAndArchivedFalseOrderByUpdatedAtDesc(tenant())
-            .map { summaryOf(it) }
+    fun list(workspaceIdRaw: String? = null): List<FlowSummary> {
+        val wsId = workspace.resolveId(workspaceIdRaw)
+        workspace.requireRead(workspace.currentUsername(), wsId)
+        val flows = if (wsId == null)
+            flowRepo.findByTenantIdAndArchivedFalseAndWorkspaceIdIsNullOrderByUpdatedAtDesc(tenant())
+        else
+            flowRepo.findByTenantIdAndArchivedFalseAndWorkspaceIdOrderByUpdatedAtDesc(tenant(), wsId)
+        return flows.map { summaryOf(it) }
+    }
 
     // 목록 카드 미리보기 + 내용 검색을 위해 현재 버전 그래프에서 노드 요약을 뽑는다(서버측 1왕복 — 카드별 재조회 N+1 제거).
     private fun summaryOf(flow: Flow): FlowSummary {
@@ -74,18 +85,21 @@ class FlowService(
 
     @Transactional
     fun create(req: CreateFlowRequest): FlowDetail {
+        val wsId = workspace.resolveId(req.workspaceId)
+        workspace.requireWrite(workspace.currentUsername(), wsId)
         val flow = createInternal(req.name, req.description, emptyGraph(req.name), "초기 버전", req.folderId)
+        flow.workspaceId = wsId
         return toDetail(flow)
     }
 
     @Transactional
     fun moveToFolder(id: UUID, folderId: UUID?) {
-        loadFlow(id).folderId = folderId
+        writable(loadFlow(id)).folderId = folderId
     }
 
     @Transactional
     fun updateMeta(id: UUID, name: String?, description: String?): FlowDetail {
-        val flow = loadFlow(id)
+        val flow = writable(loadFlow(id))
         name?.takeIf { it.isNotBlank() }?.let { flow.name = it }
         if (description != null) flow.description = description
         return toDetail(flow)
@@ -93,12 +107,12 @@ class FlowService(
 
     @Transactional
     fun archive(id: UUID) {
-        loadFlow(id).archived = true
+        writable(loadFlow(id)).archived = true
     }
 
     @Transactional
     fun saveVersion(id: UUID, graph: JsonNode, note: String?): FlowVersionSummary {
-        val flow = loadFlow(id)
+        val flow = writable(loadFlow(id))
         val graphJson = json.toJson(graph)
         val parsed = json.parseGraph(graphJson)
         validator.validate(parsed)
@@ -140,7 +154,7 @@ class FlowService(
      */
     @Transactional
     fun restoreVersion(id: UUID, versionNo: Int): FlowVersionSummary {
-        val flow = loadFlow(id)
+        val flow = writable(loadFlow(id))
         val src = versionRepo.findByFlowIdAndVersionNo(id, versionNo)
             .orElseThrow { NotFoundException.of("FlowVersion", versionNo) }
         val nextNo = flow.currentVersion + 1
@@ -154,6 +168,9 @@ class FlowService(
 
     @Transactional
     fun importFlow(export: JsonNode): FlowDetail {
+        // 가져오기/복제도 현재 워크스페이스로 — payload 의 workspaceId('public'/없음=공용)
+        val wsId = workspace.resolveId(export.get("workspaceId")?.asText()?.takeIf { it.isNotBlank() })
+        workspace.requireWrite(workspace.currentUsername(), wsId)
         val name = textOr(export, "name", "가져온 플로우")
         val graph: ObjectNode = mapper.createObjectNode()
         graph.put("name", name)
@@ -165,6 +182,7 @@ class FlowService(
         validator.validate(parsed)
 
         val flow = createInternal(name, textOr(export, "desc", ""), json.toJson(graph), "가져오기", null)
+        flow.workspaceId = wsId
         return toDetail(flow)
     }
 
@@ -187,8 +205,10 @@ class FlowService(
     }
 
     private fun loadFlow(id: UUID): Flow =
-        flowRepo.findByIdAndTenantId(id, tenant())
-            .orElseThrow { NotFoundException.of("Flow", id) }
+        readable(
+            flowRepo.findByIdAndTenantId(id, tenant())
+                .orElseThrow { NotFoundException.of("Flow", id) }
+        )
 
     private fun currentGraph(flow: Flow): JsonNode {
         if (flow.currentVersion <= 0) {

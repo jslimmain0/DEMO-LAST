@@ -46,7 +46,7 @@ export function AppShellTier1({ children, sidebarExtra }: { children: ReactNode;
           <span style={{ fontFamily: 'var(--fl-font-head)', fontWeight: 700, fontSize: 17, letterSpacing: '-.01em' }}>FlowLink</span>
         </Link>
 
-        <div style={sectionLabel}>워크스페이스</div>
+        <div style={sectionLabel}>메뉴</div>
         <nav style={{ display: 'grid', gap: 2 }}>
           {NAV.map((n) => (
             <Link key={n.to} to={n.to} style={navItem(n.to)}>

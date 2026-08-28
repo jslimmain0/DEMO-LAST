@@ -28,7 +28,8 @@ import java.util.UUID
 class FlowController(private val service: FlowService) {
 
     @GetMapping
-    fun list(): List<FlowSummary> = service.list()
+    fun list(@org.springframework.web.bind.annotation.RequestParam(required = false) workspaceId: String?): List<FlowSummary> =
+        service.list(workspaceId)
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)

@@ -12,6 +12,10 @@ interface FlowRepository : JpaRepository<Flow, UUID> {
 
     fun findByTenantIdAndArchivedFalseOrderByUpdatedAtDesc(tenantId: String): List<Flow>
 
+    // 워크스페이스 스코프 목록 — null=공용(레거시 데이터 포함)
+    fun findByTenantIdAndArchivedFalseAndWorkspaceIdIsNullOrderByUpdatedAtDesc(tenantId: String): List<Flow>
+    fun findByTenantIdAndArchivedFalseAndWorkspaceIdOrderByUpdatedAtDesc(tenantId: String, workspaceId: UUID): List<Flow>
+
     fun findByIdAndTenantId(id: UUID, tenantId: String): Optional<Flow>
 
     fun countByTenantIdAndFolderIdAndArchivedFalse(tenantId: String, folderId: UUID): Long
@@ -23,4 +27,9 @@ interface FlowRepository : JpaRepository<Flow, UUID> {
     @Modifying
     @Query("update Flow f set f.folderId = :toId where f.folderId = :fromId")
     fun reassignFolder(@Param("fromId") fromId: UUID, @Param("toId") toId: UUID?): Int
+
+    /** 워크스페이스 삭제 시 안의 워크플로를 공용(null)으로 승격 — 데이터 유실 방지. */
+    @Modifying
+    @Query("update Flow f set f.workspaceId = null where f.workspaceId = :wsId")
+    fun clearWorkspace(@Param("wsId") wsId: UUID): Int
 }

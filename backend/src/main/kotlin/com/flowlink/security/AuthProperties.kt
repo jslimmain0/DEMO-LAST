@@ -21,14 +21,20 @@ class AuthProperties(
     jwtSecret: String? = null,
     tokenTtlHours: Int? = null,
     allowedLogins: List<String>? = null,
+    adminLogins: List<String>? = null,
     clientId: String? = null,
 ) {
     val githubEnabled: Boolean = githubEnabled ?: false
     val jwtSecret: String? = jwtSecret?.takeIf { it.isNotBlank() }
     val tokenTtlHours: Int = if (tokenTtlHours == null || tokenTtlHours <= 0) 12 else tokenTtlHours
     val allowedLogins: List<String> = allowedLogins?.map { it.trim().lowercase() }?.filter { it.isNotEmpty() } ?: emptyList()
+
+    /** 부트스트랩 관리자 로그인 목록(env `FLOWLINK_AUTH_ADMIN_LOGINS`, csv) — DB 전역 롤(ADMIN)과 OR 판정. */
+    val adminLogins: List<String> = adminLogins?.map { it.trim().lowercase() }?.filter { it.isNotEmpty() } ?: emptyList()
     val clientId: String = clientId?.takeIf { it.isNotBlank() } ?: "Iv1.b507a08c87ecfe98"
 
     /** 허용 여부 — 화이트리스트가 비면 누구나(dev), 있으면 목록만. */
     fun allows(login: String): Boolean = allowedLogins.isEmpty() || allowedLogins.contains(login.lowercase())
+
+    fun isBootstrapAdmin(login: String): Boolean = adminLogins.contains(login.lowercase())
 }

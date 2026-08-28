@@ -44,8 +44,9 @@ export function toRF(graph: FlowGraph): { nodes: Node[]; edges: Edge[] } {
     data: n as unknown as Record<string, unknown>,
     ...rfExtras(n.type),
   }))
+  // id 없는 엣지(API/손편집 그래프)도 렌더되게 결정적 fallback id — React Flow 는 엣지 id 가 없으면 선을 그리지 않는다
   const edges: Edge[] = (Array.isArray(graph.edges) ? graph.edges : []).map((e) => ({
-    id: e.id,
+    id: e.id || `e-${e.from}-${e.fromPort ?? 'out'}-${e.to}`,
     source: e.from,
     target: e.to,
     sourceHandle: e.fromPort ?? 'out',

@@ -998,6 +998,12 @@ tcp-preview 는 시크릿 미시드라 무관. 단위 5종 + 라이브(단일 �
 - 라이브 확인 중 이 브라우저의 `fl:editor:propertyW=560`(과대 저장값)이 캔버스를 압박 → 380 으로 리셋(코드 무관, "이상해 보임"의 한 원인).
 - 검증: tsc/build/oxlint + 실브라우저(:18080 dark) — 전체화면 속성 모달·Mock 결제창 HTML 1,490자 큰 편집기·시크릿 볼트 새 레이아웃 실측.
 
+### 7차 — 중첩 JSON 경로 바인딩 + 단일 실행 상류 값 입력 (사용자: "json 안에 json 어떻게 표현? 대충 만든 거 아니냐")
+- **중첩 경로 바인딩**: [TokenResolver](backend/src/main/kotlin/com/flowlink/execution/engine/TokenResolver.kt) `dig()` — `{{ user.name@노드 }}`·`{{ user.addr.city@노드 }}`·`{{ items[0].id@노드 }}`(=`items.0.id`).
+  규칙: **평평한 실키 우선**(응답에 `"a.b"` 키가 문자 그대로 있으면 그것), 부재는 `Missing` 센티널로 값-null 과 구분(**bare 토큰의 상위 노드 폴스루 유지**), 전체-토큰 리터럴 원형 보존(조건식 숫자 비교 동작). 토큰 문법 key 클래스에 `[ ]` 추가(백엔드 TOKEN·[tokenGrammar.ts](frontend/src/lib/tokenGrammar.ts) 미러). 단위 3케이스+라이브 E2E(중첩 assert SUCCEEDED·오경로 FAILED·flat-key 우선) ALL PASS. ⚠ 단일 실행 E2E 시 확인: **플로우 생성은 `POST /flows`(graph 무시) 후 `POST /flows/{id}/versions`** — graph 를 create 에 실어도 조용히 무시됨.
+- **[JsonTree](frontend/src/components/JsonTree.tsx)**(신규): 워크벤치 응답 패널의 클릭 가능한 JSON 트리 — **키 클릭 = `{{ 경로@노드 }}` 토큰 복사**, [트리|Raw] 토글, 타입별 색·접기. '이 응답에서 키 채우기'는 중첩 경로까지 펼쳐 채움(깊이 3·40개 캡).
+- **단일 실행 상류 값 입력**(사용자: "바인딩 있으면 단일 실행 안 되잖아 — 입력받게 해"): [PropertyPanel](frontend/src/panels/PropertyPanel.tsx) `detectUpstreamTokens`(노드 JSON 스캔, env/input/secret/req:/자기자신 제외) → **'이전 노드 값 입력' 폼**(도킹·워크벤치, 노드별 localStorage `fl:uprun:*` 기억, 숫자/불리언/JSON 코어션) → `RunRequest.upstream`({소스노드:{키:값}}, bare 는 `__prev`) → [ExecutionService.runSingleNode](backend/src/main/kotlin/com/flowlink/execution/ExecutionService.kt) 가 `ctx.putOutput` 시드. E2E: 값 없이 FAILED → 주입 시 OK(중첩 경로 포함).
+
 ### 6차 — 전체화면 모달 = API 워크벤치 (사용자: "좌우만 바꾼다고 편해지냐, 넓어진 걸 잘 써라" 재설계)
 - 단순 2단 재배치(1차안)를 버리고 **포스트맨 어휘의 워크벤치**로 재설계([PropertyPanel](frontend/src/panels/PropertyPanel.tsx), 모달 96vw×92vh):
   - **HTTP**: 상단 **URL 바 [메서드|Base URL|Path|▶ 실행]** 한 줄 → 좌 "요청"(cURL·프리셋·고급·쿼리/헤더/본문 — **모달에선 섹션 기본 펼침**, json/xml raw 본문은 **인라인 CodeMirror**(260px, `CodeEditorLazy` 재사용)) | 우 "응답"(**실행 응답이 크게** — 상태칩+본문 38vh, 실행 전엔 점선 빈 상태 안내 → 아래에 출력 키 매핑·'이 응답에서 키 채우기'·요청 미리보기). **작성→실행→응답→키 매핑이 한 화면에서 좌→우로 흐른다.**

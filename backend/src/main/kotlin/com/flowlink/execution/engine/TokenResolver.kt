@@ -114,6 +114,12 @@ class TokenResolver(private val json: JsonService) {
         }
         var cur: Any? = base
         for (seg in splitPath(key)) {
+            // 값이 JSON "문자열"(이중 인코딩 — 레거시 API 의 json-in-json)이고 경로가 남았으면 파싱해 계속 내려간다
+            if (cur is String) {
+                val t = cur.trim()
+                if (!t.startsWith("{") && !t.startsWith("[")) return Missing
+                cur = runCatching { json.mapper().readValue(t, Any::class.java) }.getOrNull() ?: return Missing
+            }
             cur = when {
                 cur is Map<*, *> && cur.containsKey(seg) -> cur[seg]
                 cur is List<*> -> {

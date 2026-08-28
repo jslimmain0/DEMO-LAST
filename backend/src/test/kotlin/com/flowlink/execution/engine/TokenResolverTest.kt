@@ -133,6 +133,23 @@ class TokenResolverTest {
         assertEquals("flat", resolver.resolveTokens("{{ a.b@n1 }}", ctx))
     }
 
+    /** 이중 인코딩 — 값이 JSON "문자열"이어도 경로가 남았으면 파싱해 내려간다(레거시 json-in-json). */
+    @Test
+    fun jsonStringInsideJson() {
+        val ctx = ExecutionContext()
+        ctx.putOutput("n1", mapOf(
+            "data" to """{"inner":{"code":"0000","amt":500},"list":[{"id":"L1"}]}""",
+            "plain" to "그냥 문자열",
+        ))
+        assertEquals("0000", resolver.resolveTokens("{{ data.inner.code@n1 }}", ctx))
+        assertEquals(500, resolver.resolveLiteral("{{ data.inner.amt@n1 }}", ctx)) // Jackson 정수 파싱=Int
+        assertEquals("L1", resolver.resolveTokens("{{ data.list[0].id@n1 }}", ctx))
+        // JSON 이 아닌 문자열에 경로를 더 파고들면 부재(빈 치환)
+        assertEquals("x=", resolver.resolveTokens("x={{ plain.deep@n1 }}", ctx))
+        // 문자열 값 자체는 그대로(경로 없이)
+        assertEquals("그냥 문자열", resolver.resolveTokens("{{ plain@n1 }}", ctx))
+    }
+
     /** 부재 경로 — 빈 문자열 치환(중간 타입 불일치·범위 밖 인덱스 포함), bare 는 상위 노드 계속 탐색. */
     @Test
     fun missingNestedPathFallsThrough() {

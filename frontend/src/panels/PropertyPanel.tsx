@@ -14,6 +14,7 @@ import type { BindableSource } from '../binding/upstream'
 import { asGraphNode } from '../canvas/graphAdapter'
 import { ANNO_COLORS, catColor, METHOD_COLOR, typeIcon, typeLabel } from '../canvas/nodeMeta'
 import { fieldsToRaw, rawToFields, headersToRaw, rawToHeaders } from '../lib/bodyConvert'
+import { duplicateKeys, parseOutputKeys } from '../lib/bulkPaste'
 import { parseCurl, toCurl } from '../lib/curl'
 import { computeReachInfo, isUnreachableExecutable } from '../lib/reachable'
 import { useEnvStore, activeEnvVars, activeEnvName } from '../lib/environments'
@@ -761,7 +762,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
                   <button onClick={() => setPick('rawParams')} style={{ ...braceBtn, width: 'auto', padding: '0 10px', marginTop: 4 }} title="데이터 삽입"><DataInsertIcon /></button>
                 </div>
               ) : (
-                <KeyValueEditor rows={fields.params ?? []} onChange={(rows) => setRows('params', rows)} sources={sources} />
+                <KeyValueEditor rows={fields.params ?? []} onChange={(rows) => setRows('params', rows)} sources={sources} warnDupes={false} />
               )}
             </HttpSection>
 
@@ -1265,7 +1266,8 @@ function WaitFieldsEditor({ fields, onChange }: { fields: WaitFieldT[]; onChange
     <>
       {fields.map((f, i) => (
         <div key={f.id} style={{ display: 'flex', gap: 6, marginBottom: 6, alignItems: 'center' }}>
-          <input style={{ ...mono, flex: 1 }} value={f.key} placeholder="키(=출력)" onChange={(e) => upd(f.id, { key: e.target.value })} />
+          <input style={{ ...mono, flex: 1 }} value={f.key} placeholder="키(=출력)" onChange={(e) => upd(f.id, { key: e.target.value })}
+            onKeyDown={(e) => { if (e.key === 'Enter' && i === fields.length - 1) { e.preventDefault(); onChange([...fields, { id: newId(), key: '', label: '', type: 'string' }]) } }} />
           <input style={{ ...field, flex: 1 }} value={f.label ?? ''} placeholder="라벨(표시)" onChange={(e) => upd(f.id, { label: e.target.value })} />
           <select style={{ ...field, width: 84 }} value={f.type ?? 'string'} onChange={(e) => upd(f.id, { type: e.target.value })}>
             {['string', 'number', 'boolean', 'json'].map((t) => <option key={t} value={t}>{t}</option>)}
@@ -1357,11 +1359,31 @@ function CondSnippets({ onInsert }: { onInsert: (s: string) => void }) {
 
 function OutputsEditor({ outputs, onChange, nodeId }: { outputs: NodeOutput[]; onChange: (o: NodeOutput[]) => void; nodeId?: string }) {
   const upd = (i: number, patch: Partial<NodeOutput>) => onChange(outputs.map((o, idx) => (idx === i ? { ...o, ...patch } : o)))
+  const [bulkOpen, setBulkOpen] = useState(false)
+  const [bulkText, setBulkText] = useState('')
+  const dup = duplicateKeys(outputs.map((o) => o.key))
+  // 여러 키 한꺼번에 — 쉼표/줄바꿈 나열 또는 샘플 JSON 응답(키+타입 추론). 기존 키는 건너뛴다.
+  const applyBulk = () => {
+    const parsed = parseOutputKeys(bulkText)
+    if (!parsed.length) { toast('추가할 키를 찾지 못했습니다.', 'error'); return }
+    const existing = new Set(outputs.map((o) => o.key.trim()).filter(Boolean))
+    const added = parsed.filter((p) => !existing.has(p.key))
+    if (!added.length) { toast('전부 이미 있는 키입니다.', 'ok'); return }
+    onChange([...outputs, ...added])
+    setBulkText(''); setBulkOpen(false)
+    toast(`출력 키 ${added.length}개 추가${parsed.length !== added.length ? ` (중복 ${parsed.length - added.length}개 건너뜀)` : ''}`, 'ok')
+  }
   return (
     <>
       {outputs.map((o, i) => (
         <div key={i} style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
-          <input style={{ ...mono, flex: 1 }} value={o.key} placeholder="키" onChange={(e) => upd(i, { key: e.target.value })} />
+          <input
+            style={{ ...mono, flex: 1, ...(o.key.trim() && dup.has(o.key.trim()) ? { borderColor: 'var(--fl-put)', boxShadow: '0 0 0 1px var(--fl-put) inset' } : null) }}
+            value={o.key} placeholder="키"
+            title={o.key.trim() && dup.has(o.key.trim()) ? '중복 키 — 같은 키가 여러 번 선언돼 있습니다' : undefined}
+            onChange={(e) => upd(i, { key: e.target.value })}
+            onKeyDown={(e) => { if (e.key === 'Enter' && i === outputs.length - 1) { e.preventDefault(); onChange([...outputs, { key: '', type: 'string' }]) } }}
+          />
           <select style={{ ...field, width: 96 }} value={o.type ?? 'string'} onChange={(e) => upd(i, { type: e.target.value })}>
             {OUTPUT_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
           </select>
@@ -1376,7 +1398,24 @@ function OutputsEditor({ outputs, onChange, nodeId }: { outputs: NodeOutput[]; o
           <button onClick={() => onChange(outputs.filter((_, idx) => idx !== i))} aria-label="삭제" style={{ width: 28, flexShrink: 0, border: '1px solid var(--fl-border)', borderRadius: 6, background: 'var(--fl-surface)', cursor: 'pointer' }}>×</button>
         </div>
       ))}
-      <button onClick={() => onChange([...outputs, { key: '', type: 'string' }])} style={addDashed}>+ 출력 항목</button>
+      <div style={{ display: 'flex', gap: 6 }}>
+        <button onClick={() => onChange([...outputs, { key: '', type: 'string' }])} style={addDashed}>+ 출력 항목</button>
+        <button onClick={() => setBulkOpen((v) => !v)} style={addDashed} title="키 나열(쉼표/줄바꿈) 또는 샘플 JSON 응답을 붙여넣어 한꺼번에 추가">📋 여러 키 추가</button>
+      </div>
+      {bulkOpen && (
+        <div style={{ marginTop: 6 }}>
+          <textarea
+            value={bulkText} onChange={(e) => setBulkText(e.target.value)} autoFocus
+            placeholder={'code, tid, message\n또는 샘플 JSON 응답 붙여넣기 → 키+타입 자동'}
+            aria-label="여러 키 추가"
+            style={{ ...mono, width: '100%', minHeight: 72, resize: 'vertical', boxSizing: 'border-box' }}
+          />
+          <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+            <button onClick={applyBulk} style={{ padding: '6px 12px', border: 'none', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-primary)', color: '#fff', cursor: 'pointer', fontSize: 12, fontWeight: 600 }}>추가</button>
+            <button onClick={() => { setBulkOpen(false); setBulkText('') }} style={{ padding: '6px 12px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'transparent', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 12 }}>취소</button>
+          </div>
+        </div>
+      )}
     </>
   )
 }
@@ -1390,9 +1429,10 @@ function VarsEditor({ vars, onChange, sources, sourceType }: { vars: NodeVar[]; 
   return (
     <>
       <label style={label}>변수</label>
-      {vars.map((v) => (
+      {vars.map((v, vi) => (
         <div key={v.id} style={{ display: 'flex', gap: 6, marginBottom: 6, alignItems: 'center' }}>
-          <input style={{ ...mono, flex: 1 }} value={v.key} placeholder="key" onChange={(e) => upd(v.id, { key: e.target.value })} />
+          <input style={{ ...mono, flex: 1 }} value={v.key} placeholder="key" onChange={(e) => upd(v.id, { key: e.target.value })}
+            onKeyDown={(e) => { if (e.key === 'Enter' && vi === vars.length - 1) { e.preventDefault(); onChange([...vars, { id: newId(), key: '', value: '', secret: false }]) } }} />
           {v.secret ? (
             v.bound ? (
               <div style={{ flex: 1 }}><BindingChip binding={v.bound} sourceType={sourceType(v.bound)} onRemove={() => upd(v.id, { bound: null })} onClick={() => setPickVar(v.id)} /></div>

@@ -968,6 +968,18 @@ fail-closed 메시지가 "토큰 또는 AppRole" 로 확장. 검증: 단위 10�
 recorder(전체 실행 저장)와 [runSingleNode](backend/src/main/kotlin/com/flowlink/execution/ExecutionService.kt) 응답(requestText/responseText/output JSON 라운드트립)이 공유.
 tcp-preview 는 시크릿 미시드라 무관. 단위 5종 + 라이브(단일 실행 LEAK false·`Bearer ••••••`, 전체 실행 무회귀) 확인.
 
+## 최근 변경 (2026-08-28) — 긴 목록 UX 패치: 피커 최근 사용·접기, .env/JSON 일괄 입력, 중복 경고 (`feat/ux-list-polish`)
+"리스트가 많아지면 선택이 어렵다(환경변수·응답항목 등) + 입력 디테일" 요청. **전부 프론트 레이어**(백엔드에 필요한 데이터가 이미 있어 무변경). 새 순수 lib 2개 + 기존 컴포넌트 개선.
+- **[bulkPaste.ts](frontend/src/lib/bulkPaste.ts)**(순수): `parseDotEnv`(.env 형식 — 주석/`export`/따옴표/콜론/중복은 마지막 값) · `parseOutputKeys`(JSON 객체면 최상위 키+타입 추론 `inferOutputType`, 아니면 쉼표/공백/줄바꿈 나열) · `duplicateKeys`(중복 경고 집합). 단위 16케이스(Node 타입스트리핑).
+- **[BindingPicker](frontend/src/binding/BindingPicker.tsx)**: **🕘 최근 사용** 섹션([recentBindings.ts](frontend/src/binding/recentBindings.ts) — localStorage `fl:bind:recent` 최대 8, 현재 sources 에 없는 항목 자동 탈락, 검색 중 숨김) · 소스별 **접기(▾/▸)+항목 수 배지** · 12개 초과 섹션 **+N개 더** 축약 · 검색 **하이라이트**+노드 이름 매칭 시 전체 항목 표시(기존: 빈 섹션 버그) · ↑↓ 활성 칩 scrollIntoView · 검색어 있을 때 Esc=지움(stopPropagation 으로 모달 유지). 렌더/키보드 순서는 단일 `sections` 구조에서 파생(불일치 원천 차단).
+- **[EnvManagerDialog](frontend/src/components/EnvManagerDialog.tsx)**: 변수 8개↑ 검색 필터 · **📋 .env 붙여넣기**(같은 키=값 갱신, 토스트 요약) · 환경 **⧉ 복제** · 중복 키 주황 경고 · Enter=다음 행/새 행+포커스(`data-var` + pendingFocus ref).
+- **[PropertyPanel](frontend/src/panels/PropertyPanel.tsx) OutputsEditor**: **📋 여러 키 추가**(나열 또는 샘플 JSON→키+타입, 기존 키 스킵) · 중복 키 경고 · 마지막 행 Enter=행 추가(WaitFields/SET VarsEditor 키 입력도 동일).
+- **[KeyValueEditor](frontend/src/panels/KeyValueEditor.tsx)**: 중복 키 경고(`warnDupes` prop — **Params 는 끔**, 쿼리 중복은 유효) · 마지막 행 Enter=행 추가.
+- **[SecretsDialog](frontend/src/components/SecretsDialog.tsx)**: 6개↑ 이름 검색 · 활성 환경 기준 **✓ 적용/덮임** 배지 + 타 환경 스코프 흐림(우선순위 활성환경>공통>Vault — `SecretService.activeSecrets` 미러).
+- **[MockServerEditor](frontend/src/routes/MockServerEditor.tsx)**: 라우트 5개↑ 메서드/경로 검색(원본 인덱스 유지 — 첫 매칭 의미 불변).
+- 검증: bulkPaste 단위 16 PASS + tsc/build/oxlint + 브라우저 실측(피커 배지/접기/하이라이트/최근 사용/+3개 더 · .env 붙여넣기 갱신+추가 · JSON 샘플→email/age/active/tags 타입 추론 · 중복 경고 · 시크릿 ✓ 적용/흐림 · 라우트 필터). 가이드 [14장](docs/guide/14-편의기능.md)에 "긴 목록 다루기" 섹션 추가.
+- ⚠ 최근 사용은 브라우저 개인 스코프(localStorage). 스크린샷 재촬영은 안 함(기능 추가 — 기존 라벨/화면 유지).
+
 ## 참고 문서
 - `backend/README.md` — 백엔드 구조·설정·API 요약 · `frontend/README.md` · `infra/README.md`(배포)
 - **`docs/guide/`** — 실사용자 가이드(심플+심화 15챕터, 스크린샷) · `docs/사용가이드.md` — 한 페이지 요약본

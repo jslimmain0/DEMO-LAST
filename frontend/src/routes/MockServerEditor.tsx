@@ -274,6 +274,10 @@ function RoutesEditor({ base, ensureSaved, routes, onChange }: { base: string; e
     onChange([...routes.slice(0, i + 1), copy, ...routes.slice(i + 1)])
   }
   const [openApi, setOpenApi] = useState<string | null>(null)
+  const [filter, setFilter] = useState('')
+  const f = filter.trim().toLowerCase()
+  // 라우트가 많을 때 메서드/경로로 좁혀 찾는다 — 원본 순서/인덱스는 유지(첫 매칭 의미 불변)
+  const visible = routes.map((r, i) => ({ r, i })).filter(({ r }) => !f || `${r.method} ${r.path}`.toLowerCase().includes(f))
   return (
     <section style={panel}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -306,8 +310,13 @@ function RoutesEditor({ base, ensureSaved, routes, onChange }: { base: string; e
         (워크플로의 <code style={code}>{'{{ 키@노드 }}'}</code> 바인딩과는 다른 문법입니다)
       </p>
       {routes.length === 0 && <p style={{ ...hint, padding: '14px 0' }}>라우트가 없습니다 — [+ 라우트 추가]로 시작하세요.</p>}
+      {routes.length >= 5 && (
+        <input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder={`라우트 검색 — 메서드/경로… (${routes.length}개)`} aria-label="라우트 검색"
+          style={{ ...input, width: '100%', marginTop: 8, boxSizing: 'border-box' }} />
+      )}
+      {f && visible.length === 0 && routes.length > 0 && <p style={{ ...hint, padding: '10px 0' }}>검색과 일치하는 라우트가 없습니다.</p>}
       <div style={{ display: 'grid', gap: 12, marginTop: 10 }}>
-        {routes.map((r, i) => (
+        {visible.map(({ r, i }) => (
           <RouteCard
             key={r.id}
             base={base}

@@ -20,6 +20,7 @@ export function SecretsDialog({ onClose }: { onClose: () => void }) {
   const [name, setName] = useState('')
   const [value, setValue] = useState('')
   const [env, setEnv] = useState<string>('') // '' = 공통
+  const [filter, setFilter] = useState('')
 
   // 셀렉트 옵션 = 공통 + 정의된 환경 + 활성 환경(정의 안 됐어도)
   const envNames = useMemo(() => {
@@ -44,6 +45,21 @@ export function SecretsDialog({ onClose }: { onClose: () => void }) {
     const ea = a.environment ?? '', eb = b.environment ?? ''
     return ea === eb ? a.name.localeCompare(b.name) : ea.localeCompare(eb)
   })
+  const f = filter.trim().toLowerCase()
+  const shown = f ? sorted.filter((s) => s.name.toLowerCase().includes(f)) : sorted
+
+  // 실행 시 실제 적용될 항목 계산 — 우선순위: 활성환경 DB > 공통 DB > Vault (SecretService.activeSecrets 미러)
+  const act = envStore.active
+  const effect = (s: (typeof list)[number]): 'win' | 'shadowed' | 'inactive' => {
+    const isVault = s.source === 'vault'
+    if (!isVault && s.environment && s.environment !== act) return 'inactive' // 다른 환경 스코프
+    const sameName = list.filter((x) => x.name === s.name)
+    const envRow = act ? sameName.find((x) => x.source !== 'vault' && x.environment === act) : undefined
+    const commonRow = sameName.find((x) => x.source !== 'vault' && !x.environment)
+    const vaultRow = sameName.find((x) => x.source === 'vault')
+    const winner = envRow ?? commonRow ?? vaultRow
+    return winner === s ? 'win' : 'shadowed'
+  }
 
   return (
     <Modal onClose={onClose} ariaLabel="시크릿" width={560} card={{ padding: 18, display: 'block', overflowY: 'auto' }}>
@@ -61,16 +77,26 @@ export function SecretsDialog({ onClose }: { onClose: () => void }) {
             : <> 활성 환경이 없어 <b>공통</b> 시크릿만 적용됩니다(환경 스위처에서 전환).</>}
         </p>
 
+        {list.length >= 6 && (
+          <input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder={`이름 검색… (${list.length}개)`} aria-label="시크릿 검색"
+            style={{ ...mono, width: '100%', margin: '12px 0 0', fontFamily: 'var(--fl-font-ui)', boxSizing: 'border-box' }} />
+        )}
         <div style={{ display: 'grid', gap: 6, margin: '12px 0' }}>
           {sorted.length === 0 && !q.isLoading && <p style={{ ...hint, color: 'var(--fl-text-muted)' }}>저장된 시크릿이 없습니다.</p>}
-          {sorted.map((s) => {
+          {f && shown.length === 0 && sorted.length > 0 && <p style={{ ...hint, color: 'var(--fl-text-muted)' }}>검색과 일치하는 시크릿이 없습니다.</p>}
+          {shown.map((s) => {
             const isVault = s.source === 'vault'
+            const eff = effect(s)
             return (
-            <div key={`${s.source ?? 'db'}:${s.environment ?? '*'}:${s.name}`} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)' }}>
+            <div key={`${s.source ?? 'db'}:${s.environment ?? '*'}:${s.name}`} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', opacity: eff === 'inactive' ? 0.55 : 1 }}
+              title={eff === 'inactive' ? '다른 환경 스코프 — 현재 활성 환경에선 미적용' : undefined}>
               {isVault
                 ? <span title="HashiCorp Vault 에서 끌어온 읽기전용 시크릿" style={{ fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 999, background: 'rgba(255,209,102,.16)', color: '#e0a800', border: '1px solid rgba(255,209,102,.4)' }}>Vault</span>
                 : <span style={envBadge(s.environment)}>{s.environment ?? '공통'}</span>}
               <code style={{ flex: 1, fontFamily: 'var(--fl-font-mono)', fontSize: 12.5 }}>{s.name}</code>
+              {/* 활성 환경 기준 실제 적용 여부 — 같은 이름의 오버레이(환경>공통>Vault)를 눈으로 확인 */}
+              {eff === 'win' && <span title="실행 시 이 값이 적용됩니다" style={effBadge(true)}>✓ 적용</span>}
+              {eff === 'shadowed' && <span title="같은 이름의 더 높은 우선순위(활성환경 > 공통 > Vault) 값에 덮입니다" style={effBadge(false)}>덮임</span>}
               <span style={{ fontFamily: 'var(--fl-font-mono)', fontSize: 12, color: 'var(--fl-text-muted)', letterSpacing: 2 }}>••••••</span>
               <button onClick={() => copy(`{{ ${s.name}@secret }}`)} title="바인딩 토큰 복사" style={miniBtn}>토큰</button>
               {isVault
@@ -113,6 +139,14 @@ const mono: CSSProperties = { padding: '7px 9px', border: '1px solid var(--fl-bo
 const xBtn: CSSProperties = { width: 28, height: 28, borderRadius: 8, border: 'none', background: 'var(--fl-surface-2)', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 15 }
 const primary: CSSProperties = { padding: '7px 14px', border: 'none', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-primary)', color: '#fff', cursor: 'pointer', fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap' }
 const miniBtn: CSSProperties = { padding: '4px 8px', border: '1px solid var(--fl-border)', borderRadius: 6, background: 'var(--fl-surface)', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 11.5, flexShrink: 0 }
+function effBadge(win: boolean): CSSProperties {
+  return {
+    flexShrink: 0, fontSize: 10.5, fontWeight: 700, padding: '2px 7px', borderRadius: 999,
+    background: win ? 'color-mix(in srgb, var(--fl-ok) 14%, transparent)' : 'var(--fl-surface)',
+    color: win ? 'var(--fl-ok)' : 'var(--fl-text-muted)',
+    border: `1px solid ${win ? 'color-mix(in srgb, var(--fl-ok) 45%, var(--fl-border))' : 'var(--fl-border)'}`,
+  }
+}
 function envBadge(env: string | null): CSSProperties {
   return {
     flexShrink: 0, fontSize: 10.5, fontWeight: 700, padding: '2px 7px', borderRadius: 999,

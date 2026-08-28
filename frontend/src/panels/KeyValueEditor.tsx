@@ -3,6 +3,7 @@ import type { Binding, NodeField } from '../api/types'
 import { BindingChip } from '../binding/BindingChip'
 import { TokenInput } from '../binding/TokenInput'
 import type { BindableSource } from '../binding/upstream'
+import { duplicateKeys } from '../lib/bulkPaste'
 import { bindingToToken, isTokenizable } from '../lib/tokenGrammar'
 import { newId } from '../lib/ids'
 
@@ -25,11 +26,13 @@ export function KeyValueEditor({
   onChange,
   sources,
   showType = false,
+  warnDupes = true,
 }: {
   rows: NodeField[]
   onChange: (rows: NodeField[]) => void
   sources: BindableSource[]
   showType?: boolean // JSON 바디에서만 값 타입(따옴표 여부) 선택 노출
+  warnDupes?: boolean // 중복 키 경고 — 중복이 유효한 곳(쿼리 params a=1&a=2)은 끈다
 }) {
   const update = (id: string, patch: Partial<NodeField>) => onChange(rows.map((r) => (r.id === id ? { ...r, ...patch } : r)))
   const add = () => onChange([...rows, { id: newId(), key: '', value: '' }])
@@ -40,12 +43,19 @@ export function KeyValueEditor({
     onChange([...rows.slice(0, idx + 1), { ...rows[idx], id: newId() }, ...rows.slice(idx + 1)])
   }
   const sourceType = (b: Binding) => sources.find((s) => s.id === b.sourceId)?.type
+  const dupSet = warnDupes ? duplicateKeys(rows.map((r) => r.key)) : new Set<string>()
 
   return (
     <div>
-      {rows.map((r) => (
+      {rows.map((r, i) => (
         <div key={r.id} style={{ display: 'flex', gap: 6, marginBottom: 6, alignItems: 'center' }}>
-          <input style={input} value={r.key} placeholder="key" onChange={(e) => update(r.id, { key: e.target.value })} />
+          <input
+            style={{ ...input, ...(r.key.trim() && dupSet.has(r.key.trim()) ? dupWarn : null) }}
+            value={r.key} placeholder="key"
+            title={r.key.trim() && dupSet.has(r.key.trim()) ? '중복 키 — 같은 키가 여러 행에 있습니다' : undefined}
+            onChange={(e) => update(r.id, { key: e.target.value })}
+            onKeyDown={(e) => { if (e.key === 'Enter' && i === rows.length - 1) { e.preventDefault(); add() } }}
+          />
           <div style={{ flex: 1.4, minWidth: 0, display: 'flex' }}>
             {/* 값은 텍스트+토큰 칩 혼합 입력 — 구(舊) bound 저장분은 토큰으로 표시되고, 수정하는 순간 토큰 문자열로 이관된다.
                 토큰 문법이 못 담는 키/id 의 bound 는 이관하면 조용히 깨지므로 구조적 바인딩 칩을 유지한다. */}
@@ -82,5 +92,6 @@ export function KeyValueEditor({
 }
 
 const delBtn: CSSProperties = { width: 30, flexShrink: 0, border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text-muted)', cursor: 'pointer' }
+const dupWarn: CSSProperties = { borderColor: 'var(--fl-put)', boxShadow: '0 0 0 1px var(--fl-put) inset' }
 const typeSel: CSSProperties = { flexShrink: 0, width: 78, padding: '6px 4px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 11.5 }
 const addBtn: CSSProperties = { marginTop: 2, padding: '6px 10px', border: '1px dashed var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'transparent', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 12.5 }

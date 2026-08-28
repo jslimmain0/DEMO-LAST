@@ -1,9 +1,27 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent } from 'react'
 import type { Binding } from '../api/types'
 import { catColor, typeIcon, typeLabel } from '../canvas/nodeMeta'
 import { Modal } from '../components/Modal'
+import { getRecentBindings, pushRecentBinding } from './recentBindings'
 import type { BindableItem, BindableSource } from './upstream'
+
+// 한 소스가 이보다 많은 항목을 가지면 접어서 보여준다(+N개 더) — 칩 수십 개가 화면을 덮는 것 방지.
+const TRUNC = 12
+
+interface Entry { it: BindableItem; src: BindableSource }
+interface Section {
+  id: string
+  label: string
+  sub?: string
+  icon?: string
+  iconColor?: string
+  entries: Entry[]      // 실제 렌더할 항목(접힘/축약 반영)
+  total: number         // 매칭된 전체 항목 수(배지)
+  hiddenCount: number   // '+N개 더' 로 감춰진 수
+  collapsible: boolean
+  isRecent?: boolean
+}
 
 // 상위 노드들의 요청/응답 규격을 블록으로 골라 바인딩을 삽입하는 모달 (UI/UX 스펙 §7.3).
 export function BindingPicker({
@@ -16,76 +34,161 @@ export function BindingPicker({
   onClose: () => void
 }) {
   const [q, setQ] = useState('')
-  const filtered = useMemo(() => {
-    const query = q.trim().toLowerCase()
-    if (!query) return sources
-    return sources
-      .map((s) => ({ ...s, items: s.items.filter((it) => it.key.toLowerCase().includes(query)) }))
-      .filter((s) => s.items.length > 0 || s.name.toLowerCase().includes(query))
-  }, [sources, q])
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
+  const [expanded, setExpanded] = useState<Set<string>>(new Set()) // '+N개 더' 로 펼친 섹션
+  const listRef = useRef<HTMLDivElement>(null)
+  const query = q.trim().toLowerCase()
 
-  const pick = (s: BindableSource, it: BindableItem) => {
-    onPick({ nodeName: s.name, cat: s.cat, key: it.key, sourceId: s.id, scope: it.scope })
+  // 최근 사용 — 현재 소스에 아직 존재하는 것만(지워진 노드/키는 자연 탈락). 검색 중엔 숨김(중복 노출 방지).
+  const recent = useMemo<Entry[]>(() => {
+    if (query) return []
+    const out: Entry[] = []
+    for (const r of getRecentBindings()) {
+      const src = sources.find((s) => s.id === r.sourceId)
+      if (!src) continue
+      const it = src.items.find((x) => x.key === r.key && (x.scope ?? null) === (r.scope ?? null))
+      if (it) out.push({ it, src })
+    }
+    return out
+  }, [sources, query])
+
+  const sections = useMemo<Section[]>(() => {
+    const list: Section[] = []
+    if (recent.length) {
+      list.push({ id: '__recent', label: '최근 사용', icon: '🕘', entries: recent, total: recent.length, hiddenCount: 0, collapsible: false, isRecent: true })
+    }
+    for (const s of sources) {
+      let items = s.items
+      if (query) {
+        items = s.items.filter((it) => it.key.toLowerCase().includes(query))
+        // 키가 안 걸려도 노드 이름이 걸리면 그 노드의 전체 항목을 보여준다(빈 섹션 방지)
+        if (items.length === 0 && s.name.toLowerCase().includes(query)) items = s.items
+        if (items.length === 0) continue
+      }
+      const total = items.length
+      let entries = items.map((it) => ({ it, src: s }))
+      let hiddenCount = 0
+      if (!query && collapsed.has(s.id)) {
+        entries = []
+      } else if (!query && !expanded.has(s.id) && entries.length > TRUNC) {
+        hiddenCount = entries.length - TRUNC
+        entries = entries.slice(0, TRUNC)
+      }
+      list.push({
+        id: s.id, label: s.name, sub: `${typeLabel(s.type)} · #${s.id}`,
+        icon: typeIcon(s.type), iconColor: catColor(s.cat),
+        entries, total, hiddenCount, collapsible: !query,
+      })
+    }
+    return list
+  }, [sources, recent, query, collapsed, expanded])
+
+  const pick = (e: Entry) => {
+    const b: Binding = { nodeName: e.src.name, cat: e.src.cat, key: e.it.key, sourceId: e.src.id, scope: e.it.scope }
+    pushRecentBinding(b)
+    onPick(b)
     onClose()
   }
 
-  // 키보드 선택 — 검색 후 방향키로 이동, Enter 로 삽입
-  const flat = useMemo(() => filtered.flatMap((s) => s.items.map((it) => ({ s, it }))), [filtered])
+  // 키보드 선택 — 검색 후 방향키로 이동, Enter 로 삽입. flat 은 렌더 순서와 동일.
+  const flat = useMemo(() => sections.flatMap((sec) => sec.entries), [sections])
   const [active, setActive] = useState(0)
   useEffect(() => { setActive(0) }, [q])
+  useEffect(() => { if (active >= flat.length) setActive(Math.max(0, flat.length - 1)) }, [flat.length, active])
+  // 활성 칩이 스크롤 밖이면 따라간다
+  useEffect(() => {
+    listRef.current?.querySelector('[data-bp-active="1"]')?.scrollIntoView({ block: 'nearest' })
+  }, [active, flat])
   const onKey = (e: ReactKeyboardEvent) => {
     if (e.key === 'ArrowDown') { e.preventDefault(); setActive((a) => Math.min(a + 1, flat.length - 1)) }
     else if (e.key === 'ArrowUp') { e.preventDefault(); setActive((a) => Math.max(a - 1, 0)) }
-    else if (e.key === 'Enter') { e.preventDefault(); const sel = flat[active]; if (sel) pick(sel.s, sel.it) }
+    else if (e.key === 'Enter') { e.preventDefault(); const sel = flat[active]; if (sel) pick(sel) }
+    else if (e.key === 'Escape' && q) { e.stopPropagation(); setQ('') } // Esc 1회=검색어 지움, 2회=닫기
   }
-  let gi = -1
+  const toggleCollapse = (id: string) => setCollapsed((p) => { const n = new Set(p); if (n.has(id)) n.delete(id); else n.add(id); return n })
 
+  // 검색어 매칭 부분 하이라이트
+  const hi = (key: string) => {
+    if (!query) return key
+    const i = key.toLowerCase().indexOf(query)
+    if (i < 0) return key
+    return (
+      <>
+        {key.slice(0, i)}
+        <span style={{ background: 'color-mix(in srgb, var(--fl-primary) 28%, transparent)', borderRadius: 3 }}>{key.slice(i, i + query.length)}</span>
+        {key.slice(i + query.length)}
+      </>
+    )
+  }
+
+  let gi = -1
   return (
     <Modal onClose={onClose} ariaLabel="데이터 삽입" width={520} maxWidth="100%" maxHeight="70vh">
         <header style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 16px', borderBottom: '1px solid var(--fl-border)' }}>
           <strong style={{ fontFamily: 'var(--fl-font-head)', fontSize: 15 }}>데이터 삽입</strong>
-          <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={onKey} placeholder="키 검색… (↑↓ 이동, Enter 삽입)" style={search} />
+          <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={onKey} placeholder="키·노드 검색… (↑↓ 이동, Enter 삽입)" style={search} />
           <button onClick={onClose} aria-label="닫기" style={{ border: 'none', background: 'transparent', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 18 }}>×</button>
         </header>
 
-        <div style={{ overflowY: 'auto', padding: 8, flex: 1 }}>
-          {filtered.length === 0 && (
+        <div ref={listRef} style={{ overflowY: 'auto', padding: 8, flex: 1 }}>
+          {sections.length === 0 && (
             <p style={{ color: 'var(--fl-text-muted)', fontSize: 13, padding: 16, textAlign: 'center' }}>
-              연결된 상위 노드가 없습니다. 먼저 이 노드에 이전 노드를 연결하세요.
+              {query ? '검색 결과가 없습니다.' : '연결된 상위 노드가 없습니다. 먼저 이 노드에 이전 노드를 연결하세요.'}
             </p>
           )}
-          {filtered.map((s) => (
-            <section key={s.id} style={{ marginBottom: 8 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '6px 8px', fontSize: 12, fontWeight: 700, color: 'var(--fl-text-muted)' }}>
-                <span aria-hidden style={{ color: catColor(s.cat) }}>{typeIcon(s.type)}</span>
-                {s.name}
-                <span style={{ fontWeight: 400, fontFamily: 'var(--fl-font-mono)', fontSize: 10.5, opacity: 0.7 }}>{typeLabel(s.type)} · #{s.id}</span>
+          {sections.map((sec) => {
+            const isCollapsed = sec.collapsible && collapsed.has(sec.id) && !sec.isRecent
+            return (
+            <section key={sec.id} style={{ marginBottom: 8 }}>
+              <div
+                role={sec.collapsible && !sec.isRecent ? 'button' : undefined}
+                onClick={sec.collapsible && !sec.isRecent ? () => toggleCollapse(sec.id) : undefined}
+                title={sec.collapsible && !sec.isRecent ? (isCollapsed ? '펼치기' : '접기') : undefined}
+                style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '6px 8px', fontSize: 12, fontWeight: 700, color: 'var(--fl-text-muted)', cursor: sec.collapsible && !sec.isRecent ? 'pointer' : 'default', userSelect: 'none' }}
+              >
+                {sec.collapsible && !sec.isRecent && <span aria-hidden style={{ fontSize: 9, width: 10, flexShrink: 0 }}>{isCollapsed ? '▸' : '▾'}</span>}
+                <span aria-hidden style={{ color: sec.iconColor }}>{sec.icon}</span>
+                {sec.label}
+                <span style={countBadge}>{sec.total}</span>
+                {sec.sub && <span style={{ fontWeight: 400, fontFamily: 'var(--fl-font-mono)', fontSize: 10.5, opacity: 0.7, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sec.sub}</span>}
               </div>
               {/* 파라미터는 세로 목록 대신 블럭(칩)으로 나열 — 한눈에 훑고 바로 집는다 */}
+              {sec.entries.length > 0 && (
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: '0 8px 4px 27px' }}>
-                {s.items.map((it, i) => {
+                {sec.entries.map((e, i) => {
                   gi++
                   const isActive = gi === active
+                  const isResp = e.it.group === 'response'
                   return (
                   <button
-                    key={`${it.group}-${it.key}-${i}`}
-                    onClick={() => pick(s, it)}
+                    key={`${e.src.id}-${e.it.group}-${e.it.key}-${i}`}
+                    data-bp-active={isActive ? '1' : undefined}
+                    onClick={() => pick(e)}
                     onMouseEnter={() => setActive(gi)}
                     className="fl-bind-chip"
-                    title={`${it.group === 'response' ? '응답' : '요청'} · ${it.key}${it.type ? ` (${it.type})` : ''}`}
-                    style={{ ...chipBtn(it.group === 'response'), ...(isActive ? { outline: '2px solid var(--fl-primary)', outlineOffset: 1 } : {}) }}
+                    title={`${isResp ? '응답' : '요청'} · ${e.it.key}${e.it.type ? ` (${e.it.type})` : ''}${sec.isRecent ? ` — ${e.src.name}` : ''}`}
+                    style={{ ...chipBtn(isResp), ...(isActive ? { outline: '2px solid var(--fl-primary)', outlineOffset: 1 } : {}) }}
                   >
                     {/* 색 단독 금지(1.4.1) — 응답/요청 구분은 텍스트 태그로 */}
-                    <span style={{ fontSize: 9.5, fontWeight: 700, flexShrink: 0, color: it.group === 'response' ? 'var(--fl-ok)' : 'var(--fl-running)' }}>
-                      {it.group === 'response' ? '응답' : '요청'}
+                    <span style={{ fontSize: 9.5, fontWeight: 700, flexShrink: 0, color: isResp ? 'var(--fl-ok)' : 'var(--fl-running)' }}>
+                      {isResp ? '응답' : '요청'}
                     </span>
-                    <span style={{ fontFamily: 'var(--fl-font-mono)', fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 180 }}>{it.key}</span>
-                    {it.type && <span style={typeBadge}>{it.type}</span>}
+                    <span style={{ fontFamily: 'var(--fl-font-mono)', fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 180 }}>{hi(e.it.key)}</span>
+                    {e.it.type && <span style={typeBadge}>{e.it.type}</span>}
+                    {sec.isRecent && <span style={{ ...typeBadge, maxWidth: 90, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.src.name}</span>}
                   </button>
                 ) })}
+                {sec.hiddenCount > 0 && (
+                  <button
+                    onClick={() => setExpanded((p) => new Set(p).add(sec.id))}
+                    style={{ ...chipBtn(false), borderStyle: 'dashed', color: 'var(--fl-text-muted)', fontSize: 11.5 }}
+                    title="이 노드의 나머지 항목 펼치기"
+                  >+{sec.hiddenCount}개 더</button>
+                )}
               </div>
+              )}
             </section>
-          ))}
+          ) })}
         </div>
       </Modal>
   )
@@ -107,3 +210,4 @@ function chipBtn(isResponse: boolean): CSSProperties {
   }
 }
 const typeBadge: CSSProperties = { fontSize: 10, color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)', background: 'var(--fl-surface-2)', padding: '1px 5px', borderRadius: 5, flexShrink: 0 }
+const countBadge: CSSProperties = { flexShrink: 0, fontSize: 10, fontWeight: 600, color: 'var(--fl-text-muted)', background: 'var(--fl-surface-2)', borderRadius: 8, padding: '1px 6px' }

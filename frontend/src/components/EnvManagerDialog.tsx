@@ -1,7 +1,9 @@
 import type { CSSProperties } from 'react'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { duplicateKeys, parseDotEnv } from '../lib/bulkPaste'
 import { getEnvStore, setEnvStore, useEnvStore } from '../lib/environments'
 import { Modal } from './Modal'
+import { toast } from './toast'
 
 /**
  * 환경(dev/staging/prod) 관리 다이얼로그.
@@ -35,6 +37,16 @@ export function EnvManagerDialog({ onClose }: { onClose: () => void }) {
     for (const [k, v] of Object.entries(s.envs)) envs[k === from ? t : k] = v
     setEnvStore({ active: s.active === from ? t : s.active, envs })
     setSelected(t)
+  }
+  const duplicateEnv = (name: string) => {
+    const s = getEnvStore()
+    const src = s.envs[name]
+    if (!src) return
+    let copy = `${name}-복사`
+    let n = 1
+    while (s.envs[copy]) copy = `${name}-복사-${++n}`
+    setEnvStore({ ...s, envs: { ...s.envs, [copy]: { ...src } } })
+    setSelected(copy)
   }
   const deleteEnv = (name: string) => {
     const s = getEnvStore()
@@ -111,6 +123,7 @@ export function EnvManagerDialog({ onClose }: { onClose: () => void }) {
                       onBlur={(e) => renameEnv(selected, e.target.value)}
                       onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
                     />
+                    <button onClick={() => duplicateEnv(selected)} style={ghostBtn} title="이 환경을 변수째 복제 (dev 를 복사해 staging 만들기)">⧉ 복제</button>
                     <button onClick={() => deleteEnv(selected)} style={ghostBtn} title="이 환경 삭제">삭제</button>
                   </div>
                   {/* key={selected} — 환경을 바꿀 때만 새 초기값으로 리마운트. 같은 환경 편집 중엔
@@ -142,6 +155,11 @@ export function EnvManagerDialog({ onClose }: { onClose: () => void }) {
 function VarEditor({ initial, onChange }: { initial: Record<string, string>; onChange: (v: Record<string, string>) => void }) {
   // 삽입 순서 보존을 위해 배열로 편집 후 맵으로 직렬화
   const [rows, setRows] = useState<Array<{ k: string; v: string }>>(() => Object.entries(initial).map(([k, v]) => ({ k, v })))
+  const [filter, setFilter] = useState('')
+  const [pasteOpen, setPasteOpen] = useState(false)
+  const [pasteText, setPasteText] = useState('')
+  const boxRef = useRef<HTMLDivElement>(null)
+  const pendingFocus = useRef<string | null>(null) // rows 반영 후 포커스할 input 의 data-var 값
 
   const commit = (next: Array<{ k: string; v: string }>) => {
     setRows(next)
@@ -150,20 +168,85 @@ function VarEditor({ initial, onChange }: { initial: Record<string, string>; onC
     onChange(out)
   }
   const setRow = (i: number, patch: Partial<{ k: string; v: string }>) => commit(rows.map((r, j) => (j === i ? { ...r, ...patch } : r)))
-  const addRow = () => commit([...rows, { k: '', v: '' }])
+  const addRow = () => { setFilter(''); pendingFocus.current = `k${rows.length}`; commit([...rows, { k: '', v: '' }]) }
   const delRow = (i: number) => commit(rows.filter((_, j) => j !== i))
+  useEffect(() => {
+    if (!pendingFocus.current) return
+    const el = boxRef.current?.querySelector<HTMLInputElement>(`[data-var="${pendingFocus.current}"]`)
+    pendingFocus.current = null
+    el?.focus()
+  }, [rows.length])
+
+  // .env 붙여넣기 일괄 추가 — 같은 키는 값 갱신, 새 키는 뒤에 추가
+  const applyPaste = () => {
+    const parsed = parseDotEnv(pasteText)
+    if (!parsed.length) { toast('KEY=value 형식의 줄을 찾지 못했습니다.', 'error'); return }
+    const next = [...rows]
+    let added = 0, updated = 0
+    for (const { key, value } of parsed) {
+      const idx = next.findIndex((r) => r.k.trim() === key)
+      if (idx >= 0) { if (next[idx].v !== value) { next[idx] = { ...next[idx], v: value }; updated++ } }
+      else { next.push({ k: key, v: value }); added++ }
+    }
+    commit(next)
+    setPasteText(''); setPasteOpen(false); setFilter('')
+    toast(`변수 ${added}개 추가${updated ? ` · ${updated}개 갱신` : ''}`, 'ok')
+  }
+
+  const dup = duplicateKeys(rows.map((r) => r.k))
+  const f = filter.trim().toLowerCase()
+  const visible = rows.map((r, i) => ({ r, i })).filter(({ r }) => !f || r.k.toLowerCase().includes(f) || r.v.toLowerCase().includes(f))
 
   return (
-    <div style={{ overflowY: 'auto', maxHeight: 300 }}>
+    <div ref={boxRef} style={{ overflowY: 'auto', maxHeight: 300 }}>
       {rows.length === 0 && <p style={{ ...hint, marginTop: 2 }}>변수를 추가하세요 (예: <code style={code}>baseUrl</code> = <code style={code}>https://dev.api.example.com</code>).</p>}
-      {rows.map((r, i) => (
+      {rows.length >= 8 && (
+        <input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder={`변수 검색… (${rows.length}개)`} aria-label="변수 검색"
+          style={{ ...mono, width: '100%', marginBottom: 6, fontFamily: 'var(--fl-font-ui)', boxSizing: 'border-box' }} />
+      )}
+      {f && visible.length === 0 && <p style={{ ...hint, marginTop: 2 }}>검색과 일치하는 변수가 없습니다.</p>}
+      {visible.map(({ r, i }) => (
         <div key={i} style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
-          <input style={{ ...mono, flex: 1, fontFamily: 'var(--fl-font-mono)' }} value={r.k} placeholder="키" onChange={(e) => setRow(i, { k: e.target.value })} />
-          <input style={{ ...mono, flex: 1.4, fontFamily: 'var(--fl-font-mono)' }} value={r.v} placeholder="값" onChange={(e) => setRow(i, { v: e.target.value })} />
+          <input
+            style={{ ...mono, flex: 1, fontFamily: 'var(--fl-font-mono)', ...(r.k.trim() && dup.has(r.k.trim()) ? dupWarn : null) }}
+            value={r.k} placeholder="키" data-var={`k${i}`}
+            title={r.k.trim() && dup.has(r.k.trim()) ? '중복 키 — 마지막 값이 적용됩니다' : undefined}
+            onChange={(e) => setRow(i, { k: e.target.value })}
+            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); boxRef.current?.querySelector<HTMLInputElement>(`[data-var="v${i}"]`)?.focus() } }}
+          />
+          <input
+            style={{ ...mono, flex: 1.4, fontFamily: 'var(--fl-font-mono)' }} value={r.v} placeholder="값" data-var={`v${i}`}
+            onChange={(e) => setRow(i, { v: e.target.value })}
+            onKeyDown={(e) => {
+              if (e.key !== 'Enter') return
+              e.preventDefault()
+              // Enter = 다음 행으로, 마지막 행이면 새 행 추가 — 여러 변수를 손 안 떼고 입력
+              if (i === rows.length - 1) addRow()
+              else boxRef.current?.querySelector<HTMLInputElement>(`[data-var="k${i + 1}"]`)?.focus()
+            }}
+          />
           <button onClick={() => delRow(i)} aria-label="변수 삭제" style={delBtn}>×</button>
         </div>
       ))}
-      <button onClick={addRow} style={addBtn}>+ 변수</button>
+      <div style={{ display: 'flex', gap: 6 }}>
+        <button onClick={addRow} style={addBtn}>+ 변수</button>
+        <button onClick={() => setPasteOpen((v) => !v)} style={addBtn} title="KEY=value 여러 줄(.env 형식)을 한 번에 붙여넣어 추가">📋 .env 붙여넣기</button>
+      </div>
+      {pasteOpen && (
+        <div style={{ marginTop: 6 }}>
+          <textarea
+            value={pasteText} onChange={(e) => setPasteText(e.target.value)} autoFocus
+            placeholder={'baseUrl=https://dev.api.example.com\ntoken=abc123\n# 주석·빈 줄은 무시'}
+            aria-label=".env 붙여넣기"
+            style={{ ...mono, width: '100%', minHeight: 84, fontFamily: 'var(--fl-font-mono)', resize: 'vertical', boxSizing: 'border-box' }}
+          />
+          <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+            <button onClick={applyPaste} style={{ ...primaryBtn, padding: '6px 12px', fontSize: 12 }}>추가</button>
+            <button onClick={() => { setPasteOpen(false); setPasteText('') }} style={ghostBtn}>취소</button>
+            <span style={{ ...hint, alignSelf: 'center', marginTop: 0 }}>같은 키는 값이 갱신됩니다.</span>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -178,5 +261,6 @@ const addBtn: CSSProperties = { marginTop: 2, padding: '6px 10px', border: '1px 
 const delBtn: CSSProperties = { width: 30, flexShrink: 0, border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text-muted)', cursor: 'pointer' }
 const envRow: CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, padding: '7px 9px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', cursor: 'pointer' }
 const envRowSel: CSSProperties = { borderColor: 'var(--fl-primary)', background: 'var(--fl-surface-2)' }
+const dupWarn: CSSProperties = { borderColor: 'var(--fl-put)', boxShadow: '0 0 0 1px var(--fl-put) inset' }
 const countBadge: CSSProperties = { flexShrink: 0, fontSize: 10.5, color: 'var(--fl-text-muted)', background: 'var(--fl-surface-2)', borderRadius: 8, padding: '1px 6px' }
 const empty: CSSProperties = { display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--fl-text-muted)', fontSize: 12.5, padding: 24 }

@@ -666,9 +666,9 @@ const saveBtn: CSSProperties = { ...ghostBtn, border: 'none', background: 'var(-
 // 접힌 사이드바를 펼치는 얇은 세로 바
 const expandStrip: CSSProperties = { width: 22, flexShrink: 0, border: 'none', borderLeft: '1px solid var(--fl-border)', borderRight: '1px solid var(--fl-border)', background: 'var(--fl-surface)', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 13 }
 // 넓은 속성 편집 모달(배경 딤 + 중앙 카드)
-const modalBackdrop: CSSProperties = { position: 'fixed', inset: 0, background: 'color-mix(in srgb, var(--fl-bg) 55%, transparent)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 250, padding: 24 }
-// 거의 전체화면 — 좁은 사이드가 불편해서 여는 모달이므로 화면을 최대한 쓴다
-const modalCard: CSSProperties = { width: 'min(1500px, 96vw)', height: '92vh', display: 'flex', flexDirection: 'column', background: 'var(--fl-surface)', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius)', boxShadow: 'var(--fl-shadow-lg)', overflow: 'hidden' }
+const modalBackdrop: CSSProperties = { position: 'fixed', inset: 0, background: 'color-mix(in srgb, var(--fl-bg) 55%, transparent)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 250, padding: 24 }
+// 크게 열되(높이 92vh) 폭은 폼 칼럼에 맞게 — 96vw 로 벌리면 좌우가 텅 비어 안 예쁘다(본문 전체화면은 BigTextEditor 몫)
+const modalCard: CSSProperties = { width: 'min(1080px, 96vw)', height: '92vh', display: 'flex', flexDirection: 'column', background: 'var(--fl-surface)', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius)', boxShadow: 'var(--fl-shadow-lg)', overflow: 'hidden' }
 // 도구 드롭다운 메뉴
 const toolsMenu: CSSProperties = { position: 'absolute', top: '110%', right: 0, zIndex: 91, background: 'var(--fl-surface)', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', boxShadow: 'var(--fl-shadow-lg)', minWidth: 200, padding: 4 }
 const toolItem: CSSProperties = { display: 'block', width: '100%', textAlign: 'left', padding: '8px 10px', border: 'none', background: 'transparent', color: 'var(--fl-text)', cursor: 'pointer', fontSize: 12.5, borderRadius: 6 }

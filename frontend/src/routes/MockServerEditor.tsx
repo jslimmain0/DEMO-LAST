@@ -548,8 +548,9 @@ function RuleCard({ rule, index, total, onChange, onDup, onRemove }: {
           value={rule.body ?? ''}
           onChange={(v) => onChange({ ...rule, body: v })}
           onClose={() => setBig(null)}
+          language={rule.contentType === 'html' ? 'html' : rule.contentType === 'json' ? 'json' : rule.contentType === 'xml' ? 'xml' : 'auto'}
           placeholder={'응답 본문 템플릿 — HTML/JSON. 예: {{path.id}} {{query.q}} {{body.필드}} {{state.x}} {{uuid}} {{now}}'}
-          hint="입력 즉시 반영됩니다(Esc 로 닫기). contentType 이 html 이면 브라우저에 페이지로 렌더됩니다 — 결제창/인증창 패턴."
+          hint="입력 즉시 반영됩니다(Esc 로 닫기). contentType 이 html 이면 브라우저에 페이지로 렌더됩니다 — 결제창/인증창 패턴. {{템플릿}} 토큰이 문법 경고로 표시될 수 있습니다(무해)."
         />
       )}
       {big === 'cb' && (
@@ -558,6 +559,7 @@ function RuleCard({ rule, index, total, onChange, onDup, onRemove }: {
           value={cb.body ?? ''}
           onChange={(v) => setCb({ body: v })}
           onClose={() => setBig(null)}
+          language="text"
           placeholder="resultCode=0000&orderId={{body.orderId}}"
           hint="응답 후 발사되는 콜백(웹훅)의 본문(urlencoded) — 템플릿 문법 동일."
         />

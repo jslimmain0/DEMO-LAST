@@ -49,14 +49,19 @@ export function DeletableEdge({ id, source, target, sourceHandleId, sourceX, sou
           <button
             className="nodrag nopan"
             onClick={(e) => { e.stopPropagation(); cycle!() }}
-            title={srcType === 'if' ? '분기 전환 (T↔F)' : '트랙 전환(클릭)'}
+            title={`${portLabel} — ${srcType === 'if' ? '분기 전환 (T↔F)' : '트랙 전환(클릭)'}`}
             style={{
               position: 'absolute',
-              transform: `translate(-50%, -50%) translate(${sourceX + 16}px, ${sourceY}px)`,
+              // 칩의 왼쪽 끝을 핸들 오른쪽(+10px)에 고정 — 중앙정렬이면 긴 트랙 이름의 앞 글자가 노드 밑에 가려진다
+              transform: `translate(0, -50%) translate(${sourceX + 10}px, ${sourceY}px)`,
               pointerEvents: 'all',
               minWidth: 18,
+              maxWidth: 130,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
               height: 18,
-              padding: '0 5px',
+              padding: '0 6px',
               borderRadius: 'var(--fl-radius-pill)',
               border: `1px solid ${portColor}`,
               background: 'var(--fl-surface)',

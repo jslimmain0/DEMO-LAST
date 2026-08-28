@@ -41,5 +41,5 @@ export function Modal({
   )
 }
 
-const OVERLAY: CSSProperties = { position: 'fixed', inset: 0, background: 'rgba(26,29,39,.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }
+const OVERLAY: CSSProperties = { position: 'fixed', inset: 0, background: 'rgba(26,29,39,.4)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }
 const CARD: CSSProperties = { background: 'var(--fl-surface)', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-lg)', boxShadow: 'var(--fl-shadow-lg)', overflow: 'hidden', display: 'flex', flexDirection: 'column' }

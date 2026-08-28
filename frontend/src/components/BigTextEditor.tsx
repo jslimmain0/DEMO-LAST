@@ -1,10 +1,26 @@
 import type { CSSProperties } from 'react'
+import { Suspense, lazy, useState } from 'react'
+import type { CodeLang } from './CodeEditor'
 import { Modal } from './Modal'
+
+// CodeMirror(하이라이트·문법 체크)는 무거워서 편집기를 열 때만 로드
+const CodeEditorLazy = lazy(() => import('./CodeEditor'))
+
+export type BigTextLang = CodeLang | 'text' | 'auto'
+
+/** 내용으로 언어 추정 — 명시 language 가 없을 때(auto)만 */
+function detectLang(v: string): CodeLang | 'text' {
+  const t = v.trimStart()
+  if (t.startsWith('<')) return 'html'
+  if (t.startsWith('{') || t.startsWith('[')) return 'json'
+  return 'text'
+}
 
 /**
  * 거의 전체화면 텍스트 편집 모달 — HTML 응답 템플릿·콜백 본문·raw 바디처럼
  * 작은 textarea 로 쓰기 힘든 긴 본문을 크게 편집한다. value/onChange 를 그대로 물려받아
  * 원본 입력과 실시간 동기화(닫으면 그 상태가 남는다 — 별도 저장 없음).
+ * HTML(내장 JS/CSS)·JSON·XML 은 하이라이트 + 문법 체크(거터/밑줄), 텍스트는 평문 textarea.
  */
 export function BigTextEditor({
   title,
@@ -13,6 +29,7 @@ export function BigTextEditor({
   onClose,
   placeholder,
   hint,
+  language = 'auto',
 }: {
   title: string
   value: string
@@ -20,27 +37,42 @@ export function BigTextEditor({
   onClose: () => void
   placeholder?: string
   hint?: string
+  language?: BigTextLang
 }) {
+  const [lang, setLang] = useState<CodeLang | 'text'>(() => (language === 'auto' ? detectLang(value) : language))
   return (
     <Modal onClose={onClose} ariaLabel={title} width="min(1500px, 96vw)" maxWidth="96vw" height="92vh" maxHeight="94vh" zIndex={320} card={{ padding: 0 }}>
       <header style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', borderBottom: '1px solid var(--fl-border)', flexShrink: 0 }}>
-        <strong style={{ flex: 1, fontFamily: 'var(--fl-font-head)', fontSize: 14.5 }}>{title}</strong>
-        <span style={{ fontSize: 11.5, color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)' }}>{value.length.toLocaleString()}자</span>
+        <strong style={{ flex: 1, fontFamily: 'var(--fl-font-head)', fontSize: 14.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{title}</strong>
+        <select
+          value={lang}
+          onChange={(e) => setLang(e.target.value as CodeLang | 'text')}
+          aria-label="문법(하이라이트·체크)"
+          title="문법 하이라이트·체크 언어 — HTML 은 안의 JS/CSS 까지"
+          style={langSel}
+        >
+          <option value="html">HTML (+JS/CSS)</option>
+          <option value="json">JSON</option>
+          <option value="xml">XML</option>
+          <option value="text">텍스트</option>
+        </select>
+        <span style={{ fontSize: 11.5, color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)', flexShrink: 0 }}>{value.length.toLocaleString()}자</span>
         <button onClick={onClose} aria-label="닫기" title="닫기 (Esc)" style={xBtn}>×</button>
       </header>
-      <textarea
-        autoFocus
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        spellCheck={false}
-        style={{
-          flex: 1, minHeight: 0, width: '100%', boxSizing: 'border-box', resize: 'none',
-          padding: '14px 16px', border: 'none', outline: 'none',
-          background: 'var(--fl-surface)', color: 'var(--fl-text)',
-          fontFamily: 'var(--fl-font-mono)', fontSize: 13, lineHeight: 1.65, tabSize: 2,
-        }}
-      />
+      {lang === 'text' ? (
+        <textarea
+          autoFocus
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
+          spellCheck={false}
+          style={plainArea}
+        />
+      ) : (
+        <Suspense fallback={<textarea value={value} onChange={(e) => onChange(e.target.value)} spellCheck={false} style={plainArea} />}>
+          <CodeEditorLazy value={value} onChange={onChange} language={lang} />
+        </Suspense>
+      )}
       {hint && <p style={{ margin: 0, padding: '8px 16px', borderTop: '1px solid var(--fl-border)', fontSize: 11.5, color: 'var(--fl-text-muted)', flexShrink: 0 }}>{hint}</p>}
     </Modal>
   )
@@ -53,13 +85,20 @@ export function ExpandCorner({ onClick, label = '크게 편집' }: { onClick: ()
       type="button"
       onClick={onClick}
       aria-label={label}
-      title={`${label} — 거의 전체화면`}
+      title={`${label} — 거의 전체화면 (HTML/JSON 문법 체크)`}
       style={corner}
     >⤢</button>
   )
 }
 
 const xBtn: CSSProperties = { width: 28, height: 28, borderRadius: 8, border: 'none', background: 'var(--fl-surface-2)', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 15, flexShrink: 0 }
+const langSel: CSSProperties = { flexShrink: 0, padding: '5px 8px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 12 }
+const plainArea: CSSProperties = {
+  flex: 1, minHeight: 0, width: '100%', boxSizing: 'border-box', resize: 'none',
+  padding: '14px 16px', border: 'none', outline: 'none',
+  background: 'var(--fl-surface)', color: 'var(--fl-text)',
+  fontFamily: 'var(--fl-font-mono)', fontSize: 13, lineHeight: 1.65, tabSize: 2,
+}
 const corner: CSSProperties = {
   position: 'absolute', top: 5, right: 7, width: 24, height: 24,
   border: '1px solid var(--fl-border)', borderRadius: 6,

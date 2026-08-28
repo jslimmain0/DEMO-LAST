@@ -456,21 +456,24 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
 
   return (
     <aside aria-label="속성" style={{ ...shell, width }}>
-      <header style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '14px 16px', borderBottom: '1px solid var(--fl-border)' }}>
-        <span aria-hidden style={{ color: catColor(node.cat), fontSize: 16 }}>{typeIcon(node.type)}</span>
-        <input aria-label="노드 이름" value={node.name ?? ''} placeholder={typeLabel(node.type)} onChange={(e) => update(id, { name: e.target.value })} style={{ ...field, fontWeight: 600, fontFamily: 'var(--fl-font-head)' }} />
-        {onExpand && (
-          <button onClick={onExpand} aria-label="넓게 편집" title="넓은 모달로 편집" style={iconBtn}>⤢</button>
-        )}
-        {onCollapse && (
-          <button onClick={onCollapse} aria-label="속성 패널 접기" title="접기" style={iconBtn}>»</button>
-        )}
-        {modal
-          ? <button onClick={onCloseModal} aria-label="모달 닫기" title="닫기(도킹으로)" style={closeBtn}>×</button>
-          : <button onClick={() => selectNode(null)} aria-label="패널 닫기" style={closeBtn}>×</button>}
+      <header style={{ padding: '14px 16px', borderBottom: '1px solid var(--fl-border)' }}>
+        {/* 모달(큰 화면)에선 헤더도 본문과 같은 중앙 칼럼 폭 — 이름 입력이 화면 끝까지 늘어지지 않게 */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 7, width: '100%', ...(modal ? { maxWidth: 940, margin: '0 auto' } : null) }}>
+          <span aria-hidden style={{ color: catColor(node.cat), fontSize: 16 }}>{typeIcon(node.type)}</span>
+          <input aria-label="노드 이름" value={node.name ?? ''} placeholder={typeLabel(node.type)} onChange={(e) => update(id, { name: e.target.value })} style={{ ...field, fontWeight: 600, fontFamily: 'var(--fl-font-head)' }} />
+          {onExpand && (
+            <button onClick={onExpand} aria-label="넓게 편집" title="넓은 모달로 편집" style={iconBtn}>⤢</button>
+          )}
+          {onCollapse && (
+            <button onClick={onCollapse} aria-label="속성 패널 접기" title="접기" style={iconBtn}>»</button>
+          )}
+          {modal
+            ? <button onClick={onCloseModal} aria-label="모달 닫기" title="닫기(도킹으로)" style={closeBtn}>×</button>
+            : <button onClick={() => selectNode(null)} aria-label="패널 닫기" style={closeBtn}>×</button>}
+        </div>
       </header>
 
-      {/* 모달(전체화면)에선 내용을 편한 폭의 중앙 칼럼으로 — 입력이 1500px 로 늘어지지 않게 */}
+      {/* 모달(큰 화면)에선 내용을 편한 폭의 중앙 칼럼으로 */}
       <div style={{ padding: modal ? '20px 28px' : '16px 18px', overflowY: 'auto', flex: 1, ...(modal ? { width: '100%', maxWidth: 940, margin: '0 auto' } : null) }}>
         <button
           onClick={() => copyText(id, '노드 id 를 복사했습니다.')}
@@ -1228,8 +1231,9 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
           value={node.rawBody ?? ''}
           onChange={(v) => update(id, { rawBody: v })}
           onClose={() => setBigEdit(null)}
+          language={node.bodyType === 'json' ? 'json' : node.bodyType === 'xml' ? 'xml' : node.bodyType === 'urlencoded' || node.bodyType === 'form' ? 'text' : 'auto'}
           placeholder={rawBodyPlaceholder(node.bodyType)}
-          hint="입력 즉시 반영됩니다(Esc 로 닫기). {{ 키@노드 }} 토큰은 텍스트로 직접 쓸 수 있습니다."
+          hint="입력 즉시 반영됩니다(Esc 로 닫기). {{ 키@노드 }} 토큰은 텍스트로 직접 쓸 수 있습니다(문법 경고로 표시될 수 있음 — 무해)."
         />
       )}
       {bigEdit === 'callbackRespBody' && (
@@ -1238,6 +1242,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
           value={node.callbackRespBody ?? ''}
           onChange={(v) => update(id, { callbackRespBody: v })}
           onClose={() => setBigEdit(null)}
+          language={node.callbackRespType === 'html' ? 'html' : node.callbackRespType === 'json' ? 'json' : 'text'}
           placeholder={node.callbackRespType === 'html' ? '<!doctype html>\n<p>인증 완료 — 창을 닫으세요</p>' : 'OK'}
           hint="콜백을 보낸 쪽이 받을 응답 — HTML 이면 결제/인증 창에 그대로 렌더됩니다('창을 닫으세요' 패턴)."
         />

@@ -81,23 +81,27 @@ export function SwitchNode({ data, selected }: NodeProps) {
                 display: 'flex',
                 alignItems: 'center',
                 gap: 8,
-                padding: '0 14px 0 12px',
+                // 오른쪽 여유 18px — 핸들(호버 시 16px 로 커짐)이 라벨 끝 글자를 덮지 않게
+                padding: '0 18px 0 12px',
                 cursor: 'pointer',
               }}
             >
-              {/* 선로 — 젖혀진 트랙은 진한 실선, 나머지는 흐린 점선 */}
+              {/* 선로 — 젖혀진 트랙은 진한 실선, 나머지는 흐린 점선. 라벨이 길어도 선로 토막은 남긴다 */}
               <span
                 aria-hidden
                 style={{
                   flex: 1,
+                  minWidth: 14,
                   borderTop: on ? `2.5px solid ${accent}` : '2px dashed var(--fl-border)',
                   opacity: on ? 1 : 0.9,
                 }}
               />
               <span
+                title={p.label || p.id}
                 style={{
-                  flexShrink: 0,
-                  maxWidth: 110,
+                  flexShrink: 1,
+                  minWidth: 0,
+                  maxWidth: 150,
                   overflow: 'hidden',
                   textOverflow: 'ellipsis',
                   whiteSpace: 'nowrap',

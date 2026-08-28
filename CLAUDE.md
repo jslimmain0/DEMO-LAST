@@ -998,6 +998,15 @@ tcp-preview 는 시크릿 미시드라 무관. 단위 5종 + 라이브(단일 �
 - 라이브 확인 중 이 브라우저의 `fl:editor:propertyW=560`(과대 저장값)이 캔버스를 압박 → 380 으로 리셋(코드 무관, "이상해 보임"의 한 원인).
 - 검증: tsc/build/oxlint + 실브라우저(:18080 dark) — 전체화면 속성 모달·Mock 결제창 HTML 1,490자 큰 편집기·시크릿 볼트 새 레이아웃 실측.
 
+### 5차 — 코드 편집기(문법 체크)·트랙 칩 가림·모달 미관 (2026-08-29, 사용자 피드백 3건)
+- **[CodeEditor](frontend/src/components/CodeEditor.tsx)**(신규, CodeMirror 6): BigTextEditor 가 HTML/JSON/XML 일 때 textarea 대신 —
+  **하이라이트(HTML 안의 JS/CSS 포함) + 문법 체크**(JSON=`jsonParseLinter` 오류, HTML/XML=lezer 파스 트리 오류 노드 경고·50개 캡) + 줄번호·접기·다크(oneDark).
+  **lazy import 별도 청크**(gzip 200KB — 편집기 열 때만 로드, 본 번들 무변화). BigTextEditor 헤더에 언어 셀렉트(HTML/JSON/XML/텍스트, 미지정 시 내용으로 자동 추정),
+  호출부가 language 전달(Mock rule.contentType·wait callbackRespType·HTTP bodyType). ⚠ `{{템플릿}}` 토큰은 문법 경고로 표시될 수 있음(무해, 힌트로 안내). deps: codemirror + @codemirror/lang-html/json/xml·lint·theme-one-dark.
+- **스위치 엣지 포트 칩 가림 수정**([DeletableEdge](frontend/src/canvas/DeletableEdge.tsx)): 칩이 소스 핸들 기준 **중앙정렬**이라 긴 트랙 이름의 앞 글자가 노드 밑에 가려짐("Mock 전문"→"Ock 전문") → 칩 왼쪽 끝을 핸들 오른쪽(+10px)에 고정 + maxWidth 130 말줄임 + title. [SwitchNode](frontend/src/canvas/SwitchNode.tsx) 트랙 라벨도 우측 여유 18px·maxWidth 150·title.
+- **최대화 모달 미관**: 96vw 가 좌우 텅 비어 "안 예쁘다" → 속성 모달 카드 `min(1080px,96vw)`(높이 92vh 유지), 헤더도 본문과 같은 중앙 940px 칼럼, 배경 **blur(4px)**(Editor modalBackdrop + 공용 Modal OVERLAY). 본문 전체화면은 BigTextEditor 가 담당(96vw 유지).
+- 검증: tsc/build(CodeEditor 청크 분리 확인) + 실브라우저 — 결제창 HTML 하이라이트/접기/줄번호, 깨진 태그 입력 시 거터 ⚠, undo 복원(1,490자), 트랙 칩 "Mock 전문/운영 전문" 온전 표시, 1080px 모달.
+
 ### 3차 디테일 패치("10개 이상" 추가 발굴, 15건)
 키보드·일관성 마이크로 UX — 전부 프론트: ① 피커 헤더 **모두 펼치기 ⇄ 모두 접기** 토글 버튼(기본 접힘의 짝) ② 피커 섹션 헤더 키보드 접근(tabIndex·Enter/Space·aria-expanded) ③ [NodeAddMenu](frontend/src/canvas/NodeAddMenu.tsx) ↑↓ 활성 이동+하이라이트+Enter 선택·빈 상태 문구 ④ 대시보드 검색 **Esc=지우기 + × 버튼** ⑤ 실행 이력 검색 Esc=지우기 ⑥ 팔레트 검색 Esc=지우기 ⑦ 에디터 워크플로 이름 Enter/Esc=확정(blur) ⑧ Mock 보내보기 경로 Enter=전송 ⑨ 시크릿 이름/값 Enter=저장 ⑩ EnvSwitcher 드롭다운 Esc 닫기 ⑪ 도구(⋯) 메뉴 Esc 닫기 ⑫ 전역 `accent-color`(체크박스/라디오 브랜드 색) ⑬ 전역 `::selection` 브랜드 틴트 ⑭ 전역 버튼 커서(enabled=pointer·disabled=not-allowed+opacity .6) ⑮ 입력 크기 리듬 통일(KeyValueEditor·Env/Secrets 다이얼로그 8×10px·12.5px + KVE 행 버튼 높이 32). 검증: tsc/build/oxlint + 브라우저(펼치기/접기 토글·검색 ×/Esc 클리어·포커스 링).
 

@@ -545,7 +545,7 @@ export function Editor() {
         {propModal && (
           <div style={modalBackdrop} onClick={() => setPropModal(false)} role="presentation">
             <div style={modalCard} onClick={(e) => e.stopPropagation()}>
-              <PropertyPanel width={760} modal onCloseModal={() => setPropModal(false)} />
+              <PropertyPanel width="100%" modal onCloseModal={() => setPropModal(false)} />
             </div>
           </div>
         )}
@@ -667,7 +667,8 @@ const saveBtn: CSSProperties = { ...ghostBtn, border: 'none', background: 'var(-
 const expandStrip: CSSProperties = { width: 22, flexShrink: 0, border: 'none', borderLeft: '1px solid var(--fl-border)', borderRight: '1px solid var(--fl-border)', background: 'var(--fl-surface)', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 13 }
 // 넓은 속성 편집 모달(배경 딤 + 중앙 카드)
 const modalBackdrop: CSSProperties = { position: 'fixed', inset: 0, background: 'color-mix(in srgb, var(--fl-bg) 55%, transparent)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 250, padding: 24 }
-const modalCard: CSSProperties = { width: 'min(760px, 94vw)', height: 'min(85vh, 900px)', display: 'flex', flexDirection: 'column', background: 'var(--fl-surface)', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius)', boxShadow: 'var(--fl-shadow-lg)', overflow: 'hidden' }
+// 거의 전체화면 — 좁은 사이드가 불편해서 여는 모달이므로 화면을 최대한 쓴다
+const modalCard: CSSProperties = { width: 'min(1500px, 96vw)', height: '92vh', display: 'flex', flexDirection: 'column', background: 'var(--fl-surface)', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius)', boxShadow: 'var(--fl-shadow-lg)', overflow: 'hidden' }
 // 도구 드롭다운 메뉴
 const toolsMenu: CSSProperties = { position: 'absolute', top: '110%', right: 0, zIndex: 91, background: 'var(--fl-surface)', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', boxShadow: 'var(--fl-shadow-lg)', minWidth: 200, padding: 4 }
 const toolItem: CSSProperties = { display: 'block', width: '100%', textAlign: 'left', padding: '8px 10px', border: 'none', background: 'transparent', color: 'var(--fl-text)', cursor: 'pointer', fontSize: 12.5, borderRadius: 6 }

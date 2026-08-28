@@ -990,6 +990,14 @@ tcp-preview 는 시크릿 미시드라 무관. 단위 5종 + 라이브(단일 �
 - **가로 스크롤바**: 전역 가로 바 높이 10→**7px**+호버 색, `html,body{overflow-x:clip}`(1~2px 오버플로가 문서 가로 바를 만들지 않게), 대시보드 카드 미니 프리뷰([MiniFlow](frontend/src/components/MiniFlow.tsx))는 `.fl-hidden-scroll` 로 바 숨김(스크롤은 유지).
 - 검증: tsc/build/oxlint + 브라우저 실측(피커 3소스 접힘/펼침·텍스트 모드 타이핑 즉시 변수 6개 반영·팔레트 균일 폭·패널 380·대시보드/Mock/실행 1000px 폭 오버플로 스캔 bars 0). ⚠ propertyW 는 localStorage 지속이라 이미 드래그했던 브라우저는 저장값 우선(도구 ⋯ 패널 크기 리셋).
 
+### 4차 — 전체화면 편집(사용자 피드백: "모달 거의 전체화면·시크릿 볼트 UX·HTML 편집 불편")
+- **[BigTextEditor](frontend/src/components/BigTextEditor.tsx)**(신규): 거의 전체화면(96vw×92vh) 텍스트 편집 모달 + 작은 textarea 우상단에 붙는 `ExpandCorner`(⤢) 버튼. value/onChange 그대로 물려받아 실시간 동기화(Esc 닫기), 글자 수 표시.
+  적용: **Mock 규칙 응답 본문**(결제창 HTML 템플릿)·**Mock 콜백 본문**([MockServerEditor](frontend/src/routes/MockServerEditor.tsx) RuleCard) · **wait 콜백 응답 본문**·**HTTP raw 바디**([PropertyPanel](frontend/src/panels/PropertyPanel.tsx) `bigEdit`).
+- **넓은 속성 모달(⤢) 거의 전체화면**: [Editor](frontend/src/routes/Editor.tsx) modalCard 760px → `min(1500px,96vw)`×92vh, 내용은 중앙 940px 칼럼(입력이 늘어지지 않게, PropertyPanel `modal` 분기). JSON 보기 모달도 같은 카드 공유로 확대. PropertyPanel width prop `number|string`.
+- **시크릿 볼트 UX**: 560→760px, 목록 스크롤 영역 분리(maxHeight 88vh flex), 헤더 개수 배지, 새 시크릿 값 **👁 저장 전 확인 토글**.
+- 라이브 확인 중 이 브라우저의 `fl:editor:propertyW=560`(과대 저장값)이 캔버스를 압박 → 380 으로 리셋(코드 무관, "이상해 보임"의 한 원인).
+- 검증: tsc/build/oxlint + 실브라우저(:18080 dark) — 전체화면 속성 모달·Mock 결제창 HTML 1,490자 큰 편집기·시크릿 볼트 새 레이아웃 실측.
+
 ### 3차 디테일 패치("10개 이상" 추가 발굴, 15건)
 키보드·일관성 마이크로 UX — 전부 프론트: ① 피커 헤더 **모두 펼치기 ⇄ 모두 접기** 토글 버튼(기본 접힘의 짝) ② 피커 섹션 헤더 키보드 접근(tabIndex·Enter/Space·aria-expanded) ③ [NodeAddMenu](frontend/src/canvas/NodeAddMenu.tsx) ↑↓ 활성 이동+하이라이트+Enter 선택·빈 상태 문구 ④ 대시보드 검색 **Esc=지우기 + × 버튼** ⑤ 실행 이력 검색 Esc=지우기 ⑥ 팔레트 검색 Esc=지우기 ⑦ 에디터 워크플로 이름 Enter/Esc=확정(blur) ⑧ Mock 보내보기 경로 Enter=전송 ⑨ 시크릿 이름/값 Enter=저장 ⑩ EnvSwitcher 드롭다운 Esc 닫기 ⑪ 도구(⋯) 메뉴 Esc 닫기 ⑫ 전역 `accent-color`(체크박스/라디오 브랜드 색) ⑬ 전역 `::selection` 브랜드 틴트 ⑭ 전역 버튼 커서(enabled=pointer·disabled=not-allowed+opacity .6) ⑮ 입력 크기 리듬 통일(KeyValueEditor·Env/Secrets 다이얼로그 8×10px·12.5px + KVE 행 버튼 높이 32). 검증: tsc/build/oxlint + 브라우저(펼치기/접기 토글·검색 ×/Esc 클리어·포커스 링).
 

@@ -21,6 +21,7 @@ export function SecretsDialog({ onClose }: { onClose: () => void }) {
   const [value, setValue] = useState('')
   const [env, setEnv] = useState<string>('') // '' = 공통
   const [filter, setFilter] = useState('')
+  const [reveal, setReveal] = useState(false) // 저장 전 값 확인용 표시 토글
 
   // 셀렉트 옵션 = 공통 + 정의된 환경 + 활성 환경(정의 안 됐어도)
   const envNames = useMemo(() => {
@@ -62,10 +63,12 @@ export function SecretsDialog({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <Modal onClose={onClose} ariaLabel="시크릿" width={560} card={{ padding: 18, display: 'block', overflowY: 'auto' }}>
-        <header style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+    <Modal onClose={onClose} ariaLabel="시크릿" width={760} maxHeight="88vh" card={{ padding: 18, display: 'flex', flexDirection: 'column' }}>
+        <header style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, flexShrink: 0 }}>
           <span aria-hidden>🔑</span>
-          <b style={{ flex: 1, fontSize: 15 }}>시크릿 볼트</b>
+          <b style={{ fontSize: 15 }}>시크릿 볼트</b>
+          {list.length > 0 && <span style={{ fontSize: 11.5, color: 'var(--fl-text-muted)', background: 'var(--fl-surface-2)', borderRadius: 999, padding: '2px 8px' }}>{list.length}</span>}
+          <span style={{ flex: 1 }} />
           <button onClick={onClose} aria-label="닫기" style={xBtn}>×</button>
         </header>
         <p style={hint}>
@@ -81,7 +84,7 @@ export function SecretsDialog({ onClose }: { onClose: () => void }) {
           <input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder={`이름 검색… (${list.length}개)`} aria-label="시크릿 검색"
             style={{ ...mono, width: '100%', margin: '12px 0 0', fontFamily: 'var(--fl-font-ui)', boxSizing: 'border-box' }} />
         )}
-        <div style={{ display: 'grid', gap: 6, margin: '12px 0' }}>
+        <div style={{ display: 'grid', gap: 6, margin: '12px 0', overflowY: 'auto', minHeight: 0, flex: '1 1 auto', alignContent: 'start' }}>
           {sorted.length === 0 && !q.isLoading && <p style={{ ...hint, color: 'var(--fl-text-muted)' }}>저장된 시크릿이 없습니다.</p>}
           {f && shown.length === 0 && sorted.length > 0 && <p style={{ ...hint, color: 'var(--fl-text-muted)' }}>검색과 일치하는 시크릿이 없습니다.</p>}
           {shown.map((s) => {
@@ -107,17 +110,19 @@ export function SecretsDialog({ onClose }: { onClose: () => void }) {
           })}
         </div>
 
-        <div style={{ borderTop: '1px solid var(--fl-border)', paddingTop: 12 }}>
-          <label style={label}>새 시크릿 (환경 + 이름 + 값)</label>
+        <div style={{ borderTop: '1px solid var(--fl-border)', paddingTop: 12, flexShrink: 0 }}>
+          <label style={label}>새 시크릿 (환경 + 이름 + 값 — Enter 로 저장)</label>
           <div style={{ display: 'flex', gap: 6 }}>
-            <select value={env} onChange={(e) => setEnv(e.target.value)} style={{ ...mono, flex: '0 0 96px' }} title="환경 스코프">
+            <select value={env} onChange={(e) => setEnv(e.target.value)} style={{ ...mono, flex: '0 0 104px' }} title="환경 스코프">
               <option value="">공통</option>
               {envNames.map((n) => <option key={n} value={n}>{n}</option>)}
             </select>
             <input value={name} onChange={(e) => setName(e.target.value)} placeholder="예: API_TOKEN" style={{ ...mono, flex: 1 }}
               onKeyDown={(e) => { if (e.key === 'Enter' && name.trim() && value && !put.isPending) { e.preventDefault(); put.mutate() } }} />
-            <input value={value} onChange={(e) => setValue(e.target.value)} placeholder="값(저장 후 숨김)" type="password" style={{ ...mono, flex: 1.3 }}
+            <input value={value} onChange={(e) => setValue(e.target.value)} placeholder="값(저장 후 숨김)" type={reveal ? 'text' : 'password'} style={{ ...mono, flex: 1.3 }}
               onKeyDown={(e) => { if (e.key === 'Enter' && name.trim() && value && !put.isPending) { e.preventDefault(); put.mutate() } }} />
+            <button onClick={() => setReveal((v) => !v)} aria-label={reveal ? '값 숨기기' : '값 표시'} title="저장 전 값 확인(저장 후에는 다시 볼 수 없음)"
+              style={{ ...miniBtn, width: 34, padding: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 14 }}>{reveal ? '🙈' : '👁'}</button>
             <button onClick={() => put.mutate()} disabled={!name.trim() || !value || put.isPending} style={primary}>저장</button>
           </div>
           <p style={{ ...hint, marginTop: 6 }}>

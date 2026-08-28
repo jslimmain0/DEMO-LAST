@@ -7,6 +7,7 @@ import { mockBaseUrl, mocksApi } from '../api/client'
 import { AppShellTier1 } from '../app/AppShell'
 import { useAuth, usePermissions } from '../auth/AuthContext'
 import { METHOD_COLOR } from '../canvas/nodeMeta'
+import { BigTextEditor, ExpandCorner } from '../components/BigTextEditor'
 import { MockAssistantPanel } from '../components/MockAssistantPanel'
 import { AssistantLoginGate } from '../components/AssistantLoginGate'
 import { toast } from '../components/toast'
@@ -415,6 +416,7 @@ function RuleCard({ rule, index, total, onChange, onDup, onRemove }: {
   onRemove: () => void
 }) {
   const [showCb, setShowCb] = useState(!!rule.callback?.url)
+  const [big, setBig] = useState<'body' | 'cb' | null>(null) // HTML 템플릿 등 긴 본문 — 거의 전체화면 편집
   const conds = rule.when ?? []
   const setCond = (i: number, c: MockCond) => onChange({ ...rule, when: conds.map((x, xi) => (xi === i ? c : x)) })
   const cb = rule.callback ?? {}
@@ -477,13 +479,16 @@ function RuleCard({ rule, index, total, onChange, onDup, onRemove }: {
         >+ 조건 (요청 값으로 분기)</button>
       </div>
 
-      {/* 본문 */}
-      <textarea
-        style={{ ...input, width: '100%', minHeight: 74, marginTop: 8, fontFamily: 'var(--fl-font-mono)', fontSize: 12, resize: 'vertical', boxSizing: 'border-box' }}
-        value={rule.body ?? ''}
-        placeholder={'응답 본문 — 예: {"orderId":"{{body.orderId}}","status":"{{state.status}}"}'}
-        onChange={(e) => onChange({ ...rule, body: e.target.value })}
-      />
+      {/* 본문 — HTML(결제창) 같은 긴 템플릿은 ⤢ 로 거의 전체화면 편집 */}
+      <div style={{ position: 'relative', marginTop: 8 }}>
+        <textarea
+          style={{ ...input, width: '100%', minHeight: 74, fontFamily: 'var(--fl-font-mono)', fontSize: 12, resize: 'vertical', boxSizing: 'border-box' }}
+          value={rule.body ?? ''}
+          placeholder={'응답 본문 — 예: {"orderId":"{{body.orderId}}","status":"{{state.status}}"}'}
+          onChange={(e) => onChange({ ...rule, body: e.target.value })}
+        />
+        <ExpandCorner onClick={() => setBig('body')} label="응답 본문 크게 편집" />
+      </div>
 
       {/* 상태 설정(setState) — 상태 있는 목: 응답 후 서버 상태 갱신 → 다음 호출 조건(source=state)/템플릿({{state.x}}) */}
       <div style={{ marginTop: 8 }}>
@@ -525,15 +530,38 @@ function RuleCard({ rule, index, total, onChange, onDup, onRemove }: {
                 OK 재시도
               </label>
             </div>
-            <textarea
-              style={{ ...input, width: '100%', minHeight: 46, fontFamily: 'var(--fl-font-mono)', fontSize: 12, resize: 'vertical', boxSizing: 'border-box' }}
-              value={cb.body ?? ''}
-              placeholder="콜백 본문(urlencoded) — 예: resultCode=0000&orderId={{body.orderId}}"
-              onChange={(e) => setCb({ body: e.target.value })}
-            />
+            <div style={{ position: 'relative' }}>
+              <textarea
+                style={{ ...input, width: '100%', minHeight: 46, fontFamily: 'var(--fl-font-mono)', fontSize: 12, resize: 'vertical', boxSizing: 'border-box' }}
+                value={cb.body ?? ''}
+                placeholder="콜백 본문(urlencoded) — 예: resultCode=0000&orderId={{body.orderId}}"
+                onChange={(e) => setCb({ body: e.target.value })}
+              />
+              <ExpandCorner onClick={() => setBig('cb')} label="콜백 본문 크게 편집" />
+            </div>
           </div>
         )}
       </div>
+      {big === 'body' && (
+        <BigTextEditor
+          title={`규칙 ${index + 1}/${total} — 응답 본문 크게 편집`}
+          value={rule.body ?? ''}
+          onChange={(v) => onChange({ ...rule, body: v })}
+          onClose={() => setBig(null)}
+          placeholder={'응답 본문 템플릿 — HTML/JSON. 예: {{path.id}} {{query.q}} {{body.필드}} {{state.x}} {{uuid}} {{now}}'}
+          hint="입력 즉시 반영됩니다(Esc 로 닫기). contentType 이 html 이면 브라우저에 페이지로 렌더됩니다 — 결제창/인증창 패턴."
+        />
+      )}
+      {big === 'cb' && (
+        <BigTextEditor
+          title={`규칙 ${index + 1}/${total} — 콜백 본문 크게 편집`}
+          value={cb.body ?? ''}
+          onChange={(v) => setCb({ body: v })}
+          onClose={() => setBig(null)}
+          placeholder="resultCode=0000&orderId={{body.orderId}}"
+          hint="응답 후 발사되는 콜백(웹훅)의 본문(urlencoded) — 템플릿 문법 동일."
+        />
+      )}
     </div>
   )
 }

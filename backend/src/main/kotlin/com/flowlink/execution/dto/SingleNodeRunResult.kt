@@ -10,4 +10,5 @@ data class SingleNodeRunResult(
     val output: Any?,          // 노드 출력(맵/스칼라) — 다음 노드가 바인딩할 값
     val requestText: String?,  // 조립된 요청(HTTP/TCP)
     val responseText: String?, // 응답 본문 또는 실패 사유
+    val durationMs: Long? = null, // 벽시계 소요시간 — 워크벤치 응답 배지용
 )

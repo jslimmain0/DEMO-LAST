@@ -150,7 +150,9 @@ class ExecutionService(
             }
         }
 
+        val t0 = System.nanoTime()
         val r = flowExecutor.runSingleNode(node, ctx)
+        val durationMs = (System.nanoTime() - t0) / 1_000_000
         // 응답도 실행 이력과 동일하게 시크릿 마스킹 — 단일 실행 결과가 패널에 그대로 표시되므로
         // 시크릿 평문(요청 헤더/출력 값)이 화면·네트워크 응답으로 새지 않게 한다.
         val masks = SecretMasker.variants(secrets.values)
@@ -158,7 +160,8 @@ class ExecutionService(
             else json.mapper().readTree(SecretMasker.mask(json.toJson(r.value), masks))
         return SingleNodeRunResult(
             r.ok, r.httpStatus, output,
-            SecretMasker.mask(r.requestText, masks), SecretMasker.mask(r.responseText, masks)
+            SecretMasker.mask(r.requestText, masks), SecretMasker.mask(r.responseText, masks),
+            durationMs
         )
     }
 

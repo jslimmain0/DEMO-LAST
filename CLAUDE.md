@@ -998,6 +998,15 @@ tcp-preview 는 시크릿 미시드라 무관. 단위 5종 + 라이브(단일 �
 - 라이브 확인 중 이 브라우저의 `fl:editor:propertyW=560`(과대 저장값)이 캔버스를 압박 → 380 으로 리셋(코드 무관, "이상해 보임"의 한 원인).
 - 검증: tsc/build/oxlint + 실브라우저(:18080 dark) — 전체화면 속성 모달·Mock 결제창 HTML 1,490자 큰 편집기·시크릿 볼트 새 레이아웃 실측.
 
+### 8차 — 워크벤치 적대적 토론(에이전트 3렌즈) 확정안 반영 (사용자: "확대했을 때 저게 최선이냐 토론시켜 봐")
+API 도구 UX·비주얼/IA·플로우 통합 3관점 병렬 비평 → 확정 반영:
+- **[중요 버그] Esc 중첩 닫힘 수정**: [useEscapeClose](frontend/src/components/useEscapeClose.ts) 를 **모듈 전역 Esc 스택**으로 — 가장 위에 뜬 모달만 반응(마운트 순서=스택). 워크벤치 안에서 피커/큰 편집기 열고 Esc 시 워크벤치까지 닫히며 편집 유실되던 문제. Editor 의 propModal raw 리스너도 `registerEscapeClose` 로 통합.
+- **워크벤치**: ⑴ 지난 전체 실행의 이 노드 결과 **자동 로드**(`lastRunQ` — runs limit1→detail→NodeExecution, 🕘 배지+트리, ▶ 실행 시 대체) ⑵ **실제 전송 요청** 접기(single.requestText — 토큰 치환·마스킹된 전송값, "요청 미리보기(토큰 미해석)"와 구분) ⑶ 미리보기를 **좌측 요청 칼럼**으로 이동 ⑷ **Ctrl/Cmd+Enter=실행** ⑸ 응답 배지에 **durationMs**(백엔드 SingleNodeRunResult 필드 추가, 벽시계).
+- **플로우 통합**: 이웃 칩에 **분기 갈래 태그**(IF T/F·스위치 트랙명, `portLabelOf`) · 출력 키에 **"N곳" 사용처 배지**(`outputUsage` — 하류 노드 토큰 스캔, 키/하위 경로 참조, 클릭=첫 사용처로 이동+모달 닫힘) · 모달 헤더에 **활성 환경**(🌐) 표시.
+- **비주얼/IA**: 모달 헤더 재설계(이름=제목 스타일+타입·#id 메타 통합, 풀폭 입력 제거) · 하단 복제/삭제 **컴팩트 우측 정렬+구분선**(`compactAction`) · colHead 위계 강화(13px/800) · 우측 칼럼 섹션 제목 "응답 (Response)"→**"파싱 설정 · 출력 키"**(중복 라벨 해소, 도킹은 기존) · **비워크벤치 타입 모달 축소**(Editor — http/tcp 외엔 `min(820px,94vw)`·height auto).
+- 기각(에이전트 합의): Authorization 탭(과거 폐기 방향), 응답 헤더 전면 캡처(백엔드 다층 변경), 쿠키 잭(무상태 철학 충돌), 미니 캔버스, 그래프 자동 재실행(부수효과 위험). 유보: 단일 실행 미니 히스토리·응답 트리 검색.
+- 실측: 워크벤치(지난 실행 ✓HTTP 200·16ms 트리·grade "1곳" 배지·헤더 메타) + assert 모달(820px·`grade@사용자 조회`=VIP 입력→▶ 실행 ✓ 성공·1ms·result true·실제 전송 요청 접기).
+
 ### 7차 — 중첩 JSON 경로 바인딩 + 단일 실행 상류 값 입력 (사용자: "json 안에 json 어떻게 표현? 대충 만든 거 아니냐")
 - **중첩 경로 바인딩**: [TokenResolver](backend/src/main/kotlin/com/flowlink/execution/engine/TokenResolver.kt) `dig()` — `{{ user.name@노드 }}`·`{{ user.addr.city@노드 }}`·`{{ items[0].id@노드 }}`(=`items.0.id`).
   규칙: **평평한 실키 우선**(응답에 `"a.b"` 키가 문자 그대로 있으면 그것), 부재는 `Missing` 센티널로 값-null 과 구분(**bare 토큰의 상위 노드 폴스루 유지**), 전체-토큰 리터럴 원형 보존(조건식 숫자 비교 동작). 토큰 문법 key 클래스에 `[ ]` 추가(백엔드 TOKEN·[tokenGrammar.ts](frontend/src/lib/tokenGrammar.ts) 미러). 단위 3케이스+라이브 E2E(중첩 assert SUCCEEDED·오경로 FAILED·flat-key 우선) ALL PASS. ⚠ 단일 실행 E2E 시 확인: **플로우 생성은 `POST /flows`(graph 무시) 후 `POST /flows/{id}/versions`** — graph 를 create 에 실어도 조용히 무시됨.

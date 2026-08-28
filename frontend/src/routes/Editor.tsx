@@ -15,6 +15,7 @@ import { WorkflowIODialog } from '../openapi/WorkflowIODialog'
 import { ImportDialog } from '../openapi/ImportDialog'
 import { InputPromptDialog } from '../components/InputPromptDialog'
 import { ResizeHandle } from '../components/ResizeHandle'
+import { registerEscapeClose } from '../components/useEscapeClose'
 import { ConflictDialog } from '../components/ConflictDialog'
 import { PresenceAvatars } from '../components/PresenceAvatars'
 import { EnvSwitcher } from '../components/EnvSwitcher'
@@ -138,13 +139,12 @@ export function Editor() {
     setPaletteCollapsed(false); persistUI('fl:editor:palColl', '0')
     setPropCollapsed(false); persistUI('fl:editor:propColl', '0')
   }
-  // 속성 모달: Esc 닫기 + 노드 선택이 풀리면 자동으로 닫는다
+  // 속성 모달: Esc 닫기(Esc 스택 — 안에 뜬 피커/큰 편집기가 있으면 그쪽만 닫힘) + 노드 선택이 풀리면 자동으로 닫는다
   useEffect(() => {
     if (!propModal) return
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setPropModal(false) }
-    window.addEventListener('keydown', onKey)
+    const unregister = registerEscapeClose(() => setPropModal(false))
     const unsub = useEditorStore.subscribe((s, prev) => { if (s.selectedId !== prev.selectedId && !s.selectedId) setPropModal(false) })
-    return () => { window.removeEventListener('keydown', onKey); unsub() }
+    return () => { unregister(); unsub() }
   }, [propModal])
 
   // 뷰포트에 맞춘 동적 상한 — 패널이 화면을 넘어 캔버스를 0으로 만들지 않도록 창 크기 변화에 재클램프
@@ -541,14 +541,20 @@ export function Editor() {
             <RunPanel execution={execution} running={running} waitStatus={waitStatus} onStop={onStop} height={runH} onClose={() => setShowLog(false)} />
           </>
         )}
-        {/* 넓은 모달 편집 — 좁은 사이드가 불편할 때. 배경/Esc 로 닫으면 도킹으로 복귀 */}
-        {propModal && (
-          <div style={modalBackdrop} onClick={() => setPropModal(false)} role="presentation">
-            <div style={modalCard} onClick={(e) => e.stopPropagation()}>
-              <PropertyPanel width="100%" modal onCloseModal={() => setPropModal(false)} />
+        {/* 넓은 모달 편집 — 좁은 사이드가 불편할 때. 배경/Esc 로 닫으면 도킹으로 복귀.
+            워크벤치 타입(http/tcp)만 거의 전체화면 — 조건식 한 줄짜리 노드에 96vw 를 주면 빈 공간만 커진다. */}
+        {propModal && (() => {
+          const st = useEditorStore.getState()
+          const selType = (st.nodes.find((n) => n.id === st.selectedId)?.data as { type?: string } | undefined)?.type
+          const wb = selType === 'http' || selType === 'tcp'
+          return (
+            <div style={modalBackdrop} onClick={() => setPropModal(false)} role="presentation">
+              <div style={wb ? modalCard : { ...modalCard, width: 'min(820px, 94vw)', height: 'auto', maxHeight: '86vh' }} onClick={(e) => e.stopPropagation()}>
+                <PropertyPanel width="100%" modal onCloseModal={() => setPropModal(false)} />
+              </div>
             </div>
-          </div>
-        )}
+          )
+        })()}
         {jsonOpen && <JsonViewModal graph={getGraph()} onClose={() => setJsonOpen(false)} />}
         {shortcutsOpen && <ShortcutsModal onClose={() => setShortcutsOpen(false)} />}
         {versionsOpen && (

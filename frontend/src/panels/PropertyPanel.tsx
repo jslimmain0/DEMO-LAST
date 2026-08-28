@@ -116,6 +116,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
   const [pick, setPick] = useState<string | null>(null) // rawBody | rawParams | rawHeaders (Raw 텍스트영역 전용)
   const [bigEdit, setBigEdit] = useState<'rawBody' | 'callbackRespBody' | null>(null) // 거의 전체화면 본문 편집
   const [respView, setRespView] = useState<'tree' | 'raw'>('tree') // 워크벤치 응답 보기(트리=경로 토큰 클릭)
+  const [showSentReq, setShowSentReq] = useState(false) // 실제 전송 요청(토큰 치환·마스킹) 펼침
   const [bodyConvNote, setBodyConvNote] = useState<string | null>(null) // 필드↔Raw 변환 안내
   const [single, setSingle] = useState<SingleNodeRunResult | null>(null) // 이 노드만 실행 결과
   const [singleRunning, setSingleRunning] = useState(false)
@@ -195,6 +196,20 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
   // envStore 를 구독해 활성 환경 변수 변경(스위처/관리 다이얼로그)이 즉시 바인딩 피커에 반영되게 한다.
   const envStore = useEnvStore()
   const runInput = useRunInput()
+  // 워크벤치(모달)에서 지난 전체 실행의 이 노드 기록을 미리 보여준다 — 임시 단일 실행과 실제 그래프 실행의 단절 해소
+  const lastRunQ = useQuery({
+    queryKey: ['lastNodeRun', flowId, selectedId],
+    enabled: !!modal && !!flowId && !!selectedId,
+    staleTime: 15_000,
+    queryFn: async () => {
+      const runs = await runsApi.listForFlow(flowId!, 1)
+      if (!runs.length) return null
+      const d = await runsApi.get(runs[0].id)
+      const ne = d.nodes.find((n) => n.nodeId === selectedId)
+      return ne ? { ne, startedAt: d.startedAt } : null
+    },
+  })
+
   // 시크릿 이름을 바인딩 소스로 노출({{ 이름@secret }}) — 값은 서버에만(write-only).
   // 활성 환경에서 적용될 것만 보여준다: 공통 + 활성 환경(백엔드 activeSecrets 오버레이 규칙과 동일, 이름으로 dedupe).
   const secretsQ = useQuery({ queryKey: ['secrets'], queryFn: secretsApi.list })
@@ -223,8 +238,52 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
   )
 
   // 연결(바로가기) — 선택 노드의 상류(들어오는)·하류(나가는) 이웃 노드 id (early-return 위에서 훅 순서 고정)
-  const upstreamIds = useMemo(() => (selectedId ? edges.filter((e) => e.target === selectedId).map((e) => e.source) : []), [edges, selectedId])
-  const downstreamIds = useMemo(() => (selectedId ? edges.filter((e) => e.source === selectedId).map((e) => e.target) : []), [edges, selectedId])
+  // 이웃 링크 — 분기 노드(IF T/F·스위치 트랙)의 fromPort 라벨까지 실어 "어느 갈래로 이어졌는지" 보이게
+  const portLabelOf = useMemo(() => (srcId: string, port: string | null | undefined): string | null => {
+    if (!port || port === 'out') return null
+    const src = nodes.find((n) => n.id === srcId)
+    if (!src) return port
+    const g = asGraphNode(src.data)
+    if (g.type === 'if') return port === 'true' ? 'T' : port === 'false' ? 'F' : port
+    if (g.type === 'switch') return g.switchPorts?.find((p) => p.id === port)?.label || port
+    return port
+  }, [nodes])
+  // 이 노드의 출력 키를 참조하는 하류 사용처 — 키를 지우거나 바꾸면 조용히 끊기는 사각지대를 배지로 노출
+  const outputUsage = useMemo(() => {
+    const map = new Map<string, string[]>()
+    if (!selectedId) return map
+    for (const rf of nodes) {
+      if (rf.id === selectedId) continue
+      const s = JSON.stringify(rf.data)
+      const re = tokenRegex()
+      for (let m = re.exec(s); m; m = re.exec(s)) {
+        if ((m[3] ?? null) !== selectedId) continue
+        const arr = map.get(m[1]) ?? []
+        if (!arr.includes(rf.id)) arr.push(rf.id)
+        map.set(m[1], arr)
+      }
+    }
+    return map
+  }, [nodes, selectedId])
+  const usageOf = (key: string): Array<{ id: string; name: string }> => {
+    const t = key.trim()
+    if (!t) return []
+    const out: Array<{ id: string; name: string }> = []
+    for (const [k, ids] of outputUsage) {
+      if (k === t || k.startsWith(t + '.') || k.startsWith(t + '[')) {
+        for (const nid of ids) if (!out.some((x) => x.id === nid)) out.push({ id: nid, name: nodeLabel(nid).name || nid })
+      }
+    }
+    return out
+  }
+  const gotoNode = (nid: string) => { if (modal) onCloseModal?.(); focusNode(nid) }
+
+  const upstreamLinks = useMemo(
+    () => (selectedId ? edges.filter((e) => e.target === selectedId).map((e) => ({ id: e.source, port: (e.sourceHandle as string | null) ?? null })) : []),
+    [edges, selectedId])
+  const downstreamLinks = useMemo(
+    () => (selectedId ? edges.filter((e) => e.source === selectedId).map((e) => ({ id: e.target, port: (e.sourceHandle as string | null) ?? null })) : []),
+    [edges, selectedId])
   // 실행 도달성 — START 에서 못 오는 노드는 실행 시 건너뜀. 실행 전에 미리 경고.
   const reachInfo = useMemo(() => computeReachInfo(nodes, edges), [nodes, edges])
 
@@ -535,7 +594,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
   const runResultBox = single ? (
     <div style={{ marginTop: bigResult ? 0 : 8, border: `1px solid ${single.ok ? 'var(--fl-ok)' : 'var(--fl-fail)'}`, borderRadius: 'var(--fl-radius-sm)', overflow: 'hidden' }}>
       <div style={{ padding: bigResult ? '8px 12px' : '6px 10px', fontSize: bigResult ? 12.5 : 12, fontWeight: 600, background: 'var(--fl-surface-2)', color: single.ok ? 'var(--fl-ok)' : 'var(--fl-fail)' }}>
-        {single.ok ? '✓ 성공' : '✕ 실패'}{single.httpStatus != null ? ` · HTTP ${single.httpStatus}` : ''}
+        {single.ok ? '✓ 성공' : '✕ 실패'}{single.httpStatus != null ? ` · HTTP ${single.httpStatus}` : ''}{single.durationMs != null ? ` · ${single.durationMs}ms` : ''}
       </div>
       {single.output != null && (
         bigResult && typeof single.output === 'object' ? (
@@ -564,6 +623,16 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
       )}
       {single.responseText && (!single.ok || single.output == null) && (
         <pre style={{ ...singlePre, ...(bigResult ? { maxHeight: '38vh', fontSize: 12 } : null), color: single.ok ? 'var(--fl-text)' : 'var(--fl-fail)' }}>{single.responseText}</pre>
+      )}
+      {/* 서버가 실제로 보낸 요청 — 토큰 치환·시크릿 마스킹이 끝난 전송값("왜 이 응답이지?" 디버깅용) */}
+      {single.requestText && (
+        <div style={{ borderTop: '1px solid var(--fl-border)' }}>
+          <button onClick={() => setShowSentReq((v) => !v)} aria-expanded={showSentReq}
+            style={{ display: 'block', width: '100%', textAlign: 'left', padding: '6px 12px', border: 'none', background: 'transparent', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 11.5, fontWeight: 600 }}>
+            {showSentReq ? '▾' : '▸'} 실제 전송 요청 (토큰 치환 · 시크릿 마스킹 적용)
+          </button>
+          {showSentReq && <pre style={{ ...singlePre, maxHeight: '24vh' }}>{single.requestText}</pre>}
+        </div>
       )}
     </div>
   ) : null
@@ -594,6 +663,31 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
     </div>
   ) : null
 
+  // 지난 전체 실행의 이 노드 결과 — 단일 실행 전의 기본 콘텐츠(워크벤치 응답 패널)
+  const lastNe = lastRunQ.data?.ne
+  const lastRunBox = lastNe ? (
+    <div style={{ border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', overflow: 'hidden' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 12px', fontSize: 12, fontWeight: 600, background: 'var(--fl-surface-2)', color: 'var(--fl-text-muted)' }}>
+        🕘 지난 전체 실행의 이 노드
+        <span style={{ color: lastNe.ok ? 'var(--fl-ok)' : 'var(--fl-fail)' }}>
+          {lastNe.ok ? '✓' : '✕'}{lastNe.httpStatus != null ? ` HTTP ${lastNe.httpStatus}` : ''}{lastNe.durationMs != null ? ` · ${lastNe.durationMs}ms` : ''}
+        </span>
+        <span style={{ fontWeight: 400, fontSize: 11 }}>— ▶ 실행하면 새 결과로 대체</span>
+      </div>
+      {lastNe.output != null && typeof lastNe.output === 'object' ? (
+        <div style={{ maxHeight: '30vh', overflow: 'auto', padding: '6px 12px 10px' }}>
+          <JsonTree value={lastNe.output} onPick={(p) => copyText(`{{ ${p}@${id} }}`, `{{ ${p}@${id} }} 복사 — 하위 노드나 조건식에 붙여넣으세요.`)} />
+        </div>
+      ) : lastNe.output != null ? (
+        <pre style={{ ...singlePre, maxHeight: '30vh' }}>{String(lastNe.output)}</pre>
+      ) : lastNe.responseText ? (
+        <pre style={{ ...singlePre, maxHeight: '30vh' }}>{lastNe.responseText}</pre>
+      ) : (
+        <div style={{ padding: '8px 12px', fontSize: 12, color: 'var(--fl-text-muted)' }}>기록된 출력이 없습니다 (본문 캡처 꺼짐 또는 미도달).</div>
+      )}
+    </div>
+  ) : null
+
   // ▶ 이 노드만 실행 + 결과 — 도킹 상단용(모달 워크벤치는 URL 바의 ▶ 실행 + 오른쪽 응답 패널로 대체)
   const singleRunBlock = SINGLE_RUNNABLE.has(node.type) && canEdit ? (
     <div style={{ marginTop: 10 }}>
@@ -608,11 +702,33 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
 
   return (
     <aside aria-label="속성" style={{ ...shell, width }}>
-      <header style={{ padding: '14px 16px', borderBottom: '1px solid var(--fl-border)' }}>
-        {/* 모달(큰 화면)에선 헤더도 본문과 같은 중앙 칼럼 폭 — 이름 입력이 화면 끝까지 늘어지지 않게 */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 7, width: '100%', ...(modal ? { maxWidth: modalColW, margin: '0 auto' } : null) }}>
-          <span aria-hidden style={{ color: catColor(node.cat), fontSize: 16 }}>{typeIcon(node.type)}</span>
-          <input aria-label="노드 이름" value={node.name ?? ''} placeholder={typeLabel(node.type)} onChange={(e) => update(id, { name: e.target.value })} style={{ ...field, fontWeight: 600, fontFamily: 'var(--fl-font-head)' }} />
+      <header style={{ padding: modal ? '14px 16px 12px' : '14px 16px', borderBottom: '1px solid var(--fl-border)' }}>
+        {/* 모달(큰 화면)에선 헤더도 본문과 같은 중앙 칼럼 폭. 이름은 입력창이 아니라 '화면 제목'처럼 —
+            타입·#id 메타와 활성 환경(실행에 적용될 컨텍스트)을 헤더에 통합한다. */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: modal ? 10 : 7, width: '100%', ...(modal ? { maxWidth: modalColW, margin: '0 auto' } : null) }}>
+          <span aria-hidden style={{ color: catColor(node.cat), fontSize: modal ? 19 : 16, flexShrink: 0 }}>{typeIcon(node.type)}</span>
+          {modal ? (
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <input
+                aria-label="노드 이름" value={node.name ?? ''} placeholder={typeLabel(node.type)}
+                onChange={(e) => update(id, { name: e.target.value })}
+                className="fl-name-input"
+                style={{ width: '100%', maxWidth: 520, border: '1px solid transparent', borderRadius: 8, background: 'transparent', padding: '3px 6px', fontFamily: 'var(--fl-font-head)', fontWeight: 700, fontSize: 17, color: 'var(--fl-text)' }}
+              />
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 2, paddingLeft: 6, fontSize: 11, color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)' }}>
+                <button onClick={() => copyText(id, '노드 id 를 복사했습니다.')} title="노드 id 복사"
+                  style={{ border: 'none', background: 'transparent', padding: 0, font: 'inherit', color: 'inherit', cursor: 'pointer' }}>
+                  {typeLabel(node.type)} · #{id} ⧉
+                </button>
+                <span aria-hidden style={{ opacity: .5 }}>│</span>
+                <span title="실행에 적용될 활성 환경 — {{ 키@env }}·환경 시크릿이 이 환경 기준으로 주입됩니다">
+                  🌐 {envStore.active ?? '환경 없음'}
+                </span>
+              </div>
+            </div>
+          ) : (
+            <input aria-label="노드 이름" value={node.name ?? ''} placeholder={typeLabel(node.type)} onChange={(e) => update(id, { name: e.target.value })} style={{ ...field, fontWeight: 600, fontFamily: 'var(--fl-font-head)' }} />
+          )}
           {onExpand && (
             <button onClick={onExpand} aria-label="넓게 편집" title="넓은 모달로 편집" style={iconBtn}>⤢</button>
           )}
@@ -627,32 +743,37 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
 
       {/* 모달(큰 화면)에선 내용을 편한 폭의 중앙 칼럼으로 — 2단 타입(http/tcp)은 넓게 */}
       <div style={{ padding: modal ? '20px 28px' : '16px 18px', overflowY: 'auto', flex: 1, ...(modal ? { width: '100%', maxWidth: modalColW, margin: '0 auto' } : null) }}>
-        <button
-          onClick={() => copyText(id, '노드 id 를 복사했습니다.')}
-          title="노드 id 복사"
-          style={{ border: 'none', background: 'transparent', padding: 0, fontSize: 11, color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)', cursor: 'pointer' }}
-        >{typeLabel(node.type)} · #{id} ⧉</button>
+        {/* 모달에선 타입·#id 가 헤더로 올라갔다 — 도킹에서만 표시 */}
+        {!modal && (
+          <button
+            onClick={() => copyText(id, '노드 id 를 복사했습니다.')}
+            title="노드 id 복사"
+            style={{ border: 'none', background: 'transparent', padding: 0, fontSize: 11, color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)', cursor: 'pointer' }}
+          >{typeLabel(node.type)} · #{id} ⧉</button>
+        )}
 
-        {(upstreamIds.length > 0 || downstreamIds.length > 0) && (
+        {(upstreamLinks.length > 0 || downstreamLinks.length > 0) && (
           <div style={{ marginTop: 10, display: 'grid', gap: 6 }}>
-            {upstreamIds.length > 0 && (
+            {upstreamLinks.length > 0 && (
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
                 <span style={{ fontSize: 11, color: 'var(--fl-text-muted)', minWidth: 42 }}>← 이전</span>
-                {upstreamIds.map((nid) => { const nl = nodeLabel(nid); return (
-                  <button key={'u' + nid} style={navChip} title={`${nl.name} 로 이동`} onClick={() => focusNode(nid)}>
+                {upstreamLinks.map((lk, i) => { const nl = nodeLabel(lk.id); const pl = portLabelOf(lk.id, lk.port); return (
+                  <button key={'u' + lk.id + i} style={navChip} title={`${nl.name} 로 이동${pl ? ` (${pl} 갈래에서 옴)` : ''}`} onClick={() => focusNode(lk.id)}>
                     <span aria-hidden style={{ color: catColor(nl.type), flexShrink: 0 }}>{typeIcon(nl.type)}</span>
                     <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{nl.name}</span>
+                    {pl && <span style={portTag}>{pl}</span>}
                   </button>
                 ) })}
               </div>
             )}
-            {downstreamIds.length > 0 && (
+            {downstreamLinks.length > 0 && (
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
                 <span style={{ fontSize: 11, color: 'var(--fl-text-muted)', minWidth: 42 }}>다음 →</span>
-                {downstreamIds.map((nid) => { const nl = nodeLabel(nid); return (
-                  <button key={'d' + nid} style={navChip} title={`${nl.name} 로 이동`} onClick={() => focusNode(nid)}>
+                {downstreamLinks.map((lk, i) => { const nl = nodeLabel(lk.id); const pl = portLabelOf(id, lk.port); return (
+                  <button key={'d' + lk.id + i} style={navChip} title={`${nl.name} 로 이동${pl ? ` (${pl} 갈래로 나감)` : ''}`} onClick={() => focusNode(lk.id)}>
                     <span aria-hidden style={{ color: catColor(nl.type), flexShrink: 0 }}>{typeIcon(nl.type)}</span>
                     <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{nl.name}</span>
+                    {pl && <span style={portTag}>{pl}</span>}
                   </button>
                 ) })}
               </div>
@@ -969,8 +1090,8 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
           )
           const respCfg = (
           <>
-            {/* 응답 섹션 */}
-            <HttpSection title="응답 (Response)" badge={normRespType(node.respType)} open={secIsOpen('resp')} onToggle={() => toggleSec('resp')}
+            {/* 응답 섹션 — 워크벤치에선 상위 칼럼 제목이 이미 '응답'이라 '파싱 설정'으로 구분(중복 라벨 방지) */}
+            <HttpSection title={twoCol ? '파싱 설정 · 출력 키' : '응답 (Response)'} badge={normRespType(node.respType)} open={secIsOpen('resp')} onToggle={() => toggleSec('resp')}
               right={<select style={{ ...field, width: 'auto', padding: '5px 6px', fontSize: 12 }} value={normRespType(node.respType)} onChange={(e) => update(id, { respType: e.target.value as RespType })} aria-label="응답 타입">
                 {RESP_TYPES.map((r) => <option key={r} value={r}>{respTypeLabel(r)}</option>)}
               </select>}>
@@ -980,7 +1101,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
               {KEYED_RESP.includes(node.respType ?? 'json') ? (
                 <>
                   <label style={label}>{respOutputLabel(node.respType)}</label>
-                  <OutputsEditor outputs={node.outputs ?? []} onChange={(outputs) => update(id, { outputs })} nodeId={id} />
+                  <OutputsEditor outputs={node.outputs ?? []} onChange={(outputs) => update(id, { outputs })} nodeId={id} usageOf={usageOf} onGoto={gotoNode} />
                   {single?.output && typeof single.output === 'object' && !Array.isArray(single.output) && (
                     <button onClick={populateOutputs} style={{ ...ghostMini, marginTop: 6 }} title="방금 '이 노드만 실행'한 응답의 키를 출력 목록에 채웁니다">↧ 이 응답에서 키 채우기</button>
                   )}
@@ -996,9 +1117,13 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
               )}
             </HttpSection>
 
-            {/* 요청 미리보기 — 보이는 것 = 보내는 것 */}
+          </>
+          )
+          // 요청 미리보기(실행 전 템플릿 확인) — 워크벤치에선 '요청' 칼럼에, 도킹에선 응답 설정 아래에
+          const previewBlock = (
+          <>
             <button onClick={() => setPreviewOpen((v) => !v)} style={advToggle} aria-expanded={previewOpen}>
-              {previewOpen ? '▾' : '▸'} 요청 미리보기 (보이는 것 = 보내는 것)
+              {previewOpen ? '▾' : '▸'} 요청 미리보기 (보이는 것 = 보내는 것 · 토큰은 미해석)
             </button>
             {previewOpen && (
               <div style={{ marginTop: 4 }}>
@@ -1021,32 +1146,34 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
               {urlExtras}
               {reqRest}
               {respCfg}
+              {previewBlock}
             </>
           )
           // 전체화면 모달: API 워크벤치 — 상단 [메서드|URL|Path|▶실행] 바, 좌 요청 구성 / 우 실행 응답+출력 매핑
+          // Ctrl/Cmd+Enter = 실행(포스트맨 근육기억)
           return (
-            <>
+            <div onKeyDown={(e) => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && canEdit && !singleRunning) { e.preventDefault(); void runSingle() } }}>
               <div style={wbBar}>
                 {methodEl}
                 <div style={{ flex: 1.6, minWidth: 0 }}>{baseUrlEl}</div>
                 <div style={{ flex: 1, minWidth: 0 }}>{pathEl}</div>
                 {canEdit && (
                   <button onClick={runSingle} disabled={singleRunning} style={wbRunBtn}
-                    title="이 노드만 즉석 실행 — 응답이 오른쪽 패널에 표시됩니다. 환경변수·시크릿 적용, 이전 노드 값만 빈 값.">
+                    title="이 노드만 즉석 실행 (Ctrl+Enter) — 응답이 오른쪽 패널에 표시됩니다. 환경변수·시크릿 적용, 이전 노드 값은 입력폼으로.">
                     {singleRunning ? '실행 중…' : '▶ 실행'}
                   </button>
                 )}
               </div>
               {urlExtras}
               <div style={twoColGrid}>
-                <div style={{ minWidth: 0 }}><div style={colHead}>요청</div>{reqRest}</div>
+                <div style={{ minWidth: 0 }}><div style={colHead}>요청</div>{reqRest}{previewBlock}</div>
                 <div style={{ minWidth: 0 }}>
                   <div style={colHead}>응답</div>
                   {upstreamInputs}
                   <div style={{ margin: '12px 0 4px' }}>
-                    {runResultBox ?? (
+                    {runResultBox ?? lastRunBox ?? (
                       <div style={respEmpty}>
-                        {singleRunning ? '실행 중…' : '위의 ▶ 실행 을 누르면 실제 응답이 여기에 표시됩니다.'}
+                        {singleRunning ? '실행 중…' : '위의 ▶ 실행 (Ctrl+Enter) 을 누르면 실제 응답이 여기에 표시됩니다.'}
                         <div style={{ fontSize: 11, marginTop: 6, opacity: .75 }}>환경변수({'{{ 키@env }}'})·시크릿({'{{ 이름@secret }}'})이 적용되고, 이전 노드 값({'{{ 키@노드 }}'})은 위 입력폼으로 넣습니다.</div>
                       </div>
                     )}
@@ -1054,7 +1181,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
                   {respCfg}
                 </div>
               </div>
-            </>
+            </div>
           )
         })()}
 
@@ -1252,11 +1379,11 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
             {twoCol && (
               <>
                 {singleRunBlock}
-                {!single && (
+                {!single && (lastRunBox ?? (
                   <div style={{ ...respEmpty, marginTop: 8 }}>
                     ▶ 실행하면 실제 전문 응답(응답 필드로 슬라이싱된 값)이 여기에 표시됩니다.
                   </div>
-                )}
+                ))}
               </>
             )}
             <label style={label}>응답 필드 (고정길이 → 출력)</label>
@@ -1404,7 +1531,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
             <WaitReceiveUrl nodeId={id} />
 
             <label style={label}>응답 규격 (출력) — 콜백 본문 키 (하위 노드가 바인딩)</label>
-            <OutputsEditor outputs={node.outputs ?? []} onChange={(outputs) => update(id, { outputs })} nodeId={id} />
+            <OutputsEditor outputs={node.outputs ?? []} onChange={(outputs) => update(id, { outputs })} nodeId={id} usageOf={usageOf} onGoto={gotoNode} />
             <p style={hintP}>
               선언은 바인딩 피커 칩용입니다 — 실제로는 콜백 본문(JSON/urlencoded 파싱)의 <b>모든</b> 키가 출력이 되고,
               키 구조가 아니면 원문이 body 로 제공됩니다. 수신 URL 은 <code>{`{{ url@${id} }}`}</code> 로 어느 노드에서든 바인딩됩니다.
@@ -1437,14 +1564,15 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
           <p style={{ fontSize: 13, color: 'var(--fl-text-muted)', marginTop: 14 }}>이 노드는 추가 설정이 없습니다.</p>
         )}
 
+        {/* 모달(큰 화면)에선 풀폭 알약 대신 우측 정렬 컴팩트 버튼 — 화면 비율에 맞게 */}
         {node.type !== 'start' && (
-          <div style={{ display: 'flex', gap: 8, marginTop: 28 }}>
-            <button onClick={() => duplicateSelection()} style={{ ...deleteBtn, marginTop: 0, flex: 1, borderColor: 'var(--fl-border)', color: 'var(--fl-text-muted)' }} title="이 노드 복제 (Ctrl+D)">⧉ 복제</button>
-            <button onClick={() => deleteNode(id)} style={{ ...deleteBtn, marginTop: 0, flex: 1 }}>이 노드 삭제</button>
+          <div style={{ display: 'flex', gap: 8, marginTop: 28, ...(modal ? { justifyContent: 'flex-end', borderTop: '1px solid var(--fl-border)', paddingTop: 14 } : null) }}>
+            <button onClick={() => duplicateSelection()} style={{ ...deleteBtn, marginTop: 0, ...(modal ? compactAction : { flex: 1 }), borderColor: 'var(--fl-border)', color: 'var(--fl-text-muted)' }} title="이 노드 복제 (Ctrl+D)">⧉ 복제</button>
+            <button onClick={() => deleteNode(id)} style={{ ...deleteBtn, marginTop: 0, ...(modal ? compactAction : { flex: 1 }) }}>이 노드 삭제</button>
           </div>
         )}
         {node.type === 'start' && (
-          <button onClick={() => deleteNode(id)} style={deleteBtn}>이 노드 삭제</button>
+          <button onClick={() => deleteNode(id)} style={modal ? { ...deleteBtn, ...compactAction, marginTop: 28 } : deleteBtn}>이 노드 삭제</button>
         )}
       </div>
 
@@ -1615,7 +1743,13 @@ function CondSnippets({ onInsert }: { onInsert: (s: string) => void }) {
   )
 }
 
-function OutputsEditor({ outputs, onChange, nodeId }: { outputs: NodeOutput[]; onChange: (o: NodeOutput[]) => void; nodeId?: string }) {
+function OutputsEditor({ outputs, onChange, nodeId, usageOf, onGoto }: {
+  outputs: NodeOutput[]
+  onChange: (o: NodeOutput[]) => void
+  nodeId?: string
+  usageOf?: (key: string) => Array<{ id: string; name: string }> // 하류 사용처(키/하위 경로 참조 노드)
+  onGoto?: (nodeId: string) => void
+}) {
   const upd = (i: number, patch: Partial<NodeOutput>) => onChange(outputs.map((o, idx) => (idx === i ? { ...o, ...patch } : o)))
   const [bulkOpen, setBulkOpen] = useState(false)
   const [bulkText, setBulkText] = useState('')
@@ -1652,6 +1786,18 @@ function OutputsEditor({ outputs, onChange, nodeId }: { outputs: NodeOutput[]; o
               style={{ width: 30, flexShrink: 0, border: '1px solid var(--fl-border)', borderRadius: 6, background: 'var(--fl-surface)', color: 'var(--fl-primary)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
             ><CopyIcon /></button>
           )}
+          {usageOf && o.key?.trim() && (() => {
+            const u = usageOf(o.key)
+            if (u.length === 0) return null
+            // 이 키(또는 하위 경로)를 참조하는 하류가 있다 — 지우거나 이름을 바꾸면 그 바인딩이 끊긴다
+            return (
+              <button
+                onClick={() => onGoto?.(u[0].id)}
+                title={`사용처 ${u.length}곳: ${u.map((x) => x.name).join(', ')} — 클릭하면 첫 사용처로 이동`}
+                style={{ flexShrink: 0, padding: '3px 8px', border: '1px solid color-mix(in srgb, var(--fl-ok) 45%, var(--fl-border))', borderRadius: 999, background: 'color-mix(in srgb, var(--fl-ok) 10%, transparent)', color: 'var(--fl-ok)', cursor: 'pointer', fontSize: 10.5, fontWeight: 700, whiteSpace: 'nowrap' }}
+              >{u.length}곳</button>
+            )
+          })()}
           <RowMove i={i} len={outputs.length} onMove={(d) => onChange(moveInList(outputs, i, d))} />
           <button onClick={() => onChange(outputs.filter((_, idx) => idx !== i))} aria-label="삭제" style={{ width: 28, flexShrink: 0, border: '1px solid var(--fl-border)', borderRadius: 6, background: 'var(--fl-surface)', cursor: 'pointer' }}>×</button>
         </div>
@@ -1853,7 +1999,8 @@ const padTag: CSSProperties = { fontSize: 9.5, fontWeight: 700, color: 'var(--fl
 const shell: CSSProperties = { flexShrink: 0, background: 'var(--fl-surface)', display: 'flex', flexDirection: 'column', height: '100%' }
 // 전체화면 모달 2단 레이아웃 — 요청(좌) | 응답(우) 워크벤치
 const twoColGrid: CSSProperties = { display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', columnGap: 44, alignItems: 'start', marginTop: 8 }
-const colHead: CSSProperties = { fontSize: 11, fontWeight: 700, color: 'var(--fl-text-muted)', textTransform: 'uppercase', letterSpacing: '.07em', paddingBottom: 8, marginTop: 10, borderBottom: '1px solid var(--fl-border)' }
+// 칼럼 제목은 안쪽 섹션 제목(12.5px)보다 강하게 — 위계 역전 방지
+const colHead: CSSProperties = { fontSize: 13, fontWeight: 800, color: 'var(--fl-text)', letterSpacing: '.04em', paddingBottom: 9, marginTop: 10, borderBottom: '2px solid var(--fl-border)' }
 // 워크벤치 URL 바 — [메서드 | Base URL | Path | ▶ 실행] 한 줄(포스트맨 어휘)
 const wbBar: CSSProperties = { display: 'flex', gap: 8, alignItems: 'stretch', margin: '12px 0 4px' }
 const wbRunBtn: CSSProperties = { flexShrink: 0, minWidth: 96, padding: '0 18px', border: 'none', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-primary)', color: '#fff', cursor: 'pointer', fontSize: 13.5, fontWeight: 700 }
@@ -1864,6 +2011,8 @@ const iconBtn: CSSProperties = { width: 30, height: 30, flexShrink: 0, borderRad
 const singleBtn: CSSProperties = { width: '100%', padding: '8px 10px', border: '1px solid var(--fl-primary)', borderRadius: 'var(--fl-radius-sm)', background: 'transparent', color: 'var(--fl-primary)', cursor: 'pointer', fontSize: 12.5, fontWeight: 600 }
 const singlePre: CSSProperties = { margin: 0, padding: '8px 10px', fontSize: 11.5, fontFamily: 'var(--fl-font-mono)', color: 'var(--fl-text)', background: 'var(--fl-surface)', whiteSpace: 'pre-wrap', wordBreak: 'break-all', maxHeight: 200, overflow: 'auto' }
 const deleteBtn: CSSProperties = { marginTop: 28, width: '100%', padding: '9px', border: '1px solid var(--fl-fail)', borderRadius: 'var(--fl-radius-sm)', background: 'transparent', color: 'var(--fl-fail)', cursor: 'pointer', fontSize: 13, fontWeight: 600 }
+// 모달 하단 액션 — 풀폭 알약 대신 컴팩트(우측 정렬)
+const compactAction: CSSProperties = { width: 'auto', flex: '0 0 auto', padding: '8px 18px', fontSize: 12.5 }
 const addDashed: CSSProperties = { marginTop: 2, padding: '6px 10px', border: '1px dashed var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'transparent', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 12.5 }
 const hintP: CSSProperties = { fontSize: 11.5, color: 'var(--fl-text-muted)', marginTop: 12, lineHeight: 1.5 }
 // URL 행의 메서드 셀렉트 — 좁은 고정폭 + 메서드 색 강조(모노)
@@ -1879,7 +2028,9 @@ function rowMoveBtn(disabled: boolean): CSSProperties {
 }
 const advToggle: CSSProperties = { marginTop: 12, padding: '4px 0', border: 'none', background: 'transparent', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 12, fontWeight: 600, textAlign: 'left', width: '100%', display: 'block' }
 // 연결(바로가기) 이웃 노드 칩
-const navChip: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 5, padding: '4px 9px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-pill)', background: 'var(--fl-surface-2)', color: 'var(--fl-text)', cursor: 'pointer', fontSize: 12, maxWidth: 160 }
+const navChip: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 5, padding: '4px 9px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-pill)', background: 'var(--fl-surface-2)', color: 'var(--fl-text)', cursor: 'pointer', fontSize: 12, maxWidth: 180 }
+// 이웃 칩의 분기 갈래 태그(IF T/F·스위치 트랙명)
+const portTag: CSSProperties = { flexShrink: 0, fontSize: 9.5, fontWeight: 700, fontFamily: 'var(--fl-font-mono)', color: 'var(--fl-put)', border: '1px solid color-mix(in srgb, var(--fl-put) 45%, var(--fl-border))', borderRadius: 999, padding: '0 5px', maxWidth: 72, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }
 // HTTP 요청 3파트 통합 — 탭 대신 항상 보이는 접을 수 있는 섹션(쿼리/헤더/본문/응답)
 const secHeadBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, border: 'none', background: 'transparent', color: 'var(--fl-text)', cursor: 'pointer', fontSize: 12.5, fontWeight: 700, padding: 0 }
 const secBadge: CSSProperties = { marginLeft: 4, fontSize: 10.5, fontFamily: 'var(--fl-font-mono)', color: 'var(--fl-primary)', fontWeight: 600 }

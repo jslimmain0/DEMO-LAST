@@ -413,6 +413,7 @@ export interface SingleNodeRunResult {
   output: unknown
   requestText: string | null
   responseText: string | null
+  durationMs?: number | null
 }
 
 // TCP 요청 전문 미리보기(전송 없음) — 백엔드가 바이트 단위로 조립한 결과

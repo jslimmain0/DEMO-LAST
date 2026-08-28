@@ -28,7 +28,7 @@ export function FlowStrip({ nodes, max = 8 }: { nodes: MiniNode[]; max?: number 
   const shown = nodes.slice(0, max)
   const extra = nodes.length - shown.length
   return (
-    <div style={{ display: 'flex', alignItems: 'center', overflowX: 'auto', paddingBottom: 2 }} aria-hidden>
+    <div className="fl-hidden-scroll" style={{ display: 'flex', alignItems: 'center', overflowX: 'auto', paddingBottom: 2 }} aria-hidden>
       {shown.map((n, i) => (
         <div key={i} style={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
           {i > 0 && <span style={{ width: 16, height: 2, background: 'var(--fl-border)', flexShrink: 0 }} />}

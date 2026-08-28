@@ -209,10 +209,43 @@ button { font-family: inherit; color: inherit; }
   fill: currentColor;
 }
 
-/* 스크롤바 */
-::-webkit-scrollbar { width: 10px; height: 10px; }
+/* 스크롤바 — 세로는 보통, 가로는 가늘게(콘텐츠를 가리는 두꺼운 가로 바 방지) */
+::-webkit-scrollbar { width: 10px; height: 7px; }
 ::-webkit-scrollbar-thumb { background: #d3d8e2; border-radius: 8px; border: 2px solid transparent; background-clip: padding-box; }
+::-webkit-scrollbar-thumb:hover { background: #b9c0cf; background-clip: padding-box; }
+::-webkit-scrollbar-corner { background: transparent; }
 html[data-theme='dark'] ::-webkit-scrollbar-thumb { background: #39404f; background-clip: padding-box; }
+html[data-theme='dark'] ::-webkit-scrollbar-thumb:hover { background: #4a5264; background-clip: padding-box; }
+/* 페이지(문서) 레벨 가로 스크롤 금지 — 카드/코드의 1~2px 오버플로가 앱 전체 가로 바를 만들지 않게.
+   가로 스크롤이 필요한 영역은 자기 컨테이너 안에서만(overflow-x:auto) 스크롤한다. */
+html, body { overflow-x: clip; }
+/* 프리뷰 스트립 등 '스크롤은 되지만 바는 숨길' 영역 */
+.fl-hidden-scroll { scrollbar-width: none; }
+.fl-hidden-scroll::-webkit-scrollbar { display: none; }
+
+/* --- 입력 컨트롤 공통(전역) — 포커스 링·호버·플레이스홀더를 앱 전체에서 통일 ---
+   컴포넌트들이 인라인 스타일로 border 를 주므로, 상태 스타일만 !important 로 계층을 이긴다. */
+input:not([type='checkbox']):not([type='radio']), select, textarea {
+  transition: border-color var(--fl-dur-fast) var(--fl-ease), box-shadow var(--fl-dur-fast) var(--fl-ease), background var(--fl-dur-fast) var(--fl-ease);
+}
+input:not([type='checkbox']):not([type='radio']):hover:not(:focus):not(:disabled),
+select:hover:not(:focus):not(:disabled),
+textarea:hover:not(:focus):not(:disabled) {
+  border-color: color-mix(in srgb, var(--fl-focus) 35%, var(--fl-border)) !important;
+}
+input:not([type='checkbox']):not([type='radio']):focus, select:focus, textarea:focus {
+  outline: none !important;
+  border-color: var(--fl-focus) !important;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--fl-focus) 16%, transparent) !important;
+}
+::placeholder { color: var(--fl-text-muted); opacity: 0.62; }
+input:disabled, select:disabled, textarea:disabled { opacity: 0.55; cursor: not-allowed; }
+/* 토큰 입력(contentEditable)도 같은 포커스 어휘 */
+.fl-token-input:focus-visible {
+  outline: none;
+  border-color: var(--fl-focus) !important;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--fl-focus) 16%, transparent);
+}
 
 /* wait(콜백 대기) 노드 — 대기 중 청록 펄스 점 + 유입 엣지 애니메이션 */
 @keyframes fl-wait-pulse {
@@ -259,10 +292,7 @@ html[data-theme='dark'] ::-webkit-scrollbar-thumb { background: #39404f; backgro
 }
 
 /* --- 데이터 삽입: 인라인 토큰 칩 입력 --- */
-.fl-token-input:focus-visible {
-  outline: 2px solid var(--fl-focus);
-  outline-offset: 0;
-}
+/* (포커스 링은 상단 '입력 컨트롤 공통' 블록에서 input 과 동일 어휘로 통일) */
 /* 한 줄 고정 입력의 가로 스크롤바는 가늘게 */
 .fl-token-input {
   scrollbar-width: thin;

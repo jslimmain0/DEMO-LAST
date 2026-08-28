@@ -25,8 +25,8 @@ import { useEditorStore } from '../store/editorStore'
 import { KeyValueEditor } from './KeyValueEditor'
 import { TransformPreview } from './TransformPreview'
 
-const label: CSSProperties = { display: 'block', fontSize: 11.5, fontWeight: 600, color: 'var(--fl-text-muted)', margin: '10px 0 4px' }
-const field: CSSProperties = { width: '100%', padding: '8px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 13, fontFamily: 'var(--fl-font-ui)' }
+const label: CSSProperties = { display: 'block', fontSize: 11.5, fontWeight: 600, color: 'var(--fl-text-muted)', margin: '12px 0 5px' }
+const field: CSSProperties = { width: '100%', padding: '9px 11px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 13, fontFamily: 'var(--fl-font-ui)' }
 const mono: CSSProperties = { ...field, fontFamily: 'var(--fl-font-mono)', fontSize: 12 }
 const braceBtn: CSSProperties = { width: 32, height: 32, flexShrink: 0, border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-primary)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }
 
@@ -468,7 +468,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
           : <button onClick={() => selectNode(null)} aria-label="패널 닫기" style={closeBtn}>×</button>}
       </header>
 
-      <div style={{ padding: 16, overflowY: 'auto', flex: 1 }}>
+      <div style={{ padding: '16px 18px', overflowY: 'auto', flex: 1 }}>
         <button
           onClick={() => copyText(id, '노드 id 를 복사했습니다.')}
           title="노드 id 복사"

@@ -158,6 +158,9 @@ function VarEditor({ initial, onChange }: { initial: Record<string, string>; onC
   const [filter, setFilter] = useState('')
   const [pasteOpen, setPasteOpen] = useState(false)
   const [pasteText, setPasteText] = useState('')
+  // 텍스트 모드 — 행을 하나씩 추가하는 대신 .env 텍스트로 통편집(변수가 많을 때 훨씬 빠르다)
+  const [mode, setMode] = useState<'form' | 'text'>('form')
+  const [text, setText] = useState('')
   const boxRef = useRef<HTMLDivElement>(null)
   const pendingFocus = useRef<string | null>(null) // rows 반영 후 포커스할 input 의 data-var 값
 
@@ -166,6 +169,15 @@ function VarEditor({ initial, onChange }: { initial: Record<string, string>; onC
     const out: Record<string, string> = {}
     for (const { k, v } of next) if (k.trim()) out[k.trim()] = v
     onChange(out)
+  }
+  const toTextMode = () => {
+    setText(rows.filter((r) => r.k.trim()).map((r) => `${r.k.trim()}=${r.v}`).join('\n'))
+    setMode('text')
+  }
+  // 텍스트는 타이핑마다 파싱해 폼/스토어와 실시간 동기화 — 모드를 안 돌아와도 반영된 상태로 닫을 수 있다
+  const onTextChange = (t: string) => {
+    setText(t)
+    commit(parseDotEnv(t).map((p) => ({ k: p.key, v: p.value })))
   }
   const setRow = (i: number, patch: Partial<{ k: string; v: string }>) => commit(rows.map((r, j) => (j === i ? { ...r, ...patch } : r)))
   const addRow = () => { setFilter(''); pendingFocus.current = `k${rows.length}`; commit([...rows, { k: '', v: '' }]) }
@@ -198,7 +210,27 @@ function VarEditor({ initial, onChange }: { initial: Record<string, string>; onC
   const visible = rows.map((r, i) => ({ r, i })).filter(({ r }) => !f || r.k.toLowerCase().includes(f) || r.v.toLowerCase().includes(f))
 
   return (
-    <div ref={boxRef} style={{ overflowY: 'auto', maxHeight: 300 }}>
+    <div ref={boxRef} style={{ overflowY: 'auto', maxHeight: 360 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+        <span style={{ ...hint, marginTop: 0, flex: 1 }}>변수 {rows.filter((r) => r.k.trim()).length}개</span>
+        <div role="group" aria-label="편집 방식" style={seg}>
+          <button onClick={() => setMode('form')} style={{ ...segBtn, ...(mode === 'form' ? segOn : null) }}>폼</button>
+          <button onClick={toTextMode} style={{ ...segBtn, ...(mode === 'text' ? segOn : null) }} title="KEY=value 텍스트로 한꺼번에 편집">텍스트</button>
+        </div>
+      </div>
+
+      {mode === 'text' ? (
+        <>
+          <textarea
+            value={text} onChange={(e) => onTextChange(e.target.value)} autoFocus
+            aria-label="환경 변수 텍스트 편집"
+            placeholder={'baseUrl=https://dev.api.example.com\ntoken=abc123'}
+            style={{ ...mono, width: '100%', minHeight: 240, fontFamily: 'var(--fl-font-mono)', resize: 'vertical', boxSizing: 'border-box', lineHeight: 1.7 }}
+          />
+          <p style={hint}>한 줄에 하나(<code style={code}>키=값</code>) — 주석(#)·따옴표 허용, 입력 즉시 반영됩니다.</p>
+        </>
+      ) : (
+      <>
       {rows.length === 0 && <p style={{ ...hint, marginTop: 2 }}>변수를 추가하세요 (예: <code style={code}>baseUrl</code> = <code style={code}>https://dev.api.example.com</code>).</p>}
       {rows.length >= 8 && (
         <input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder={`변수 검색… (${rows.length}개)`} aria-label="변수 검색"
@@ -247,6 +279,8 @@ function VarEditor({ initial, onChange }: { initial: Record<string, string>; onC
           </div>
         </div>
       )}
+      </>
+      )}
     </div>
   )
 }
@@ -262,5 +296,8 @@ const delBtn: CSSProperties = { width: 30, flexShrink: 0, border: '1px solid var
 const envRow: CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, padding: '7px 9px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', cursor: 'pointer' }
 const envRowSel: CSSProperties = { borderColor: 'var(--fl-primary)', background: 'var(--fl-surface-2)' }
 const dupWarn: CSSProperties = { borderColor: 'var(--fl-put)', boxShadow: '0 0 0 1px var(--fl-put) inset' }
+const seg: CSSProperties = { display: 'inline-flex', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', overflow: 'hidden' }
+const segBtn: CSSProperties = { padding: '4px 12px', border: 'none', background: 'transparent', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 12 }
+const segOn: CSSProperties = { background: 'var(--fl-surface-2)', color: 'var(--fl-text)', fontWeight: 600 }
 const countBadge: CSSProperties = { flexShrink: 0, fontSize: 10.5, color: 'var(--fl-text-muted)', background: 'var(--fl-surface-2)', borderRadius: 8, padding: '1px 6px' }
 const empty: CSSProperties = { display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--fl-text-muted)', fontSize: 12.5, padding: 24 }

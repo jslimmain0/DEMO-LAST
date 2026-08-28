@@ -162,7 +162,10 @@ const paletteBtn: CSSProperties = {
   display: 'flex',
   alignItems: 'center',
   gap: 10,
-  padding: '10px 12px',
+  // 균일 타일 — 라벨 길이에 따라 버튼 폭이 제각각이 되지 않게 전부 같은 폭·높이로
+  width: '100%',
+  minHeight: 40,
+  padding: '9px 12px',
   border: '1px solid var(--fl-border)',
   borderRadius: 'var(--fl-radius-sm)',
   background: 'var(--fl-surface)',
@@ -171,6 +174,9 @@ const paletteBtn: CSSProperties = {
   fontWeight: 500,
   color: 'var(--fl-text)',
   textAlign: 'left',
+  whiteSpace: 'nowrap',
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
 }
 const templateRow: CSSProperties = {
   display: 'flex',

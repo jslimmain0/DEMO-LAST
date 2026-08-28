@@ -34,8 +34,10 @@ export function BindingPicker({
   onClose: () => void
 }) {
   const [q, setQ] = useState('')
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
-  const [expanded, setExpanded] = useState<Set<string>>(new Set()) // '+N개 더' 로 펼친 섹션
+  // 기본 접힘 — 노드가 많을 때 칩 벽이 한 번에 쏟아지지 않게. 소스가 2개 이하면 바로 펼쳐준다.
+  const [openSecs, setOpenSecs] = useState<Set<string>>(() =>
+    sources.length <= 2 ? new Set(sources.map((s) => s.id)) : new Set())
+  const [showAll, setShowAll] = useState<Set<string>>(new Set()) // '+N개 더' 로 펼친 섹션
   const listRef = useRef<HTMLDivElement>(null)
   const query = q.trim().toLowerCase()
 
@@ -68,9 +70,9 @@ export function BindingPicker({
       const total = items.length
       let entries = items.map((it) => ({ it, src: s }))
       let hiddenCount = 0
-      if (!query && collapsed.has(s.id)) {
+      if (!query && !openSecs.has(s.id)) {
         entries = []
-      } else if (!query && !expanded.has(s.id) && entries.length > TRUNC) {
+      } else if (!query && !showAll.has(s.id) && entries.length > TRUNC) {
         hiddenCount = entries.length - TRUNC
         entries = entries.slice(0, TRUNC)
       }
@@ -81,7 +83,7 @@ export function BindingPicker({
       })
     }
     return list
-  }, [sources, recent, query, collapsed, expanded])
+  }, [sources, recent, query, openSecs, showAll])
 
   const pick = (e: Entry) => {
     const b: Binding = { nodeName: e.src.name, cat: e.src.cat, key: e.it.key, sourceId: e.src.id, scope: e.it.scope }
@@ -105,7 +107,7 @@ export function BindingPicker({
     else if (e.key === 'Enter') { e.preventDefault(); const sel = flat[active]; if (sel) pick(sel) }
     else if (e.key === 'Escape' && q) { e.stopPropagation(); setQ('') } // Esc 1회=검색어 지움, 2회=닫기
   }
-  const toggleCollapse = (id: string) => setCollapsed((p) => { const n = new Set(p); if (n.has(id)) n.delete(id); else n.add(id); return n })
+  const toggleCollapse = (id: string) => setOpenSecs((p) => { const n = new Set(p); if (n.has(id)) n.delete(id); else n.add(id); return n })
 
   // 검색어 매칭 부분 하이라이트
   const hi = (key: string) => {
@@ -137,7 +139,7 @@ export function BindingPicker({
             </p>
           )}
           {sections.map((sec) => {
-            const isCollapsed = sec.collapsible && collapsed.has(sec.id) && !sec.isRecent
+            const isCollapsed = sec.collapsible && !openSecs.has(sec.id) && !sec.isRecent
             return (
             <section key={sec.id} style={{ marginBottom: 8 }}>
               <div
@@ -180,7 +182,7 @@ export function BindingPicker({
                 ) })}
                 {sec.hiddenCount > 0 && (
                   <button
-                    onClick={() => setExpanded((p) => new Set(p).add(sec.id))}
+                    onClick={() => setShowAll((p) => new Set(p).add(sec.id))}
                     style={{ ...chipBtn(false), borderStyle: 'dashed', color: 'var(--fl-text-muted)', fontSize: 11.5 }}
                     title="이 노드의 나머지 항목 펼치기"
                   >+{sec.hiddenCount}개 더</button>

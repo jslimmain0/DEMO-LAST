@@ -980,6 +980,16 @@ tcp-preview 는 시크릿 미시드라 무관. 단위 5종 + 라이브(단일 �
 - 검증: bulkPaste 단위 16 PASS + tsc/build/oxlint + 브라우저 실측(피커 배지/접기/하이라이트/최근 사용/+3개 더 · .env 붙여넣기 갱신+추가 · JSON 샘플→email/age/active/tags 타입 추론 · 중복 경고 · 시크릿 ✓ 적용/흐림 · 라우트 필터). 가이드 [14장](docs/guide/14-편의기능.md)에 "긴 목록 다루기" 섹션 추가.
 - ⚠ 최근 사용은 브라우저 개인 스코프(localStorage). 스크린샷 재촬영은 안 함(기능 추가 — 기존 라벨/화면 유지).
 
+### 2차 디테일 패치(같은 날, 사용자 후속 피드백 6건)
+"입력 대규모 업데이트·환경변수 리스트 나열 어려움·피커 기본 접힘·팔레트 크기 제각각·속성 패널 비좁음·가로 스크롤바 이상" 반영:
+- **피커 기본 접힘**: [BindingPicker](frontend/src/binding/BindingPicker.tsx) 섹션이 **접힌 채 열림**(소스 ≤2 면 자동 펼침, `openSecs` Set) — 배지 보고 펼치거나 검색.
+- **환경 변수 [폼|텍스트] 토글**: [EnvManagerDialog](frontend/src/components/EnvManagerDialog.tsx) VarEditor 에 텍스트 모드 — `.env` 텍스트 통편집, `onTextChange` 가 타이핑마다 `parseDotEnv`→commit(폼/스토어 실시간 동기화, 모드 안 돌아와도 반영). 직렬화는 `키=값` 줄(따옴표 값은 재파싱 시 벗겨짐 — 수용).
+- **전역 입력 컨트롤**([index.css](frontend/src/index.css)): 모든 input/select/textarea 에 **포커스 링(보라 테두리+글로우)·호버 보더·플레이스홀더·disabled** 통일 — 컴포넌트 인라인 border 를 이기려 상태 스타일만 `!important`. TokenInput(contentEditable)도 같은 어휘.
+- **팔레트 균일 타일**([Palette](frontend/src/canvas/Palette.tsx) `paletteBtn`): width 100%·minHeight 40 — 라벨 길이에 따라 버튼 폭이 제각각이던 문제 해소.
+- **속성 패널 여유**: 기본 폭 330→**380**(max 640, [Editor](frontend/src/routes/Editor.tsx) loadSize)·본문 padding 16→16×18·label 간격 확대·field padding 9×11.
+- **가로 스크롤바**: 전역 가로 바 높이 10→**7px**+호버 색, `html,body{overflow-x:clip}`(1~2px 오버플로가 문서 가로 바를 만들지 않게), 대시보드 카드 미니 프리뷰([MiniFlow](frontend/src/components/MiniFlow.tsx))는 `.fl-hidden-scroll` 로 바 숨김(스크롤은 유지).
+- 검증: tsc/build/oxlint + 브라우저 실측(피커 3소스 접힘/펼침·텍스트 모드 타이핑 즉시 변수 6개 반영·팔레트 균일 폭·패널 380·대시보드/Mock/실행 1000px 폭 오버플로 스캔 bars 0). ⚠ propertyW 는 localStorage 지속이라 이미 드래그했던 브라우저는 저장값 우선(도구 ⋯ 패널 크기 리셋).
+
 ## 참고 문서
 - `backend/README.md` — 백엔드 구조·설정·API 요약 · `frontend/README.md` · `infra/README.md`(배포)
 - **`docs/guide/`** — 실사용자 가이드(심플+심화 15챕터, 스크린샷) · `docs/사용가이드.md` — 한 페이지 요약본

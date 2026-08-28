@@ -95,7 +95,7 @@ export function Editor() {
 
   // 패널 크기(좌 팔레트 / 우 속성 / 하 로그) — 드래그로 조절하고 localStorage 에 유지
   const [paletteW, setPaletteW] = useState(() => loadSize('paletteW', 200, 160, 420))
-  const [propertyW, setPropertyW] = useState(() => loadSize('propertyW', 330, 300, 560))
+  const [propertyW, setPropertyW] = useState(() => loadSize('propertyW', 380, 300, 640))
   const [runH, setRunH] = useState(() => loadSize('runH', 260, 120, 600))
   // AI 어시스턴트 패널(오른쪽 채팅) — 너비 + 열림 상태 지속
   const [assistantW, setAssistantW] = useState(() => loadSize('assistantW', 360, 300, 560))

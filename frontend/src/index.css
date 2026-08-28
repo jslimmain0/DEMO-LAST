@@ -240,6 +240,13 @@ input:not([type='checkbox']):not([type='radio']):focus, select:focus, textarea:f
 }
 ::placeholder { color: var(--fl-text-muted); opacity: 0.62; }
 input:disabled, select:disabled, textarea:disabled { opacity: 0.55; cursor: not-allowed; }
+/* 체크박스·라디오·프로그레스도 브랜드 색으로(브라우저 기본 파랑 제거) */
+input[type='checkbox'], input[type='radio'], progress { accent-color: var(--fl-primary); }
+/* 텍스트 선택 색 — 브랜드 틴트 */
+::selection { background: color-mix(in srgb, var(--fl-primary) 24%, transparent); }
+/* 버튼 커서 일관성 — 인라인 스타일이 빠진 버튼도 포인터, 비활성은 금지 표시 */
+button:not(:disabled) { cursor: pointer; }
+button:disabled { cursor: not-allowed !important; opacity: 0.6; }
 /* 토큰 입력(contentEditable)도 같은 포커스 어휘 */
 .fl-token-input:focus-visible {
   outline: none;

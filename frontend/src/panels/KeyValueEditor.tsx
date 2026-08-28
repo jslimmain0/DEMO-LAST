@@ -10,13 +10,13 @@ import { newId } from '../lib/ids'
 const input: CSSProperties = {
   flex: 1,
   minWidth: 0,
-  padding: '7px 9px',
+  padding: '8px 10px', // PropertyPanel field 와 같은 리듬 — 행마다 높이가 들쭉날쭉하지 않게
   border: '1px solid var(--fl-border)',
   borderRadius: 'var(--fl-radius-sm)',
   background: 'var(--fl-surface)',
   color: 'var(--fl-text)',
   fontFamily: 'var(--fl-font-mono)',
-  fontSize: 12,
+  fontSize: 12.5,
 }
 
 const VALUE_TYPES = ['string', 'number', 'boolean', 'json', 'array']
@@ -91,7 +91,7 @@ export function KeyValueEditor({
   )
 }
 
-const delBtn: CSSProperties = { width: 30, flexShrink: 0, border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text-muted)', cursor: 'pointer' }
+const delBtn: CSSProperties = { width: 30, height: 32, flexShrink: 0, border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text-muted)', cursor: 'pointer' }
 const dupWarn: CSSProperties = { borderColor: 'var(--fl-put)', boxShadow: '0 0 0 1px var(--fl-put) inset' }
 const typeSel: CSSProperties = { flexShrink: 0, width: 78, padding: '6px 4px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 11.5 }
 const addBtn: CSSProperties = { marginTop: 2, padding: '6px 10px', border: '1px dashed var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'transparent', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 12.5 }

@@ -322,7 +322,12 @@ export function Dashboard() {
             <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
               <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
                 <span aria-hidden style={{ position: 'absolute', left: 11, color: 'var(--fl-text-muted)', fontSize: 13, pointerEvents: 'none' }}>⌕</span>
-                <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="검색" aria-label="워크플로 검색" style={searchBox} />
+                <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="검색" aria-label="워크플로 검색" style={searchBox}
+                  onKeyDown={(e) => { if (e.key === 'Escape' && search) { e.stopPropagation(); setSearch('') } }} />
+                {search && (
+                  <button onClick={() => setSearch('')} aria-label="검색 지우기" title="지우기 (Esc)"
+                    style={{ position: 'absolute', right: 6, width: 20, height: 20, border: 'none', borderRadius: 10, background: 'transparent', color: 'var(--fl-text-muted)', fontSize: 13, lineHeight: 1 }}>×</button>
+                )}
               </div>
               <div style={seg} role="group" aria-label="정렬">
                 <button onClick={() => setSort('recent')} style={segBtn(sort === 'recent')}>최근</button>

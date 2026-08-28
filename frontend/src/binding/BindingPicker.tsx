@@ -108,6 +108,9 @@ export function BindingPicker({
     else if (e.key === 'Escape' && q) { e.stopPropagation(); setQ('') } // Esc 1회=검색어 지움, 2회=닫기
   }
   const toggleCollapse = (id: string) => setOpenSecs((p) => { const n = new Set(p); if (n.has(id)) n.delete(id); else n.add(id); return n })
+  // 모두 펼치기 ⇄ 모두 접기 — 하나라도 접혀 있으면 전체 펼침
+  const anyCollapsed = sources.some((s) => !openSecs.has(s.id))
+  const toggleAll = () => setOpenSecs(anyCollapsed ? new Set(sources.map((s) => s.id)) : new Set())
 
   // 검색어 매칭 부분 하이라이트
   const hi = (key: string) => {
@@ -129,6 +132,12 @@ export function BindingPicker({
         <header style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 16px', borderBottom: '1px solid var(--fl-border)' }}>
           <strong style={{ fontFamily: 'var(--fl-font-head)', fontSize: 15 }}>데이터 삽입</strong>
           <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={onKey} placeholder="키·노드 검색… (↑↓ 이동, Enter 삽입)" style={search} />
+          {!query && sources.length > 0 && (
+            <button onClick={toggleAll} title={anyCollapsed ? '모든 섹션 펼치기' : '모든 섹션 접기'}
+              style={{ flexShrink: 0, padding: '5px 9px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text-muted)', fontSize: 11.5, whiteSpace: 'nowrap' }}>
+              {anyCollapsed ? '▾ 모두 펼치기' : '▸ 모두 접기'}
+            </button>
+          )}
           <button onClick={onClose} aria-label="닫기" style={{ border: 'none', background: 'transparent', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 18 }}>×</button>
         </header>
 
@@ -144,7 +153,10 @@ export function BindingPicker({
             <section key={sec.id} style={{ marginBottom: 8 }}>
               <div
                 role={sec.collapsible && !sec.isRecent ? 'button' : undefined}
+                tabIndex={sec.collapsible && !sec.isRecent ? 0 : undefined}
+                aria-expanded={sec.collapsible && !sec.isRecent ? !isCollapsed : undefined}
                 onClick={sec.collapsible && !sec.isRecent ? () => toggleCollapse(sec.id) : undefined}
+                onKeyDown={sec.collapsible && !sec.isRecent ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleCollapse(sec.id) } } : undefined}
                 title={sec.collapsible && !sec.isRecent ? (isCollapsed ? '펼치기' : '접기') : undefined}
                 style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '6px 8px', fontSize: 12, fontWeight: 700, color: 'var(--fl-text-muted)', cursor: sec.collapsible && !sec.isRecent ? 'pointer' : 'default', userSelect: 'none' }}
               >

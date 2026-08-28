@@ -62,6 +62,7 @@ export function Palette({ width = 200, onCollapse }: { width?: number; onCollaps
         )}
       </div>
       <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="노드 검색…"
+        onKeyDown={(e) => { if (e.key === 'Escape' && q) { e.stopPropagation(); setQ('') } }}
         style={{ width: '100%', padding: '6px 9px', marginBottom: 4, border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', color: 'var(--fl-text)', fontSize: 12.5, outline: 'none' }} />
       {/* 검색 중엔 평면 목록, 아니면 카테고리 섹션으로(클러터 축소) */}
       {q.trim()

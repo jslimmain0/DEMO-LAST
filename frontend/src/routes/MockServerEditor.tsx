@@ -643,7 +643,8 @@ function TestPanel({ base, ensureSaved }: { base: string; ensureSaved: () => Pro
         <select style={{ ...input, minWidth: 90 }} value={method} onChange={(e) => setMethod(e.target.value)}>
           {['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].map((m) => <option key={m}>{m}</option>)}
         </select>
-        <input style={{ ...input, flex: 1, fontFamily: 'var(--fl-font-mono)' }} value={path} onChange={(e) => setPath(e.target.value)} placeholder="/hello?name=kim" />
+        <input style={{ ...input, flex: 1, fontFamily: 'var(--fl-font-mono)' }} value={path} onChange={(e) => setPath(e.target.value)} placeholder="/hello?name=kim"
+          onKeyDown={(e) => { if (e.key === 'Enter' && !busy) { e.preventDefault(); void send() } }} />
         <button style={primaryBtn} disabled={busy} onClick={() => { void send() }}>전송</button>
       </div>
       {method !== 'GET' && (

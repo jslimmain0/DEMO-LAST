@@ -78,6 +78,7 @@ export function Executions() {
         {!isLoading && !isError && (all.length > 0 || filter !== 'all' || range !== 'all' || q) && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 16, flexWrap: 'wrap' }}>
             <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="워크플로 이름 검색…"
+              onKeyDown={(e) => { if (e.key === 'Escape' && q) { e.stopPropagation(); setQ('') } }}
               style={{ padding: '7px 11px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', color: 'var(--fl-text)', fontSize: 13, minWidth: 220 }} />
             <div style={{ display: 'flex', gap: 3 }}>
               {([['all', '전체'], ['SUCCEEDED', '성공'], ['FAILED', '실패'], ['WAITING', '대기'], ['CANCELLED', '취소']] as const).map(([k, lbl]) => (

@@ -107,6 +107,13 @@ export function Editor() {
   const persistUI = (k: string, v: string) => { try { localStorage.setItem(k, v) } catch { /* 프라이빗 모드 무시 */ } }
   // QoL: 도구 메뉴 + 모달들 + 자동저장
   const [toolsOpen, setToolsOpen] = useState(false)
+  // 도구(⋯) 드롭다운 열림 중 Esc = 닫기 (바깥 클릭과 같은 어휘)
+  useEffect(() => {
+    if (!toolsOpen) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setToolsOpen(false) }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [toolsOpen])
   const [jsonOpen, setJsonOpen] = useState(false)
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
   const [versionsOpen, setVersionsOpen] = useState(false)
@@ -440,6 +447,7 @@ export function Editor() {
           className="fl-name-input"
           value={flowName}
           onChange={(e) => setName(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === 'Escape') (e.target as HTMLInputElement).blur() }}
           title="워크플로 이름 — 눌러서 편집"
           style={{ fontFamily: 'var(--fl-font-head)', fontWeight: 600, fontSize: 15, border: '1px solid transparent', borderRadius: 8, padding: '6px 8px', background: 'transparent', color: 'var(--fl-text)', minWidth: 220 }}
         />

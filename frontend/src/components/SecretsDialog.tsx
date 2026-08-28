@@ -114,8 +114,10 @@ export function SecretsDialog({ onClose }: { onClose: () => void }) {
               <option value="">공통</option>
               {envNames.map((n) => <option key={n} value={n}>{n}</option>)}
             </select>
-            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="예: API_TOKEN" style={{ ...mono, flex: 1 }} />
-            <input value={value} onChange={(e) => setValue(e.target.value)} placeholder="값(저장 후 숨김)" type="password" style={{ ...mono, flex: 1.3 }} />
+            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="예: API_TOKEN" style={{ ...mono, flex: 1 }}
+              onKeyDown={(e) => { if (e.key === 'Enter' && name.trim() && value && !put.isPending) { e.preventDefault(); put.mutate() } }} />
+            <input value={value} onChange={(e) => setValue(e.target.value)} placeholder="값(저장 후 숨김)" type="password" style={{ ...mono, flex: 1.3 }}
+              onKeyDown={(e) => { if (e.key === 'Enter' && name.trim() && value && !put.isPending) { e.preventDefault(); put.mutate() } }} />
             <button onClick={() => put.mutate()} disabled={!name.trim() || !value || put.isPending} style={primary}>저장</button>
           </div>
           <p style={{ ...hint, marginTop: 6 }}>
@@ -135,7 +137,7 @@ function copy(s: string) { void navigator.clipboard?.writeText(s).then(() => toa
 const hint: CSSProperties = { fontSize: 11.5, color: 'var(--fl-text-muted)', lineHeight: 1.6, margin: 0 }
 const label: CSSProperties = { display: 'block', fontSize: 11.5, fontWeight: 600, color: 'var(--fl-text-muted)', margin: '0 0 5px' }
 const code: CSSProperties = { fontFamily: 'var(--fl-font-mono)', fontSize: 11, background: 'var(--fl-surface-2)', padding: '1px 5px', borderRadius: 4 }
-const mono: CSSProperties = { padding: '7px 9px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 12, fontFamily: 'var(--fl-font-mono)', minWidth: 0 }
+const mono: CSSProperties = { padding: '8px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 12.5, fontFamily: 'var(--fl-font-mono)', minWidth: 0 }
 const xBtn: CSSProperties = { width: 28, height: 28, borderRadius: 8, border: 'none', background: 'var(--fl-surface-2)', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 15 }
 const primary: CSSProperties = { padding: '7px 14px', border: 'none', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-primary)', color: '#fff', cursor: 'pointer', fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap' }
 const miniBtn: CSSProperties = { padding: '4px 8px', border: '1px solid var(--fl-border)', borderRadius: 6, background: 'var(--fl-surface)', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 11.5, flexShrink: 0 }

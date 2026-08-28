@@ -1,5 +1,5 @@
 import type { CSSProperties } from 'react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { setActiveEnv, useEnvStore } from '../lib/environments'
 import { EnvManagerDialog } from './EnvManagerDialog'
 
@@ -12,6 +12,13 @@ export function EnvSwitcher() {
   const [manage, setManage] = useState(false)
   const [open, setOpen] = useState(false)
   const names = Object.keys(store.envs).sort((a, b) => a.localeCompare(b))
+  // 드롭다운 열림 중 Esc = 닫기 (바깥 클릭과 같은 어휘)
+  useEffect(() => {
+    if (!open) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false) }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [open])
 
   return (
     <div style={{ position: 'relative', display: 'flex' }}>

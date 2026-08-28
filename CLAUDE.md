@@ -990,6 +990,9 @@ tcp-preview 는 시크릿 미시드라 무관. 단위 5종 + 라이브(단일 �
 - **가로 스크롤바**: 전역 가로 바 높이 10→**7px**+호버 색, `html,body{overflow-x:clip}`(1~2px 오버플로가 문서 가로 바를 만들지 않게), 대시보드 카드 미니 프리뷰([MiniFlow](frontend/src/components/MiniFlow.tsx))는 `.fl-hidden-scroll` 로 바 숨김(스크롤은 유지).
 - 검증: tsc/build/oxlint + 브라우저 실측(피커 3소스 접힘/펼침·텍스트 모드 타이핑 즉시 변수 6개 반영·팔레트 균일 폭·패널 380·대시보드/Mock/실행 1000px 폭 오버플로 스캔 bars 0). ⚠ propertyW 는 localStorage 지속이라 이미 드래그했던 브라우저는 저장값 우선(도구 ⋯ 패널 크기 리셋).
 
+### 3차 디테일 패치("10개 이상" 추가 발굴, 15건)
+키보드·일관성 마이크로 UX — 전부 프론트: ① 피커 헤더 **모두 펼치기 ⇄ 모두 접기** 토글 버튼(기본 접힘의 짝) ② 피커 섹션 헤더 키보드 접근(tabIndex·Enter/Space·aria-expanded) ③ [NodeAddMenu](frontend/src/canvas/NodeAddMenu.tsx) ↑↓ 활성 이동+하이라이트+Enter 선택·빈 상태 문구 ④ 대시보드 검색 **Esc=지우기 + × 버튼** ⑤ 실행 이력 검색 Esc=지우기 ⑥ 팔레트 검색 Esc=지우기 ⑦ 에디터 워크플로 이름 Enter/Esc=확정(blur) ⑧ Mock 보내보기 경로 Enter=전송 ⑨ 시크릿 이름/값 Enter=저장 ⑩ EnvSwitcher 드롭다운 Esc 닫기 ⑪ 도구(⋯) 메뉴 Esc 닫기 ⑫ 전역 `accent-color`(체크박스/라디오 브랜드 색) ⑬ 전역 `::selection` 브랜드 틴트 ⑭ 전역 버튼 커서(enabled=pointer·disabled=not-allowed+opacity .6) ⑮ 입력 크기 리듬 통일(KeyValueEditor·Env/Secrets 다이얼로그 8×10px·12.5px + KVE 행 버튼 높이 32). 검증: tsc/build/oxlint + 브라우저(펼치기/접기 토글·검색 ×/Esc 클리어·포커스 링).
+
 ## 참고 문서
 - `backend/README.md` — 백엔드 구조·설정·API 요약 · `frontend/README.md` · `infra/README.md`(배포)
 - **`docs/guide/`** — 실사용자 가이드(심플+심화 15챕터, 스크린샷) · `docs/사용가이드.md` — 한 페이지 요약본

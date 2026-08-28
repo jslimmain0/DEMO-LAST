@@ -6,6 +6,7 @@ import { usePermissions } from '../auth/AuthContext'
 import { toast } from '../components/toast'
 import type { Binding, BodyType, GraphNode, HttpMethod, NodeField, NodeOutput, NodeVar, ReqMode, RespType, SingleNodeRunResult, TcpField, TcpPreview, TcpRespField, WaitField as WaitFieldT } from '../api/types'
 import { BigTextEditor, ExpandCorner } from '../components/BigTextEditor'
+import { JsonTree } from '../components/JsonTree'
 // 워크벤치(전체화면 모달)의 인라인 코드 편집기 — 열 때만 로드(BigTextEditor 와 같은 청크)
 const CodeEditorLazy = lazy(() => import('../components/CodeEditor'))
 import { CopyIcon, DataInsertIcon } from '../components/icons'
@@ -22,7 +23,7 @@ import { parseCurl, toCurl } from '../lib/curl'
 import { computeReachInfo, isUnreachableExecutable } from '../lib/reachable'
 import { useEnvStore, activeEnvVars, activeEnvName } from '../lib/environments'
 import { useRunInput } from '../lib/runInput'
-import { bindingToToken, isTokenizable } from '../lib/tokenGrammar'
+import { bindingToToken, isTokenizable, tokenRegex } from '../lib/tokenGrammar'
 import { newId } from '../lib/ids'
 import { useEditorStore } from '../store/editorStore'
 import { KeyValueEditor } from './KeyValueEditor'
@@ -50,6 +51,35 @@ function rawBodyPlaceholder(bt: BodyType | undefined): string {
 // 'form' 은 'urlencoded' 와 백엔드 파싱이 동일 — 드롭다운에선 하나로 통합(중복 제거). 저장된 'form' 그래프는
 // 선택값을 'urlencoded' 로 정규화해 표시하고(normRespType), 새로 고르면 'urlencoded' 로 저장(동작 불변).
 const RESP_TYPES: RespType[] = ['json', 'xml', 'urlencoded', 'query', 'text', 'binary']
+
+// 단일 실행 시 값을 물어볼 상류 토큰 — env/input/secret/req: 스코프·자기 자신 제외, 중복 제거.
+// 노드 설정 전체(JSON 직렬화)에서 {{ 키(@노드) }} 를 스캔한다.
+function detectUpstreamTokens(n: GraphNode): Array<{ key: string; sourceId: string | null }> {
+  const out = new Map<string, { key: string; sourceId: string | null }>()
+  const re = tokenRegex()
+  const s = JSON.stringify(n)
+  for (let m = re.exec(s); m; m = re.exec(s)) {
+    const key = m[1]
+    const isReq = !!m[2]
+    const src = m[3] ?? null
+    if (isReq) continue
+    if (src === 'env' || src === 'input' || src === 'secret') continue
+    if (src === n.id) continue // wait url 자기 참조 등
+    const k = `${src ?? ''}|${key}`
+    if (!out.has(k)) out.set(k, { key, sourceId: src })
+  }
+  return [...out.values()]
+}
+
+// 단일 실행 입력값 코어션 — 숫자/불리언/JSON 은 원형으로(조건식 숫자 비교가 동작하게), 나머진 문자열.
+function coerceUpstreamInput(raw: string): unknown {
+  const t = raw.trim()
+  if (/^-?\d+(\.\d+)?$/.test(t)) return Number(t)
+  if (t === 'true') return true
+  if (t === 'false') return false
+  if (t.startsWith('{') || t.startsWith('[')) { try { return JSON.parse(t) } catch { /* 문자열로 둔다 */ } }
+  return raw
+}
 const normRespType = (rt: RespType | undefined): RespType => (rt === 'form' ? 'urlencoded' : rt ?? 'json')
 const CHARSETS = ['UTF-8', 'EUC-KR', 'MS949', 'US-ASCII']
 const OUTPUT_TYPES = ['string', 'int', 'number', 'boolean', 'object', 'array', 'secret']
@@ -85,6 +115,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
   const removeEdge = useEditorStore((s) => s.removeEdge)
   const [pick, setPick] = useState<string | null>(null) // rawBody | rawParams | rawHeaders (Raw 텍스트영역 전용)
   const [bigEdit, setBigEdit] = useState<'rawBody' | 'callbackRespBody' | null>(null) // 거의 전체화면 본문 편집
+  const [respView, setRespView] = useState<'tree' | 'raw'>('tree') // 워크벤치 응답 보기(트리=경로 토큰 클릭)
   const [bodyConvNote, setBodyConvNote] = useState<string | null>(null) // 필드↔Raw 변환 안내
   const [single, setSingle] = useState<SingleNodeRunResult | null>(null) // 이 노드만 실행 결과
   const [singleRunning, setSingleRunning] = useState(false)
@@ -106,12 +137,40 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
     setTcpPrev(null); setTcpPrevErr(null)
   }, [selectedId])
 
-  // 이 노드만 실행 — 즉석 실행. 활성 환경(env)·시크릿은 전달돼 {{키@env}}·{{이름@secret}}는 해석됨(상류 노드 값만 빈 값).
+  // 단일 실행용 상류 값 입력 — {{ 키@노드 }} 를 쓰는 노드를 흐름 없이 테스트할 때 직접 넣는 값.
+  // 플로우·노드별 localStorage 지속(도킹/모달 두 패널 인스턴스가 공유).
+  const [upVals, setUpVals] = useState<Record<string, string>>({})
+  useEffect(() => {
+    try { setUpVals(JSON.parse(localStorage.getItem(`fl:uprun:${flowId}:${selectedId}`) ?? '{}') as Record<string, string>) }
+    catch { setUpVals({}) }
+  }, [flowId, selectedId])
+  const setUpVal = (k: string, v: string) => setUpVals((p) => {
+    const n = { ...p, [k]: v }
+    try { localStorage.setItem(`fl:uprun:${flowId}:${selectedId}`, JSON.stringify(n)) } catch { /* 저장 불가 무시 */ }
+    return n
+  })
+
+  // 이 노드만 실행 — 즉석 실행. 활성 환경(env)·시크릿은 전달되고, 상류 노드 값은 아래 입력폼(upstream)으로 넣는다.
   const runSingle = async () => {
     if (!flowId || !selectedId) return
     setSingleRunning(true)
     const env = activeEnvVars()
-    const body = { envName: activeEnvName(), ...(Object.keys(env).length ? { env } : {}) }
+    // 이 노드가 참조하는 상류 토큰에 사용자가 넣은 값 → {소스노드: {키: 값}} (bare 토큰은 __prev)
+    const rf = nodes.find((x) => x.id === selectedId)
+    const upstream: Record<string, Record<string, unknown>> = {}
+    if (rf) {
+      for (const t of detectUpstreamTokens(asGraphNode(rf.data))) {
+        const raw = upVals[`${t.sourceId ?? ''}|${t.key}`]
+        if (raw == null || raw.trim() === '') continue
+        const src = t.sourceId ?? '__prev'
+        ;(upstream[src] ??= {})[t.key] = coerceUpstreamInput(raw)
+      }
+    }
+    const body = {
+      envName: activeEnvName(),
+      ...(Object.keys(env).length ? { env } : {}),
+      ...(Object.keys(upstream).length ? { upstream } : {}),
+    }
     try { setSingle(await runsApi.runNode(flowId, selectedId, body)) }
     catch (e) { setSingle({ ok: false, httpStatus: null, output: null, requestText: null, responseText: e instanceof Error ? e.message : String(e) }) }
     finally { setSingleRunning(false) }
@@ -313,7 +372,18 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
     const out = single?.output
     if (!out || typeof out !== 'object' || Array.isArray(out)) return
     const existing = new Set((node.outputs ?? []).map((o) => o.key))
-    const added = Object.entries(out as Record<string, unknown>).filter(([k]) => k && !existing.has(k)).map(([k, v]) => ({ key: k, type: inferOut(v) }))
+    // 중첩 객체는 경로 키(user.name)로도 펼쳐 채운다 — JSON 안의 JSON 을 바로 바인딩(깊이 3, 최대 40개)
+    const flat: Array<[string, unknown]> = []
+    const walk = (o: Record<string, unknown>, prefix: string, depth: number) => {
+      for (const [k, v] of Object.entries(o)) {
+        if (!k) continue
+        const p = prefix ? `${prefix}.${k}` : k
+        flat.push([p, v])
+        if (v && typeof v === 'object' && !Array.isArray(v) && depth < 2 && flat.length < 60) walk(v as Record<string, unknown>, p, depth + 1)
+      }
+    }
+    walk(out as Record<string, unknown>, '', 0)
+    const added = flat.filter(([k]) => !existing.has(k)).map(([k, v]) => ({ key: k, type: inferOut(v) })).slice(0, 40)
     if (!added.length) { toast('추가할 새 키가 없습니다.', 'ok'); return }
     update(id, { outputs: [...(node.outputs ?? []), ...added] })
     toast(`응답에서 출력 키 ${added.length}개를 추가했습니다.`, 'ok')
@@ -468,18 +538,68 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
         {single.ok ? '✓ 성공' : '✕ 실패'}{single.httpStatus != null ? ` · HTTP ${single.httpStatus}` : ''}
       </div>
       {single.output != null && (
-        <pre style={{ ...singlePre, ...(bigResult ? { maxHeight: '38vh', fontSize: 12 } : null) }}>{typeof single.output === 'string' ? single.output : JSON.stringify(single.output, null, 2)}</pre>
+        bigResult && typeof single.output === 'object' ? (
+          // 워크벤치: 중첩 JSON 은 클릭 가능한 트리 — 키 클릭 = 경로 토큰({{ user.name@노드 }}) 복사
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px 0' }}>
+              <span style={{ flex: 1, fontSize: 11, color: 'var(--fl-text-muted)' }}>
+                키 클릭 = <code style={{ fontFamily: 'var(--fl-font-mono)' }}>{'{{ 경로@노드 }}'}</code> 토큰 복사 — JSON 안의 JSON 도 경로로 바인딩
+              </span>
+              <div style={miniSeg} role="group" aria-label="응답 보기">
+                <button type="button" onClick={() => setRespView('tree')} style={miniSegBtn(respView === 'tree')}>트리</button>
+                <button type="button" onClick={() => setRespView('raw')} style={miniSegBtn(respView === 'raw')}>Raw</button>
+              </div>
+            </div>
+            {respView === 'tree' ? (
+              <div style={{ maxHeight: '38vh', overflow: 'auto', padding: '6px 12px 12px' }}>
+                <JsonTree value={single.output} onPick={(p) => copyText(`{{ ${p}@${id} }}`, `{{ ${p}@${id} }} 복사 — 하위 노드나 조건식에 붙여넣으세요.`)} />
+              </div>
+            ) : (
+              <pre style={{ ...singlePre, maxHeight: '38vh', fontSize: 12 }}>{JSON.stringify(single.output, null, 2)}</pre>
+            )}
+          </div>
+        ) : (
+          <pre style={{ ...singlePre, ...(bigResult ? { maxHeight: '38vh', fontSize: 12 } : null) }}>{typeof single.output === 'string' ? single.output : JSON.stringify(single.output, null, 2)}</pre>
+        )
       )}
       {single.responseText && (!single.ok || single.output == null) && (
         <pre style={{ ...singlePre, ...(bigResult ? { maxHeight: '38vh', fontSize: 12 } : null), color: single.ok ? 'var(--fl-text)' : 'var(--fl-fail)' }}>{single.responseText}</pre>
       )}
     </div>
   ) : null
+  // 이 노드가 참조하는 상류 토큰 — 단일 실행 시 값을 직접 입력받는다("이전 노드 값이 없어서 안 되는" 문제 해소)
+  const upTokens = SINGLE_RUNNABLE.has(node.type) && canEdit ? detectUpstreamTokens(node) : []
+  const upstreamInputs = upTokens.length > 0 ? (
+    <div style={{ margin: '10px 0 2px', border: '1px dashed var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', padding: '9px 11px' }}>
+      <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--fl-text-muted)', marginBottom: 7 }}>
+        이전 노드 값 입력 <span style={{ fontWeight: 400 }}>— 단일 실행은 흐름이 없으니 직접 넣어 테스트</span>
+      </div>
+      {upTokens.map((t) => {
+        const k = `${t.sourceId ?? ''}|${t.key}`
+        const srcName = t.sourceId ? (nodeLabel(t.sourceId).name || t.sourceId) : '가까운 상위'
+        return (
+          <div key={k} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+            <code
+              style={{ flexShrink: 0, width: 168, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: 'var(--fl-font-mono)', fontSize: 11.5, color: 'var(--fl-primary)' }}
+              title={t.sourceId ? `{{ ${t.key}@${t.sourceId} }} — ${srcName} 의 출력` : `{{ ${t.key} }} — 가장 가까운 상위 출력`}
+            >
+              {t.key}<span style={{ color: 'var(--fl-text-muted)' }}>@{srcName}</span>
+            </code>
+            <input style={{ ...mono, flex: 1 }} value={upVals[k] ?? ''} placeholder="테스트 값 (비우면 빈 값)"
+              onChange={(e) => setUpVal(k, e.target.value)} />
+          </div>
+        )
+      })}
+      <p style={{ ...hintP, marginTop: 2 }}>숫자/불리언/JSON 은 원형으로 인식됩니다(조건식 비교 동작). 값은 이 노드에 기억됩니다.</p>
+    </div>
+  ) : null
+
   // ▶ 이 노드만 실행 + 결과 — 도킹 상단용(모달 워크벤치는 URL 바의 ▶ 실행 + 오른쪽 응답 패널로 대체)
   const singleRunBlock = SINGLE_RUNNABLE.has(node.type) && canEdit ? (
     <div style={{ marginTop: 10 }}>
+      {upstreamInputs}
       <button onClick={runSingle} disabled={singleRunning} style={singleBtn}
-        title="이 노드만 즉석 실행합니다. 활성 환경변수({{키@env}})·시크릿({{이름@secret}})은 적용되고, 이전 노드에서 오는 값({{키@노드}})만 빈 값입니다.">
+        title="이 노드만 즉석 실행합니다. 활성 환경변수({{키@env}})·시크릿({{이름@secret}})은 적용되고, 이전 노드 값은 위 입력폼으로 넣습니다.">
         {singleRunning ? '실행 중…' : '▶ 이 노드만 실행'}
       </button>
       {runResultBox}
@@ -922,11 +1042,12 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
                 <div style={{ minWidth: 0 }}><div style={colHead}>요청</div>{reqRest}</div>
                 <div style={{ minWidth: 0 }}>
                   <div style={colHead}>응답</div>
+                  {upstreamInputs}
                   <div style={{ margin: '12px 0 4px' }}>
                     {runResultBox ?? (
                       <div style={respEmpty}>
                         {singleRunning ? '실행 중…' : '위의 ▶ 실행 을 누르면 실제 응답이 여기에 표시됩니다.'}
-                        <div style={{ fontSize: 11, marginTop: 6, opacity: .75 }}>환경변수({'{{ 키@env }}'})·시크릿({'{{ 이름@secret }}'})은 적용되고, 이전 노드 값({'{{ 키@노드 }}'})만 빈 값으로 호출합니다.</div>
+                        <div style={{ fontSize: 11, marginTop: 6, opacity: .75 }}>환경변수({'{{ 키@env }}'})·시크릿({'{{ 이름@secret }}'})이 적용되고, 이전 노드 값({'{{ 키@노드 }}'})은 위 입력폼으로 넣습니다.</div>
                       </div>
                     )}
                   </div>

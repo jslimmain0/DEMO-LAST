@@ -141,6 +141,14 @@ class ExecutionService(
         seedInput(ctx, req)
         val secrets = secretMap(req?.envName?.trim()?.takeIf { it.isNotEmpty() })
         if (secrets.isNotEmpty()) ctx.putSeed("secret", secrets)
+        // 상류 바인딩({{ 키@노드 }}) 수동 값 — 사용자가 입력한 이전 노드 출력을 그 노드 id 로 시드.
+        // bare {{ 키 }} 는 프론트가 __prev 로 묶어 보내고, nearest-upstream 탐색에 걸린다.
+        req?.upstream?.takeIf { it.isObject }?.fields()?.forEach { (srcId, v) ->
+            runCatching {
+                val m = json.mapper().convertValue(v, object : com.fasterxml.jackson.core.type.TypeReference<Map<String, Any?>>() {})
+                if (m.isNotEmpty()) ctx.putOutput(srcId, m)
+            }
+        }
 
         val r = flowExecutor.runSingleNode(node, ctx)
         // 응답도 실행 이력과 동일하게 시크릿 마스킹 — 단일 실행 결과가 패널에 그대로 표시되므로

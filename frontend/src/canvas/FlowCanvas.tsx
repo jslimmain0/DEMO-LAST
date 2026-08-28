@@ -25,6 +25,22 @@ const alignBtn: CSSProperties = { width: 26, height: 26, border: 'none', borderR
 const GRID = 22
 const snap = (v: number) => Math.round(v / GRID) * GRID
 
+/**
+ * 캔버스를 만지면 입력 포커스·텍스트 선택을 회수한다.
+ * React Flow 가 mousedown 기본 동작을 막아 blur/선택 해제가 안 일어나므로,
+ * 피커가 닫히며 토큰 입력에 복원된 포커스("입력 중" 가드)나 로그에서 드래그한 텍스트 선택
+ * (getSelection 가드)이 남아 Ctrl+C/V 단축키가 조용히 죽던 버그의 근본 수정.
+ * (새로고침하면 되던 이유 = 포커스/선택이 리셋되기 때문)
+ */
+function reclaimCanvasFocus() {
+  const ae = document.activeElement as HTMLElement | null
+  if (ae && ae !== document.body && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.tagName === 'SELECT' || ae.isContentEditable)) {
+    ae.blur()
+  }
+  const sel = window.getSelection()
+  if (sel && !sel.isCollapsed) sel.removeAllRanges()
+}
+
 export function FlowCanvas() {
   const nodes = useEditorStore((s) => s.nodes)
   const edges = useEditorStore((s) => s.edges)
@@ -233,8 +249,9 @@ export function FlowCanvas() {
         snapToGrid
         snapGrid={[GRID, GRID]}
         disableKeyboardA11y
-        onNodeClick={(_, n) => selectNode(n.id)}
-        onPaneClick={() => { selectNode(null); setCtxMenu(null); setAddMenu(null) }}
+        onNodeClick={(_, n) => { reclaimCanvasFocus(); selectNode(n.id) }}
+        onPaneClick={() => { reclaimCanvasFocus(); selectNode(null); setCtxMenu(null); setAddMenu(null) }}
+        onNodeDragStart={() => reclaimCanvasFocus()}
         onNodeContextMenu={(e, n) => { e.preventDefault(); selectNode(n.id); setCtxMenu({ x: e.clientX, y: e.clientY, nodeId: n.id, nodeType: (n.data as { type?: string }).type ?? '' }) }}
         onPaneContextMenu={(e) => { e.preventDefault(); openAddMenu((e as MouseEvent).clientX, (e as MouseEvent).clientY) }}
         onDoubleClick={(e) => { if ((e.target as HTMLElement)?.classList?.contains('react-flow__pane')) openAddMenu(e.clientX, e.clientY) }}

@@ -133,6 +133,18 @@ class TokenResolverTest {
         assertEquals("flat", resolver.resolveTokens("{{ a.b@n1 }}", ctx))
     }
 
+    /** 최상위 배열 응답 — `[n].키` 루트 인덱싱 + bare 키는 기존 '첫 원소' 규약 유지. */
+    @Test
+    fun topLevelArrayResponse() {
+        val ctx = ExecutionContext()
+        ctx.putOutput("n1", listOf(mapOf("id" to "A", "v" to 1L), mapOf("id" to "B")))
+        assertEquals("A", resolver.resolveTokens("{{ id@n1 }}", ctx))       // bare 키 = 첫 원소(기존 규약)
+        assertEquals("A", resolver.resolveTokens("{{ [0].id@n1 }}", ctx))
+        assertEquals("B", resolver.resolveTokens("{{ [1].id@n1 }}", ctx))
+        assertEquals(1L, resolver.resolveLiteral("{{ [0].v@n1 }}", ctx))   // 원형 보존(숫자 비교)
+        assertEquals("x=", resolver.resolveTokens("x={{ [5].id@n1 }}", ctx)) // 범위 밖 = 부재
+    }
+
     /** 이중 인코딩 — 값이 JSON "문자열"이어도 경로가 남았으면 파싱해 내려간다(레거시 json-in-json). */
     @Test
     fun jsonStringInsideJson() {

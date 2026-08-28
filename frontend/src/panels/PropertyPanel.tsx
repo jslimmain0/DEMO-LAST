@@ -1760,6 +1760,7 @@ function OutputsEditor({ outputs, onChange, nodeId, usageOf, onGoto }: {
   const upd = (i: number, patch: Partial<NodeOutput>) => onChange(outputs.map((o, idx) => (idx === i ? { ...o, ...patch } : o)))
   const [bulkOpen, setBulkOpen] = useState(false)
   const [bulkText, setBulkText] = useState('')
+  const [usageMenuKey, setUsageMenuKey] = useState<string | null>(null) // 사용처 2곳+ 선택 메뉴
   const dup = duplicateKeys(outputs.map((o) => o.key))
   // 여러 키 한꺼번에 — 쉼표/줄바꿈 나열 또는 샘플 JSON 응답(키+타입 추론). 기존 키는 건너뛴다.
   const applyBulk = () => {
@@ -1793,25 +1794,43 @@ function OutputsEditor({ outputs, onChange, nodeId, usageOf, onGoto }: {
               style={{ width: 30, flexShrink: 0, border: '1px solid var(--fl-border)', borderRadius: 6, background: 'var(--fl-surface)', color: 'var(--fl-primary)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
             ><CopyIcon /></button>
           )}
-          {/* 사용처 배지 — 모든 행에 같은 폭으로 항상 표시(행마다 레이아웃이 널뛰지 않게). 0곳은 흐림·비클릭 */}
+          {/* 사용처 배지 — 모든 행에 같은 폭으로 항상 표시(레이아웃 일관). 0곳=흐림·비클릭,
+              1곳=바로 이동, 2곳+=클릭 시 사용처 목록에서 골라 이동 */}
           {usageOf && (() => {
+            const rowKey = `u-${i}`
             const u = o.key?.trim() ? usageOf(o.key) : []
             const used = u.length > 0
             return (
-              <button
-                disabled={!used}
-                onClick={used ? () => onGoto?.(u[0].id) : undefined}
-                title={used
-                  ? `사용처 ${u.length}곳: ${u.map((x) => x.name).join(', ')} — 클릭하면 첫 사용처로 이동`
-                  : '아직 이 키를 참조하는 하위 노드가 없습니다'}
-                style={{
-                  flexShrink: 0, width: 44, padding: '3px 0', textAlign: 'center', borderRadius: 999,
-                  fontSize: 10.5, fontWeight: 700, whiteSpace: 'nowrap',
-                  ...(used
-                    ? { border: '1px solid color-mix(in srgb, var(--fl-ok) 45%, var(--fl-border))', background: 'color-mix(in srgb, var(--fl-ok) 10%, transparent)', color: 'var(--fl-ok)', cursor: 'pointer' }
-                    : { border: '1px solid var(--fl-border)', background: 'transparent', color: 'var(--fl-text-muted)' }),
-                }}
-              >{u.length}곳</button>
+              <span style={{ position: 'relative', flexShrink: 0, display: 'inline-flex' }}>
+                <button
+                  disabled={!used}
+                  onClick={used ? () => (u.length === 1 ? onGoto?.(u[0].id) : setUsageMenuKey(usageMenuKey === rowKey ? null : rowKey)) : undefined}
+                  title={used
+                    ? (u.length === 1 ? `사용처: ${u[0].name} — 클릭하면 이동` : `사용처 ${u.length}곳 — 클릭해서 이동할 노드 선택`)
+                    : '아직 이 키를 참조하는 하위 노드가 없습니다'}
+                  style={{
+                    width: 44, padding: '3px 0', textAlign: 'center', borderRadius: 999,
+                    fontSize: 10.5, fontWeight: 700, whiteSpace: 'nowrap',
+                    ...(used
+                      ? { border: '1px solid color-mix(in srgb, var(--fl-ok) 45%, var(--fl-border))', background: 'color-mix(in srgb, var(--fl-ok) 10%, transparent)', color: 'var(--fl-ok)', cursor: 'pointer' }
+                      : { border: '1px solid var(--fl-border)', background: 'transparent', color: 'var(--fl-text-muted)' }),
+                  }}
+                >{u.length}곳</button>
+                {usageMenuKey === rowKey && u.length > 1 && (
+                  <>
+                    <div style={{ position: 'fixed', inset: 0, zIndex: 90 }} onClick={() => setUsageMenuKey(null)} />
+                    <div style={{ position: 'absolute', top: '110%', right: 0, zIndex: 91, minWidth: 180, background: 'var(--fl-surface)', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', boxShadow: 'var(--fl-shadow-lg)', padding: 5, display: 'flex', flexDirection: 'column', gap: 1 }}>
+                      <div style={{ padding: '4px 9px', fontSize: 10.5, fontWeight: 700, color: 'var(--fl-text-muted)' }}>이 키의 사용처 — 이동할 노드</div>
+                      {u.map((x) => (
+                        <button key={x.id} onClick={() => { setUsageMenuKey(null); onGoto?.(x.id) }}
+                          style={{ display: 'block', width: '100%', textAlign: 'left', padding: '6px 9px', border: 'none', borderRadius: 6, background: 'transparent', color: 'var(--fl-text)', cursor: 'pointer', fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {x.name} <span style={{ color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)', fontSize: 10.5 }}>#{x.id}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </span>
             )
           })()}
           <RowMove i={i} len={outputs.length} onMove={(d) => onChange(moveInList(outputs, i, d))} />

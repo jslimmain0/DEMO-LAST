@@ -105,7 +105,10 @@ class TokenResolver(private val json: JsonService) {
      * 배열은 숫자 세그먼트로 인덱싱({@code items[0]} = {@code items.0}). 부재/타입 불일치는 [Missing].
      */
     private fun dig(obj: Any?, key: String): Any? {
-        val base = if (obj is List<*>) (if (obj.isEmpty()) return Missing else obj[0]) else obj
+        // 최상위가 배열인 응답: `[1].id` 처럼 [ 로 시작하는 경로는 배열 자체에서 인덱싱하고,
+        // 일반 키는 기존 규약(첫 원소에서 조회)을 유지한다.
+        val rootIndexed = key.startsWith("[")
+        val base = if (obj is List<*> && !rootIndexed) (if (obj.isEmpty()) return Missing else obj[0]) else obj
         if (base is Map<*, *> && base.containsKey(key)) {
             return base[key]
         }

@@ -118,7 +118,6 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
   const [respView, setRespView] = useState<'tree' | 'raw'>('tree') // 워크벤치 응답 보기(트리=경로 토큰 클릭)
   const [showSentReq, setShowSentReq] = useState(false) // 실제 전송 요청(토큰 치환·마스킹) 펼침
   const [bodyConvNote, setBodyConvNote] = useState<string | null>(null) // 필드↔Raw 변환 안내
-  const [bodyPaste, setBodyPaste] = useState<string | null>(null) // 필드 모드 'JSON 붙여넣기' 텍스트(null=닫힘)
   const [single, setSingle] = useState<SingleNodeRunResult | null>(null) // 이 노드만 실행 결과
   const [singleRunning, setSingleRunning] = useState(false)
   const [tcpPrev, setTcpPrev] = useState<TcpPreview | null>(null) // TCP 전문 미리보기 결과
@@ -142,7 +141,9 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
   // 단일 실행용 상류 값 입력 — {{ 키@노드 }} 를 쓰는 노드를 흐름 없이 테스트할 때 직접 넣는 값.
   // 플로우·노드별 localStorage 지속(도킹/모달 두 패널 인스턴스가 공유).
   const [upVals, setUpVals] = useState<Record<string, string>>({})
+  const [upOpen, setUpOpen] = useState(false) // 이전 노드 값 입력 — 기본 접힘(값은 접혀 있어도 실행에 적용)
   useEffect(() => {
+    setUpOpen(false)
     try { setUpVals(JSON.parse(localStorage.getItem(`fl:uprun:${flowId}:${selectedId}`) ?? '{}') as Record<string, string>) }
     catch { setUpVals({}) }
   }, [flowId, selectedId])
@@ -420,7 +421,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
     key === 'query' ? (paramCount > 0 || method === 'GET')
     : key === 'headers' ? headerCount > 0
     : key === 'body' ? true
-    : key === 'resp' ? false
+    : key === 'resp' ? true // 응답(파싱 설정·출력 키)은 기본 펼침 — 실행 결과를 보는 흐름과 붙어 있어야 한다
     : false
   // 전체화면 모달에선 공간이 충분하니 섹션을 기본 펼침(수동 접기는 존중)
   const secIsOpen = (key: string): boolean => secOverride[key] ?? (modal ? true : secDefault(key))
@@ -639,28 +640,38 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
   ) : null
   // 이 노드가 참조하는 상류 토큰 — 단일 실행 시 값을 직접 입력받는다("이전 노드 값이 없어서 안 되는" 문제 해소)
   const upTokens = SINGLE_RUNNABLE.has(node.type) && canEdit ? detectUpstreamTokens(node) : []
+  const upFilled = upTokens.filter((t) => (upVals[`${t.sourceId ?? ''}|${t.key}`] ?? '').trim() !== '').length
   const upstreamInputs = upTokens.length > 0 ? (
-    <div style={{ margin: '10px 0 2px', border: '1px dashed var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', padding: '9px 11px' }}>
-      <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--fl-text-muted)', marginBottom: 7 }}>
-        이전 노드 값 입력 <span style={{ fontWeight: 400 }}>— 단일 실행은 흐름이 없으니 직접 넣어 테스트</span>
-      </div>
-      {upTokens.map((t) => {
-        const k = `${t.sourceId ?? ''}|${t.key}`
-        const srcName = t.sourceId ? (nodeLabel(t.sourceId).name || t.sourceId) : '가까운 상위'
-        return (
-          <div key={k} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-            <code
-              style={{ flexShrink: 0, width: 168, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: 'var(--fl-font-mono)', fontSize: 11.5, color: 'var(--fl-primary)' }}
-              title={t.sourceId ? `{{ ${t.key}@${t.sourceId} }} — ${srcName} 의 출력` : `{{ ${t.key} }} — 가장 가까운 상위 출력`}
-            >
-              {t.key}<span style={{ color: 'var(--fl-text-muted)' }}>@{srcName}</span>
-            </code>
-            <input style={{ ...mono, flex: 1 }} value={upVals[k] ?? ''} placeholder="테스트 값 (비우면 빈 값)"
-              onChange={(e) => setUpVal(k, e.target.value)} />
-          </div>
-        )
-      })}
-      <p style={{ ...hintP, marginTop: 2 }}>숫자/불리언/JSON 은 원형으로 인식됩니다(조건식 비교 동작). 값은 이 노드에 기억됩니다.</p>
+    <div style={{ margin: '10px 0 2px', border: '1px dashed var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', padding: '7px 11px' }}>
+      {/* 기본 접힘 — 펼치지 않아도 넣어둔 값은 단일 실행에 그대로 적용된다 */}
+      <button onClick={() => setUpOpen((v) => !v)} aria-expanded={upOpen}
+        style={{ display: 'flex', alignItems: 'center', gap: 6, width: '100%', border: 'none', background: 'transparent', padding: 0, cursor: 'pointer', fontSize: 11.5, fontWeight: 700, color: 'var(--fl-text-muted)', textAlign: 'left' }}>
+        <span aria-hidden style={{ fontSize: 9, width: 10 }}>{upOpen ? '▾' : '▸'}</span>
+        이전 노드 값 입력
+        <span style={{ fontWeight: 400 }}>({upTokens.length}개{upFilled ? ` · ${upFilled}개 입력됨` : ''})</span>
+        {!upOpen && <span style={{ fontWeight: 400, marginLeft: 'auto', fontSize: 11 }}>단일 실행 시 적용</span>}
+      </button>
+      {upOpen && (
+        <div style={{ marginTop: 8 }}>
+          {upTokens.map((t) => {
+            const k = `${t.sourceId ?? ''}|${t.key}`
+            const srcName = t.sourceId ? (nodeLabel(t.sourceId).name || t.sourceId) : '가까운 상위'
+            return (
+              <div key={k} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                <code
+                  style={{ flexShrink: 0, width: 168, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: 'var(--fl-font-mono)', fontSize: 11.5, color: 'var(--fl-primary)' }}
+                  title={t.sourceId ? `{{ ${t.key}@${t.sourceId} }} — ${srcName} 의 출력` : `{{ ${t.key} }} — 가장 가까운 상위 출력`}
+                >
+                  {t.key}<span style={{ color: 'var(--fl-text-muted)' }}>@{srcName}</span>
+                </code>
+                <input style={{ ...mono, flex: 1 }} value={upVals[k] ?? ''} placeholder="테스트 값 (비우면 빈 값)"
+                  onChange={(e) => setUpVal(k, e.target.value)} />
+              </div>
+            )
+          })}
+          <p style={{ ...hintP, marginTop: 2 }}>숫자/불리언/JSON 은 원형으로 인식됩니다(조건식 비교 동작). 값은 이 노드에 기억됩니다.</p>
+        </div>
+      )}
     </div>
   ) : null
 
@@ -1083,42 +1094,9 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
                   <>
                     <KeyValueEditor rows={fields.body ?? []} onChange={(rows) => setRows('body', rows)} sources={sources} showType={bodyKind === 'json'} />
                     {bodyKind === 'json' && (
-                      <>
-                        {/* 중첩 JSON 을 손으로 행 입력하지 않게 — 샘플/실제 JSON 을 통째로 붙여넣으면 경로 행으로 펼쳐 병합 */}
-                        <button onClick={() => setBodyPaste(bodyPaste === null ? '' : null)} style={{ ...ghostMini, marginTop: 6 }}
-                          title="JSON 을 붙여넣으면 중첩 구조가 경로 행(customer.name·items[0].sku)으로 펼쳐집니다 — 같은 키는 값 갱신">
-                          📋 JSON 붙여넣기 → 필드 채우기
-                        </button>
-                        {bodyPaste !== null && (
-                          <div style={{ marginTop: 6 }}>
-                            <textarea autoFocus value={bodyPaste} onChange={(e) => setBodyPaste(e.target.value)}
-                              placeholder={'{"customer":{"name":"김철수"},"items":[{"sku":"A-100","qty":2}]}'}
-                              style={{ ...mono, width: '100%', minHeight: 84, resize: 'vertical', boxSizing: 'border-box' }} />
-                            <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
-                              <button style={{ ...braceBtn, width: 'auto', padding: '0 14px', color: 'var(--fl-primary)', fontWeight: 600 }}
-                                onClick={() => {
-                                  const parsed = rawToFields(bodyPaste ?? '', 'json')
-                                  if (parsed === null) { toast('유효한 JSON 객체가 아닙니다.', 'error'); return }
-                                  const cur = fields.body ?? []
-                                  const next = [...cur]
-                                  let added = 0, updated = 0
-                                  for (const r of parsed) {
-                                    const idx = next.findIndex((f) => (f.key ?? '').trim() === r.key)
-                                    if (idx >= 0) { next[idx] = { ...next[idx], value: r.value, bound: null, type: r.type }; updated++ }
-                                    else { next.push({ id: newId(), key: r.key, value: r.value, type: r.type }); added++ }
-                                  }
-                                  setRows('body', next)
-                                  setBodyPaste(null)
-                                  toast(`본문 필드 ${added}개 추가${updated ? ` · ${updated}개 갱신` : ''} — 중첩은 경로 행으로 펼쳤습니다.`, 'ok')
-                                }}>적용</button>
-                              <button onClick={() => setBodyPaste(null)} style={ghostMini}>취소</button>
-                            </div>
-                          </div>
-                        )}
-                        <p style={{ ...hintP, marginTop: 6 }}>
-                          💡 키에 <code style={{ fontFamily: 'var(--fl-font-mono)', fontSize: 11 }}>customer.name</code>·<code style={{ fontFamily: 'var(--fl-font-mono)', fontSize: 11 }}>items[0].sku</code> 처럼 경로를 쓰면 <b>중첩 JSON</b> 으로 전송됩니다. 필드⇄Raw 전환은 중첩을 왕복 보존합니다(배열 10개 이하는 인덱스 행으로).
-                        </p>
-                      </>
+                      <p style={{ ...hintP, marginTop: 6 }}>
+                        💡 키에 <code style={{ fontFamily: 'var(--fl-font-mono)', fontSize: 11 }}>customer.name</code>·<code style={{ fontFamily: 'var(--fl-font-mono)', fontSize: 11 }}>items[0].sku</code> 처럼 경로를 쓰면 <b>중첩 JSON</b> 으로 전송됩니다. 중첩 JSON 을 통째로 넣으려면 <b>Raw 에 붙여넣고 [필드]로 전환</b> — 경로 행으로 펼쳐지고, 왕복해도 형태가 유지됩니다.
+                      </p>
                     )}
                   </>
                 )}

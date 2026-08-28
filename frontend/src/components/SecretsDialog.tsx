@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { CSSProperties } from 'react'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { secretsApi } from '../api/client'
 import { useEnvStore } from '../lib/environments'
 import { Modal } from './Modal'
@@ -22,6 +22,10 @@ export function SecretsDialog({ onClose }: { onClose: () => void }) {
   const [env, setEnv] = useState<string>('') // '' = 공통
   const [filter, setFilter] = useState('')
   const [reveal, setReveal] = useState(false) // 저장 전 값 확인용 표시 토글
+  // 그룹 접기 — 미적용(다른 환경) 그룹은 기본 접힘
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
+  const [collapsedInit, setCollapsedInit] = useState(false)
+  const toggleGroup = (id: string) => setCollapsed((p) => { const n = new Set(p); if (n.has(id)) n.delete(id); else n.add(id); return n })
 
   // 셀렉트 옵션 = 공통 + 정의된 환경 + 활성 환경(정의 안 됐어도)
   const envNames = useMemo(() => {
@@ -41,6 +45,14 @@ export function SecretsDialog({ onClose }: { onClose: () => void }) {
     onSuccess: () => { toast('시크릿을 삭제했습니다.', 'ok'); invalidate() },
   })
   const list = q.data ?? []
+  // 미적용(다른 환경) 그룹은 처음에 접어둔다 — 지금 실행에 안 쓰이는 것들로 목록이 길어지지 않게
+  useEffect(() => {
+    if (collapsedInit || !q.data) return
+    setCollapsed(new Set(q.data
+      .filter((s) => s.source !== 'vault' && s.environment && s.environment !== envStore.active)
+      .map((s) => `g-${s.environment}`)))
+    setCollapsedInit(true)
+  }, [q.data, collapsedInit, envStore.active])
   // 공통 먼저, 그다음 환경별 정렬
   const sorted = [...list].sort((a, b) => {
     const ea = a.environment ?? '', eb = b.environment ?? ''
@@ -87,27 +99,60 @@ export function SecretsDialog({ onClose }: { onClose: () => void }) {
         <div style={{ display: 'grid', gap: 6, margin: '12px 0', overflowY: 'auto', minHeight: 0, flex: '1 1 auto', alignContent: 'start' }}>
           {sorted.length === 0 && !q.isLoading && <p style={{ ...hint, color: 'var(--fl-text-muted)' }}>저장된 시크릿이 없습니다.</p>}
           {f && shown.length === 0 && sorted.length > 0 && <p style={{ ...hint, color: 'var(--fl-text-muted)' }}>검색과 일치하는 시크릿이 없습니다.</p>}
-          {shown.map((s) => {
-            const isVault = s.source === 'vault'
-            const eff = effect(s)
-            return (
-            <div key={`${s.source ?? 'db'}:${s.environment ?? '*'}:${s.name}`} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', opacity: eff === 'inactive' ? 0.55 : 1 }}
-              title={eff === 'inactive' ? '다른 환경 스코프 — 현재 활성 환경에선 미적용' : undefined}>
-              {isVault
-                ? <span title="HashiCorp Vault 에서 끌어온 읽기전용 시크릿" style={{ fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 999, background: 'rgba(255,209,102,.16)', color: '#e0a800', border: '1px solid rgba(255,209,102,.4)' }}>Vault</span>
-                : <span style={envBadge(s.environment)}>{s.environment ?? '공통'}</span>}
-              <code style={{ flex: 1, fontFamily: 'var(--fl-font-mono)', fontSize: 12.5 }}>{s.name}</code>
-              {/* 활성 환경 기준 실제 적용 여부 — 같은 이름의 오버레이(환경>공통>Vault)를 눈으로 확인 */}
-              {eff === 'win' && <span title="실행 시 이 값이 적용됩니다" style={effBadge(true)}>✓ 적용</span>}
-              {eff === 'shadowed' && <span title="같은 이름의 더 높은 우선순위(활성환경 > 공통 > Vault) 값에 덮입니다" style={effBadge(false)}>덮임</span>}
-              <span style={{ fontFamily: 'var(--fl-font-mono)', fontSize: 12, color: 'var(--fl-text-muted)', letterSpacing: 2 }}>••••••</span>
-              <button onClick={() => copy(`{{ ${s.name}@secret }}`)} title="바인딩 토큰 복사" style={miniBtn}>토큰</button>
-              {isVault
-                ? <span title="Vault 관리 — 여기서 삭제 불가" style={{ ...miniBtn, opacity: .4, cursor: 'default' }}>읽기전용</span>
-                : <button onClick={() => del.mutate({ name: s.name, environment: s.environment })} aria-label="삭제" style={miniBtn}>×</button>}
-            </div>
-            )
-          })}
+          {/* 스코프별 그룹 — 실행 우선순위 순서(활성 환경 → 공통 → Vault), 미적용 환경은 뒤에 접힘 */}
+          {(() => {
+            const db = shown.filter((s) => s.source !== 'vault')
+            const groups: Array<{ id: string; title: string; rows: typeof shown; dimmed?: boolean }> = []
+            if (act) {
+              const r = db.filter((s) => s.environment === act)
+              if (r.length) groups.push({ id: 'g-act', title: `활성 환경 · ${act}`, rows: r })
+            }
+            const common = db.filter((s) => !s.environment)
+            if (common.length) groups.push({ id: 'g-common', title: '공통', rows: common })
+            const vault = shown.filter((s) => s.source === 'vault')
+            if (vault.length) groups.push({ id: 'g-vault', title: 'Vault (읽기전용)', rows: vault })
+            for (const e of [...new Set(db.filter((s) => s.environment && s.environment !== act).map((s) => s.environment as string))].sort()) {
+              groups.push({ id: `g-${e}`, title: `환경 · ${e} — 미적용`, rows: db.filter((s) => s.environment === e), dimmed: true })
+            }
+            return groups.map((grp) => {
+              const isCollapsed = !f && collapsed.has(grp.id)
+              return (
+              <section key={grp.id}>
+                <button onClick={() => toggleGroup(grp.id)} aria-expanded={!isCollapsed}
+                  style={{ display: 'flex', alignItems: 'center', gap: 7, width: '100%', border: 'none', background: 'transparent', padding: '4px 2px', cursor: 'pointer', fontSize: 11.5, fontWeight: 700, color: 'var(--fl-text-muted)', textAlign: 'left' }}>
+                  <span aria-hidden style={{ fontSize: 9, width: 10 }}>{isCollapsed ? '▸' : '▾'}</span>
+                  {grp.title}
+                  <span style={{ fontWeight: 400, background: 'var(--fl-surface-2)', borderRadius: 999, padding: '1px 7px', fontSize: 10.5 }}>{grp.rows.length}</span>
+                </button>
+                {!isCollapsed && (
+                  <div style={{ display: 'grid', gap: 6, marginTop: 2 }}>
+                    {grp.rows.map((s) => {
+                      const isVault = s.source === 'vault'
+                      const eff = effect(s)
+                      return (
+                      <div key={`${s.source ?? 'db'}:${s.environment ?? '*'}:${s.name}`} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', opacity: eff === 'inactive' ? 0.55 : 1 }}
+                        title={eff === 'inactive' ? '다른 환경 스코프 — 현재 활성 환경에선 미적용' : undefined}>
+                        {isVault
+                          ? <span title="HashiCorp Vault 에서 끌어온 읽기전용 시크릿" style={{ fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 999, background: 'rgba(255,209,102,.16)', color: '#e0a800', border: '1px solid rgba(255,209,102,.4)' }}>Vault</span>
+                          : <span style={envBadge(s.environment)}>{s.environment ?? '공통'}</span>}
+                        <code style={{ flex: 1, fontFamily: 'var(--fl-font-mono)', fontSize: 12.5 }}>{s.name}</code>
+                        {/* 활성 환경 기준 실제 적용 여부 — 같은 이름의 오버레이(환경>공통>Vault)를 눈으로 확인 */}
+                        {eff === 'win' && <span title="실행 시 이 값이 적용됩니다" style={effBadge(true)}>✓ 적용</span>}
+                        {eff === 'shadowed' && <span title="같은 이름의 더 높은 우선순위(활성환경 > 공통 > Vault) 값에 덮입니다" style={effBadge(false)}>덮임</span>}
+                        <span style={{ fontFamily: 'var(--fl-font-mono)', fontSize: 12, color: 'var(--fl-text-muted)', letterSpacing: 2 }}>••••••</span>
+                        <button onClick={() => copy(`{{ ${s.name}@secret }}`)} title="바인딩 토큰 복사" style={miniBtn}>토큰</button>
+                        {isVault
+                          ? <span title="Vault 관리 — 여기서 삭제 불가" style={{ ...miniBtn, opacity: .4, cursor: 'default' }}>읽기전용</span>
+                          : <button onClick={() => del.mutate({ name: s.name, environment: s.environment })} aria-label="삭제" style={miniBtn}>×</button>}
+                      </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </section>
+              )
+            })
+          })()}
         </div>
 
         <div style={{ borderTop: '1px solid var(--fl-border)', paddingTop: 12, flexShrink: 0 }}>

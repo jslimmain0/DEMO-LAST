@@ -998,6 +998,13 @@ tcp-preview 는 시크릿 미시드라 무관. 단위 5종 + 라이브(단일 �
 - 라이브 확인 중 이 브라우저의 `fl:editor:propertyW=560`(과대 저장값)이 캔버스를 압박 → 380 으로 리셋(코드 무관, "이상해 보임"의 한 원인).
 - 검증: tsc/build/oxlint + 실브라우저(:18080 dark) — 전체화면 속성 모달·Mock 결제창 HTML 1,490자 큰 편집기·시크릿 볼트 새 레이아웃 실측.
 
+### 10차 — 접힘 기본값 정리 + 시크릿/환경 그룹핑 (사용자 피드백 4건)
+- **'JSON 붙여넣기→필드 채우기' 버튼 제거** — Raw 에 붙여넣고 [필드] 전환과 동일(왕복이 안정된 뒤 중복). Body 힌트가 그 흐름을 안내.
+- **이전 노드 값 입력 기본 접힘**([PropertyPanel](frontend/src/panels/PropertyPanel.tsx) `upOpen`) — 헤더에 (N개 · M개 입력됨) 표시, **접혀 있어도 값은 단일 실행에 적용**. 노드 전환 시 접힘 초기화.
+- **응답(파싱 설정) 섹션 기본 펼침**(`secDefault('resp')` false→true) — 실행 결과를 보는 흐름과 붙어 있어야 해서.
+- **시크릿 볼트 스코프 그룹핑**([SecretsDialog](frontend/src/components/SecretsDialog.tsx)): 실행 우선순위 순서로 섹션 — **활성 환경 → 공통 → Vault → 기타 환경(미적용, 기본 접힘)**, 헤더에 개수·접기, 검색 중엔 전부 펼침. (사용자가 시크릿 16개를 만들어 둔 상태에서 실측 — 공통 15 펼침/prod 1 접힘 확인)
+- **환경 변수 누락 감지**([EnvManagerDialog](frontend/src/components/EnvManagerDialog.tsx)): "다른 환경에는 있는데 여기 없는 키 N개: …" 안내 + **[+ 빈 값으로 추가]**(VarEditor `missingKeys` prop — 환경 전환 시 값 누락 예방).
+
 ### 9차 — 요청 json-in-json + 배지 일관성 (사용자: "사용처 배지 일관성·요청 쪽도 중첩·입력 편하게")
 - **요청 JSON 경로 조립**: [JsonPathBuilder](backend/src/main/kotlin/com/flowlink/execution/engine/JsonPathBuilder.kt)(신규, 응답 dig 의 대칭) — JSON 본문 필드 키에 `customer.name`·`items[0].sku` 를 쓰면 **중첩 JSON 으로 전송**([HttpNodeExecutor](backend/src/main/kotlin/com/flowlink/execution/engine/HttpNodeExecutor.kt) json 필드 분기, 평평한 키 무회귀·인덱스 갭 null·타입 충돌 시 마지막 쓰기 승). 단위 5종.
   ⚠ 점(.) 포함 키를 평평하게 보내야 하는 API 는 Raw 모드 사용(필드 모드는 경로로 해석).

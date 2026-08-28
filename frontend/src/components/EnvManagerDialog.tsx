@@ -65,6 +65,17 @@ export function EnvManagerDialog({ onClose }: { onClose: () => void }) {
   }
 
   const vars = selected ? store.envs[selected] ?? {} : {}
+  // 다른 환경에는 있는데 이 환경엔 없는 키 — 환경 전환 시 값 누락을 미리 잡는다
+  const missingKeys = useMemo(() => {
+    if (!selected) return []
+    const cur = new Set(Object.keys(store.envs[selected] ?? {}))
+    const out = new Set<string>()
+    for (const [name, v] of Object.entries(store.envs)) {
+      if (name === selected) continue
+      for (const k of Object.keys(v)) if (!cur.has(k)) out.add(k)
+    }
+    return [...out].sort()
+  }, [store.envs, selected])
 
   return (
     <Modal onClose={onClose} ariaLabel="환경 관리" width={720} card={{ padding: 18 }}>
@@ -128,7 +139,7 @@ export function EnvManagerDialog({ onClose }: { onClose: () => void }) {
                   </div>
                   {/* key={selected} — 환경을 바꿀 때만 새 초기값으로 리마운트. 같은 환경 편집 중엔
                       로컬 rows 가 source of truth 라 작성 중(빈 키) 행이 store 갱신에 덮여 사라지지 않는다. */}
-                  <VarEditor key={selected} initial={vars} onChange={(v) => setVars(selected, v)} />
+                  <VarEditor key={selected} initial={vars} onChange={(v) => setVars(selected, v)} missingKeys={missingKeys} />
                   {store.active === selected
                     ? <p style={{ ...hint, color: 'var(--fl-ok)' }}>✓ 활성 환경 — 실행 시 이 변수들이 주입됩니다.</p>
                     : <p style={hint}>이 환경을 쓰려면 왼쪽 라디오로 <b>활성화</b>하세요.</p>}
@@ -152,7 +163,7 @@ export function EnvManagerDialog({ onClose }: { onClose: () => void }) {
  * initial 은 마운트 시점 초기값으로만 쓰고 이후 prop 변화를 재반영하지 않는다(부모가 key={환경}로 리마운트).
  * → 빈 키(작성 중) 행이 자신의 onChange 로 인한 store 갱신에 덮여 사라지는 유실 버그 방지.
  */
-function VarEditor({ initial, onChange }: { initial: Record<string, string>; onChange: (v: Record<string, string>) => void }) {
+function VarEditor({ initial, onChange, missingKeys }: { initial: Record<string, string>; onChange: (v: Record<string, string>) => void; missingKeys?: string[] }) {
   // 삽입 순서 보존을 위해 배열로 편집 후 맵으로 직렬화
   const [rows, setRows] = useState<Array<{ k: string; v: string }>>(() => Object.entries(initial).map(([k, v]) => ({ k, v })))
   const [filter, setFilter] = useState('')
@@ -264,6 +275,21 @@ function VarEditor({ initial, onChange }: { initial: Record<string, string>; onC
         <button onClick={addRow} style={addBtn}>+ 변수</button>
         <button onClick={() => setPasteOpen((v) => !v)} style={addBtn} title="KEY=value 여러 줄(.env 형식)을 한 번에 붙여넣어 추가">📋 .env 붙여넣기</button>
       </div>
+      {/* 환경 간 키 누락 감지 — 다른 환경에는 있는데 여기 없는 키를 빈 값으로 한 번에 추가 */}
+      {(() => {
+        const missing = (missingKeys ?? []).filter((k) => !rows.some((r) => r.k.trim() === k))
+        if (missing.length === 0) return null
+        return (
+          <p style={{ ...hint, marginTop: 8 }}>
+            💡 다른 환경에는 있는데 여기 없는 키 <b>{missing.length}개</b>:{' '}
+            <code style={code}>{missing.slice(0, 8).join(', ')}{missing.length > 8 ? ' …' : ''}</code>{' '}
+            <button onClick={() => commit([...rows, ...missing.map((k) => ({ k, v: '' }))])}
+              style={{ ...addBtn, marginTop: 0, padding: '2px 8px', fontSize: 11.5 }} title="누락 키를 빈 값 행으로 추가 — 값만 채우면 됩니다">
+              + 빈 값으로 추가
+            </button>
+          </p>
+        )
+      })()}
       {pasteOpen && (
         <div style={{ marginTop: 6 }}>
           <textarea

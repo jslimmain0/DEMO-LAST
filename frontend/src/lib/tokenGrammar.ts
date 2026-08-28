@@ -11,8 +11,9 @@ export function bindingToToken(b: Pick<Binding, 'key' | 'sourceId' | 'scope'>): 
   return `{{ ${b.key}@${scope}${b.sourceId} }}`
 }
 
-// 백엔드 TokenResolver.TOKEN 패턴과 동일(그룹: key / req: / sourceId). key 클래스에 한글 포함(응답 키가 한글인 API).
-const TOKEN_SRC = String.raw`\{\{\s*([\w.가-힣-]+)(?:@(req:)?([\w-]+))?\s*\}\}`
+// 백엔드 TokenResolver.TOKEN 패턴과 동일(그룹: key / req: / sourceId). key 클래스에 한글 포함(응답 키가 한글인 API)
+// + 중첩 경로 문자(. [ ] — {{ user.name@노드 }}·{{ items[0].id@노드 }}).
+const TOKEN_SRC = String.raw`\{\{\s*([\w.\[\]가-힣-]+)(?:@(req:)?([\w-]+))?\s*\}\}`
 
 /** 토큰 매칭용 정규식(호출마다 새 인스턴스 — lastIndex 공유 버그 방지). */
 export function tokenRegex(): RegExp {

@@ -16,19 +16,15 @@ import java.util.regex.Pattern
 @Component
 class TokenResolver(private val json: JsonService) {
 
-    /** 바인딩 값을 그대로(원형 객체로) 해석. */
+    /** 바인딩 값을 그대로(원형 객체로) 해석. 중첩 경로(user.name·items[0].id)도 지원. */
     fun resolveBinding(b: Binding?, ctx: ExecutionContext): Any? {
         if (b == null) {
             return null
         }
-        var src = ctx.raw((if (b.isRequestScope()) "req:" else "") + b.sourceId)
-        if (src is List<*>) {
-            src = if (src.isEmpty()) null else src[0]
-        }
-        if (src is Map<*, *>) {
-            return src[b.key]
-        }
-        return null
+        val key = b.key ?: return null
+        val src = ctx.raw((if (b.isRequestScope()) "req:" else "") + b.sourceId)
+        val v = dig(src, key)
+        return if (v === Missing) null else v
     }
 
     /**
@@ -96,12 +92,43 @@ class TokenResolver(private val json: JsonService) {
     }
 
     private fun pickObject(obj: Any?, key: String): Any? {
-        val base = if (obj is List<*>) (if (obj.isEmpty()) null else obj[0]) else obj
+        val v = dig(obj, key)
+        return if (v === Missing) null else v
+    }
+
+    /** 경로 탐색 실패 표식 — '값이 null 로 존재'와 '키 부재'를 구분한다(부재면 상위 노드 계속 탐색). */
+    private object Missing
+
+    /**
+     * 중첩 경로 탐색 — JSON 안의 JSON 을 {@code user.name}·{@code items[0].id} 경로로 꺼낸다.
+     * <b>평평한 실키 우선</b>: 응답에 {@code "user.name"} 이라는 키가 문자 그대로 있으면 그것을 쓴다(호환).
+     * 배열은 숫자 세그먼트로 인덱싱({@code items[0]} = {@code items.0}). 부재/타입 불일치는 [Missing].
+     */
+    private fun dig(obj: Any?, key: String): Any? {
+        val base = if (obj is List<*>) (if (obj.isEmpty()) return Missing else obj[0]) else obj
         if (base is Map<*, *> && base.containsKey(key)) {
             return base[key]
         }
-        return null
+        if (!key.contains('.') && !key.contains('[')) {
+            return Missing
+        }
+        var cur: Any? = base
+        for (seg in splitPath(key)) {
+            cur = when {
+                cur is Map<*, *> && cur.containsKey(seg) -> cur[seg]
+                cur is List<*> -> {
+                    val i = seg.toIntOrNull() ?: return Missing
+                    if (i < 0 || i >= cur.size) return Missing
+                    cur[i]
+                }
+                else -> return Missing
+            }
+        }
+        return cur
     }
+
+    private fun splitPath(key: String): List<String> =
+        key.replace("]", "").split('.', '[').filter { it.isNotEmpty() }
 
     private fun nearestUpstream(key: String, ctx: ExecutionContext): String? {
         for (k in ctx.keysReversed()) {
@@ -116,13 +143,10 @@ class TokenResolver(private val json: JsonService) {
         return null
     }
 
-    /** 객체(또는 배열의 첫 원소)에서 key 값을 문자열로 추출. */
+    /** 객체(또는 배열의 첫 원소)에서 key(중첩 경로 가능) 값을 문자열로 추출. */
     fun pickVal(obj: Any?, key: String): String? {
-        val base = if (obj is List<*>) (if (obj.isEmpty()) null else obj[0]) else obj
-        if (base is Map<*, *> && base.containsKey(key)) {
-            return stringify(base[key])
-        }
-        return null
+        val v = dig(obj, key)
+        return if (v === Missing) null else stringify(v)
     }
 
     /** ctx 값들을 헤더/쿼리/바디에 넣기 위한 문자열화. */
@@ -140,10 +164,10 @@ class TokenResolver(private val json: JsonService) {
     }
 
     companion object {
-        // key 클래스에 한글 포함(응답 키가 한글인 API) · sourceId 클래스 [\w-](가져온 그래프의 kebab/snake id 호환).
+        // key 클래스에 한글 포함(응답 키가 한글인 API) + 중첩 경로 문자(. [ ] — items[0].id) · sourceId 클래스 [\w-].
         // 프론트 lib/tokenGrammar.ts 와 1:1 미러 — 같이 바꿀 것.
         private val TOKEN: Pattern =
-            Pattern.compile("\\{\\{\\s*([\\w.가-힣-]+)(?:@(req:)?([\\w-]+))?\\s*}}")
+            Pattern.compile("\\{\\{\\s*([\\w.\\[\\]가-힣-]+)(?:@(req:)?([\\w-]+))?\\s*}}")
 
         @JvmStatic
         fun tokenPattern(): Pattern = TOKEN

@@ -99,4 +99,50 @@ class TokenResolverTest {
         val f = NodeField("f1", "qty", "{{ cnt@n1 }}", null, null)
         assertEquals(30L, resolver.fieldValue(f, ctx))
     }
+
+    /** JSON 안의 JSON — 중첩 경로({{ user.name }}·{{ items[0].id }})로 꺼낸다. */
+    @Test
+    fun nestedPathTokens() {
+        val ctx = ExecutionContext()
+        ctx.putOutput("n1", mapOf(
+            "user" to mapOf("name" to "kim", "addr" to mapOf("city" to "seoul")),
+            "items" to listOf(mapOf("id" to "A-1", "qty" to 2L), mapOf("id" to "B-2")),
+            "tags" to listOf("vip", "kr"),
+        ))
+        // 점 경로 — 2단·3단
+        assertEquals("kim", resolver.resolveTokens("{{ user.name@n1 }}", ctx))
+        assertEquals("seoul", resolver.resolveTokens("{{ user.addr.city@n1 }}", ctx))
+        // 배열 인덱스 — [0] 과 .0 둘 다
+        assertEquals("A-1", resolver.resolveTokens("{{ items[0].id@n1 }}", ctx))
+        assertEquals("B-2", resolver.resolveTokens("{{ items.1.id@n1 }}", ctx))
+        assertEquals("vip", resolver.resolveTokens("{{ tags[0]@n1 }}", ctx))
+        // bare 토큰(가장 가까운 상위)도 경로 지원
+        assertEquals("kim", resolver.resolveTokens("{{ user.name }}", ctx))
+        // 전체-토큰 리터럴은 원형 보존 — 조건식({{ items[0].qty@n1 }} == 2)이 숫자 비교로 동작
+        assertEquals(2L, resolver.resolveLiteral("{{ items[0].qty@n1 }}", ctx))
+        assertEquals(mapOf("city" to "seoul"), resolver.resolveLiteral("{{ user.addr@n1 }}", ctx))
+        // 바인딩(picker)도 동일 경로
+        assertEquals("kim", resolver.resolveBinding(Binding(null, null, "user.name", "n1", null), ctx))
+    }
+
+    /** 평평한 실키 우선 — 응답에 "a.b" 라는 키가 문자 그대로 있으면 경로 해석보다 우선(호환). */
+    @Test
+    fun flatKeyWithDotWinsOverPath() {
+        val ctx = ExecutionContext()
+        ctx.putOutput("n1", mapOf("a.b" to "flat", "a" to mapOf("b" to "nested")))
+        assertEquals("flat", resolver.resolveTokens("{{ a.b@n1 }}", ctx))
+    }
+
+    /** 부재 경로 — 빈 문자열 치환(중간 타입 불일치·범위 밖 인덱스 포함), bare 는 상위 노드 계속 탐색. */
+    @Test
+    fun missingNestedPathFallsThrough() {
+        val ctx = ExecutionContext()
+        ctx.putOutput("n1", mapOf("user" to mapOf("name" to "kim")))
+        ctx.putOutput("n2", mapOf("user" to "문자열")) // 더 최근이지만 user.name 경로 없음
+        assertEquals("x=", resolver.resolveTokens("x={{ user.nope@n1 }}", ctx))
+        assertEquals("x=", resolver.resolveTokens("x={{ user.name.deep@n1 }}", ctx))
+        assertEquals("x=", resolver.resolveTokens("x={{ user[5]@n1 }}", ctx))
+        // bare — n2(문자열)에선 부재 → n1 로 폴스루
+        assertEquals("kim", resolver.resolveTokens("{{ user.name }}", ctx))
+    }
 }

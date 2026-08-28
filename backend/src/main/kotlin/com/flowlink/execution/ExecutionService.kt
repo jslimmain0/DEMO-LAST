@@ -34,6 +34,7 @@ import com.flowlink.execution.engine.ExecutionContext
 import com.flowlink.execution.engine.FlowExecutor
 import com.flowlink.execution.engine.NodeRecorder
 import com.flowlink.execution.engine.RunStateSnapshot
+import com.flowlink.execution.engine.SecretMasker
 import com.flowlink.settings.RelayBaseResolver
 import org.slf4j.LoggerFactory
 import org.springframework.boot.context.event.ApplicationReadyEvent
@@ -142,7 +143,15 @@ class ExecutionService(
         if (secrets.isNotEmpty()) ctx.putSeed("secret", secrets)
 
         val r = flowExecutor.runSingleNode(node, ctx)
-        return SingleNodeRunResult(r.ok, r.httpStatus, r.value, r.requestText, r.responseText)
+        // 응답도 실행 이력과 동일하게 시크릿 마스킹 — 단일 실행 결과가 패널에 그대로 표시되므로
+        // 시크릿 평문(요청 헤더/출력 값)이 화면·네트워크 응답으로 새지 않게 한다.
+        val masks = SecretMasker.variants(secrets.values)
+        val output = if (r.value == null || masks.isEmpty()) r.value
+            else json.mapper().readTree(SecretMasker.mask(json.toJson(r.value), masks))
+        return SingleNodeRunResult(
+            r.ok, r.httpStatus, output,
+            SecretMasker.mask(r.requestText, masks), SecretMasker.mask(r.responseText, masks)
+        )
     }
 
     /**
@@ -497,15 +506,14 @@ class ExecutionService(
 
     private fun recorder(execId: UUID, secretValues: Collection<String> = emptyList()): NodeRecorder {
         val captureBodies = props.capture.requestResponseBodies
-        // 마스킹 대상 = 시크릿 원문 + 캡처 텍스트에 나타날 수 있는 인코딩 변형(URL 인코딩·JSON 이스케이프).
-        // 원문만 치환하면 쿼리/urlencoded(퍼센트 인코딩)·JSON 출력(따옴표·역슬래시 이스케이프)에서 시크릿이 새므로 변형도 포함.
-        val masks = secretMaskVariants(secretValues).sortedByDescending { it.length }
+        // 마스킹 규칙은 SecretMasker(원문+URL 인코딩·JSON 이스케이프 변형, 긴 값 우선) — 단일 노드 실행 응답과 공유.
+        val masks = SecretMasker.variants(secretValues)
         return NodeRecorder { node, seq, result, status, durationMs ->
             val ne = NodeExecution.of(execId, node.id!!, node.name, node.type, seq)
-            val outputJson = if (result.storedValue != null) mask(json.toJson(result.storedValue), masks) else null
+            val outputJson = if (result.storedValue != null) SecretMasker.mask(json.toJson(result.storedValue), masks) else null
             val redact = !captureBodies && node.nodeType() == NodeType.HTTP
-            val requestText = if (redact) "(redacted — capture 비활성)" else mask(result.requestText, masks)
-            val responseText = if (redact) "(redacted — capture 비활성)" else mask(result.responseText, masks)
+            val requestText = if (redact) "(redacted — capture 비활성)" else SecretMasker.mask(result.requestText, masks)
+            val responseText = if (redact) "(redacted — capture 비활성)" else SecretMasker.mask(result.responseText, masks)
             ne.complete(
                 status, result.ok, result.httpStatus,
                 requestText, responseText, outputJson, durationMs
@@ -514,26 +522,7 @@ class ExecutionService(
         }
     }
 
-    /** 시크릿 값 + 인코딩 변형(URL 인코딩·JSON 이스케이프) 마스킹 후보. 1자 이상만(과도 마스킹 방지). */
-    private fun secretMaskVariants(values: Collection<String>): List<String> {
-        val out = LinkedHashSet<String>()
-        for (v in values) {
-            if (v.isBlank()) continue
-            out.add(v)
-            try { out.add(java.net.URLEncoder.encode(v, Charsets.UTF_8)) } catch (_: Exception) {}
-            // JSON 이스케이프형 — toJson("v") 의 양끝 따옴표 제거
-            try { val j = json.toJson(v); if (j.length >= 2) out.add(j.substring(1, j.length - 1)) } catch (_: Exception) {}
-        }
-        return out.filter { it.isNotBlank() }
-    }
-
-    /** 캡처 텍스트에서 시크릿 값 문자열을 마스킹(로그/DB 평문 노출 방지). */
-    private fun mask(text: String?, masks: List<String>): String? {
-        if (text == null || masks.isEmpty()) return text
-        var out: String = text
-        for (v in masks) if (v.isNotEmpty()) out = out.replace(v, "••••••")
-        return out
-    }
+    // (마스킹 유틸은 SecretMasker 로 추출 — recorder·runSingleNode 가 공유)
 
     private fun applyStatus(execution: Execution, outcome: FlowExecutor.Outcome) {
         when (outcome.status) {

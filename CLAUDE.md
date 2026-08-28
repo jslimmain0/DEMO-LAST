@@ -962,6 +962,12 @@ static 토큰 대신 **AppRole 로그인 + 자동 갱신**(정석). [VaultTokenS
 KV([VaultSecretSource](backend/src/main/kotlin/com/flowlink/secret/VaultSecretSource.kt))와 Transit([TransitCrypto](backend/src/main/kotlin/com/flowlink/common/crypto/TransitCrypto.kt))이 **단일 빈을 공유**(이중 로그인 방지, CryptoConfig 등록). env: `FLOWLINK_VAULT_APPROLE_ROLE_ID`/`SECRET_ID`/`MOUNT`(기본 approle).
 fail-closed 메시지가 "토큰 또는 AppRole" 로 확장. 검증: 단위 10종(로그인/캐시/절반 갱신/실패 재로그인/만료 직행 재로그인/전파·선택 규칙 4종) + 라이브(도커 Vault: approle 활성 + **스코프 정책 flowlink-app**(4경로) + token_period=180 role) — 토큰 env 없이 기동(AppRole 로그인 → Transit 헬스체크 OK) → 시크릿 플로우 SUCCEEDED+마스킹 → **만료 후 접근에서 자동 재로그인** 로그 실측. 운영가이드 §6 AppRole 준비 절차 추가.
 
+### 단일 노드 실행 시크릿 평문 유출 수정 (2026-08-28, `fix/single-run-secret-mask`)
+`▶ 이 노드만 실행` 응답(SingleNodeRunResult)이 실행 이력 마스킹을 안 거쳐 **requestText 에 시크릿 평문**(`Bearer demo-...`)이 그대로 실리던 유출 —
+마스킹 로직을 [SecretMasker](backend/src/main/kotlin/com/flowlink/execution/engine/SecretMasker.kt)(원문+URL 인코딩·JSON 이스케이프 변형, 긴 값 우선)로 추출해
+recorder(전체 실행 저장)와 [runSingleNode](backend/src/main/kotlin/com/flowlink/execution/ExecutionService.kt) 응답(requestText/responseText/output JSON 라운드트립)이 공유.
+tcp-preview 는 시크릿 미시드라 무관. 단위 5종 + 라이브(단일 실행 LEAK false·`Bearer ••••••`, 전체 실행 무회귀) 확인.
+
 ## 참고 문서
 - `backend/README.md` — 백엔드 구조·설정·API 요약 · `frontend/README.md` · `infra/README.md`(배포)
 - **`docs/guide/`** — 실사용자 가이드(심플+심화 15챕터, 스크린샷) · `docs/사용가이드.md` — 한 페이지 요약본

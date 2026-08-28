@@ -454,11 +454,37 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
     setPick(null)
   }
 
+  // 모달(전체화면)에서 2단 레이아웃을 쓰는 타입 — 요청 구성(좌) | 응답·확인(우)
+  const twoCol = modal && (node.type === 'http' || node.type === 'tcp')
+  const modalColW = twoCol ? 1380 : 940
+  // ▶ 이 노드만 실행 + 결과 — 도킹에선 상단, 모달 2단에선 오른쪽 '확인' 칼럼으로 이동
+  const singleRunBlock = SINGLE_RUNNABLE.has(node.type) && canEdit ? (
+    <div style={{ marginTop: 10 }}>
+      <button onClick={runSingle} disabled={singleRunning} style={singleBtn}
+        title="이 노드만 즉석 실행합니다. 활성 환경변수({{키@env}})·시크릿({{이름@secret}})은 적용되고, 이전 노드에서 오는 값({{키@노드}})만 빈 값입니다.">
+        {singleRunning ? '실행 중…' : '▶ 이 노드만 실행'}
+      </button>
+      {single && (
+        <div style={{ marginTop: 8, border: `1px solid ${single.ok ? 'var(--fl-ok)' : 'var(--fl-fail)'}`, borderRadius: 'var(--fl-radius-sm)', overflow: 'hidden' }}>
+          <div style={{ padding: '6px 10px', fontSize: 12, fontWeight: 600, background: 'var(--fl-surface-2)', color: single.ok ? 'var(--fl-ok)' : 'var(--fl-fail)' }}>
+            {single.ok ? '✓ 성공' : '✕ 실패'}{single.httpStatus != null ? ` · HTTP ${single.httpStatus}` : ''}
+          </div>
+          {single.output != null && (
+            <pre style={singlePre}>{typeof single.output === 'string' ? single.output : JSON.stringify(single.output, null, 2)}</pre>
+          )}
+          {single.responseText && (!single.ok || single.output == null) && (
+            <pre style={{ ...singlePre, color: single.ok ? 'var(--fl-text)' : 'var(--fl-fail)' }}>{single.responseText}</pre>
+          )}
+        </div>
+      )}
+    </div>
+  ) : null
+
   return (
     <aside aria-label="속성" style={{ ...shell, width }}>
       <header style={{ padding: '14px 16px', borderBottom: '1px solid var(--fl-border)' }}>
         {/* 모달(큰 화면)에선 헤더도 본문과 같은 중앙 칼럼 폭 — 이름 입력이 화면 끝까지 늘어지지 않게 */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 7, width: '100%', ...(modal ? { maxWidth: 940, margin: '0 auto' } : null) }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 7, width: '100%', ...(modal ? { maxWidth: modalColW, margin: '0 auto' } : null) }}>
           <span aria-hidden style={{ color: catColor(node.cat), fontSize: 16 }}>{typeIcon(node.type)}</span>
           <input aria-label="노드 이름" value={node.name ?? ''} placeholder={typeLabel(node.type)} onChange={(e) => update(id, { name: e.target.value })} style={{ ...field, fontWeight: 600, fontFamily: 'var(--fl-font-head)' }} />
           {onExpand && (
@@ -473,8 +499,8 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
         </div>
       </header>
 
-      {/* 모달(큰 화면)에선 내용을 편한 폭의 중앙 칼럼으로 */}
-      <div style={{ padding: modal ? '20px 28px' : '16px 18px', overflowY: 'auto', flex: 1, ...(modal ? { width: '100%', maxWidth: 940, margin: '0 auto' } : null) }}>
+      {/* 모달(큰 화면)에선 내용을 편한 폭의 중앙 칼럼으로 — 2단 타입(http/tcp)은 넓게 */}
+      <div style={{ padding: modal ? '20px 28px' : '16px 18px', overflowY: 'auto', flex: 1, ...(modal ? { width: '100%', maxWidth: modalColW, margin: '0 auto' } : null) }}>
         <button
           onClick={() => copyText(id, '노드 id 를 복사했습니다.')}
           title="노드 id 복사"
@@ -514,27 +540,8 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
           </div>
         )}
 
-        {SINGLE_RUNNABLE.has(node.type) && canEdit && (
-          <div style={{ marginTop: 10 }}>
-            <button onClick={runSingle} disabled={singleRunning} style={singleBtn}
-              title="이 노드만 즉석 실행합니다. 활성 환경변수({{키@env}})·시크릿({{이름@secret}})은 적용되고, 이전 노드에서 오는 값({{키@노드}})만 빈 값입니다.">
-              {singleRunning ? '실행 중…' : '▶ 이 노드만 실행'}
-            </button>
-            {single && (
-              <div style={{ marginTop: 8, border: `1px solid ${single.ok ? 'var(--fl-ok)' : 'var(--fl-fail)'}`, borderRadius: 'var(--fl-radius-sm)', overflow: 'hidden' }}>
-                <div style={{ padding: '6px 10px', fontSize: 12, fontWeight: 600, background: 'var(--fl-surface-2)', color: single.ok ? 'var(--fl-ok)' : 'var(--fl-fail)' }}>
-                  {single.ok ? '✓ 성공' : '✕ 실패'}{single.httpStatus != null ? ` · HTTP ${single.httpStatus}` : ''}
-                </div>
-                {single.output != null && (
-                  <pre style={singlePre}>{typeof single.output === 'string' ? single.output : JSON.stringify(single.output, null, 2)}</pre>
-                )}
-                {single.responseText && (!single.ok || single.output == null) && (
-                  <pre style={{ ...singlePre, color: single.ok ? 'var(--fl-text)' : 'var(--fl-fail)' }}>{single.responseText}</pre>
-                )}
-              </div>
-            )}
-          </div>
-        )}
+        {/* 2단 모달(http/tcp)에선 단일 실행이 오른쪽 '응답·확인' 칼럼으로 이동 */}
+        {!twoCol && singleRunBlock}
 
         {(node.type === 'note' || node.type === 'group') && (
           <>
@@ -669,7 +676,8 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
           )
         })()}
 
-        {node.type === 'http' && (
+        {node.type === 'http' && (() => {
+          const reqCol = (
           <>
             {/* Base URL 과 Path 분리. 각 필드 안에서 리터럴 + 토큰({{ 키@노드 }}·{{ 키@env }}) 자유 혼합·다중 가능. */}
             <label style={label}>메서드 · Base URL</label>
@@ -818,6 +826,11 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
               <p style={{ ...hintP }}>ⓘ {method} 요청은 본문을 보내지 않습니다 — 조회 조건은 위 <b>쿼리(URL)</b>에 넣으세요.</p>
             )}
 
+          </>
+          )
+          const respCol = (
+          <>
+            {twoCol && singleRunBlock}
             {/* 응답 섹션 */}
             <HttpSection title="응답 (Response)" badge={normRespType(node.respType)} open={secIsOpen('resp')} onToggle={() => toggleSec('resp')}
               right={<select style={{ ...field, width: 'auto', padding: '5px 6px', fontSize: 12 }} value={normRespType(node.respType)} onChange={(e) => update(id, { respType: e.target.value as RespType })} aria-label="응답 타입">
@@ -856,7 +869,17 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
               </div>
             )}
           </>
-        )}
+          )
+          // 전체화면 모달: 요청 구성(좌) | 응답·확인(우) 2단 — 도킹 사이드에선 기존 세로 흐름 그대로
+          return twoCol ? (
+            <div style={twoColGrid}>
+              <div style={{ minWidth: 0 }}><div style={colHead}>요청 구성</div>{reqCol}</div>
+              <div style={{ minWidth: 0 }}><div style={colHead}>응답 · 확인</div>{respCol}</div>
+            </div>
+          ) : (
+            <>{reqCol}{respCol}</>
+          )
+        })()}
 
         {node.type === 'if' && (
           <ConditionEditor
@@ -1010,7 +1033,8 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
           </>
         )}
 
-        {node.type === 'tcp' && (
+        {node.type === 'tcp' && (() => {
+          const reqCol = (
           <>
             <label style={label}>대상 (host:port)</label>
             <input
@@ -1044,6 +1068,11 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
             <label style={label}>요청 필드 (고정길이 · 위→아래 순서로 연결)</label>
             <TcpReqEditor fields={node.tcpRequest ?? []} sources={sources} sourceType={sourceType} onChange={(r) => update(id, { tcpRequest: r })} />
 
+          </>
+          )
+          const respCol = (
+          <>
+            {twoCol && singleRunBlock}
             <label style={label}>응답 필드 (고정길이 → 출력)</label>
             <TcpRespEditor
               fields={node.tcpResponse ?? []}
@@ -1066,7 +1095,16 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
               </div>
             )}
           </>
-        )}
+          )
+          return twoCol ? (
+            <div style={twoColGrid}>
+              <div style={{ minWidth: 0 }}><div style={colHead}>요청 전문 구성</div>{reqCol}</div>
+              <div style={{ minWidth: 0 }}><div style={colHead}>응답 · 확인</div>{respCol}</div>
+            </div>
+          ) : (
+            <>{reqCol}{respCol}</>
+          )
+        })()}
 
         {node.type === 'form' && (
           <>
@@ -1627,6 +1665,9 @@ const warnTag: CSSProperties = { fontSize: 9.5, fontWeight: 700, color: 'var(--f
 const padTag: CSSProperties = { fontSize: 9.5, fontWeight: 700, color: 'var(--fl-text-muted)', border: '1px solid var(--fl-border)', borderRadius: 4, padding: '0 4px' }
 
 const shell: CSSProperties = { flexShrink: 0, background: 'var(--fl-surface)', display: 'flex', flexDirection: 'column', height: '100%' }
+// 전체화면 모달 2단 레이아웃 — 요청 구성(좌) | 응답·확인(우)
+const twoColGrid: CSSProperties = { display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', columnGap: 36, alignItems: 'start', marginTop: 4 }
+const colHead: CSSProperties = { fontSize: 11, fontWeight: 700, color: 'var(--fl-text-muted)', textTransform: 'uppercase', letterSpacing: '.07em', paddingBottom: 8, marginTop: 10, borderBottom: '1px solid var(--fl-border)' }
 const closeBtn: CSSProperties = { width: 30, height: 30, borderRadius: 8, border: 'none', background: 'var(--fl-surface-2)', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 16 }
 const iconBtn: CSSProperties = { width: 30, height: 30, flexShrink: 0, borderRadius: 8, border: '1px solid var(--fl-border)', background: 'var(--fl-surface)', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 14 }
 const singleBtn: CSSProperties = { width: '100%', padding: '8px 10px', border: '1px solid var(--fl-primary)', borderRadius: 'var(--fl-radius-sm)', background: 'transparent', color: 'var(--fl-primary)', cursor: 'pointer', fontSize: 12.5, fontWeight: 600 }

@@ -118,6 +118,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
   const [respView, setRespView] = useState<'tree' | 'raw'>('tree') // 워크벤치 응답 보기(트리=경로 토큰 클릭)
   const [showSentReq, setShowSentReq] = useState(false) // 실제 전송 요청(토큰 치환·마스킹) 펼침
   const [bodyConvNote, setBodyConvNote] = useState<string | null>(null) // 필드↔Raw 변환 안내
+  const [bodyPaste, setBodyPaste] = useState<string | null>(null) // 필드 모드 'JSON 붙여넣기' 텍스트(null=닫힘)
   const [single, setSingle] = useState<SingleNodeRunResult | null>(null) // 이 노드만 실행 결과
   const [singleRunning, setSingleRunning] = useState(false)
   const [tcpPrev, setTcpPrev] = useState<TcpPreview | null>(null) // TCP 전문 미리보기 결과
@@ -1082,9 +1083,42 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
                   <>
                     <KeyValueEditor rows={fields.body ?? []} onChange={(rows) => setRows('body', rows)} sources={sources} showType={bodyKind === 'json'} />
                     {bodyKind === 'json' && (
-                      <p style={{ ...hintP, marginTop: 6 }}>
-                        💡 키에 <code style={{ fontFamily: 'var(--fl-font-mono)', fontSize: 11 }}>customer.name</code>·<code style={{ fontFamily: 'var(--fl-font-mono)', fontSize: 11 }}>items[0].sku</code> 처럼 경로를 쓰면 <b>중첩 JSON</b> 으로 전송됩니다. Raw 로 전환하면 중첩 구조가 그대로 보이고, 중첩 JSON 을 Raw 에 붙여넣고 필드로 전환하면 경로 행으로 펼쳐집니다.
-                      </p>
+                      <>
+                        {/* 중첩 JSON 을 손으로 행 입력하지 않게 — 샘플/실제 JSON 을 통째로 붙여넣으면 경로 행으로 펼쳐 병합 */}
+                        <button onClick={() => setBodyPaste(bodyPaste === null ? '' : null)} style={{ ...ghostMini, marginTop: 6 }}
+                          title="JSON 을 붙여넣으면 중첩 구조가 경로 행(customer.name·items[0].sku)으로 펼쳐집니다 — 같은 키는 값 갱신">
+                          📋 JSON 붙여넣기 → 필드 채우기
+                        </button>
+                        {bodyPaste !== null && (
+                          <div style={{ marginTop: 6 }}>
+                            <textarea autoFocus value={bodyPaste} onChange={(e) => setBodyPaste(e.target.value)}
+                              placeholder={'{"customer":{"name":"김철수"},"items":[{"sku":"A-100","qty":2}]}'}
+                              style={{ ...mono, width: '100%', minHeight: 84, resize: 'vertical', boxSizing: 'border-box' }} />
+                            <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+                              <button style={{ ...braceBtn, width: 'auto', padding: '0 14px', color: 'var(--fl-primary)', fontWeight: 600 }}
+                                onClick={() => {
+                                  const parsed = rawToFields(bodyPaste ?? '', 'json')
+                                  if (parsed === null) { toast('유효한 JSON 객체가 아닙니다.', 'error'); return }
+                                  const cur = fields.body ?? []
+                                  const next = [...cur]
+                                  let added = 0, updated = 0
+                                  for (const r of parsed) {
+                                    const idx = next.findIndex((f) => (f.key ?? '').trim() === r.key)
+                                    if (idx >= 0) { next[idx] = { ...next[idx], value: r.value, bound: null, type: r.type }; updated++ }
+                                    else { next.push({ id: newId(), key: r.key, value: r.value, type: r.type }); added++ }
+                                  }
+                                  setRows('body', next)
+                                  setBodyPaste(null)
+                                  toast(`본문 필드 ${added}개 추가${updated ? ` · ${updated}개 갱신` : ''} — 중첩은 경로 행으로 펼쳤습니다.`, 'ok')
+                                }}>적용</button>
+                              <button onClick={() => setBodyPaste(null)} style={ghostMini}>취소</button>
+                            </div>
+                          </div>
+                        )}
+                        <p style={{ ...hintP, marginTop: 6 }}>
+                          💡 키에 <code style={{ fontFamily: 'var(--fl-font-mono)', fontSize: 11 }}>customer.name</code>·<code style={{ fontFamily: 'var(--fl-font-mono)', fontSize: 11 }}>items[0].sku</code> 처럼 경로를 쓰면 <b>중첩 JSON</b> 으로 전송됩니다. 필드⇄Raw 전환은 중첩을 왕복 보존합니다(배열 10개 이하는 인덱스 행으로).
+                        </p>
+                      </>
                     )}
                   </>
                 )}

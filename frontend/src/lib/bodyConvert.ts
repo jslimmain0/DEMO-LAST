@@ -91,7 +91,9 @@ function serializeTree(n: PathNode, indent: string): string {
 
 function jsonValueLiteral(value: string, type: string | undefined): string {
   const v = value ?? ''
-  if (v.includes('{{')) return JSON.stringify(v) // 토큰(바인딩)은 유효 JSON 유지 위해 따옴표 문자열로
+  // 토큰({{…}})이 있어도 json/array 값은 파싱을 먼저 시도 — 토큰이 문자열 리터럴 "안"에 있으면
+  // 그 자체로 유효 JSON 이라 실제 배열/객체로 심는다(문자열로 감싸면 필드⇄Raw 왕복이 깨짐).
+  // number/boolean 은 아래 분기가 비정합 값을 어차피 따옴표 문자열로 처리한다.
   switch (type) {
     case 'number':
       return v.trim() !== '' && Number.isFinite(Number(v)) ? String(Number(v)) : JSON.stringify(v)
@@ -127,8 +129,9 @@ export function rawToFields(raw: string, bodyType: BodyType): KV[] | null {
       return null
     }
     if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return null
-    // 중첩 객체는 점 경로 키(customer.name)로 평탄화 — 필드 모드에서 json-in-json 을 행 단위로 편집.
-    // 배열은 한 행(array 타입)으로 유지(원소 폭발 방지), 점(.)이 든 실키는 평탄화하지 않고 그대로(경로 오인 방지).
+    // 중첩 객체는 점 경로 키(customer.name)로, 배열도 10개 이하면 인덱스 행(items[0].sku)으로 평탄화 —
+    // 필드⇄Raw 왕복이 안정되게(경로 필드 → 중첩 Raw → 다시 같은 경로 필드). 큰 배열(11+)·빈 배열은
+    // 한 행(array 타입) 유지, 점(.)이 든 실키는 평탄화하지 않고 그대로(경로 오인 방지).
     const rows: KV[] = []
     const push = (k: string, v: unknown) => {
       if (typeof v === 'string') rows.push({ key: k, value: v, type: 'string' })
@@ -136,13 +139,20 @@ export function rawToFields(raw: string, bodyType: BodyType): KV[] | null {
       else if (typeof v === 'boolean') rows.push({ key: k, value: String(v), type: 'boolean' })
       else rows.push({ key: k, value: JSON.stringify(v), type: Array.isArray(v) ? 'array' : 'json' }) // array / null
     }
+    const place = (v: unknown, p: string, depth: number, keyPathSafe: boolean) => {
+      if (v !== null && typeof v === 'object' && keyPathSafe && depth < 4) {
+        if (!Array.isArray(v)) {
+          if (Object.keys(v as object).length > 0) { walk(v as Record<string, unknown>, p, depth + 1); return }
+        } else if (v.length > 0 && v.length <= 10) {
+          v.forEach((el, i) => place(el, `${p}[${i}]`, depth + 1, true))
+          return
+        }
+      }
+      push(p, v)
+    }
     const walk = (o: Record<string, unknown>, prefix: string, depth: number) => {
       for (const [k, v] of Object.entries(o)) {
-        const p = prefix ? `${prefix}.${k}` : k
-        const nestable = v !== null && typeof v === 'object' && !Array.isArray(v)
-          && Object.keys(v as object).length > 0 && !k.includes('.') && !k.includes('[') && depth < 4
-        if (nestable) walk(v as Record<string, unknown>, p, depth + 1)
-        else push(p, v)
+        place(v, prefix ? `${prefix}.${k}` : k, depth, !k.includes('.') && !k.includes('['))
       }
     }
     walk(obj as Record<string, unknown>, '', 0)

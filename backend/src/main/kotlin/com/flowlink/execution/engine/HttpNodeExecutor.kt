@@ -139,8 +139,9 @@ class HttpNodeExecutor(
                         val obj = LinkedHashMap<String, Any?>()
                         for (f in fields.bodyOrEmpty()) {
                             if (notBlank(f.key)) {
-                                // 필드 타입에 따라 따옴표 여부 결정: number/boolean/json 은 코어션, string/미지정은 기존 동작
-                                obj[f.key!!] = coerceJson(tokens.fieldValue(f, ctx), f.type)
+                                // 필드 타입에 따라 따옴표 여부 결정: number/boolean/json 은 코어션, string/미지정은 기존 동작.
+                                // 키의 점 경로(customer.name)·배열 인덱스(items[0].sku)는 중첩 JSON 으로 확장(요청 json-in-json).
+                                JsonPathBuilder.put(obj, f.key!!, coerceJson(tokens.fieldValue(f, ctx), f.type))
                             }
                         }
                         bodyString = json.toJson(obj)

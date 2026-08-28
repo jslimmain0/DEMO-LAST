@@ -1079,7 +1079,14 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
                     <button onClick={() => setPick('rawBody')} style={{ ...braceBtn, width: 'auto', padding: '0 10px', marginTop: 4 }} title="데이터 삽입"><DataInsertIcon /></button>
                   </div>
                 ) : (
-                  <KeyValueEditor rows={fields.body ?? []} onChange={(rows) => setRows('body', rows)} sources={sources} showType={bodyKind === 'json'} />
+                  <>
+                    <KeyValueEditor rows={fields.body ?? []} onChange={(rows) => setRows('body', rows)} sources={sources} showType={bodyKind === 'json'} />
+                    {bodyKind === 'json' && (
+                      <p style={{ ...hintP, marginTop: 6 }}>
+                        💡 키에 <code style={{ fontFamily: 'var(--fl-font-mono)', fontSize: 11 }}>customer.name</code>·<code style={{ fontFamily: 'var(--fl-font-mono)', fontSize: 11 }}>items[0].sku</code> 처럼 경로를 쓰면 <b>중첩 JSON</b> 으로 전송됩니다. Raw 로 전환하면 중첩 구조가 그대로 보이고, 중첩 JSON 을 Raw 에 붙여넣고 필드로 전환하면 경로 행으로 펼쳐집니다.
+                      </p>
+                    )}
+                  </>
                 )}
               </HttpSection>
             ) : (
@@ -1786,15 +1793,24 @@ function OutputsEditor({ outputs, onChange, nodeId, usageOf, onGoto }: {
               style={{ width: 30, flexShrink: 0, border: '1px solid var(--fl-border)', borderRadius: 6, background: 'var(--fl-surface)', color: 'var(--fl-primary)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
             ><CopyIcon /></button>
           )}
-          {usageOf && o.key?.trim() && (() => {
-            const u = usageOf(o.key)
-            if (u.length === 0) return null
-            // 이 키(또는 하위 경로)를 참조하는 하류가 있다 — 지우거나 이름을 바꾸면 그 바인딩이 끊긴다
+          {/* 사용처 배지 — 모든 행에 같은 폭으로 항상 표시(행마다 레이아웃이 널뛰지 않게). 0곳은 흐림·비클릭 */}
+          {usageOf && (() => {
+            const u = o.key?.trim() ? usageOf(o.key) : []
+            const used = u.length > 0
             return (
               <button
-                onClick={() => onGoto?.(u[0].id)}
-                title={`사용처 ${u.length}곳: ${u.map((x) => x.name).join(', ')} — 클릭하면 첫 사용처로 이동`}
-                style={{ flexShrink: 0, padding: '3px 8px', border: '1px solid color-mix(in srgb, var(--fl-ok) 45%, var(--fl-border))', borderRadius: 999, background: 'color-mix(in srgb, var(--fl-ok) 10%, transparent)', color: 'var(--fl-ok)', cursor: 'pointer', fontSize: 10.5, fontWeight: 700, whiteSpace: 'nowrap' }}
+                disabled={!used}
+                onClick={used ? () => onGoto?.(u[0].id) : undefined}
+                title={used
+                  ? `사용처 ${u.length}곳: ${u.map((x) => x.name).join(', ')} — 클릭하면 첫 사용처로 이동`
+                  : '아직 이 키를 참조하는 하위 노드가 없습니다'}
+                style={{
+                  flexShrink: 0, width: 44, padding: '3px 0', textAlign: 'center', borderRadius: 999,
+                  fontSize: 10.5, fontWeight: 700, whiteSpace: 'nowrap',
+                  ...(used
+                    ? { border: '1px solid color-mix(in srgb, var(--fl-ok) 45%, var(--fl-border))', background: 'color-mix(in srgb, var(--fl-ok) 10%, transparent)', color: 'var(--fl-ok)', cursor: 'pointer' }
+                    : { border: '1px solid var(--fl-border)', background: 'transparent', color: 'var(--fl-text-muted)' }),
+                }}
               >{u.length}곳</button>
             )
           })()}

@@ -998,6 +998,13 @@ tcp-preview 는 시크릿 미시드라 무관. 단위 5종 + 라이브(단일 �
 - 라이브 확인 중 이 브라우저의 `fl:editor:propertyW=560`(과대 저장값)이 캔버스를 압박 → 380 으로 리셋(코드 무관, "이상해 보임"의 한 원인).
 - 검증: tsc/build/oxlint + 실브라우저(:18080 dark) — 전체화면 속성 모달·Mock 결제창 HTML 1,490자 큰 편집기·시크릿 볼트 새 레이아웃 실측.
 
+### 9차 — 요청 json-in-json + 배지 일관성 (사용자: "사용처 배지 일관성·요청 쪽도 중첩·입력 편하게")
+- **요청 JSON 경로 조립**: [JsonPathBuilder](backend/src/main/kotlin/com/flowlink/execution/engine/JsonPathBuilder.kt)(신규, 응답 dig 의 대칭) — JSON 본문 필드 키에 `customer.name`·`items[0].sku` 를 쓰면 **중첩 JSON 으로 전송**([HttpNodeExecutor](backend/src/main/kotlin/com/flowlink/execution/engine/HttpNodeExecutor.kt) json 필드 분기, 평평한 키 무회귀·인덱스 갭 null·타입 충돌 시 마지막 쓰기 승). 단위 5종.
+  ⚠ 점(.) 포함 키를 평평하게 보내야 하는 API 는 Raw 모드 사용(필드 모드는 경로로 해석).
+- **필드↔Raw 중첩 왕복**([bodyConvert](frontend/src/lib/bodyConvert.ts)): `fieldsToRaw`(json) 가 리터럴 트리로 중첩 조립(값은 타입별 리터럴·토큰은 따옴표 유지), `rawToFields`(json) 가 중첩 객체를 점 경로 행으로 평탄화(깊이 4·배열은 한 행(array)·점 든 실키는 평탄화 안 함). 라운드트립 단위 7케이스. Body 섹션에 점 경로 힌트 문구.
+- **사용처 배지 일관성**: OutputsEditor 배지를 **모든 행에 고정 폭(44px)으로 항상 표시** — 0곳=흐림·비클릭(툴팁 안내), N곳=초록 클릭. 행마다 레이아웃이 널뛰던 문제 해소.
+- 데모 플로우 v3: 승인 통보 본문을 점 경로 필드로, mock /notify 는 `{{body}}` echo → 통보 확인이 `{{ echo.customer.grade@notify }}` 중첩 검증. 실행 SUCCEEDED + 전송 본문 `{"customer":{"name":"김철수",...},"approval":{"code":"0000"},"items":[{"sku":"A-100"}]}` 실측.
+
 ### 8차 — 워크벤치 적대적 토론(에이전트 3렌즈) 확정안 반영 (사용자: "확대했을 때 저게 최선이냐 토론시켜 봐")
 API 도구 UX·비주얼/IA·플로우 통합 3관점 병렬 비평 → 확정 반영:
 - **[중요 버그] Esc 중첩 닫힘 수정**: [useEscapeClose](frontend/src/components/useEscapeClose.ts) 를 **모듈 전역 Esc 스택**으로 — 가장 위에 뜬 모달만 반응(마운트 순서=스택). 워크벤치 안에서 피커/큰 편집기 열고 Esc 시 워크벤치까지 닫히며 편집 유실되던 문제. Editor 의 propModal raw 리스너도 `registerEscapeClose` 로 통합.

@@ -50,6 +50,14 @@ class FlowVersion {
     var createdBy: String? = null
         private set
 
+    /**
+     * 📌 보존 버전(커밋) — 사용자가 메시지를 붙여 명시적으로 남긴 스냅샷.
+     * 자동 보존 정책(retention)의 버전 정리에서 **절대 삭제되지 않는다**.
+     * null=false(레거시 행 — H2 ddl-auto 호환), 토글 가능(불변 스냅샷 규약의 유일한 가변 필드).
+     */
+    @Column
+    var pinned: Boolean? = null
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     lateinit var createdAt: Instant

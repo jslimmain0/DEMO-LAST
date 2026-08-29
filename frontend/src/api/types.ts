@@ -263,6 +263,8 @@ export interface FlowVersionSummary {
   note?: string | null
   createdBy?: string | null
   createdAt: string
+  /** 📌 보존 버전(커밋) — 자동 정리에서 영구 제외 */
+  pinned?: boolean
 }
 
 export interface FlowDetail {
@@ -290,6 +292,8 @@ export interface CreateFlowRequest {
 export interface SaveVersionRequest {
   graph: FlowGraph
   note?: string
+  /** true = 📌 보존 버전(커밋)으로 저장 — 자동 정리에서 영구 제외 */
+  pinned?: boolean
 }
 
 // --- 실행 DTO ---

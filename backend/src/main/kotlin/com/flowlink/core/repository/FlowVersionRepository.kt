@@ -30,6 +30,7 @@ interface FlowVersionRepository : JpaRepository<FlowVersion, UUID> {
     @org.springframework.data.jpa.repository.Query(
         "DELETE FROM FlowVersion v WHERE " +
             "v.versionNo <= (SELECT f.currentVersion FROM Flow f WHERE f.id = v.flowId) - :keep " +
+            "AND (v.pinned IS NULL OR v.pinned = false) " + // 📌 보존 버전(커밋)은 영구 유지
             "AND NOT EXISTS (SELECT 1 FROM Execution e WHERE e.flowVersionId = v.id) " +
             "AND NOT EXISTS (SELECT 1 FROM FlowTrigger t WHERE t.flowId = v.flowId AND t.versionNo = v.versionNo)"
     )

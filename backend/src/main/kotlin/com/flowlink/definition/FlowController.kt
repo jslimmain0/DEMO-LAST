@@ -58,7 +58,12 @@ class FlowController(private val service: FlowService) {
     @PostMapping("/{id}/versions")
     @ResponseStatus(HttpStatus.CREATED)
     fun saveVersion(@PathVariable id: UUID, @Valid @RequestBody req: SaveVersionRequest): FlowVersionSummary =
-        service.saveVersion(id, req.graph, req.note)
+        service.saveVersion(id, req.graph, req.note, req.pinned)
+
+    /** 📌 보존 토글 — 커밋처럼 남긴 버전은 자동 보존 정책에서 영구 제외. */
+    @PutMapping("/{id}/versions/{no}/pin")
+    fun pinVersion(@PathVariable id: UUID, @PathVariable no: Int, @RequestBody req: Map<String, Boolean>): FlowVersionSummary =
+        service.setVersionPinned(id, no, req["pinned"] ?: true)
 
     // 버전 기록(최신 우선) — 히스토리/복원 UI 목록
     @GetMapping("/{id}/versions")

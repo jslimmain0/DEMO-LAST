@@ -13,5 +13,8 @@ data class SaveVersionRequest(
     val graph: JsonNode,
 
     @field:Size(max = 500)
-    val note: String?
+    val note: String?,
+
+    /** true = 📌 보존 버전(커밋) 으로 저장 — 자동 보존 정책의 버전 정리에서 영구 제외. */
+    val pinned: Boolean = false,
 )

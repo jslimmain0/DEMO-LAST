@@ -1121,6 +1121,17 @@ API 도구 UX·비주얼/IA·플로우 통합 3관점 병렬 비평 → 확정 �
   `retention.flow-versions-keep`(기본 flow 당 100개 — **실행 이력·트리거 참조 버전은 보호**, [pruneOldVersions](backend/src/main/kotlin/com/flowlink/core/repository/FlowVersionRepository.kt)).
   0=끄기. 전용 데몬 스레드(TriggerScheduler 관례), 단일 인스턴스 스코프. RetentionServiceTest 2종(백데이트는 JdbcTemplate).
 
+### 📌 보존 버전(커밋) — 자동 정리에서 영구 제외되는 버전 (2026-08-30)
+"커밋같이 보존하는 버전" 요청 — git 커밋처럼 메시지를 달아 남기는 스냅샷. 위 보존 정책의 짝(정리에서 빼는 수단).
+- **모델**: [FlowVersion.pinned](backend/src/main/kotlin/com/flowlink/core/domain/FlowVersion.kt)(`Boolean?`, null=false — 레거시/H2 ddl-auto 호환 관례, V18 oracle) —
+  [pruneOldVersions](backend/src/main/kotlin/com/flowlink/core/repository/FlowVersionRepository.kt) JPQL 에 `pinned IS NULL OR pinned = false` 제외 조건.
+- **API**: `SaveVersionRequest.pinned`(저장과 동시에 보존 — 커밋) + `PUT /flows/{id}/versions/{no}/pin` `{pinned}`(기존 버전 토글,
+  [FlowService.setVersionPinned](backend/src/main/kotlin/com/flowlink/definition/FlowService.kt) — writable 게이트). `FlowVersionSummary.pinned` 노출.
+- **UI**([VersionHistoryDialog](frontend/src/components/VersionHistoryDialog.tsx)): 헤더 아래 **커밋 바**(메시지 입력 + 📌 보존 버전으로 저장 —
+  현재 캔버스(미저장 편집 포함)를 pinned 새 버전으로, Enter 지원) · 목록 행 `📌 보존` 배지 · 상세 pane **📌 이 버전 보존/보존 해제** 토글 ·
+  워크스페이스 VIEWER(editorStore.readOnly)는 커밋 바/토글/복원 숨김.
+- 검증: RetentionServiceTest(📌 v2 가 keep=2 스윕에서 생존) + `:test` 전종 그린 + API 왕복(pinned 저장→토글→목록) + 브라우저 실측(커밋 바 저장 → v8 📌 배지·해제/재보존 토글). 가이드 [09장](docs/guide/09-버전-협업.md)·운영가이드 §12 갱신.
+
 ## 참고 문서
 - `backend/README.md` — 백엔드 구조·설정·API 요약 · `frontend/README.md` · `infra/README.md`(배포)
 - **`docs/guide/`** — 실사용자 가이드(심플+심화 15챕터, 스크린샷) · `docs/사용가이드.md` — 한 페이지 요약본

@@ -145,7 +145,7 @@ class FlowService(
     }
 
     @Transactional
-    fun saveVersion(id: UUID, graph: JsonNode, note: String?): FlowVersionSummary {
+    fun saveVersion(id: UUID, graph: JsonNode, note: String?, pinned: Boolean = false): FlowVersionSummary {
         val flow = writable(loadFlow(id))
         val graphJson = json.toJson(graph)
         val parsed = json.parseGraph(graphJson)
@@ -156,6 +156,7 @@ class FlowService(
         val nextNo = flow.currentVersion + 1
 
         val version = FlowVersion.create(flow.id, nextNo, name, graphJson, note, currentUser())
+        if (pinned) version.pinned = true // 📌 보존 버전(커밋) — retention 정리에서 영구 제외
         // 할당식 UUID 엔티티는 save 가 merge 로 동작 → @CreationTimestamp lateinit createdAt 은
         // **반환된 관리 인스턴스**에만 채워진다(원본 version 은 merge 소스라 미초기화). from 이 createdAt
         // 을 읽으므로 반환값(saved)을 써야 한다. createInternal 의 `flow = saveAndFlush(flow)` 와 동일 이유.
@@ -164,6 +165,16 @@ class FlowService(
         flow.name = name
         flow.currentVersion = nextNo
         return FlowVersionSummary.from(saved)
+    }
+
+    /** 📌 보존 토글 — 커밋처럼 남긴 버전을 자동 정리에서 제외(해제 시 다시 정리 대상). */
+    @Transactional
+    fun setVersionPinned(id: UUID, versionNo: Int, pinned: Boolean): FlowVersionSummary {
+        writable(loadFlow(id))
+        val v = versionRepo.findByFlowIdAndVersionNo(id, versionNo)
+            .orElseThrow { NotFoundException.of("FlowVersion", versionNo) }
+        v.pinned = pinned
+        return FlowVersionSummary.from(versionRepo.saveAndFlush(v))
     }
 
     /** 버전 기록(최신 우선) — 테넌트 소유 확인 후. */

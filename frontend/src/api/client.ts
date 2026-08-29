@@ -51,6 +51,9 @@ export const flowsApi = {
     http.get<FlowVersionSummary[]>(`/flows/${id}/versions`).then((r) => r.data),
   getVersion: (id: string, no: number) =>
     http.get<FlowGraph>(`/flows/${id}/versions/${no}`).then((r) => r.data),
+  // 📌 보존 토글 — 커밋처럼 남긴 버전은 자동 보존 정책에서 영구 제외
+  pinVersion: (id: string, no: number, pinned: boolean) =>
+    http.put<FlowVersionSummary>(`/flows/${id}/versions/${no}/pin`, { pinned }).then((r) => r.data),
   restoreVersion: (id: string, no: number) =>
     http.post<FlowVersionSummary>(`/flows/${id}/versions/${no}/restore`).then((r) => r.data),
   importFlow: (graph: unknown) =>

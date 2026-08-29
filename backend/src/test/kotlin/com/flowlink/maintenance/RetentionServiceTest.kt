@@ -77,15 +77,18 @@ class RetentionServiceTest {
     }
 
     @Test
-    fun `버전 보존 - flow 당 최신 2개 유지, 실행이 참조하는 옛 버전은 보호`() {
+    fun `버전 보존 - flow 당 최신 2개 유지, 실행이 참조하는 옛 버전과 📌 보존 버전은 보호`() {
         val flow = newFlow("버전 플로우", 5) // v1~v5, keep=2 → v1~v3 이 정리 대상
         val v1 = versionRepo.findByFlowIdAndVersionNo(flow.id, 1).get()
         newExecution(flow.id, v1.id, ExecutionStatus.SUCCEEDED, 1) // v1 을 실행이 참조
+        val v2 = versionRepo.findByFlowIdAndVersionNo(flow.id, 2).get()
+        v2.pinned = true // 📌 보존 버전(커밋) — 사용자가 명시적으로 남긴 스냅샷
+        versionRepo.saveAndFlush(v2)
 
         retention.sweepFlowVersions()
 
         assertTrue(versionRepo.findByFlowIdAndVersionNo(flow.id, 1).isPresent, "실행이 참조하는 v1 은 보호")
-        assertFalse(versionRepo.findByFlowIdAndVersionNo(flow.id, 2).isPresent, "v2 삭제")
+        assertTrue(versionRepo.findByFlowIdAndVersionNo(flow.id, 2).isPresent, "📌 보존 v2 는 영구 보호")
         assertFalse(versionRepo.findByFlowIdAndVersionNo(flow.id, 3).isPresent, "v3 삭제")
         assertTrue(versionRepo.findByFlowIdAndVersionNo(flow.id, 4).isPresent, "최신 2개(v4) 유지")
         assertTrue(versionRepo.findByFlowIdAndVersionNo(flow.id, 5).isPresent, "최신 2개(v5) 유지")

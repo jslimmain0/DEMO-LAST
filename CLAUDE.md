@@ -1101,6 +1101,22 @@ API 도구 UX·비주얼/IA·플로우 통합 3관점 병렬 비평 → 확정 �
   Mock slug 는 `GET /mock-servers/slug-check` + 생성 폼 **실시간 ✓사용 가능/✕사용 중**(350ms 디바운스, 400 에러 메시지도 전역 유일 이유 명시). RBAC 테스트 13종(라운드트립·VIEWER 가져오기 403).
 - ⚠ **잔여 경계(의식적 수용)**: BLOCKED 는 신규 로그인+승인 게이트만 즉시 — 이미 발급된 JWT(12h)의 공용 접근은 만료까지 유지(매 요청 status 검사 필터는 후속). Mock 서빙·TCP 포트는 전역(무인증 테스트 도구 전제). 시크릿/환경/설정은 테넌트 스코프(워크스페이스 무관). removeMember 의 OWNER 카운트는 비관적 락 없음(동시 상호 내보내기 이론상 레이스 — 관리자 복구 가능).
 
+## 최근 변경 (2026-08-29) — 성능 분석·개선 배치 (실측 → 핫스팟 → 수정 → 재실측)
+로컬 H2(:18080) 실측 기반. 대부분 엔드포인트 4~8ms 로 양호했고, 두 개의 실제 핫스팟을 수정.
+- **[대형] 실행 이력 유령 오염 257,000행**: 과거 유령 스케줄 트리거(수정 전 버그)가 남긴 실행이 실제로는 **25만+ 행**
+  (이전 6,200 집계는 페이징 상한 오류). `/executions` 가 p50 7ms / **p95 568ms** 바이모달이던 원인.
+  → **관리자 purge API**(`POST /api/v1/admin/executions/purge` {flowId|olderThanDays}, RUNNING/WAITING 보호,
+  조건 없는 전체 삭제 400 — [ExecutionService.purgeExecutions](backend/src/main/kotlin/com/flowlink/execution/ExecutionService.kt)) 신설 + 전량 정리 → **3~5ms 균일**(스파이크 소멸). 운영가이드 §12 에 보존 정책 예시.
+  42일 묵은 좀비 WAITING 1건은 resume(aborted)로 종결 후 정리.
+- **[중형] flows 목록 = N+1 + 반복 파싱**: flow 당 현재 버전 재조회(N 쿼리) + 요청마다 그래프 JSON 파싱.
+  → [findCurrentByFlowIds](backend/src/main/kotlin/com/flowlink/core/repository/FlowVersionRepository.kt) 일괄 조회(원격 Oracle 왕복 제거)
+  + **(flowId, versionNo) 키 요약 캐시**(그래프는 버전별 불변 — 자연 무효화, [FlowService.GraphDigest](backend/src/main/kotlin/com/flowlink/definition/FlowService.kt)). 100개 목록 19.4ms → **11.7ms**(잔여는 68KB 응답 직렬화).
+- **N+1 일괄 제거**: 폴더별 count([countGroupByFolder](backend/src/main/kotlin/com/flowlink/core/repository/FlowRepository.kt)) · 관리 콘솔 ws 별 flow/mock count+멤버(3N+1 → 고정 5쿼리, countGroupByWorkspace/findByWorkspaceIdIn).
+- **인덱스**: `execution(tenant_id, started_at)`(V17 + @Table 인덱스 — H2 dev 는 ddl-auto 로 자동), flow/folder workspace_id @Table 인덱스(H2 파리티 — Oracle 은 V13/V15).
+- **isAdmin 5초 캐시**: 실행 폴링(0.4초 tick)의 워크스페이스 게이트가 매번 사용자 행을 조회하던 것 — putUser/deleteUser 에서 즉시 무효화([invalidateRoleCache](backend/src/main/kotlin/com/flowlink/workspace/WorkspaceService.kt)).
+- 관찰(수정 안 함): 프론트 본 번들 gzip 275KB(CodeEditor 200KB 는 lazy 분리됨) · listFiltered 의 offset 은 off+limit 페치(대형 offset 비효율 — 실사용 200 상한이라 무해) · mock 서빙 ~5ms.
+- ⚠ purge 는 UI 없음(API 전용) — 관리 콘솔 버튼은 후속 후보. 요약 캐시·isAdmin 캐시는 단일 인스턴스 스코프.
+
 ## 참고 문서
 - `backend/README.md` — 백엔드 구조·설정·API 요약 · `frontend/README.md` · `infra/README.md`(배포)
 - **`docs/guide/`** — 실사용자 가이드(심플+심화 15챕터, 스크린샷) · `docs/사용가이드.md` — 한 페이지 요약본

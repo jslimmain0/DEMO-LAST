@@ -24,6 +24,14 @@ interface FlowRepository : JpaRepository<Flow, UUID> {
     fun countByTenantIdAndArchivedFalseAndWorkspaceId(tenantId: String, workspaceId: UUID): Long
     fun countByTenantIdAndArchivedFalseAndWorkspaceIdIsNull(tenantId: String): Long
 
+    /** 폴더별 워크플로 수 일괄(group by) — 폴더 목록의 폴더당 count 쿼리 N+1 제거. */
+    @Query("SELECT f.folderId, COUNT(f) FROM Flow f WHERE f.tenantId = :tenant AND f.archived = false AND f.folderId IS NOT NULL GROUP BY f.folderId")
+    fun countGroupByFolder(@Param("tenant") tenant: String): List<Array<Any>>
+
+    /** 워크스페이스별 워크플로 수 일괄(group by) — 관리 콘솔의 ws 당 count N+1 제거. */
+    @Query("SELECT f.workspaceId, COUNT(f) FROM Flow f WHERE f.tenantId = :tenant AND f.archived = false AND f.workspaceId IS NOT NULL GROUP BY f.workspaceId")
+    fun countGroupByWorkspace(@Param("tenant") tenant: String): List<Array<Any>>
+
     /** 폴더 직속 워크플로 — 스위트 일괄 실행용(하위 폴더 재귀 아님). */
     fun findByTenantIdAndFolderIdAndArchivedFalse(tenantId: String, folderId: UUID): List<Flow>
 

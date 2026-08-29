@@ -52,4 +52,19 @@ interface ExecutionRepository : JpaRepository<Execution, UUID> {
         @Param("ws") ws: UUID?,
         pageable: Pageable,
     ): List<Execution>
+
+    /** 이력 정리(purge) — 진행 중(RUNNING/WAITING)은 보호. 노드 기록을 먼저 지운 뒤 호출. */
+    @org.springframework.data.jpa.repository.Modifying
+    @Query(
+        "DELETE FROM Execution e WHERE e.tenantId = :tenant " +
+            "AND (:flowId IS NULL OR e.flowId = :flowId) " +
+            "AND (:before IS NULL OR e.startedAt < :before) " +
+            "AND e.status NOT IN :active"
+    )
+    fun purge(
+        @Param("tenant") tenant: String,
+        @Param("flowId") flowId: UUID?,
+        @Param("before") before: Instant?,
+        @Param("active") active: Collection<ExecutionStatus>,
+    ): Int
 }

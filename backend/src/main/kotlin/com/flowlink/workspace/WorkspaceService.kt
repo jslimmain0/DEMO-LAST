@@ -56,12 +56,22 @@ class WorkspaceService(
 
     fun isAuthenticated(username: String): Boolean = username != GUEST
 
+    // isAdmin DB 판정 5초 캐시 — 실행 폴링(0.4초 간격)의 requireRead 경로가 매 tick 사용자 행을 조회하던 것 완화.
+    // 롤 변경(putUser)·삭제 시 즉시 무효화. env/dev 판정은 캐시 불필요(메모리 비교).
+    private val adminCache = java.util.concurrent.ConcurrentHashMap<String, Pair<Long, Boolean>>()
+
+    fun invalidateRoleCache(username: String) { adminCache.remove(username.lowercase()) }
+
     @Transactional
     fun isAdmin(username: String): Boolean {
         if (username == DEV_USER) return true // dev 모드 = 로컬 단독 사용 — 전권
         if (auth.isBootstrapAdmin(username)) return true
-        return userRepo.findByTenantIdAndUsername(tenant(), username)
+        val now = System.currentTimeMillis()
+        adminCache[username]?.let { if (now - it.first < 5_000) return it.second }
+        val v = userRepo.findByTenantIdAndUsername(tenant(), username)
             .map { it.globalRole == AppUser.ROLE_ADMIN }.orElse(false)
+        adminCache[username] = now to v
+        return v
     }
 
     /**

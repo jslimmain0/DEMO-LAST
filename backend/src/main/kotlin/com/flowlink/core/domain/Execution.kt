@@ -16,7 +16,7 @@ import java.util.UUID
  * 실행 이력을 영속화해 감사/재현/관측의 기반으로 삼는다.
  */
 @Entity
-@Table(name = "execution")
+@Table(name = "execution", indexes = [jakarta.persistence.Index(name = "idx_execution_tenant_started", columnList = "tenant_id, started_at")])
 class Execution {
 
     @Id

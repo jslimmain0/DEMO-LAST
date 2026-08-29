@@ -503,6 +503,23 @@ class ExecutionService(
     }
 
     /**
+     * 실행 이력 정리(purge) — 관리 콘솔용. flowId 또는 기준 시각(이전) 조건으로 실행+노드 기록을 일괄 삭제.
+     * 진행 중(RUNNING/WAITING)은 보호. 유령 트리거 사태처럼 이력이 수천 건 오염됐을 때 목록 성능 복구용.
+     */
+    @Transactional
+    fun purgeExecutions(flowId: UUID?, before: java.time.Instant?): Int {
+        if (flowId == null && before == null) {
+            throw BadRequestException("flowId 또는 olderThanDays 중 하나는 지정해야 합니다(전체 삭제 방지).")
+        }
+        val tenant = TenantContext.getTenantId()
+        val active = listOf(ExecutionStatus.RUNNING, ExecutionStatus.WAITING)
+        nodeExecRepo.purgeForExecutions(tenant, flowId, before, active)
+        val removed = executionRepo.purge(tenant, flowId, before, active)
+        log.info("실행 이력 정리 — {}건 삭제(flowId={}, before={})", removed, flowId, before)
+        return removed
+    }
+
+    /**
      * 같은 조건으로 다시 실행 — 원본 실행의 flowVersion + input 을 그대로 재실행(반복 테스트/디버깅 루프).
      * 그래프가 그 사이 바뀌어도 원본이 돌던 버전으로 재현한다.
      */

@@ -16,7 +16,7 @@ import java.util.UUID
  * Flow 는 메타데이터와 "현재 버전 포인터"를 갖는다. (버전관리/롤백의 기반)
  */
 @Entity
-@Table(name = "flow")
+@Table(name = "flow", indexes = [jakarta.persistence.Index(name = "idx_flow_workspace", columnList = "workspace_id")])
 class Flow {
 
     @Id

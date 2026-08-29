@@ -27,4 +27,8 @@ interface MockServerRepository : JpaRepository<MockServer, UUID> {
     // 관리 콘솔 — 워크스페이스별 mock 수
     fun countByTenantIdAndWorkspaceId(tenantId: String, workspaceId: UUID): Long
     fun countByTenantIdAndWorkspaceIdIsNull(tenantId: String): Long
+
+    /** 워크스페이스별 mock 수 일괄(group by) — 관리 콘솔 N+1 제거. */
+    @Query("SELECT m.workspaceId, COUNT(m) FROM MockServer m WHERE m.tenantId = :tenant AND m.workspaceId IS NOT NULL GROUP BY m.workspaceId")
+    fun countGroupByWorkspace(@Param("tenant") tenant: String): List<Array<Any>>
 }

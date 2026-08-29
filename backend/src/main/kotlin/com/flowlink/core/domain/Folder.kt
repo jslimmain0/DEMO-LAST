@@ -12,7 +12,7 @@ import java.util.UUID
 
 /** 워크플로 그룹핑 폴더 — parent_id 로 중첩(트리) 가능(null = 루트). */
 @Entity
-@Table(name = "folder")
+@Table(name = "folder", indexes = [jakarta.persistence.Index(name = "idx_folder_workspace", columnList = "workspace_id")])
 class Folder {
 
     @Id

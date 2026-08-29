@@ -23,9 +23,11 @@ class FolderService(
         val tenant = tenant()
         val wsId = workspace.resolveId(workspaceIdRaw)
         workspace.requireRead(workspace.currentUsername(), wsId)
+        // 폴더별 워크플로 수를 group by 1 쿼리로 — 폴더당 count 재조회 N+1 제거
+        val counts = flowRepo.countGroupByFolder(tenant).associate { it[0] as UUID to it[1] as Long }
         return folderRepo.findByTenantIdOrderByNameAsc(tenant)
             .filter { it.workspaceId == wsId }
-            .map { FolderSummary.from(it, flowRepo.countByTenantIdAndFolderIdAndArchivedFalse(tenant, it.id)) }
+            .map { FolderSummary.from(it, counts[it.id] ?: 0L) }
     }
 
     @Transactional

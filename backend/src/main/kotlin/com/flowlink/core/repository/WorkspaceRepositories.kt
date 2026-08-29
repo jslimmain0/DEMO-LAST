@@ -15,6 +15,7 @@ interface WorkspaceRepository : JpaRepository<Workspace, UUID> {
 
 interface WorkspaceMemberRepository : JpaRepository<WorkspaceMember, UUID> {
     fun findByWorkspaceIdOrderByCreatedAtAsc(workspaceId: UUID): List<WorkspaceMember>
+    fun findByWorkspaceIdIn(workspaceIds: Collection<UUID>): List<WorkspaceMember> // 관리 콘솔 일괄 조회(N+1 제거)
     fun findByUsername(username: String): List<WorkspaceMember>
     fun findByWorkspaceIdAndUsername(workspaceId: UUID, username: String): Optional<WorkspaceMember>
     fun deleteByWorkspaceId(workspaceId: UUID)

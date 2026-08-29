@@ -81,6 +81,7 @@ class AdminController(
     private val memberRepo: com.flowlink.core.repository.WorkspaceMemberRepository,
     private val flowRepo: com.flowlink.core.repository.FlowRepository,
     private val mockRepo: com.flowlink.core.repository.MockServerRepository,
+    private val executionService: com.flowlink.execution.ExecutionService,
 ) {
     data class UserView(
         val username: String, val globalRole: String, val status: String,
@@ -138,12 +139,17 @@ class AdminController(
     fun workspaces(): AdminWorkspacesResponse {
         requireAdmin()
         val tenant = TenantContext.SHARED_FLOW_TENANT
-        val list = wsRepo.findByTenantIdOrderByCreatedAtAsc(tenant).map { ws ->
+        // ws 당 count/멤버 재조회(3N+1) 대신 group by + 일괄 조회 — 콘솔 한 화면 = 고정 4~5 쿼리
+        val flowCounts = flowRepo.countGroupByWorkspace(tenant).associate { it[0] as java.util.UUID to it[1] as Long }
+        val mockCounts = mockRepo.countGroupByWorkspace(tenant).associate { it[0] as java.util.UUID to it[1] as Long }
+        val workspaces = wsRepo.findByTenantIdOrderByCreatedAtAsc(tenant)
+        val membersByWs = memberRepo.findByWorkspaceIdIn(workspaces.map { it.id }).groupBy { it.workspaceId }
+        val list = workspaces.map { ws ->
             AdminWorkspaceView(
                 ws.id.toString(), ws.name, ws.kind, ws.ownerUsername, ws.createdAt?.toString(),
-                flowRepo.countByTenantIdAndArchivedFalseAndWorkspaceId(tenant, ws.id),
-                memberRepo.findByWorkspaceIdOrderByCreatedAtAsc(ws.id).map { MemberView(it.username, it.role) },
-                mockRepo.countByTenantIdAndWorkspaceId(tenant, ws.id),
+                flowCounts[ws.id] ?: 0L,
+                (membersByWs[ws.id] ?: emptyList()).sortedBy { it.createdAt }.map { MemberView(it.username, it.role) },
+                mockCounts[ws.id] ?: 0L,
             )
         }
         return AdminWorkspacesResponse(
@@ -169,6 +175,7 @@ class AdminController(
             }
             if (name == me) throw com.flowlink.common.error.BadRequestException("자기 자신의 전역 롤은 바꿀 수 없습니다.")
             u.globalRole = role
+            service.invalidateRoleCache(name) // isAdmin 5초 캐시 즉시 무효화
         }
         req.status?.trim()?.uppercase()?.let { st ->
             if (st !in setOf(AppUser.STATUS_PENDING, AppUser.STATUS_APPROVED, AppUser.STATUS_BLOCKED)) {
@@ -183,6 +190,17 @@ class AdminController(
         return UserView(u.username, u.globalRole, u.effectiveStatus(), u.lastSeenAt?.toString(), u.createdAt?.toString())
     }
 
+    /** 실행 이력 정리 — flowId(그 flow 전부) 또는 olderThanDays(N일 이전) 조건. 진행 중 실행은 보호. */
+    data class PurgeRequest(val flowId: UUID? = null, val olderThanDays: Int? = null)
+    data class PurgeResult(val removed: Int)
+
+    @PostMapping("/executions/purge")
+    fun purgeExecutions(@RequestBody req: PurgeRequest): PurgeResult {
+        requireAdmin()
+        val before = req.olderThanDays?.let { java.time.Instant.now().minus(java.time.Duration.ofDays(it.toLong())) }
+        return PurgeResult(executionService.purgeExecutions(req.flowId, before))
+    }
+
     @DeleteMapping("/users/{username}")
     @Transactional
     fun deleteUser(@PathVariable username: String) {
@@ -192,6 +210,7 @@ class AdminController(
         // 팀 멤버십 정리 + 개인 워크스페이스를 삭제 실행 관리자의 개인 ws 로 흡수(핸들 재사용 시 데이터 승계 방지).
         // 소유자 없는 팀은 유지 — 관리자는 모든 워크스페이스 OWNER 격이라 계속 관리 가능.
         service.purgeUser(u.username)
+        service.invalidateRoleCache(u.username)
         userRepo.delete(u)
     }
 }

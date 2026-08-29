@@ -134,9 +134,9 @@ export type UserStatus = 'PENDING' | 'APPROVED' | 'BLOCKED'
 export interface AdminUserView { username: string; globalRole: 'ADMIN' | 'MEMBER'; status: UserStatus; lastSeenAt: string | null; createdAt: string | null }
 export interface AdminWorkspaceView {
   id: string; name: string; kind: 'PERSONAL' | 'TEAM'; ownerUsername: string | null
-  createdAt: string | null; flowCount: number; members: WorkspaceMemberView[]
+  createdAt: string | null; flowCount: number; members: WorkspaceMemberView[]; mockCount: number
 }
-export interface AdminWorkspacesResponse { publicFlowCount: number; workspaces: AdminWorkspaceView[] }
+export interface AdminWorkspacesResponse { publicFlowCount: number; workspaces: AdminWorkspaceView[]; publicMockCount: number }
 export const adminApi = {
   me: () => http.get<AdminMeView>('/admin/me').then((r) => r.data),
   users: () => http.get<AdminUserView[]>('/admin/users').then((r) => r.data),

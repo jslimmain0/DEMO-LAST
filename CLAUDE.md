@@ -1088,6 +1088,12 @@ API 도구 UX·비주얼/IA·플로우 통합 3관점 병렬 비평 → 확정 �
   - **관리 콘솔 다듬기**: 승인/차단 토스트+행 단위 처리중, 검색 대소문자 버그, me 로딩 스켈레톤(비관리자 깜빡임 방지), 파괴 버튼 중복 클릭 가드, 테이블 가로 스크롤, 팀 멤버 행 상태 필, WorkspaceDialog 의 중복 [사용자] 탭 제거(콘솔 단일 진입점, SPA Link).
   - **대시보드 잔결함**: 죽은 ws localStorage 정리(가짜 "백엔드 연결 실패" 방지) · 게스트/PENDING 에 "＋ 새 팀" 숨김 · 최근 실행 ws 스코프 · 폴더 컨텍스트 액션 scopeReady 가드 · 즐겨찾기 ws 별 분리.
   - 검증: WorkspaceRbacTest **12종**(트리거/Mock 게이트·putMember 가드·purgeUser·개인 ws 이관) + 전체 스위트 그린 + 라이브 e2e/브라우저.
+- **관리 콘솔 전면 리빌딩(사용자 피드백 "UX/UI 안 좋다 — 리빌딩해", 같은 날)**: [Admin.tsx](frontend/src/routes/Admin.tsx) 재작성 —
+  상단 **현황 스트립 4카드**(멤버/가입 신청(대기 시 강조)/팀+개인/워크플로+Mock, 클릭=탭 이동) · 세그먼트 탭(카운트 배지) · ↻ 새로고침(스피너).
+  [사용자] 신청 큐(아바타·신청 시각·**모두 승인 N**)+멤버 테이블(아바타·상태 필터 칩(전체/승인/차단)·정렬(최근 접속/이름)·**전역 롤 세그먼트**(ADMIN/MEMBER, 본인 잠금)·승인 직후 행 초록 하이라이트 4초).
+  [팀] 공용 요약 카드+팀 카드(**멤버 아바타 스택**·워크플로/Mock/멤버/생성 메타·롤 select·내보내기)+개인 워크스페이스 행(소유자 상태·최근 접속).
+  파괴적 동작은 공용 [ConfirmChip](frontend/src/routes/Admin.tsx)(클릭→[취소|확정] 인라인, 4초 자동 해제)으로 전부 통일. Avatar 는 username 해시 색(콘솔 전역 동일).
+  백엔드: AdminWorkspaceView.mockCount + publicMockCount([MockServerRepository](backend/src/main/kotlin/com/flowlink/core/repository/MockServerRepository.kt) count 2종).
 - ⚠ **잔여 경계(의식적 수용)**: BLOCKED 는 신규 로그인+승인 게이트만 즉시 — 이미 발급된 JWT(12h)의 공용 접근은 만료까지 유지(매 요청 status 검사 필터는 후속). Mock 서빙·TCP 포트는 전역(무인증 테스트 도구 전제). 시크릿/환경/설정은 테넌트 스코프(워크스페이스 무관). removeMember 의 OWNER 카운트는 비관적 락 없음(동시 상호 내보내기 이론상 레이스 — 관리자 복구 가능).
 
 ## 참고 문서

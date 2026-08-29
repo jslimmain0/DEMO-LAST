@@ -68,6 +68,7 @@ class AdminController(
     private val wsRepo: com.flowlink.core.repository.WorkspaceRepository,
     private val memberRepo: com.flowlink.core.repository.WorkspaceMemberRepository,
     private val flowRepo: com.flowlink.core.repository.FlowRepository,
+    private val mockRepo: com.flowlink.core.repository.MockServerRepository,
 ) {
     data class UserView(
         val username: String, val globalRole: String, val status: String,
@@ -81,8 +82,12 @@ class AdminController(
     data class AdminWorkspaceView(
         val id: String, val name: String, val kind: String, val ownerUsername: String?,
         val createdAt: String?, val flowCount: Long, val members: List<MemberView>,
+        val mockCount: Long = 0,
     )
-    data class AdminWorkspacesResponse(val publicFlowCount: Long, val workspaces: List<AdminWorkspaceView>)
+    data class AdminWorkspacesResponse(
+        val publicFlowCount: Long, val workspaces: List<AdminWorkspaceView>,
+        val publicMockCount: Long = 0,
+    )
 
     private fun requireAdmin() {
         if (!service.isAdmin(service.currentUsername())) throw ForbiddenException("관리자만 접근할 수 있습니다.")
@@ -126,9 +131,13 @@ class AdminController(
                 ws.id.toString(), ws.name, ws.kind, ws.ownerUsername, ws.createdAt?.toString(),
                 flowRepo.countByTenantIdAndArchivedFalseAndWorkspaceId(tenant, ws.id),
                 memberRepo.findByWorkspaceIdOrderByCreatedAtAsc(ws.id).map { MemberView(it.username, it.role) },
+                mockRepo.countByTenantIdAndWorkspaceId(tenant, ws.id),
             )
         }
-        return AdminWorkspacesResponse(flowRepo.countByTenantIdAndArchivedFalseAndWorkspaceIdIsNull(tenant), list)
+        return AdminWorkspacesResponse(
+            flowRepo.countByTenantIdAndArchivedFalseAndWorkspaceIdIsNull(tenant), list,
+            mockRepo.countByTenantIdAndWorkspaceIdIsNull(tenant),
+        )
     }
 
     /** 전역 롤 및/또는 가입 상태 변경 — 둘 다 선택(주면 그것만 적용). 없는 사용자면 등록(테스트/사전 배정용). */

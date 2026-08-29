@@ -23,4 +23,8 @@ interface MockServerRepository : JpaRepository<MockServer, UUID> {
     fun findByTenantIdAndSlug(tenantId: String, slug: String): Optional<MockServer>
 
     fun existsByTenantIdAndSlug(tenantId: String, slug: String): Boolean
+
+    // 관리 콘솔 — 워크스페이스별 mock 수
+    fun countByTenantIdAndWorkspaceId(tenantId: String, workspaceId: UUID): Long
+    fun countByTenantIdAndWorkspaceIdIsNull(tenantId: String): Long
 }

@@ -26,9 +26,12 @@ export function WorkspaceDialog({ current, onClose, onDeleted }: {
         <span style={{ fontSize: 12.5, color: 'var(--fl-text-muted)' }}>
           {current.kind === 'PUBLIC' ? '🌐' : current.kind === 'PERSONAL' ? '🔒' : '👥'} {current.name}
         </span>
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: 4 }}>
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 4, alignItems: 'center' }}>
           <button onClick={() => setTab('members')} style={tabBtn(tab === 'members')}>멤버</button>
           {me.data?.admin && <button onClick={() => setTab('users')} style={tabBtn(tab === 'users')}>사용자 (admin)</button>}
+          {me.data?.admin && (
+            <a href="/admin" style={{ fontSize: 12, color: 'var(--fl-primary)', textDecoration: 'none', fontWeight: 600, marginLeft: 4 }} title="회원·팀·권한 전체 관리">🛡 관리 콘솔 →</a>
+          )}
         </div>
         <button onClick={onClose} aria-label="닫기" style={xBtn}>×</button>
       </div>

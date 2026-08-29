@@ -1,6 +1,8 @@
+import { useQuery } from '@tanstack/react-query'
 import type { CSSProperties, ReactNode } from 'react'
 import { useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
+import { adminApi } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
 import { SettingsDialog } from '../components/SettingsDialog'
 import { getTheme, toggleTheme, type Theme } from '../design/theme'
@@ -10,6 +12,8 @@ const NAV = [
   { to: '/mocks', label: 'Mock 서버', icon: '◈' },
   { to: '/executions', label: '실행 이력', icon: '◴' },
 ]
+// 관리 콘솔 — 관리자에게만 노출(백엔드 /admin/* 도 403 으로 이중 방어)
+const NAV_ADMIN = { to: '/admin', label: '관리', icon: '🛡' }
 
 /** 앱 전역 셸 — AI Studio 식 좌측 세로 사이드바 네비 + 우측 콘텐츠.
  *  sidebarExtra: 페이지가 사이드바에 덧붙이는 컨텍스트 UI(예: 대시보드의 폴더 목록). */
@@ -18,6 +22,9 @@ export function AppShellTier1({ children, sidebarExtra }: { children: ReactNode;
   const [settingsOpen, setSettingsOpen] = useState(false)
   const loc = useLocation()
   const { enabled: authEnabled, me, logout, isGuest, requestLogin } = useAuth()
+  // 관리자 여부(캐시 5분) — 관리 네비 노출 게이트
+  const adminMe = useQuery({ queryKey: ['admin', 'me'], queryFn: adminApi.me, staleTime: 300_000 })
+  const nav = adminMe.data?.admin ? [...NAV, NAV_ADMIN] : NAV
 
   const navItem = (to: string): CSSProperties => {
     const active = loc.pathname.startsWith(to)
@@ -48,7 +55,7 @@ export function AppShellTier1({ children, sidebarExtra }: { children: ReactNode;
 
         <div style={sectionLabel}>메뉴</div>
         <nav style={{ display: 'grid', gap: 2 }}>
-          {NAV.map((n) => (
+          {nav.map((n) => (
             <Link key={n.to} to={n.to} style={navItem(n.to)}>
               <span aria-hidden style={{ width: 16, textAlign: 'center', fontSize: 14 }}>{n.icon}</span>
               <span>{n.label}</span>

@@ -159,7 +159,8 @@ class WorkspaceService(
     fun delete(workspaceId: UUID) {
         val me = currentUsername()
         val ws = wsRepo.findByIdAndTenantId(workspaceId, tenant()).orElseThrow { NotFoundException.of("Workspace", workspaceId) }
-        if (ws.kind == Workspace.KIND_PERSONAL) throw BadRequestException("개인 워크스페이스는 삭제할 수 없습니다.")
+        // 개인 워크스페이스는 소유자도 못 지운다(자동 재생성될 뿐) — 단 관리자는 정리 가능(탈퇴자 잔여 공간 등)
+        if (ws.kind == Workspace.KIND_PERSONAL && !isAdmin(me)) throw BadRequestException("개인 워크스페이스는 삭제할 수 없습니다.")
         requireOwner(me, workspaceId)
         memberRepo.deleteByWorkspaceId(workspaceId)
         // 안의 플로우/폴더는 공용으로 승격 — 데이터 유실 방지(정리는 사용자가)

@@ -131,6 +131,11 @@ export const workspacesApi = {
 
 export interface AdminMeView { username: string; admin: boolean; authenticated: boolean }
 export interface AdminUserView { username: string; globalRole: 'ADMIN' | 'MEMBER'; lastSeenAt: string | null }
+export interface AdminWorkspaceView {
+  id: string; name: string; kind: 'PERSONAL' | 'TEAM'; ownerUsername: string | null
+  createdAt: string | null; flowCount: number; members: WorkspaceMemberView[]
+}
+export interface AdminWorkspacesResponse { publicFlowCount: number; workspaces: AdminWorkspaceView[] }
 export const adminApi = {
   me: () => http.get<AdminMeView>('/admin/me').then((r) => r.data),
   users: () => http.get<AdminUserView[]>('/admin/users').then((r) => r.data),
@@ -138,6 +143,8 @@ export const adminApi = {
     http.put<AdminUserView>(`/admin/users/${encodeURIComponent(username)}`, { globalRole }).then((r) => r.data),
   removeUser: (username: string) =>
     http.delete(`/admin/users/${encodeURIComponent(username)}`).then(() => undefined),
+  // 팀·권한 콘솔 — 전체 워크스페이스(팀+개인) + 멤버 + 워크플로 수 1왕복
+  workspaces: () => http.get<AdminWorkspacesResponse>('/admin/workspaces').then((r) => r.data),
 }
 
 export const mocksApi = {

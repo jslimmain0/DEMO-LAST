@@ -4,6 +4,7 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { AuthProvider } from './auth/AuthContext'
 import { Toasts } from './components/toast'
 import { applyTheme, getTheme } from './design/theme'
+import { Admin } from './routes/Admin'
 import { Dashboard } from './routes/Dashboard'
 import { Editor } from './routes/Editor'
 import { Executions } from './routes/Executions'
@@ -30,6 +31,7 @@ export default function App() {
             <Route path="/executions" element={<Executions />} />
             <Route path="/mocks" element={<MockServers />} />
             <Route path="/mocks/:id" element={<MockServerEditor />} />
+            <Route path="/admin" element={<Admin />} />
             <Route path="*" element={<Navigate to="/flows" replace />} />
           </Routes>
         </BrowserRouter>

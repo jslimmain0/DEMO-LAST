@@ -20,6 +20,10 @@ interface FlowRepository : JpaRepository<Flow, UUID> {
 
     fun countByTenantIdAndFolderIdAndArchivedFalse(tenantId: String, folderId: UUID): Long
 
+    // 관리 콘솔 — 워크스페이스별 워크플로 수
+    fun countByTenantIdAndArchivedFalseAndWorkspaceId(tenantId: String, workspaceId: UUID): Long
+    fun countByTenantIdAndArchivedFalseAndWorkspaceIdIsNull(tenantId: String): Long
+
     /** 폴더 직속 워크플로 — 스위트 일괄 실행용(하위 폴더 재귀 아님). */
     fun findByTenantIdAndFolderIdAndArchivedFalse(tenantId: String, folderId: UUID): List<Flow>
 

@@ -59,15 +59,23 @@ class WorkspaceController(private val service: WorkspaceService) {
     }
 }
 
-/** 관리자 — 사용자 레지스트리/전역 롤. (ADMIN 전용) */
+/** 관리자 — 사용자 레지스트리/전역 롤 + 팀·권한 콘솔. (ADMIN 전용) */
 @RestController
 @RequestMapping("/api/v1/admin")
 class AdminController(
     private val service: WorkspaceService,
     private val userRepo: AppUserRepository,
+    private val wsRepo: com.flowlink.core.repository.WorkspaceRepository,
+    private val memberRepo: com.flowlink.core.repository.WorkspaceMemberRepository,
+    private val flowRepo: com.flowlink.core.repository.FlowRepository,
 ) {
     data class UserView(val username: String, val globalRole: String, val lastSeenAt: String?)
     data class MeView(val username: String, val admin: Boolean, val authenticated: Boolean)
+    data class AdminWorkspaceView(
+        val id: String, val name: String, val kind: String, val ownerUsername: String?,
+        val createdAt: String?, val flowCount: Long, val members: List<MemberView>,
+    )
+    data class AdminWorkspacesResponse(val publicFlowCount: Long, val workspaces: List<AdminWorkspaceView>)
 
     private fun requireAdmin() {
         if (!service.isAdmin(service.currentUsername())) throw ForbiddenException("관리자만 접근할 수 있습니다.")
@@ -86,6 +94,22 @@ class AdminController(
         requireAdmin()
         return userRepo.findByTenantIdOrderByUsernameAsc(TenantContext.SHARED_FLOW_TENANT)
             .map { UserView(it.username, it.globalRole, it.lastSeenAt?.toString()) }
+    }
+
+    /** 팀·권한 콘솔 한 화면용 — 전체 워크스페이스(팀+개인) + 멤버 + 워크플로 수를 1왕복으로. */
+    @GetMapping("/workspaces")
+    @Transactional(readOnly = true)
+    fun workspaces(): AdminWorkspacesResponse {
+        requireAdmin()
+        val tenant = TenantContext.SHARED_FLOW_TENANT
+        val list = wsRepo.findByTenantIdOrderByCreatedAtAsc(tenant).map { ws ->
+            AdminWorkspaceView(
+                ws.id.toString(), ws.name, ws.kind, ws.ownerUsername, ws.createdAt?.toString(),
+                flowRepo.countByTenantIdAndArchivedFalseAndWorkspaceId(tenant, ws.id),
+                memberRepo.findByWorkspaceIdOrderByCreatedAtAsc(ws.id).map { MemberView(it.username, it.role) },
+            )
+        }
+        return AdminWorkspacesResponse(flowRepo.countByTenantIdAndArchivedFalseAndWorkspaceIdIsNull(tenant), list)
     }
 
     data class PutUserRequest(@field:NotBlank(message = "globalRole 은 필수입니다.") val globalRole: String)
@@ -111,6 +135,9 @@ class AdminController(
         requireAdmin()
         val u = userRepo.findByTenantIdAndUsername(TenantContext.SHARED_FLOW_TENANT, username.trim().lowercase())
             .orElseThrow { NotFoundException.of("User", username) }
+        // 팀 멤버십도 함께 정리 — 삭제된 사용자가 팀 목록에 유령으로 남지 않게(팀 자체·개인 워크스페이스는 유지,
+        // 관리자는 모든 워크스페이스 OWNER 격이라 소유자 없는 팀도 계속 관리 가능).
+        memberRepo.findByUsername(u.username).forEach { memberRepo.delete(it) }
         userRepo.delete(u)
     }
 }

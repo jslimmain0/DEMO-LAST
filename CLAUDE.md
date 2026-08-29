@@ -1116,6 +1116,10 @@ API 도구 UX·비주얼/IA·플로우 통합 3관점 병렬 비평 → 확정 �
 - **isAdmin 5초 캐시**: 실행 폴링(0.4초 tick)의 워크스페이스 게이트가 매번 사용자 행을 조회하던 것 — putUser/deleteUser 에서 즉시 무효화([invalidateRoleCache](backend/src/main/kotlin/com/flowlink/workspace/WorkspaceService.kt)).
 - 관찰(수정 안 함): 프론트 본 번들 gzip 275KB(CodeEditor 200KB 는 lazy 분리됨) · listFiltered 의 offset 은 off+limit 페치(대형 offset 비효율 — 실사용 200 상한이라 무해) · mock 서빙 ~5ms.
 - ⚠ purge 는 UI 없음(API 전용) — 관리 콘솔 버튼은 후속 후보. 요약 캐시·isAdmin 캐시는 단일 인스턴스 스코프.
+- **자동 보존 정책(후속 — 사용자 요청 "1·2 해결")**: [maintenance/RetentionService](backend/src/main/kotlin/com/flowlink/maintenance/RetentionService.kt) —
+  6시간 주기 스윕(기동 90초 후 1회): ① 실행 이력 `retention.execution-days`(기본 90일, RUNNING/WAITING 보호) ② 버전 스냅샷
+  `retention.flow-versions-keep`(기본 flow 당 100개 — **실행 이력·트리거 참조 버전은 보호**, [pruneOldVersions](backend/src/main/kotlin/com/flowlink/core/repository/FlowVersionRepository.kt)).
+  0=끄기. 전용 데몬 스레드(TriggerScheduler 관례), 단일 인스턴스 스코프. RetentionServiceTest 2종(백데이트는 JdbcTemplate).
 
 ## 참고 문서
 - `backend/README.md` — 백엔드 구조·설정·API 요약 · `frontend/README.md` · `infra/README.md`(배포)

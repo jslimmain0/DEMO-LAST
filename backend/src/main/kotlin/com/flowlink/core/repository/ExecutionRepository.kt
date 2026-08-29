@@ -67,4 +67,9 @@ interface ExecutionRepository : JpaRepository<Execution, UUID> {
         @Param("before") before: Instant?,
         @Param("active") active: Collection<ExecutionStatus>,
     ): Int
+
+    /** 보존 정책 스윕(서버 유지보수 — 테넌트 무관) — 기준 시각 이전의 끝난 실행 일괄 삭제. */
+    @org.springframework.data.jpa.repository.Modifying
+    @Query("DELETE FROM Execution e WHERE e.startedAt < :before AND e.status NOT IN :active")
+    fun purgeBefore(@Param("before") before: Instant, @Param("active") active: Collection<ExecutionStatus>): Int
 }

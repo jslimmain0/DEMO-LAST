@@ -51,6 +51,10 @@ management:
 
 # Flowlink 고유 설정
 flowlink:
+  # DB 무한 성장 방지 자동 보존 정책 — 6시간 주기 스윕(기동 90초 후 1회 포함). 0 = 끄기.
+  retention:
+    execution-days: 90        # 90일 이전의 끝난 실행(+노드 기록) 자동 삭제 (env FLOWLINK_RETENTION_EXECUTION_DAYS)
+    flow-versions-keep: 100   # flow 당 최신 100개 버전 유지 — 실행/트리거가 참조하는 버전은 보호 (env FLOWLINK_RETENTION_FLOW_VERSIONS_KEEP)
   execution:
     http:
       connect-timeout-ms: 5000

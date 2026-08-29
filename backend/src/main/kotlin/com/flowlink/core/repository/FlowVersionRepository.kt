@@ -20,4 +20,18 @@ interface FlowVersionRepository : JpaRepository<FlowVersion, UUID> {
         "SELECT v FROM FlowVersion v, Flow f WHERE f.id = v.flowId AND v.versionNo = f.currentVersion AND f.id IN :flowIds"
     )
     fun findCurrentByFlowIds(@org.springframework.data.repository.query.Param("flowIds") flowIds: Collection<UUID>): List<FlowVersion>
+
+    /**
+     * 버전 스냅샷 보존 정리 — flow 마다 최신 :keep 개만 남기고 오래된 버전 삭제.
+     * 단 **실행 이력이 참조하는 버전**(재실행/rehydrate 재현용)과 **트리거가 고정한 버전**은 남긴다.
+     * (자동 저장이 1.5초마다 그래프 CLOB 버전을 쌓아 DB 가 무한 성장하던 부하 지점의 해소)
+     */
+    @org.springframework.data.jpa.repository.Modifying
+    @org.springframework.data.jpa.repository.Query(
+        "DELETE FROM FlowVersion v WHERE " +
+            "v.versionNo <= (SELECT f.currentVersion FROM Flow f WHERE f.id = v.flowId) - :keep " +
+            "AND NOT EXISTS (SELECT 1 FROM Execution e WHERE e.flowVersionId = v.id) " +
+            "AND NOT EXISTS (SELECT 1 FROM FlowTrigger t WHERE t.flowId = v.flowId AND t.versionNo = v.versionNo)"
+    )
+    fun pruneOldVersions(@org.springframework.data.repository.query.Param("keep") keep: Int): Int
 }

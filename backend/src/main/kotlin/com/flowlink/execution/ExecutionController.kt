@@ -81,10 +81,12 @@ class ExecutionController(private val service: ExecutionService) {
         @RequestParam(required = false) from: Long?,
         @RequestParam(required = false) to: Long?,
         @RequestParam(defaultValue = "0") offset: Int,
+        // 워크스페이스 스코프 — 'public'=공용, UUID=팀/개인. 지정 시 그 워크스페이스 flow 의 실행만.
+        @RequestParam(required = false) workspaceId: String?,
     ): List<ExecutionSummary> =
-        if (status == null && flowId == null && from == null && to == null && offset == 0)
-            service.listRecent(limit)
-        else service.listFiltered(status, flowId, from, to, limit, offset)
+        if (workspaceId == null && status == null && flowId == null && from == null && to == null && offset == 0)
+            service.listRecent(limit) // 무필터 최근(대시보드 배지) — 내 실행 한정이라 스코프 불필요
+        else service.listFiltered(status, flowId, from, to, limit, offset, workspaceId)
 
     /** 같은 조건(원본 flowVersion+input)으로 재실행. */
     @PostMapping("/executions/{id}/rerun")

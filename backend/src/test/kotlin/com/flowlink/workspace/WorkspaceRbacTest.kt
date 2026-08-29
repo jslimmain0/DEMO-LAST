@@ -41,6 +41,7 @@ class WorkspaceRbacTest {
     @Autowired lateinit var ws: WorkspaceService
     @Autowired lateinit var flowService: FlowService
     @Autowired lateinit var flowRepo: FlowRepository
+    @Autowired lateinit var execService: com.flowlink.execution.ExecutionService
 
     @AfterEach
     fun clear() = SecurityContextHolder.clearContext()
@@ -127,6 +128,29 @@ class WorkspaceRbacTest {
         ws.delete(teamId)
         assertNull(flowRepo.findById(flow.id).get().workspaceId)
         assertTrue(flowService.list(null).any { it.id == flow.id })
+    }
+
+    @Test
+    fun `실행 레이어 게이트 - VIEWER 실행 403, 비멤버 이력 조회 403, 이력 워크스페이스 스코프`() {
+        asUser("alice")
+        val team = ws.createTeam("실행팀")
+        val teamId = UUID.fromString(team.id)
+        ws.putMember(teamId, "bob", WorkspaceMember.ROLE_VIEWER)
+        val flow = flowService.create(CreateFlowRequest("실행 플로우", null, null, team.id))
+
+        asUser("bob") // VIEWER — 실행 불가(조회만)
+        assertThrows(ForbiddenException::class.java) { execService.run(flow.id, null) }
+        assertThrows(ForbiddenException::class.java) { execService.runSingleNode(flow.id, "n1") }
+        execService.listFiltered(null, null, null, null, 10, 0, team.id) // 이력 조회는 허용
+
+        asUser("mallory") // 비멤버 — 이력 조회부터 403 (워크스페이스 지정/flowId 직접 지정 모두)
+        assertThrows(ForbiddenException::class.java) { execService.listFiltered(null, null, null, null, 10, 0, team.id) }
+        assertThrows(ForbiddenException::class.java) { execService.listFiltered(null, flow.id, null, null, 10, 0, null) }
+        assertThrows(ForbiddenException::class.java) { execService.listForFlow(flow.id, 10) }
+
+        asUser("alice") // 스코프 분리 — 공용 스코프 이력엔 팀 flow 실행이 안 섞인다(빈 결과여도 호출 자체는 성공)
+        assertTrue(execService.listFiltered(null, null, null, null, 10, 0, null).none { it.flowId == flow.id })
+        assertTrue(execService.listFiltered(null, null, null, null, 10, 0, team.id).isEmpty())
     }
 
     @Test

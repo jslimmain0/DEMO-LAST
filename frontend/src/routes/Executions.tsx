@@ -1,9 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { CSSProperties } from 'react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import type { ExecutionStatus, ExecutionSummary } from '../api/types'
-import { runsApi } from '../api/client'
+import { runsApi, workspacesApi } from '../api/client'
 import { AppShellTier1 } from '../app/AppShell'
 import { LogBlock } from '../components/NodeExecutionLog'
 import { StatusBadge } from '../components/StatusBadge'
@@ -39,14 +39,27 @@ export function Executions() {
   const [q, setQ] = useState('')
   const [openExec, setOpenExec] = useState<string | null>(null)
 
+  // 워크스페이스 스코프 — 대시보드와 같은 선택(fl:workspace)을 공유. 여기서 바꾸면 대시보드도 따라간다.
+  const [wsId, setWsIdRaw] = useState<string>(() => { try { return localStorage.getItem('fl:workspace') ?? 'public' } catch { return 'public' } })
+  const workspaces = useQuery({ queryKey: ['workspaces'], queryFn: workspacesApi.list })
+  const setWsId = (id: string) => {
+    setWsIdRaw(id)
+    try { localStorage.setItem('fl:workspace', id) } catch { /* 프라이빗 모드 */ }
+  }
+  // 저장된 워크스페이스가 사라졌으면(삭제/권한 상실) 공용으로 복귀 — 대시보드와 동일 규칙
+  useEffect(() => {
+    if (workspaces.data && !workspaces.isFetching && !workspaces.data.some((w) => w.id === wsId)) setWsIdRaw('public')
+  }, [workspaces.data, workspaces.isFetching, wsId])
+
   const rangeMs = RANGES.find(([k]) => k === range)?.[2] ?? null
-  // 서버측 status/기간 필터 + limit. from 은 쿼리 실행 시점 기준(키에는 range 코드만 넣어 매 렌더 재요청 방지).
+  // 서버측 status/기간/워크스페이스 필터 + limit. from 은 쿼리 실행 시점 기준(키에는 range 코드만 넣어 매 렌더 재요청 방지).
   const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ['executions', 'list', limit, filter, range],
+    queryKey: ['executions', 'list', limit, filter, range, wsId],
     queryFn: () => runsApi.list({
       limit,
       status: filter === 'all' ? undefined : filter,
       from: rangeMs != null ? Date.now() - rangeMs : undefined,
+      workspaceId: wsId,
     }),
   })
   const all = data ?? []
@@ -73,6 +86,17 @@ export function Executions() {
               {failCount > 0 && <span style={{ ...metaMono, color: 'var(--fl-fail)' }}>✕ {failCount}</span>}
             </div>
           )}
+          {/* 워크스페이스 스코프 — 이력이 워크스페이스별로 분리. 대시보드 선택과 동기화 */}
+          <select
+            aria-label="워크스페이스"
+            value={wsId}
+            onChange={(e) => setWsId(e.target.value)}
+            style={{ marginLeft: 'auto', padding: '7px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', color: 'var(--fl-text)', fontSize: 12.5, cursor: 'pointer' }}
+          >
+            {(workspaces.data ?? [{ id: 'public', name: '공용', kind: 'PUBLIC' } as const]).map((w) => (
+              <option key={w.id} value={w.id}>{w.kind === 'PERSONAL' ? '🔒' : w.kind === 'TEAM' ? '👥' : '🌐'} {w.name}</option>
+            ))}
+          </select>
         </div>
 
         {!isLoading && !isError && (all.length > 0 || filter !== 'all' || range !== 'all' || q) && (

@@ -80,6 +80,7 @@ class ExecutionService(
     private val notifier: com.flowlink.notify.NotificationService,
     private val secretService: com.flowlink.secret.SecretService,
     private val crypto: com.flowlink.common.crypto.CryptoProvider,
+    private val workspace: com.flowlink.workspace.WorkspaceService,
     txManager: PlatformTransactionManager,
 ) {
     private val mapper: ObjectMapper = json.mapper()
@@ -130,6 +131,7 @@ class ExecutionService(
         // flow 는 전역 공유 — 공유 테넌트로 조회(로그인 테넌트 무관).
         val flow = flowRepo.findByIdAndTenantId(flowId, TenantContext.SHARED_FLOW_TENANT)
             .orElseThrow { NotFoundException.of("Flow", flowId) }
+        workspace.requireWrite(workspace.currentUsername(), flow.workspaceId) // VIEWER 는 실행 불가(조회만)
         val version = versionRepo.findByFlowIdAndVersionNo(flowId, flow.currentVersion)
             .orElseThrow { NotFoundException.of("FlowVersion", "$flowId/v${flow.currentVersion}") }
         val graph = json.parseGraph(version.graphJson)
@@ -172,9 +174,10 @@ class ExecutionService(
     @Transactional(readOnly = true)
     fun previewTcp(flowId: UUID, nodeId: String, override: com.flowlink.core.graph.GraphNode? = null): com.flowlink.execution.engine.TcpPreview {
         val node = if (override != null) override else {
-            // flow 는 전역 공유 — 공유 테넌트로 조회.
+            // flow 는 전역 공유 — 공유 테넌트로 조회. 저장 그래프를 읽으므로 워크스페이스 읽기 권한 필요.
             val flow = flowRepo.findByIdAndTenantId(flowId, TenantContext.SHARED_FLOW_TENANT)
                 .orElseThrow { NotFoundException.of("Flow", flowId) }
+            workspace.requireRead(workspace.currentUsername(), flow.workspaceId)
             val version = versionRepo.findByFlowIdAndVersionNo(flowId, flow.currentVersion)
                 .orElseThrow { NotFoundException.of("FlowVersion", "$flowId/v${flow.currentVersion}") }
             val graph = json.parseGraph(version.graphJson)
@@ -194,6 +197,12 @@ class ExecutionService(
         // flow 는 전역 공유 — 조회만 공유 테넌트로(실행 이력은 위 tenant 로 격리 유지).
         val flow = flowRepo.findByIdAndTenantId(flowId, TenantContext.SHARED_FLOW_TENANT)
             .orElseThrow { NotFoundException.of("Flow", flowId) }
+
+        // 워크스페이스 롤 게이트 — VIEWER 는 실행 불가(조회만). 트리거 발화(SCHEDULE/WEBHOOK)는 등록 시점에
+        // 승인된 것이므로 호출자 신원(스케줄러 스레드=guest/dev)으로 재판정하지 않는다.
+        if (trigger == TriggerType.MANUAL) {
+            workspace.requireWrite(workspace.currentUsername(), flow.workspaceId)
+        }
 
         val versionNo = req?.versionNo ?: flow.currentVersion
         val version = versionRepo.findByFlowIdAndVersionNo(flowId, versionNo)
@@ -415,6 +424,7 @@ class ExecutionService(
     fun get(executionId: UUID): ExecutionDetail {
         val e = executionRepo.findByIdAndTenantId(executionId, TenantContext.getTenantId())
             .orElseThrow { NotFoundException.of("Execution", executionId) }
+        requireFlowRead(e.flowId) // 실행 상세도 flow 의 워크스페이스 읽기 권한 필요
         // 아직 중단(대기) 중이면 pending 명세를 함께 반환 — 프론트가 폴링만으로 대기 상태를 유지/재개 감지.
         // (이게 없으면 wait 대기 루프가 첫 재조회에서 pending=null 을 보고 바로 끝나 "콜백 대기가 안 되는" 증상)
         if (e.status == ExecutionStatus.WAITING) {
@@ -442,9 +452,10 @@ class ExecutionService(
 
     @Transactional(readOnly = true)
     fun listForFlow(flowId: UUID, limit: Int): List<ExecutionSummary> {
-        // flow 존재 확인(공유 풀) — 없는 flowId 는 404.
-        flowRepo.findByIdAndTenantId(flowId, TenantContext.SHARED_FLOW_TENANT)
+        // flow 존재 확인(공유 풀) — 없는 flowId 는 404. 워크스페이스 읽기 권한도 함께.
+        val flow = flowRepo.findByIdAndTenantId(flowId, TenantContext.SHARED_FLOW_TENANT)
             .orElseThrow { NotFoundException.of("Flow", flowId) }
+        workspace.requireRead(workspace.currentUsername(), flow.workspaceId)
         // 실행 이력은 사용자별 격리 유지 — 공유 flow 라도 내 실행만 반환(타 팀 실행 유출 방지).
         val execs = executionRepo.findByFlowIdAndTenantIdOrderByStartedAtDesc(
             flowId, TenantContext.getTenantId(), PageRequest.of(0, clamp(limit)))
@@ -457,11 +468,23 @@ class ExecutionService(
         return withFlowNames(execs)
     }
 
-    /** 실행 이력 필터 조회(status/flowId/기간 + offset 페이지네이션) — 과거 실패 추적용. */
+    /** 실행 이력 필터 조회(status/flowId/기간 + offset 페이지네이션 + **워크스페이스 스코프**) — 과거 실패 추적용. */
     @Transactional(readOnly = true)
     fun listFiltered(
-        status: ExecutionStatus?, flowId: UUID?, fromMs: Long?, toMs: Long?, limit: Int, offset: Int
+        status: ExecutionStatus?, flowId: UUID?, fromMs: Long?, toMs: Long?, limit: Int, offset: Int,
+        workspaceIdRaw: String? = null,
     ): List<ExecutionSummary> {
+        // 워크스페이스별 분리 — 미지정('public'/null)=공용 스코프. 접근 권한 없는 워크스페이스는 403.
+        // flowId 직접 필터면 **그 flow 의 워크스페이스**가 스코프(실행 상세 모달의 flow 이력 등 — 파라미터 불일치로 빈 결과 방지).
+        val wsId = if (flowId != null) {
+            val w = flowRepo.findById(flowId).orElse(null)?.workspaceId
+            workspace.requireRead(workspace.currentUsername(), w)
+            w
+        } else {
+            val w = workspace.resolveId(workspaceIdRaw)
+            workspace.requireRead(workspace.currentUsername(), w)
+            w
+        }
         val pageSize = clamp(limit)
         val off = offset.coerceAtLeast(0)
         // 임의 offset(pageSize 배수 아님)도 정확히 건너뛰도록 off+pageSize 를 가져와 앞 off 개를 버린다
@@ -469,10 +492,15 @@ class ExecutionService(
         val fetched = executionRepo.findFiltered(
             TenantContext.getTenantId(), status, flowId,
             fromMs?.let { Instant.ofEpochMilli(it) }, toMs?.let { Instant.ofEpochMilli(it) },
-            PageRequest.of(0, off + pageSize)
+            wsId, PageRequest.of(0, off + pageSize)
         )
         val execs = if (off > 0) fetched.drop(off) else fetched
         return withFlowNames(execs)
+    }
+
+    /** 실행 → 소속 flow 의 워크스페이스 읽기 게이트. flow 행이 없으면(이론상 없음) 관용 통과. */
+    private fun requireFlowRead(flowId: UUID) {
+        flowRepo.findById(flowId).ifPresent { workspace.requireRead(workspace.currentUsername(), it.workspaceId) }
     }
 
     /**

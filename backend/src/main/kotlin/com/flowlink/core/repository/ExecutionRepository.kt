@@ -28,7 +28,9 @@ interface ExecutionRepository : JpaRepository<Execution, UUID> {
     fun findByStatusIn(statuses: Collection<ExecutionStatus>): List<Execution>
 
     /**
-     * 실행 이력 필터 조회(테넌트 스코프 + 선택 status/flowId/기간). null 파라미터는 무시(전체).
+     * 실행 이력 필터 조회(테넌트 스코프 + 선택 status/flowId/기간 + **워크스페이스 스코프**). null 파라미터는 무시(전체).
+     * 워크스페이스는 flow.workspaceId 로 판정 — ws=null 은 공용(레거시 포함). 삭제된 flow 의 실행은 어느 스코프에도
+     * 안 나오는 대신 flowId 직접 필터로는 여전히 조회 가능(flow 는 archive 라 실제 삭제는 없음).
      * 페이지네이션은 Pageable(offset+limit)로 — 실행량 많은 팀의 과거 실패 추적용.
      */
     @Query(
@@ -37,6 +39,8 @@ interface ExecutionRepository : JpaRepository<Execution, UUID> {
             "AND (:flowId IS NULL OR e.flowId = :flowId) " +
             "AND (:from IS NULL OR e.startedAt >= :from) " +
             "AND (:to IS NULL OR e.startedAt <= :to) " +
+            "AND EXISTS (SELECT 1 FROM Flow f WHERE f.id = e.flowId " +
+            "  AND ((:ws IS NULL AND f.workspaceId IS NULL) OR f.workspaceId = :ws)) " +
             "ORDER BY e.startedAt DESC"
     )
     fun findFiltered(
@@ -45,6 +49,7 @@ interface ExecutionRepository : JpaRepository<Execution, UUID> {
         @Param("flowId") flowId: UUID?,
         @Param("from") from: Instant?,
         @Param("to") to: Instant?,
+        @Param("ws") ws: UUID?,
         pageable: Pageable,
     ): List<Execution>
 }

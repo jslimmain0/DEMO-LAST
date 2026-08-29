@@ -94,6 +94,11 @@ class TriggerService(
     fun claimWebhookFire(token: String, body: com.fasterxml.jackson.databind.JsonNode?): FireSpec? {
         val t = triggerRepo.findByWebhookToken(token).orElse(null) ?: return null
         if (!t.enabled) return null
+        if (flowGone(t.flowId)) { // 삭제(archive)된 flow 의 웹훅도 발화 금지 + 자동 비활성
+            log.warn("웹훅 트리거 자동 비활성 — flow 가 삭제됨(trigger={}, flow={})", t.id, t.flowId)
+            t.enabled = false
+            return null
+        }
         t.lastRunAt = Instant.now()
         // 본문(JSON object)이 있으면 그걸 input 으로, 없으면 트리거 저장 input
         val inputJson = if (body != null && !body.isNull && body.isObject) json.toJson(body) else t.inputJson
@@ -115,10 +120,20 @@ class TriggerService(
     fun claimScheduleFire(triggerId: UUID, now: Instant): FireSpec? {
         val t = triggerRepo.findById(triggerId).orElse(null) ?: return null
         if (!t.enabled || t.type != TriggerType.SCHEDULE) return null
+        // flow 가 삭제(archive)됐으면 트리거 자동 비활성 — 유령 스케줄이 이력을 무한 오염하던 버그(삭제 후에도 20초마다 발화).
+        if (flowGone(t.flowId)) {
+            log.warn("스케줄 트리거 자동 비활성 — flow 가 삭제됨(trigger={}, flow={})", t.id, t.flowId)
+            t.enabled = false
+            return null
+        }
         t.lastRunAt = now
         t.nextRunAt = computeNext(t.cron.orEmpty(), now)
         return FireSpec(t.tenantId, t.flowId, t.versionNo, t.inputJson)
     }
+
+    /** flow 부재/보관(archive) 여부 — 트리거 발화 가드. */
+    private fun flowGone(flowId: UUID): Boolean =
+        flowRepo.findByIdAndTenantId(flowId, TenantContext.SHARED_FLOW_TENANT).map { it.archived }.orElse(true)
 
     /** 실제 실행 — **비트랜잭션**(ambient tx 없음)이라 run() 의 Execution INSERT 가 즉시 커밋된다. */
     fun runFire(spec: FireSpec, trigger: TriggerType): UUID {

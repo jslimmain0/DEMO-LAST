@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import type { CSSProperties } from 'react'
 import { useState } from 'react'
 import { adminApi, workspacesApi } from '../api/client'
-import type { WorkspaceView } from '../api/client'
+import type { WorkspaceImportResult, WorkspaceView } from '../api/client'
 import { Modal } from './Modal'
 import { toast } from './toast'
 
@@ -40,9 +40,121 @@ export function WorkspaceDialog({ current, onClose, onDeleted }: {
         ) : (
           <MembersTab ws={current} isTeam={isTeam} onDeleted={onDeleted} />
         )}
+        <TransferSection ws={current} />
       </div>
     </Modal>
   )
+}
+
+/**
+ * 워크스페이스 통째 내보내기/가져오기 — 폴더 트리 + 워크플로(현재 그래프) + Mock(spec)을
+ * 한 JSON 텍스트로. 파일 없이 **복사/붙여넣기**로 다른 워크스페이스·인스턴스에 옮긴다.
+ */
+function TransferSection({ ws }: { ws: WorkspaceView }) {
+  const qc = useQueryClient()
+  const [mode, setMode] = useState<'none' | 'export' | 'import'>('none')
+  const [text, setText] = useState('')
+  const [copied, setCopied] = useState(false)
+  const [result, setResult] = useState<WorkspaceImportResult | null>(null)
+
+  const doExport = useMutation({
+    mutationFn: () => workspacesApi.exportBundle(ws.id),
+    onSuccess: (bundle) => { setMode('export'); setResult(null); setCopied(false); setText(JSON.stringify(bundle, null, 2)) },
+    onError: (e) => toast(errOf(e) ?? '내보내기에 실패했습니다.', 'error'),
+  })
+  const doImport = useMutation({
+    mutationFn: (raw: string) => {
+      let parsed: unknown
+      try { parsed = JSON.parse(raw) } catch { throw new Error('JSON 파싱 실패 — 내보내기 텍스트를 그대로 붙여넣으세요.') }
+      return workspacesApi.importBundle(ws.id, parsed)
+    },
+    onSuccess: (r) => {
+      setResult(r)
+      toast(`가져오기 완료 — 폴더 ${r.folders} · 워크플로 ${r.flows} · Mock ${r.mocks}`, 'ok')
+      void qc.invalidateQueries({ queryKey: ['flows'] })
+      void qc.invalidateQueries({ queryKey: ['folders'] })
+      void qc.invalidateQueries({ queryKey: ['mock-servers'] })
+      void qc.invalidateQueries({ queryKey: ['admin', 'workspaces'] })
+    },
+    onError: (e) => toast(errOf(e) ?? (e instanceof Error ? e.message : '가져오기에 실패했습니다.'), 'error'),
+  })
+  const errOf = (e: unknown) => (e as { response?: { data?: { message?: string } } })?.response?.data?.message
+
+  const copy = async () => {
+    try { await navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 2000) }
+    catch { toast('클립보드 복사 실패 — 텍스트를 직접 선택해 복사하세요.', 'error') }
+  }
+
+  const canWrite = ws.kind === 'PUBLIC' || ws.myRole !== 'VIEWER'
+
+  return (
+    <div style={{ marginTop: 18, paddingTop: 14, borderTop: '1px solid var(--fl-border)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <b style={{ fontSize: 12.5 }}>워크스페이스 이동</b>
+        <span style={{ fontSize: 11.5, color: 'var(--fl-text-muted)' }}>폴더·워크플로·Mock 을 JSON 텍스트로 복붙</span>
+        <span style={{ marginLeft: 'auto', display: 'inline-flex', gap: 6 }}>
+          <button onClick={() => (mode === 'export' ? setMode('none') : doExport.mutate())} disabled={doExport.isPending}
+            style={transferBtn(mode === 'export')}>⬆ 내보내기</button>
+          <button onClick={() => { setMode(mode === 'import' ? 'none' : 'import'); setText(''); setResult(null) }}
+            disabled={!canWrite} title={canWrite ? undefined : 'VIEWER 는 가져올 수 없습니다'}
+            style={transferBtn(mode === 'import')}>⬇ 가져오기</button>
+        </span>
+      </div>
+
+      {mode === 'export' && (
+        <div style={{ marginTop: 10 }}>
+          <textarea readOnly value={text} onFocus={(e) => e.currentTarget.select()} spellCheck={false}
+            style={transferArea} aria-label="내보내기 JSON" />
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 6 }}>
+            <button onClick={() => void copy()} style={{ ...addBtn, background: copied ? 'var(--fl-ok)' : 'var(--fl-primary)' }}>
+              {copied ? '✓ 복사됨' : '⧉ 전체 복사'}
+            </button>
+            <span style={{ fontSize: 11.5, color: 'var(--fl-text-muted)' }}>
+              {text.length.toLocaleString()}자 — 다른 워크스페이스의 이 다이얼로그에서 [⬇ 가져오기]에 붙여넣으세요
+            </span>
+          </div>
+        </div>
+      )}
+
+      {mode === 'import' && (
+        <div style={{ marginTop: 10 }}>
+          <textarea value={text} onChange={(e) => setText(e.target.value)} spellCheck={false}
+            placeholder='내보내기로 복사한 JSON 을 붙여넣으세요 ({"kind":"flowlink-workspace", …})'
+            style={transferArea} aria-label="가져오기 JSON" />
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 6 }}>
+            <button onClick={() => doImport.mutate(text)} disabled={!text.trim() || doImport.isPending} style={addBtn}>
+              {doImport.isPending ? '가져오는 중…' : `"${ws.name}" 으로 가져오기`}
+            </button>
+            <span style={{ fontSize: 11.5, color: 'var(--fl-text-muted)' }}>전부 새로 생성 — 기존 데이터는 건드리지 않습니다</span>
+          </div>
+          {result && (
+            <div style={{ marginTop: 8, padding: '9px 12px', borderRadius: 'var(--fl-radius-sm)', background: 'color-mix(in srgb, var(--fl-ok) 9%, transparent)', fontSize: 12.5 }}>
+              ✓ 폴더 {result.folders} · 워크플로 {result.flows} · Mock {result.mocks} 가져옴
+              {result.warnings.length > 0 && (
+                <ul style={{ margin: '6px 0 0', paddingLeft: 18, color: 'var(--fl-text-muted)', fontSize: 12 }}>
+                  {result.warnings.map((w, i) => <li key={i}>{w}</li>)}
+                </ul>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+const transferBtn = (on: boolean): CSSProperties => ({
+  padding: '6px 12px', fontSize: 12, fontWeight: 600, cursor: 'pointer',
+  border: '1px solid ' + (on ? 'var(--fl-primary)' : 'var(--fl-border)'),
+  borderRadius: 'var(--fl-radius-sm)',
+  background: on ? 'color-mix(in srgb, var(--fl-primary) 12%, transparent)' : 'transparent',
+  color: on ? 'var(--fl-primary)' : 'var(--fl-text)',
+})
+const transferArea: CSSProperties = {
+  width: '100%', height: 180, resize: 'vertical', padding: 10,
+  border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)',
+  background: 'var(--fl-bg)', color: 'var(--fl-text)',
+  fontFamily: 'var(--fl-font-mono)', fontSize: 11.5, lineHeight: 1.5, boxSizing: 'border-box',
 }
 
 const ROLES = ['OWNER', 'EDITOR', 'VIEWER'] as const

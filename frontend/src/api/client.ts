@@ -127,7 +127,12 @@ export const workspacesApi = {
     http.put<WorkspaceMemberView[]>(`/workspaces/${id}/members`, { username, role }).then((r) => r.data),
   removeMember: (id: string, username: string) =>
     http.delete<WorkspaceMemberView[]>(`/workspaces/${id}/members/${encodeURIComponent(username)}`).then((r) => r.data),
+  // 워크스페이스 통째 내보내기/가져오기(폴더+워크플로+Mock) — 텍스트 복붙용 JSON 번들
+  exportBundle: (id: string) => http.get<unknown>(`/workspaces/${id}/export`).then((r) => r.data),
+  importBundle: (id: string, bundle: unknown) =>
+    http.post<WorkspaceImportResult>(`/workspaces/${id}/import`, bundle).then((r) => r.data),
 }
+export interface WorkspaceImportResult { folders: number; flows: number; mocks: number; warnings: string[] }
 
 export interface AdminMeView { username: string; admin: boolean; authenticated: boolean; pendingCount: number; myStatus: 'GUEST' | 'PENDING' | 'APPROVED' | 'BLOCKED' }
 export type UserStatus = 'PENDING' | 'APPROVED' | 'BLOCKED'
@@ -152,6 +157,9 @@ export const mocksApi = {
   list: (workspaceId?: string) =>
     http.get<import('./types').MockServerSummary[]>('/mock-servers', { params: workspaceId && workspaceId !== 'public' ? { workspaceId } : undefined }).then((r) => r.data),
   get: (id: string) => http.get<import('./types').MockServerDetail>(`/mock-servers/${id}`).then((r) => r.data),
+  // slug 실시간 가용성 — 서빙 주소(/mock/{slug})가 전역이라 워크스페이스 무관 전체 유일
+  slugCheck: (slug: string) =>
+    http.get<{ slug: string; available: boolean }>('/mock-servers/slug-check', { params: { slug } }).then((r) => r.data),
   create: (body: { name: string; slug: string; type?: 'HTTP' | 'TCP'; workspaceId?: string | null }) =>
     http.post<import('./types').MockServerDetail>('/mock-servers', body).then((r) => r.data),
   update: (id: string, body: { name?: string; enabled?: boolean }) =>

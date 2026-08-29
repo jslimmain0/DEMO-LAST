@@ -45,6 +45,8 @@ class WorkspaceRbacTest {
     @Autowired lateinit var userRepo: com.flowlink.core.repository.AppUserRepository
     @Autowired lateinit var triggerService: com.flowlink.trigger.TriggerService
     @Autowired lateinit var mockService: com.flowlink.mock.MockServerService
+    @Autowired lateinit var transfer: WorkspaceTransferService
+    @Autowired lateinit var folderService: com.flowlink.folder.FolderService
 
     @AfterEach
     fun clear() = SecurityContextHolder.clearContext()
@@ -278,6 +280,46 @@ class WorkspaceRbacTest {
         val alicePersonal = ws.ensurePersonal("alice")!!.id
         assertEquals(alicePersonal, flowRepo.findById(flow.id).get().workspaceId)
         assertNull(ws.roleFor("victim", victimPersonal.id)) // ws 행 자체가 사라짐(roleFor=null)
+    }
+
+    @Test
+    fun `워크스페이스 export-import 라운드트립 - 폴더·플로우·목 이관, slug 자동 개명, VIEWER 가져오기 403`() {
+        asUser("alice")
+        approveUser("alice")
+        val src = ws.createTeam("이전팀")
+        val dst = ws.createTeam("이후팀")
+
+        // 원본: 폴더 1 + 그 안의 flow 1(그래프 포함) + mock 1
+        val folder = folderService.create("결제 폴더", null, src.id)
+        val flow = flowService.create(CreateFlowRequest("이관 플로우", "설명", folder.id, src.id))
+        flowService.saveVersion(flow.id, com.fasterxml.jackson.databind.ObjectMapper().readTree(
+            """{"name":"이관 플로우","nodes":[{"id":"s1","type":"start"},{"id":"e1","type":"end"}],"edges":[{"id":"ed1","from":"s1","to":"e1"}]}"""), null)
+        mockService.create(com.flowlink.mock.MockDtos.CreateMockServerRequest("이관 목", "transfer-mock", "HTTP", src.id))
+
+        val bundle = transfer.export(src.id)
+        assertEquals("flowlink-workspace", bundle.path("kind").asText())
+        assertEquals(1, bundle.path("folders").size())
+        assertEquals(1, bundle.path("flows").size())
+        assertEquals(1, bundle.path("mocks").size())
+
+        // 대상 워크스페이스로 가져오기 — slug 는 이미 존재하므로 -2 로 자동 개명
+        val r = transfer.import(dst.id, bundle)
+        assertEquals(1, r.folders); assertEquals(1, r.flows); assertEquals(1, r.mocks)
+        assertTrue(r.warnings.any { it.contains("transfer-mock-2") })
+        assertTrue(flowService.list(dst.id).any { it.name == "이관 플로우" })
+        assertTrue(mockService.list(dst.id).any { it.slug == "transfer-mock-2" })
+        assertTrue(folderService.list(dst.id).any { it.name == "결제 폴더" })
+        // 원본 불변
+        assertTrue(flowService.list(src.id).any { it.id == flow.id })
+
+        // VIEWER 는 가져오기 403(내보내기는 읽기라 허용)
+        ws.putMember(UUID.fromString(dst.id), "bob", WorkspaceMember.ROLE_VIEWER)
+        asUser("bob")
+        transfer.export(dst.id)
+        assertThrows(ForbiddenException::class.java) { transfer.import(dst.id, bundle) }
+        // 비멤버는 내보내기부터 403
+        asUser("mallory")
+        assertThrows(ForbiddenException::class.java) { transfer.export(dst.id) }
     }
 
     @Test

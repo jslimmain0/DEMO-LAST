@@ -46,7 +46,8 @@ class MockServerService(
             throw BadRequestException("slug 는 소문자·숫자·하이픈 3~40자여야 합니다: $slug")
         }
         if (repository.existsByTenantIdAndSlug(tenant(), slug)) {
-            throw BadRequestException("이미 사용 중인 slug 입니다: $slug")
+            // 서빙 주소(/mock/{slug})가 워크스페이스와 무관한 전역 경로라 slug 는 전체에서 유일해야 한다
+            throw BadRequestException("이미 사용 중인 slug 입니다: $slug — 서빙 주소가 전역이라 다른 워크스페이스의 slug 와도 겹칠 수 없습니다. 다른 이름을 쓰세요(예: $slug-2).")
         }
         // 유형 선택 — TCP 면 tcp 섹션만, 그 외(기본)는 HTTP 라우트만. CUSTOM(둘 다)은 레거시 데이터 전용.
         val kind = if (req.type?.uppercase(Locale.ROOT) == "TCP") MockServer.Kind.TCP else MockServer.Kind.HTTP
@@ -122,6 +123,14 @@ class MockServerService(
         findReadable(id)
         val s = store.snapshot(id)
         return MockDtos.MockStateView(s.state, s.seq, s.hits, s.requestCount)
+    }
+
+    /** slug 사용 가능 여부 — 생성 폼의 실시간 체크(서빙 경로가 전역이라 워크스페이스 무관 전체 유일). */
+    @Transactional(readOnly = true)
+    fun slugAvailable(slugRaw: String): Boolean {
+        val slug = slugRaw.lowercase(Locale.ROOT)
+        if (!SLUG.matcher(slug).matches()) return false
+        return !repository.existsByTenantIdAndSlug(tenant(), slug)
     }
 
     /** 게이트웨이 서빙용 — 무인증. tenant 는 경로 세그먼트에서 온다(레거시 경로는 default 테넌트). */

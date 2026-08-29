@@ -20,10 +20,22 @@ import org.springframework.web.bind.annotation.ResponseStatus
 import org.springframework.web.bind.annotation.RestController
 import java.util.UUID
 
-/** 워크스페이스 목록/생성/멤버 관리 — 롤 검사는 서비스가 수행. */
+/** 워크스페이스 목록/생성/멤버 관리 + export/import — 롤 검사는 서비스가 수행. */
 @RestController
 @RequestMapping("/api/v1/workspaces")
-class WorkspaceController(private val service: WorkspaceService) {
+class WorkspaceController(
+    private val service: WorkspaceService,
+    private val transfer: WorkspaceTransferService,
+) {
+
+    /** 워크스페이스 통째 내보내기(폴더+워크플로 그래프+Mock spec) — 텍스트 복붙용 JSON. id='public' 허용. */
+    @GetMapping("/{id}/export")
+    fun export(@PathVariable id: String): com.fasterxml.jackson.databind.JsonNode = transfer.export(id)
+
+    /** 내보낸 JSON 을 이 워크스페이스로 가져오기 — 전부 새 id, slug 충돌 자동 개명, TCP mock 은 꺼서. */
+    @PostMapping("/{id}/import")
+    fun importBundle(@PathVariable id: String, @RequestBody bundle: com.fasterxml.jackson.databind.JsonNode?): WorkspaceTransferService.ImportResult =
+        transfer.import(id, bundle)
 
     @GetMapping
     fun list(): List<WorkspaceView> = service.listMine()

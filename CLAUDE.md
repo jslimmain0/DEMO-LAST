@@ -1094,6 +1094,11 @@ API 도구 UX·비주얼/IA·플로우 통합 3관점 병렬 비평 → 확정 �
   [팀] 공용 요약 카드+팀 카드(**멤버 아바타 스택**·워크플로/Mock/멤버/생성 메타·롤 select·내보내기)+개인 워크스페이스 행(소유자 상태·최근 접속).
   파괴적 동작은 공용 [ConfirmChip](frontend/src/routes/Admin.tsx)(클릭→[취소|확정] 인라인, 4초 자동 해제)으로 전부 통일. Avatar 는 username 해시 색(콘솔 전역 동일).
   백엔드: AdminWorkspaceView.mockCount + publicMockCount([MockServerRepository](backend/src/main/kotlin/com/flowlink/core/repository/MockServerRepository.kt) count 2종).
+- **워크스페이스 export/import + Mock 충돌 방지(같은 날 후속)**: [WorkspaceTransferService](backend/src/main/kotlin/com/flowlink/workspace/WorkspaceTransferService.kt) —
+  `GET/POST /workspaces/{id}/export|import`('public' 허용) — **폴더 트리(ref 재매핑)+워크플로(현재 그래프, GraphValidator 검증)+Mock(spec)** 을 한 JSON 텍스트로.
+  import 는 전부 새 id·원본 불변, **mock slug 충돌은 `-2` 자동 개명**(서빙 주소 전역 유일), **TCP mock 은 꺼서 가져옴**(포트 전역 자원 — 경고로 보고).
+  UI 는 [WorkspaceDialog](frontend/src/components/WorkspaceDialog.tsx) "워크스페이스 이동" 섹션 — 내보내기(전체 복사)/가져오기(붙여넣기) **텍스트 복붙**, 결과 요약+경고 목록.
+  Mock slug 는 `GET /mock-servers/slug-check` + 생성 폼 **실시간 ✓사용 가능/✕사용 중**(350ms 디바운스, 400 에러 메시지도 전역 유일 이유 명시). RBAC 테스트 13종(라운드트립·VIEWER 가져오기 403).
 - ⚠ **잔여 경계(의식적 수용)**: BLOCKED 는 신규 로그인+승인 게이트만 즉시 — 이미 발급된 JWT(12h)의 공용 접근은 만료까지 유지(매 요청 status 검사 필터는 후속). Mock 서빙·TCP 포트는 전역(무인증 테스트 도구 전제). 시크릿/환경/설정은 테넌트 스코프(워크스페이스 무관). removeMember 의 OWNER 카운트는 비관적 락 없음(동시 상호 내보내기 이론상 레이스 — 관리자 복구 가능).
 
 ## 참고 문서

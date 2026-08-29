@@ -56,7 +56,19 @@ export function MockServers() {
   const remove = useMutation({ mutationFn: (id: string) => mocksApi.remove(id), onSuccess: invalidate })
 
   const list = servers.data ?? []
-  const slugOk = /^[a-z0-9-]{3,40}$/.test(slug.trim())
+  const slugFormatOk = /^[a-z0-9-]{3,40}$/.test(slug.trim())
+
+  // slug 실시간 가용성 — 서빙 주소(/mock/{slug})가 워크스페이스 무관 전역이라 겹치면 제출 전에 알려준다
+  const [slugTaken, setSlugTaken] = useState<boolean | null>(null) // null=확인 전/불필요
+  useEffect(() => {
+    setSlugTaken(null)
+    if (!slugFormatOk) return
+    const t = setTimeout(() => {
+      mocksApi.slugCheck(slug.trim()).then((r) => setSlugTaken(!r.available)).catch(() => setSlugTaken(null))
+    }, 350)
+    return () => clearTimeout(t)
+  }, [slug, slugFormatOk])
+  const slugOk = slugFormatOk && slugTaken !== true
 
   return (
     <AppShellTier1>
@@ -93,10 +105,18 @@ export function MockServers() {
               ))}
             </div>
             <input style={input} placeholder="이름 (예: 결제 게이트웨이)" value={name} onChange={(e) => setName(e.target.value)} autoFocus />
-            <input style={{ ...input, fontFamily: 'var(--fl-font-mono)' }} placeholder="slug (예: pay-mock)" value={slug} onChange={(e) => setSlug(e.target.value.toLowerCase())} onKeyDown={(e) => { if (e.key === 'Enter' && slugOk) create.mutate() }} />
+            <span style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
+              <input style={{ ...input, fontFamily: 'var(--fl-font-mono)', paddingRight: 84, borderColor: slugTaken === true ? 'var(--fl-fail)' : undefined }}
+                placeholder="slug (예: pay-mock)" value={slug} onChange={(e) => setSlug(e.target.value.toLowerCase())} onKeyDown={(e) => { if (e.key === 'Enter' && slugOk) create.mutate() }} />
+              {slugFormatOk && slugTaken !== null && (
+                <span style={{ position: 'absolute', right: 10, fontSize: 11, fontWeight: 700, pointerEvents: 'none', color: slugTaken ? 'var(--fl-fail)' : 'var(--fl-ok)' }}>
+                  {slugTaken ? '✕ 사용 중' : '✓ 사용 가능'}
+                </span>
+              )}
+            </span>
             <button style={{ ...primaryBtn, opacity: slugOk ? 1 : 0.5 }} disabled={!slugOk || create.isPending} onClick={() => create.mutate()}>만들기</button>
             <button style={ghostBtn} onClick={() => { setCreating(false); setError(null) }}>취소</button>
-            <span style={{ flexBasis: '100%', fontSize: 11.5, color: 'var(--fl-text-muted)' }}>{type === 'HTTP' ? 'HTTP: 경로마다 JSON/HTML/XML 응답·조건 분기·콜백 발사' : 'TCP: 빈 포트에 고정길이 전문(길이 프리픽스) 리스너 — 워크플로 TCP 노드 대상'}</span>
+            <span style={{ flexBasis: '100%', fontSize: 11.5, color: 'var(--fl-text-muted)' }}>{type === 'HTTP' ? 'HTTP: 경로마다 JSON/HTML/XML 응답·조건 분기·콜백 발사' : 'TCP: 빈 포트에 고정길이 전문(길이 프리픽스) 리스너 — 워크플로 TCP 노드 대상'} · slug 는 서빙 주소(/mock/{'{slug}'})라 워크스페이스와 무관하게 전체에서 유일해야 합니다</span>
           </div>
         )}
         {error && <p style={{ color: 'var(--fl-fail)', fontSize: 12.5, marginTop: 8 }}>{error}</p>}

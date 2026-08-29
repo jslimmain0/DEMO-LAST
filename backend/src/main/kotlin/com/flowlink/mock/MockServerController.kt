@@ -28,6 +28,11 @@ class MockServerController(private val service: MockServerService) {
     fun list(@org.springframework.web.bind.annotation.RequestParam(required = false) workspaceId: String?): List<MockServerSummary> =
         service.list(workspaceId)
 
+    /** slug 실시간 가용성 체크 — 생성 폼이 타이핑 중에 충돌을 미리 알려준다(제출 후 400 대신). */
+    @GetMapping("/slug-check")
+    fun slugCheck(@org.springframework.web.bind.annotation.RequestParam slug: String): Map<String, Any> =
+        mapOf("slug" to slug, "available" to service.slugAvailable(slug))
+
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     fun create(@Valid @RequestBody req: CreateMockServerRequest): MockServerDetail = service.create(req)

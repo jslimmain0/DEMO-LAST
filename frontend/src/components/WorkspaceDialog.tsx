@@ -155,7 +155,7 @@ function UsersTab({ myName }: { myName: string }) {
   const refresh = () => qc.invalidateQueries({ queryKey: ['admin', 'users'] })
   const errMsg = (e: unknown) => (e as { response?: { data?: { message?: string } } })?.response?.data?.message
   const putRole = useMutation({
-    mutationFn: (v: { username: string; globalRole: string }) => adminApi.putUser(v.username, v.globalRole),
+    mutationFn: (v: { username: string; globalRole: string }) => adminApi.putUser(v.username, { globalRole: v.globalRole }),
     onSuccess: refresh,
     onError: (e) => toast(errMsg(e) ?? '변경에 실패했습니다.', 'error'),
   })

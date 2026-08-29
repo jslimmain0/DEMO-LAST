@@ -63,21 +63,44 @@ class WorkspaceService(
             .map { it.globalRole == AppUser.ROLE_ADMIN }.orElse(false)
     }
 
-    /** 사용자 자동 등록/최근 활동 갱신 — 로그인 사용자의 워크스페이스 조회 시점에 호출. */
+    /**
+     * 사용자 자동 등록/최근 활동 갱신 — 로그인 사용자의 활동 시점에 호출.
+     * **처음 관측되는 사용자는 PENDING(가입 신청)으로 등록** → 관리 콘솔에서 승인.
+     * 관리자·화이트리스트(allowed-logins 명시) 사용자는 자동 승인.
+     */
     @Transactional
     fun touchUser(username: String) {
         if (!isAuthenticated(username)) return
         val u = userRepo.findByTenantIdAndUsername(tenant(), username).orElseGet {
-            userRepo.save(AppUser.of(tenant(), username))
+            userRepo.save(AppUser.of(tenant(), username, defaultStatus(username)))
         }
         u.lastSeenAt = Instant.now()
         userRepo.save(u)
     }
 
-    /** 개인 워크스페이스 보장(없으면 생성). */
+    /** 신규 등록 기본 상태 — 관리자/명시 화이트리스트는 APPROVED, 그 외 PENDING(가입 신청). */
+    fun defaultStatus(username: String): String =
+        if (username == DEV_USER || auth.isBootstrapAdmin(username) ||
+            (auth.allowedLogins.isNotEmpty() && auth.allows(username))
+        ) AppUser.STATUS_APPROVED else AppUser.STATUS_PENDING
+
+    /**
+     * 가입 승인 여부 — **승인된 사용자만** 개인 워크스페이스·팀 생성·AI 를 쓴다(팀 접근은 멤버십으로 별도 판정).
+     * 관리자·dev·명시 화이트리스트는 항상 승인. 레거시 행(status=null)도 승인 간주.
+     */
+    @Transactional
+    fun isApproved(username: String): Boolean {
+        if (!isAuthenticated(username)) return false
+        if (username == DEV_USER || isAdmin(username)) return true
+        if (auth.allowedLogins.isNotEmpty() && auth.allows(username)) return true
+        return userRepo.findByTenantIdAndUsername(tenant(), username)
+            .map { it.effectiveStatus() == AppUser.STATUS_APPROVED }.orElse(false)
+    }
+
+    /** 개인 워크스페이스 보장(없으면 생성) — **승인된 사용자만**(가입 신청 중에는 공용만 사용). */
     @Transactional
     fun ensurePersonal(username: String): Workspace? {
-        if (!isAuthenticated(username)) return null
+        if (!isAuthenticated(username) || !isApproved(username)) return null
         return wsRepo.findByTenantIdAndKindAndOwnerUsername(tenant(), Workspace.KIND_PERSONAL, username)
             .orElseGet { wsRepo.save(Workspace.personal(tenant(), username, "개인 — $username")) }
     }
@@ -148,6 +171,7 @@ class WorkspaceService(
     fun createTeam(name: String): WorkspaceView {
         val me = currentUsername()
         if (!isAuthenticated(me)) throw ForbiddenException("팀 워크스페이스는 로그인 후 만들 수 있습니다.")
+        if (!isApproved(me)) throw ForbiddenException("가입 승인 대기 중입니다 — 관리자 승인 후 팀을 만들 수 있습니다.")
         val n = name.trim()
         if (n.isEmpty()) throw BadRequestException("워크스페이스 이름을 입력하세요.")
         val ws = wsRepo.save(Workspace.team(tenant(), n))
@@ -191,8 +215,9 @@ class WorkspaceService(
         } else {
             memberRepo.save(WorkspaceMember.of(workspaceId, u, role))
         }
-        // 사용자 레지스트리에도 등록(관리 화면 목록)
-        userRepo.findByTenantIdAndUsername(tenant(), u).orElseGet { userRepo.save(AppUser.of(tenant(), u)) }
+        // 사용자 레지스트리에도 등록(관리 화면 목록) — 미로그인 사용자면 PENDING(팀 접근은 멤버십으로 이미 가능,
+        // 전역 승인(개인 ws·AI)은 별도 — 팀 OWNER 의 초대가 곧 전역 승인이 되지 않게 분리)
+        userRepo.findByTenantIdAndUsername(tenant(), u).orElseGet { userRepo.save(AppUser.of(tenant(), u, defaultStatus(u))) }
     }
 
     @Transactional

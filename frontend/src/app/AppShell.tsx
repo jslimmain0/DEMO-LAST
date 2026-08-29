@@ -59,6 +59,9 @@ export function AppShellTier1({ children, sidebarExtra }: { children: ReactNode;
             <Link key={n.to} to={n.to} style={navItem(n.to)}>
               <span aria-hidden style={{ width: 16, textAlign: 'center', fontSize: 14 }}>{n.icon}</span>
               <span>{n.label}</span>
+              {n.to === '/admin' && (adminMe.data?.pendingCount ?? 0) > 0 && (
+                <span title={`가입 신청 ${adminMe.data!.pendingCount}건 대기`} style={pendingNavBadge}>{adminMe.data!.pendingCount}</span>
+              )}
             </Link>
           ))}
         </nav>
@@ -175,6 +178,19 @@ const themeBtn: CSSProperties = {
   fontWeight: 500,
   fontFamily: 'inherit',
   textAlign: 'left',
+}
+const pendingNavBadge: CSSProperties = {
+  marginLeft: 'auto',
+  minWidth: 18,
+  height: 18,
+  padding: '0 5px',
+  borderRadius: 9,
+  display: 'inline-grid',
+  placeItems: 'center',
+  background: 'var(--fl-waiting)',
+  color: '#1a1d27',
+  fontSize: 10.5,
+  fontWeight: 800,
 }
 const skipLink: CSSProperties = {
   position: 'absolute',

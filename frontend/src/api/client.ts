@@ -129,8 +129,9 @@ export const workspacesApi = {
     http.delete<WorkspaceMemberView[]>(`/workspaces/${id}/members/${encodeURIComponent(username)}`).then((r) => r.data),
 }
 
-export interface AdminMeView { username: string; admin: boolean; authenticated: boolean }
-export interface AdminUserView { username: string; globalRole: 'ADMIN' | 'MEMBER'; lastSeenAt: string | null }
+export interface AdminMeView { username: string; admin: boolean; authenticated: boolean; pendingCount: number }
+export type UserStatus = 'PENDING' | 'APPROVED' | 'BLOCKED'
+export interface AdminUserView { username: string; globalRole: 'ADMIN' | 'MEMBER'; status: UserStatus; lastSeenAt: string | null; createdAt: string | null }
 export interface AdminWorkspaceView {
   id: string; name: string; kind: 'PERSONAL' | 'TEAM'; ownerUsername: string | null
   createdAt: string | null; flowCount: number; members: WorkspaceMemberView[]
@@ -139,8 +140,8 @@ export interface AdminWorkspacesResponse { publicFlowCount: number; workspaces: 
 export const adminApi = {
   me: () => http.get<AdminMeView>('/admin/me').then((r) => r.data),
   users: () => http.get<AdminUserView[]>('/admin/users').then((r) => r.data),
-  putUser: (username: string, globalRole: string) =>
-    http.put<AdminUserView>(`/admin/users/${encodeURIComponent(username)}`, { globalRole }).then((r) => r.data),
+  putUser: (username: string, body: { globalRole?: string; status?: string }) =>
+    http.put<AdminUserView>(`/admin/users/${encodeURIComponent(username)}`, body).then((r) => r.data),
   removeUser: (username: string) =>
     http.delete(`/admin/users/${encodeURIComponent(username)}`).then(() => undefined),
   // 팀·권한 콘솔 — 전체 워크스페이스(팀+개인) + 멤버 + 워크플로 수 1왕복

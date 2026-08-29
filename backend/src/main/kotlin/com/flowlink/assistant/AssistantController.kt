@@ -23,19 +23,28 @@ class AssistantController(
     private val skills: SkillService,
     private val sessions: AssistantSessionService,
     private val mockAssistant: MockAssistantService,
+    private val workspace: com.flowlink.workspace.WorkspaceService,
 ) {
 
     /** 가용 상태(패널이 stub/실제 표시). */
     @GetMapping("/config")
     fun config(): AssistantConfig = service.config()
 
+    /** 가입 승인 게이트 — 로그인(인증)했어도 승인 전(PENDING)이면 AI 사용 불가(관리 콘솔에서 승인). */
+    private fun requireApproved() {
+        val me = workspace.currentUsername()
+        if (!workspace.isApproved(me)) {
+            throw com.flowlink.common.error.ForbiddenException("가입 승인 대기 중입니다 — 관리자가 승인하면 AI 를 쓸 수 있습니다.")
+        }
+    }
+
     /** 대화 한 번 — 이력 + 현재 그래프를 받아 답변 + (선택)제안 그래프를 반환. */
     @PostMapping("/chat")
-    fun chat(@RequestBody req: AssistantChatRequest): AssistantChatResponse = service.chat(req)
+    fun chat(@RequestBody req: AssistantChatRequest): AssistantChatResponse { requireApproved(); return service.chat(req) }
 
     /** Mock 어시스턴트 — 이력 + 현재 mock spec 을 받아 답변 + (선택)제안 spec 을 반환. */
     @PostMapping("/mock")
-    fun mockChat(@RequestBody req: MockAssistantChatRequest): MockAssistantChatResponse = mockAssistant.chat(req)
+    fun mockChat(@RequestBody req: MockAssistantChatRequest): MockAssistantChatResponse { requireApproved(); return mockAssistant.chat(req) }
 
     /** 지침 + 스킬(내장/사용자 플로우 조각) 조회. */
     @GetMapping("/skills")

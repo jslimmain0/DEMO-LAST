@@ -42,6 +42,7 @@ class WorkspaceRbacTest {
     @Autowired lateinit var flowService: FlowService
     @Autowired lateinit var flowRepo: FlowRepository
     @Autowired lateinit var execService: com.flowlink.execution.ExecutionService
+    @Autowired lateinit var userRepo: com.flowlink.core.repository.AppUserRepository
 
     @AfterEach
     fun clear() = SecurityContextHolder.clearContext()
@@ -50,6 +51,15 @@ class WorkspaceRbacTest {
         val jwt = Jwt.withTokenValue("t").header("alg", "none")
             .claim("preferred_username", name).subject(name).build()
         SecurityContextHolder.getContext().authentication = JwtAuthenticationToken(jwt)
+    }
+
+    /** 가입 승인 시뮬레이션 — 관리 콘솔의 [✓ 승인]에 해당(로그인=신청 → 승인 후 개인 ws/팀 생성 가능). */
+    private fun approveUser(name: String) {
+        val t = com.flowlink.common.tenant.TenantContext.SHARED_FLOW_TENANT
+        val u = userRepo.findByTenantIdAndUsername(t, name)
+            .orElseGet { userRepo.save(com.flowlink.core.domain.AppUser.of(t, name)) }
+        u.status = com.flowlink.core.domain.AppUser.STATUS_APPROVED
+        userRepo.save(u)
     }
 
     @Test
@@ -62,6 +72,7 @@ class WorkspaceRbacTest {
     @Test
     fun `개인 워크스페이스 - 소유자만 접근, 타인은 403, 관리자는 열람`() {
         asUser("alice")
+        approveUser("alice")
         val personal = ws.ensurePersonal("alice")!!
         assertEquals(Workspace.KIND_PERSONAL, personal.kind)
         assertEquals(WorkspaceMember.ROLE_OWNER, ws.roleFor("alice", personal.id))
@@ -75,6 +86,7 @@ class WorkspaceRbacTest {
     @Test
     fun `팀 워크스페이스 - 멤버십 롤과 VIEWER 쓰기 차단`() {
         asUser("alice")
+        approveUser("alice")
         val team = ws.createTeam("결제팀")
         val teamId = UUID.fromString(team.id)
         ws.putMember(teamId, "bob", WorkspaceMember.ROLE_VIEWER)
@@ -92,6 +104,7 @@ class WorkspaceRbacTest {
     @Test
     fun `멤버 관리는 OWNER 만 - 마지막 OWNER 는 못 내보낸다`() {
         asUser("alice")
+        approveUser("alice")
         val teamId = UUID.fromString(ws.createTeam("운영팀").id)
         ws.putMember(teamId, "bob", WorkspaceMember.ROLE_EDITOR)
 
@@ -107,6 +120,7 @@ class WorkspaceRbacTest {
     @Test
     fun `플로우 워크스페이스 격리 - VIEWER 저장 403, 비멤버 조회 403, 삭제 시 공용 승격`() {
         asUser("alice")
+        approveUser("alice")
         val team = ws.createTeam("보안팀")
         val teamId = UUID.fromString(team.id)
         ws.putMember(teamId, "bob", WorkspaceMember.ROLE_VIEWER)
@@ -133,6 +147,7 @@ class WorkspaceRbacTest {
     @Test
     fun `실행 레이어 게이트 - VIEWER 실행 403, 비멤버 이력 조회 403, 이력 워크스페이스 스코프`() {
         asUser("alice")
+        approveUser("alice")
         val team = ws.createTeam("실행팀")
         val teamId = UUID.fromString(team.id)
         ws.putMember(teamId, "bob", WorkspaceMember.ROLE_VIEWER)
@@ -151,6 +166,29 @@ class WorkspaceRbacTest {
         asUser("alice") // 스코프 분리 — 공용 스코프 이력엔 팀 flow 실행이 안 섞인다(빈 결과여도 호출 자체는 성공)
         assertTrue(execService.listFiltered(null, null, null, null, 10, 0, null).none { it.flowId == flow.id })
         assertTrue(execService.listFiltered(null, null, null, null, 10, 0, team.id).isEmpty())
+    }
+
+    @Test
+    fun `가입 신청 승인 모델 - 신규 활동은 PENDING, 승인 전엔 개인 ws·팀 생성 불가, 차단은 미승인`() {
+        val t = com.flowlink.common.tenant.TenantContext.SHARED_FLOW_TENANT
+        asUser("newbie")
+        ws.touchUser("newbie") // 첫 활동 = 가입 신청(PENDING) 자동 등록
+        val row = userRepo.findByTenantIdAndUsername(t, "newbie").get()
+        assertEquals(com.flowlink.core.domain.AppUser.STATUS_PENDING, row.effectiveStatus())
+
+        assertFalse(ws.isApproved("newbie"))
+        assertNull(ws.ensurePersonal("newbie")) // 승인 전 — 개인 워크스페이스 없음(공용만)
+        assertThrows(ForbiddenException::class.java) { ws.createTeam("몰래팀") } // 팀 생성 불가
+
+        approveUser("newbie") // 관리자 승인
+        assertTrue(ws.isApproved("newbie"))
+        assertTrue(ws.ensurePersonal("newbie") != null)
+
+        row.status = com.flowlink.core.domain.AppUser.STATUS_BLOCKED // 차단 → 미승인 취급
+        userRepo.save(row)
+        assertFalse(ws.isApproved("newbie"))
+
+        assertTrue(ws.isApproved("dev")) // dev/관리자는 항상 승인
     }
 
     @Test

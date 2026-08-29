@@ -69,8 +69,11 @@ class AdminController(
     private val memberRepo: com.flowlink.core.repository.WorkspaceMemberRepository,
     private val flowRepo: com.flowlink.core.repository.FlowRepository,
 ) {
-    data class UserView(val username: String, val globalRole: String, val lastSeenAt: String?)
-    data class MeView(val username: String, val admin: Boolean, val authenticated: Boolean)
+    data class UserView(
+        val username: String, val globalRole: String, val status: String,
+        val lastSeenAt: String?, val createdAt: String?,
+    )
+    data class MeView(val username: String, val admin: Boolean, val authenticated: Boolean, val pendingCount: Long = 0)
     data class AdminWorkspaceView(
         val id: String, val name: String, val kind: String, val ownerUsername: String?,
         val createdAt: String?, val flowCount: Long, val members: List<MemberView>,
@@ -81,11 +84,17 @@ class AdminController(
         if (!service.isAdmin(service.currentUsername())) throw ForbiddenException("관리자만 접근할 수 있습니다.")
     }
 
-    /** 현재 사용자 요약 — 프론트가 관리 메뉴 노출 여부를 정한다. */
+    /** 현재 사용자 요약 — 프론트가 관리 메뉴 노출 여부를 정한다. 관리자면 가입 신청 대기 수(네비 배지)도 함께. */
     @GetMapping("/me")
+    @Transactional(readOnly = true)
     fun me(): MeView {
         val u = service.currentUsername()
-        return MeView(u, service.isAdmin(u), service.isAuthenticated(u))
+        val admin = service.isAdmin(u)
+        val pending = if (admin) {
+            userRepo.findByTenantIdOrderByUsernameAsc(TenantContext.SHARED_FLOW_TENANT)
+                .count { it.effectiveStatus() == AppUser.STATUS_PENDING }.toLong()
+        } else 0L
+        return MeView(u, admin, service.isAuthenticated(u), pending)
     }
 
     @GetMapping("/users")
@@ -93,7 +102,7 @@ class AdminController(
     fun users(): List<UserView> {
         requireAdmin()
         return userRepo.findByTenantIdOrderByUsernameAsc(TenantContext.SHARED_FLOW_TENANT)
-            .map { UserView(it.username, it.globalRole, it.lastSeenAt?.toString()) }
+            .map { UserView(it.username, it.globalRole, it.effectiveStatus(), it.lastSeenAt?.toString(), it.createdAt?.toString()) }
     }
 
     /** 팀·권한 콘솔 한 화면용 — 전체 워크스페이스(팀+개인) + 멤버 + 워크플로 수를 1왕복으로. */
@@ -112,21 +121,35 @@ class AdminController(
         return AdminWorkspacesResponse(flowRepo.countByTenantIdAndArchivedFalseAndWorkspaceIdIsNull(tenant), list)
     }
 
-    data class PutUserRequest(@field:NotBlank(message = "globalRole 은 필수입니다.") val globalRole: String)
+    /** 전역 롤 및/또는 가입 상태 변경 — 둘 다 선택(주면 그것만 적용). 없는 사용자면 등록(테스트/사전 배정용). */
+    data class PutUserRequest(val globalRole: String? = null, val status: String? = null)
 
     @PutMapping("/users/{username}")
     @Transactional
     fun putUser(@PathVariable username: String, @Valid @RequestBody req: PutUserRequest): UserView {
         requireAdmin()
-        val role = req.globalRole.trim().uppercase()
-        if (role != AppUser.ROLE_ADMIN && role != AppUser.ROLE_MEMBER) {
-            throw com.flowlink.common.error.BadRequestException("globalRole 은 ADMIN 또는 MEMBER 여야 합니다.")
+        val name = username.trim().lowercase()
+        val me = service.currentUsername()
+        val u = userRepo.findByTenantIdAndUsername(TenantContext.SHARED_FLOW_TENANT, name)
+            .orElseGet { userRepo.save(AppUser.of(TenantContext.SHARED_FLOW_TENANT, name, AppUser.STATUS_PENDING)) }
+        req.globalRole?.trim()?.uppercase()?.let { role ->
+            if (role != AppUser.ROLE_ADMIN && role != AppUser.ROLE_MEMBER) {
+                throw com.flowlink.common.error.BadRequestException("globalRole 은 ADMIN 또는 MEMBER 여야 합니다.")
+            }
+            if (name == me) throw com.flowlink.common.error.BadRequestException("자기 자신의 전역 롤은 바꿀 수 없습니다.")
+            u.globalRole = role
         }
-        val u = userRepo.findByTenantIdAndUsername(TenantContext.SHARED_FLOW_TENANT, username.trim().lowercase())
-            .orElseGet { userRepo.save(AppUser.of(TenantContext.SHARED_FLOW_TENANT, username.trim().lowercase())) }
-        u.globalRole = role
+        req.status?.trim()?.uppercase()?.let { st ->
+            if (st !in setOf(AppUser.STATUS_PENDING, AppUser.STATUS_APPROVED, AppUser.STATUS_BLOCKED)) {
+                throw com.flowlink.common.error.BadRequestException("status 는 PENDING/APPROVED/BLOCKED 중 하나여야 합니다.")
+            }
+            if (name == me && st != AppUser.STATUS_APPROVED) {
+                throw com.flowlink.common.error.BadRequestException("자기 자신을 차단/대기 상태로 바꿀 수 없습니다.")
+            }
+            u.status = st
+        }
         userRepo.save(u)
-        return UserView(u.username, u.globalRole, u.lastSeenAt?.toString())
+        return UserView(u.username, u.globalRole, u.effectiveStatus(), u.lastSeenAt?.toString(), u.createdAt?.toString())
     }
 
     @DeleteMapping("/users/{username}")

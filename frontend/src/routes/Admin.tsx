@@ -67,15 +67,17 @@ function UsersPanel({ myName }: { myName: string }) {
   const qc = useQueryClient()
   const users = useQuery({ queryKey: ['admin', 'users'], queryFn: adminApi.users })
   const wss = useQuery({ queryKey: ['admin', 'workspaces'], queryFn: adminApi.workspaces })
-  const [newName, setNewName] = useState('')
-  const [newRole, setNewRole] = useState<string>('MEMBER')
   const [q, setQ] = useState('')
   const [armDel, setArmDel] = useState<string | null>(null)
-  const refresh = () => { qc.invalidateQueries({ queryKey: ['admin', 'users'] }); qc.invalidateQueries({ queryKey: ['admin', 'workspaces'] }) }
+  const refresh = () => {
+    qc.invalidateQueries({ queryKey: ['admin', 'users'] })
+    qc.invalidateQueries({ queryKey: ['admin', 'workspaces'] })
+    qc.invalidateQueries({ queryKey: ['admin', 'me'] }) // 네비 신청 배지 갱신
+  }
 
   const putUser = useMutation({
-    mutationFn: (v: { username: string; globalRole: string }) => adminApi.putUser(v.username, v.globalRole),
-    onSuccess: () => { refresh(); setNewName('') },
+    mutationFn: (v: { username: string; body: { globalRole?: string; status?: string } }) => adminApi.putUser(v.username, v.body),
+    onSuccess: refresh,
     onError: (e) => toast(errMsg(e) ?? '저장에 실패했습니다.', 'error'),
   })
   const delUser = useMutation({
@@ -83,6 +85,8 @@ function UsersPanel({ myName }: { myName: string }) {
     onSuccess: () => { refresh(); setArmDel(null); toast('사용자를 삭제했습니다(팀 멤버십도 정리).', 'ok') },
     onError: (e) => toast(errMsg(e) ?? '삭제에 실패했습니다.', 'error'),
   })
+  const approve = (username: string) => putUser.mutate({ username, body: { status: 'APPROVED' } })
+  const block = (username: string) => putUser.mutate({ username, body: { status: 'BLOCKED' } })
 
   // 사용자별 소속 팀 — admin/workspaces 의 멤버 목록에서 역인덱스
   const teamsOf = (username: string): Array<{ name: string; role: string }> =>
@@ -90,51 +94,65 @@ function UsersPanel({ myName }: { myName: string }) {
       .filter((w) => w.kind === 'TEAM')
       .flatMap((w) => w.members.filter((m) => m.username === username).map((m) => ({ name: w.name, role: m.role })))
 
+  const all = users.data ?? []
+  const pending = all.filter((u) => u.status === 'PENDING')
   const query = q.trim().toLowerCase()
-  const rows = (users.data ?? []).filter((u) => !query || u.username.includes(query))
+  const members = all.filter((u) => u.status !== 'PENDING' && (!query || u.username.includes(query)))
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-        {(users.data?.length ?? 0) >= 6 && (
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="사용자 검색…"
-            onKeyDown={(e) => { if (e.key === 'Escape' && q) { e.stopPropagation(); setQ('') } }} style={searchBox} />
-        )}
-        <span style={{ fontSize: 12, color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)' }}>{rows.length}명</span>
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
-          <input
-            value={newName}
-            onChange={(e) => setNewName(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter' && newName.trim()) putUser.mutate({ username: newName.trim(), globalRole: newRole }) }}
-            placeholder="GitHub 사용자명" aria-label="추가할 사용자명" style={inputBox}
-          />
-          <select value={newRole} onChange={(e) => setNewRole(e.target.value)} aria-label="전역 롤" style={selBox}>
-            <option value="MEMBER">MEMBER</option>
-            <option value="ADMIN">ADMIN</option>
-          </select>
-          <button onClick={() => newName.trim() && putUser.mutate({ username: newName.trim(), globalRole: newRole })}
-            disabled={!newName.trim() || putUser.isPending} style={primaryBtn}>+ 사용자 등록</button>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {/* ── 가입 신청 — GitHub 로그인하면 자동 접수, 관리자가 승인 ── */}
+      {pending.length > 0 && (
+        <div style={{ ...card, borderColor: 'color-mix(in srgb, var(--fl-waiting) 55%, transparent)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '13px 18px', borderBottom: '1px solid var(--fl-border)' }}>
+            <strong style={{ fontSize: 14 }}>🔔 가입 신청</strong>
+            <span style={pendingBadge}>{pending.length}</span>
+            <span style={{ fontSize: 12, color: 'var(--fl-text-muted)' }}>GitHub 로그인한 계정이 자동으로 접수됩니다 — 승인하면 개인 워크스페이스·팀 배정·AI 사용 가능</span>
+          </div>
+          {pending.map((u) => (
+            <div key={u.username} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 18px', borderBottom: '1px solid var(--fl-border)' }}>
+              <span aria-hidden style={avatarDot}>{u.username.slice(0, 1).toUpperCase()}</span>
+              <span style={{ fontFamily: 'var(--fl-font-mono)', fontWeight: 700, fontSize: 13.5 }}>{u.username}</span>
+              <span style={{ fontSize: 12, color: 'var(--fl-text-muted)' }}>
+                신청 {u.createdAt ? relTime(u.createdAt) : '—'}{u.lastSeenAt ? ` · 최근 접속 ${relTime(u.lastSeenAt)}` : ''}
+              </span>
+              <span style={{ marginLeft: 'auto', display: 'inline-flex', gap: 6 }}>
+                <button onClick={() => approve(u.username)} disabled={putUser.isPending} style={approveBtn}>✓ 승인</button>
+                <button onClick={() => block(u.username)} disabled={putUser.isPending} style={miniDanger}>차단</button>
+              </span>
+            </div>
+          ))}
         </div>
-      </div>
+      )}
 
+      {/* ── 멤버 목록 ── */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <strong style={{ fontSize: 13.5 }}>멤버</strong>
+        <span style={{ fontSize: 12, color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)' }}>{members.length}명</span>
+        {(all.length >= 6) && (
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="사용자 검색…"
+            onKeyDown={(e) => { if (e.key === 'Escape' && q) { e.stopPropagation(); setQ('') } }} style={{ ...searchBox, marginLeft: 'auto' }} />
+        )}
+      </div>
       <div style={card}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
           <thead>
             <tr style={{ textAlign: 'left', color: 'var(--fl-text-muted)', fontSize: 11.5 }}>
-              <th style={th}>사용자</th><th style={th}>전역 롤</th><th style={th}>소속 팀</th><th style={th}>최근 접속</th><th style={{ ...th, width: 110 }} />
+              <th style={th}>사용자</th><th style={th}>상태</th><th style={th}>전역 롤</th><th style={th}>소속 팀</th><th style={th}>최근 접속</th><th style={{ ...th, width: 150 }} />
             </tr>
           </thead>
           <tbody>
-            {rows.map((u: AdminUserView) => (
-              <tr key={u.username} style={{ borderTop: '1px solid var(--fl-border)' }}>
+            {members.map((u: AdminUserView) => (
+              <tr key={u.username} style={{ borderTop: '1px solid var(--fl-border)', opacity: u.status === 'BLOCKED' ? 0.6 : 1 }}>
                 <td style={td}>
                   <span style={{ fontFamily: 'var(--fl-font-mono)', fontWeight: 600 }}>{u.username}</span>
                   {u.username === myName && <span style={{ marginLeft: 6, fontSize: 11, color: 'var(--fl-primary)' }}>(나)</span>}
                 </td>
+                <td style={td}><StatusPill status={u.status} /></td>
                 <td style={td}>
                   <select value={u.globalRole} disabled={u.username === myName}
                     title={u.username === myName ? '자기 자신의 전역 롤은 바꿀 수 없습니다' : undefined}
-                    onChange={(e) => putUser.mutate({ username: u.username, globalRole: e.target.value })} style={selBox}>
+                    onChange={(e) => putUser.mutate({ username: u.username, body: { globalRole: e.target.value } })} style={selBox}>
                     <option value="ADMIN">ADMIN</option>
                     <option value="MEMBER">MEMBER</option>
                   </select>
@@ -155,23 +173,37 @@ function UsersPanel({ myName }: { myName: string }) {
                       <button onClick={() => delUser.mutate(u.username)} style={{ ...miniDanger, background: 'var(--fl-fail)', color: '#fff' }}>정말 삭제</button>
                     </span>
                   ) : (
-                    <button onClick={() => setArmDel(u.username)} title="레지스트리에서 삭제(팀 멤버십도 정리)" style={miniDanger}>삭제</button>
+                    <span style={{ display: 'inline-flex', gap: 5 }}>
+                      {u.status === 'BLOCKED'
+                        ? <button onClick={() => approve(u.username)} style={approveBtn}>차단 해제</button>
+                        : <button onClick={() => block(u.username)} title="차단하면 로그인 자체가 거부됩니다" style={miniDanger}>차단</button>}
+                      <button onClick={() => setArmDel(u.username)} title="레지스트리에서 삭제(팀 멤버십도 정리)" style={miniDanger}>삭제</button>
+                    </span>
                   ))}
                 </td>
               </tr>
             ))}
-            {users.data && rows.length === 0 && (
-              <tr><td colSpan={5} style={{ ...td, color: 'var(--fl-text-muted)' }}>{query ? '검색 결과가 없습니다.' : '등록된 사용자가 없습니다. 로그인하거나 위에서 등록하면 나타납니다.'}</td></tr>
+            {users.data && members.length === 0 && (
+              <tr><td colSpan={6} style={{ ...td, color: 'var(--fl-text-muted)' }}>{query ? '검색 결과가 없습니다.' : 'GitHub 로그인한 사용자가 여기에 나타납니다(로그인 = 가입 신청).'}</td></tr>
             )}
           </tbody>
         </table>
       </div>
       <p style={hint}>
-        전역 <b>ADMIN</b> 은 모든 워크스페이스의 OWNER 격 + 이 콘솔 접근. env <code>FLOWLINK_AUTH_ADMIN_LOGINS</code> 의 부트스트랩 관리자는
-        DB 롤과 무관하게 항상 관리자입니다(dev 모드의 <code>dev</code> 포함). 사용자 등록은 로그인 전에 팀 멤버로 미리 배정할 때 씁니다.
+        <b>로그인 = 가입 신청</b> — GitHub 로그인하면 자동으로 신청 목록에 올라오고, 승인해야 개인 워크스페이스·팀 배정·AI 를 씁니다.
+        <b> 차단</b>은 로그인 자체를 거부. 전역 <b>ADMIN</b> 은 모든 워크스페이스의 OWNER 격 + 이 콘솔 접근
+        (env <code>FLOWLINK_AUTH_ADMIN_LOGINS</code> 부트스트랩 관리자와 <code>FLOWLINK_AUTH_ALLOWED_LOGINS</code> 화이트리스트 계정은 자동 승인).
       </p>
     </div>
   )
+}
+
+function StatusPill({ status }: { status: string }) {
+  const [bg, fg, label] =
+    status === 'APPROVED' ? ['color-mix(in srgb, var(--fl-ok) 15%, transparent)', 'var(--fl-ok)', '✓ 승인']
+    : status === 'BLOCKED' ? ['color-mix(in srgb, var(--fl-fail) 15%, transparent)', 'var(--fl-fail)', '차단됨']
+    : ['color-mix(in srgb, var(--fl-waiting) 18%, transparent)', 'var(--fl-waiting)', '대기']
+  return <span style={{ padding: '3px 10px', borderRadius: 'var(--fl-radius-pill)', fontSize: 11.5, fontWeight: 700, background: bg, color: fg, whiteSpace: 'nowrap' }}>{label}</span>
 }
 
 // ─────────────────────────── 팀 · 권한 탭 ───────────────────────────
@@ -179,6 +211,7 @@ function UsersPanel({ myName }: { myName: string }) {
 function TeamsPanel({ myName, onAsk }: { myName: string; onAsk: (a: AskSpec) => void }) {
   const qc = useQueryClient()
   const wss = useQuery({ queryKey: ['admin', 'workspaces'], queryFn: adminApi.workspaces })
+  const users = useQuery({ queryKey: ['admin', 'users'], queryFn: adminApi.users })
   const refresh = () => { qc.invalidateQueries({ queryKey: ['admin', 'workspaces'] }); qc.invalidateQueries({ queryKey: ['workspaces'] }) }
 
   const createWs = useMutation({
@@ -203,7 +236,7 @@ function TeamsPanel({ myName, onAsk }: { myName: string; onAsk: (a: AskSpec) => 
         </button>
       </div>
 
-      {teams.map((w) => <TeamCard key={w.id} ws={w} myName={myName} onChanged={refresh} />)}
+      {teams.map((w) => <TeamCard key={w.id} ws={w} myName={myName} allUsers={users.data ?? []} onChanged={refresh} />)}
       {wss.data && teams.length === 0 && (
         <div style={{ ...card, padding: 24, textAlign: 'center', color: 'var(--fl-text-muted)', fontSize: 13 }}>
           아직 팀이 없습니다 — <b>+ 새 팀</b>으로 만들고 멤버에게 롤(OWNER/EDITOR/VIEWER)을 부여하세요.
@@ -226,10 +259,13 @@ function TeamsPanel({ myName, onAsk }: { myName: string; onAsk: (a: AskSpec) => 
   )
 }
 
-function TeamCard({ ws, myName, onChanged }: { ws: AdminWorkspaceView; myName: string; onChanged: () => void }) {
+function TeamCard({ ws, myName, allUsers, onChanged }: { ws: AdminWorkspaceView; myName: string; allUsers: AdminUserView[]; onChanged: () => void }) {
   const [name, setName] = useState('')
   const [role, setRole] = useState<string>('EDITOR')
   const [armDelete, setArmDelete] = useState(false)
+  // 추가 후보 = 등록된 사용자 중 아직 이 팀 멤버가 아닌 사람(차단 제외) — 계정을 타이핑하지 않는다
+  const memberSet = new Set(ws.members.map((m) => m.username))
+  const candidates = allUsers.filter((u) => !memberSet.has(u.username) && u.status !== 'BLOCKED')
 
   const put = useMutation({
     mutationFn: (v: { username: string; role: string }) => workspacesApi.putMember(ws.id, v.username, v.role),
@@ -290,13 +326,16 @@ function TeamCard({ ws, myName, onChanged }: { ws: AdminWorkspaceView; myName: s
           </tbody>
         </table>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 10 }}>
-          <input value={name} onChange={(e) => setName(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter' && name.trim()) put.mutate({ username: name.trim(), role }) }}
-            placeholder="GitHub 사용자명" aria-label={`${ws.name} 에 추가할 사용자명`} style={{ ...inputBox, flex: 1 }} />
+          <select value={name} onChange={(e) => setName(e.target.value)} aria-label={`${ws.name} 에 추가할 사용자`} style={{ ...selBox, flex: 1, minWidth: 0 }}>
+            <option value="">{candidates.length === 0 ? '추가할 사용자가 없습니다 — 로그인(가입 신청)한 사용자만 목록에 나옵니다' : '사용자 선택…'}</option>
+            {candidates.map((u) => (
+              <option key={u.username} value={u.username}>{u.username}{u.status === 'PENDING' ? ' (승인 대기)' : ''}</option>
+            ))}
+          </select>
           <select value={role} onChange={(e) => setRole(e.target.value)} aria-label="롤" style={selBox}>
             {ROLES.map((r) => <option key={r} value={r}>{r} — {roleDesc[r]}</option>)}
           </select>
-          <button onClick={() => name.trim() && put.mutate({ username: name.trim(), role })} disabled={!name.trim() || put.isPending} style={primaryBtn}>+ 멤버 추가</button>
+          <button onClick={() => name && put.mutate({ username: name, role })} disabled={!name || put.isPending} style={primaryBtn}>+ 멤버 추가</button>
         </div>
       </div>
     </div>
@@ -344,7 +383,9 @@ const td: CSSProperties = { padding: '9px 12px' }
 const hint: CSSProperties = { fontSize: 12.5, color: 'var(--fl-text-muted)', lineHeight: 1.7, margin: 0 }
 const metaMono: CSSProperties = { fontSize: 11.5, color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)' }
 const searchBox: CSSProperties = { padding: '7px 11px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', color: 'var(--fl-text)', fontSize: 13, minWidth: 180 }
-const inputBox: CSSProperties = { padding: '7px 11px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-bg)', color: 'var(--fl-text)', fontSize: 13, minWidth: 170 }
+const pendingBadge: CSSProperties = { minWidth: 20, height: 20, padding: '0 6px', borderRadius: 10, display: 'inline-grid', placeItems: 'center', background: 'var(--fl-waiting)', color: '#1a1d27', fontSize: 11.5, fontWeight: 800 }
+const avatarDot: CSSProperties = { width: 26, height: 26, borderRadius: '50%', display: 'grid', placeItems: 'center', fontSize: 12, fontWeight: 700, color: '#fff', background: 'linear-gradient(135deg,var(--fl-primary),var(--fl-primary-2))', flexShrink: 0 }
+const approveBtn: CSSProperties = { padding: '5px 12px', border: 'none', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-ok)', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }
 const selBox: CSSProperties = { padding: '6px 8px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 12.5, cursor: 'pointer' }
 const primaryBtn: CSSProperties = { padding: '7px 14px', border: 'none', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-primary)', color: '#fff', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }
 const miniDanger: CSSProperties = { padding: '5px 10px', border: '1px solid color-mix(in srgb, var(--fl-fail) 45%, transparent)', borderRadius: 'var(--fl-radius-sm)', background: 'transparent', color: 'var(--fl-fail)', fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap' }

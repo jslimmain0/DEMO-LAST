@@ -1066,6 +1066,13 @@ API 도구 UX·비주얼/IA·플로우 통합 3관점 병렬 비평 → 확정 �
   [사용자] 탭: 전역 롤(ADMIN/MEMBER) 변경(자기 자신은 불가)·소속 팀 칩(역인덱스)·사용자 사전 등록(로그인 전 팀 배정용)·삭제(**팀 멤버십도 정리**).
   [팀·권한] 탭: 팀 생성/삭제(2단계 확인)·팀별 멤버 카드(롤 select·내보내기·추가)·개인 워크스페이스 접힌 목록+**관리자 정리 허용**([WorkspaceService.delete](backend/src/main/kotlin/com/flowlink/workspace/WorkspaceService.kt) — PERSONAL 삭제는 admin 만, 내용물 공용 승격).
   백엔드 `GET /admin/workspaces`(전체 ws+멤버+flowCount 1왕복, [AdminController](backend/src/main/kotlin/com/flowlink/workspace/WorkspaceController.kt)). 네비 "🛡 관리"는 [AppShell](frontend/src/app/AppShell.tsx) 이 `/admin/me` 로 관리자에게만 노출(+백엔드 403 이중 방어). 대시보드 ⚙ 다이얼로그에 "관리 콘솔 →" 링크.
+- **가입 신청/승인 모델(사용자 피드백 — "계정 타이핑이 이상하다, 로그인 이력=신청으로")**: 수동 사용자 등록 제거 →
+  **GitHub 로그인 = 가입 신청**. [AppUser.status](backend/src/main/kotlin/com/flowlink/core/domain/AppUser.kt)(PENDING|APPROVED|BLOCKED, null=레거시 승인 간주, V14 oracle) —
+  [GithubAuthService](backend/src/main/kotlin/com/flowlink/security/GithubAuthService.kt) 가 로그인 성공 시 PENDING 등록(TransactionTemplate — 폴러 스레드)·**BLOCKED 는 토큰 발급 거부**,
+  명시 화이트리스트(allowed-logins)/부트스트랩 관리자는 자동 승인. [WorkspaceService.isApproved](backend/src/main/kotlin/com/flowlink/workspace/WorkspaceService.kt) 게이트:
+  **승인 전엔 공용만**(개인 ws 미생성·팀 생성 403·assistant chat/mock 403 — [AssistantController.requireApproved](backend/src/main/kotlin/com/flowlink/assistant/AssistantController.kt)). 팀 접근은 멤버십으로 별도(OWNER 초대≠전역 승인).
+  관리 콘솔: **🔔 가입 신청 섹션**(승인/차단 버튼)+네비 "관리" 대기 수 배지(`/admin/me`.pendingCount)+상태 필(승인/대기/차단됨)+차단↔해제,
+  팀 멤버 추가는 타이핑 대신 **등록 사용자 select**. `PUT /admin/users/{u}` 는 {globalRole?, status?}(자기 차단/강등 400). WorkspaceRbacTest 8종.
 - **유령 트리거 버그 수정(같은 날, 이력 확인 중 발견)**: flow 를 삭제(archive)해도 그 flow 의 SCHEDULE 트리거가 20초마다 영원히 발화해 실행 이력을 무한 오염(실측: 최근 200건 중 199건이 삭제된 flow "g" 의 예약 실행). [TriggerService](backend/src/main/kotlin/com/flowlink/trigger/TriggerService.kt) `claimScheduleFire`/`claimWebhookFire` 에 `flowGone`(부재/archive) 가드 — 발화 대신 **트리거 자동 비활성**(WARN 로그).
 - ⚠ **MVP 경계**: 게스트(github 모드 비로그인)는 공용만(개인 워크스페이스 없음). Mock 서버·시크릿·환경은 워크스페이스 무관(기존 테넌트 스코프). 트리거/스위트 등록 UI 는 에디터 접근(=워크스페이스 읽기/쓰기)이 전제라 별도 게이트 없음.
 

@@ -19,6 +19,8 @@ interface EditorState {
   focusId: string | null
   dirty: boolean
   palette: PaletteGroup[]
+  // 워크스페이스 롤 읽기전용(VIEWER) — Editor 가 합성해 주입, 속성패널/캔버스 메뉴가 구독(전역 usePermissions 보완)
+  readOnly: boolean
   // 실행 중 콜백을 기다리는 wait 노드(캔버스 펄스·유입 엣지 애니메이션용). 실행 상태라 dirty 와 무관.
   waitingNodeId: string | null
   // 실행 경과 표시(노드 상태·엣지 진행 애니메이션) — 폴링된 ExecutionDetail 로 계산. dirty 와 무관.
@@ -27,6 +29,7 @@ interface EditorState {
   past: Array<{ nodes: Node[]; edges: Edge[] }>
   future: Array<{ nodes: Node[]; edges: Edge[] }>
 
+  setReadOnly: (v: boolean) => void
   loadGraph: (flowId: string, name: string, graph: FlowGraph) => void
   importGraph: (graph: FlowGraph) => void
   // 공동 편집 — 원격 참여자의 그래프 스냅샷을 적용(로컬 선택 하이라이트는 보존, 히스토리 미적재)
@@ -113,6 +116,7 @@ export const useEditorStore = create<EditorState>()((set, get) => {
   focusId: null,
   dirty: false,
   palette: [],
+  readOnly: false,
   waitingNodeId: null,
   runView: null,
   past: [],
@@ -322,6 +326,7 @@ export const useEditorStore = create<EditorState>()((set, get) => {
     return n ? asGraphNode(n.data) : null
   },
 
+  setReadOnly: (v) => set((s) => (s.readOnly === v ? {} : { readOnly: v })),
   setWaitingNode: (id) => set({ waitingNodeId: id }),
   setRunView: (view) => set({ runView: view }),
 

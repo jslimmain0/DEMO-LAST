@@ -19,13 +19,15 @@ import java.nio.file.StandardCopyOption
  *
  * **보안**: 신뢰 JAR 전용 — 샌드박스 없음. 업로드된 JAR은 전체 권한으로 실행된다.
  * OIDC 모드(SaaS P1)에서는 plugins 하위 경로를 전역 `platform-admin` 롤로 게이트한다(SecurityConfig).
- * dev 모드(issuer 미설정)는 permitAll — 사내 로컬 전제. JAR 샌드박싱은 범위 밖(권한 게이트만).
+ * github/dev 모드에서는 업로드를 **워크스페이스 관리자(ADMIN)** 로 게이트 — 게스트/승인 대기 계정의
+ * 무인증 JAR 업로드(=RCE, 적대 리뷰 [H])를 서비스 레벨에서 봉인(dev 모드의 'dev' 는 항상 관리자라 로컬 무마찰).
  */
 @RestController
 @RequestMapping("/api/v1/plugins")
 class PluginController(
     @Value("\${flowlink.plugins.dir:plugins}") dir: String,
-    private val registry: TransformRegistry
+    private val registry: TransformRegistry,
+    private val workspace: com.flowlink.workspace.WorkspaceService,
 ) {
     private val dir: Path = Path.of(dir)
 
@@ -44,6 +46,9 @@ class PluginController(
 
     @PostMapping(consumes = [MediaType.MULTIPART_FORM_DATA_VALUE])
     fun upload(@RequestParam("file") file: MultipartFile): List<String> {
+        if (!workspace.isAdmin(workspace.currentUsername())) {
+            throw com.flowlink.common.error.ForbiddenException("플러그인 업로드는 관리자만 가능합니다(JAR 는 전체 권한으로 실행됨).")
+        }
         val fn = file.originalFilename
         if (fn == null || !fn.lowercase().endsWith(".jar")) {
             throw BadRequestException(".jar 파일만 업로드할 수 있습니다.")

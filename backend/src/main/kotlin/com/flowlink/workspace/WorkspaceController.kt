@@ -73,7 +73,11 @@ class AdminController(
         val username: String, val globalRole: String, val status: String,
         val lastSeenAt: String?, val createdAt: String?,
     )
-    data class MeView(val username: String, val admin: Boolean, val authenticated: Boolean, val pendingCount: Long = 0)
+    /** myStatus: GUEST(비로그인) | PENDING(승인 대기) | APPROVED | BLOCKED — 프론트가 대기 안내/AI 게이트에 사용. */
+    data class MeView(
+        val username: String, val admin: Boolean, val authenticated: Boolean,
+        val pendingCount: Long = 0, val myStatus: String = "APPROVED",
+    )
     data class AdminWorkspaceView(
         val id: String, val name: String, val kind: String, val ownerUsername: String?,
         val createdAt: String?, val flowCount: Long, val members: List<MemberView>,
@@ -94,7 +98,13 @@ class AdminController(
             userRepo.findByTenantIdOrderByUsernameAsc(TenantContext.SHARED_FLOW_TENANT)
                 .count { it.effectiveStatus() == AppUser.STATUS_PENDING }.toLong()
         } else 0L
-        return MeView(u, admin, service.isAuthenticated(u), pending)
+        val myStatus = when {
+            !service.isAuthenticated(u) -> "GUEST"
+            service.isApproved(u) -> AppUser.STATUS_APPROVED
+            else -> userRepo.findByTenantIdAndUsername(TenantContext.SHARED_FLOW_TENANT, u)
+                .map { it.effectiveStatus() }.orElse(AppUser.STATUS_PENDING)
+        }
+        return MeView(u, admin, service.isAuthenticated(u), pending, myStatus)
     }
 
     @GetMapping("/users")
@@ -158,9 +168,9 @@ class AdminController(
         requireAdmin()
         val u = userRepo.findByTenantIdAndUsername(TenantContext.SHARED_FLOW_TENANT, username.trim().lowercase())
             .orElseThrow { NotFoundException.of("User", username) }
-        // 팀 멤버십도 함께 정리 — 삭제된 사용자가 팀 목록에 유령으로 남지 않게(팀 자체·개인 워크스페이스는 유지,
-        // 관리자는 모든 워크스페이스 OWNER 격이라 소유자 없는 팀도 계속 관리 가능).
-        memberRepo.findByUsername(u.username).forEach { memberRepo.delete(it) }
+        // 팀 멤버십 정리 + 개인 워크스페이스를 삭제 실행 관리자의 개인 ws 로 흡수(핸들 재사용 시 데이터 승계 방지).
+        // 소유자 없는 팀은 유지 — 관리자는 모든 워크스페이스 OWNER 격이라 계속 관리 가능.
+        service.purgeUser(u.username)
         userRepo.delete(u)
     }
 }

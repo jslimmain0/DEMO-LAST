@@ -129,7 +129,7 @@ export const workspacesApi = {
     http.delete<WorkspaceMemberView[]>(`/workspaces/${id}/members/${encodeURIComponent(username)}`).then((r) => r.data),
 }
 
-export interface AdminMeView { username: string; admin: boolean; authenticated: boolean; pendingCount: number }
+export interface AdminMeView { username: string; admin: boolean; authenticated: boolean; pendingCount: number; myStatus: 'GUEST' | 'PENDING' | 'APPROVED' | 'BLOCKED' }
 export type UserStatus = 'PENDING' | 'APPROVED' | 'BLOCKED'
 export interface AdminUserView { username: string; globalRole: 'ADMIN' | 'MEMBER'; status: UserStatus; lastSeenAt: string | null; createdAt: string | null }
 export interface AdminWorkspaceView {
@@ -149,9 +149,10 @@ export const adminApi = {
 }
 
 export const mocksApi = {
-  list: () => http.get<import('./types').MockServerSummary[]>('/mock-servers').then((r) => r.data),
+  list: (workspaceId?: string) =>
+    http.get<import('./types').MockServerSummary[]>('/mock-servers', { params: workspaceId && workspaceId !== 'public' ? { workspaceId } : undefined }).then((r) => r.data),
   get: (id: string) => http.get<import('./types').MockServerDetail>(`/mock-servers/${id}`).then((r) => r.data),
-  create: (body: { name: string; slug: string; type?: 'HTTP' | 'TCP' }) =>
+  create: (body: { name: string; slug: string; type?: 'HTTP' | 'TCP'; workspaceId?: string | null }) =>
     http.post<import('./types').MockServerDetail>('/mock-servers', body).then((r) => r.data),
   update: (id: string, body: { name?: string; enabled?: boolean }) =>
     http.patch<import('./types').MockServerDetail>(`/mock-servers/${id}`, body).then((r) => r.data),
@@ -211,8 +212,8 @@ export const runsApi = {
   // TCP 요청 전문 미리보기(전송 없음) — 편집 중 노드를 실어 미저장 편집을 실시간 반영
   tcpPreview: (flowId: string, nodeId: string, node: GraphNode) =>
     http.post<TcpPreview>(`/flows/${flowId}/nodes/${nodeId}/tcp-preview`, node).then((r) => r.data),
-  recent: (limit = 50) =>
-    http.get<ExecutionSummary[]>('/executions', { params: { limit } }).then((r) => r.data),
+  recent: (limit = 50, workspaceId?: string) =>
+    http.get<ExecutionSummary[]>('/executions', { params: { limit, ...(workspaceId && workspaceId !== 'public' ? { workspaceId } : {}) } }).then((r) => r.data),
   // 서버측 필터/페이지네이션 — status/flowId/기간(epoch ms)/offset
   list: (params: { limit?: number; offset?: number; status?: string; flowId?: string; from?: number; to?: number; workspaceId?: string }) =>
     http.get<ExecutionSummary[]>('/executions', { params }).then((r) => r.data),

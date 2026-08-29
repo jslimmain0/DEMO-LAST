@@ -50,16 +50,24 @@ class AssistantController(
     @GetMapping("/skills")
     fun skills(): SkillsView = skills.view()
 
-    /** 사용자 스킬(플로우 조각) 저장 — editor. */
+    /** 사용자 스킬(프롬프트) 저장 — 승인된 사용자만. */
     @PutMapping("/skills")
     fun updateSkills(@RequestBody req: SkillsUpdateRequest): SkillsView {
+        requireApproved()
         skills.updateSkills(req)
         return skills.view()
     }
 
-    /** 팀 지침 저장 — admin(스토어드 프롬프트 인젝션 방지 위해 상위 권한). */
+    /**
+     * 팀 지침 저장 — **관리자만**. 지침은 모든 사용자의 시스템 프롬프트에 "항상 우선 준수"로 자동 주입되므로
+     * (SkillService.promptBlock), 승인 대기 계정이 조직 전체 프롬프트를 인젝션하던 구멍(적대 리뷰 [H]) 봉인.
+     * OIDC 모드의 admin URL 규칙과 달리 github 게스트 모드에도 걸리는 서비스 레벨 게이트.
+     */
     @PutMapping("/instructions")
     fun updateInstructions(@RequestBody req: InstructionsUpdateRequest): SkillsView {
+        if (!workspace.isAdmin(workspace.currentUsername())) {
+            throw com.flowlink.common.error.ForbiddenException("팀 지침은 관리자만 수정할 수 있습니다.")
+        }
         skills.updateInstructions(req)
         return skills.view()
     }

@@ -25,7 +25,9 @@ interface Turn extends AssistantMessage {
 export function AssistantPanel({ width, onClose }: { width: number; onClose: () => void }) {
   const getGraph = useEditorStore((s) => s.getGraph)
   const importGraph = useEditorStore((s) => s.importGraph)
-  const { canEdit } = usePermissions()
+  const { canEdit: canEditGlobal } = usePermissions()
+  const wsReadOnly = useEditorStore((s) => s.readOnly) // 워크스페이스 VIEWER — 캔버스 적용 차단
+  const canEdit = canEditGlobal && !wsReadOnly
   const qc = useQueryClient()
   const cfg = useQuery({ queryKey: ['assistant', 'config'], queryFn: assistantApi.config })
   const [device, setDevice] = useState<{ userCode: string; verificationUri: string } | null>(null)

@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Link } from 'react-router-dom'
 import type { CSSProperties } from 'react'
 import { useState } from 'react'
 import { adminApi, workspacesApi } from '../api/client'
@@ -7,8 +8,8 @@ import { Modal } from './Modal'
 import { toast } from './toast'
 
 /**
- * 워크스페이스 관리 다이얼로그 — [멤버] 현재 워크스페이스의 멤버·롤(OWNER 만 편집),
- * [사용자] 전역 사용자 레지스트리/전역 롤(ADMIN 만). 공용 워크스페이스는 멤버 개념이 없어 안내만.
+ * 워크스페이스 관리 다이얼로그 — 현재 워크스페이스의 멤버·롤(OWNER 만 편집).
+ * 전역 사용자 관리(가입 승인·전역 롤)는 관리 콘솔(/admin) 단일 진입점 — 여기 있던 열화 복제 탭은 제거.
  */
 export function WorkspaceDialog({ current, onClose, onDeleted }: {
   current: WorkspaceView
@@ -16,7 +17,6 @@ export function WorkspaceDialog({ current, onClose, onDeleted }: {
   onDeleted: () => void
 }) {
   const me = useQuery({ queryKey: ['admin', 'me'], queryFn: adminApi.me })
-  const [tab, setTab] = useState<'members' | 'users'>('members')
   const isTeam = current.kind === 'TEAM'
 
   return (
@@ -27,24 +27,18 @@ export function WorkspaceDialog({ current, onClose, onDeleted }: {
           {current.kind === 'PUBLIC' ? '🌐' : current.kind === 'PERSONAL' ? '🔒' : '👥'} {current.name}
         </span>
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 4, alignItems: 'center' }}>
-          <button onClick={() => setTab('members')} style={tabBtn(tab === 'members')}>멤버</button>
-          {me.data?.admin && <button onClick={() => setTab('users')} style={tabBtn(tab === 'users')}>사용자 (admin)</button>}
           {me.data?.admin && (
-            <a href="/admin" style={{ fontSize: 12, color: 'var(--fl-primary)', textDecoration: 'none', fontWeight: 600, marginLeft: 4 }} title="회원·팀·권한 전체 관리">🛡 관리 콘솔 →</a>
+            <Link to="/admin" onClick={onClose} style={{ fontSize: 12, color: 'var(--fl-primary)', textDecoration: 'none', fontWeight: 600, marginLeft: 4 }} title="가입 승인·회원·팀·권한 전체 관리">🛡 관리 콘솔 →</Link>
           )}
         </div>
         <button onClick={onClose} aria-label="닫기" style={xBtn}>×</button>
       </div>
       <div style={{ padding: '16px 20px 20px', overflowY: 'auto' }}>
-        {tab === 'members' ? (
-          current.kind === 'PUBLIC' ? (
-            <p style={hint}>공용 워크스페이스는 모두(게스트 포함)가 편집할 수 있는 공유 공간입니다 — 멤버·롤이 없습니다.<br />
-              접근을 제한하려면 팀 워크스페이스를 만들어 워크플로를 옮기고 멤버에게 롤(OWNER/EDITOR/VIEWER)을 부여하세요.</p>
-          ) : (
-            <MembersTab ws={current} isTeam={isTeam} onDeleted={onDeleted} />
-          )
+        {current.kind === 'PUBLIC' ? (
+          <p style={hint}>공용 워크스페이스는 모두(게스트 포함)가 편집할 수 있는 공유 공간입니다 — 멤버·롤이 없습니다.<br />
+            접근을 제한하려면 팀 워크스페이스를 만들어 워크플로를 옮기고 멤버에게 롤(OWNER/EDITOR/VIEWER)을 부여하세요.</p>
         ) : (
-          <UsersTab myName={me.data?.username ?? ''} />
+          <MembersTab ws={current} isTeam={isTeam} onDeleted={onDeleted} />
         )}
       </div>
     </Modal>
@@ -75,7 +69,7 @@ function MembersTab({ ws, isTeam, onDeleted }: { ws: WorkspaceView; isTeam: bool
   })
   const removeWs = useMutation({
     mutationFn: () => workspacesApi.remove(ws.id),
-    onSuccess: () => { toast('워크스페이스를 삭제했습니다 — 안의 워크플로/폴더는 공용으로 이동됨', 'ok'); onDeleted() },
+    onSuccess: () => { toast('워크스페이스를 삭제했습니다 — 안의 워크플로/폴더는 내 개인 워크스페이스로 이동됨', 'ok'); onDeleted() },
     onError: (e) => toast(errMsg(e) ?? '삭제에 실패했습니다.', 'error'),
   })
 
@@ -133,7 +127,7 @@ function MembersTab({ ws, isTeam, onDeleted }: { ws: WorkspaceView; isTeam: bool
       {ws.canManage && (
         <div style={{ marginTop: 8, paddingTop: 12, borderTop: '1px dashed var(--fl-border)', display: 'flex', alignItems: 'center', gap: 10 }}>
           <span style={{ fontSize: 12, color: 'var(--fl-text-muted)' }}>
-            {armDelete ? `"${ws.name}" 을 정말 삭제할까요? 안의 워크플로/폴더는 공용으로 이동됩니다.` : '워크스페이스 삭제 — 안의 워크플로/폴더는 공용으로 이동됩니다.'}
+            {armDelete ? `"${ws.name}" 을 정말 삭제할까요? 안의 워크플로/폴더/Mock 은 삭제한 사람의 개인 워크스페이스로 이동됩니다(비공개 유지).` : '워크스페이스 삭제 — 안의 워크플로/폴더/Mock 은 삭제한 사람의 개인 워크스페이스로 이동됩니다(비공개 유지).'}
           </span>
           {armDelete ? (
             <span style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
@@ -149,61 +143,7 @@ function MembersTab({ ws, isTeam, onDeleted }: { ws: WorkspaceView; isTeam: bool
   )
 }
 
-function UsersTab({ myName }: { myName: string }) {
-  const qc = useQueryClient()
-  const users = useQuery({ queryKey: ['admin', 'users'], queryFn: adminApi.users })
-  const refresh = () => qc.invalidateQueries({ queryKey: ['admin', 'users'] })
-  const errMsg = (e: unknown) => (e as { response?: { data?: { message?: string } } })?.response?.data?.message
-  const putRole = useMutation({
-    mutationFn: (v: { username: string; globalRole: string }) => adminApi.putUser(v.username, { globalRole: v.globalRole }),
-    onSuccess: refresh,
-    onError: (e) => toast(errMsg(e) ?? '변경에 실패했습니다.', 'error'),
-  })
-  const removeUser = useMutation({
-    mutationFn: (username: string) => adminApi.removeUser(username),
-    onSuccess: refresh,
-    onError: (e) => toast(errMsg(e) ?? '삭제에 실패했습니다.', 'error'),
-  })
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-      <p style={hint}>로그인했거나 멤버로 추가된 사용자 목록입니다. 전역 ADMIN 은 모든 워크스페이스의 OWNER 격입니다.
-        (env <code>FLOWLINK_AUTH_ADMIN_LOGINS</code> 로 부트스트랩 관리자를 지정할 수 있습니다)</p>
-      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-        <thead>
-          <tr style={{ textAlign: 'left', color: 'var(--fl-text-muted)', fontSize: 11.5 }}>
-            <th style={th}>사용자</th><th style={th}>전역 롤</th><th style={th}>최근 접속</th><th style={{ ...th, width: 50 }} />
-          </tr>
-        </thead>
-        <tbody>
-          {(users.data ?? []).map((u) => (
-            <tr key={u.username} style={{ borderTop: '1px solid var(--fl-border)' }}>
-              <td style={td}><span style={{ fontFamily: 'var(--fl-font-mono)' }}>{u.username}</span>{u.username === myName && <span style={{ marginLeft: 6, fontSize: 11, color: 'var(--fl-text-muted)' }}>(나)</span>}</td>
-              <td style={td}>
-                <select value={u.globalRole} onChange={(e) => putRole.mutate({ username: u.username, globalRole: e.target.value })} style={roleSel}>
-                  <option value="ADMIN">ADMIN</option>
-                  <option value="MEMBER">MEMBER</option>
-                </select>
-              </td>
-              <td style={{ ...td, color: 'var(--fl-text-muted)', fontSize: 12 }}>{u.lastSeenAt ? u.lastSeenAt.slice(0, 16).replace('T', ' ') : '—'}</td>
-              <td style={{ ...td, textAlign: 'right' }}>
-                {u.username !== myName && <button onClick={() => removeUser.mutate(u.username)} title="레지스트리에서 삭제" style={miniDanger}>삭제</button>}
-              </td>
-            </tr>
-          ))}
-          {users.data && users.data.length === 0 && (
-            <tr><td colSpan={4} style={{ ...td, color: 'var(--fl-text-muted)' }}>등록된 사용자가 없습니다.</td></tr>
-          )}
-        </tbody>
-      </table>
-    </div>
-  )
-}
 
-const tabBtn = (on: boolean): CSSProperties => ({
-  padding: '6px 12px', border: '1px solid ' + (on ? 'var(--fl-primary)' : 'var(--fl-border)'), borderRadius: 'var(--fl-radius-sm)',
-  background: on ? 'color-mix(in srgb, var(--fl-primary) 12%, transparent)' : 'transparent',
-  color: on ? 'var(--fl-primary)' : 'var(--fl-text-muted)', fontSize: 12.5, fontWeight: 600, cursor: 'pointer',
-})
 const xBtn: CSSProperties = { width: 28, height: 28, border: 'none', borderRadius: 14, background: 'transparent', color: 'var(--fl-text-muted)', fontSize: 18, cursor: 'pointer', lineHeight: 1 }
 const hint: CSSProperties = { fontSize: 12.5, color: 'var(--fl-text-muted)', lineHeight: 1.6, margin: 0 }
 const th: CSSProperties = { padding: '4px 8px', fontWeight: 600 }

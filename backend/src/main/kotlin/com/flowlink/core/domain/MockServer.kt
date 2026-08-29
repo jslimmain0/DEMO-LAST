@@ -64,6 +64,10 @@ class MockServer {
     @Column(name = "spec_json", columnDefinition = "text")
     var specJson: String? = null
 
+    /** 소속 워크스페이스(null=공용) — flow 와 동일 규약. 서빙(/mock/{slug})은 무인증 그대로. */
+    @Column(name = "workspace_id")
+    var workspaceId: UUID? = null
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     lateinit var createdAt: Instant

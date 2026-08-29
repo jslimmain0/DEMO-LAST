@@ -32,6 +32,7 @@ class WorkspaceService(
     private val userRepo: AppUserRepository,
     private val flowRepo: com.flowlink.core.repository.FlowRepository,
     private val folderRepo: com.flowlink.core.repository.FolderRepository,
+    private val mockRepo: com.flowlink.core.repository.MockServerRepository,
     private val auth: AuthProperties,
 ) {
     companion object {
@@ -91,16 +92,23 @@ class WorkspaceService(
     @Transactional
     fun isApproved(username: String): Boolean {
         if (!isAuthenticated(username)) return false
+        // 차단이 화이트리스트/DB-ADMIN 보다 우선 — 차단해도 allowed-logins 우회로 AI 가 살아있던 구멍 방지.
+        // (env 부트스트랩 관리자만 예외 — 관리자 전원이 서로 차단해 잠기는 사고 방지)
+        val row = userRepo.findByTenantIdAndUsername(tenant(), username).orElse(null)
+        if (row?.effectiveStatus() == AppUser.STATUS_BLOCKED && !auth.isBootstrapAdmin(username) && username != DEV_USER) {
+            return false
+        }
         if (username == DEV_USER || isAdmin(username)) return true
         if (auth.allowedLogins.isNotEmpty() && auth.allows(username)) return true
-        return userRepo.findByTenantIdAndUsername(tenant(), username)
-            .map { it.effectiveStatus() == AppUser.STATUS_APPROVED }.orElse(false)
+        return row?.effectiveStatus() == AppUser.STATUS_APPROVED
     }
 
     /** 개인 워크스페이스 보장(없으면 생성) — **승인된 사용자만**(가입 신청 중에는 공용만 사용). */
     @Transactional
     fun ensurePersonal(username: String): Workspace? {
         if (!isAuthenticated(username) || !isApproved(username)) return null
+        // 동시 첫 로그인 레이스는 V16 유니크 인덱스가 이중 생성을 막는다 — 진 쪽 요청은 1회 실패 후
+        // 다음 요청에서 이긴 행을 찾는다(트랜잭션 rollback-only 때문에 같은 tx 내 catch-재조회는 불가).
         return wsRepo.findByTenantIdAndKindAndOwnerUsername(tenant(), Workspace.KIND_PERSONAL, username)
             .orElseGet { wsRepo.save(Workspace.personal(tenant(), username, "개인 — $username")) }
     }
@@ -109,8 +117,10 @@ class WorkspaceService(
     @Transactional
     fun roleFor(username: String, workspaceId: UUID?): String? {
         if (workspaceId == null) return WorkspaceMember.ROLE_EDITOR // 공용 — 게스트 포함 편집 개방(기존 동작)
-        if (isAdmin(username)) return WorkspaceMember.ROLE_OWNER
+        // 존재 확인을 admin 단축 경로보다 먼저 — 없는 ws id 에 관리자가 OWNER 로 판정되면
+        // 존재하지 않는 워크스페이스에 flow 를 배정해 고아 데이터를 만들 수 있다.
         val ws = wsRepo.findByIdAndTenantId(workspaceId, tenant()).orElse(null) ?: return null
+        if (isAdmin(username)) return WorkspaceMember.ROLE_OWNER
         if (ws.kind == Workspace.KIND_PERSONAL) {
             return if (ws.ownerUsername == username) WorkspaceMember.ROLE_OWNER else null
         }
@@ -161,6 +171,8 @@ class WorkspaceService(
         } else {
             for (m in memberRepo.findByUsername(me)) {
                 val ws = wsRepo.findByIdAndTenantId(m.workspaceId, tenant()).orElse(null) ?: continue
+                // 개인 ws 멤버십 행(비정상 데이터)·자기 개인 ws 중복은 목록에서 제외 — 진입 불가/중복 표시 방지
+                if (ws.kind == Workspace.KIND_PERSONAL || ws.id == personal?.id) continue
                 out.add(WorkspaceView(ws.id.toString(), ws.name, ws.kind, m.role, m.role == WorkspaceMember.ROLE_OWNER))
             }
         }
@@ -174,6 +186,10 @@ class WorkspaceService(
         if (!isApproved(me)) throw ForbiddenException("가입 승인 대기 중입니다 — 관리자 승인 후 팀을 만들 수 있습니다.")
         val n = name.trim()
         if (n.isEmpty()) throw BadRequestException("워크스페이스 이름을 입력하세요.")
+        if (n.length > 120) throw BadRequestException("워크스페이스 이름은 120자 이하여야 합니다.")
+        if (wsRepo.findByTenantIdOrderByCreatedAtAsc(tenant()).any { it.kind == Workspace.KIND_TEAM && it.name == n }) {
+            throw BadRequestException("같은 이름의 팀이 이미 있습니다: $n")
+        }
         val ws = wsRepo.save(Workspace.team(tenant(), n))
         memberRepo.save(WorkspaceMember.of(ws.id, me, WorkspaceMember.ROLE_OWNER))
         return WorkspaceView(ws.id.toString(), ws.name, ws.kind, WorkspaceMember.ROLE_OWNER, true)
@@ -187,10 +203,30 @@ class WorkspaceService(
         if (ws.kind == Workspace.KIND_PERSONAL && !isAdmin(me)) throw BadRequestException("개인 워크스페이스는 삭제할 수 없습니다.")
         requireOwner(me, workspaceId)
         memberRepo.deleteByWorkspaceId(workspaceId)
-        // 안의 플로우/폴더는 공용으로 승격 — 데이터 유실 방지(정리는 사용자가)
-        flowRepo.clearWorkspace(workspaceId)
-        folderRepo.clearWorkspace(workspaceId)
+        // 안의 플로우/폴더/Mock 은 **삭제 실행자의 개인 워크스페이스로 이관** — 공용 승격은 비공개 데이터를
+        // 게스트 포함 전원에게 공개하는 권한 상승이었다(적대 리뷰 [H]). 개인 ws 가 없으면(이론상 없음) 공용 폴백.
+        val target = ensurePersonal(me)?.id
+        flowRepo.reassignWorkspace(workspaceId, target)
+        folderRepo.reassignWorkspace(workspaceId, target)
+        mockRepo.reassignWorkspace(workspaceId, target)
         wsRepo.delete(ws)
+    }
+
+    /**
+     * 관리자 사용자 삭제의 워크스페이스 정리 — 팀 멤버십 제거 + **개인 ws 를 삭제 실행 관리자의 개인 ws 로 흡수**.
+     * 개인 ws 를 남기면 같은 GitHub 핸들이 해제·재사용될 때 다음 사람이 이전 사람의 비공개 flow 를 통째로 물려받는다.
+     */
+    @Transactional
+    fun purgeUser(username: String) {
+        memberRepo.findByUsername(username).forEach { memberRepo.delete(it) }
+        wsRepo.findByTenantIdAndKindAndOwnerUsername(tenant(), Workspace.KIND_PERSONAL, username).ifPresent { pws ->
+            val target = ensurePersonal(currentUsername())?.id
+            flowRepo.reassignWorkspace(pws.id, target)
+            folderRepo.reassignWorkspace(pws.id, target)
+            mockRepo.reassignWorkspace(pws.id, target)
+            memberRepo.deleteByWorkspaceId(pws.id)
+            wsRepo.delete(pws)
+        }
     }
 
     @Transactional
@@ -203,13 +239,23 @@ class WorkspaceService(
     fun putMember(workspaceId: UUID, username: String, role: String) {
         val me = currentUsername()
         requireOwner(me, workspaceId)
+        val ws = wsRepo.findByIdAndTenantId(workspaceId, tenant()).orElseThrow { NotFoundException.of("Workspace", workspaceId) }
+        if (ws.kind == Workspace.KIND_PERSONAL) throw BadRequestException("개인 워크스페이스에는 멤버를 추가할 수 없습니다.")
         val u = username.trim().lowercase()
         if (u.isEmpty()) throw BadRequestException("사용자명을 입력하세요.")
+        // 예약 계정 금지 — 'guest' 를 멤버로 넣으면 github 모드의 모든 익명 방문자가 그 팀 롤을 얻는다
+        if (u == GUEST || u == DEV_USER) throw BadRequestException("예약된 계정명은 멤버로 추가할 수 없습니다: $u")
         if (role !in setOf(WorkspaceMember.ROLE_OWNER, WorkspaceMember.ROLE_EDITOR, WorkspaceMember.ROLE_VIEWER)) {
             throw BadRequestException("role 은 OWNER/EDITOR/VIEWER 중 하나여야 합니다.")
         }
         val existing = memberRepo.findByWorkspaceIdAndUsername(workspaceId, u).orElse(null)
         if (existing != null) {
+            // 마지막 OWNER 강등 방지 — removeMember 와 동일 보호(단독 OWNER 가 자신을 VIEWER 로 바꿔 팀이 잠기는 사고)
+            if (existing.role == WorkspaceMember.ROLE_OWNER && role != WorkspaceMember.ROLE_OWNER &&
+                memberRepo.findByWorkspaceIdOrderByCreatedAtAsc(workspaceId).count { it.role == WorkspaceMember.ROLE_OWNER } <= 1
+            ) {
+                throw BadRequestException("마지막 OWNER 는 강등할 수 없습니다 — 먼저 다른 OWNER 를 지정하세요.")
+            }
             existing.role = role
             memberRepo.save(existing)
         } else {

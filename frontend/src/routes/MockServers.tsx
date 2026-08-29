@@ -1,9 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { CSSProperties } from 'react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { MockServerSummary } from '../api/types'
-import { mockBaseUrl, mocksApi } from '../api/client'
+import { mockBaseUrl, mocksApi, workspacesApi } from '../api/client'
 import { AppShellTier1 } from '../app/AppShell'
 import { useAuth, usePermissions } from '../auth/AuthContext'
 import { AskDialog } from '../components/AskDialog'
@@ -18,9 +18,26 @@ import { relTime } from '../lib/format'
 export function MockServers() {
   const qc = useQueryClient()
   const navigate = useNavigate()
-  const { canEdit } = usePermissions()
+  const { canEdit: canEditGlobal } = usePermissions()
   const { me } = useAuth()
-  const servers = useQuery({ queryKey: ['mock-servers'], queryFn: mocksApi.list })
+
+  // 워크스페이스 스코프 — 대시보드와 같은 선택(fl:workspace) 공유. Mock 도 flow 와 동일 규약으로 분리.
+  const [wsId, setWsIdRaw] = useState<string>(() => { try { return localStorage.getItem('fl:workspace') ?? 'public' } catch { return 'public' } })
+  const workspaces = useQuery({ queryKey: ['workspaces'], queryFn: workspacesApi.list })
+  const setWsId = (id: string) => {
+    setWsIdRaw(id)
+    try { localStorage.setItem('fl:workspace', id) } catch { /* 프라이빗 모드 */ }
+  }
+  useEffect(() => {
+    if (workspaces.data && !workspaces.isFetching && !workspaces.data.some((w) => w.id === wsId)) {
+      setWsIdRaw('public')
+      try { localStorage.setItem('fl:workspace', 'public') } catch { /* 프라이빗 모드 */ }
+    }
+  }, [workspaces.data, workspaces.isFetching, wsId])
+  const wsRole = workspaces.data?.find((w) => w.id === wsId)?.myRole ?? 'EDITOR'
+  const canEdit = canEditGlobal && wsRole !== 'VIEWER'
+
+  const servers = useQuery({ queryKey: ['mock-servers', wsId], queryFn: () => mocksApi.list(wsId) })
   const [ask, setAsk] = useState<AskSpec | null>(null)
   const [name, setName] = useState('')
   const [slug, setSlug] = useState('')
@@ -31,7 +48,7 @@ export function MockServers() {
   const invalidate = () => qc.invalidateQueries({ queryKey: ['mock-servers'] })
 
   const create = useMutation({
-    mutationFn: () => mocksApi.create({ name: name.trim() || slug.trim(), slug: slug.trim(), type }),
+    mutationFn: () => mocksApi.create({ name: name.trim() || slug.trim(), slug: slug.trim(), type, workspaceId: wsId === 'public' ? null : wsId }),
     onSuccess: (d) => { setName(''); setSlug(''); setType('HTTP'); setError(null); setCreating(false); void invalidate(); navigate(`/mocks/${d.id}`) },
     onError: (e) => setError(apiErrorMessage(e)),
   })
@@ -54,7 +71,16 @@ export function MockServers() {
               미완성 시스템을 흉내 내는 가짜 API. 경로마다 응답·조건 분기·콜백 발사를 정의하면 워크플로 노드가 바로 호출합니다.
             </p>
           </div>
-          {!creating && canEdit && <button onClick={() => setCreating(true)} style={primaryBtn}>+ 새 Mock 서버</button>}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {/* 워크스페이스 스코프 — 대시보드 선택과 동기화. 서빙(/mock/{slug})은 여전히 무인증 공개 */}
+            <select aria-label="워크스페이스" value={wsId} onChange={(e) => setWsId(e.target.value)}
+              style={{ padding: '8px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', color: 'var(--fl-text)', fontSize: 12.5, cursor: 'pointer' }}>
+              {(workspaces.data ?? [{ id: 'public', name: '공용', kind: 'PUBLIC' } as const]).map((w) => (
+                <option key={w.id} value={w.id}>{w.kind === 'PERSONAL' ? '🔒' : w.kind === 'TEAM' ? '👥' : '🌐'} {w.name}</option>
+              ))}
+            </select>
+            {!creating && canEdit && <button onClick={() => setCreating(true)} style={primaryBtn}>+ 새 Mock 서버</button>}
+          </div>
         </div>
 
         {creating && (

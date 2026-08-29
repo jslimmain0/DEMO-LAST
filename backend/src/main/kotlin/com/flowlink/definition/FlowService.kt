@@ -26,6 +26,7 @@ import java.util.UUID
 class FlowService(
     private val flowRepo: FlowRepository,
     private val versionRepo: FlowVersionRepository,
+    private val folderRepo: com.flowlink.core.repository.FolderRepository,
     private val json: JsonService,
     private val validator: GraphValidator,
     private val workspace: com.flowlink.workspace.WorkspaceService,
@@ -87,6 +88,7 @@ class FlowService(
     fun create(req: CreateFlowRequest): FlowDetail {
         val wsId = workspace.resolveId(req.workspaceId)
         workspace.requireWrite(workspace.currentUsername(), wsId)
+        requireFolderInWorkspace(req.folderId, wsId)
         val flow = createInternal(req.name, req.description, emptyGraph(req.name), "초기 버전", req.folderId)
         flow.workspaceId = wsId
         return toDetail(flow)
@@ -94,7 +96,19 @@ class FlowService(
 
     @Transactional
     fun moveToFolder(id: UUID, folderId: UUID?) {
-        writable(loadFlow(id)).folderId = folderId
+        val flow = writable(loadFlow(id))
+        requireFolderInWorkspace(folderId, flow.workspaceId)
+        flow.folderId = folderId
+    }
+
+    /** 폴더-워크스페이스 교차 배치 방지 — 다른 ws 폴더에 넣으면 어느 화면에도 안 보이는 고아 flow 가 된다. */
+    private fun requireFolderInWorkspace(folderId: UUID?, wsId: UUID?) {
+        if (folderId == null) return
+        val folder = folderRepo.findByIdAndTenantId(folderId, tenant())
+            .orElseThrow { NotFoundException.of("Folder", folderId) }
+        if (folder.workspaceId != wsId) {
+            throw com.flowlink.common.error.BadRequestException("다른 워크스페이스의 폴더에는 넣을 수 없습니다.")
+        }
     }
 
     @Transactional
@@ -222,7 +236,8 @@ class FlowService(
     private fun toDetail(flow: Flow): FlowDetail =
         FlowDetail(
             flow.id, flow.name, flow.description,
-            flow.currentVersion, flow.folderId, flow.createdAt, flow.updatedAt, currentGraph(flow)
+            flow.currentVersion, flow.folderId, flow.createdAt, flow.updatedAt, currentGraph(flow),
+            flow.workspaceId, workspace.roleFor(workspace.currentUsername(), flow.workspaceId)
         )
 
     private fun emptyGraph(name: String): String {

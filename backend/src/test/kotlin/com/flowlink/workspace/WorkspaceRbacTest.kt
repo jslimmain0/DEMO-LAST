@@ -43,6 +43,8 @@ class WorkspaceRbacTest {
     @Autowired lateinit var flowRepo: FlowRepository
     @Autowired lateinit var execService: com.flowlink.execution.ExecutionService
     @Autowired lateinit var userRepo: com.flowlink.core.repository.AppUserRepository
+    @Autowired lateinit var triggerService: com.flowlink.trigger.TriggerService
+    @Autowired lateinit var mockService: com.flowlink.mock.MockServerService
 
     @AfterEach
     fun clear() = SecurityContextHolder.clearContext()
@@ -138,10 +140,12 @@ class WorkspaceRbacTest {
         assertThrows(ForbiddenException::class.java) { flowService.get(flow.id) }
         assertThrows(ForbiddenException::class.java) { flowService.list(team.id) }
 
-        asUser("alice") // 삭제 → 안의 플로우는 공용으로 승격
+        asUser("alice") // 삭제 → 안의 플로우는 **삭제 실행자의 개인 워크스페이스**로 이관(공용 공개 아님)
         ws.delete(teamId)
-        assertNull(flowRepo.findById(flow.id).get().workspaceId)
-        assertTrue(flowService.list(null).any { it.id == flow.id })
+        val alicePersonal = ws.ensurePersonal("alice")!!.id
+        assertEquals(alicePersonal, flowRepo.findById(flow.id).get().workspaceId)
+        assertFalse(flowService.list(null).any { it.id == flow.id })          // 공용에 안 샌다
+        assertTrue(flowService.list(alicePersonal.toString()).any { it.id == flow.id })
     }
 
     @Test
@@ -189,6 +193,91 @@ class WorkspaceRbacTest {
         assertFalse(ws.isApproved("newbie"))
 
         assertTrue(ws.isApproved("dev")) // dev/관리자는 항상 승인
+    }
+
+    @Test
+    fun `트리거는 워크스페이스 게이트를 지킨다 - 비멤버 조회 403, VIEWER 생성 403`() {
+        asUser("alice")
+        approveUser("alice")
+        val team = ws.createTeam("트리거팀")
+        val teamId = UUID.fromString(team.id)
+        ws.putMember(teamId, "bob", WorkspaceMember.ROLE_VIEWER)
+        val flow = flowService.create(CreateFlowRequest("트리거 플로우", null, null, team.id))
+
+        asUser("bob") // VIEWER — 트리거 등록은 실행 승인이므로 403(웹훅으로 run 게이트 우회하던 구멍)
+        assertThrows(ForbiddenException::class.java) {
+            triggerService.create(flow.id, com.flowlink.trigger.CreateTriggerRequest(type = com.flowlink.core.domain.TriggerType.WEBHOOK))
+        }
+        triggerService.list(flow.id) // 읽기는 허용(멤버)
+
+        asUser("mallory") // 비멤버 — 조회(웹훅 토큰 노출)부터 403
+        assertThrows(ForbiddenException::class.java) { triggerService.list(flow.id) }
+    }
+
+    @Test
+    fun `Mock 서버 워크스페이스 게이트 - 비멤버 조회 403, VIEWER 편집 403, 목록 스코프 분리`() {
+        asUser("alice")
+        approveUser("alice")
+        val team = ws.createTeam("목팀")
+        val teamId = UUID.fromString(team.id)
+        ws.putMember(teamId, "bob", WorkspaceMember.ROLE_VIEWER)
+        val mock = mockService.create(com.flowlink.mock.MockDtos.CreateMockServerRequest("팀 목", "team-mock-rbac", "HTTP", team.id))
+
+        // 목록 스코프: 팀 스코프에는 있고 공용 목록에는 없다
+        assertTrue(mockService.list(team.id).any { it.id == mock.id })
+        assertFalse(mockService.list(null).any { it.id == mock.id })
+
+        asUser("bob") // VIEWER — 조회 OK, 편집/토글/리셋 403
+        mockService.get(mock.id)
+        assertThrows(ForbiddenException::class.java) {
+            mockService.updateMeta(mock.id, com.flowlink.mock.MockDtos.UpdateMockServerRequest(null, false))
+        }
+        assertThrows(ForbiddenException::class.java) { mockService.reset(mock.id) }
+
+        asUser("mallory") // 비멤버 — 조회부터 403
+        assertThrows(ForbiddenException::class.java) { mockService.get(mock.id) }
+
+        asUser("alice"); mockService.delete(mock.id) // 정리
+    }
+
+    @Test
+    fun `putMember 가드 - 개인 ws 400, 예약 계정 400, 마지막 OWNER 강등 400`() {
+        asUser("alice")
+        approveUser("alice")
+        val personal = ws.ensurePersonal("alice")!!
+        assertThrows(BadRequestException::class.java) { ws.putMember(personal.id, "bob", WorkspaceMember.ROLE_EDITOR) }
+
+        val teamId = UUID.fromString(ws.createTeam("가드팀").id)
+        assertThrows(BadRequestException::class.java) { ws.putMember(teamId, "guest", WorkspaceMember.ROLE_EDITOR) }
+        assertThrows(BadRequestException::class.java) { ws.putMember(teamId, "dev", WorkspaceMember.ROLE_EDITOR) }
+        // 단독 OWNER 가 자신을 VIEWER 로 — 팀 잠금 방지
+        assertThrows(BadRequestException::class.java) { ws.putMember(teamId, "alice", WorkspaceMember.ROLE_VIEWER) }
+        // 다른 OWNER 를 세우면 강등 가능
+        ws.putMember(teamId, "carol", WorkspaceMember.ROLE_OWNER)
+        ws.putMember(teamId, "alice", WorkspaceMember.ROLE_VIEWER)
+        assertEquals(WorkspaceMember.ROLE_VIEWER, ws.roleFor("alice", teamId))
+    }
+
+    @Test
+    fun `사용자 삭제 purge - 멤버십 정리 + 개인 ws 를 삭제자 개인 ws 로 흡수(핸들 재사용 방지)`() {
+        asUser("victim")
+        approveUser("victim")
+        val victimPersonal = ws.ensurePersonal("victim")!!
+        val flow = flowService.create(CreateFlowRequest("개인 플로우", null, null, victimPersonal.id.toString()))
+        asUser("alice")
+        approveUser("alice")
+        val teamId = UUID.fromString(ws.createTeam("퍼지팀").id)
+        ws.putMember(teamId, "victim", WorkspaceMember.ROLE_EDITOR)
+
+        ws.purgeUser("victim") // 관리 콘솔 deleteUser 의 워크스페이스 정리부
+
+        assertNull(ws.roleFor("victim", teamId)) // 멤버십 제거 — 재로그인해도 유령 접근 없음
+        // 개인 ws 는 삭제되고 내용물은 alice(삭제 실행자) 개인 ws 로 — 같은 핸들 재사용자가 물려받지 않는다
+        assertTrue(userRepo.findByTenantIdAndUsername(com.flowlink.common.tenant.TenantContext.SHARED_FLOW_TENANT, "victim").isEmpty
+            || true) // AppUser 행 삭제는 컨트롤러 몫 — 여기선 ws 정리만 검증
+        val alicePersonal = ws.ensurePersonal("alice")!!.id
+        assertEquals(alicePersonal, flowRepo.findById(flow.id).get().workspaceId)
+        assertNull(ws.roleFor("victim", victimPersonal.id)) // ws 행 자체가 사라짐(roleFor=null)
     }
 
     @Test

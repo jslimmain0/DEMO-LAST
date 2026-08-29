@@ -19,6 +19,7 @@ import java.util.UUID
 class SuiteController(
     private val flowRepo: FlowRepository,
     private val executionService: ExecutionService,
+    private val workspace: com.flowlink.workspace.WorkspaceService,
 ) {
 
     data class SuiteRunRequest(val flowIds: List<UUID>? = null, val folderId: UUID? = null)
@@ -28,11 +29,14 @@ class SuiteController(
     fun run(@RequestBody req: SuiteRunRequest): List<SuiteRunItem> {
         // flow 는 전역 공유 — 공유 테넌트로 조회. 실행(run)은 내부에서 실제 사용자 테넌트로 이력 기록.
         val tenant = TenantContext.SHARED_FLOW_TENANT
+        val me = workspace.currentUsername()
+        // 읽기 권한 없는 flow 는 응답 이전에 제외 — REJECTED 항목으로 타 워크스페이스 flow 의 id·이름이
+        // 열거되던 유출(적대 리뷰 [M]) 봉인. 실행 권한(쓰기)은 개별 run() 이 강제.
         val flows = when {
             !req.flowIds.isNullOrEmpty() -> req.flowIds.mapNotNull { flowRepo.findByIdAndTenantId(it, tenant).orElse(null) }
             req.folderId != null -> flowRepo.findByTenantIdAndFolderIdAndArchivedFalse(tenant, req.folderId)
             else -> throw BadRequestException("flowIds 또는 folderId 가 필요합니다.")
-        }
+        }.filter { workspace.roleFor(me, it.workspaceId) != null }
         return flows.map { flow ->
             try {
                 val d = executionService.run(flow.id, null)

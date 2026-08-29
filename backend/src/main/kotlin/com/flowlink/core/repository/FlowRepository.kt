@@ -32,8 +32,8 @@ interface FlowRepository : JpaRepository<Flow, UUID> {
     @Query("update Flow f set f.folderId = :toId where f.folderId = :fromId")
     fun reassignFolder(@Param("fromId") fromId: UUID, @Param("toId") toId: UUID?): Int
 
-    /** 워크스페이스 삭제 시 안의 워크플로를 공용(null)으로 승격 — 데이터 유실 방지. */
+    /** 워크스페이스 삭제 시 안의 워크플로 이관 — to=삭제 실행자의 개인 ws(비공개 유지), null=공용 폴백. */
     @Modifying
-    @Query("update Flow f set f.workspaceId = null where f.workspaceId = :wsId")
-    fun clearWorkspace(@Param("wsId") wsId: UUID): Int
+    @Query("update Flow f set f.workspaceId = :to where f.workspaceId = :from")
+    fun reassignWorkspace(@Param("from") from: UUID, @Param("to") to: UUID?): Int
 }

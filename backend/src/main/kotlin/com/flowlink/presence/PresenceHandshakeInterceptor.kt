@@ -41,7 +41,8 @@ class PresenceHandshakeInterceptor(
         val token = params.getFirst("token")
         if (token == null && guestAllowed) {
             // github 게스트 모드 — 앱 자체가 게스트 개방이므로 WS 도 dev 방식(쿼리 name)으로 허용.
-            // 토큰을 명시한 접속은 아래에서 계속 엄격 검증(무효 토큰의 조용한 게스트 다운그레이드 금지).
+            // 단 팀/개인 워크스페이스 flow 의 방은 게스트 입장 거부(누가 어느 노드를 편집 중인지 노출 방지).
+            if (!flowAccessCheck(uuid, "guest")) return refuse(response, HttpStatus.FORBIDDEN)
             attributes["flowId"] = flowId
             attributes["name"] = decoded(params.getFirst("name")).ifBlank { "게스트" }.take(40)
             return true
@@ -50,8 +51,9 @@ class PresenceHandshakeInterceptor(
         val jwt = try { decoder.decode(token) } catch (e: JwtException) {
             return refuse(response, HttpStatus.UNAUTHORIZED)
         }
-        val tenant = jwt.getClaimAsString(tenantClaim) ?: "default"
-        if (!flowAccessCheck(uuid, tenant)) return refuse(response, HttpStatus.FORBIDDEN)
+        val username = (jwt.getClaimAsString("preferred_username") ?: jwt.subject ?: "").lowercase()
+        // 워크스페이스 롤 게이트 — flow 존재만 보던 검사를 롤 판정으로 교체(비멤버의 팀 방 입장 차단).
+        if (!flowAccessCheck(uuid, username)) return refuse(response, HttpStatus.FORBIDDEN)
         attributes["flowId"] = flowId
         attributes["name"] = (jwt.getClaimAsString("preferred_username") ?: jwt.subject).take(40)
         return true

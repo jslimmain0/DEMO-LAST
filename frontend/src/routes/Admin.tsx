@@ -15,10 +15,21 @@ import { relTime } from '../lib/format'
  * 네비는 관리자에게만 노출되고, 백엔드 /admin/* 도 403 으로 이중 방어된다.
  */
 export function Admin() {
-  const me = useQuery({ queryKey: ['admin', 'me'], queryFn: adminApi.me, staleTime: 300_000 })
+  const me = useQuery({ queryKey: ['admin', 'me'], queryFn: adminApi.me, staleTime: 30_000, refetchOnMount: 'always' })
   const [tab, setTab] = useState<'users' | 'teams'>('users')
   const [ask, setAsk] = useState<AskSpec | null>(null)
 
+  // 로딩 중엔 판정 보류 — 비관리자에게 콘솔 UI 를 한 번 그렸다가 403 두 발 쏘고 차단 화면으로 바뀌던 깜빡임 방지
+  if (me.isPending) {
+    return (
+      <AppShellTier1>
+        <div style={{ maxWidth: 1020, margin: '0 auto', padding: '36px 40px' }}>
+          <div style={{ height: 34, width: 220, borderRadius: 8, background: 'var(--fl-surface-2)', opacity: 0.6 }} />
+          <div style={{ marginTop: 24, height: 180, borderRadius: 12, background: 'var(--fl-surface-2)', opacity: 0.4 }} />
+        </div>
+      </AppShellTier1>
+    )
+  }
   if (me.data && !me.data.admin) {
     return (
       <AppShellTier1>
@@ -77,9 +88,10 @@ function UsersPanel({ myName }: { myName: string }) {
 
   const putUser = useMutation({
     mutationFn: (v: { username: string; body: { globalRole?: string; status?: string } }) => adminApi.putUser(v.username, v.body),
-    onSuccess: refresh,
+    onSuccess: (_d, v) => { refresh(); if (v.body.status === 'APPROVED') toast(v.username + ' 승인됨 — 개인 워크스페이스·팀 배정·AI 사용 가능', 'ok'); else if (v.body.status === 'BLOCKED') toast(v.username + ' 차단됨 — 로그인이 거부됩니다', 'ok') },
     onError: (e) => toast(errMsg(e) ?? '저장에 실패했습니다.', 'error'),
   })
+  const pendingUser = putUser.isPending ? putUser.variables?.username : null
   const delUser = useMutation({
     mutationFn: (username: string) => adminApi.removeUser(username),
     onSuccess: () => { refresh(); setArmDel(null); toast('사용자를 삭제했습니다(팀 멤버십도 정리).', 'ok') },
@@ -97,7 +109,7 @@ function UsersPanel({ myName }: { myName: string }) {
   const all = users.data ?? []
   const pending = all.filter((u) => u.status === 'PENDING')
   const query = q.trim().toLowerCase()
-  const members = all.filter((u) => u.status !== 'PENDING' && (!query || u.username.includes(query)))
+  const members = all.filter((u) => u.status !== 'PENDING' && (!query || u.username.toLowerCase().includes(query)))
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -117,8 +129,8 @@ function UsersPanel({ myName }: { myName: string }) {
                 신청 {u.createdAt ? relTime(u.createdAt) : '—'}{u.lastSeenAt ? ` · 최근 접속 ${relTime(u.lastSeenAt)}` : ''}
               </span>
               <span style={{ marginLeft: 'auto', display: 'inline-flex', gap: 6 }}>
-                <button onClick={() => approve(u.username)} disabled={putUser.isPending} style={approveBtn}>✓ 승인</button>
-                <button onClick={() => block(u.username)} disabled={putUser.isPending} style={miniDanger}>차단</button>
+                <button onClick={() => approve(u.username)} disabled={pendingUser === u.username} style={approveBtn}>{pendingUser === u.username ? '처리 중…' : '✓ 승인'}</button>
+                <button onClick={() => block(u.username)} disabled={pendingUser === u.username} style={miniDanger}>차단</button>
               </span>
             </div>
           ))}
@@ -134,8 +146,8 @@ function UsersPanel({ myName }: { myName: string }) {
             onKeyDown={(e) => { if (e.key === 'Escape' && q) { e.stopPropagation(); setQ('') } }} style={{ ...searchBox, marginLeft: 'auto' }} />
         )}
       </div>
-      <div style={card}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+      <div style={{ ...card, overflowX: 'auto' }}>
+        <table style={{ width: '100%', minWidth: 720, borderCollapse: 'collapse', fontSize: 13 }}>
           <thead>
             <tr style={{ textAlign: 'left', color: 'var(--fl-text-muted)', fontSize: 11.5 }}>
               <th style={th}>사용자</th><th style={th}>상태</th><th style={th}>전역 롤</th><th style={th}>소속 팀</th><th style={th}>최근 접속</th><th style={{ ...th, width: 150 }} />
@@ -170,7 +182,7 @@ function UsersPanel({ myName }: { myName: string }) {
                   {u.username !== myName && (armDel === u.username ? (
                     <span style={{ display: 'inline-flex', gap: 5 }}>
                       <button onClick={() => setArmDel(null)} style={cancelMini}>취소</button>
-                      <button onClick={() => delUser.mutate(u.username)} style={{ ...miniDanger, background: 'var(--fl-fail)', color: '#fff' }}>정말 삭제</button>
+                      <button onClick={() => delUser.mutate(u.username)} disabled={delUser.isPending} style={{ ...miniDanger, background: 'var(--fl-fail)', color: '#fff' }}>정말 삭제</button>
                     </span>
                   ) : (
                     <span style={{ display: 'inline-flex', gap: 5 }}>
@@ -279,7 +291,7 @@ function TeamCard({ ws, myName, allUsers, onChanged }: { ws: AdminWorkspaceView;
   })
   const removeWs = useMutation({
     mutationFn: () => workspacesApi.remove(ws.id),
-    onSuccess: () => { toast(`팀 "${ws.name}" 삭제 — 안의 워크플로/폴더는 공용으로 이동됨`, 'ok'); onChanged() },
+    onSuccess: () => { toast(`팀 "${ws.name}" 삭제 — 안의 워크플로/폴더/Mock 은 내 개인 워크스페이스로 이동됨`, 'ok'); onChanged() },
     onError: (e) => toast(errMsg(e) ?? '삭제에 실패했습니다.', 'error'),
   })
 
@@ -292,7 +304,7 @@ function TeamCard({ ws, myName, allUsers, onChanged }: { ws: AdminWorkspaceView;
         <div style={{ marginLeft: 'auto' }}>
           {armDelete ? (
             <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
-              <span style={{ fontSize: 12, color: 'var(--fl-text-muted)' }}>워크플로/폴더는 공용으로 이동됩니다 —</span>
+              <span style={{ fontSize: 12, color: 'var(--fl-text-muted)' }}>워크플로/폴더/Mock 은 내 개인 워크스페이스로 이동됩니다(비공개 유지) —</span>
               <button onClick={() => setArmDelete(false)} style={cancelMini}>취소</button>
               <button onClick={() => removeWs.mutate()} disabled={removeWs.isPending} style={{ ...miniDanger, background: 'var(--fl-fail)', color: '#fff' }}>정말 삭제</button>
             </span>
@@ -309,6 +321,7 @@ function TeamCard({ ws, myName, allUsers, onChanged }: { ws: AdminWorkspaceView;
                 <td style={{ ...td, width: '34%' }}>
                   <span style={{ fontFamily: 'var(--fl-font-mono)' }}>{m.username}</span>
                   {m.username === myName && <span style={{ marginLeft: 6, fontSize: 11, color: 'var(--fl-primary)' }}>(나)</span>}
+                  {(() => { const st = allUsers.find((u) => u.username === m.username)?.status; return st && st !== 'APPROVED' ? <span style={{ marginLeft: 8 }}><StatusPill status={st} /></span> : null })()}
                 </td>
                 <td style={td}>
                   <select value={m.role} onChange={(e) => put.mutate({ username: m.username, role: e.target.value })} style={selBox}>
@@ -316,7 +329,7 @@ function TeamCard({ ws, myName, allUsers, onChanged }: { ws: AdminWorkspaceView;
                   </select>
                 </td>
                 <td style={{ ...td, textAlign: 'right' }}>
-                  <button onClick={() => remove.mutate(m.username)} style={miniDanger}>내보내기</button>
+                  <button onClick={() => remove.mutate(m.username)} disabled={remove.isPending} style={miniDanger}>내보내기</button>
                 </td>
               </tr>
             ))}
@@ -346,7 +359,7 @@ function PersonalRow({ ws, onChanged }: { ws: AdminWorkspaceView; onChanged: () 
   const [arm, setArm] = useState(false)
   const removeWs = useMutation({
     mutationFn: () => workspacesApi.remove(ws.id),
-    onSuccess: () => { toast(`"${ws.name}" 정리 — 워크플로는 공용으로 이동됨`, 'ok'); onChanged() },
+    onSuccess: () => { toast(`"${ws.name}" 정리 — 내용물은 내 개인 워크스페이스로 이동됨`, 'ok'); onChanged() },
     onError: (e) => toast(errMsg(e) ?? '삭제에 실패했습니다.', 'error'),
   })
   return (
@@ -357,10 +370,10 @@ function PersonalRow({ ws, onChanged }: { ws: AdminWorkspaceView; onChanged: () 
       {arm ? (
         <span style={{ display: 'inline-flex', gap: 5 }}>
           <button onClick={() => setArm(false)} style={cancelMini}>취소</button>
-          <button onClick={() => removeWs.mutate()} style={{ ...miniDanger, background: 'var(--fl-fail)', color: '#fff' }}>정말 정리</button>
+          <button onClick={() => removeWs.mutate()} disabled={removeWs.isPending} style={{ ...miniDanger, background: 'var(--fl-fail)', color: '#fff' }}>정말 정리</button>
         </span>
       ) : (
-        <button onClick={() => setArm(true)} title="탈퇴자 등 잔여 개인 공간 정리(워크플로는 공용으로)" style={miniDanger}>정리</button>
+        <button onClick={() => setArm(true)} title="탈퇴자 등 잔여 개인 공간 정리(내용물은 내 개인 워크스페이스로)" style={miniDanger}>정리</button>
       )}
     </div>
   )

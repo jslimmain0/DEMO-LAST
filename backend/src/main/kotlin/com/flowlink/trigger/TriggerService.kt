@@ -29,19 +29,21 @@ class TriggerService(
     private val flowRepo: FlowRepository,
     private val executionService: ExecutionService,
     private val json: JsonService,
+    private val workspace: com.flowlink.workspace.WorkspaceService,
 ) {
     private val log = LoggerFactory.getLogger(TriggerService::class.java)
     private val zone: ZoneId = ZoneId.systemDefault()
 
     @Transactional(readOnly = true)
     fun list(flowId: UUID): List<TriggerView> {
-        requireFlow(flowId)
+        requireFlow(flowId, write = false) // 조회도 웹훅 토큰을 노출하므로 최소 읽기 권한
         return triggerRepo.findByFlowIdAndTenantId(flowId, tenant()).map { TriggerView.from(it) }
     }
 
     @Transactional
     fun create(flowId: UUID, req: CreateTriggerRequest): TriggerView {
-        requireFlow(flowId)
+        // 트리거 등록 = 실행 승인 시점 — VIEWER/비멤버가 트리거로 run() 의 MANUAL 게이트를 우회하던 구멍 차단
+        requireFlow(flowId, write = true)
         if (req.type != TriggerType.SCHEDULE && req.type != TriggerType.WEBHOOK) {
             throw BadRequestException("트리거 종류는 SCHEDULE 또는 WEBHOOK 이어야 합니다.")
         }
@@ -64,6 +66,7 @@ class TriggerService(
     @Transactional
     fun update(id: UUID, req: UpdateTriggerRequest): TriggerView {
         val t = load(id)
+        requireFlow(t.flowId, write = true)
         req.enabled?.let { t.enabled = it }
         req.versionNo?.let { t.versionNo = it }
         if (req.input != null) t.inputJson = if (req.input.isNull) null else json.toJson(req.input)
@@ -80,7 +83,9 @@ class TriggerService(
 
     @Transactional
     fun delete(id: UUID) {
-        triggerRepo.delete(load(id))
+        val t = load(id)
+        requireFlow(t.flowId, write = true)
+        triggerRepo.delete(t)
     }
 
     /** 발화 스펙 — claim(트랜잭션) 이 확정해 run(비트랜잭션) 으로 넘긴다. */
@@ -158,10 +163,13 @@ class TriggerService(
         return next.toInstant()
     }
 
-    private fun requireFlow(flowId: UUID) {
+    private fun requireFlow(flowId: UUID, write: Boolean) {
         // flow 는 전역 공유 — 공유 테넌트로 존재 확인(트리거 행 자체는 아래 load() 처럼 사용자 테넌트 유지).
-        flowRepo.findByIdAndTenantId(flowId, TenantContext.SHARED_FLOW_TENANT)
+        // + 워크스페이스 롤 게이트: 쓰기(등록/수정/삭제)=EDITOR 이상, 조회=읽기 권한(웹훅 토큰 노출 방지).
+        val flow = flowRepo.findByIdAndTenantId(flowId, TenantContext.SHARED_FLOW_TENANT)
             .orElseThrow { NotFoundException.of("Flow", flowId) }
+        val me = workspace.currentUsername()
+        if (write) workspace.requireWrite(me, flow.workspaceId) else workspace.requireRead(me, flow.workspaceId)
     }
 
     private fun load(id: UUID): FlowTrigger =

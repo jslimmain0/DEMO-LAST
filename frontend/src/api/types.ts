@@ -274,6 +274,9 @@ export interface FlowDetail {
   createdAt: string | null
   updatedAt: string | null
   graph: FlowGraph
+  /** 소속 워크스페이스(null=공용) + 내 롤 — 에디터 VIEWER 읽기전용 모드의 근거 */
+  workspaceId?: string | null
+  myRole?: 'OWNER' | 'EDITOR' | 'VIEWER' | null
 }
 
 export interface CreateFlowRequest {
@@ -536,7 +539,7 @@ export interface MockServerSummary {
   slug: string
   kind: MockKind
   enabled: boolean
-  updatedAt: string | null
+  updatedAt: string | null  workspaceId?: string | null
 }
 
 export interface MockServerDetail extends MockServerSummary {

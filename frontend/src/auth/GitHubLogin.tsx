@@ -22,12 +22,16 @@ export function GitHubLogin({ onSuccess, onCancel }: { onSuccess: () => void; on
       setDevice(d)
       try { await navigator.clipboard?.writeText(d.userCode) } catch { /* ignore */ }
       window.open(d.verificationUri, '_blank', 'noopener')
+      let failStreak = 0 // 폴 요청 자체가 연속 실패(세션 소실/서버 재시작)하면 영구 폴링 대신 안내로 종료
       pollRef.current = setInterval(async () => {
         try {
           const r = await authApi.devicePoll(d.sessionId)
+          failStreak = 0
           if (r.status === 'ready' && r.token) { stopPoll(); setToken(r.token); onSuccess() }
           else if (r.status === 'error') { stopPoll(); setError(r.error || '로그인 실패'); setDevice(null) }
-        } catch { /* keep polling */ }
+        } catch {
+          if (++failStreak >= 3) { stopPoll(); setError('로그인 세션이 만료되었거나 서버와 연결이 끊겼습니다 — 다시 시작하세요.'); setDevice(null) }
+        }
       }, Math.max(2, d.intervalSec) * 1000)
     } catch (e) {
       setError((e as { response?: { data?: { message?: string } } })?.response?.data?.message || 'GitHub 로그인 시작 실패')

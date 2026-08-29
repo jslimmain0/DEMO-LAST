@@ -14,7 +14,17 @@ import org.springframework.web.bind.annotation.RestController
  */
 @RestController
 @RequestMapping("/api/v1/assistant/oauth")
-class AssistantOAuthController(private val service: AssistantOAuthService) {
+class AssistantOAuthController(
+    private val service: AssistantOAuthService,
+    private val workspace: com.flowlink.workspace.WorkspaceService,
+) {
+
+    /** 가입 승인 게이트 — 승인 전(PENDING)엔 Copilot 연결/모델 변경 불가(AI 자체가 승인 후). */
+    private fun requireApproved() {
+        if (!workspace.isApproved(workspace.currentUsername())) {
+            throw com.flowlink.common.error.ForbiddenException("가입 승인 대기 중입니다 — 관리자가 승인하면 AI 를 쓸 수 있습니다.")
+        }
+    }
 
     @GetMapping("/status")
     fun status(): OAuthStatus = service.status()
@@ -27,16 +37,23 @@ class AssistantOAuthController(private val service: AssistantOAuthService) {
     @GetMapping("/models")
     fun models(): Map<String, Any> = mapOf("models" to service.availableModels(), "current" to service.copilotModel())
 
-    /** 채팅 모델 선택 저장. */
+    /** 채팅 모델 선택 저장 — 전역 설정이라 승인 사용자만 + 목록 화이트리스트 검증. */
     @PutMapping("/model")
     fun setModel(@RequestBody req: Map<String, String>): Map<String, Any> {
-        req["model"]?.let { service.setModel(it) }
+        requireApproved()
+        req["model"]?.let { m ->
+            val allowed = service.availableModels()
+            if (allowed.isNotEmpty() && allowed.none { it["id"] == m }) {
+                throw com.flowlink.common.error.BadRequestException("지원하지 않는 모델입니다: $m")
+            }
+            service.setModel(m)
+        }
         return mapOf("current" to service.copilotModel())
     }
 
-    /** 디바이스 코드 발급 — 프론트가 userCode 를 보여주고 verificationUri 를 열어 인증 대기. */
+    /** 디바이스 코드 발급 — 승인 전엔 연결 자체를 막아 헛수고(연결 후 첫 채팅 403) 방지. */
     @PostMapping("/device/start")
-    fun deviceStart(): DeviceStart = service.startDevice()
+    fun deviceStart(): DeviceStart { requireApproved(); return service.startDevice() }
 
     @PostMapping("/disconnect")
     @ResponseStatus(HttpStatus.NO_CONTENT)

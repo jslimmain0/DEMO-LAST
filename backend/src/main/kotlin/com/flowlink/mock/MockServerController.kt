@@ -25,7 +25,8 @@ import java.util.UUID
 class MockServerController(private val service: MockServerService) {
 
     @GetMapping
-    fun list(): List<MockServerSummary> = service.list()
+    fun list(@org.springframework.web.bind.annotation.RequestParam(required = false) workspaceId: String?): List<MockServerSummary> =
+        service.list(workspaceId)
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)

@@ -68,11 +68,12 @@ class PresenceHandshakeInterceptorTest {
     fun `OIDC - 유효 토큰 + 접근 가능한 flow 는 허용, 이름은 preferred_username`() {
         val dec = JwtDecoder { jwt("team-a") }
         var checked: Pair<UUID, String>? = null
-        val i = PresenceHandshakeInterceptor(dec, "tenant") { id, t -> checked = id to t; true }
+        val i = PresenceHandshakeInterceptor(dec, "tenant") { id, u -> checked = id to u; true }
         val (ok, attrs, _) = run(i, "flowId=$flowId&token=tok&name=ignored")
         assertTrue(ok)
         assertEquals("alice", attrs["name"])       // 쿼리 name 무시, JWT 사용자명
-        assertEquals(flowId to "team-a", checked)
+        // 접근 판정 콜백은 이제 **사용자명**(소문자)을 받는다 — 워크스페이스 롤 게이트의 근거
+        assertEquals(flowId to "alice", checked)
     }
 
     @Test

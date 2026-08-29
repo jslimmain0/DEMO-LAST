@@ -14,8 +14,8 @@ interface FolderRepository : JpaRepository<Folder, UUID> {
 
     fun findByIdAndTenantId(id: UUID, tenantId: String): Optional<Folder>
 
-    /** 워크스페이스 삭제 시 안의 폴더를 공용(null)으로 승격. */
+    /** 워크스페이스 삭제 시 안의 폴더 이관 — to=삭제 실행자의 개인 ws(비공개 유지), null=공용 폴백. */
     @Modifying
-    @Query("update Folder f set f.workspaceId = null where f.workspaceId = :wsId")
-    fun clearWorkspace(@Param("wsId") wsId: UUID): Int
+    @Query("update Folder f set f.workspaceId = :to where f.workspaceId = :from")
+    fun reassignWorkspace(@Param("from") from: UUID, @Param("to") to: UUID?): Int
 }

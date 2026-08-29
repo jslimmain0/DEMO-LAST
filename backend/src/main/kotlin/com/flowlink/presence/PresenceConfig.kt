@@ -20,13 +20,18 @@ class PresenceConfig(
     private val props: SecurityProperties,
     private val authProps: AuthProperties,
     private val flowRepository: FlowRepository,
+    private val workspace: com.flowlink.workspace.WorkspaceService,
 ) : WebSocketConfigurer {
 
     override fun registerWebSocketHandlers(registry: WebSocketHandlerRegistry) {
-        // flow 는 전역 공유 — 핸드셰이크는 "flow 존재" 만 확인(공유 테넌트). 인증·테넌트 클레임 검증은 인터셉터가 유지.
+        // flow 는 전역 공유 — 핸드셰이크에서 존재 확인 + **워크스페이스 롤 판정**(username 기준).
+        // 비멤버/게스트는 팀·개인 flow 의 presence 방에 못 들어간다(편집 현황 노출 방지).
         val interceptor = PresenceHandshakeInterceptor(
             decoderProvider.getIfAvailable(), props.tenantClaim, authProps.githubEnabled,
-        ) { id, _ -> flowRepository.findByIdAndTenantId(id, TenantContext.SHARED_FLOW_TENANT).isPresent }
+        ) { id, username ->
+            flowRepository.findByIdAndTenantId(id, TenantContext.SHARED_FLOW_TENANT)
+                .map { workspace.roleFor(username, it.workspaceId) != null }.orElse(false)
+        }
         registry.addHandler(handler, "/ws/presence")
             .addInterceptors(interceptor)
             .setAllowedOrigins("*")   // 사내 도구 전제 + 핸드셰이크에서 자체 검증(OIDC 모드)

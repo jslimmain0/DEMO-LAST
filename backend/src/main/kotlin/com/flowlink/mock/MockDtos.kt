@@ -15,7 +15,8 @@ object MockDtos {
         val slug: String,
         val kind: String,
         val enabled: Boolean,
-        val updatedAt: Instant
+        val updatedAt: Instant,
+        val workspaceId: UUID? = null
     )
 
     data class MockServerDetail(
@@ -26,7 +27,8 @@ object MockDtos {
         val enabled: Boolean,
         val spec: JsonNode,
         val createdAt: Instant,
-        val updatedAt: Instant
+        val updatedAt: Instant,
+        val workspaceId: UUID? = null
     )
 
     // 요청 DTO: @get:JvmName 금지 — jackson-module-kotlin 이 오인식해 역직렬화가 깨진다(spec JsonNode 바인딩 등).
@@ -38,7 +40,9 @@ object MockDtos {
             message = "slug 는 소문자·숫자·하이픈 3~40자"
         ) val slug: String,
         // 유형 — "HTTP"(경로·응답) | "TCP"(소켓 전문). 미지정/그 외는 HTTP. (@get:JvmName 금지 규칙 준수)
-        val type: String? = null
+        val type: String? = null,
+        /** 소속 워크스페이스 — 'public'/null=공용, UUID=팀/개인. */
+        val workspaceId: String? = null
     )
 
     data class UpdateMockServerRequest(

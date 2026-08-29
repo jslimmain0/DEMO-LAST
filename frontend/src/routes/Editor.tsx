@@ -4,7 +4,7 @@ import type { CSSProperties } from 'react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import type { ExecutionDetail, PendingClientRequest, PendingInputRequest, ResumeRequest, RunRequest } from '../api/types'
-import { flowsApi, runsApi } from '../api/client'
+import { adminApi, flowsApi, runsApi } from '../api/client'
 import { catColor, typeIcon, typeLabel } from '../canvas/nodeMeta'
 import { FlowCanvas } from '../canvas/FlowCanvas'
 import { Palette } from '../canvas/Palette'
@@ -52,7 +52,7 @@ export function Editor() {
   const addNodeFromTemplate = useEditorStore((s) => s.addNodeFromTemplate)
   const focusNode = useEditorStore((s) => s.focusNode)
 
-  const { canEdit, isViewer } = usePermissions()
+  const { canEdit: canEditGlobal, isViewer: isViewerGlobal } = usePermissions()
   const { me, enabled: authEnabled, isGuest } = useAuth()
 
   // presence — 같은 플로우를 연 사람들끼리 커서/편집중/저장 알림(별도 presenceStore, 그래프 불변)
@@ -164,6 +164,16 @@ export function Editor() {
   useEffect(() => { setRunH((h) => Math.min(h, maxRunH)) }, [maxRunH])
 
   const flowQuery = useQuery({ queryKey: ['flow', flowId], queryFn: () => flowsApi.get(flowId), enabled: !!flowId })
+  // 가입 승인 대기(PENDING) — AI 패널을 게이트(Copilot 연결까지 시킨 뒤 첫 채팅 403 나던 헛수고 방지)
+  const aiMe = useQuery({ queryKey: ['admin', 'me'], queryFn: adminApi.me, staleTime: 30_000 })
+  const aiPending = aiMe.data?.myStatus === 'PENDING'
+  // 워크스페이스 롤 합성 — 팀 flow 의 VIEWER 는 에디터도 읽기전용(전역 롤만 보던 갭: 백엔드 403 을 UI 로 선반영)
+  const wsViewer = flowQuery.data?.myRole === 'VIEWER'
+  const canEdit = canEditGlobal && !wsViewer
+  const isViewer = isViewerGlobal || wsViewer
+  // 속성 패널/캔버스 메뉴 등 usePermissions 를 직접 보는 하위 컴포넌트를 위한 전파
+  const setReadOnly = useEditorStore((s) => s.setReadOnly)
+  useEffect(() => { setReadOnly(!canEdit) }, [canEdit, setReadOnly])
 
   // 실행 경과 → 캔버스 표시(노드 배지·엣지 애니메이션). 실행 결과는 다음 실행/그래프 로드까지 유지된다.
   useEffect(() => {
@@ -281,7 +291,8 @@ export function Editor() {
     onSuccess: () => { markSaved(); presence.sendSaved() },
     onError: (e) => {
       if (isAxiosError(e) && e.response?.status === 409) setSaveConflict(true)
-      else toast(`저장 실패: ${e instanceof Error ? e.message : e}`, 'error')
+      // 서버 메시지(403 "viewer 롤은 조회만 가능합니다" 등)를 그대로 — raw axios 문구만 나오던 갭 수정
+      else toast(`저장 실패: ${isAxiosError(e) ? ((e.response?.data as { message?: string })?.message ?? e.message) : e instanceof Error ? e.message : e}`, 'error')
     },
   })
   // Ctrl+S 가 최신 상태(dirty/isPending)를 보고 저장하게 매 렌더 갱신 — 저장 버튼과 동일 조건
@@ -486,7 +497,7 @@ export function Editor() {
                 <button style={toolItem} onClick={() => { toggleZen(); setToolsOpen(false) }}>{zen ? '◱ 집중 모드 끄기' : '⛶ 집중 모드'}</button>
                 <button style={toolItem} onClick={() => { setSearchOpen(true); setToolsOpen(false) }}>🔍 노드 검색 (Ctrl+F)</button>
                 <button style={toolItem} onClick={() => { setVersionsOpen(true); setToolsOpen(false) }}>🕘 버전 기록</button>
-                <button style={toolItem} onClick={() => { setTriggersOpen(true); setToolsOpen(false) }}>⏰ 자동 실행 트리거</button>
+                {canEdit && <button style={toolItem} onClick={() => { setTriggersOpen(true); setToolsOpen(false) }}>⏰ 자동 실행 트리거</button>}
                 <button style={toolItem} onClick={() => { setSecretsOpen(true); setToolsOpen(false) }}>🔑 시크릿 볼트</button>
                 <button style={toolItem} onClick={() => { setJsonOpen(true); setToolsOpen(false) }}>{'{ } 그래프 JSON 보기'}</button>
                 <button style={toolItem} onClick={() => { setAutosave((v) => { persistUI('fl:editor:autosave', v ? '0' : '1'); return !v }); setToolsOpen(false) }}>{autosave ? '☑ 자동 저장 켜짐' : '☐ 자동 저장'}</button>
@@ -529,8 +540,8 @@ export function Editor() {
           {assistantOpen && (
             <>
               <ResizeHandle axis="x" sign={-1} size={assistantW} min={300} max={maxAssistantW} defaultSize={360} onResize={setAssistantW} onResizeEnd={(n) => saveSize('assistantW', n)} ariaLabel="어시스턴트 패널 너비 조절" />
-              {isGuest
-                ? <AssistantLoginGate width={assistantW} onClose={() => { setAssistantOpen(false); persistUI('fl:editor:assistant', '0') }} />
+              {isGuest || aiPending
+                ? <AssistantLoginGate reason={isGuest ? 'guest' : 'pending'} width={assistantW} onClose={() => { setAssistantOpen(false); persistUI('fl:editor:assistant', '0') }} />
                 : <AssistantPanel width={assistantW} onClose={() => { setAssistantOpen(false); persistUI('fl:editor:assistant', '0') }} />}
             </>
           )}

@@ -34,8 +34,13 @@ class FolderService(
         workspace.requireWrite(workspace.currentUsername(), wsId)
         // 상위 폴더는 존재+테넌트 검증(다른 테넌트/삭제된 폴더 아래 생성 방지). null = 루트.
         val parent = parentId?.let { load(it) }
+        // 요청 워크스페이스와 상위 폴더의 워크스페이스가 다르면 거부 — 조용한 오배치(팀에 만든 줄 알았는데
+        // 공용에 생성 등) 방지. 승계가 아니라 명시적 불일치 거부.
+        if (parent != null && parent.workspaceId != wsId) {
+            throw BadRequestException("상위 폴더가 다른 워크스페이스에 있습니다.")
+        }
         val entity = Folder.create(tenant(), name, parent?.id)
-        entity.workspaceId = parent?.workspaceId ?: wsId // 하위 폴더는 상위의 워크스페이스 승계
+        entity.workspaceId = wsId
         val f = folderRepo.saveAndFlush(entity)
         return FolderSummary.from(f, 0L)
     }

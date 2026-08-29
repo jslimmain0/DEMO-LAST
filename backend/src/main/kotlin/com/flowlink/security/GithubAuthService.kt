@@ -69,6 +69,9 @@ class GithubAuthService(
 
     fun poll(sessionId: String): PollResult {
         val s = sessions[sessionId] ?: return PollResult("error", error = "세션이 없거나 만료됐습니다.")
+        // 종결 상태(ready/error)는 **1회성 소비** — sessionId 가 무인증 쿼리스트링(액세스 로그·히스토리에 남음)이라
+        // 발급된 JWT 를 남은 세션 수명 동안 반복 회수하던 구멍 봉인 + 완료 세션이 동시 상한(20)을 점유하지 않게 함.
+        if (s.status == "ready" || s.status == "error") sessions.remove(sessionId)
         return PollResult(s.status, s.token, s.login, s.error)
     }
 

@@ -3,7 +3,7 @@ import type { CSSProperties } from 'react'
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import type { HttpMethod, MockCond, MockRouteSpec, MockRuleSpec, MockServerSpec, MockTcpRuleSpec, MockTcpSpec } from '../api/types'
-import { mockBaseUrl, mocksApi } from '../api/client'
+import { adminApi, mockBaseUrl, mocksApi, workspacesApi } from '../api/client'
 import { AppShellTier1 } from '../app/AppShell'
 import { useAuth, usePermissions } from '../auth/AuthContext'
 import { METHOD_COLOR } from '../canvas/nodeMeta'
@@ -27,10 +27,18 @@ const COND_OPS = ['eq', 'ne', 'exists', 'contains', 'gt', 'gte', 'lt', 'lte', 'r
 export function MockServerEditor() {
   const { id = '' } = useParams()
   const qc = useQueryClient()
-  const { canEdit } = usePermissions()
+  const { canEdit: canEditGlobal } = usePermissions()
   const { me, isGuest } = useAuth()
+  const aiMe = useQuery({ queryKey: ['admin', 'me'], queryFn: adminApi.me, staleTime: 30_000 })
+  const aiPending = aiMe.data?.myStatus === 'PENDING' // 승인 대기 — AI 게이트
   const badgeInk = useReadableInk('var(--fl-cat-generic)')
   const detail = useQuery({ queryKey: ['mock-server', id], queryFn: () => mocksApi.get(id), enabled: !!id })
+  // 워크스페이스 롤 합성 — 팀 mock 의 VIEWER 는 편집 UI 도 읽기전용(백엔드 403 선반영)
+  const wss = useQuery({ queryKey: ['workspaces'], queryFn: workspacesApi.list })
+  const wsRole = detail.data?.workspaceId
+    ? (wss.data?.find((w) => w.id === detail.data!.workspaceId)?.myRole ?? 'VIEWER')
+    : 'EDITOR'
+  const canEdit = canEditGlobal && wsRole !== 'VIEWER'
 
   const [spec, setSpec] = useState<MockServerSpec>({ routes: [] })
   const [name, setName] = useState('')
@@ -148,8 +156,8 @@ export function MockServerEditor() {
 
             <RuntimePanel id={id} canEdit={canEdit} />
 
-            {aiOpen && (isGuest
-              ? <AssistantLoginGate variant="overlay" onClose={() => setAiOpen(false)} />
+            {aiOpen && (isGuest || aiPending
+              ? <AssistantLoginGate reason={isGuest ? 'guest' : 'pending'} variant="overlay" onClose={() => setAiOpen(false)} />
               : <MockAssistantPanel
                   spec={spec}
                   mockId={id}

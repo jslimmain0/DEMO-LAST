@@ -13,5 +13,8 @@ data class FlowDetail(
     val folderId: UUID?, // 에디터 ← 가 "그 폴더"로 돌아가기 위함
     val createdAt: Instant,
     val updatedAt: Instant,
-    val graph: JsonNode
+    val graph: JsonNode,
+    /** 소속 워크스페이스(null=공용) + 이 사용자의 롤 — 에디터가 VIEWER 읽기전용 모드를 켜는 근거. */
+    val workspaceId: UUID? = null,
+    val myRole: String? = null,
 )

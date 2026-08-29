@@ -22,9 +22,10 @@ export function AppShellTier1({ children, sidebarExtra }: { children: ReactNode;
   const [settingsOpen, setSettingsOpen] = useState(false)
   const loc = useLocation()
   const { enabled: authEnabled, me, logout, isGuest, requestLogin } = useAuth()
-  // 관리자 여부(캐시 5분) — 관리 네비 노출 게이트
-  const adminMe = useQuery({ queryKey: ['admin', 'me'], queryFn: adminApi.me, staleTime: 300_000 })
+  // 관리자 여부 + 가입 신청 배지 — 60초 폴링으로 새 신청이 네비에 늦지 않게 뜬다(콘솔 진입 시에도 refetch)
+  const adminMe = useQuery({ queryKey: ['admin', 'me'], queryFn: adminApi.me, staleTime: 30_000, refetchInterval: 60_000 })
   const nav = adminMe.data?.admin ? [...NAV, NAV_ADMIN] : NAV
+  const myStatus = adminMe.data?.myStatus
 
   const navItem = (to: string): CSSProperties => {
     const active = loc.pathname.startsWith(to)
@@ -69,12 +70,12 @@ export function AppShellTier1({ children, sidebarExtra }: { children: ReactNode;
         {sidebarExtra && <div style={{ marginTop: 8, overflowY: 'auto', flex: '0 1 auto' }}>{sidebarExtra}</div>}
 
         {authEnabled && me && (
-          <div style={{ ...userChip, marginTop: 'auto' }} title={isGuest ? '게스트 — GitHub 로그인하면 AI 를 쓸 수 있습니다' : `${me.username} · ${me.tenant} · ${me.roles.join(', ')}`}>
+          <div style={{ ...userChip, marginTop: 'auto' }} title={isGuest ? '게스트 — GitHub 로그인하면 AI 를 쓸 수 있습니다' : myStatus === 'PENDING' ? '관리자 승인 대기 중 — 개인 워크스페이스·팀·AI 는 승인 후 사용 가능' : `${me.username} · ${me.tenant} · ${me.roles.join(', ')}`}>
             <span aria-hidden style={avatar}>{isGuest ? 'G' : me.username.slice(0, 1).toUpperCase()}</span>
             <span style={{ minWidth: 0, flex: 1 }}>
               <span style={{ display: 'block', fontSize: 12.5, fontWeight: 600, color: 'var(--fl-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{isGuest ? '게스트' : me.username}</span>
-              <span style={{ display: 'block', fontSize: 11, color: 'var(--fl-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {isGuest ? 'AI 는 로그인 필요' : `${me.tenant} · ${primaryRole(me.roles)}`}
+              <span style={{ display: 'block', fontSize: 11, color: myStatus === 'PENDING' ? 'var(--fl-waiting)' : 'var(--fl-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {isGuest ? 'AI 는 로그인 필요' : myStatus === 'PENDING' ? '⏳ 승인 대기 중' : `${me.tenant} · ${primaryRole(me.roles)}`}
               </span>
             </span>
             {isGuest ? (

@@ -18,22 +18,29 @@ import java.util.Optional
 import java.util.UUID
 import java.util.regex.Pattern
 
-/** Mock 서버 관리(테넌트 스코프 CRUD) + 서빙 조회(무인증, slug 팀 스코프 유니크). */
+/** Mock 서버 관리(테넌트 + 워크스페이스 스코프 CRUD) + 서빙 조회(무인증, slug 팀 스코프 유니크). */
 @Service
 class MockServerService(
     private val repository: MockServerRepository,
     private val json: JsonService,
     private val tcpRegistry: TcpMockRegistry,
-    private val store: MockRuntimeStore
+    private val store: MockRuntimeStore,
+    private val workspace: com.flowlink.workspace.WorkspaceService,
 ) {
 
     @Transactional(readOnly = true)
-    fun list(): List<MockServerSummary> =
-        repository.findByTenantIdOrderByUpdatedAtDesc(tenant())
+    fun list(workspaceIdRaw: String? = null): List<MockServerSummary> {
+        val wsId = workspace.resolveId(workspaceIdRaw)
+        workspace.requireRead(workspace.currentUsername(), wsId)
+        return repository.findByTenantIdOrderByUpdatedAtDesc(tenant())
+            .filter { it.workspaceId == wsId }
             .map { toSummary(it) }
+    }
 
     @Transactional
     fun create(req: CreateMockServerRequest): MockServerDetail {
+        val wsId = workspace.resolveId(req.workspaceId)
+        workspace.requireWrite(workspace.currentUsername(), wsId)
         val slug = req.slug.lowercase(Locale.ROOT)
         if (!SLUG.matcher(slug).matches()) {
             throw BadRequestException("slug 는 소문자·숫자·하이픈 3~40자여야 합니다: $slug")
@@ -46,15 +53,15 @@ class MockServerService(
         val spec = if (kind == MockServer.Kind.TCP) defaultTcpSpec(tcpRegistry.pickFreePort()) else defaultCustomSpec()
         // saveAndFlush: 신규 엔티티라 @CreationTimestamp lateinit createdAt/updatedAt 가 flush 후 채워진다
         // (toDetail 이 이를 읽으므로 flush 전 접근하면 UninitializedPropertyAccessException). FlowService.createInternal 과 동일.
-        val saved = repository.saveAndFlush(
-            MockServer.create(tenant(), req.name, slug, kind, spec)
-        )
+        val entity = MockServer.create(tenant(), req.name, slug, kind, spec)
+        entity.workspaceId = wsId
+        val saved = repository.saveAndFlush(entity)
         tcpRegistry.sync(saved) // TCP 면 pickFreePort 로 고른 빈 포트에 바인딩(충돌 없음)
         return toDetail(saved)
     }
 
     @Transactional(readOnly = true)
-    fun get(id: UUID): MockServerDetail = toDetail(find(id))
+    fun get(id: UUID): MockServerDetail = toDetail(findReadable(id))
 
     @Transactional
     fun updateMeta(id: UUID, req: UpdateMockServerRequest): MockServerDetail {
@@ -96,23 +103,23 @@ class MockServerService(
     /** 요청 기록(journal, 최신순) — 테넌트 소유 확인 후. */
     @Transactional(readOnly = true)
     fun requests(id: UUID): List<MockDtos.MockRequestLog> {
-        find(id)
+        findReadable(id)
         return store.journal(id).map {
             MockDtos.MockRequestLog(it.at, it.method, it.path, it.query, it.headers, it.bodyText, it.matchedRuleId, it.status, it.delayMs, it.callbackFired)
         }
     }
 
-    @Transactional(readOnly = true)
-    fun clearRequests(id: UUID) { find(id); store.clearJournal(id) }
+    @Transactional
+    fun clearRequests(id: UUID) { find(id); store.clearJournal(id) } // 런타임 변형 = 쓰기 게이트
 
     /** 런타임 상태 초기화(state·seq·hits·journal) — 재시작 없이 깨끗한 상태로. */
-    @Transactional(readOnly = true)
+    @Transactional
     fun reset(id: UUID) { find(id); store.reset(id) }
 
     /** 현재 런타임 상태 스냅샷(state·seq·hits·요청수). */
     @Transactional(readOnly = true)
     fun runtimeState(id: UUID): MockDtos.MockStateView {
-        find(id)
+        findReadable(id)
         val s = store.snapshot(id)
         return MockDtos.MockStateView(s.state, s.seq, s.hits, s.requestCount)
     }
@@ -134,12 +141,24 @@ class MockServerService(
         }
     }
 
-    private fun find(id: UUID): MockServer =
-        repository.findByIdAndTenantId(id, tenant())
+    /** 쓰기 경로 로드 — 워크스페이스 EDITOR 이상(VIEWER 는 조회만). */
+    private fun find(id: UUID): MockServer {
+        val m = repository.findByIdAndTenantId(id, tenant())
             .orElseThrow { NotFoundException("Mock 서버가 없습니다: $id") }
+        workspace.requireWrite(workspace.currentUsername(), m.workspaceId)
+        return m
+    }
+
+    /** 읽기 경로 로드 — 워크스페이스 읽기 권한. */
+    private fun findReadable(id: UUID): MockServer {
+        val m = repository.findByIdAndTenantId(id, tenant())
+            .orElseThrow { NotFoundException("Mock 서버가 없습니다: $id") }
+        workspace.requireRead(workspace.currentUsername(), m.workspaceId)
+        return m
+    }
 
     private fun toSummary(m: MockServer): MockServerSummary =
-        MockServerSummary(m.id, m.name, m.slug, m.kind.name, m.isEnabled, m.updatedAt)
+        MockServerSummary(m.id, m.name, m.slug, m.kind.name, m.isEnabled, m.updatedAt, m.workspaceId)
 
     private fun toDetail(m: MockServer): MockServerDetail {
         val specJson = m.specJson
@@ -150,7 +169,7 @@ class MockServerService(
         }
         return MockServerDetail(
             m.id, m.name, m.slug, m.kind.name,
-            m.isEnabled, spec, m.createdAt, m.updatedAt
+            m.isEnabled, spec, m.createdAt, m.updatedAt, m.workspaceId
         )
     }
 

@@ -46,9 +46,12 @@ export function Executions() {
     setWsIdRaw(id)
     try { localStorage.setItem('fl:workspace', id) } catch { /* 프라이빗 모드 */ }
   }
-  // 저장된 워크스페이스가 사라졌으면(삭제/권한 상실) 공용으로 복귀 — 대시보드와 동일 규칙
+  // 저장된 워크스페이스가 사라졌으면(삭제/권한 상실) 공용으로 복귀 — localStorage 도 정리(대시보드와 동일 규칙)
   useEffect(() => {
-    if (workspaces.data && !workspaces.isFetching && !workspaces.data.some((w) => w.id === wsId)) setWsIdRaw('public')
+    if (workspaces.data && !workspaces.isFetching && !workspaces.data.some((w) => w.id === wsId)) {
+      setWsIdRaw('public')
+      try { localStorage.setItem('fl:workspace', 'public') } catch { /* 프라이빗 모드 */ }
+    }
   }, [workspaces.data, workspaces.isFetching, wsId])
 
   const rangeMs = RANGES.find(([k]) => k === range)?.[2] ?? null

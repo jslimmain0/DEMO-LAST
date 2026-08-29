@@ -81,12 +81,12 @@ class ExecutionController(private val service: ExecutionService) {
         @RequestParam(required = false) from: Long?,
         @RequestParam(required = false) to: Long?,
         @RequestParam(defaultValue = "0") offset: Int,
-        // 워크스페이스 스코프 — 'public'=공용, UUID=팀/개인. 지정 시 그 워크스페이스 flow 의 실행만.
+        // 워크스페이스 스코프 — 'public'/미지정=공용, UUID=팀/개인. 항상 스코프 강제:
+        // github 모드는 전원이 같은 테넌트라 "내 실행 한정" 전제가 성립하지 않아, 무스코프 무필터 경로가
+        // 타 워크스페이스 실행 이력(flow 이름 포함)을 게스트에게 유출하던 구멍(적대 리뷰 [M]) 봉인.
         @RequestParam(required = false) workspaceId: String?,
     ): List<ExecutionSummary> =
-        if (workspaceId == null && status == null && flowId == null && from == null && to == null && offset == 0)
-            service.listRecent(limit) // 무필터 최근(대시보드 배지) — 내 실행 한정이라 스코프 불필요
-        else service.listFiltered(status, flowId, from, to, limit, offset, workspaceId)
+        service.listFiltered(status, flowId, from, to, limit, offset, workspaceId)
 
     /** 같은 조건(원본 flowVersion+input)으로 재실행. */
     @PostMapping("/executions/{id}/rerun")

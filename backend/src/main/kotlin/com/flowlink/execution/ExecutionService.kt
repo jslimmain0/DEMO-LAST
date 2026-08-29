@@ -320,6 +320,11 @@ class ExecutionService(
         val tenant = TenantContext.getTenantId()
         val execution = executionRepo.findByIdAndTenantId(executionId, tenant)
             .orElseThrow { NotFoundException.of("Execution", executionId) }
+        // 워크스페이스 쓰기 게이트 — 재개는 임의 노드 출력 주입이 가능한 쓰기 행위(비멤버가 팀 실행을
+        // 이어붙이는 것 방지). 외부 콜백은 이 경로가 아니라 recordWaitCallback(무인증 의도)으로 온다.
+        flowRepo.findById(execution.flowId).ifPresent {
+            workspace.requireWrite(workspace.currentUsername(), it.workspaceId)
+        }
         val nodeId = req?.nodeId
         val suspended = if (nodeId == null) null else claim(executionId, nodeId)
         if (suspended == null || suspended.tenant != tenant) {
@@ -459,12 +464,6 @@ class ExecutionService(
         // 실행 이력은 사용자별 격리 유지 — 공유 flow 라도 내 실행만 반환(타 팀 실행 유출 방지).
         val execs = executionRepo.findByFlowIdAndTenantIdOrderByStartedAtDesc(
             flowId, TenantContext.getTenantId(), PageRequest.of(0, clamp(limit)))
-        return withFlowNames(execs)
-    }
-
-    @Transactional(readOnly = true)
-    fun listRecent(limit: Int): List<ExecutionSummary> {
-        val execs = executionRepo.findByTenantIdOrderByStartedAtDesc(TenantContext.getTenantId(), PageRequest.of(0, clamp(limit)))
         return withFlowNames(execs)
     }
 

@@ -72,6 +72,7 @@ export function FlowCanvas() {
   const distributeNodes = useEditorStore((s) => s.distributeNodes)
   const selectedCount = useEditorStore((s) => s.nodes.reduce((a, n) => a + (n.selected ? 1 : 0), 0))
   const flowId = useEditorStore((s) => s.flowId)
+  const wsReadOnly = useEditorStore((s) => s.readOnly) // 워크스페이스 VIEWER — 우클릭 실행 숨김
   const focusTick = useEditorStore((s) => s.focusTick)
   const { screenToFlowPosition, fitBounds, zoomTo, setCenter, getZoom } = useReactFlow()
   // 노드 바로가기 — focusNode 신호가 오면 그 노드를 화면 중앙으로(줌 유지, 최소 1)
@@ -282,7 +283,7 @@ export function FlowCanvas() {
         <>
           <div style={{ position: 'fixed', inset: 0, zIndex: 40 }} onClick={() => setCtxMenu(null)} onContextMenu={(e) => { e.preventDefault(); setCtxMenu(null) }} />
           <div style={{ position: 'fixed', left: Math.min(ctxMenu.x, window.innerWidth - 180), top: Math.min(ctxMenu.y, window.innerHeight - 140), zIndex: 41, background: 'var(--fl-surface)', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', boxShadow: 'var(--fl-shadow-lg)', minWidth: 160, padding: 4 }}>
-            {SINGLE_OK.has(ctxMenu.nodeType) && (
+            {SINGLE_OK.has(ctxMenu.nodeType) && !wsReadOnly && (
               <button style={ctxItem} onClick={() => { runSingleFromMenu(ctxMenu.nodeId); setCtxMenu(null) }}>▶ 이 노드만 실행</button>
             )}
             <button style={ctxItem} onClick={() => { duplicateSelection(); setCtxMenu(null) }}>⧉ 복제 (Ctrl+D)</button>

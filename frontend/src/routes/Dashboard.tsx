@@ -3,7 +3,7 @@ import type { CSSProperties, ReactNode } from 'react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import type { ExecutionSummary, FlowSummary, FolderSummary } from '../api/types'
-import { flowsApi, foldersApi, runsApi, suitesApi, workspacesApi } from '../api/client'
+import { adminApi, flowsApi, foldersApi, runsApi, suitesApi, workspacesApi } from '../api/client'
 import type { SuiteRunItem } from '../api/client'
 import { WorkspaceDialog } from '../components/WorkspaceDialog'
 import { AppShellTier1 } from '../app/AppShell'
@@ -27,19 +27,27 @@ export function Dashboard() {
   // ---- 워크스페이스(폴더 위 최상위 스코프) ----
   const [wsId, setWsIdRaw] = useState<string>(() => { try { return localStorage.getItem('fl:workspace') ?? 'public' } catch { return 'public' } })
   const workspaces = useQuery({ queryKey: ['workspaces'], queryFn: workspacesApi.list })
-  // 저장된 워크스페이스가 사라졌으면(삭제/권한 상실) 공용으로 복귀.
+  const adminMe = useQuery({ queryKey: ['admin', 'me'], queryFn: adminApi.me, staleTime: 30_000 }) // 승인 대기 안내용(캐시 공유)
+  // 저장된 워크스페이스가 사라졌으면(삭제/권한 상실) 공용으로 복귀 — localStorage 도 함께 정리.
+  // (상태만 되돌리면 죽은 UUID 가 영구 잔존해 매 마운트 403 → 가짜 "백엔드 연결 실패"로 보이던 버그)
   // isFetching 중엔 판정하지 않는다 — 새 워크스페이스 생성 직후 stale 목록으로 되돌리는 레이스 방지.
   useEffect(() => {
-    if (workspaces.data && !workspaces.isFetching && !workspaces.data.some((w) => w.id === wsId)) setWsIdRaw('public')
+    if (workspaces.data && !workspaces.isFetching && !workspaces.data.some((w) => w.id === wsId)) {
+      setWsIdRaw('public')
+      try { localStorage.setItem('fl:workspace', 'public') } catch { /* 프라이빗 모드 */ }
+    }
   }, [workspaces.data, workspaces.isFetching, wsId])
   const currentWs = workspaces.data?.find((w) => w.id === wsId)
   const wsRole = currentWs?.myRole ?? 'EDITOR'
   const canEdit = canEditGlobal && wsRole !== 'VIEWER' // VIEWER 롤은 조회만
   const [wsDialog, setWsDialog] = useState(false)
+  // 팀 생성 가능 여부 — 개인 워크스페이스 부재 = 게스트/승인 대기(백엔드 403 대신 옵션 자체를 숨김)
+  const canCreateWs = (workspaces.data ?? []).some((w) => w.kind === 'PERSONAL')
 
   const flows = useQuery({ queryKey: ['flows', wsId], queryFn: () => flowsApi.list(wsId) })
   const folders = useQuery({ queryKey: ['folders', wsId], queryFn: () => foldersApi.list(wsId) })
-  const runs = useQuery({ queryKey: ['executions', 'recent'], queryFn: () => runsApi.recent(50) })
+  // 최근 실행도 현재 워크스페이스 스코프 — 무스코프 조회가 타 ws 실행을 유출/배지 창을 잠식하던 갭
+  const runs = useQuery({ queryKey: ['executions', 'recent', wsId], queryFn: () => runsApi.recent(50, wsId) })
 
   // 현재 위치(홈/폴더)는 URL(?folder=id)이 진실원 — 에디터에서 ←/브라우저 뒤로가기로 돌아와도
   // 보고 있던 폴더가 유지된다. 폴더 이동은 history 를 쌓아 탐색기처럼 뒤로가기로 상위 복귀 가능.
@@ -105,11 +113,19 @@ export function Dashboard() {
   // 앱 다이얼로그(prompt/confirm 대체)
   const [ask, setAsk] = useState<AskSpec | null>(null)
 
-  // 즐겨찾기(핀) — localStorage. 홈 상단에 고정 노출.
-  const [favorites, setFavorites] = useState<string[]>(() => { try { return JSON.parse(localStorage.getItem('fl:favorites') ?? '[]') as string[] } catch { return [] } })
+  // 즐겨찾기(핀) — localStorage, **워크스페이스별 분리**(팀 즐겨찾기가 공용에서 유령처럼 사라졌다 돌아오는 혼란 방지).
+  // 공용은 구(단일) 키를 1회 승계.
+  const favKey = `fl:favorites:${wsId}`
+  const [favorites, setFavorites] = useState<string[]>([])
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(favKey) ?? (wsId === 'public' ? localStorage.getItem('fl:favorites') : null)
+      setFavorites(raw ? (JSON.parse(raw) as string[]) : [])
+    } catch { setFavorites([]) }
+  }, [favKey, wsId])
   const toggleFav = (id: string) => setFavorites((prev) => {
     const next = prev.includes(id) ? prev.filter((x) => x !== id) : [id, ...prev]
-    try { localStorage.setItem('fl:favorites', JSON.stringify(next)) } catch { /* 프라이빗 모드 */ }
+    try { localStorage.setItem(favKey, JSON.stringify(next)) } catch { /* 프라이빗 모드 */ }
     return next
   })
 
@@ -121,6 +137,9 @@ export function Dashboard() {
   const childFolders = (parentId: string | null) => folderList.filter((f) => (f.parentId ?? null) === parentId)
   // 현재 스코프의 하위 폴더(탐색기 타일) — 전체=루트 폴더들, 폴더 안=그 폴더의 하위. 미분류/검색 중엔 없음.
   const scopeFolders = sel === 'none' || search.trim() ? [] : childFolders(isFolderId(sel) ? sel : null)
+  // URL 의 folder 가 이 워크스페이스에 실재할 때만 폴더 컨텍스트 액션 허용 — ws 전환 직후/뒤로가기로
+  // 타 ws 폴더가 sel 에 남아 그 안에 생성·실행하는 교차 배치 방지(백엔드 400 방어와 이중)
+  const scopeReady = !isFolderId(sel) || (folders.data?.some((f) => f.id === sel) ?? false)
   // 브레드크럼 경로(루트→현재). 데이터 오염(사이클)에도 멈추도록 가드.
   const folderPath = useMemo(() => {
     if (!isFolderId(sel)) return [] as FolderSummary[]
@@ -326,11 +345,16 @@ export function Dashboard() {
           {(workspaces.data ?? [{ id: 'public', name: '공용', kind: 'PUBLIC', myRole: 'EDITOR', canManage: false } as const]).map((w) => (
             <option key={w.id} value={w.id}>{wsGlyph(w.kind)} {w.name}{w.myRole === 'VIEWER' ? ' (읽기전용)' : ''}</option>
           ))}
-          <option value="@new">＋ 새 팀 워크스페이스…</option>
+          {canCreateWs && <option value="@new">＋ 새 팀 워크스페이스…</option>}
         </select>
         <button onClick={() => setWsDialog(true)} title="워크스페이스 관리(멤버·롤)" aria-label="워크스페이스 관리" style={wsGearBtn}>⚙</button>
       </div>
       {wsRole === 'VIEWER' && <div style={{ padding: '0 12px 6px', fontSize: 11.5, color: 'var(--fl-text-muted)' }}>읽기전용 — 조회만 가능합니다</div>}
+      {adminMe.data?.myStatus === 'PENDING' && (
+        <div style={{ margin: '0 10px 6px', padding: '7px 10px', borderRadius: 'var(--fl-radius-sm)', background: 'color-mix(in srgb, var(--fl-waiting) 14%, transparent)', fontSize: 11.5, color: 'var(--fl-text)', lineHeight: 1.5 }}>
+          ⏳ 가입 승인 대기 중 — 승인되면 개인 워크스페이스·팀·AI 를 쓸 수 있어요
+        </div>
+      )}
       <div style={sidebarLabel}>워크플로</div>
       {/* 홈 = 탐색기 루트: 폴더 타일 + 미분류 워크플로. 여기로 드롭하면 폴더 밖(미분류)으로 꺼낸다. */}
       <SidebarItem label="홈" count={noneCount} active={sel === 'all'} onClick={() => setSel('all')} glyph="▤" drop={dropTo(null)} />
@@ -383,12 +407,12 @@ export function Dashboard() {
                 <button onClick={() => setSort('name')} style={segBtn(sort === 'name')}>이름</button>
               </div>
               {canEdit && sel !== 'all' && sel !== 'none' && !selectMode && (
-                <button onClick={() => runSuite.mutate({ folderId: sel })} disabled={runSuite.isPending} title="이 폴더의 워크플로를 한 번에 실행하고 성공/실패를 봅니다" style={selectToggleBtn(false)}>▶ 폴더 실행</button>
+                <button onClick={() => runSuite.mutate({ folderId: sel })} disabled={runSuite.isPending || !scopeReady} title="이 폴더의 워크플로를 한 번에 실행하고 성공/실패를 봅니다" style={selectToggleBtn(false)}>▶ 폴더 실행</button>
               )}
               {canEdit && (visible.length > 0 || selectMode) && (
                 <button onClick={toggleSelectMode} aria-pressed={selectMode} style={selectToggleBtn(selectMode)}>{selectMode ? '선택 완료' : '☑ 선택'}</button>
               )}
-              {canEdit && <button onClick={() => createFlow.mutate()} disabled={createFlow.isPending} style={primaryBtn}>+ 새 워크플로</button>}
+              {canEdit && <button onClick={() => createFlow.mutate()} disabled={createFlow.isPending || !scopeReady} style={primaryBtn}>+ 새 워크플로</button>}
             </div>
           </div>
 

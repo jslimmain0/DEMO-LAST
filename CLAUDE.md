@@ -1074,7 +1074,21 @@ API 도구 UX·비주얼/IA·플로우 통합 3관점 병렬 비평 → 확정 �
   관리 콘솔: **🔔 가입 신청 섹션**(승인/차단 버튼)+네비 "관리" 대기 수 배지(`/admin/me`.pendingCount)+상태 필(승인/대기/차단됨)+차단↔해제,
   팀 멤버 추가는 타이핑 대신 **등록 사용자 select**. `PUT /admin/users/{u}` 는 {globalRole?, status?}(자기 차단/강등 400). WorkspaceRbacTest 8종.
 - **유령 트리거 버그 수정(같은 날, 이력 확인 중 발견)**: flow 를 삭제(archive)해도 그 flow 의 SCHEDULE 트리거가 20초마다 영원히 발화해 실행 이력을 무한 오염(실측: 최근 200건 중 199건이 삭제된 flow "g" 의 예약 실행). [TriggerService](backend/src/main/kotlin/com/flowlink/trigger/TriggerService.kt) `claimScheduleFire`/`claimWebhookFire` 에 `flowGone`(부재/archive) 가드 — 발화 대신 **트리거 자동 비활성**(WARN 로그).
-- ⚠ **MVP 경계**: 게스트(github 모드 비로그인)는 공용만(개인 워크스페이스 없음). Mock 서버·시크릿·환경은 워크스페이스 무관(기존 테넌트 스코프). 트리거/스위트 등록 UI 는 에디터 접근(=워크스페이스 읽기/쓰기)이 전제라 별도 게이트 없음.
+- **적대적 멀티에이전트 리뷰(10 렌즈 병렬 → 확정 반영, 같은 날)** — "Mock 권한 + 어설픈 관리자 처리" 후속. 주요 반영:
+  - **Mock 서버 워크스페이스 스코프(V15)**: [MockServer.workspaceId](backend/src/main/kotlin/com/flowlink/core/domain/MockServer.kt) + [MockServerService](backend/src/main/kotlin/com/flowlink/mock/MockServerService.kt) 읽기(get/requests/state)=requireRead·쓰기(create/meta/spec/delete/reset/clear)=requireWrite, 목록 `?workspaceId=`. **서빙(/mock/{slug})은 무인증 그대로**(외부 시스템 호출 대상 — UI 문구로 명시). slug 유니크는 테넌트 스코프 유지. [MockServers](frontend/src/routes/MockServers.tsx) 페이지 ws 셀렉트+롤 합성, MockServerEditor 도 Detail.workspaceId 로 VIEWER 읽기전용.
+  - **[H] 트리거 = 실행 게이트 우회 봉인**: [TriggerService.requireFlow(write)](backend/src/main/kotlin/com/flowlink/trigger/TriggerService.kt) — 등록/수정/삭제=requireWrite(VIEWER·비멤버가 웹훅 만들어 run 의 MANUAL 게이트를 우회하던 권한 상승), 조회=requireRead(웹훅 토큰 노출 방지).
+  - **[H] resume 게이트**: [ExecutionService.resume](backend/src/main/kotlin/com/flowlink/execution/ExecutionService.kt) 에 requireWrite — 비멤버가 팀 실행에 임의 노드 출력 주입 불가(외부 콜백은 recordWaitCallback 별도 경로라 무영향). **listRecent 폐기** — `GET /executions` 는 항상 워크스페이스 스코프(무필터 경로가 게스트에게 전 워크스페이스 이력을 유출).
+  - **[H] 팀/개인 ws 삭제 = 공용 공개 버그** → 내용물(flow/folder/**mock**)을 **삭제 실행자의 개인 워크스페이스로 이관**([reassignWorkspace](backend/src/main/kotlin/com/flowlink/core/repository/FlowRepository.kt) 3종). deleteUser 는 [purgeUser](backend/src/main/kotlin/com/flowlink/workspace/WorkspaceService.kt) — 멤버십 정리 + 개인 ws 흡수(GitHub 핸들 재사용자가 전임자 데이터를 물려받던 [H] 봉인).
+  - **[H] github 모드 서비스 레벨 게이트**(URL RBAC 는 OIDC 전용이었음): 플러그인 JAR 업로드=관리자(게스트 RCE 봉인) · 시크릿 쓰기=승인 사용자 · 설정 쓰기=관리자(+notify GET 은 비관리자 마스킹) · assistant 지침=관리자(스토어드 프롬프트 인젝션)·skills=승인·oauth device/모델=승인+모델 화이트리스트.
+  - **RBAC 로직**: roleFor 존재확인을 admin 단축보다 먼저(없는 ws 에 flow 배정 고아 방지) · isApproved 는 BLOCKED 가 화이트리스트/DB-ADMIN 보다 우선(부트스트랩 admin 만 예외) · putMember 가드(개인 ws 400·예약계정 guest/dev 400·마지막 OWNER 강등 400) · listMine 중복/개인 멤버십 행 제외 · createTeam 이름 길이/중복 400 · 개인 ws 유니크 인덱스(V16).
+  - **폴더/flow 교차 배치 봉인**: create/moveToFolder 가 폴더-워크스페이스 일치 검증([FlowService.requireFolderInWorkspace](backend/src/main/kotlin/com/flowlink/definition/FlowService.kt)), FolderService.create 는 상위 폴더 ws 불일치 400(승계 아님). SuiteController 는 읽기 권한 없는 flow 를 응답 전에 제외(이름 열거 유출).
+  - **에디터 VIEWER 읽기전용**: [FlowDetail](backend/src/main/kotlin/com/flowlink/definition/dto/FlowDetail.kt) 에 workspaceId+myRole → [Editor](frontend/src/routes/Editor.tsx) 합성 canEdit + editorStore.readOnly 로 PropertyPanel/AssistantPanel/캔버스 우클릭 전파. 저장 403 은 서버 메시지 표시.
+  - **presence 게이트**: 핸드셰이크 접근 판정을 flow 존재 → **워크스페이스 롤(username)** 로 교체(게스트/비멤버의 팀 방 입장·편집 현황 노출 차단).
+  - **가입 신청 UX**: `/admin/me`.myStatus(GUEST/PENDING/APPROVED/BLOCKED) — AppShell 칩 "⏳ 승인 대기 중"·대시보드 안내·[AssistantLoginGate](frontend/src/components/AssistantLoginGate.tsx) reason=pending(Copilot 연결 헛수고 방지, oauth device/start 도 서버 403). 네비 배지 60초 폴링. 디바이스 로그인 poll 은 **1회성 소비**(쿼리스트링 sessionId 로 JWT 반복 회수 봉인+세션 슬롯 즉시 반환), 프론트 폴 연속 실패 3회 시 안내 종료.
+  - **관리 콘솔 다듬기**: 승인/차단 토스트+행 단위 처리중, 검색 대소문자 버그, me 로딩 스켈레톤(비관리자 깜빡임 방지), 파괴 버튼 중복 클릭 가드, 테이블 가로 스크롤, 팀 멤버 행 상태 필, WorkspaceDialog 의 중복 [사용자] 탭 제거(콘솔 단일 진입점, SPA Link).
+  - **대시보드 잔결함**: 죽은 ws localStorage 정리(가짜 "백엔드 연결 실패" 방지) · 게스트/PENDING 에 "＋ 새 팀" 숨김 · 최근 실행 ws 스코프 · 폴더 컨텍스트 액션 scopeReady 가드 · 즐겨찾기 ws 별 분리.
+  - 검증: WorkspaceRbacTest **12종**(트리거/Mock 게이트·putMember 가드·purgeUser·개인 ws 이관) + 전체 스위트 그린 + 라이브 e2e/브라우저.
+- ⚠ **잔여 경계(의식적 수용)**: BLOCKED 는 신규 로그인+승인 게이트만 즉시 — 이미 발급된 JWT(12h)의 공용 접근은 만료까지 유지(매 요청 status 검사 필터는 후속). Mock 서빙·TCP 포트는 전역(무인증 테스트 도구 전제). 시크릿/환경/설정은 테넌트 스코프(워크스페이스 무관). removeMember 의 OWNER 카운트는 비관적 락 없음(동시 상호 내보내기 이론상 레이스 — 관리자 복구 가능).
 
 ## 참고 문서
 - `backend/README.md` — 백엔드 구조·설정·API 요약 · `frontend/README.md` · `infra/README.md`(배포)

@@ -129,7 +129,10 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
   const focusNode = useEditorStore((s) => s.focusNode)
   const transforms = useQuery({ queryKey: ['transforms'], queryFn: transformsApi.list })
   const qc = useQueryClient()
-  const { canPlatformAdmin, canEdit } = usePermissions()
+  const { canPlatformAdmin, canEdit: canEditGlobal } = usePermissions()
+  // 워크스페이스 롤 합성 — Editor 가 flow 의 myRole 로 계산해 스토어에 주입(VIEWER 는 단일 실행 등 쓰기 액션 차단)
+  const wsReadOnly = useEditorStore((s) => s.readOnly)
+  const canEdit = canEditGlobal && !wsReadOnly
 
   // 다른 노드 선택 시 단일 실행 결과 + HTTP 임시 UI 상태 초기화(다른 노드로 새어가지 않게)
   useEffect(() => {

@@ -76,4 +76,8 @@ class MockServerController(private val service: MockServerService) {
      */
     @PostMapping("/tcp-preview")
     fun tcpPreview(@RequestBody req: MockDtos.TcpPreviewRequest): TcpMockEngine.Preview = service.previewTcp(req)
+
+    /** 코덱 시험(HTTP) — 미저장 코덱 + 샘플 전문 → 단계별 입력/출력(저장·소켓 없음). 시크릿 값이 쓰이므로 승인 사용자 + 읽기 권한. */
+    @PostMapping("/{id}/codec-try")
+    fun codecTry(@PathVariable id: UUID, @RequestBody req: MockDtos.CodecTryRequest): MockDtos.CodecTryResult = service.tryCodec(id, req)
 }

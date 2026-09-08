@@ -33,15 +33,18 @@ class TcpMockRegistry(
     private val json: JsonService,
     private val repository: MockServerRepository,
     private val transforms: TransformRegistry,
-    private val store: MockRuntimeStore
+    private val store: MockRuntimeStore,
+    private val secretProvider: MockSecretProvider
 ) {
 
     private class Listener(
         val mockId: UUID,
+        val tenantId: String,
         val port: Int,
         val socket: ServerSocket,
         @Volatile var tcp: MockSpec.MockTcp,
-        @Volatile var codec: MockSpec.MockCodec? // 서버 전문 코덱(요청 디코딩 → 매칭, 응답 렌더 → 인코딩)
+        @Volatile var codec: MockSpec.MockCodec?, // 서버 전문 코덱(요청 디코딩 → 매칭, 응답 렌더 → 인코딩)
+        @Volatile var environment: String?        // 시크릿 스코프({{ 이름@secret }})
     )
 
     private val listeners = ConcurrentHashMap<UUID, Listener>() // mock 서버 id → 리스너
@@ -81,8 +84,9 @@ class TcpMockRegistry(
         }
         val cur = listeners[m.id]
         if (cur != null && cur.port == port) {
-            cur.tcp = tcp // 같은 포트 — 규칙/문자셋/코덱만 핫스왑
+            cur.tcp = tcp // 같은 포트 — 규칙/문자셋/코덱/시크릿 환경만 핫스왑
             cur.codec = spec?.codec
+            cur.environment = spec?.environment
             return
         }
         // 포트 변경/신규: **새 소켓을 먼저 확보한 뒤에야** 기존 리스너를 닫는다.
@@ -96,7 +100,7 @@ class TcpMockRegistry(
             throw BadRequestException("TCP 포트 $port 바인딩 실패: ${e.message}") // 기존 리스너 그대로 — 롤백과 정합
         }
         if (cur != null) stop(m.id) // 새 소켓 확보 성공 후에만 기존 포트 리스너 종료
-        val listener = Listener(m.id, port, ss, tcp, spec?.codec)
+        val listener = Listener(m.id, m.tenantId, port, ss, tcp, spec?.codec, spec?.environment)
         listeners[m.id] = listener
         Thread({ acceptLoop(m.slug, listener) }, "tcp-mock-$port").apply {
             isDaemon = true
@@ -190,26 +194,12 @@ class TcpMockRegistry(
                         all
                     }
 
-                    // 전문 코덱: 요청은 디코딩 후 매칭/에코({{req}} 도 디코딩 전문 기준), 응답은 렌더 후 인코딩.
-                    val codec = l.codec
+                    // 요청 코덱(body/fields) → 레이아웃 슬라이싱 → contains + 필드 조건 매칭 → 응답 렌더(필드 코덱) → 응답 body 코덱.
+                    // 엔진이 미리보기와 같은 경로. 시크릿({{ 이름@secret }})은 Mock 의 시크릿 환경으로 조회(10초 캐시).
                     val lookup: (String) -> FlowTransform? = { transforms.get(it).orElse(null) }
-                    val reqSteps = codec?.request
-                    val text: String
-                    val reqForTemplate: ByteArray
-                    if (reqSteps.isNullOrEmpty()) {
-                        text = String(body, cs)
-                        reqForTemplate = body
-                    } else {
-                        text = MockCodec.run(reqSteps, String(body, cs), lookup)
-                        reqForTemplate = text.toByteArray(cs)
-                    }
-                    // 요청 레이아웃 슬라이싱 → contains + 필드 조건 매칭 → 응답(텍스트 템플릿 또는 필드별 바이트 조립)
-                    val reqFields = TcpMockEngine.sliceRequest(tcp, reqForTemplate, cs)
-                    val rule = TcpMockEngine.matchRule(tcp.rulesOrEmpty(), text, reqFields)
-                    val seq = store.seqNext(l.mockId)
-                    var respBytes = TcpMockEngine.render(rule, reqForTemplate, cs, reqFields, seq).body
-                    val respSteps = codec?.response
-                    if (!respSteps.isNullOrEmpty()) respBytes = MockCodec.run(respSteps, String(respBytes, cs), lookup).toByteArray(cs)
+                    val secrets = secretProvider.secrets(l.tenantId, l.environment)
+                    val processed = TcpMockEngine.process(tcp, l.codec, body, cs, store.seqNext(l.mockId), secrets, lookup)
+                    val respBytes = processed.body
                     if (prefixLen > 0) {
                         val declared = if (tcp.prefixIncludesSelf == true) respBytes.size + prefixLen else respBytes.size
                         out.write(String.format("%0${prefixLen}d", declared).toByteArray(StandardCharsets.US_ASCII))

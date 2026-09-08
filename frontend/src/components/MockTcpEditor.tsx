@@ -1,6 +1,8 @@
 import type { CSSProperties } from 'react'
 import { useState } from 'react'
-import type { MockTcpCond, MockTcpPreview, MockTcpReqField, MockTcpRespField, MockTcpRuleSpec, MockTcpSpec } from '../api/types'
+import type { MockCodecSpec, MockTcpCond, MockTcpPreview, MockTcpReqField, MockTcpRespField, MockTcpRuleSpec, MockTcpSpec } from '../api/types'
+import { TokenInput } from '../binding/TokenInput'
+import type { BindableSource } from '../binding/upstream'
 import { mocksApi } from '../api/client'
 import { apiErrorMessage } from '../lib/apiError'
 import { newId } from '../lib/ids'
@@ -14,7 +16,7 @@ const COND_OPS: NonNullable<MockTcpCond['op']>[] = ['eq', 'ne', 'contains', 'sta
  * - 규칙 응답: [필드] 모드(길이·값·패딩·인코딩, 바이트 조립) 또는 [텍스트] 템플릿.
  * - 미리보기: 샘플 요청으로 요청 분해·매칭 규칙·응답 hex/필드 오프셋/절단·패딩을 저장 없이 확인.
  */
-export function MockTcpEditor({ tcp, onChange, readOnly }: { tcp: MockTcpSpec | null; onChange: (t: MockTcpSpec | null) => void; readOnly?: boolean }) {
+export function MockTcpEditor({ tcp, onChange, readOnly, codec, environment, sources = [] }: { tcp: MockTcpSpec | null; onChange: (t: MockTcpSpec | null) => void; readOnly?: boolean; codec?: MockCodecSpec | null; environment?: string | null; sources?: BindableSource[] }) {
   const on = !!tcp
   const t = tcp ?? {}
   const set = (patch: Partial<MockTcpSpec>) => onChange({ ...t, ...patch })
@@ -104,7 +106,7 @@ export function MockTcpEditor({ tcp, onChange, readOnly }: { tcp: MockTcpSpec | 
           {/* 규칙 */}
           <div style={{ display: 'grid', gap: 8 }}>
             {rules.map((r, i) => (
-              <TcpRuleCard key={r.id} rule={r} index={i} total={rules.length} layout={layout} readOnly={readOnly}
+              <TcpRuleCard key={r.id} rule={r} index={i} total={rules.length} layout={layout} readOnly={readOnly} sources={sources}
                 onChange={(patch) => setRule(i, patch)}
                 onMove={(d) => set({ rules: move(rules, i, d) })}
                 onDup={() => { const copy = { ...r, id: newId(), responseFields: r.responseFields?.map((f) => ({ ...f, id: newId() })) }; set({ rules: [...rules.slice(0, i + 1), copy, ...rules.slice(i + 1)] }) }}
@@ -113,15 +115,15 @@ export function MockTcpEditor({ tcp, onChange, readOnly }: { tcp: MockTcpSpec | 
             {!readOnly && <button style={{ ...miniBtn, justifySelf: 'start' }} onClick={() => set({ rules: [...rules, { id: newId(), contains: '', when: [], response: '', responseFields: [{ id: newId(), name: '응답코드', length: 4, value: '0000', pad: 'right', padChar: ' ' }] }] })}>+ TCP 규칙</button>}
           </div>
 
-          <TcpPreviewPanel tcp={t} layout={layout} />
+          <TcpPreviewPanel tcp={t} layout={layout} codec={codec} environment={environment} />
         </div>
       )}
     </section>
   )
 }
 
-function TcpRuleCard({ rule: r, index, total, layout, readOnly, onChange, onMove, onDup, onRemove }: {
-  rule: MockTcpRuleSpec; index: number; total: number; layout: MockTcpReqField[]; readOnly?: boolean
+function TcpRuleCard({ rule: r, index, total, layout, readOnly, sources, onChange, onMove, onDup, onRemove }: {
+  rule: MockTcpRuleSpec; index: number; total: number; layout: MockTcpReqField[]; readOnly?: boolean; sources: BindableSource[]
   onChange: (patch: Partial<MockTcpRuleSpec>) => void; onMove: (d: -1 | 1) => void; onDup: () => void; onRemove: () => void
 }) {
   const fields = r.responseFields ?? []
@@ -191,16 +193,9 @@ function TcpRuleCard({ rule: r, index, total, layout, readOnly, onChange, onMove
                   <span style={offBadge} title={`시작 바이트 오프셋 ${off} (본문 기준)`}>@{off}</span>
                   <input style={{ ...input, width: 110, fontFamily: 'var(--fl-font-mono)' }} value={f.name ?? ''} placeholder="이름" disabled={readOnly} onChange={(e) => setField(f.id, { name: e.target.value })} />
                   <input style={{ ...input, width: 58, fontFamily: 'var(--fl-font-mono)' }} type="number" value={f.length ?? 0} title="바이트 길이" disabled={readOnly} onChange={(e) => setField(f.id, { length: Number(e.target.value) })} />
-                  <span style={{ position: 'relative', display: 'flex', flex: 1, minWidth: 160 }}>
-                    <input style={{ ...input, flex: 1, fontFamily: 'var(--fl-font-mono)', paddingRight: names.length ? 28 : undefined }} value={f.value ?? ''} placeholder="값 — 고정값 또는 {{req.필드}}" disabled={readOnly} onChange={(e) => setField(f.id, { value: e.target.value })} />
-                    {names.length > 0 && !readOnly && (
-                      <select aria-label="요청 필드 삽입" title="요청 필드 값을 토큰으로 삽입" value="" onChange={(e) => { if (e.target.value) setField(f.id, { value: (f.value ?? '') + `{{req.${e.target.value}}}` }) }}
-                        style={{ position: 'absolute', right: 2, top: 2, bottom: 2, width: 24, border: 'none', background: 'transparent', color: 'var(--fl-primary)', cursor: 'pointer', fontSize: 12 }}>
-                        <option value="">{'{ }'}</option>
-                        {names.map((n) => <option key={n} value={n}>{n}</option>)}
-                      </select>
-                    )}
-                  </span>
+                  <div style={{ flex: 1, minWidth: 180 }}>
+                    <TokenInput ariaLabel={`응답 필드 ${f.name || ''} 값`} value={f.value ?? ''} sources={sources} placeholder="값 — 고정값 또는 { } 요청 필드·시크릿" onChange={(v) => setField(f.id, { value: v })} />
+                  </div>
                   <select style={{ ...input, width: 52 }} value={f.pad ?? 'right'} title="패딩 방향 (→ 우측 공백=문자, ← 좌측 0=숫자)" disabled={readOnly} onChange={(e) => setField(f.id, { pad: e.target.value as 'left' | 'right' })}>
                     <option value="right">→</option><option value="left">←</option>
                   </select>
@@ -238,14 +233,14 @@ function TcpRuleCard({ rule: r, index, total, layout, readOnly, onChange, onMove
 }
 
 /** 샘플 요청으로 요청 분해·매칭·응답 바이트를 저장 없이 확인. */
-function TcpPreviewPanel({ tcp, layout }: { tcp: MockTcpSpec; layout: MockTcpReqField[] }) {
+function TcpPreviewPanel({ tcp, layout, codec, environment }: { tcp: MockTcpSpec; layout: MockTcpReqField[]; codec?: MockCodecSpec | null; environment?: string | null }) {
   const [sample, setSample] = useState('')
   const [p, setP] = useState<MockTcpPreview | null>(null)
   const [err, setErr] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const run = async () => {
     setBusy(true); setErr(null)
-    try { setP(await mocksApi.tcpPreview(tcp, sample)) } catch (e) { setP(null); setErr(apiErrorMessage(e, '미리보기 실패')) } finally { setBusy(false) }
+    try { setP(await mocksApi.tcpPreview(tcp, sample, codec, environment)) } catch (e) { setP(null); setErr(apiErrorMessage(e, '미리보기 실패')) } finally { setBusy(false) }
   }
   const layoutTotal = layout.reduce((a, f) => a + (f.length ?? 0), 0)
   return (
@@ -261,6 +256,25 @@ function TcpPreviewPanel({ tcp, layout }: { tcp: MockTcpSpec; layout: MockTcpReq
       {err && <div style={{ fontSize: 12, color: 'var(--fl-fail)', marginTop: 6 }}>{err}</div>}
       {p && (
         <div style={{ marginTop: 10, display: 'grid', gap: 10 }}>
+          {p.decodedRequest != null && (
+            <div>
+              <div style={subTitle}>요청 코덱 적용 후 전문</div>
+              <pre style={pre}>{p.decodedRequest}</pre>
+            </div>
+          )}
+          {(p.codecSteps?.length ?? 0) > 0 && (
+            <div>
+              <div style={subTitle}>코덱 단계 ({p.codecSteps!.length})</div>
+              <div style={{ display: 'grid', gap: 3 }}>
+                {p.codecSteps!.map((st, i) => (
+                  <div key={i} style={{ fontSize: 11, fontFamily: 'var(--fl-font-mono)', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    <span style={{ color: 'var(--fl-text-muted)' }}>{st.index + 1}. {st.id} · {st.target === 'body' ? '전체' : `필드 ${st.field}`}</span>
+                    <span style={{ wordBreak: 'break-all' }}>{JSON.stringify(st.input)} → <b>{JSON.stringify(st.output)}</b></span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           {p.requestFields.length > 0 && (
             <div>
               <div style={subTitle}>요청 분해 ({p.requestBytes}B · {p.encoding})</div>

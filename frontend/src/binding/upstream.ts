@@ -9,6 +9,7 @@ export interface BindableItem {
   type?: string
   scope: 'req' | null // null=응답(출력), 'req'=요청값
   group: 'response' | 'request'
+  tag?: string        // 피커 칩의 텍스트 태그 덮어쓰기(기본 응답/요청) — Mock 소스(요청 본문/시크릿/상태)용
 }
 
 export interface BindableSource {

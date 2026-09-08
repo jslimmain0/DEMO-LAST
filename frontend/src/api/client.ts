@@ -175,8 +175,11 @@ export const mocksApi = {
   reset: (id: string) => http.post(`/mock-servers/${id}/reset`).then(() => undefined),
   state: (id: string) => http.get<import('./types').MockStateView>(`/mock-servers/${id}/state`).then((r) => r.data),
   // TCP 전문 미리보기 — 편집 중 tcp 섹션(미저장) + 샘플 요청 → 요청 필드 분해·매칭 규칙·응답 바이트(저장/소켓 없음)
-  tcpPreview: (tcp: import('./types').MockTcpSpec, sample: string) =>
-    http.post<import('./types').MockTcpPreview>('/mock-servers/tcp-preview', { tcp, sample }).then((r) => r.data),
+  tcpPreview: (tcp: import('./types').MockTcpSpec, sample: string, codec?: import('./types').MockCodecSpec | null, environment?: string | null) =>
+    http.post<import('./types').MockTcpPreview>('/mock-servers/tcp-preview', { tcp, sample, codec: codec ?? null, environment: environment ?? null }).then((r) => r.data),
+  // 코덱 시험(HTTP) — 미저장 코덱 + 샘플 전문 → 단계별 입력/출력(서버가 실제 시크릿으로 계산, 결과는 마스킹)
+  codecTry: (id: string, body: { codec: import('./types').MockCodecSpec; environment?: string | null; side: 'request' | 'response'; message: string; headers?: Record<string, string>; contentType?: string }) =>
+    http.post<import('./types').MockCodecTryResult>(`/mock-servers/${id}/codec-try`, body).then((r) => r.data),
 }
 
 /**

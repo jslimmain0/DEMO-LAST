@@ -26,6 +26,8 @@ class MockServerService(
     private val tcpRegistry: TcpMockRegistry,
     private val store: MockRuntimeStore,
     private val workspace: com.flowlink.workspace.WorkspaceService,
+    private val secretProvider: MockSecretProvider,
+    private val transforms: com.flowlink.transform.TransformRegistry,
 ) {
 
     @Transactional(readOnly = true)
@@ -103,13 +105,53 @@ class MockServerService(
 
     /** 요청 기록(journal, 최신순) — 테넌트 소유 확인 후. */
     @Transactional(readOnly = true)
-    /** TCP 전문 미리보기(순수 계산 — 권한: 편집 화면에서만 호출, 데이터 접근 없음). 잘못된 길이는 400. */
+    /** TCP 전문 미리보기(저장·소켓 없음) — 코덱/시크릿 환경까지 실제 리스너와 같은 경로. 잘못된 길이·코덱 실패는 400. */
     fun previewTcp(req: MockDtos.TcpPreviewRequest): TcpMockEngine.Preview {
         val tcp = req.tcp ?: throw BadRequestException("tcp 섹션이 없습니다.")
+        val secrets = if (req.codec == null) emptyMap() else secretProvider.secrets(tenant(), req.environment)
         return try {
-            TcpMockEngine.preview(tcp, req.sample ?: "")
+            TcpMockEngine.preview(tcp, req.sample ?: "", codec = req.codec, secrets = secrets, lookup = { transforms.get(it).orElse(null) })
         } catch (e: IllegalArgumentException) {
             throw BadRequestException(e.message ?: "TCP 미리보기 실패")
+        } catch (e: MockCodec.CodecException) {
+            throw BadRequestException(e.message ?: "코덱 실패")
+        }
+    }
+
+    /**
+     * 코덱 시험(HTTP) — 샘플 전문(+헤더)에 미저장 코덱을 적용해 단계별 입력/출력을 돌려준다.
+     * 시크릿 값이 실제로 쓰이므로 승인 사용자만(시크릿 쓰기와 같은 게이트) + 대상 Mock 읽기 권한. 결과의 시크릿 값은 마스킹.
+     */
+    fun tryCodec(id: UUID, req: MockDtos.CodecTryRequest): MockDtos.CodecTryResult {
+        findReadable(id)
+        if (!workspace.isApproved(workspace.currentUsername())) throw com.flowlink.common.error.ForbiddenException("코덱 시험은 가입 승인 후 가능합니다(시크릿 값 사용).")
+        val codec = req.codec ?: throw BadRequestException("codec 이 없습니다.")
+        val side = (req.side ?: "request").lowercase(Locale.ROOT)
+        val secrets = secretProvider.secrets(tenant(), req.environment)
+        val mapper = json.mapper()
+        val lookup: (String) -> com.flowlink.transform.FlowTransform? = { transforms.get(it).orElse(null) }
+        val traces = ArrayList<MockCodec.StepTrace>()
+        val headersIn = LinkedHashMap<String, String>()
+        for ((k, v) in req.headers ?: emptyMap()) headersIn[k.lowercase(Locale.ROOT)] = v
+        val ct = req.contentType?.takeIf { it.isNotBlank() } ?: headersIn["content-type"] ?: "application/json"
+        val message = req.message ?: ""
+        val masks = com.flowlink.execution.engine.SecretMasker.variants(secrets.values)
+        fun m(s: String) = com.flowlink.execution.engine.SecretMasker.mask(s, masks) ?: s
+        try {
+            if (side == "response") {
+                val ctx = MockContext(req = MockHttp.MockRequest("POST", "/", emptyMap(), headersIn, "", emptyMap()), seq = 1001L, secrets = secrets, json = mapper)
+                val headers = LinkedHashMap<String, String>()
+                val out = MockCodec.applyResponse(codec.response, message, headers, ct, ctx, lookup, mapper, traces)
+                return MockDtos.CodecTryResult(m(out), headers.mapValues { m(it.value) }, emptyMap(), traces.map { it.copy(input = m(it.input), output = m(it.output)) })
+            }
+            val cs = MockHttp.charsetFromContentType(ct)
+            if (!headersIn.containsKey("content-type")) headersIn["content-type"] = ct
+            val request = MockHttp.MockRequest("POST", "/", emptyMap(), headersIn, message, MockHttp.parseBodyFields(message, ct, cs, mapper))
+            val ctx = MockContext(seq = 1001L, secrets = secrets, json = mapper)
+            val out = MockCodec.applyRequest(codec.request, request, ctx, lookup, mapper, traces)
+            return MockDtos.CodecTryResult(m(out.bodyText), out.headers.mapValues { m(it.value) }, out.bodyFields.mapValues { m(it.value) }, traces.map { it.copy(input = m(it.input), output = m(it.output)) })
+        } catch (e: MockCodec.CodecException) {
+            throw BadRequestException(e.message ?: "코덱 실패")
         }
     }
 

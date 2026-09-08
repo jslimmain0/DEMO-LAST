@@ -15,7 +15,12 @@ data class MockSpec(
      * 전문 코덱(서버 전체) — 요청 전문이 매칭·템플릿에 들어가기 **전**(request) / 응답 전문을 다 만든 뒤 나가기 **전**(response)
      * 변환 플러그인(FlowTransform)을 순서대로 적용. HTTP 본문·TCP 전문 모두 대상. 라우트의 codec 이 있으면 그것이 우선.
      */
-    val codec: MockCodec? = null
+    val codec: MockCodec? = null,
+    /**
+     * 시크릿 스코프 — 이 Mock 이 `{{ 이름@secret }}` 를 풀 때 쓰는 시크릿 환경 이름(dev/staging/prod).
+     * 없으면 공통 시크릿(+Vault)만. 서빙은 서버에서 도니 브라우저 활성 환경과 무관(Mock 별 설정). 환경 변수({{키@env}})는 Mock 에 없음(사용자 결정).
+     */
+    val environment: String? = null
 ) {
     fun routesOrEmpty(): List<MockRoute> = routes ?: emptyList()
 
@@ -98,24 +103,46 @@ data class MockSpec(
     )
 
     /**
-     * 코덱 단계 — 변환 플러그인 id + 설정. inputKey/outputKey 는 다중 포트 플러그인일 때만 지정(기본 = 첫 입력/첫 출력).
+     * 코덱 단계 — 변환 플러그인 id + 적용 범위 + 입력 포트별 값 + 설정.
+     *  - target: body(전문 전체, 기본) | fields(지정 필드만 — HTTP JSON 점 경로/urlencoded 키, TCP 레이아웃/응답 필드명) | header(HTTP 헤더)
+     *  - inputs: 플러그인 입력 포트마다 {key, mode: message(전문/대상 값) | value(템플릿 값 — {{ key@secret }} 등)}. 없으면 첫 포트=message.
+     *  - config: 파라미터(값은 템플릿 허용). inputKey/outputKey 는 v1 호환(inputKey 포트 = message).
      */
     @JsonIgnoreProperties(ignoreUnknown = true)
     data class MockCodecStep(
         val id: String?,
         val config: List<KV>? = null,
         val inputKey: String? = null,
-        val outputKey: String? = null
+        val outputKey: String? = null,
+        val target: String? = null,
+        val fields: List<String>? = null,
+        val header: String? = null,
+        val inputs: List<MockCodecInput>? = null
+    ) {
+        fun targetOrBody(): String = target?.trim()?.lowercase()?.takeIf { it.isNotEmpty() } ?: "body"
+        fun fieldsOrEmpty(): List<String> = fields?.map { it.trim() }?.filter { it.isNotEmpty() } ?: emptyList()
+    }
+
+    /** 코덱 단계 입력 포트 값 — mode=message 면 대상 전문/값, value 면 템플릿. */
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    data class MockCodecInput(
+        val key: String?,
+        val mode: String? = null,
+        val value: String? = null
     )
 
-    /** 라우트 하나 — method+경로 패턴(/users/{id})과 규칙 목록. codec 이 있으면 서버 codec 대신 적용. */
+    /**
+     * 라우트 하나 — method+경로 패턴(/users/{id})과 규칙 목록. codec 이 있으면 서버 codec 대신 적용.
+     * [expect] = 이 라우트로 올 것으로 예상하는 요청 필드(본문/쿼리/헤더) — 데이터 삽입 피커 소스·조건 키 후보·테스트 샘플 요청.
+     */
     @JsonIgnoreProperties(ignoreUnknown = true)
     data class MockRoute(
         val id: String?,
         val method: String?, // GET/POST/…/ANY
         val path: String?,
         val rules: List<MockRule>?,
-        val codec: MockCodec? = null
+        val codec: MockCodec? = null,
+        val expect: MockExpect? = null
     ) {
         fun rulesOrEmpty(): List<MockRule> = rules ?: emptyList()
     }
@@ -144,6 +171,21 @@ data class MockSpec(
     ) {
         fun whenOrEmpty(): List<MockCond> = `when` ?: emptyList()
     }
+
+    /** 예상 요청 정의 — 어떤 요청이 올지 미리 적어 두는 것(요청 기록에서 자동 채움). 실행 의미 없음(편집기·테스트·AI 컨텍스트). */
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    data class MockExpect(
+        val body: List<MockExpectField>? = null,
+        val query: List<MockExpectField>? = null,
+        val header: List<MockExpectField>? = null
+    )
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    data class MockExpectField(
+        val key: String?,
+        val type: String? = null,
+        val example: String? = null
+    )
 
     /** 상태 설정 항목 — op: set(기본,대입) | incr(증가) | decr(감소). incr/decr 은 숫자 누산기. */
     @JsonIgnoreProperties(ignoreUnknown = true)

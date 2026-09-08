@@ -512,6 +512,7 @@ export interface MockRouteSpec {
   path: string   // /users/{id}
   rules: MockRuleSpec[]
   codec?: MockCodecSpec | null // 이 라우트만 다른 전문 코덱(서버 codec 대체)
+  expect?: MockExpect | null   // 예상 요청 필드
 }
 
 // TCP mock — 지정 포트에 고정길이 전문(길이 프리픽스) 리스너를 연다.
@@ -547,6 +548,8 @@ export interface MockTcpPreview {
   hex: string
   printable: string
   fields: TcpPreviewField[]
+  decodedRequest?: string | null   // 요청 코덱이 있을 때 디코딩된 전문
+  codecSteps?: MockCodecStepTrace[]
 }
 
 export interface MockTcpSpec {
@@ -561,12 +564,23 @@ export interface MockTcpSpec {
 
 // 전문 코덱 — 요청 전문이 매칭·템플릿에 들어가기 전(request) / 응답 전문을 다 만든 뒤 나가기 전(response)
 // 변환 플러그인(FlowTransform)을 순서대로 적용. HTTP 본문·TCP 전문 모두 대상. 라우트 codec 이 있으면 서버 codec 대신(통째로).
+export type MockCodecTarget = 'body' | 'fields' | 'header'
+export interface MockCodecInput { key: string; mode: 'message' | 'value'; value?: string } // 포트별: message=전문/대상 값, value=템플릿({{ x@secret }} 등)
 export interface MockCodecStep {
   id: string                                  // 변환 플러그인 id (GET /transforms)
-  config?: Array<{ key: string; value: string }>
-  inputKey?: string                           // 다중 포트 플러그인일 때만(기본 첫 입력)
+  target?: MockCodecTarget                    // 적용 범위 — body(전문 전체, 기본) | fields(지정 필드만) | header(HTTP 헤더)
+  fields?: string[]                           // target=fields — HTTP JSON(점 경로)/urlencoded 키, TCP 레이아웃/응답 필드명
+  header?: string                             // target=header — 헤더명(요청 전: 그 값 변환, 응답 후: 본문 입력 → 결과를 헤더에 기록)
+  inputs?: MockCodecInput[]                   // 입력 포트 값(없으면 첫 포트=전문, 나머지 빈 값)
+  config?: Array<{ key: string; value: string }> // 파라미터(템플릿 허용)
+  inputKey?: string                           // v1 호환
   outputKey?: string                          // (기본 첫 출력)
 }
+export interface MockCodecStepTrace { index: number; id: string; target: string; field: string | null; input: string; output: string }
+export interface MockCodecTryResult { result: string; headers: Record<string, string>; fields: Record<string, string>; steps: MockCodecStepTrace[] }
+// 예상 요청 정의 — 어떤 요청이 올지 미리 적어 둔 것(피커 소스·조건 키 후보·테스트 샘플). 요청 기록에서 자동 채움.
+export interface MockExpectField { key: string; type?: string; example?: string }
+export interface MockExpect { body?: MockExpectField[]; query?: MockExpectField[]; header?: MockExpectField[] }
 export interface MockCodecSpec {
   request?: MockCodecStep[]
   response?: MockCodecStep[]
@@ -576,6 +590,7 @@ export interface MockServerSpec {
   routes?: MockRouteSpec[]
   tcp?: MockTcpSpec | null
   codec?: MockCodecSpec | null
+  environment?: string | null // 시크릿 스코프({{ 이름@secret }} — 공통 + 이 환경 오버레이). 없으면 공통만
 }
 
 // CUSTOM=레거시(HTTP·TCP 둘 다) · HTTP=경로/응답 · TCP=소켓 전문

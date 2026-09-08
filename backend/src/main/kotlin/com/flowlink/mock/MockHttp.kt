@@ -136,6 +136,35 @@ object MockHttp {
         return sb.toString()
     }
 
+    // ---------- 본문 필드 파싱 (게이트웨이·코덱 공용) ----------
+
+    /** 본문 → 최상위 필드 맵: JSON 객체(값은 문자열화) 또는 urlencoded. 둘 다 아니면 빈 맵. */
+    @JvmStatic
+    fun parseBodyFields(bodyText: String, contentType: String, cs: Charset, json: com.fasterxml.jackson.databind.ObjectMapper): Map<String, String> {
+        if (bodyText.isBlank()) {
+            return emptyMap()
+        }
+        val ct = contentType.lowercase(Locale.ROOT)
+        if (ct.contains("json") || (!ct.contains("urlencoded") && bodyText.trim().startsWith("{"))) {
+            try {
+                val node = json.readTree(bodyText)
+                if (node != null && node.isObject) {
+                    val out = LinkedHashMap<String, String>()
+                    node.fields().forEachRemaining { e ->
+                        out[e.key] = if (e.value.isTextual) e.value.asText() else e.value.toString()
+                    }
+                    return out
+                }
+            } catch (ignored: Exception) {
+                // JSON 아님 — urlencoded 폴백
+            }
+        }
+        if (bodyText.contains("=")) {
+            return parseUrlEncoded(bodyText, cs)
+        }
+        return emptyMap()
+    }
+
     // ---------- URL 경로/헤더 디코딩 (게이트웨이 공용) ----------
 
     /**

@@ -1,5 +1,6 @@
 package com.flowlink.mock
 
+import com.fasterxml.jackson.databind.ObjectMapper
 import com.flowlink.mock.MockHttp.FiredCallback
 import com.flowlink.mock.MockHttp.MockRequest
 import com.flowlink.mock.MockHttp.MockResponse
@@ -11,24 +12,25 @@ import java.nio.charset.StandardCharsets
 import java.util.LinkedHashMap
 import java.util.Locale
 import java.util.Optional
-import java.util.UUID
-import java.util.regex.Matcher
-import java.util.regex.Pattern
 
 /**
- * CUSTOM mock 서버의 순수 런타임 — 라우트 매칭·조건 평가·템플릿 렌더.
- * 상태가 없어 단위 테스트 대상. (콜백 "발사"는 [MockCallbackDispatcher]가 담당)
+ * 사용자 정의 mock 라우트 실행기(순수 — 저장소/HTTP 의존 없음).
  *
- * 템플릿 토큰(응답 body·헤더 값·콜백 url/body):
- * `{{path.x}} {{query.x}} {{header.x}} {{body.x}} {{body}} {{method}} {{uuid}} {{seq}} {{now}}`
- * — 미해석 토큰은 빈 문자열. (워크플로 바인딩 `{{ key@node }}` 와는 다른 문맥)
+ * 매칭: 정의 순서대로 method+경로 패턴(`/users/{id}`) 첫 매칭 라우트 → 그 안에서 조건(AND) 만족 첫 규칙.
+ * 렌더: 규칙의 본문/헤더/setState/콜백 템플릿을 [MockTemplate] 문맥(요청·경로·seq·상태·시크릿)으로 해석.
+ * 템플릿 문법은 [MockTemplate] — `{{ x@body }}`(칩) 와 `{{body.x}}`(dot) 둘 다, `{{ 이름@secret }}` 포함.
+ * 미해석 토큰은 빈 문자열(워크플로 바인딩 `{{ key@node }}` 와는 다른 문맥).
  */
 @Component
 class MockRuntime {
 
-    /** 매칭 결과 — 규칙·경로 파라미터. */
     /** 매칭 결과 — [req] 는 라우트 코덱(prepare)까지 적용된 요청(조건·템플릿이 본 그대로). */
     data class Match(val rule: MockRule, val pathParams: Map<String, String>, val req: MockRequest)
+
+    /** 응답 후 코덱 훅 — 렌더된 본문 + (기록 가능한) 헤더 + 규칙 contentType → 최종 본문. */
+    fun interface ResponseCodec {
+        fun apply(body: String, headers: MutableMap<String, String>, contentType: String?): String
+    }
 
     /**
      * 정의 순서대로 method+경로 첫 매칭 라우트, 그 안에서 조건 만족 첫 규칙.
@@ -62,27 +64,29 @@ class MockRuntime {
 
     /**
      * 규칙 → 실제 응답(바이트) + 지연 + 콜백 명세. seq 는 서버별 증가 카운터 공급자에서 받은 값.
-     * [responseCodec] 은 템플릿 렌더가 끝난 본문 전체에 적용(응답 코덱 — 문자셋 인코딩 직전). 헤더/콜백에는 미적용.
+     * [responseCodec] 은 템플릿 렌더가 끝난 본문 전체에 적용(응답 코덱 — 문자셋 인코딩 직전, 헤더 기록 가능). 콜백 본문에는 미적용.
+     * [secrets] 는 `{{ 이름@secret }}` 해석용(게이트웨이가 Mock 시크릿 환경으로 조회), [json] 은 본문 점 경로 토큰용.
      */
     fun render(
         rule: MockRule, req: MockRequest, pathParams: Map<String, String>, seq: Long, state: Map<String, String> = emptyMap(),
-        responseCodec: ((String) -> String)? = null
+        responseCodec: ResponseCodec? = null, secrets: Map<String, String> = emptyMap(), json: ObjectMapper? = null
     ): MockResponse {
+        val ctx = MockContext(req = req, pathParams = pathParams, seq = seq, state = state, secrets = secrets, json = json)
         val cs = MockHttp.charsetOf(rule.charset)
-        val rendered = template(if (rule.body == null) "" else rule.body, req, pathParams, seq, state)
-        val body = if (responseCodec == null) rendered else responseCodec(rendered)
+        val rendered = MockTemplate.render(rule.body ?: "", ctx)
         val headers = LinkedHashMap<String, String>()
         for (kv in rule.headers ?: emptyList()) {
             if (kv.key != null && kv.key.isNotBlank()) {
-                headers[kv.key] = template(if (kv.value == null) "" else kv.value, req, pathParams, seq, state)
+                headers[kv.key] = MockTemplate.render(kv.value ?: "", ctx)
             }
         }
+        val body = if (responseCodec == null) rendered else responseCodec.apply(rendered, headers, rule.contentType)
         // 상태 있는 목: setState 의 값을 템플릿 해석해 서버 상태에 반영할 맵으로(게이트웨이가 적용).
         // op=incr/decr 은 현재 상태값을 숫자로 누산(재고·잔액 원장 시뮬레이션). set(기본)은 대입.
         val newState = LinkedHashMap<String, String>()
         for (kv in rule.setState ?: emptyList()) {
             if (kv.key == null || kv.key.isBlank()) continue
-            val v = template(if (kv.value == null) "" else kv.value, req, pathParams, seq, state)
+            val v = MockTemplate.render(kv.value ?: "", ctx)
             newState[kv.key] = when (kv.op?.lowercase(Locale.ROOT)) {
                 "incr" -> ((state[kv.key]?.toLongOrNull() ?: 0L) + (v.toLongOrNull() ?: 1L)).toString()
                 "decr" -> ((state[kv.key]?.toLongOrNull() ?: 0L) - (v.toLongOrNull() ?: 1L)).toString()
@@ -93,7 +97,7 @@ class MockRuntime {
         var cb: FiredCallback? = null
         val c = rule.callback
         if (c != null) {
-            val url = template(if (c.url == null) "" else c.url, req, pathParams, seq, state).trim()
+            val url = MockTemplate.render(c.url ?: "", ctx).trim()
             if (url.isNotEmpty()) {
                 cb = FiredCallback(
                     if (c.afterMs == null) 0 else Math.max(0, Math.min(c.afterMs, MAX_CALLBACK_DELAY_MS)),
@@ -103,7 +107,7 @@ class MockRuntime {
                         if (c.contentType == null || c.contentType.isBlank()) "urlencoded" else c.contentType,
                         StandardCharsets.UTF_8
                     ),
-                    template(if (c.body == null) "" else c.body, req, pathParams, seq, state),
+                    MockTemplate.render(c.body ?: "", ctx),
                     c.retryUntilOk == true
                 )
             }
@@ -115,46 +119,12 @@ class MockRuntime {
         )
     }
 
-    // ---------- 템플릿 ----------
+    // ---------- 템플릿(호환 편의) ----------
 
-    fun template(text: String?, req: MockRequest, pathParams: Map<String, String>, seq: Long, state: Map<String, String> = emptyMap()): String {
-        if (text == null || text.isEmpty() || !text.contains("{{")) {
-            return text ?: ""
-        }
-        val m = TOKEN.matcher(text)
-        val sb = StringBuilder()
-        while (m.find()) {
-            m.appendReplacement(sb, Matcher.quoteReplacement(resolve(m.group(1), req, pathParams, seq, state)))
-        }
-        m.appendTail(sb)
-        return sb.toString()
-    }
-
-    private fun resolve(token: String, req: MockRequest, pathParams: Map<String, String>, seq: Long, state: Map<String, String> = emptyMap()): String {
-        val t = token.trim()
-        val v: String? = when (t) {
-            "uuid" -> UUID.randomUUID().toString()
-            "seq" -> seq.toString()
-            "now" -> java.time.Instant.now().toString()
-            "method" -> req.method
-            "body" -> req.bodyText
-            else -> null
-        }
-        if (v != null) {
-            return v
-        }
-        val dot = t.indexOf('.')
-        if (dot > 0 && dot < t.length - 1) {
-            val src = t.substring(0, dot)
-            val key = t.substring(dot + 1)
-            val got = valueOf(src, key, req, pathParams, state)
-            return got ?: ""
-        }
-        return "" // 미해석 토큰 — 빈 문자열
-    }
+    fun template(text: String?, req: MockRequest, pathParams: Map<String, String>, seq: Long, state: Map<String, String> = emptyMap()): String =
+        MockTemplate.render(text, MockContext(req = req, pathParams = pathParams, seq = seq, state = state))
 
     companion object {
-        private val TOKEN: Pattern = Pattern.compile("\\{\\{\\s*(.+?)\\s*}}")
         const val MAX_DELAY_MS = 10_000
         const val MAX_CALLBACK_DELAY_MS = 60_000
 
@@ -201,8 +171,9 @@ class MockRuntime {
 
         @JvmStatic
         fun conditionsPass(conds: List<MockCond>, req: MockRequest, pathParams: Map<String, String>, state: Map<String, String> = emptyMap()): Boolean {
+            val ctx = MockContext(req = req, pathParams = pathParams, state = state)
             for (c in conds) {
-                val actual = valueOf(c.source, c.key, req, pathParams, state)
+                val actual = MockTemplate.valueOf(c.source, c.key, ctx)
                 val op = if (c.op == null) "eq" else c.op.lowercase(Locale.ROOT)
                 val cv = c.value ?: ""
                 val pass = when (op) {
@@ -228,21 +199,6 @@ class MockRuntime {
             val a = actual?.toDoubleOrNull() ?: return false
             val b = value.toDoubleOrNull() ?: return false
             return when (op) { "gt" -> a > b; "gte" -> a >= b; "lt" -> a < b; "lte" -> a <= b; else -> false }
-        }
-
-        private fun valueOf(source: String?, key: String?, req: MockRequest, pathParams: Map<String, String>, state: Map<String, String> = emptyMap()): String? {
-            if (key == null) {
-                return null
-            }
-            val src = source?.lowercase(Locale.ROOT) ?: ""
-            return when (src) {
-                "query" -> req.query[key]
-                "header" -> req.headers[key.lowercase(Locale.ROOT)]
-                "body" -> req.bodyFields[key]
-                "path" -> pathParams[key]
-                "state" -> state[key] // 상태 있는 목 — 이전 호출이 setState 한 값
-                else -> null
-            }
         }
     }
 }

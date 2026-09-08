@@ -180,12 +180,12 @@ export function BindingPicker({
                     onClick={() => pick(e)}
                     onMouseEnter={() => setActive(gi)}
                     className="fl-bind-chip"
-                    title={`${isResp ? '응답' : '요청'} · ${e.it.key}${e.it.type ? ` (${e.it.type})` : ''}${sec.isRecent ? ` — ${e.src.name}` : ''}`}
+                    title={`${e.it.tag ?? (isResp ? '응답' : '요청')} · ${e.it.key}${e.it.type ? ` (${e.it.type})` : ''}${sec.isRecent ? ` — ${e.src.name}` : ''}`}
                     style={{ ...chipBtn(isResp), ...(isActive ? { outline: '2px solid var(--fl-primary)', outlineOffset: 1 } : {}) }}
                   >
                     {/* 색 단독 금지(1.4.1) — 응답/요청 구분은 텍스트 태그로 */}
                     <span style={{ fontSize: 9.5, fontWeight: 700, flexShrink: 0, color: isResp ? 'var(--fl-ok)' : 'var(--fl-running)' }}>
-                      {isResp ? '응답' : '요청'}
+                      {e.it.tag ?? (isResp ? '응답' : '요청')}
                     </span>
                     <span style={{ fontFamily: 'var(--fl-font-mono)', fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 180 }}>{hi(e.it.key)}</span>
                     {e.it.type && <span style={typeBadge}>{e.it.type}</span>}

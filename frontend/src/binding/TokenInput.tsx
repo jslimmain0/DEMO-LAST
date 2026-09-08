@@ -75,7 +75,7 @@ export function TokenInput({
     lastValueRef.current = value
     setEmpty(value === '')
     const root = rootRef.current
-    if (root) rebuildDom(root, value, emit)
+    if (root) rebuildDom(root, value, emit, sources)
     updateOverflow()
     // emit 은 칩 × 삭제 콜백용 — rebuild 자체는 onChange 를 부르지 않는다
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -158,13 +158,13 @@ export function TokenInput({
     const sel = window.getSelection()
     if (!sel || sel.rangeCount === 0 || !root.contains(sel.getRangeAt(0).startContainer)) {
       // 캐럿이 에디터 밖이면 끝에 덧붙임
-      root.append(...buildNodes(text, emit))
+      root.append(...buildNodes(text, emit, sources))
       emit()
       return
     }
     const range = sel.getRangeAt(0)
     range.deleteContents()
-    const nodes = buildNodes(text, emit)
+    const nodes = buildNodes(text, emit, sources)
     let lastNode: Node | null = null
     for (const n of nodes) {
       range.insertNode(n)
@@ -186,7 +186,7 @@ export function TokenInput({
     if (!root) return
     root.focus() // 피커(모달)에서 돌아온 포커스를 입력으로 복귀 — 바로 이어서 타이핑 가능
     const token = bindingToToken(b)
-    const chip = makeChip(token, emit)
+    const chip = makeChip(token, emit, sources)
     // 칩 뒤에 제로폭 공백을 둬서 칩이 맨 끝이어도 그 뒤에 캐럿을 놓고 이어서 타이핑할 수 있게 한다
     // (Chromium 은 trailing non-editable 요소 뒤에 캐럿을 못 둔다). 직렬화 시 제거된다.
     const pad = document.createTextNode(ZWSP)
@@ -216,7 +216,7 @@ export function TokenInput({
     if (!root) return
     if (hasRawTokenText(root)) {
       const s = serializeDom(root)
-      rebuildDom(root, s, emit)
+      rebuildDom(root, s, emit, sources)
     }
   }
 
@@ -338,12 +338,12 @@ function serializeDom(root: HTMLElement): string {
   return out.replace(/[\n\u200B]/g, '')
 }
 
-function rebuildDom(root: HTMLElement, value: string, onMutate: () => void) {
+function rebuildDom(root: HTMLElement, value: string, onMutate: () => void, sources: BindableSource[] = []) {
   root.textContent = ''
-  root.append(...buildNodes(value, onMutate))
+  root.append(...buildNodes(value, onMutate, sources))
 }
 
-function buildNodes(value: string, onMutate: () => void): Node[] {
+function buildNodes(value: string, onMutate: () => void, sources: BindableSource[] = []): Node[] {
   const segs = segmentValue(value)
   const out: Node[] = []
   for (let i = 0; i < segs.length; i++) {
@@ -354,7 +354,7 @@ function buildNodes(value: string, onMutate: () => void): Node[] {
     }
     // 칩이 맨 앞이거나 칩끼리 붙으면 사이에 제로폭 공백 — 캐럿을 놓을 자리를 보장
     if (i === 0 || segs[i - 1].type === 'token') out.push(document.createTextNode(ZWSP))
-    out.push(makeChip(seg.raw, onMutate))
+    out.push(makeChip(seg.raw, onMutate, sources))
     if (i === segs.length - 1) out.push(document.createTextNode(ZWSP)) // 칩이 맨 끝
   }
   return out
@@ -375,8 +375,8 @@ function hasRawTokenText(root: HTMLElement): boolean {
   return tokenRegex().test(text)
 }
 
-/** 토큰 → 인라인 칩 DOM. 노드 이름/아이콘은 현재 캔버스에서 해석(없으면 sourceId 그대로). */
-function makeChip(tokenRaw: string, onMutate: () => void): HTMLSpanElement {
+/** 토큰 → 인라인 칩 DOM. 노드 이름/아이콘은 현재 캔버스에서 해석, 캔버스 밖 소스(Mock 의 요청 본문/시크릿 등)는 sources 이름으로. */
+function makeChip(tokenRaw: string, onMutate: () => void, sources: BindableSource[] = []): HTMLSpanElement {
   const parsed = parseToken(tokenRaw)
   const chip = document.createElement('span')
   chip.className = 'fl-token-chip'
@@ -395,7 +395,10 @@ function makeChip(tokenRaw: string, onMutate: () => void): HTMLSpanElement {
       icon = typeIcon(gn.type)
       color = catColor(gn.cat)
     } else {
-      name = parsed.sourceId
+      const src = sources.find((x) => x.id === parsed.sourceId)
+      name = src?.name ?? parsed.sourceId
+      if (src?.cat) color = catColor(src.cat)
+      if (src?.type === 'mock') icon = '◈'
     }
   }
   chip.style.borderColor = color

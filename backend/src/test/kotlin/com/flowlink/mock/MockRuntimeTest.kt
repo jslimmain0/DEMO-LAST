@@ -183,7 +183,7 @@ class MockRuntimeTest {
     @Test
     fun `responseCodec_은_렌더된_본문_전체에_적용되고_헤더는_그대로`() {
         val r = MockRule("x", null, 200, "text", null, listOf(KV("X-Sig", "{{query.q}}")), "hello {{query.q}}", null, null)
-        val res = runtime.render(r, req("GET", "/x", query = mapOf("q" to "kim")), emptyMap(), 1L) { it.uppercase() }
+        val res = runtime.render(r, req("GET", "/x", query = mapOf("q" to "kim")), emptyMap(), 1L, emptyMap(), MockRuntime.ResponseCodec { b, _, _ -> b.uppercase() })
         assertThat(String(res.body, Charsets.UTF_8)).isEqualTo("HELLO KIM")
         assertThat(res.headers["X-Sig"]).isEqualTo("kim")
     }

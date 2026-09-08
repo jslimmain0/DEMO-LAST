@@ -2,29 +2,25 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { CSSProperties } from 'react'
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import type { HttpMethod, MockCond, MockRouteSpec, MockRuleSpec, MockServerSpec } from '../api/types'
-import { adminApi, mockBaseUrl, mocksApi, workspacesApi } from '../api/client'
+import type { HttpMethod, MockRequestLog, MockRouteSpec, MockServerSpec } from '../api/types'
+import { adminApi, mockBaseUrl, mocksApi, secretsApi, workspacesApi } from '../api/client'
+import type { SecretView } from '../api/client'
 import { AppShellTier1 } from '../app/AppShell'
 import { useAuth, usePermissions } from '../auth/AuthContext'
 import { METHOD_COLOR } from '../canvas/nodeMeta'
-import { BigTextEditor, ExpandCorner } from '../components/BigTextEditor'
 import { MockAssistantPanel } from '../components/MockAssistantPanel'
 import { MockCodecEditor } from '../components/MockCodecEditor'
+import { RoutesEditor } from '../components/MockRouteEditor'
+import { bodyKeys, findRouteIndex, interestingHeaders, mergeExpect } from '../lib/mockRequestLog'
 import { MockTcpEditor } from '../components/MockTcpEditor'
 import { MockExportDialog, MockReplaceSpecDialog } from '../components/MockTransferDialog'
 import { AssistantLoginGate } from '../components/AssistantLoginGate'
 import { toast } from '../components/toast'
 import { apiErrorMessage } from '../lib/apiError'
 import { useReadableInk } from '../lib/contrast'
+import { mockSources } from '../lib/mockSources'
 import { newId } from '../lib/ids'
 
-const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'ANY']
-// 라우트 카드 좌측 스파인 색 — 캔버스 MethodTag 와 같은 어휘. ANY 등 미지원 메서드는 중립색.
-const methodColor = (m: string): string => METHOD_COLOR[m as HttpMethod] ?? 'var(--fl-cat-generic)'
-const CONTENT_TYPES = ['json', 'text', 'html', 'xml', 'urlencoded']
-const CHARSETS = ['UTF-8', 'EUC-KR', 'MS949']
-const COND_SOURCES = ['body', 'query', 'header', 'path', 'state'] as const
-const COND_OPS = ['eq', 'ne', 'exists', 'contains', 'gt', 'gte', 'lt', 'lte', 'regex', 'startswith', 'endswith'] as const
 
 /** Mock 서버 편집기 — 경로별 라우트/규칙(응답 템플릿·조건·콜백)을 정의하고 바로 보내본다. */
 export function MockServerEditor() {
@@ -49,6 +45,10 @@ export function MockServerEditor() {
   const [note, setNote] = useState<string | null>(null)
   const [aiOpen, setAiOpen] = useState(false)
   const [transfer, setTransfer] = useState<'export' | 'import' | null>(null) // 텍스트 복붙 내보내기/가져오기(덮어쓰기)
+  // 시크릿 볼트 — {{ 이름@secret }} 피커 소스 + 시크릿 환경(스코프) 셀렉트 옵션. 게스트(403)면 빈 목록.
+  const secretsQ = useQuery({ queryKey: ['secrets'], queryFn: secretsApi.list, retry: false })
+  const secrets: SecretView[] = secretsQ.data ?? []
+  const secretEnvs = [...new Set(secrets.map((x) => x.environment).filter((x): x is string => !!x))].sort()
 
   const invalidate = () => {
     void qc.invalidateQueries({ queryKey: ['mock-server', id] })
@@ -141,13 +141,31 @@ export function MockServerEditor() {
             </div>
             {note && <p style={{ fontSize: 12.5, marginTop: 8, color: note.startsWith('저장됨') ? 'var(--fl-ok)' : 'var(--fl-fail)' }}>{note}</p>}
 
+            {/* 시크릿 스코프 — 이 Mock 이 {{ 이름@secret }} 를 풀 때 공통 + 어느 환경의 시크릿을 볼지(서빙은 서버에서 도니 Mock 별 설정) */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 12, color: 'var(--fl-text-muted)' }}>🔑 시크릿 환경:</span>
+              <select style={{ ...input, minWidth: 140 }} value={spec.environment ?? ''} disabled={!canEdit} onChange={(e) => mutate((s) => ({ ...s, environment: e.target.value || null }))} title="{{ 이름@secret }} 해석 스코프 — 공통 시크릿(+Vault)에 이 환경의 시크릿을 덮어씀">
+                <option value="">공통만</option>
+                {secretEnvs.map((e) => <option key={e} value={e}>{e}</option>)}
+                {spec.environment && !secretEnvs.includes(spec.environment) && <option value={spec.environment}>{spec.environment}</option>}
+              </select>
+              <span style={{ fontSize: 11.5, color: 'var(--fl-text-muted)' }}>
+                {secrets.length ? `적용 가능한 시크릿 ${secrets.filter((x) => !x.environment || x.environment === (spec.environment ?? null)).length}개 — 값 칸에서 { } 로 삽입` : '시크릿 없음(도구 → 시크릿 볼트에서 추가) — 응답 본문·헤더·코덱 키에 {{ 이름@secret }} 로 씁니다'}
+              </span>
+            </div>
+
             {/* 유형별 편집 UI — HTTP=라우트, TCP=전문, CUSTOM(레거시)=둘 다 */}
             {d.kind !== 'TCP' && (
               <RoutesEditor
                 base={base}
                 ensureSaved={ensureSaved}
+                mockId={id}
+                spec={spec}
+                secrets={secrets}
                 routes={spec.routes ?? []}
+                readOnly={!canEdit}
                 onChange={(routes) => mutate((s) => ({ ...s, routes }))}
+                extraHeader={canEdit ? <OpenApiImportButton onRoutes={(generated) => mutate((s) => ({ ...s, routes: [...(s.routes ?? []), ...generated] }))} /> : null}
               />
             )}
 
@@ -155,6 +173,9 @@ export function MockServerEditor() {
               <MockTcpEditor
                 tcp={spec.tcp ?? null}
                 readOnly={!canEdit}
+                codec={spec.codec}
+                environment={spec.environment}
+                sources={mockSources({ spec, secrets, environment: spec.environment, tcp: true })}
                 onChange={(tcp) => mutate((s) => ({ ...s, tcp }))}
               />
             )}
@@ -171,13 +192,18 @@ export function MockServerEditor() {
                 라우트별로 다른 코덱이 필요하면 라우트 카드의 [이 라우트만 코덱]을 쓰세요. 코덱 실패는 500(HTTP)/연결 종료(TCP)로 명확히 실패합니다.
               </p>
               <div style={{ marginTop: 10 }}>
-                <MockCodecEditor codec={spec.codec} readOnly={!canEdit} onChange={(codec) => mutate((s) => ({ ...s, codec }))} />
+                <MockCodecEditor codec={spec.codec} readOnly={!canEdit} kind={d.kind === 'TCP' ? 'tcp' : 'http'} mockId={id} environment={spec.environment}
+                  sources={mockSources({ spec, secrets, environment: spec.environment, tcp: d.kind === 'TCP' })}
+                  fieldHints={d.kind === 'TCP'
+                    ? { request: (spec.tcp?.requestFields ?? []).map((f) => f.name ?? '').filter(Boolean), response: [...new Set((spec.tcp?.rules ?? []).flatMap((r) => (r.responseFields ?? []).map((f) => f.name ?? '')).filter(Boolean))] }
+                    : { request: [...new Set((spec.routes ?? []).flatMap((r) => (r.expect?.body ?? []).map((f) => f.key)).filter(Boolean))], response: [] }}
+                  onChange={(codec) => mutate((s) => ({ ...s, codec }))} />
               </div>
             </section>
 
             {d.kind !== 'TCP' && <TestPanel base={base} ensureSaved={ensureSaved} />}
 
-            <RuntimePanel id={id} canEdit={canEdit} />
+            <RuntimePanel id={id} canEdit={canEdit} base={base} spec={spec} onSpec={(fn) => mutate(fn)} />
 
             {transfer === 'export' && <MockExportDialog mock={d} spec={spec} onClose={() => setTransfer(null)} />}
             {transfer === 'import' && (
@@ -206,8 +232,46 @@ export function MockServerEditor() {
 }
 
 // ---------- 요청 기록 + 상태(상태 있는 목 디버깅) ----------
-function RuntimePanel({ id, canEdit }: { id: string; canEdit: boolean }) {
+function RuntimePanel({ id, canEdit, base, spec, onSpec }: { id: string; canEdit: boolean; base: string; spec: MockServerSpec; onSpec: (fn: (s: MockServerSpec) => MockServerSpec) => void }) {
   const qc = useQueryClient()
+  const routes = spec.routes ?? []
+  // 실제 온 요청 → 예상 요청 필드(피커 소스·조건 키 후보)로. 매칭 라우트가 없으면 규칙 초안으로 안내.
+  const expectFrom = (r: MockRequestLog) => {
+    const idx = findRouteIndex(routes, r.method, r.path)
+    if (idx < 0) { toast('이 요청에 맞는 라우트가 없습니다 — [규칙 초안]으로 라우트부터 만드세요.', 'error'); return }
+    const add = { body: bodyKeys(r.decodedBody ?? r.bodyText), query: r.query, header: interestingHeaders(r.headers) }
+    onSpec((s) => ({ ...s, routes: (s.routes ?? []).map((x, i) => (i === idx ? { ...x, expect: mergeExpect(x.expect, add) } : x)) }))
+    const n = Object.keys(add.body).length + Object.keys(add.query).length + Object.keys(add.header).length
+    toast(`라우트 ${routes[idx].method} ${routes[idx].path} 의 예상 요청에 ${n}개 필드를 반영했습니다.`, 'ok')
+  }
+  // 기록된 요청으로 규칙 초안 — 라우트 없으면 생성, 있으면 "요청 값 eq 조건" 규칙을 위에 추가
+  const draftRule = (r: MockRequestLog) => {
+    const idx = findRouteIndex(routes, r.method, r.path)
+    const body = bodyKeys(r.decodedBody ?? r.bodyText)
+    const add = { body, query: r.query, header: interestingHeaders(r.headers) }
+    const conds = [...Object.entries(body).slice(0, 3).map(([k, v]) => ({ source: 'body' as const, key: k, op: 'eq' as const, value: v })),
+      ...Object.entries(r.query).slice(0, 2).map(([k, v]) => ({ source: 'query' as const, key: k, op: 'eq' as const, value: v }))]
+    if (idx < 0) {
+      const route: MockRouteSpec = { id: newId(), method: r.method, path: r.path, expect: mergeExpect(null, add), rules: [{ id: newId(), status: 200, contentType: 'json', body: '{"ok":true}' }] }
+      onSpec((s) => ({ ...s, routes: [...(s.routes ?? []), route] }))
+      toast(`라우트 ${r.method} ${r.path} 를 만들었습니다(기본 규칙 + 예상 요청). 저장하면 반영됩니다.`, 'ok')
+      return
+    }
+    onSpec((s) => ({ ...s, routes: (s.routes ?? []).map((x, i) => (i === idx ? { ...x, expect: mergeExpect(x.expect, add), rules: [{ id: newId(), when: conds, status: 200, contentType: 'json', body: '{"ok":true}' }, ...x.rules] } : x)) }))
+    toast(`라우트 ${routes[idx].method} ${routes[idx].path} 위에 조건 ${conds.length}개짜리 규칙 초안을 추가했습니다.`, 'ok')
+  }
+  // 기록된 요청 재전송(코덱/규칙 수정 후 같은 요청으로 다시 확인)
+  const replay = async (r: MockRequestLog) => {
+    const qs = Object.entries(r.query).map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join('&')
+    const hasBody = r.method !== 'GET' && r.method !== 'HEAD'
+    const headers: Record<string, string> = {}
+    for (const [k, v] of Object.entries(r.headers)) if (k === 'content-type' || !['host', 'content-length', 'connection', 'accept-encoding'].includes(k)) headers[k] = v
+    try {
+      const res = await fetch(base + r.path + (qs ? `?${qs}` : ''), { method: r.method, headers, body: hasBody ? r.bodyText : undefined })
+      toast(`재전송 → HTTP ${res.status}`, res.ok ? 'ok' : 'error')
+      qc.invalidateQueries({ queryKey: ['mock-requests', id] })
+    } catch (e) { toast(`재전송 실패: ${(e as Error).message}`, 'error') }
+  }
   const [open, setOpen] = useState(false)
   const reqs = useQuery({ queryKey: ['mock-requests', id], queryFn: () => mocksApi.requests(id), enabled: open, refetchInterval: open ? 3000 : false })
   const st = useQuery({ queryKey: ['mock-state', id], queryFn: () => mocksApi.state(id), enabled: open, refetchInterval: open ? 3000 : false })
@@ -256,6 +320,11 @@ function RuntimePanel({ id, canEdit }: { id: string; canEdit: boolean }) {
                         {r.bodyText && <pre style={reqPre}>body: {r.bodyText}</pre>}
                         {r.decodedBody != null && <pre style={{ ...reqPre, borderLeft: '3px solid var(--fl-primary)' }}>코덱 적용 후: {r.decodedBody}</pre>}
                         <div style={{ fontSize: 10.5, color: 'var(--fl-text-muted)' }}>{r.matchedRuleId ? `규칙 ${r.matchedRuleId}` : '매칭 규칙 없음(404)'}{r.callbackFired ? ' · 콜백 발사' : ''}{r.delayMs ? ` · 지연 ${r.delayMs}ms` : ''}</div>
+                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                          {canEdit && <button style={miniBtn} onClick={() => expectFrom(r)} title="이 요청의 본문/쿼리/헤더 키를 라우트의 예상 요청 필드로(피커·조건 후보)">예상 필드로</button>}
+                          {canEdit && <button style={miniBtn} onClick={() => draftRule(r)} title="이 요청에 맞는 라우트/규칙 초안 만들기(요청 값 eq 조건)">규칙 초안</button>}
+                          <button style={miniBtn} onClick={() => { void replay(r) }} title="같은 요청을 다시 보냅니다(코덱/규칙 수정 후 확인)">재전송</button>
+                        </div>
                       </div>
                     )}
                   </div>
@@ -269,7 +338,34 @@ function RuntimePanel({ id, canEdit }: { id: string; canEdit: boolean }) {
 
 const reqPre: CSSProperties = { margin: 0, padding: '6px 8px', fontSize: 11, fontFamily: 'var(--fl-font-mono)', color: 'var(--fl-text)', background: 'var(--fl-surface-2)', borderRadius: 5, whiteSpace: 'pre-wrap', wordBreak: 'break-all', maxHeight: 140, overflow: 'auto' }
 
-// ---------- 커스텀 라우트 편집 ----------
+// ---------- OpenAPI 가져오기(라우트 자동 생성) ----------
+
+function OpenApiImportButton({ onRoutes }: { onRoutes: (r: MockRouteSpec[]) => void }) {
+  const [openApi, setOpenApi] = useState<string | null>(null)
+  return (
+    <>
+      <button style={miniBtn} onClick={() => setOpenApi(openApi === null ? '' : null)} title="OpenAPI/Swagger 문서를 붙여넣어 라우트 자동 생성">OpenAPI 가져오기</button>
+      {openApi !== null && (
+        <div style={{ flexBasis: '100%', margin: '8px 0' }}>
+          <textarea autoFocus value={openApi} onChange={(e) => setOpenApi(e.target.value)} placeholder="OpenAPI 3 / Swagger 2 JSON 을 붙여넣으세요…"
+            style={{ ...input, width: '100%', minHeight: 90, fontFamily: 'var(--fl-font-mono)', fontSize: 12, boxSizing: 'border-box' }} />
+          <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+            <button style={{ ...miniBtn, color: 'var(--fl-primary)' }} onClick={() => {
+              const generated = openApiToMockRoutes(openApi)
+              if (!generated.length) { toast('라우트를 추출하지 못했습니다 — 유효한 OpenAPI/Swagger JSON 인지 확인하세요.', 'error'); return }
+              onRoutes(generated)
+              setOpenApi(null)
+              toast(`라우트 ${generated.length}개를 생성했습니다.`, 'ok')
+            }}>가져오기</button>
+            <button style={miniBtn} onClick={() => setOpenApi(null)}>취소</button>
+          </div>
+        </div>
+      )}
+    </>
+  )
+}
+
+// ---------- 커스텀 라우트 편집(OpenAPI 변환) ----------
 
 // OpenAPI/Swagger 문서(JSON) → mock 라우트. path+method 마다 첫 성공 응답 코드와 예시 본문으로 규칙 1개 생성.
 function openApiToMockRoutes(text: string): MockRouteSpec[] {
@@ -301,327 +397,6 @@ function openApiToMockRoutes(text: string): MockRouteSpec[] {
     }
   }
   return out
-}
-
-function RoutesEditor({ base, ensureSaved, routes, onChange }: { base: string; ensureSaved: () => Promise<boolean>; routes: MockRouteSpec[]; onChange: (r: MockRouteSpec[]) => void }) {
-  const setRoute = (i: number, r: MockRouteSpec) => onChange(routes.map((x, xi) => (xi === i ? r : x)))
-  const move = (i: number, dir: -1 | 1) => {
-    const j = i + dir
-    if (j < 0 || j >= routes.length) return
-    const next = [...routes]
-    const t = next[i]; next[i] = next[j]; next[j] = t
-    onChange(next)
-  }
-  const dup = (i: number) => {
-    const src = routes[i]
-    const copy: MockRouteSpec = { ...src, id: newId(), rules: src.rules.map((r) => ({ ...r, id: newId() })) }
-    onChange([...routes.slice(0, i + 1), copy, ...routes.slice(i + 1)])
-  }
-  const [openApi, setOpenApi] = useState<string | null>(null)
-  const [filter, setFilter] = useState('')
-  const f = filter.trim().toLowerCase()
-  // 라우트가 많을 때 메서드/경로로 좁혀 찾는다 — 원본 순서/인덱스는 유지(첫 매칭 의미 불변)
-  const visible = routes.map((r, i) => ({ r, i })).filter(({ r }) => !f || `${r.method} ${r.path}`.toLowerCase().includes(f))
-  return (
-    <section style={panel}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-        <h2 style={h2}>라우트 <span style={{ fontWeight: 400, fontSize: 12, color: 'var(--fl-text-muted)' }}>(위에서부터 첫 매칭)</span></h2>
-        <button style={{ ...miniBtn, marginLeft: 'auto' }} onClick={() => setOpenApi(openApi === null ? '' : null)} title="OpenAPI/Swagger 문서를 붙여넣어 라우트 자동 생성">OpenAPI 가져오기</button>
-        <button
-          style={miniBtn}
-          onClick={() => onChange([...routes, { id: newId(), method: 'GET', path: '/new', rules: [{ id: newId(), status: 200, contentType: 'json', body: '{"ok":true}' }] }])}
-        >+ 라우트 추가</button>
-      </div>
-      {openApi !== null && (
-        <div style={{ margin: '8px 0' }}>
-          <textarea autoFocus value={openApi} onChange={(e) => setOpenApi(e.target.value)} placeholder="OpenAPI 3 / Swagger 2 JSON 을 붙여넣으세요…"
-            style={{ ...input, width: '100%', minHeight: 90, fontFamily: 'var(--fl-font-mono)', fontSize: 12 }} />
-          <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
-            <button style={{ ...miniBtn, color: 'var(--fl-primary)' }} onClick={() => {
-              const generated = openApiToMockRoutes(openApi)
-              if (!generated.length) { toast('라우트를 추출하지 못했습니다 — 유효한 OpenAPI/Swagger JSON 인지 확인하세요.', 'error'); return }
-              onChange([...routes, ...generated])
-              setOpenApi(null)
-              toast(`라우트 ${generated.length}개를 생성했습니다.`, 'ok')
-            }}>가져오기</button>
-            <button style={miniBtn} onClick={() => setOpenApi(null)}>취소</button>
-          </div>
-        </div>
-      )}
-      <p style={hint}>
-        경로는 <code style={code}>{'/users/{id}'}</code> 패턴 지원. 응답 본문·헤더·콜백은 템플릿을 쓸 수 있습니다:
-        <code style={code}>{'{{path.id}} {{query.q}} {{body.필드}} {{header.이름}} {{body}} {{uuid}} {{seq}} {{now}}'}</code>
-        (워크플로의 <code style={code}>{'{{ 키@노드 }}'}</code> 바인딩과는 다른 문법입니다)
-      </p>
-      {routes.length === 0 && <p style={{ ...hint, padding: '14px 0' }}>라우트가 없습니다 — [+ 라우트 추가]로 시작하세요.</p>}
-      {routes.length >= 5 && (
-        <input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder={`라우트 검색 — 메서드/경로… (${routes.length}개)`} aria-label="라우트 검색"
-          style={{ ...input, width: '100%', marginTop: 8, boxSizing: 'border-box' }} />
-      )}
-      {f && visible.length === 0 && routes.length > 0 && <p style={{ ...hint, padding: '10px 0' }}>검색과 일치하는 라우트가 없습니다.</p>}
-      <div style={{ display: 'grid', gap: 12, marginTop: 10 }}>
-        {visible.map(({ r, i }) => (
-          <RouteCard
-            key={r.id}
-            base={base}
-            ensureSaved={ensureSaved}
-            route={r}
-            onChange={(nr) => setRoute(i, nr)}
-            onRemove={() => onChange(routes.filter((_, xi) => xi !== i))}
-            onDup={() => dup(i)}
-            onUp={() => move(i, -1)}
-            onDown={() => move(i, 1)}
-          />
-        ))}
-      </div>
-    </section>
-  )
-}
-
-function RouteCard({ base, ensureSaved, route, onChange, onRemove, onDup, onUp, onDown }: {
-  base: string
-  ensureSaved: () => Promise<boolean>
-  route: MockRouteSpec
-  onChange: (r: MockRouteSpec) => void
-  onRemove: () => void
-  onDup: () => void
-  onUp: () => void
-  onDown: () => void
-}) {
-  const setRule = (i: number, u: MockRuleSpec) => onChange({ ...route, rules: route.rules.map((x, xi) => (xi === i ? u : x)) })
-  const dupRule = (i: number) => {
-    const copy = { ...route.rules[i], id: newId() }
-    onChange({ ...route, rules: [...route.rules.slice(0, i + 1), copy, ...route.rules.slice(i + 1)] })
-  }
-  // 이 라우트 원클릭 테스트 — 경로 파라미터({id})는 예시값으로 채워 mock 에 실제 요청
-  const [test, setTest] = useState<{ status: number; body: string } | string | null>(null)
-  const [testing, setTesting] = useState(false)
-  const [codecOpen, setCodecOpen] = useState(!!route.codec) // 이 라우트만 다른 전문 코덱(서버 codec 대체)
-  const runTest = async () => {
-    // 테스트는 저장된 mock 을 호출하므로 미저장 편집을 먼저 반영(아니면 stale 상태 테스트)
-    if (!(await ensureSaved())) return
-    setTesting(true); setTest(null)
-    try {
-      const p = route.path.replace(/\{[^}]+\}/g, '1') // {id} → 1
-      const hasBody = route.method !== 'GET' && route.method !== 'HEAD'
-      const res = await fetch(base + p, { method: route.method, headers: hasBody ? { 'Content-Type': 'application/json' } : undefined, body: hasBody ? '{}' : undefined })
-      setTest({ status: res.status, body: (await res.text()).slice(0, 2000) })
-    } catch (e) { setTest(e instanceof Error ? e.message : String(e)) }
-    finally { setTesting(false) }
-  }
-  return (
-    <div style={{ border: '1px solid var(--fl-border)', borderLeft: `3px solid ${methodColor(route.method)}`, borderRadius: 'var(--fl-radius)', padding: 14, background: 'var(--fl-surface)' }}>
-      <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-        <select style={{ ...input, minWidth: 90 }} value={route.method} onChange={(e) => onChange({ ...route, method: e.target.value })}>
-          {METHODS.map((m) => <option key={m}>{m}</option>)}
-        </select>
-        <input style={{ ...input, flex: 1, fontFamily: 'var(--fl-font-mono)' }} value={route.path} onChange={(e) => onChange({ ...route, path: e.target.value })} placeholder="/users/{id}" />
-        <button style={{ ...miniBtn, color: 'var(--fl-primary)' }} onClick={runTest} disabled={testing} title="이 라우트로 바로 요청을 보내 응답을 봅니다">{testing ? '…' : '▶ 테스트'}</button>
-        <button style={miniBtn} onClick={onDup} title="라우트 복제">복제</button>
-        <button style={miniBtn} onClick={onUp} title="위로">↑</button>
-        <button style={miniBtn} onClick={onDown} title="아래로">↓</button>
-        <button style={{ ...miniBtn, color: 'var(--fl-fail)' }} onClick={onRemove}>삭제</button>
-      </div>
-      {test != null && (
-        <div style={{ marginTop: 8, border: `1px solid ${typeof test === 'string' ? 'var(--fl-fail)' : 'var(--fl-border)'}`, borderRadius: 'var(--fl-radius-sm)', overflow: 'hidden' }}>
-          {typeof test === 'string'
-            ? <div style={{ padding: '6px 10px', fontSize: 12, color: 'var(--fl-fail)' }}>{test}</div>
-            : <><div style={{ padding: '5px 10px', fontSize: 12, fontWeight: 600, background: 'var(--fl-surface-2)', color: test.status < 400 ? 'var(--fl-ok)' : 'var(--fl-fail)' }}>HTTP {test.status}</div>
-                <pre style={{ margin: 0, padding: '8px 10px', fontSize: 11.5, fontFamily: 'var(--fl-font-mono)', whiteSpace: 'pre-wrap', wordBreak: 'break-all', maxHeight: 180, overflow: 'auto', color: 'var(--fl-text)' }}>{test.body}</pre></>}
-        </div>
-      )}
-      <div style={{ display: 'grid', gap: 10, marginTop: 10 }}>
-        {route.rules.map((u, i) => (
-          <RuleCard
-            key={u.id}
-            rule={u}
-            index={i}
-            total={route.rules.length}
-            onChange={(nu) => setRule(i, nu)}
-            onDup={() => dupRule(i)}
-            onRemove={() => onChange({ ...route, rules: route.rules.filter((_, xi) => xi !== i) })}
-          />
-        ))}
-      </div>
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 10, flexWrap: 'wrap' }}>
-        <button
-          style={miniBtn}
-          onClick={() => onChange({ ...route, rules: [...route.rules, { id: newId(), status: 200, contentType: 'json', body: '{"ok":true}' }] })}
-        >+ 규칙 추가</button>
-        <label style={{ fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 5, cursor: 'pointer', marginLeft: 'auto', color: route.codec ? 'var(--fl-primary)' : 'var(--fl-text-muted)' }} title="서버 전문 코덱 대신 이 라우트만 다른 플러그인 단계를 적용">
-          <input type="checkbox" checked={codecOpen} onChange={(e) => { setCodecOpen(e.target.checked); if (!e.target.checked) onChange({ ...route, codec: null }) }} />
-          이 라우트만 코덱
-        </label>
-      </div>
-      {codecOpen && (
-        <div style={{ marginTop: 8, padding: 10, border: '1px dashed var(--fl-primary)', borderRadius: 'var(--fl-radius-sm)' }}>
-          <div style={{ fontSize: 11.5, color: 'var(--fl-text-muted)', marginBottom: 6 }}>이 라우트에는 서버 코덱 대신 아래 단계만 적용됩니다(통째로 대체 — 비우면 코덱 없음).</div>
-          <MockCodecEditor compact codec={route.codec} onChange={(codec) => onChange({ ...route, codec: codec ?? { } })} />
-        </div>
-      )}
-    </div>
-  )
-}
-
-function RuleCard({ rule, index, total, onChange, onDup, onRemove }: {
-  rule: MockRuleSpec
-  index: number
-  total: number
-  onChange: (u: MockRuleSpec) => void
-  onDup: () => void
-  onRemove: () => void
-}) {
-  const [showCb, setShowCb] = useState(!!rule.callback?.url)
-  const [big, setBig] = useState<'body' | 'cb' | null>(null) // HTML 템플릿 등 긴 본문 — 거의 전체화면 편집
-  const conds = rule.when ?? []
-  const setCond = (i: number, c: MockCond) => onChange({ ...rule, when: conds.map((x, xi) => (xi === i ? c : x)) })
-  const cb = rule.callback ?? {}
-  const setCb = (patch: Partial<typeof cb>) => onChange({ ...rule, callback: { ...cb, ...patch } })
-  return (
-    <div style={{ border: '1px dashed var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', padding: 12 }}>
-      <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-        <span style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--fl-text-muted)' }}>
-          규칙 {index + 1}/{total} {conds.length === 0 && '(조건 없음 = 기본)'}
-        </span>
-        <span style={{ fontSize: 12, marginLeft: 'auto' }}>status</span>
-        <input
-          style={{ ...input, width: 72, fontFamily: 'var(--fl-font-mono)' }}
-          value={rule.status ?? 200}
-          onChange={(e) => onChange({ ...rule, status: Number(e.target.value) || 200 })}
-        />
-        <select style={{ ...input, minWidth: 100 }} value={rule.contentType ?? 'json'} onChange={(e) => onChange({ ...rule, contentType: e.target.value })}>
-          {CONTENT_TYPES.map((c) => <option key={c}>{c}</option>)}
-        </select>
-        <select style={{ ...input, minWidth: 90 }} value={rule.charset ?? 'UTF-8'} onChange={(e) => onChange({ ...rule, charset: e.target.value })}>
-          {CHARSETS.map((c) => <option key={c}>{c}</option>)}
-        </select>
-        <span style={{ fontSize: 12 }}>지연(ms)</span>
-        <input
-          style={{ ...input, width: 76, fontFamily: 'var(--fl-font-mono)' }}
-          value={rule.delayMs ?? 0}
-          onChange={(e) => onChange({ ...rule, delayMs: Number(e.target.value) || 0 })}
-        />
-        <span style={{ fontSize: 12 }} title="이 규칙을 처음 N회 매칭까지만 적용(순차 응답). 비우면 무제한">N회만</span>
-        <input
-          style={{ ...input, width: 56, fontFamily: 'var(--fl-font-mono)' }}
-          value={rule.repeat ?? ''}
-          placeholder="∞"
-          onChange={(e) => { const n = Number(e.target.value); onChange({ ...rule, repeat: e.target.value.trim() && n > 0 ? n : undefined }) }}
-        />
-        <button style={miniBtn} onClick={onDup} title="규칙 복제">복제</button>
-        <button style={{ ...miniBtn, color: 'var(--fl-fail)' }} onClick={onRemove}>규칙 삭제</button>
-      </div>
-
-      {/* 조건 */}
-      <div style={{ marginTop: 8 }}>
-        {conds.map((c, i) => (
-          <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 6 }}>
-            <select style={{ ...input, minWidth: 86 }} value={c.source} onChange={(e) => setCond(i, { ...c, source: e.target.value as MockCond['source'] })}>
-              {COND_SOURCES.map((s) => <option key={s}>{s}</option>)}
-            </select>
-            <input style={{ ...input, width: 130, fontFamily: 'var(--fl-font-mono)' }} value={c.key} placeholder="키" onChange={(e) => setCond(i, { ...c, key: e.target.value })} />
-            <select style={{ ...input, minWidth: 92 }} value={c.op} onChange={(e) => setCond(i, { ...c, op: e.target.value as MockCond['op'] })}>
-              {COND_OPS.map((o) => <option key={o}>{o}</option>)}
-            </select>
-            {c.op !== 'exists' && (
-              <input style={{ ...input, flex: 1, fontFamily: 'var(--fl-font-mono)' }} value={c.value ?? ''} placeholder="값" onChange={(e) => setCond(i, { ...c, value: e.target.value })} />
-            )}
-            <button style={miniBtn} onClick={() => onChange({ ...rule, when: conds.filter((_, xi) => xi !== i) })}>×</button>
-          </div>
-        ))}
-        <button
-          style={{ ...miniBtn, marginTop: 6 }}
-          onClick={() => onChange({ ...rule, when: [...conds, { source: 'body', key: '', op: 'eq', value: '' }] })}
-        >+ 조건 (요청 값으로 분기)</button>
-      </div>
-
-      {/* 본문 — HTML(결제창) 같은 긴 템플릿은 ⤢ 로 거의 전체화면 편집 */}
-      <div style={{ position: 'relative', marginTop: 8 }}>
-        <textarea
-          style={{ ...input, width: '100%', minHeight: 74, fontFamily: 'var(--fl-font-mono)', fontSize: 12, resize: 'vertical', boxSizing: 'border-box' }}
-          value={rule.body ?? ''}
-          placeholder={'응답 본문 — 예: {"orderId":"{{body.orderId}}","status":"{{state.status}}"}'}
-          onChange={(e) => onChange({ ...rule, body: e.target.value })}
-        />
-        <ExpandCorner onClick={() => setBig('body')} label="응답 본문 크게 편집" />
-      </div>
-
-      {/* 상태 설정(setState) — 상태 있는 목: 응답 후 서버 상태 갱신 → 다음 호출 조건(source=state)/템플릿({{state.x}}) */}
-      <div style={{ marginTop: 8 }}>
-        {(rule.setState ?? []).map((s, i) => (
-          <div key={i} style={{ display: 'flex', gap: 6, marginBottom: 4 }}>
-            <span style={{ fontSize: 11, color: 'var(--fl-text-muted)', alignSelf: 'center' }}>state.</span>
-            <input style={{ ...input, flex: 1 }} value={s.key} placeholder="키(예: status)" onChange={(e) => onChange({ ...rule, setState: (rule.setState ?? []).map((x, xi) => xi === i ? { ...x, key: e.target.value } : x) })} />
-            <select style={{ ...input, width: 78 }} value={s.op ?? 'set'} title="대입/증가/감소(증감은 숫자 누산기)" onChange={(e) => onChange({ ...rule, setState: (rule.setState ?? []).map((x, xi) => xi === i ? { ...x, op: e.target.value as 'set' | 'incr' | 'decr' } : x) })}>
-              <option value="set">대입</option><option value="incr">증가</option><option value="decr">감소</option>
-            </select>
-            <input style={{ ...input, flex: 1.4 }} value={s.value} placeholder={s.op === 'incr' || s.op === 'decr' ? '증감량(기본 1)' : '값(템플릿, 예: approved)'} onChange={(e) => onChange({ ...rule, setState: (rule.setState ?? []).map((x, xi) => xi === i ? { ...x, value: e.target.value } : x) })} />
-            <button style={miniBtn} onClick={() => onChange({ ...rule, setState: (rule.setState ?? []).filter((_, xi) => xi !== i) })}>×</button>
-          </div>
-        ))}
-        <button style={miniBtn} onClick={() => onChange({ ...rule, setState: [...(rule.setState ?? []), { key: '', value: '' }] })}>+ 상태 설정 (호출 후 저장 · 다음 호출에 {'{{state.x}}'}로 보임)</button>
-      </div>
-
-      {/* 콜백 발사 */}
-      <div style={{ marginTop: 8 }}>
-        <label style={{ fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
-          <input
-            type="checkbox"
-            checked={showCb}
-            onChange={(e) => {
-              setShowCb(e.target.checked)
-              if (!e.target.checked) onChange({ ...rule, callback: null })
-            }}
-          />
-          응답 후 콜백(웹훅) 발사 — 승인·입금 알림 콜백 패턴
-        </label>
-        {showCb && (
-          <div style={{ display: 'grid', gap: 6, marginTop: 6, paddingLeft: 4 }}>
-            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-              <span style={{ fontSize: 12, flexShrink: 0 }}>지연(ms)</span>
-              <input style={{ ...input, width: 90, fontFamily: 'var(--fl-font-mono)' }} value={cb.afterMs ?? 500} onChange={(e) => setCb({ afterMs: Number(e.target.value) || 0 })} />
-              <input style={{ ...input, flex: 1, fontFamily: 'var(--fl-font-mono)' }} value={cb.url ?? ''} placeholder="URL 템플릿 — 예: {{body.notiUrl}}" onChange={(e) => setCb({ url: e.target.value })} />
-              <label style={{ fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                <input type="checkbox" checked={cb.retryUntilOk ?? true} onChange={(e) => setCb({ retryUntilOk: e.target.checked })} />
-                OK 재시도
-              </label>
-            </div>
-            <div style={{ position: 'relative' }}>
-              <textarea
-                style={{ ...input, width: '100%', minHeight: 46, fontFamily: 'var(--fl-font-mono)', fontSize: 12, resize: 'vertical', boxSizing: 'border-box' }}
-                value={cb.body ?? ''}
-                placeholder="콜백 본문(urlencoded) — 예: resultCode=0000&orderId={{body.orderId}}"
-                onChange={(e) => setCb({ body: e.target.value })}
-              />
-              <ExpandCorner onClick={() => setBig('cb')} label="콜백 본문 크게 편집" />
-            </div>
-          </div>
-        )}
-      </div>
-      {big === 'body' && (
-        <BigTextEditor
-          title={`규칙 ${index + 1}/${total} — 응답 본문 크게 편집`}
-          value={rule.body ?? ''}
-          onChange={(v) => onChange({ ...rule, body: v })}
-          onClose={() => setBig(null)}
-          language={rule.contentType === 'html' ? 'html' : rule.contentType === 'json' ? 'json' : rule.contentType === 'xml' ? 'xml' : 'auto'}
-          placeholder={'응답 본문 템플릿 — HTML/JSON. 예: {{path.id}} {{query.q}} {{body.필드}} {{state.x}} {{uuid}} {{now}}'}
-          hint="입력 즉시 반영됩니다(Esc 로 닫기). contentType 이 html 이면 브라우저에 페이지로 렌더됩니다 — 결제창/인증창 패턴. {{템플릿}} 토큰이 문법 경고로 표시될 수 있습니다(무해)."
-        />
-      )}
-      {big === 'cb' && (
-        <BigTextEditor
-          title={`규칙 ${index + 1}/${total} — 콜백 본문 크게 편집`}
-          value={cb.body ?? ''}
-          onChange={(v) => setCb({ body: v })}
-          onClose={() => setBig(null)}
-          language="text"
-          placeholder="resultCode=0000&orderId={{body.orderId}}"
-          hint="응답 후 발사되는 콜백(웹훅)의 본문(urlencoded) — 템플릿 문법 동일."
-        />
-      )}
-    </div>
-  )
 }
 
 // ---------- 보내보기 ----------
@@ -692,13 +467,6 @@ const h2: CSSProperties = { fontFamily: 'var(--fl-font-head)', fontSize: 16, mar
 
 const hint: CSSProperties = { fontSize: 12, color: 'var(--fl-text-muted)', marginTop: 6, lineHeight: 1.6 }
 
-const code: CSSProperties = {
-  fontFamily: 'var(--fl-font-mono)',
-  fontSize: 11,
-  background: 'var(--fl-surface-2)',
-  padding: '1px 5px',
-  borderRadius: 4,
-}
 
 const input: CSSProperties = {
   padding: '7px 10px',

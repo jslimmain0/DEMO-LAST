@@ -55,10 +55,32 @@ object MockDtos {
     )
 
     /** 요청 기록 1건 — mock 에 온 실제 요청(디버깅·검증용). */
-    /** TCP 미리보기 요청 — 편집 중 tcp 섹션(미저장) + 샘플 요청 전문(문자열, tcp.charset 으로 인코딩). */
+    /** TCP 미리보기 요청 — 편집 중 tcp 섹션(미저장) + 샘플 요청 전문(문자열, tcp.charset 으로 인코딩) + 코덱/시크릿 환경(미저장). */
     data class TcpPreviewRequest(
         val tcp: MockSpec.MockTcp?,
         val sample: String? = null,
+        val codec: MockSpec.MockCodec? = null,
+        val environment: String? = null,
+    )
+
+    /**
+     * 코덱 시험 요청(HTTP) — 편집 중 코덱(미저장)을 샘플 전문에 적용해 단계별 결과를 본다. side=request|response.
+     * 시크릿은 서버가 [environment] 스코프로 실제 값을 넣고, 결과 텍스트에서 시크릿 값은 마스킹.
+     */
+    data class CodecTryRequest(
+        val codec: MockSpec.MockCodec?,
+        val environment: String? = null,
+        val side: String? = null,
+        val message: String? = null,
+        val headers: Map<String, String>? = null,
+        val contentType: String? = null,
+    )
+
+    data class CodecTryResult(
+        val result: String,
+        val headers: Map<String, String>,
+        val fields: Map<String, String>,
+        val steps: List<MockCodec.StepTrace>,
     )
 
     data class MockRequestLog(

@@ -11,7 +11,7 @@ import java.util.UUID
 
 /** 워크스페이스 멤버십 — 사용자별 롤(OWNER/EDITOR/VIEWER). TEAM 워크스페이스 접근의 단위. */
 @Entity
-@Table(name = "workspace_member", uniqueConstraints = [UniqueConstraint(columnNames = ["workspace_id", "username"])])
+@Table(name = "flowlink_workspace_member", uniqueConstraints = [UniqueConstraint(columnNames = ["workspace_id", "username"])])
 class WorkspaceMember {
 
     @Id

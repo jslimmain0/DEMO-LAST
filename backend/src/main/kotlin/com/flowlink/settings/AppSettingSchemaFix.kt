@@ -22,7 +22,7 @@ class AppSettingSchemaFix(private val dataSource: DataSource) {
             dataSource.connection.use { c ->
                 val product = c.metaData.databaseProductName ?: ""
                 if (!product.contains("H2", ignoreCase = true)) return
-                c.createStatement().use { it.execute("ALTER TABLE app_setting ALTER COLUMN setting_value SET DATA TYPE CLOB") }
+                c.createStatement().use { it.execute("ALTER TABLE flowlink_app_setting ALTER COLUMN setting_value SET DATA TYPE CLOB") }
                 log.info("app_setting.setting_value 를 CLOB 로 확장(H2 dev)")
             }
         } catch (e: Exception) {

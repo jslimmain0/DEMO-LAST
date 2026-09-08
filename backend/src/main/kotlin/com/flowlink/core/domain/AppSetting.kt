@@ -11,7 +11,7 @@ import java.util.UUID
 
 /** 앱 설정(키-값) — 콜백 수신 주소(relay base) 등 화면에서 저장/수정하는 런타임 설정. 테넌트 스코프. */
 @Entity
-@Table(name = "app_setting")
+@Table(name = "flowlink_app_setting")
 class AppSetting {
 
     @Id

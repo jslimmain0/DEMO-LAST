@@ -14,7 +14,7 @@ import java.util.UUID
  * '공용' 워크스페이스는 DB 행 없는 가상 스코프(workspace_id = null) — 레거시 데이터 그대로 공용이 된다.
  */
 @Entity
-@Table(name = "workspace")
+@Table(name = "flowlink_workspace")
 class Workspace {
 
     @Id

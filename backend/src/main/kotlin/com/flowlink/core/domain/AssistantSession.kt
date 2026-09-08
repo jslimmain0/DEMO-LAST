@@ -15,7 +15,7 @@ import java.util.UUID
  * [messages] 는 대화 턴 JSON 배열(role/content + 선택적 제안 graph) 원문. 그래프는 라운드트립으로만 보존.
  */
 @Entity
-@Table(name = "assistant_session")
+@Table(name = "flowlink_assistant_session")
 class AssistantSession {
 
     @Id

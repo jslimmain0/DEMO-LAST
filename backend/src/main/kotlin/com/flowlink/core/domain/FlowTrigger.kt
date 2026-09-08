@@ -19,7 +19,7 @@ import java.util.UUID
  * [versionNo] null=현재 버전, [inputJson]=고정 입력(RunRequest.input).
  */
 @Entity
-@Table(name = "flow_trigger")
+@Table(name = "flowlink_flow_trigger")
 class FlowTrigger {
 
     @Id

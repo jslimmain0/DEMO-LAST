@@ -56,7 +56,7 @@ class RetentionServiceTest {
         val e = Execution.start("default", flowId, versionId, TriggerType.MANUAL, null, null)
         val saved = executionRepo.saveAndFlush(e)
         // startedAt 은 팩토리가 now 로 고정 — 보존 판정 검증 위해 SQL 로 백데이트
-        jdbc.update("UPDATE execution SET started_at = DATEADD('DAY', ?, CURRENT_TIMESTAMP), status = ? WHERE id = ?",
+        jdbc.update("UPDATE flowlink_execution SET started_at = DATEADD('DAY', ?, CURRENT_TIMESTAMP), status = ? WHERE id = ?",
             -daysAgo, status.name, saved.id)
         return saved.id
     }

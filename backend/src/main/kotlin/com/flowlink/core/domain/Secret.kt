@@ -15,7 +15,7 @@ import java.util.UUID
  * API 는 write-only(값은 조회 불가, 이름만).
  */
 @Entity
-@Table(name = "secret")
+@Table(name = "flowlink_secret")
 class Secret {
 
     @Id

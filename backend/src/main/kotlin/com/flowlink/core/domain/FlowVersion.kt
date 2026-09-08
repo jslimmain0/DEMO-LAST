@@ -16,7 +16,7 @@ import java.util.UUID
  * 불변이므로 수정 대신 항상 새 버전을 만든다 → 실행 재현성/롤백/감사에 유리.
  */
 @Entity
-@Table(name = "flow_version")
+@Table(name = "flowlink_flow_version")
 class FlowVersion {
 
     @Id

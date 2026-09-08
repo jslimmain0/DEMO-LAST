@@ -16,7 +16,7 @@ import java.util.UUID
  * (부트스트랩 관리자는 env `flowlink.auth.admin-logins` — DB 롤과 OR 판정. status=null 은 레거시 행 = 승인 간주)
  */
 @Entity
-@Table(name = "app_user", uniqueConstraints = [UniqueConstraint(columnNames = ["tenant_id", "username"])])
+@Table(name = "flowlink_app_user", uniqueConstraints = [UniqueConstraint(columnNames = ["tenant_id", "username"])])
 class AppUser {
 
     @Id

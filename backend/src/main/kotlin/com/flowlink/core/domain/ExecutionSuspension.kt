@@ -19,7 +19,7 @@ import java.util.UUID
  *   콜백/타임아웃/브라우저 resume 이 경합해도 한 쪽만 이어 실행한다.
  */
 @Entity
-@Table(name = "execution_suspension")
+@Table(name = "flowlink_execution_suspension")
 class ExecutionSuspension {
 
     @Id

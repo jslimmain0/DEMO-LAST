@@ -1132,6 +1132,37 @@ API 도구 UX·비주얼/IA·플로우 통합 3관점 병렬 비평 → 확정 �
   워크스페이스 VIEWER(editorStore.readOnly)는 커밋 바/토글/복원 숨김.
 - 검증: RetentionServiceTest(📌 v2 가 keep=2 스윕에서 생존) + `:test` 전종 그린 + API 왕복(pinned 저장→토글→목록) + 브라우저 실측(커밋 바 저장 → v8 📌 배지·해제/재보존 토글). 가이드 [09장](docs/guide/09-버전-협업.md)·운영가이드 §12 갱신.
 
+## 최근 변경 (2026-09-08) — Mock 전문 코덱(요청 전/응답 후 플러그인) + Mock 단건 export/import (`feat/mock-codec-transfer`)
+"Mock 도 export/import 복붙 + Mock 응답에 플러그인" 요청. 플러그인은 값 하나 변환이 아니라 **전문 전체 코덱**(전문을 다 만든 뒤 나가기 전 / 들어온 전문이 매칭에 들어가기 전)으로 — 기존 FlowTransform 플러그인(내장+JAR)을 그대로 쓴다.
+- **모델**: [MockSpec.codec](backend/src/main/kotlin/com/flowlink/mock/MockSpec.kt) `{request:[step], response:[step]}` + `MockRoute.codec`(있으면 **통째로** 서버 codec 대체 — 필드 병합 아님, `{}` 면 그 라우트는 코덱 없음). step=`{id, config:[KV], inputKey?, outputKey?}`(기본 첫 입력→첫 출력, 다중 포트만 지정). 스키마 변경 없음(spec_json).
+- **[MockCodec](backend/src/main/kotlin/com/flowlink/mock/MockCodec.kt)**(순수, 플러그인 조회 람다 주입): 단계 순서대로 체인. 실패는 `CodecException`(플러그인 없음/예외/출력 없음) — HTTP 500 JSON(게이트웨이 catch-all)·TCP 연결 종료+WARN. 빈 id 단계는 건너뜀(편집 중).
+- **HTTP**: [MockRuntime.match](backend/src/main/kotlin/com/flowlink/mock/MockRuntime.kt) 에 `prepare` 훅(경로/메서드 매칭된 라우트에 대해 **조건 평가 전** 요청 교체) + `Match.req`(코덱 적용 요청) · `render(…, responseCodec)`(템플릿 렌더 후·문자셋 인코딩 전, 헤더/콜백 미적용). [MockGatewayController](backend/src/main/kotlin/com/flowlink/mock/MockGatewayController.kt) 가 TransformRegistry 연결, 디코딩 후 `parseBodyFields` 재파싱, journal 에 `decodedBody`(원문과 나란히 — UI "코덱 적용 후:").
+- **TCP**: [TcpMockRegistry](backend/src/main/kotlin/com/flowlink/mock/TcpMockRegistry.kt) Listener 가 spec.codec 보유(핫스왑) — 디코딩 전문으로 contains 매칭·`{{req}}` 에코, 렌더 후 response 코덱 → 인코딩·프리픽스.
+- **프론트**: [MockCodecEditor](frontend/src/components/MockCodecEditor.tsx)(서버 섹션 "전문 코덱" + 라우트 카드 "이 라우트만 코덱" 공용 — `GET /transforms` 목록·파라미터 폼·다중 포트 셀렉트·순서 이동). [MockTransferDialog](frontend/src/components/MockTransferDialog.tsx)(내보내기 복사/다운로드 · 목록 가져오기=새 Mock(slug 실시간 검사, 충돌 시 `-N` 자동 제안, create+updateSpec 실패 시 빈 mock 정리) · 편집기 가져오기=현재 spec 덮어쓰기(미저장 편집)). 순수 [lib/mockTransfer.ts](frontend/src/lib/mockTransfer.ts)(포맷 `{kind:"flowlink-mock",version:1,name,slug,type,spec}`, 워크스페이스 번들 오붙여넣기 안내, TCP 는 꺼서 가져옴). 백엔드 신규 API 없음.
+- 검증: 단위(MockCodecTest 8·MockRuntime 코덱 훅 2·mockTransfer 8) + 전체 스위트 그린 + **라이브 e2e 17**(서버 코덱 base64 디코딩→조건 매칭→인코딩·journal decodedBody·라우트 `{}` 무효화·응답만 코덱·알 수 없는 플러그인 500·config 전달·TCP 코덱·export/import 라운드트립+코덱 보존+서빙) + **브라우저 17**(가져오기/내보내기 다이얼로그·slug 자동 제안·코덱 섹션/파라미터 폼/라우트 체크·덮어쓰기·요청 기록 디코딩 표시·콘솔 무에러). 가이드 [10장](docs/guide/10-Mock-서버.md)·[11장](docs/guide/11-가져오기-내보내기.md) 갱신.
+- **플러그인 선택기 검색·정렬(후속, 같은 날)**: [TransformPicker](frontend/src/components/TransformPicker.tsx) — 네이티브 select 대체(검색 입력 + 이름순(ko 로케일 — 한글 라벨이 영문보다 앞) 정렬 + ↑↓/Enter/Esc(문서 캡처 — 바깥 모달 안 닫힘) + id·설명 매칭). TRANSFORM 노드 속성([PropertyPanel](frontend/src/panels/PropertyPanel.tsx))과 Mock 코덱 단계 공용. 브라우저 15/15.
+- **TCP mock 필드 빌더(후속, 같은 날 — "텍스트로 전문 만들기 힘들다, 한글 바이트")**: [common/tcp/TcpBytes](backend/src/main/kotlin/com/flowlink/common/tcp/TcpBytes.kt)(fixedField/prefix/hex — TcpNodeExecutor 에서 추출, 노드는 위임) +
+  순수 [TcpMockEngine](backend/src/main/kotlin/com/flowlink/mock/TcpMockEngine.kt)(요청 레이아웃 슬라이싱 `MockTcp.requestFields` · 규칙 `contains` AND `when`[{field,op,value}] · 응답 `responseFields`[{name,length,value,pad,padChar,encoding}] 바이트 조립(비면 `response` 텍스트 폴백) · 템플릿 `{{req.필드}}`/`{{req}}`/`{{req:o:l}}`/`{{seq}}`/`{{now}}`/`{{uuid}}` · `preview()`). TcpMockRegistry 는 엔진 위임(구 `renderTemplate` 은 delegate — 테스트 호환), Listener 가 mockId 보유(seq). `POST /api/v1/mock-servers/tcp-preview`{tcp,sample}(저장/소켓 없음, 과대 길이 400).
+  프론트 [MockTcpEditor](frontend/src/components/MockTcpEditor.tsx)(구 TcpEditor 대체 — 레이아웃 표·필드 조건·[필드|텍스트] 토글·+문자/+숫자 프리셋·`{ }` 요청 필드 삽입·미리보기 패널). 새 TCP mock 기본 spec 이 필드 모드 예시. 단위 6 + 소켓 e2e 16(EUC-KR 바이트 정확·조건 분기·텍스트 무회귀·미리보기) + 브라우저 19.
+- ⚠ 코덱은 본문/전문 전체에만(헤더·콜백 본문 미적용). `./gradlew test`(루트)는 `:plugin-sample:test` 의존성 해석 실패로 깨질 수 있음 — **`./gradlew :test`** 로 앱 모듈만 실행.
+
+## 최근 변경 (2026-09-08) — 환경(env)·실행 입력값 DB 저장 (`feat/mock-codec-transfer`)
+"환경설정이나 이런거 DB에 넣게 해" — 브라우저 localStorage 개인 스코프였던 **환경(dev/staging/prod)+변수**와 **실행 입력값(플로우별 `{{키@input}}`)**을 서버 DB 로. 즐겨찾기·패널 크기·최근 사용 등 UI 취향은 localStorage 유지.
+- **백엔드** `environment/` 모듈: [Environment](backend/src/main/kotlin/com/flowlink/core/domain/Environment.kt)(테넌트 스코프, `(tenant_id,name)` 유니크, `vars_json` text — V19 oracle, H2 는 ddl-auto) +
+  [EnvironmentService](backend/src/main/kotlin/com/flowlink/environment/EnvironmentService.kt)/[Controller](backend/src/main/kotlin/com/flowlink/environment/EnvironmentController.kt):
+  `GET /api/v1/environments` · `PUT /environments/{name}`{vars}(통째 교체, 빈 키 제거) · `POST /environments/{name}/rename`{to}(원자적, 충돌 400) · `DELETE`. **쓰기=승인 사용자**(시크릿과 같은 게이트, OIDC 는 editor). 실행 입력값은 새 테이블 없이 **AppSetting `runinput:{flowId}`** — `GET/PUT /flows/{id}/run-input`{vars}(워크스페이스 롤 read/write, 빈 값=삭제). `saveAndFlush` 로 @CreationTimestamp 즉시 반영.
+- **프론트**: [lib/environments.ts](frontend/src/lib/environments.ts)·[lib/runInput.ts](frontend/src/lib/runInput.ts) **저장 계층만 교체**(공개 API `useEnvStore/activeEnvVars/setEnvStore…` 불변 → EnvManager/EnvSwitcher/피커/시크릿 다이얼로그 무변경). 첫 구독/에디터 진입 시 `ensureEnvLoaded()` 로 서버 로드, 편집은 400ms 디바운스 diff(PUT/DELETE), 이름 변경은 서버 rename. **활성 환경만 브라우저**(`fl:env:active`). `Editor.onRun` 이 `ensureEnvLoaded()` 대기 후 env 주입.
+  **1회 이관**: 서버가 비어 있고 구 `fl:environments`/`fl:runinput:{id}` 가 있으면 자동 업로드 + 토스트 + 구 키 삭제(게스트 등 권한 없으면 조용히 건너뜀).
+- 검증: EnvironmentServiceTest 3(CRUD/rename 충돌/승인 게이트/run-input) + 전체 스위트 + 브라우저 e2e 14(API·레거시 이관 토스트·구 키 삭제·활성 유지·다이얼로그 편집 → 서버 반영·새 브라우저 컨텍스트 공유·run-input 이관) + 실행 2(`{{who@env}}` 서버 환경으로 assert SUCCEEDED). 가이드 [06장](docs/guide/06-환경-시크릿-입력.md) 갱신.
+- ⚠ 환경 변수는 평문 저장(민감값은 시크릿 볼트). 동시 편집은 마지막 저장 승(LWW). 테넌트 전역이라 워크스페이스 export 에 미포함.
+
+## 최근 변경 (2026-09-08) — DB 테이블 `flowlink_` 접두사
+"db 앞에 flowlink_ 붙여줘" — 공유 스키마 충돌 방지. 15개 엔티티 `@Table(name="flowlink_…")`(app_setting·app_user·assistant_session·environment·execution·execution_suspension·flow·flow_trigger·flow_version·folder·mock_server·node_execution·secret·workspace·workspace_member).
+- **Oracle**: [V20__table_prefix.sql](backend/src/main/resources/db/migration/oracle/V20__table_prefix.sql) — `ALTER TABLE x RENAME TO flowlink_x` ×15(FK/인덱스 자동 추종, V1~V19 는 그대로 — 체크섬 불변). 새 DB 도 V1~V19 후 V20 으로 같은 최종 상태.
+- **H2 dev**: [TablePrefixMigration](backend/src/main/kotlin/com/flowlink/common/db/TablePrefixMigration.kt) — **Hibernate(ddl-auto) 전에** 구 테이블을 이름 변경(기존 `.mv.db` 데이터 보존). `EntityManagerFactoryDependsOnPostProcessor` 로 EMF 가 이 빈에 의존. 규칙: 구만 있음→RENAME · 구/신 둘 다(이전 기동이 빈 flowlink_* 를 먼저 만든 경우)→**데이터 있는 구가 승**(신 DROP CASCADE 후 RENAME, 신의 부트스트랩 행 수 WARN) · 구가 빈 테이블→구 DROP. 첫 구현은 "신 존재 시 건너뜀"이라 실데이터가 옛 테이블에 고아로 남는 사고가 났었음(백업 `~/flowlink-h2db/flowlink.mv.db.bak-before-prefix`) → 위 규칙으로 복구 확인. AppSettingSchemaFix/MockServerSchemaFix/RetentionServiceTest 의 raw SQL 도 새 이름.
+- 검증: 전체 스위트 그린 + 라이브(:8888 기존 H2 파일 — 기동 로그에 테이블별 행 수(flow 54·execution 1267·node_execution 10511 …)와 함께 이관, API flows 26·mocks 8·executions 200 이 접두사 전과 동일, 접두사 없는 테이블은 레거시 `user_account` 만 잔존). Flyway 이력 테이블은 기본 이름 유지(운영가이드 §3).
+- ⚠ 새 테이블을 추가할 땐 `@Table(name="flowlink_…")` + Oracle 마이그레이션도 접두사 이름으로(구 이름 목록엔 넣지 않아도 됨).
+
 ## 참고 문서
 - `backend/README.md` — 백엔드 구조·설정·API 요약 · `frontend/README.md` · `infra/README.md`(배포)
 - **`docs/guide/`** — 실사용자 가이드(심플+심화 15챕터, 스크린샷) · `docs/사용가이드.md` — 한 페이지 요약본

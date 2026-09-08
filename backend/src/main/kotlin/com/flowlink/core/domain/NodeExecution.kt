@@ -16,7 +16,7 @@ import java.util.UUID
  */
 @Entity
 @Table(
-    name = "node_execution",
+    name = "flowlink_node_execution",
     indexes = [Index(name = "idx_node_exec_execution", columnList = "execution_id")]
 )
 class NodeExecution {

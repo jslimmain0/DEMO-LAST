@@ -27,7 +27,7 @@ import java.util.UUID
  */
 @Entity
 @Table(
-    name = "mock_server",
+    name = "flowlink_mock_server",
     uniqueConstraints = [UniqueConstraint(name = "uq_mock_server_tenant_slug", columnNames = ["tenant_id", "slug"])]
 )
 class MockServer {

@@ -103,10 +103,20 @@ class MockServerService(
 
     /** 요청 기록(journal, 최신순) — 테넌트 소유 확인 후. */
     @Transactional(readOnly = true)
+    /** TCP 전문 미리보기(순수 계산 — 권한: 편집 화면에서만 호출, 데이터 접근 없음). 잘못된 길이는 400. */
+    fun previewTcp(req: MockDtos.TcpPreviewRequest): TcpMockEngine.Preview {
+        val tcp = req.tcp ?: throw BadRequestException("tcp 섹션이 없습니다.")
+        return try {
+            TcpMockEngine.preview(tcp, req.sample ?: "")
+        } catch (e: IllegalArgumentException) {
+            throw BadRequestException(e.message ?: "TCP 미리보기 실패")
+        }
+    }
+
     fun requests(id: UUID): List<MockDtos.MockRequestLog> {
         findReadable(id)
         return store.journal(id).map {
-            MockDtos.MockRequestLog(it.at, it.method, it.path, it.query, it.headers, it.bodyText, it.matchedRuleId, it.status, it.delayMs, it.callbackFired)
+            MockDtos.MockRequestLog(it.at, it.method, it.path, it.query, it.headers, it.bodyText, it.matchedRuleId, it.status, it.delayMs, it.callbackFired, it.decodedBody)
         }
     }
 
@@ -189,10 +199,19 @@ class MockServerService(
            "body":"{\"message\":\"안녕하세요 {{query.name}}\",\"seq\":\"{{seq}}\"}"}
         ]}]}""".trimIndent()
 
-    /** 새 TCP 서버의 시작 예시 — 빈 포트에 4자리 길이 프리픽스 EUC-KR 전문. 앞 4바이트가 응답코드가 되게 에코. */
+    /**
+     * 새 TCP 서버의 시작 예시 — 빈 포트에 4자리 길이 프리픽스 EUC-KR 전문.
+     * 요청 레이아웃(전문코드4·계좌10)과 필드 모드 응답(코드4·계좌 에코10·잔액12 좌측0·고객명10) — 텍스트 대신 필드로 시작하게.
+     */
     private fun defaultTcpSpec(port: Int): String = """
         {"tcp":{"enabled":true,"port":$port,"charset":"EUC-KR","prefixLength":4,"prefixIncludesSelf":false,
-          "rules":[{"id":"t1","contains":"","response":"0000{{req:4:20}}"}]}}""".trimIndent()
+          "requestFields":[{"id":"q1","name":"전문코드","length":4},{"id":"q2","name":"계좌번호","length":10}],
+          "rules":[{"id":"t1","contains":"","when":[],"response":"",
+            "responseFields":[
+              {"id":"f1","name":"응답코드","length":4,"value":"0000"},
+              {"id":"f2","name":"계좌번호","length":10,"value":"{{req.계좌번호}}"},
+              {"id":"f3","name":"잔액","length":12,"value":"1500000","pad":"left","padChar":"0"},
+              {"id":"f4","name":"고객명","length":10,"value":"홍길동"}]}]}}""".trimIndent()
 
     companion object {
         private val SLUG: Pattern = Pattern.compile("[a-z0-9-]{3,40}")

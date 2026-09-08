@@ -27,23 +27,31 @@ import java.util.regex.Pattern
 class MockRuntime {
 
     /** 매칭 결과 — 규칙·경로 파라미터. */
-    data class Match(val rule: MockRule, val pathParams: Map<String, String>)
+    /** 매칭 결과 — [req] 는 라우트 코덱(prepare)까지 적용된 요청(조건·템플릿이 본 그대로). */
+    data class Match(val rule: MockRule, val pathParams: Map<String, String>, val req: MockRequest)
 
-    /** 정의 순서대로 method+경로 첫 매칭 라우트, 그 안에서 조건 만족 첫 규칙. */
-    fun match(routes: List<MockRoute>, req: MockRequest, state: Map<String, String> = emptyMap(), hits: Map<String, Int> = emptyMap()): Optional<Match> {
+    /**
+     * 정의 순서대로 method+경로 첫 매칭 라우트, 그 안에서 조건 만족 첫 규칙.
+     * [prepare] 는 경로/메서드가 맞은 라우트에 대해 조건 평가 **전** 요청을 바꿀 기회(요청 코덱 — 본문 디코딩).
+     */
+    fun match(
+        routes: List<MockRoute>, req: MockRequest, state: Map<String, String> = emptyMap(), hits: Map<String, Int> = emptyMap(),
+        prepare: ((MockRoute, MockRequest) -> MockRequest)? = null
+    ): Optional<Match> {
         for (route in routes) {
             val params = matchPath(route.path, req.path) ?: continue
             val m = if (route.method == null) "ANY" else route.method.uppercase(Locale.ROOT)
             if (m != "ANY" && m != req.method) {
                 continue
             }
+            val r = if (prepare == null) req else prepare(route, req)
             for (rule in route.rulesOrEmpty()) {
                 // 순차 응답: repeat 소진(처음 N회 매칭 후)이면 이 규칙은 건너뛰고 다음 규칙으로 폴스루
                 if (rule.repeat != null && rule.id != null && (hits[rule.id] ?: 0) >= rule.repeat) {
                     continue
                 }
-                if (conditionsPass(rule.whenOrEmpty(), req, params, state)) {
-                    return Optional.of(Match(rule, params))
+                if (conditionsPass(rule.whenOrEmpty(), r, params, state)) {
+                    return Optional.of(Match(rule, params, r))
                 }
             }
             // 경로는 맞지만 규칙 무매칭 — 다음 라우트로 넘기지 않고 404 (같은 경로 중복 정의 혼란 방지)
@@ -52,10 +60,17 @@ class MockRuntime {
         return Optional.empty()
     }
 
-    /** 규칙 → 실제 응답(바이트) + 지연 + 콜백 명세. seq 는 서버별 증가 카운터 공급자에서 받은 값. */
-    fun render(rule: MockRule, req: MockRequest, pathParams: Map<String, String>, seq: Long, state: Map<String, String> = emptyMap()): MockResponse {
+    /**
+     * 규칙 → 실제 응답(바이트) + 지연 + 콜백 명세. seq 는 서버별 증가 카운터 공급자에서 받은 값.
+     * [responseCodec] 은 템플릿 렌더가 끝난 본문 전체에 적용(응답 코덱 — 문자셋 인코딩 직전). 헤더/콜백에는 미적용.
+     */
+    fun render(
+        rule: MockRule, req: MockRequest, pathParams: Map<String, String>, seq: Long, state: Map<String, String> = emptyMap(),
+        responseCodec: ((String) -> String)? = null
+    ): MockResponse {
         val cs = MockHttp.charsetOf(rule.charset)
-        val body = template(if (rule.body == null) "" else rule.body, req, pathParams, seq, state)
+        val rendered = template(if (rule.body == null) "" else rule.body, req, pathParams, seq, state)
+        val body = if (responseCodec == null) rendered else responseCodec(rendered)
         val headers = LinkedHashMap<String, String>()
         for (kv in rule.headers ?: emptyList()) {
             if (kv.key != null && kv.key.isNotBlank()) {

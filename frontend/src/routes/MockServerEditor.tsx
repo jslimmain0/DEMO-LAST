@@ -2,13 +2,16 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { CSSProperties } from 'react'
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import type { HttpMethod, MockCond, MockRouteSpec, MockRuleSpec, MockServerSpec, MockTcpRuleSpec, MockTcpSpec } from '../api/types'
+import type { HttpMethod, MockCond, MockRouteSpec, MockRuleSpec, MockServerSpec } from '../api/types'
 import { adminApi, mockBaseUrl, mocksApi, workspacesApi } from '../api/client'
 import { AppShellTier1 } from '../app/AppShell'
 import { useAuth, usePermissions } from '../auth/AuthContext'
 import { METHOD_COLOR } from '../canvas/nodeMeta'
 import { BigTextEditor, ExpandCorner } from '../components/BigTextEditor'
 import { MockAssistantPanel } from '../components/MockAssistantPanel'
+import { MockCodecEditor } from '../components/MockCodecEditor'
+import { MockTcpEditor } from '../components/MockTcpEditor'
+import { MockExportDialog, MockReplaceSpecDialog } from '../components/MockTransferDialog'
 import { AssistantLoginGate } from '../components/AssistantLoginGate'
 import { toast } from '../components/toast'
 import { apiErrorMessage } from '../lib/apiError'
@@ -45,6 +48,7 @@ export function MockServerEditor() {
   const [dirty, setDirty] = useState(false)
   const [note, setNote] = useState<string | null>(null)
   const [aiOpen, setAiOpen] = useState(false)
+  const [transfer, setTransfer] = useState<'export' | 'import' | null>(null) // 텍스트 복붙 내보내기/가져오기(덮어쓰기)
 
   const invalidate = () => {
     void qc.invalidateQueries({ queryKey: ['mock-server', id] })
@@ -118,12 +122,14 @@ export function MockServerEditor() {
               >
                 {d.enabled ? '● 서빙 중' : '○ 꺼짐'}
               </button>
+              <button style={{ ...miniBtn, marginLeft: 'auto' }} title="이 Mock 을 JSON 텍스트로 복사/다운로드(다른 워크스페이스·서버에 붙여넣기)" onClick={() => setTransfer('export')}>⬆ 내보내기</button>
+              {canEdit && <button style={miniBtn} title="내보내기 JSON 을 붙여넣어 이 Mock 의 정의를 교체" onClick={() => setTransfer('import')}>⬇ 가져오기</button>}
               {canEdit && (
-                <button style={{ ...miniBtn, marginLeft: 'auto', border: '1px solid var(--fl-primary)', color: 'var(--fl-primary)' }} title="AI 로 mock 만들기/고치기" onClick={() => setAiOpen((v) => !v)}>
+                <button style={{ ...miniBtn, border: '1px solid var(--fl-primary)', color: 'var(--fl-primary)' }} title="AI 로 mock 만들기/고치기" onClick={() => setAiOpen((v) => !v)}>
                   ✨ AI
                 </button>
               )}
-              <button style={{ ...primaryBtn, marginLeft: canEdit ? 8 : 'auto', opacity: dirty && canEdit ? 1 : 0.55 }} disabled={!dirty || save.isPending || !canEdit} title={canEdit ? undefined : 'viewer 역할은 저장할 수 없습니다'} onClick={() => save.mutate()}>
+              <button style={{ ...primaryBtn, marginLeft: 8, opacity: dirty && canEdit ? 1 : 0.55 }} disabled={!dirty || save.isPending || !canEdit} title={canEdit ? undefined : 'viewer 역할은 저장할 수 없습니다'} onClick={() => save.mutate()}>
                 저장
               </button>
             </div>
@@ -146,15 +152,43 @@ export function MockServerEditor() {
             )}
 
             {d.kind !== 'HTTP' && (
-              <TcpEditor
+              <MockTcpEditor
                 tcp={spec.tcp ?? null}
+                readOnly={!canEdit}
                 onChange={(tcp) => mutate((s) => ({ ...s, tcp }))}
               />
             )}
 
+            {/* 전문 코덱 — 요청 전/응답 후 변환 플러그인(워크플로 TRANSFORM 과 동일 플러그인) */}
+            <section style={panel}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <h2 style={h2}>전문 코덱 <span style={{ fontWeight: 400, fontSize: 12, color: 'var(--fl-text-muted)' }}>(플러그인 — 요청 전 · 응답 후)</span></h2>
+                {spec.codec && <span style={{ ...badge, background: 'var(--fl-primary)' }}>사용 중</span>}
+              </div>
+              <p style={hint}>
+                요청 전문이 <b>매칭·템플릿에 들어가기 전</b>에 풀고(예: Base64 디코딩·복호화), 응답 전문을 <b>다 만든 뒤 나가기 전</b>에 감쌉니다(예: 인코딩·서명).
+                변환 플러그인(내장 + 업로드 JAR)을 그대로 씁니다 — 단계는 위에서부터 순서대로 체인. {d.kind !== 'HTTP' && 'TCP 전문도 같은 코덱을 거칩니다. '}
+                라우트별로 다른 코덱이 필요하면 라우트 카드의 [이 라우트만 코덱]을 쓰세요. 코덱 실패는 500(HTTP)/연결 종료(TCP)로 명확히 실패합니다.
+              </p>
+              <div style={{ marginTop: 10 }}>
+                <MockCodecEditor codec={spec.codec} readOnly={!canEdit} onChange={(codec) => mutate((s) => ({ ...s, codec }))} />
+              </div>
+            </section>
+
             {d.kind !== 'TCP' && <TestPanel base={base} ensureSaved={ensureSaved} />}
 
             <RuntimePanel id={id} canEdit={canEdit} />
+
+            {transfer === 'export' && <MockExportDialog mock={d} spec={spec} onClose={() => setTransfer(null)} />}
+            {transfer === 'import' && (
+              <MockReplaceSpecDialog
+                onClose={() => setTransfer(null)}
+                onReplace={(newSpec, warnings) => {
+                  mutate(() => newSpec)
+                  toast(`정의를 교체했습니다 — 저장하면 반영됩니다.${warnings.length ? ' ' + warnings.join(' ') : ''}`, warnings.length ? 'info' : 'ok')
+                }}
+              />
+            )}
 
             {aiOpen && (isGuest || aiPending
               ? <AssistantLoginGate reason={isGuest ? 'guest' : 'pending'} variant="overlay" onClose={() => setAiOpen(false)} />
@@ -220,6 +254,7 @@ function RuntimePanel({ id, canEdit }: { id: string; canEdit: boolean }) {
                       <div style={{ padding: '0 10px 10px', display: 'grid', gap: 6 }}>
                         {Object.keys(r.query).length > 0 && <pre style={reqPre}>query: {JSON.stringify(r.query)}</pre>}
                         {r.bodyText && <pre style={reqPre}>body: {r.bodyText}</pre>}
+                        {r.decodedBody != null && <pre style={{ ...reqPre, borderLeft: '3px solid var(--fl-primary)' }}>코덱 적용 후: {r.decodedBody}</pre>}
                         <div style={{ fontSize: 10.5, color: 'var(--fl-text-muted)' }}>{r.matchedRuleId ? `규칙 ${r.matchedRuleId}` : '매칭 규칙 없음(404)'}{r.callbackFired ? ' · 콜백 발사' : ''}{r.delayMs ? ` · 지연 ${r.delayMs}ms` : ''}</div>
                       </div>
                     )}
@@ -361,6 +396,7 @@ function RouteCard({ base, ensureSaved, route, onChange, onRemove, onDup, onUp, 
   // 이 라우트 원클릭 테스트 — 경로 파라미터({id})는 예시값으로 채워 mock 에 실제 요청
   const [test, setTest] = useState<{ status: number; body: string } | string | null>(null)
   const [testing, setTesting] = useState(false)
+  const [codecOpen, setCodecOpen] = useState(!!route.codec) // 이 라우트만 다른 전문 코덱(서버 codec 대체)
   const runTest = async () => {
     // 테스트는 저장된 mock 을 호출하므로 미저장 편집을 먼저 반영(아니면 stale 상태 테스트)
     if (!(await ensureSaved())) return
@@ -407,10 +443,22 @@ function RouteCard({ base, ensureSaved, route, onChange, onRemove, onDup, onUp, 
           />
         ))}
       </div>
-      <button
-        style={{ ...miniBtn, marginTop: 10 }}
-        onClick={() => onChange({ ...route, rules: [...route.rules, { id: newId(), status: 200, contentType: 'json', body: '{"ok":true}' }] })}
-      >+ 규칙 추가</button>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 10, flexWrap: 'wrap' }}>
+        <button
+          style={miniBtn}
+          onClick={() => onChange({ ...route, rules: [...route.rules, { id: newId(), status: 200, contentType: 'json', body: '{"ok":true}' }] })}
+        >+ 규칙 추가</button>
+        <label style={{ fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 5, cursor: 'pointer', marginLeft: 'auto', color: route.codec ? 'var(--fl-primary)' : 'var(--fl-text-muted)' }} title="서버 전문 코덱 대신 이 라우트만 다른 플러그인 단계를 적용">
+          <input type="checkbox" checked={codecOpen} onChange={(e) => { setCodecOpen(e.target.checked); if (!e.target.checked) onChange({ ...route, codec: null }) }} />
+          이 라우트만 코덱
+        </label>
+      </div>
+      {codecOpen && (
+        <div style={{ marginTop: 8, padding: 10, border: '1px dashed var(--fl-primary)', borderRadius: 'var(--fl-radius-sm)' }}>
+          <div style={{ fontSize: 11.5, color: 'var(--fl-text-muted)', marginBottom: 6 }}>이 라우트에는 서버 코덱 대신 아래 단계만 적용됩니다(통째로 대체 — 비우면 코덱 없음).</div>
+          <MockCodecEditor compact codec={route.codec} onChange={(codec) => onChange({ ...route, codec: codec ?? { } })} />
+        </div>
+      )}
     </div>
   )
 }
@@ -573,76 +621,6 @@ function RuleCard({ rule, index, total, onChange, onDup, onRemove }: {
         />
       )}
     </div>
-  )
-}
-
-// ---------- TCP mock (고정길이 전문) ----------
-
-function TcpEditor({ tcp, onChange }: { tcp: MockTcpSpec | null; onChange: (t: MockTcpSpec | null) => void }) {
-  const on = !!tcp
-  const t = tcp ?? {}
-  const set = (patch: Partial<MockTcpSpec>) => onChange({ ...t, ...patch })
-  const rules = t.rules ?? []
-  const setRule = (i: number, patch: Partial<MockTcpRuleSpec>) =>
-    set({ rules: rules.map((r, ri) => (ri === i ? { ...r, ...patch } : r)) })
-  return (
-    <section style={panel}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        <h2 style={h2}>TCP 전문 mock</h2>
-        <label style={{ fontSize: 12.5, display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
-          <input
-            type="checkbox"
-            checked={on}
-            onChange={(e) => onChange(e.target.checked
-              ? { enabled: true, port: t.port ?? 9091, charset: t.charset ?? 'EUC-KR', prefixLength: t.prefixLength ?? 4, prefixIncludesSelf: t.prefixIncludesSelf ?? false, rules: rules.length ? rules : [{ id: newId(), contains: '', response: '00{{req:4:12}}' }] }
-              : null)}
-          />
-          사용 — 저장하면 지정 포트에 TCP 리스너가 열립니다
-        </label>
-      </div>
-      <p style={hint}>
-        고정길이 전문(길이 프리픽스) 대상 시스템을 흉내냅니다 — 워크플로의 <b>TCP 전문</b> 노드가 여기로 붙습니다.
-        응답 템플릿: <code style={code}>{'{{req}}'}</code> 요청 전문 전체 · <code style={code}>{'{{req:오프셋:길이}}'}</code> 요청 바이트 슬라이스.
-      </p>
-      {on && (
-        <div style={{ marginTop: 10 }}>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 12 }}>포트</span>
-            <input style={{ ...input, width: 90, fontFamily: 'var(--fl-font-mono)' }} value={t.port ?? 9091} onChange={(e) => set({ port: Number(e.target.value) || 0 })} />
-            <span style={{ fontSize: 12 }}>인코딩</span>
-            <select style={{ ...input, minWidth: 96 }} value={t.charset ?? 'EUC-KR'} onChange={(e) => set({ charset: e.target.value })}>
-              {['EUC-KR', 'MS949', 'UTF-8', 'US-ASCII'].map((c) => <option key={c}>{c}</option>)}
-            </select>
-            <span style={{ fontSize: 12 }}>길이 프리픽스</span>
-            <input style={{ ...input, width: 60, fontFamily: 'var(--fl-font-mono)' }} value={t.prefixLength ?? 4} onChange={(e) => set({ prefixLength: Number(e.target.value) || 0 })} />
-            <label style={{ fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-              <input type="checkbox" checked={!!t.prefixIncludesSelf} onChange={(e) => set({ prefixIncludesSelf: e.target.checked })} />
-              프리픽스 포함 길이
-            </label>
-            <span style={{ ...code, marginLeft: 'auto' }}>{`${window.location.hostname || 'localhost'}:${t.port ?? 9091}`}</span>
-          </div>
-          <div style={{ display: 'grid', gap: 8, marginTop: 10 }}>
-            {rules.map((r, i) => (
-              <div key={r.id} style={{ border: '1px dashed var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', padding: 10 }}>
-                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                  <span style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--fl-text-muted)', flexShrink: 0 }}>규칙 {i + 1}</span>
-                  <span style={{ fontSize: 12, flexShrink: 0 }}>요청에 포함:</span>
-                  <input style={{ ...input, flex: 1, fontFamily: 'var(--fl-font-mono)' }} value={r.contains ?? ''} placeholder="비우면 항상 매칭(기본 규칙) — 예: BAL1" onChange={(e) => setRule(i, { contains: e.target.value })} />
-                  <button style={{ ...miniBtn, color: 'var(--fl-fail)' }} onClick={() => set({ rules: rules.filter((_, ri) => ri !== i) })}>×</button>
-                </div>
-                <textarea
-                  style={{ ...input, width: '100%', minHeight: 46, marginTop: 6, fontFamily: 'var(--fl-font-mono)', fontSize: 12, resize: 'vertical', boxSizing: 'border-box' }}
-                  value={r.response ?? ''}
-                  placeholder={'응답 전문 — 예: 00{{req:4:12}}홍길동    '}
-                  onChange={(e) => setRule(i, { response: e.target.value })}
-                />
-              </div>
-            ))}
-            <button style={{ ...miniBtn, justifySelf: 'start' }} onClick={() => set({ rules: [...rules, { id: newId(), contains: '', response: '' }] })}>+ TCP 규칙</button>
-          </div>
-        </div>
-      )}
-    </section>
   )
 }
 

@@ -4,6 +4,8 @@ import com.flowlink.common.error.BadRequestException
 import com.flowlink.common.json.JsonService
 import com.flowlink.core.domain.MockServer
 import com.flowlink.core.repository.MockServerRepository
+import com.flowlink.transform.FlowTransform
+import com.flowlink.transform.TransformRegistry
 import jakarta.annotation.PreDestroy
 import org.slf4j.LoggerFactory
 import org.springframework.boot.context.event.ApplicationReadyEvent
@@ -17,7 +19,6 @@ import java.nio.charset.Charset
 import java.nio.charset.StandardCharsets
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
-import java.util.regex.Pattern
 
 /**
  * TCP mock 리스너 수명 관리 — mock 서버 spec 의 tcp 섹션이 있고 enabled 면 지정 포트에
@@ -30,13 +31,17 @@ import java.util.regex.Pattern
 @Component
 class TcpMockRegistry(
     private val json: JsonService,
-    private val repository: MockServerRepository
+    private val repository: MockServerRepository,
+    private val transforms: TransformRegistry,
+    private val store: MockRuntimeStore
 ) {
 
     private class Listener(
+        val mockId: UUID,
         val port: Int,
         val socket: ServerSocket,
-        @Volatile var tcp: MockSpec.MockTcp
+        @Volatile var tcp: MockSpec.MockTcp,
+        @Volatile var codec: MockSpec.MockCodec? // 서버 전문 코덱(요청 디코딩 → 매칭, 응답 렌더 → 인코딩)
     )
 
     private val listeners = ConcurrentHashMap<UUID, Listener>() // mock 서버 id → 리스너
@@ -63,7 +68,8 @@ class TcpMockRegistry(
      * 포트 바인딩 실패/다른 mock 과의 충돌은 BadRequestException — 저장 트랜잭션이 롤백된다.
      */
     fun sync(m: MockServer) {
-        val tcp = parseTcp(m.specJson)
+        val spec = parseSpecQuiet(m.specJson)
+        val tcp = spec?.tcp
         val want = m.isEnabled && tcp != null && tcp.enabled != false && tcp.port != null
         if (!want) {
             stop(m.id)
@@ -75,7 +81,8 @@ class TcpMockRegistry(
         }
         val cur = listeners[m.id]
         if (cur != null && cur.port == port) {
-            cur.tcp = tcp // 같은 포트 — 규칙/문자셋만 핫스왑
+            cur.tcp = tcp // 같은 포트 — 규칙/문자셋/코덱만 핫스왑
+            cur.codec = spec?.codec
             return
         }
         // 포트 변경/신규: **새 소켓을 먼저 확보한 뒤에야** 기존 리스너를 닫는다.
@@ -89,7 +96,7 @@ class TcpMockRegistry(
             throw BadRequestException("TCP 포트 $port 바인딩 실패: ${e.message}") // 기존 리스너 그대로 — 롤백과 정합
         }
         if (cur != null) stop(m.id) // 새 소켓 확보 성공 후에만 기존 포트 리스너 종료
-        val listener = Listener(port, ss, tcp)
+        val listener = Listener(m.id, port, ss, tcp, spec?.codec)
         listeners[m.id] = listener
         Thread({ acceptLoop(m.slug, listener) }, "tcp-mock-$port").apply {
             isDaemon = true
@@ -121,12 +128,14 @@ class TcpMockRegistry(
         return start
     }
 
-    fun parseTcp(specJson: String?): MockSpec.MockTcp? {
+    fun parseTcp(specJson: String?): MockSpec.MockTcp? = parseSpecQuiet(specJson)?.tcp
+
+    private fun parseSpecQuiet(specJson: String?): MockSpec? {
         if (specJson.isNullOrBlank()) {
             return null
         }
         return try {
-            json.mapper().readValue(specJson, MockSpec::class.java)?.tcp
+            json.mapper().readValue(specJson, MockSpec::class.java)
         } catch (e: Exception) {
             null // 깨진 spec 은 updateSpec 검증이 막는다 — 여기선 리스너만 안 연다
         }
@@ -181,11 +190,26 @@ class TcpMockRegistry(
                         all
                     }
 
-                    val text = String(body, cs)
-                    val rule = l.tcp.rulesOrEmpty().firstOrNull { r ->
-                        r.contains.isNullOrEmpty() || text.contains(r.contains)
+                    // 전문 코덱: 요청은 디코딩 후 매칭/에코({{req}} 도 디코딩 전문 기준), 응답은 렌더 후 인코딩.
+                    val codec = l.codec
+                    val lookup: (String) -> FlowTransform? = { transforms.get(it).orElse(null) }
+                    val reqSteps = codec?.request
+                    val text: String
+                    val reqForTemplate: ByteArray
+                    if (reqSteps.isNullOrEmpty()) {
+                        text = String(body, cs)
+                        reqForTemplate = body
+                    } else {
+                        text = MockCodec.run(reqSteps, String(body, cs), lookup)
+                        reqForTemplate = text.toByteArray(cs)
                     }
-                    val respBytes = renderTemplate(rule?.response ?: "", body, cs).toByteArray(cs)
+                    // 요청 레이아웃 슬라이싱 → contains + 필드 조건 매칭 → 응답(텍스트 템플릿 또는 필드별 바이트 조립)
+                    val reqFields = TcpMockEngine.sliceRequest(tcp, reqForTemplate, cs)
+                    val rule = TcpMockEngine.matchRule(tcp.rulesOrEmpty(), text, reqFields)
+                    val seq = store.seqNext(l.mockId)
+                    var respBytes = TcpMockEngine.render(rule, reqForTemplate, cs, reqFields, seq).body
+                    val respSteps = codec?.response
+                    if (!respSteps.isNullOrEmpty()) respBytes = MockCodec.run(respSteps, String(respBytes, cs), lookup).toByteArray(cs)
                     if (prefixLen > 0) {
                         val declared = if (tcp.prefixIncludesSelf == true) respBytes.size + prefixLen else respBytes.size
                         out.write(String.format("%0${prefixLen}d", declared).toByteArray(StandardCharsets.US_ASCII))
@@ -196,6 +220,8 @@ class TcpMockRegistry(
                         return // EOF 모드는 연결당 1전문
                     }
                 }
+            } catch (e: MockCodec.CodecException) {
+                log.warn("TCP mock 코덱 실패(port={}): {}", l.port, e.message) // 전문이 깨진 것 — 연결 종료 + 로그
             } catch (e: Exception) {
                 // 타임아웃/파싱 실패/상대 강제종료 — 연결만 닫는다(리스너는 계속)
             }
@@ -206,42 +232,11 @@ class TcpMockRegistry(
         private val log = LoggerFactory.getLogger(TcpMockRegistry::class.java)
         private const val MAX_BODY = 1_000_000
 
-        // {{req}} = 요청 전문 전체, {{req:오프셋:길이}} = 요청 바이트 슬라이스(디코딩해 삽입)
-        private val REQ_TOKEN: Pattern = Pattern.compile("\\{\\{\\s*req(?::(\\d+):(\\d+))?\\s*}}")
+        /** 응답 템플릿 렌더({{req}}/{{req:o:l}}/{{req.필드}}/{{seq}}…) — 엔진 위임(기존 호출부·테스트 호환). */
+        internal fun renderTemplate(template: String, reqBody: ByteArray, cs: Charset): String =
+            TcpMockEngine.renderTemplate(template, reqBody, cs)
 
-        /** 응답 템플릿 렌더 — 요청 전문(바이트)을 참조하는 에코 응답을 만들 수 있다. */
-        internal fun renderTemplate(template: String, reqBody: ByteArray, cs: Charset): String {
-            if (template.isEmpty() || !template.contains("{{")) {
-                return template
-            }
-            val m = REQ_TOKEN.matcher(template)
-            val sb = StringBuilder()
-            while (m.find()) {
-                val rep = if (m.group(1) == null) {
-                    String(reqBody, cs)
-                } else {
-                    val off = m.group(1).toInt()
-                    val len = m.group(2).toInt()
-                    val from = minOf(off, reqBody.size)
-                    val to = minOf(off + len, reqBody.size)
-                    String(reqBody.copyOfRange(from, to), cs)
-                }
-                m.appendReplacement(sb, java.util.regex.Matcher.quoteReplacement(rep))
-            }
-            m.appendTail(sb)
-            return sb.toString()
-        }
-
-        internal fun charsetOf(name: String?): Charset {
-            if (name.isNullOrBlank()) {
-                return Charset.forName("EUC-KR")
-            }
-            return try {
-                Charset.forName(name.trim())
-            } catch (e: Exception) {
-                Charset.forName("EUC-KR")
-            }
-        }
+        internal fun charsetOf(name: String?): Charset = TcpMockEngine.charsetOf(name)
 
         private fun readN(input: InputStream, n: Int): ByteArray? {
             val buf = input.readNBytes(n)

@@ -69,4 +69,11 @@ class MockServerController(private val service: MockServerService) {
 
     @GetMapping("/{id}/state")
     fun state(@PathVariable id: UUID): MockDtos.MockStateView = service.runtimeState(id)
+
+    /**
+     * TCP 전문 미리보기 — 편집 중인 tcp 섹션 + 샘플 요청으로 요청 필드 분해·매칭 규칙·응답 바이트(hex/필드 오프셋/절단·패딩)를
+     * 계산만 한다(저장·소켓 없음). 필드 모드 응답을 눈으로 확인하는 용도.
+     */
+    @PostMapping("/tcp-preview")
+    fun tcpPreview(@RequestBody req: MockDtos.TcpPreviewRequest): TcpMockEngine.Preview = service.previewTcp(req)
 }

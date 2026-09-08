@@ -25,7 +25,7 @@ import { TriggersDialog } from '../components/TriggersDialog'
 import { SecretsDialog } from '../components/SecretsDialog'
 import { AssistantPanel } from '../components/AssistantPanel'
 import { AssistantLoginGate } from '../components/AssistantLoginGate'
-import { activeEnvVars, activeEnvName } from '../lib/environments'
+import { activeEnvVars, activeEnvName, ensureEnvLoaded } from '../lib/environments'
 import { activeInputVars, loadRunInput } from '../lib/runInput'
 import { toast } from '../components/toast'
 import { useAuth, usePermissions } from '../auth/AuthContext'
@@ -275,7 +275,7 @@ export function Editor() {
   }, [flowQuery.data, loadGraph])
 
   // 현재 플로우의 저장된 실행 입력을 로드 — {{ 키@input }} 바인딩 소스 + onRun 이 주입
-  useEffect(() => { loadRunInput(flowId) }, [flowId])
+  useEffect(() => { loadRunInput(flowId); void ensureEnvLoaded().catch(() => {}) }, [flowId])
 
   // 이탈 경고 — 미저장 편집 또는 실행 중(탭을 닫으면 실행이 끊긴다)
   useEffect(() => {
@@ -324,6 +324,7 @@ export function Editor() {
       // 폴링 스냅샷이 실행 경과 애니메이션(runView)도 함께 구동한다(별도 baseline 폴러 불필요).
       // pending(브라우저 협업 지점)을 만나면 처리 후 resume(즉시 반환) → 다시 폴링으로 다음 상태를 감지.
       // 활성 환경(dev/staging/prod)의 변수 + 실행 입력을 주입 — 백엔드가 `{{ 키@env }}`/`{{ 키@input }}` 로 해석한다.
+      await ensureEnvLoaded().catch(() => {}) // 서버 환경이 아직 안 왔으면 기다린다(실패 시 빈 env 로 실행)
       const envVars = activeEnvVars()
       const inputVars = activeInputVars()
       const envName = activeEnvName()

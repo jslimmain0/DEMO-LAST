@@ -4,6 +4,8 @@ import com.flowlink.common.json.JsonService
 import com.flowlink.core.domain.MockServer
 import com.flowlink.mock.MockHttp.MockRequest
 import com.flowlink.mock.MockHttp.MockResponse
+import com.flowlink.transform.FlowTransform
+import com.flowlink.transform.TransformRegistry
 import jakarta.servlet.http.HttpServletRequest
 import org.slf4j.LoggerFactory
 import org.springframework.http.ResponseEntity
@@ -31,14 +33,15 @@ class MockGatewayController(
     private val runtime: MockRuntime,
     private val dispatcher: MockCallbackDispatcher,
     private val store: MockRuntimeStore,
-    private val json: JsonService
+    private val json: JsonService,
+    private val transforms: TransformRegistry
 ) {
 
     /** 서버별 파싱된 spec 캐시(raw JSON 이 그대로면 재파싱 생략 — mock 은 반복 호출되는 경로). */
     private val specCache: MutableMap<UUID, Pair<String, MockSpec>> = ConcurrentHashMap()
 
-    /** handleCustom 결과 — 응답 + 요청 기록(journal)용 매칭 규칙 id. */
-    private data class Served(val response: MockResponse, val matchedRuleId: String?)
+    /** handleCustom 결과 — 응답 + 요청 기록(journal)용 매칭 규칙 id + 요청 코덱 결과(코덱 없으면 null). */
+    private data class Served(val response: MockResponse, val matchedRuleId: String?, val decodedBody: String? = null)
 
     @RequestMapping(path = ["/mock/{first}", "/mock/{first}/**"])
     fun handle(@PathVariable first: String, request: HttpServletRequest): ResponseEntity<ByteArray> {
@@ -62,7 +65,7 @@ class MockGatewayController(
                 store.record(server.id, MockRuntimeStore.JournalEntry(
                     Instant.now(), req.method, req.path, req.query, req.headers,
                     req.bodyText.take(MockRuntimeStore.BODY_CAP), served.matchedRuleId,
-                    res.status, res.delayMs, res.callback != null,
+                    res.status, res.delayMs, res.callback != null, served.decodedBody?.take(MockRuntimeStore.BODY_CAP),
                 ))
             }
 
@@ -104,7 +107,20 @@ class MockGatewayController(
         // 상태 있는 목: 서버(slug)별 상태 맵 + 규칙 히트수(순차 응답)를 store 에서 — 조건/템플릿에서 {{state.KEY}}·source=state.
         val state = store.state(server.id)
         val hits = store.hitsSnapshot(server.id)
-        val match = runtime.match(spec.routesOrEmpty(), req, state, hits)
+        // 전문 코덱 — 경로/메서드가 맞은 라우트의 유효 코덱(라우트 > 서버)으로 본문을 디코딩한 뒤 조건·템플릿에 넘긴다.
+        val lookup: (String) -> FlowTransform? = { transforms.get(it).orElse(null) }
+        var decoded: String? = null
+        var matchedRoute: MockSpec.MockRoute? = null
+        val match = runtime.match(spec.routesOrEmpty(), req, state, hits) { route, r ->
+            matchedRoute = route
+            val steps = MockCodec.effective(spec.codec, route.codec)?.request
+            if (steps.isNullOrEmpty()) r else {
+                val text = MockCodec.run(steps, r.bodyText, lookup)
+                decoded = text
+                val ct = r.headers.getOrDefault("content-type", "")
+                r.copy(bodyText = text, bodyFields = parseBodyFields(text, ct, MockHttp.charsetFromContentType(ct)))
+            }
+        }
         if (match.isEmpty) {
             return Served(MockResponse.of(
                 404, "application/json; charset=UTF-8",
@@ -115,10 +131,13 @@ class MockGatewayController(
         val rule = match.get().rule
         rule.id?.let { store.recordHit(server.id, it) } // repeat(순차 응답) 판정용
         val seq = store.seqNext(server.id)
-        val resp = runtime.render(rule, req, match.get().pathParams, seq, state)
+        val respSteps = MockCodec.effective(spec.codec, matchedRoute?.codec)?.response
+        val responseCodec: ((String) -> String)? =
+            if (respSteps.isNullOrEmpty()) null else { text -> MockCodec.run(respSteps, text, lookup) }
+        val resp = runtime.render(rule, match.get().req, match.get().pathParams, seq, state, responseCodec)
         // 렌더가 반환한 setState 를 서버 상태에 반영(다음 호출의 조건/템플릿에 보임)
         if (resp.setState.isNotEmpty()) state.putAll(resp.setState)
-        return Served(resp, rule.id)
+        return Served(resp, rule.id, decoded)
     }
 
     /** raw spec JSON 이 캐시된 것과 같으면 파싱 결과 재사용, 아니면 재파싱(저장 즉시 반영 유지). */

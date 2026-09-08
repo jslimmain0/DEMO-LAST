@@ -55,6 +55,12 @@ object MockDtos {
     )
 
     /** 요청 기록 1건 — mock 에 온 실제 요청(디버깅·검증용). */
+    /** TCP 미리보기 요청 — 편집 중 tcp 섹션(미저장) + 샘플 요청 전문(문자열, tcp.charset 으로 인코딩). */
+    data class TcpPreviewRequest(
+        val tcp: MockSpec.MockTcp?,
+        val sample: String? = null,
+    )
+
     data class MockRequestLog(
         val at: java.time.Instant,
         val method: String,
@@ -66,6 +72,7 @@ object MockDtos {
         val status: Int,
         val delayMs: Int,
         val callbackFired: Boolean,
+        val decodedBody: String? = null, // 요청 코덱 적용 결과(코덱 없으면 null)
     )
 
     /** 런타임 상태 스냅샷 — 상태 있는 목 디버깅용. */

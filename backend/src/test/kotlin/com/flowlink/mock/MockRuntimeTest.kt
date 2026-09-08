@@ -164,4 +164,27 @@ class MockRuntimeTest {
         val noCb = runtime.render(withCb, req("POST", "/x"), emptyMap(), 7L).callback
         assertThat(noCb).isNull()
     }
+
+    // ---------- 전문 코덱 훅 ----------
+
+    @Test
+    fun `prepare_훅이_조건_평가_전에_요청을_바꾸고_Match_req_에_담긴다`() {
+        val route = MockRoute("r", "POST", "/otp", listOf(rule("ok", listOf(MockCond("body", "otp", "eq", "111111")), "{{body.otp}}")))
+        val raw = req("POST", "/otp", bodyText = "ENC", bodyFields = emptyMap())
+        val m = runtime.match(listOf(route), raw) { _, r -> r.copy(bodyText = "otp=111111", bodyFields = mapOf("otp" to "111111")) }
+        assertThat(m).isPresent
+        assertThat(m.get().req.bodyText).isEqualTo("otp=111111")
+        val res = runtime.render(m.get().rule, m.get().req, m.get().pathParams, 1L)
+        assertThat(String(res.body, Charsets.UTF_8)).isEqualTo("111111")
+        // 훅 없이 원문으론 조건 불일치
+        assertThat(runtime.match(listOf(route), raw)).isEmpty()
+    }
+
+    @Test
+    fun `responseCodec_은_렌더된_본문_전체에_적용되고_헤더는_그대로`() {
+        val r = MockRule("x", null, 200, "text", null, listOf(KV("X-Sig", "{{query.q}}")), "hello {{query.q}}", null, null)
+        val res = runtime.render(r, req("GET", "/x", query = mapOf("q" to "kim")), emptyMap(), 1L) { it.uppercase() }
+        assertThat(String(res.body, Charsets.UTF_8)).isEqualTo("HELLO KIM")
+        assertThat(res.headers["X-Sig"]).isEqualTo("kim")
+    }
 }

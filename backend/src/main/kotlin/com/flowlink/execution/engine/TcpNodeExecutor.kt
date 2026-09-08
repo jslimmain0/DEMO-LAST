@@ -1,6 +1,7 @@
 package com.flowlink.execution.engine
 
 import com.flowlink.common.json.JsonService
+import com.flowlink.common.tcp.TcpBytes
 import com.flowlink.core.graph.GraphNode
 import com.flowlink.core.graph.TcpField
 import org.springframework.stereotype.Component
@@ -220,80 +221,16 @@ class TcpNodeExecutor(
             return buf
         }
 
-        private fun prefix(declared: Int, width: Int): ByteArray {
-            val s = String.format("%0" + width + "d", declared)
-            val b = s.toByteArray(StandardCharsets.US_ASCII)
-            if (b.size > width) {
-                // 길이 오버플로 — 하위 width 자리만(방어적)
-                return Arrays.copyOfRange(b, b.size - width, b.size)
-            }
-            return b
-        }
+        private fun prefix(declared: Int, width: Int): ByteArray = TcpBytes.prefix(declared, width)
 
-        private fun fixedField(value: String?, length: Int, pad: String?, padChar: String?, cs: Charset): ByteArray {
-            val raw = (value ?: "").toByteArray(cs)
-            if (length <= 0) {
-                return ByteArray(0)
-            }
-            if (raw.size == length) {
-                return raw
-            }
-            if (raw.size > length) {
-                return Arrays.copyOf(raw, length) // 초과 시 절단
-            }
-            val out = ByteArray(length)
-            val pb = padByte(padChar, cs)
-            if ("left".equals(pad, ignoreCase = true)) {
-                val padCount = length - raw.size
-                Arrays.fill(out, 0, padCount, pb)
-                System.arraycopy(raw, 0, out, padCount, raw.size)
-            } else { // 기본 right
-                System.arraycopy(raw, 0, out, 0, raw.size)
-                Arrays.fill(out, raw.size, length, pb)
-            }
-            return out
-        }
+        private fun fixedField(value: String?, length: Int, pad: String?, padChar: String?, cs: Charset): ByteArray =
+            TcpBytes.fixedField(value, length, pad, padChar, cs)
 
-        private fun padByte(padChar: String?, cs: Charset): Byte {
-            val p = if (padChar == null || padChar.isEmpty()) " " else padChar
-            val b = p.toByteArray(cs)
-            return if (b.isNotEmpty()) b[0] else ' '.code.toByte()
-        }
+        private fun charset(name: String?, def: Charset): Charset = TcpBytes.charset(name, def)
 
-        private fun charset(name: String?, def: Charset): Charset {
-            if (name == null || name.isBlank()) {
-                return def
-            }
-            return try {
-                Charset.forName(name)
-            } catch (e: Exception) {
-                def
-            }
-        }
+        private fun printable(bytes: ByteArray, cs: Charset): String = TcpBytes.printable(bytes, cs)
 
-        private fun printable(bytes: ByteArray, cs: Charset): String {
-            val s = String(bytes, cs)
-            val sb = StringBuilder(s.length)
-            for (i in 0 until s.length) {
-                val c = s[i]
-                sb.append(if (c.code < 0x20) '.' else c)
-            }
-            return sb.toString()
-        }
-
-        private val HEX = "0123456789ABCDEF".toCharArray()
-
-        /** 공백 구분 2자리 대문자 hex(바이트별). 미리보기용 — 룩업 테이블(바이트당 String.format 회피, CPU 증폭 방지). */
-        private fun hexDump(bytes: ByteArray): String {
-            if (bytes.isEmpty()) return ""
-            val sb = StringBuilder(bytes.size * 3)
-            for (i in bytes.indices) {
-                if (i > 0) sb.append(' ')
-                val v = bytes[i].toInt() and 0xFF
-                sb.append(HEX[v ushr 4]).append(HEX[v and 0x0F])
-            }
-            return sb.toString()
-        }
+        private fun hexDump(bytes: ByteArray): String = TcpBytes.hexDump(bytes)
     }
 }
 

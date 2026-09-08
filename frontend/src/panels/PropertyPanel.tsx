@@ -4,6 +4,7 @@ import { Suspense, lazy, useEffect, useMemo, useState } from 'react'
 import { pluginsApi, runsApi, secretsApi, settingsApi, transformsApi } from '../api/client'
 import { usePermissions } from '../auth/AuthContext'
 import { toast } from '../components/toast'
+import { TransformPicker } from '../components/TransformPicker'
 import type { Binding, BodyType, GraphNode, HttpMethod, NodeField, NodeOutput, NodeVar, ReqMode, RespType, SingleNodeRunResult, TcpField, TcpPreview, TcpRespField, WaitField as WaitFieldT } from '../api/types'
 import { BigTextEditor, ExpandCorner } from '../components/BigTextEditor'
 import { JsonTree } from '../components/JsonTree'
@@ -1250,12 +1251,14 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
         {node.type === 'transform' && (
           <>
             <label style={label}>변환</label>
-            <select
-              style={field}
+            <TransformPicker
+              list={transforms.data ?? []}
               value={node.transformId ?? ''}
-              onChange={(e) => {
-                if (e.target.value === node.transformId) return // 같은 변환 재선택은 no-op(리셋 방지)
-                const tr = (transforms.data ?? []).find((t) => t.id === e.target.value)
+              disabled={wsReadOnly}
+              placeholder="선택… (검색 가능)"
+              onChange={(picked) => {
+                if (picked === node.transformId) return // 같은 변환 재선택은 no-op(리셋 방지)
+                const tr = (transforms.data ?? []).find((t) => t.id === picked)
                 // 같은 입력 키의 기존 값/바인딩은 승계(파괴적 리셋 방지)
                 const prev = node.fields?.body ?? []
                 const body = (tr?.inputs ?? []).map((io) => {
@@ -1265,16 +1268,13 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
                 const keptConfig: Record<string, string> = {}
                 for (const p of tr?.params ?? []) if (node.config?.[p.key] != null) keptConfig[p.key] = node.config[p.key]
                 update(id, {
-                  transformId: e.target.value,
+                  transformId: picked,
                   config: keptConfig,
                   fields: { params: node.fields?.params ?? [], headers: node.fields?.headers ?? [], body },
                   outputs: (tr?.outputs ?? []).map((o) => ({ key: o.key, type: o.type })),
                 })
               }}
-            >
-              <option value="">선택…</option>
-              {(transforms.data ?? []).map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
-            </select>
+            />
             {!node.transformId && <p style={{ ...hintP, color: 'var(--fl-put)', marginTop: 6 }}>⚠ 변환을 선택하세요 — 미선택이면 실행 시 실패합니다.</p>}
             {selectedTransform?.description && (
               <p style={{ fontSize: 11.5, color: 'var(--fl-text-muted)', marginTop: 6, lineHeight: 1.5, padding: '6px 8px', background: 'var(--fl-surface-2)', borderRadius: 6 }}>

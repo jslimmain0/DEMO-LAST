@@ -73,6 +73,8 @@ class MockRuntimeStore {
         val status: Int,
         val delayMs: Int,
         val callbackFired: Boolean,
+        /** 요청 코덱을 거친 전문(코덱 없으면 null) — 원문(bodyText)과 나란히 보여 디코딩 결과를 확인. */
+        val decodedBody: String? = null,
     )
 
     data class Snapshot(val state: Map<String, String>, val seq: Long, val hits: Map<String, Int>, val requestCount: Int)

@@ -502,6 +502,7 @@ export interface MockRuleSpec {
 export interface MockRequestLog {
   at: string; method: string; path: string; query: Record<string, string>; headers: Record<string, string>
   bodyText: string; matchedRuleId: string | null; status: number; delayMs: number; callbackFired: boolean
+  decodedBody?: string | null // 요청 코덱 적용 결과(코덱 없으면 null)
 }
 export interface MockStateView { state: Record<string, string>; seq: number; hits: Record<string, number>; requestCount: number }
 
@@ -510,17 +511,46 @@ export interface MockRouteSpec {
   method: string // GET/POST/…/ANY
   path: string   // /users/{id}
   rules: MockRuleSpec[]
+  codec?: MockCodecSpec | null // 이 라우트만 다른 전문 코덱(서버 codec 대체)
 }
 
 // TCP mock — 지정 포트에 고정길이 전문(길이 프리픽스) 리스너를 연다.
-// 응답 템플릿: {{req}} 요청 전문 전체 · {{req:오프셋:길이}} 바이트 슬라이스
+// 응답 템플릿: {{req}} 요청 전문 전체 · {{req:오프셋:길이}} 바이트 슬라이스 · {{req.필드}} 요청 레이아웃 필드 · {{seq}} {{now}} {{uuid}}
+export interface MockTcpReqField { id: string; name?: string; length?: number; encoding?: string } // 요청 레이아웃(바이트 길이 누적 오프셋)
+export interface MockTcpCond { field?: string; op?: 'eq' | 'ne' | 'contains' | 'startswith' | 'endswith' | 'regex' | 'exists'; value?: string }
+export interface MockTcpRespField {
+  id: string
+  name?: string
+  length?: number       // 바이트
+  value?: string        // 템플릿
+  pad?: 'left' | 'right' // 기본 right(문자). 숫자/금액은 left + '0'
+  padChar?: string
+  encoding?: string     // 필드별(없으면 tcp.charset)
+}
 export interface MockTcpRuleSpec {
   id: string
-  contains?: string // 디코딩된 요청 전문에 포함되면 매칭(비면 항상 = 기본 규칙)
-  response?: string
+  contains?: string // 디코딩된 요청 전문에 포함되면 매칭(비면 항상 = 기본 규칙). when 과 AND
+  when?: MockTcpCond[] // 요청 레이아웃 필드 조건(AND)
+  response?: string    // 텍스트 템플릿(responseFields 가 비어 있을 때)
+  responseFields?: MockTcpRespField[] // 있으면 필드별 바이트 조립이 우선
+}
+export interface MockTcpPreview {
+  encoding: string
+  requestFields: Array<{ name: string; offset: number; length: number; value: string; encoding: string }>
+  requestBytes: number
+  matchedRuleId: string | null
+  matchedRuleIndex: number | null
+  totalBytes: number
+  prefixLen: number
+  declaredPrefix: number | null
+  bodyBytes: number
+  hex: string
+  printable: string
+  fields: TcpPreviewField[]
 }
 
 export interface MockTcpSpec {
+  requestFields?: MockTcpReqField[]
   enabled?: boolean
   port?: number            // 1024~65535
   charset?: string         // 기본 EUC-KR
@@ -529,9 +559,23 @@ export interface MockTcpSpec {
   rules?: MockTcpRuleSpec[]
 }
 
+// 전문 코덱 — 요청 전문이 매칭·템플릿에 들어가기 전(request) / 응답 전문을 다 만든 뒤 나가기 전(response)
+// 변환 플러그인(FlowTransform)을 순서대로 적용. HTTP 본문·TCP 전문 모두 대상. 라우트 codec 이 있으면 서버 codec 대신(통째로).
+export interface MockCodecStep {
+  id: string                                  // 변환 플러그인 id (GET /transforms)
+  config?: Array<{ key: string; value: string }>
+  inputKey?: string                           // 다중 포트 플러그인일 때만(기본 첫 입력)
+  outputKey?: string                          // (기본 첫 출력)
+}
+export interface MockCodecSpec {
+  request?: MockCodecStep[]
+  response?: MockCodecStep[]
+}
+
 export interface MockServerSpec {
   routes?: MockRouteSpec[]
   tcp?: MockTcpSpec | null
+  codec?: MockCodecSpec | null
 }
 
 // CUSTOM=레거시(HTTP·TCP 둘 다) · HTTP=경로/응답 · TCP=소켓 전문
@@ -543,7 +587,8 @@ export interface MockServerSummary {
   slug: string
   kind: MockKind
   enabled: boolean
-  updatedAt: string | null  workspaceId?: string | null
+  updatedAt: string | null
+  workspaceId?: string | null
 }
 
 export interface MockServerDetail extends MockServerSummary {

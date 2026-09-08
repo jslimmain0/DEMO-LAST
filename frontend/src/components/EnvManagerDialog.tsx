@@ -1,7 +1,7 @@
 import type { CSSProperties } from 'react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { duplicateKeys, parseDotEnv } from '../lib/bulkPaste'
-import { getEnvStore, setEnvStore, useEnvStore } from '../lib/environments'
+import { getEnvStore, renameEnv as renameEnvOnServer, setEnvStore, useEnvStore } from '../lib/environments'
 import { Modal } from './Modal'
 import { toast } from './toast'
 
@@ -31,12 +31,8 @@ export function EnvManagerDialog({ onClose }: { onClose: () => void }) {
   }
   const renameEnv = (from: string, to: string) => {
     const t = to.trim()
-    const s = getEnvStore()
-    if (!t || t === from || s.envs[t]) return
-    const envs: Record<string, Record<string, string>> = {}
-    for (const [k, v] of Object.entries(s.envs)) envs[k === from ? t : k] = v
-    setEnvStore({ active: s.active === from ? t : s.active, envs })
-    setSelected(t)
+    if (!t || t === from || getEnvStore().envs[t]) return
+    void renameEnvOnServer(from, t).then(() => { if (getEnvStore().envs[t]) setSelected(t) })
   }
   const duplicateEnv = (name: string) => {
     const s = getEnvStore()

@@ -174,6 +174,9 @@ export const mocksApi = {
   clearRequests: (id: string) => http.delete(`/mock-servers/${id}/requests`).then(() => undefined),
   reset: (id: string) => http.post(`/mock-servers/${id}/reset`).then(() => undefined),
   state: (id: string) => http.get<import('./types').MockStateView>(`/mock-servers/${id}/state`).then((r) => r.data),
+  // TCP 전문 미리보기 — 편집 중 tcp 섹션(미저장) + 샘플 요청 → 요청 필드 분해·매칭 규칙·응답 바이트(저장/소켓 없음)
+  tcpPreview: (tcp: import('./types').MockTcpSpec, sample: string) =>
+    http.post<import('./types').MockTcpPreview>('/mock-servers/tcp-preview', { tcp, sample }).then((r) => r.data),
 }
 
 /**
@@ -199,6 +202,20 @@ export interface RelaySetting {
   effective: string
   auto: string | null
 }
+// 실행 환경(dev/staging/prod)+변수 — 서버 DB(테넌트 스코프, 팀 공유). 활성 환경 선택만 브라우저.
+export interface EnvView { name: string; vars: Record<string, string>; updatedAt: string | null }
+export const environmentsApi = {
+  list: () => http.get<EnvView[]>('/environments').then((r) => r.data),
+  put: (name: string, vars: Record<string, string>) => http.put<EnvView>(`/environments/${encodeURIComponent(name)}`, { vars }).then((r) => r.data),
+  rename: (name: string, to: string) => http.post<EnvView>(`/environments/${encodeURIComponent(name)}/rename`, { to }).then((r) => r.data),
+  remove: (name: string) => http.delete(`/environments/${encodeURIComponent(name)}`).then(() => undefined),
+}
+// 실행 입력값(플로우별 {{키@input}}) — 플로우별 DB 저장
+export const runInputApi = {
+  get: (flowId: string) => http.get<{ vars: Record<string, string> }>(`/flows/${flowId}/run-input`).then((r) => r.data),
+  put: (flowId: string, vars: Record<string, string>) => http.put<{ vars: Record<string, string> }>(`/flows/${flowId}/run-input`, { vars }).then((r) => r.data),
+}
+
 export const settingsApi = {
   relay: () => http.get<RelaySetting>('/settings/relay').then((r) => r.data),
   saveRelay: (value: string | null) => http.put<RelaySetting>('/settings/relay', { value }).then((r) => r.data),

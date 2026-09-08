@@ -2,12 +2,13 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { CSSProperties } from 'react'
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import type { MockServerSummary } from '../api/types'
+import type { MockServerDetail, MockServerSummary } from '../api/types'
 import { mockBaseUrl, mocksApi, workspacesApi } from '../api/client'
 import { AppShellTier1 } from '../app/AppShell'
 import { useAuth, usePermissions } from '../auth/AuthContext'
 import { AskDialog } from '../components/AskDialog'
 import type { AskSpec } from '../components/AskDialog'
+import { MockExportDialog, MockImportDialog } from '../components/MockTransferDialog'
 import { apiErrorMessage } from '../lib/apiError'
 import { relTime } from '../lib/format'
 
@@ -44,6 +45,8 @@ export function MockServers() {
   const [type, setType] = useState<'HTTP' | 'TCP'>('HTTP')
   const [error, setError] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
+  const [importing, setImporting] = useState(false) // 내보내기 JSON 붙여넣기 → 새 Mock
+  const [exporting, setExporting] = useState<MockServerDetail | null>(null)
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ['mock-servers'] })
 
@@ -91,6 +94,7 @@ export function MockServers() {
                 <option key={w.id} value={w.id}>{w.kind === 'PERSONAL' ? '🔒' : w.kind === 'TEAM' ? '👥' : '🌐'} {w.name}</option>
               ))}
             </select>
+            {canEdit && <button onClick={() => setImporting(true)} style={ghostBtn} title="내보내기 JSON 을 붙여넣어 새 Mock 서버로">⬇ 가져오기</button>}
             {!creating && canEdit && <button onClick={() => setCreating(true)} style={primaryBtn}>+ 새 Mock 서버</button>}
           </div>
         </div>
@@ -123,7 +127,7 @@ export function MockServers() {
 
         <div style={{ display: 'grid', gap: 10, marginTop: 24 }}>
           {list.map((s) => (
-            <MockCard key={s.id} server={s} tenant={me?.tenant} readOnly={!canEdit} onToggle={() => toggle.mutate(s)} onRemove={() => setAsk({ title: 'Mock 서버 삭제', danger: true, confirmLabel: '삭제', message: `'${s.name}' Mock 서버를 삭제할까요? 되돌릴 수 없습니다.`, onConfirm: () => remove.mutate(s.id) })} />
+            <MockCard key={s.id} server={s} tenant={me?.tenant} readOnly={!canEdit} onToggle={() => toggle.mutate(s)} onExport={(d) => setExporting(d)} onRemove={() => setAsk({ title: 'Mock 서버 삭제', danger: true, confirmLabel: '삭제', message: `'${s.name}' Mock 서버를 삭제할까요? 되돌릴 수 없습니다.`, onConfirm: () => remove.mutate(s.id) })} />
           ))}
           {servers.isSuccess && list.length === 0 && !creating && (
             <div style={emptyBox}>
@@ -137,11 +141,13 @@ export function MockServers() {
         </div>
       </div>
       {ask && <AskDialog spec={ask} onClose={() => setAsk(null)} />}
+      {importing && <MockImportDialog workspaceId={wsId === 'public' ? null : wsId} onClose={() => setImporting(false)} onImported={() => void invalidate()} />}
+      {exporting && <MockExportDialog mock={exporting} onClose={() => setExporting(null)} />}
     </AppShellTier1>
   )
 }
 
-function MockCard({ server: s, tenant, readOnly, onToggle, onRemove }: { server: MockServerSummary; tenant?: string | null; readOnly?: boolean; onToggle: () => void; onRemove: () => void }) {
+function MockCard({ server: s, tenant, readOnly, onToggle, onExport, onRemove }: { server: MockServerSummary; tenant?: string | null; readOnly?: boolean; onToggle: () => void; onExport: (d: MockServerDetail) => void; onRemove: () => void }) {
   const navigate = useNavigate()
   const detail = useQuery({ queryKey: ['mock-server', s.id], queryFn: () => mocksApi.get(s.id) })
   const routeCount = detail.data?.spec?.routes?.length
@@ -183,6 +189,7 @@ function MockCard({ server: s, tenant, readOnly, onToggle, onRemove }: { server:
         <button disabled={readOnly} onClick={(e) => { e.stopPropagation(); onToggle() }} title={readOnly ? 'viewer 역할은 변경할 수 없습니다' : s.enabled ? '서빙 중 — 클릭하면 끔' : '꺼짐 — 클릭하면 켬'} style={{ ...pill, opacity: readOnly ? 0.5 : 1, color: s.enabled ? 'var(--fl-ok)' : 'var(--fl-text-muted)', borderColor: s.enabled ? 'color-mix(in srgb, var(--fl-ok) 40%, var(--fl-border))' : 'var(--fl-border)' }}>
           {s.enabled ? '● 켜짐' : '○ 꺼짐'}
         </button>
+        {detail.data && <button className="fl-card-actions" onClick={(e) => { e.stopPropagation(); onExport(detail.data!) }} title="JSON 텍스트로 내보내기(복사·붙여넣기)" aria-label={`${s.name} 내보내기`} style={pill}>⬆ 내보내기</button>}
         {!readOnly && <button className="fl-card-actions" onClick={(e) => { e.stopPropagation(); onRemove() }} title="삭제" aria-label={`${s.name} 삭제`} style={{ ...pill, color: 'var(--fl-fail)', borderColor: 'var(--fl-border)' }}>삭제</button>}
       </div>
     </div>

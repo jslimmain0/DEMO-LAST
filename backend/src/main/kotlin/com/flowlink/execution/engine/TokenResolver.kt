@@ -1,6 +1,7 @@
 package com.flowlink.execution.engine
 
 import com.flowlink.common.json.JsonService
+import com.flowlink.common.text.NowTokens
 import com.flowlink.core.graph.Binding
 import com.flowlink.core.graph.NodeField
 import org.springframework.stereotype.Component
@@ -12,6 +13,8 @@ import java.util.regex.Pattern
  *
  * <p>토큰 형태: {@code {{ key }}}(bare, 가장 가까운 상위), {@code {{ key@sourceId }}}(명시),
  * {@code {{ key@req:sourceId }}}(요청값 스코프).
+ * <p>현재 일시([NowTokens]): {@code {{ now }}}(ISO UTC) · {@code {{ now:yyyyMMddHHmmss }}}(패턴, 기본 KST) · {@code {{ today }}} · {@code {{ time }}}
+ * · {@code {{ now:yyyyMMdd@UTC }}}(타임존 — `@` 뒤가 ZoneId 면 타임존, 아니면 노드 id). bare {@code now/today/time} 은 상위 노드에 같은 키가 있으면 그것이 우선.
  */
 @Component
 class TokenResolver(private val json: JsonService) {
@@ -63,7 +66,7 @@ class TokenResolver(private val json: JsonService) {
             val key = m.group(1)
             val req = m.group(2) != null
             val srcId = m.group(3)
-            val replacement: String? = if (srcId != null) {
+            val replacement: String? = timeToken(key, req, srcId, ctx) ?: if (srcId != null) {
                 pickVal(ctx.raw((if (req) "req:" else "") + srcId), key)
             } else {
                 nearestUpstream(key, ctx)
@@ -76,6 +79,7 @@ class TokenResolver(private val json: JsonService) {
 
     /** IF 표현식 평가용 — 토큰을 (문자열이 아닌) 원형 객체로 해석한다. 없거나 null이면 null. */
     fun resolveTokenObject(key: String, req: Boolean, srcId: String?, ctx: ExecutionContext): Any? {
+        timeObject(key, req, srcId, ctx)?.let { return it }
         if (srcId != null) {
             return pickObject(ctx.raw((if (req) "req:" else "") + srcId), key)
         }
@@ -89,6 +93,34 @@ class TokenResolver(private val json: JsonService) {
             }
         }
         return null
+    }
+
+    /**
+     * 현재 일시 토큰 — 시각 토큰이 아니면 null(일반 해석으로). bare `now`/`today`/`time` 은 상위 노드에 같은 키가 있으면 그것(기존 의미 보존),
+     * 패턴형(`now:…`)은 항상 시각. `@타임존`(ZoneId) 이면 그 타임존, `@노드id` 면 일반 노드 참조. 잘못된 패턴은 빈 문자열.
+     */
+    private fun timeToken(key: String, req: Boolean, srcId: String?, ctx: ExecutionContext): String? {
+        if (req || !NowTokens.isTimeKey(key)) return null
+        if (srcId == null) {
+            if (!NowTokens.hasPattern(key)) nearestUpstream(key, ctx)?.let { return it }
+            return NowTokens.resolve(key) ?: ""
+        }
+        return if (NowTokens.isZone(srcId)) (NowTokens.resolve(key, srcId) ?: "") else null
+    }
+
+    private fun timeObject(key: String, req: Boolean, srcId: String?, ctx: ExecutionContext): Any? {
+        if (req || !NowTokens.isTimeKey(key)) return null
+        if (srcId == null) {
+            if (!NowTokens.hasPattern(key)) {
+                for (k in ctx.keysReversed()) {
+                    if (k.startsWith("req:")) continue
+                    val o = pickObject(ctx.raw(k), key)
+                    if (o != null) return o
+                }
+            }
+            return NowTokens.resolve(key) ?: ""
+        }
+        return if (NowTokens.isZone(srcId)) (NowTokens.resolve(key, srcId) ?: "") else null
     }
 
     private fun pickObject(obj: Any?, key: String): Any? {
@@ -174,9 +206,10 @@ class TokenResolver(private val json: JsonService) {
 
     companion object {
         // key 클래스에 한글 포함(응답 키가 한글인 API) + 중첩 경로 문자(. [ ] — items[0].id) · sourceId 클래스 [\w-].
+        // 현재 일시 토큰(now/today/time)은 `:패턴`(공백·기호 허용, `@`·중괄호 제외)이 붙을 수 있어 별도 갈래 — 그룹 번호(1 key / 2 req: / 3 sourceId)는 불변.
         // 프론트 lib/tokenGrammar.ts 와 1:1 미러 — 같이 바꿀 것.
         private val TOKEN: Pattern =
-            Pattern.compile("\\{\\{\\s*([\\w.\\[\\]가-힣-]+)(?:@(req:)?([\\w-]+))?\\s*}}")
+            Pattern.compile("\\{\\{\\s*((?:(?:now|today|time)(?::[^@{}\\s][^@{}]*?)?|[\\w.\\[\\]가-힣-]+))(?:@(req:)?([\\w-]+))?\\s*}}")
 
         @JvmStatic
         fun tokenPattern(): Pattern = TOKEN

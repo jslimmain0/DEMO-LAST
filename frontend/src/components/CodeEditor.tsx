@@ -25,7 +25,11 @@ export interface CodeEditorHandle {
 }
 
 const BEAUTIFY = { indent_size: 2, indent_char: ' ', wrap_line_length: 0, preserve_newlines: true, max_preserve_newlines: 1, indent_inner_html: true, end_with_newline: false, unformatted: [] as string[], content_unformatted: ['pre', 'textarea'], extra_liners: [] as string[] }
-const BUILTIN_TOKENS = ['uuid', 'seq', 'now', 'body']
+const BUILTIN_TOKENS: Array<[string, string]> = [
+  ['uuid', '내장 · 랜덤 UUID'], ['seq', '내장 · 증가 카운터'], ['body', '내장 · 요청 본문 전체'],
+  ['now', '내장 · 현재 일시 ISO(UTC)'], ['today', '내장 · 오늘 yyyyMMdd (KST)'], ['time', '내장 · 현재 HHmmss (KST)'],
+  ['now:yyyyMMddHHmmss', '내장 · 현재 일시 패턴 (KST)'], ['now:yyyy-MM-dd HH:mm:ss', '내장 · 현재 일시 패턴 (KST)'], ['now:yyyyMMdd@UTC', '내장 · 타임존 지정'],
+]
 
 /**
  * 코드 편집기(CodeMirror 6) — BigTextEditor 가 HTML/JSON/XML 본문일 때 textarea 대신 쓴다.
@@ -89,7 +93,7 @@ const CodeEditor = forwardRef<CodeEditorHandle, {
       if (!m) return null
       const options: Completion[] = []
       for (const s of sourcesRef.current) for (const it of s.items) options.push({ label: `{{ ${it.key}@${s.id} }}`, detail: s.name, type: 'variable', boost: 1 })
-      for (const b of BUILTIN_TOKENS) options.push({ label: `{{ ${b} }}`, detail: '내장', type: 'keyword' })
+      for (const [b, d] of BUILTIN_TOKENS) options.push({ label: `{{ ${b} }}`, detail: d, type: 'keyword' })
       return { from: m.from, options, validFor: /^\{\{\s*[^{}]*$/ }
     }
     const report = (state: EditorState) => {

@@ -67,4 +67,16 @@ class MockTemplateTest {
         assertThat(MockTemplate.JsonPaths.setText(root, "a.none", "?")).isFalse()
         assertThat(root.toString()).isEqualTo("""{"a":{"b":"ENC"},"arr":["x","Z"]}""")
     }
+
+    @Test
+    fun `현재_일시_토큰`() {
+        val c = ctx()
+        assertThat(MockTemplate.render("{{ today }}", c)).matches("\\d{8}")
+        assertThat(MockTemplate.render("{{today}}|{{time}}", c)).matches("\\d{8}\\|\\d{6}")
+        assertThat(MockTemplate.render("{{ now:yyyy-MM-dd HH:mm:ss }}", c)).matches("\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}")
+        assertThat(MockTemplate.render("{{ now:yyyyMMdd@UTC }}", c)).matches("\\d{8}")
+        assertThat(MockTemplate.render("{{now}}", c)).endsWith("Z")
+        assertThat(MockTemplate.render("{{ now:j }}", c)).isEmpty()      // 잘못된 패턴
+        assertThat(MockTemplate.render("{{ time@body }}", c)).isEmpty()  // 본문 필드 참조(없음) — 시각 토큰 아님
+    }
 }

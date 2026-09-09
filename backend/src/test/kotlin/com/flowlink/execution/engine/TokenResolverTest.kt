@@ -5,6 +5,7 @@ import com.flowlink.common.json.JsonService
 import com.flowlink.core.graph.Binding
 import com.flowlink.core.graph.NodeField
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 /** 바인딩/토큰 해석이 프로토타입 의미와 일치하는지 검증. */
@@ -173,5 +174,25 @@ class TokenResolverTest {
         assertEquals("x=", resolver.resolveTokens("x={{ user[5]@n1 }}", ctx))
         // bare — n2(문자열)에선 부재 → n1 로 폴스루
         assertEquals("kim", resolver.resolveTokens("{{ user.name }}", ctx))
+    }
+
+    /** 현재 일시 토큰 — bare/패턴/타임존 · 상위 노드 같은 키 우선 · 접두어가 같은 일반 키 무영향. */
+    @Test
+    fun nowTokens() {
+        val ctx = ExecutionContext()
+        assertTrue(resolver.resolveTokens("{{ today }}", ctx).matches(Regex("\\d{8}")))
+        assertTrue(resolver.resolveTokens("{{ time }}", ctx).matches(Regex("\\d{6}")))
+        assertTrue(resolver.resolveTokens("{{ now:yyyy-MM-dd HH:mm }}", ctx).matches(Regex("\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}")))
+        assertTrue(resolver.resolveTokens("{{ now }}", ctx).endsWith("Z"))
+        assertTrue(resolver.resolveTokens("{{ now:yyyyMMdd@UTC }}", ctx).matches(Regex("\\d{8}")))
+        assertEquals("x=", resolver.resolveTokens("x={{ now:j }}", ctx)) // 잘못된 패턴 → 빈 값
+        assertEquals("{{ now: }}", resolver.resolveTokens("{{ now: }}", ctx)) // 빈 패턴은 토큰이 아님(원문)
+        ctx.putOutput("n1", mapOf("now" to "fixed", "timeout" to "30"))
+        assertEquals("fixed", resolver.resolveTokens("{{ now }}", ctx)) // 상위 노드에 같은 키 → 그것(기존 의미)
+        assertEquals("fixed", resolver.resolveTokens("{{ now@n1 }}", ctx)) // 노드 id 는 타임존이 아님
+        assertEquals("30", resolver.resolveTokens("{{ timeout@n1 }}", ctx)) // time 접두어라도 일반 키
+        assertTrue(resolver.resolveTokens("{{ now:yyyy }}", ctx).matches(Regex("\\d{4}"))) // 패턴형은 항상 시각
+        assertEquals(8, (resolver.resolveTokenObject("today", false, null, ctx) as String).length)
+        assertEquals("fixed", resolver.resolveLiteral("{{ now }}", ctx))
     }
 }

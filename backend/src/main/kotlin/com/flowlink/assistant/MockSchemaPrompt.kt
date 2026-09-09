@@ -40,7 +40,7 @@ Callback(응답 후 웹훅 발사 — 승인/입금 노티): {"afterMs":1000,"ur
 
 ## 응답/URL/콜백 템플릿 문법 (워크플로의 노드 바인딩 {{ key@노드id }} 와는 다른 문맥 — 소스는 아래 고정 이름만)
 {{path.x}} 경로 파라미터 · {{query.x}} 쿼리 · {{body.x}} 요청 본문(JSON/폼) 필드 · {{header.x}} 요청 헤더 ·
-{{state.x}} 서버 상태 · {{body}} 요청 본문 전체 · {{uuid}} 랜덤 UUID · {{seq}} 증가 카운터 · {{now}} 현재시각.
+{{state.x}} 서버 상태 · {{body}} 요청 본문 전체 · {{uuid}} 랜덤 UUID · {{seq}} 증가 카운터 · {{now}} 현재시각(ISO UTC) · {{today}} yyyyMMdd · {{time}} HHmmss · {{now:패턴}} 현재 일시(Java 패턴, 기본 KST — 예 {{now:yyyyMMddHHmmss}}, 타임존 {{now:yyyyMMdd@UTC}}).
 - 같은 뜻의 칩 문법도 허용: {{ x@body }} {{ x@query }} {{ x@path }} {{ x@header }} {{ x@state }}. body 는 점 경로 가능({{ user.addr.city@body }}, {{ items[0].id@body }}).
 - 시크릿: {{ 이름@secret }} (시크릿 볼트 값 — API 키/서명 키. 값을 직접 쓰지 말고 이 토큰으로).
 

@@ -8,8 +8,11 @@ const SOURCES = new Set(['body', 'query', 'path', 'header', 'state', 'secret', '
 const BUILTIN: Record<string, () => string> = {
   uuid: () => '3f9c2a10-7b4e-4c1d-9e2a-5d8f1c0b7a61',
   seq: () => '1',
-  now: () => new Date().toISOString(),
 }
+// 현재 일시 토큰 — 백엔드 NowTokens 미러: now | now:패턴 | today | time (+@타임존). 미리보기라 타임존은 KST/UTC/고정 오프셋만 정확(그 외 지역명은 KST 로 근사).
+const TIME_RE = /^(now|today|time)(?::(.*?))?(?:@([^@]+))?$/
+const ZONE_RE = /^(UTC|GMT|Z|[+-]\d{2}:?\d{2}|[A-Za-z]+\/[A-Za-z_]+)$/i
+const isTimeExpr = (inner: string): boolean => { const m = TIME_RE.exec(inner); return !!m && m[2] !== '' && (!m[3] || ZONE_RE.test(m[3])) }
 
 export interface TemplateToken {
   raw: string           // 원문 토큰 `{{ orderId@body }}`
@@ -25,7 +28,7 @@ export function parseTemplateToken(raw: string): TemplateToken | null {
   if (!m) return null
   const inner = m[1].trim()
   if (!inner) return null
-  if (inner in BUILTIN) return { raw, id: inner, key: inner, source: null, builtin: true }
+  if (inner in BUILTIN || isTimeExpr(inner)) return { raw, id: inner, key: inner, source: null, builtin: true }
   if (inner === 'body' || inner === 'req') return { raw, id: inner, key: inner, source: null, builtin: true }
   if (/^req:\d+:\d+$/.test(inner)) return { raw, id: inner, key: inner, source: 'req', builtin: true }
   const at = inner.lastIndexOf('@')
@@ -58,9 +61,70 @@ export function sampleFor(t: TemplateToken, samples: Record<string, string>): st
   if (t.id in samples && samples[t.id] !== '') return samples[t.id]
   if (t.key in samples && samples[t.key] !== '') return samples[t.key]
   if (t.id in BUILTIN) return BUILTIN[t.id]()
+  if (t.builtin && isTimeExpr(t.id)) return formatNow(t.id)
   if (t.id === 'body') return samples.body ?? '«body»'
   if (t.id === 'req' || t.id.startsWith('req:')) return samples.req ?? '«req»'
   return `«${t.key}»`
+}
+
+/** 타임존 → UTC 기준 분 오프셋. KST 기본, UTC/GMT/Z=0, ±hh:mm 고정, 그 외 지역명은 KST 근사(미리보기 용도). */
+function zoneOffsetMin(zone: string | undefined): number {
+  if (!zone) return 540
+  if (/^(UTC|GMT|Z)$/i.test(zone)) return 0
+  const m = /^([+-])(\d{2}):?(\d{2})$/.exec(zone)
+  if (m) return (m[1] === '-' ? -1 : 1) * (Number(m[2]) * 60 + Number(m[3]))
+  return 540
+}
+
+/**
+ * 현재 일시 토큰 포맷(미리보기) — Java DateTimeFormatter 패턴의 흔한 글자(y M d H h m s S a E)와 '따옴표' 리터럴만 지원.
+ * `now`=ISO UTC(백엔드와 동일), `now@타임존`=그 오프셋의 ISO, `today`=yyyyMMdd, `time`=HHmmss.
+ */
+export function formatNow(expr: string, at: Date = new Date()): string {
+  const m = TIME_RE.exec(expr.trim())
+  if (!m) return `«${expr}»`
+  const [, name, pattern, zone] = m
+  const off = zoneOffsetMin(zone)
+  const d = new Date(at.getTime() + off * 60_000) // UTC getter 로 읽으면 그 타임존의 벽시계
+  const p = pattern || (name === 'today' ? 'yyyyMMdd' : name === 'time' ? 'HHmmss' : '')
+  if (!p) {
+    if (!zone) return at.toISOString()
+    const sign = off < 0 ? '-' : '+'; const a = Math.abs(off)
+    return `${fmtPattern("yyyy-MM-dd'T'HH:mm:ss.SSS", d)}${sign}${String(Math.floor(a / 60)).padStart(2, '0')}:${String(a % 60).padStart(2, '0')}`
+  }
+  return fmtPattern(p, d)
+}
+
+function fmtPattern(p: string, d: Date): string {
+  const pad = (n: number, w: number) => String(n).padStart(w, '0')
+  const Y = d.getUTCFullYear(), Mo = d.getUTCMonth() + 1, D = d.getUTCDate(), H = d.getUTCHours(), Mi = d.getUTCMinutes(), S = d.getUTCSeconds(), Ms = d.getUTCMilliseconds(), W = d.getUTCDay()
+  const days = ['일', '월', '화', '수', '목', '금', '토']
+  let out = ''
+  for (let i = 0; i < p.length;) {
+    const c = p[i]
+    if (c === "'") { // 'literal' ('' = ')
+      const j = p.indexOf("'", i + 1)
+      if (j === i + 1) { out += "'"; i += 2; continue }
+      out += j < 0 ? p.slice(i + 1) : p.slice(i + 1, j); i = j < 0 ? p.length : j + 1; continue
+    }
+    if (!/[A-Za-z]/.test(c)) { out += c; i++; continue }
+    let n = 1; while (p[i + n] === c) n++
+    switch (c) {
+      case 'y': out += n === 2 ? pad(Y % 100, 2) : pad(Y, n); break
+      case 'M': out += n >= 3 ? `${Mo}월` : pad(Mo, n); break
+      case 'd': out += pad(D, n); break
+      case 'H': out += pad(H, n); break
+      case 'h': out += pad(H % 12 || 12, n); break
+      case 'm': out += pad(Mi, n); break
+      case 's': out += pad(S, n); break
+      case 'S': out += pad(Ms, 3).slice(0, n).padEnd(n, '0'); break
+      case 'a': out += H < 12 ? '오전' : '오후'; break
+      case 'E': out += n >= 4 ? `${days[W]}요일` : days[W]; break
+      default: out += c.repeat(n)
+    }
+    i += n
+  }
+  return out
 }
 
 /** 토큰을 샘플 값으로 치환한 문서. */

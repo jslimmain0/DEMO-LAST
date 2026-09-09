@@ -121,7 +121,8 @@ TCP Mock 은 지정 포트에 **고정길이 전문(길이 프리픽스) 리스�
 | `{{ q@query }}` `{{ id@path }}` `{{ x-token@header }}` `{{ status@state }}` | `{{query.q}}` … | 쿼리·경로 파라미터·요청 헤더·서버 상태 |
 | `{{ 계좌번호@req }}` | `{{req.계좌번호}}` | TCP 요청 레이아웃 필드 |
 | **`{{ apiKey@secret }}`** | — | **시크릿 볼트** 값(공통 + Vault + 이 Mock 의 **시크릿 환경** 오버레이). 응답 헤더 `Bearer {{ apiKey@secret }}`, 코덱의 키/IV 등 |
-| `{{ body }}` `{{ uuid }}` `{{ seq }}` `{{ now }}` | 동일 | 본문 전체·랜덤·카운터·현재시각 |
+| `{{ body }}` `{{ uuid }}` `{{ seq }}` `{{ now }}` | 동일 | 본문 전체·랜덤·카운터·현재시각(ISO UTC) |
+| **`{{ now:yyyyMMddHHmmss }}`** `{{ today }}` `{{ time }}` | — | **현재 일시** — `now:패턴`은 Java DateTimeFormatter 패턴(`yyyy-MM-dd HH:mm:ss`, `a h시` …), `today`=`yyyyMMdd`, `time`=`HHmmss`. 기본 **KST**, 타임존은 `{{ now:yyyyMMdd@UTC }}` `{{ today@UTC }}` 처럼 `@`. 전송일시·거래일자 같은 전문 필드에 그대로 |
 
 - **시크릿 환경**(설정 pane 🔑): 이 Mock 이 `@secret` 을 풀 때 공통 시크릿에 어느 환경(dev/staging/prod)의 시크릿을 덮어쓸지. 서빙은 서버에서 도니 브라우저의 활성 환경과 무관합니다. 환경 변수(`@env`)는 Mock 에 없습니다.
 - **데이터 삽입 `{ }`**: 한 줄 값(헤더·상태·콜백 URL·코덱 값)은 칩 입력, 여러 줄(응답 본문·콜백 본문)은 `{ }` 버튼으로 캐럿 위치에 삽입. 피커 소스 = **예상 요청**(경로·쿼리·헤더·본문) / TCP 요청 필드 · 서버 상태 · 시크릿 볼트.

@@ -1,7 +1,8 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react'
 import { EditorView, basicSetup } from 'codemirror'
 import { Compartment, EditorState } from '@codemirror/state'
-import { keymap } from '@codemirror/view'
+import { keymap, placeholder as cmPlaceholder } from '@codemirror/view'
+import { indentWithTab } from '@codemirror/commands'
 import type { Completion, CompletionContext, CompletionResult } from '@codemirror/autocomplete'
 import { html } from '@codemirror/lang-html'
 import { json, jsonParseLinter } from '@codemirror/lang-json'
@@ -15,6 +16,7 @@ import type { BindableSource } from '../binding/upstream'
 import { formatCode } from '../lib/codeFormat'
 
 export type CodeLang = 'html' | 'json' | 'xml'
+export type EditorLang = CodeLang | 'text' // text = 하이라이트/체크 없이 편집기 기능(Tab 들여쓰기·undo·찾기·자동완성)만
 export interface CodeStatus { line: number; col: number; selected: number; lines: number }
 export interface CodeEditorHandle {
   /** 자동 정렬 — ok(바뀜) / noop(이미 정렬) / fail(파싱 불가 — 원문 유지) */
@@ -29,16 +31,18 @@ const BUILTIN_TOKENS = ['uuid', 'seq', 'now', 'body']
  * 코드 편집기(CodeMirror 6) — BigTextEditor 가 HTML/JSON/XML 본문일 때 textarea 대신 쓴다.
  * 하이라이트(HTML 안의 JS/CSS 포함) + 문법 체크(JSON 은 파서 오류, HTML/XML 은 파스 트리 오류 노드) + **자동 정렬**(js-beautify / JSON 2칸,
  * Shift+Alt+F — `{{ 토큰 }}` 은 보호) + **`{{` 자동완성**(호출처가 넘긴 소스: 예상 요청 키·상태·시크릿·상위 노드 출력 + 내장) +
- * 찾기/바꾸기(Ctrl+F) + 줄바꿈 토글 + 커서/선택 상태 보고. 무거운 의존성이라 BigTextEditor 에서 lazy import — 평소 번들에는 안 실린다.
+ * 찾기/바꾸기(Ctrl+F) + 줄바꿈 토글 + 커서/선택 상태 보고. **키 스코프**: Tab 은 들여쓰기(포커스 이탈 아님), Ctrl+Z/Y 는 이 편집기의 히스토리 —
+ * 바깥(워크플로 캔버스 undo·노드 검색·빠른 추가)은 contentEditable 가드로 받지 않는다. 무거운 의존성이라 BigTextEditor 에서 lazy import — 평소 번들에는 안 실린다.
  */
 const CodeEditor = forwardRef<CodeEditorHandle, {
   value: string
   onChange: (v: string) => void
-  language: CodeLang
+  language: EditorLang
   sources?: BindableSource[]
   wrap?: boolean
+  placeholder?: string
   onStatus?: (s: CodeStatus) => void
-}>(function CodeEditor({ value, onChange, language, sources = [], wrap = true, onStatus }, ref) {
+}>(function CodeEditor({ value, onChange, language, sources = [], wrap = true, placeholder, onStatus }, ref) {
   const hostRef = useRef<HTMLDivElement>(null)
   const viewRef = useRef<EditorView | null>(null)
   const onChangeRef = useRef(onChange); onChangeRef.current = onChange
@@ -47,6 +51,7 @@ const CodeEditor = forwardRef<CodeEditorHandle, {
   const wrapComp = useRef(new Compartment()).current
 
   const doFormat = (view: EditorView): 'ok' | 'noop' | 'fail' => {
+    if (language === 'text') return 'fail'
     const cur = view.state.doc.toString()
     const out = formatCode(cur, language, (s) => beautifyHtml(s, BEAUTIFY))
     if (out == null) return 'fail'
@@ -76,6 +81,7 @@ const CodeEditor = forwardRef<CodeEditorHandle, {
     const langExts =
       language === 'json' ? [json(), linter(jsonParseLinter())]
       : language === 'xml' ? [xml(), treeLinter]
+      : language === 'text' ? []
       : [html(), treeLinter] // html — 내장 css/js 하이라이트 + 태그 자동 닫기
     // `{{` 자동완성 — 언어(HTML 안의 JS/CSS 포함)와 무관하게 전역 languageData 로 제공
     const tokenCompletion = (ctx: CompletionContext): CompletionResult | null => {
@@ -102,7 +108,9 @@ const CodeEditor = forwardRef<CodeEditorHandle, {
         lintGutter(),
         ...langExts,
         EditorState.languageData.of(() => [{ autocomplete: tokenCompletion }]),
-        keymap.of([{ key: 'Shift-Alt-f', run: (v) => { doFormat(v); return true } }]),
+        // Tab = 들여쓰기(Shift+Tab 내어쓰기) — 편집기 밖으로 포커스가 나가지 않는다(나가려면 Esc 후 Tab)
+        keymap.of([indentWithTab, { key: 'Shift-Alt-f', run: (v) => { doFormat(v); return true } }]),
+        ...(placeholder ? [cmPlaceholder(placeholder)] : []),
         ...(dark ? [oneDark] : []),
         EditorView.updateListener.of((u) => {
           if (u.docChanged) onChangeRef.current(u.state.doc.toString())

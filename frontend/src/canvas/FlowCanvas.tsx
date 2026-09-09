@@ -103,6 +103,8 @@ export function FlowCanvas() {
   // Ctrl/⌘+K — 화면 중앙에 빠른 노드 추가 메뉴
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return // 입력 중(코드 편집기 포함)엔 양보
       if ((e.ctrlKey || e.metaKey) && !e.altKey && (e.code === 'KeyK' || e.key === 'k')) {
         e.preventDefault()
         openAddMenu(window.innerWidth / 2, window.innerHeight / 2 - 60)

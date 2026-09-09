@@ -2,7 +2,7 @@ import type { CSSProperties } from 'react'
 import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react'
 import type { BindableSource } from '../binding/upstream'
 import { previewDocument, renderTemplatePreview, templateTokens } from '../lib/templatePreview'
-import type { CodeEditorHandle, CodeLang, CodeStatus } from './CodeEditor'
+import type { CodeEditorHandle, CodeLang, CodeStatus, EditorLang } from './CodeEditor'
 import { JsonTree } from './JsonTree'
 import { Modal } from './Modal'
 import { toast } from './toast'
@@ -25,7 +25,8 @@ function detectLang(v: string): CodeLang | 'text' {
  * value/onChange 를 그대로 물려받아 원본 입력과 실시간 동기화(닫으면 그 상태가 남는다 — 별도 저장 없음).
  * HTML(내장 JS/CSS)·JSON·XML 은 코드 편집기: 하이라이트 + 문법 체크 + **⇥ 정렬**(Shift+Alt+F, `{{ 토큰 }}` 보호) + **`{{` 자동완성**(sources) +
  * 찾기/바꾸기(Ctrl+F) + 줄바꿈 토글 + 상태바. **👁 미리보기**(HTML=샌드박스 iframe 실시간 렌더 / JSON=트리)는 템플릿 토큰을
- * **샘플 값**(호출처가 넘긴 예상 요청 예시값 + 미리보기 pane 에서 직접 입력)으로 치환해 보여준다. 텍스트는 평문 textarea.
+ * **샘플 값**(호출처가 넘긴 예상 요청 예시값 + 미리보기 pane 에서 직접 입력)으로 치환해 보여준다. 텍스트 모드도 같은 편집기(하이라이트/체크만 없음)라
+ * Tab 들여쓰기·Ctrl+Z 편집기 내부 undo·찾기·자동완성이 동일하다.
  */
 export function BigTextEditor({
   title,
@@ -48,7 +49,7 @@ export function BigTextEditor({
   sources?: BindableSource[]         // `{{` 자동완성 소스(예상 요청·상태·시크릿·상위 노드 출력)
   samples?: Record<string, string>   // 미리보기 샘플 값 초기 세트(`key@source` → 값)
 }) {
-  const [lang, setLang] = useState<CodeLang | 'text'>(() => (language === 'auto' ? detectLang(value) : language))
+  const [lang, setLang] = useState<EditorLang>(() => (language === 'auto' ? detectLang(value) : language))
   const [wrap, setWrap] = useState(() => { try { return localStorage.getItem('fl:bigedit:wrap') !== '0' } catch { return true } })
   const [preview, setPreview] = useState(() => { try { return localStorage.getItem('fl:bigedit:preview') === '1' } catch { return false } })
   const [status, setStatus] = useState<CodeStatus | null>(null)
@@ -70,7 +71,7 @@ export function BigTextEditor({
         <strong style={{ flex: 1, minWidth: 160, fontFamily: 'var(--fl-font-head)', fontSize: 14.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{title}</strong>
         <select
           value={lang}
-          onChange={(e) => setLang(e.target.value as CodeLang | 'text')}
+          onChange={(e) => setLang(e.target.value as EditorLang)}
           aria-label="문법(하이라이트·체크)"
           title="문법 하이라이트·체크 언어 — HTML 은 안의 JS/CSS 까지"
           style={langSel}
@@ -81,42 +82,31 @@ export function BigTextEditor({
           <option value="text">텍스트</option>
         </select>
         <button onClick={format} disabled={!canFormat} title={canFormat ? '자동 정렬 (Shift+Alt+F) — {{ 토큰 }} 은 그대로 보호' : '텍스트 모드에는 정렬이 없습니다'} style={{ ...toolBtn, opacity: canFormat ? 1 : 0.45 }}>⇥ 정렬</button>
-        <button onClick={toggleWrap} disabled={lang === 'text'} aria-pressed={wrap} title="긴 줄 줄바꿈" style={{ ...toolBtn, ...(wrap ? toolOn : null), opacity: lang === 'text' ? 0.45 : 1 }}>↩ 줄바꿈</button>
+        <button onClick={toggleWrap} aria-pressed={wrap} title="긴 줄 줄바꿈" style={{ ...toolBtn, ...(wrap ? toolOn : null) }}>↩ 줄바꿈</button>
         <button onClick={togglePreview} disabled={!canPreview} aria-pressed={preview && canPreview} title={canPreview ? (lang === 'html' ? '샘플 값으로 렌더한 페이지를 옆에 보여줍니다(실시간)' : 'JSON 트리로 보기') : 'HTML/JSON 만 미리보기'} style={{ ...toolBtn, ...(preview && canPreview ? toolOn : null), opacity: canPreview ? 1 : 0.45 }}>👁 미리보기</button>
         <span style={{ fontSize: 11.5, color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)', flexShrink: 0 }}>{value.length.toLocaleString()}자</span>
         <button onClick={onClose} aria-label="닫기" title="닫기 (Esc)" style={xBtn}>×</button>
       </header>
       <div style={{ flex: 1, minHeight: 0, display: 'flex' }}>
         <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
-          {lang === 'text' ? (
-            <textarea
-              autoFocus
-              value={value}
-              onChange={(e) => onChange(e.target.value)}
-              placeholder={placeholder}
-              spellCheck={false}
-              style={plainArea}
-            />
-          ) : (
-            <Suspense fallback={<textarea value={value} onChange={(e) => onChange(e.target.value)} spellCheck={false} style={plainArea} />}>
-              <CodeEditorLazy ref={editorRef} value={value} onChange={onChange} language={lang} sources={sources} wrap={wrap} onStatus={setStatus} />
-            </Suspense>
-          )}
+          <Suspense fallback={<textarea value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} spellCheck={false} style={plainArea} />}>
+            <CodeEditorLazy ref={editorRef} value={value} onChange={onChange} language={lang} sources={sources} wrap={wrap} placeholder={placeholder} onStatus={setStatus} />
+          </Suspense>
         </div>
         {preview && canPreview && <PreviewPane lang={lang} value={value} initialSamples={samples ?? {}} />}
       </div>
       <footer style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '6px 16px', borderTop: '1px solid var(--fl-border)', fontSize: 11.5, color: 'var(--fl-text-muted)', flexShrink: 0, flexWrap: 'wrap' }}>
         <span style={{ flex: 1, minWidth: 200 }}>{hint}</span>
-        {lang !== 'text' && (
-          <span style={{ display: 'inline-flex', gap: 10, fontFamily: 'var(--fl-font-mono)', flexShrink: 0 }} aria-label="편집기 상태">
-            {status && <span>줄 {status.line}:{status.col}</span>}
-            {status && status.selected > 0 && <span>선택 {status.selected.toLocaleString()}자</span>}
-            {status && <span>{status.lines.toLocaleString()}줄</span>}
-            <span title="자동 정렬">Shift+Alt+F 정렬</span>
-            <span title="찾기/바꾸기 패널">Ctrl+F 찾기·바꾸기</span>
-            <span title="예상 요청·상태·시크릿 토큰 자동완성">{'{{ 자동완성'}</span>
-          </span>
-        )}
+        <span style={{ display: 'inline-flex', gap: 10, fontFamily: 'var(--fl-font-mono)', flexShrink: 0 }} aria-label="편집기 상태">
+          {status && <span>줄 {status.line}:{status.col}</span>}
+          {status && status.selected > 0 && <span>선택 {status.selected.toLocaleString()}자</span>}
+          {status && <span>{status.lines.toLocaleString()}줄</span>}
+          <span title="Tab 들여쓰기 · Shift+Tab 내어쓰기 (포커스는 편집기 안에 머뭅니다)">Tab 들여쓰기</span>
+          <span title="이 편집기 안의 되돌리기/다시 실행 — 바깥(캔버스)엔 영향 없음">Ctrl+Z/Y undo</span>
+          {lang !== 'text' && <span title="자동 정렬">Shift+Alt+F 정렬</span>}
+          <span title="찾기/바꾸기 패널">Ctrl+F 찾기·바꾸기</span>
+          <span title="예상 요청·상태·시크릿 토큰 자동완성">{'{{ 자동완성'}</span>
+        </span>
       </footer>
     </Modal>
   )

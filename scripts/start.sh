@@ -7,6 +7,7 @@
 # DB/인증은 env 로 주입(EC2 배포 시 외부 Oracle·Vault 연결):
 #   SPRING_PROFILES_ACTIVE=oracle FLOWLINK_DB_URL=... bash scripts/start.sh
 # 기본은 H2 파일(로컬). FLOWLINK_PORT(기본 18080)로 포트 변경.
+# 경로 접두사(context path): FLOWLINK_CONTEXT_PATH=/flowlink → http://host:port/flowlink/ (앞 슬래시 필수, 끝 슬래시 없음).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -15,6 +16,7 @@ PID_FILE="$RUN_DIR/flowlink.pid"
 LOG="$RUN_DIR/flowlink.log"
 JAR="$ROOT/backend/build/libs/flowlink.jar"
 PORT="${FLOWLINK_PORT:-18080}"
+CTX="${FLOWLINK_CONTEXT_PATH:-}"; CTX="${CTX#/}"; CTX="${CTX%/}"; [ -n "$CTX" ] && CTX="/$CTX"   # 정규화: /flowlink (Spring 규약)
 
 BUILD=0
 for a in "$@"; do case "$a" in --build) BUILD=1 ;; *) echo "알 수 없는 옵션: $a"; exit 2 ;; esac; done
@@ -53,11 +55,11 @@ JVM_OPTS="${FLOWLINK_JAVA_OPTS:-}"
 
 echo "▶ FlowLink 기동 (profile=$SPRING_PROFILES_ACTIVE, port=$PORT)…"
 # shellcheck disable=SC2086
-nohup env FLOWLINK_PORT="$PORT" java $JVM_OPTS -jar "$JAR" >> "$LOG" 2>&1 < /dev/null &
+nohup env FLOWLINK_PORT="$PORT" FLOWLINK_CONTEXT_PATH="$CTX" java $JVM_OPTS -jar "$JAR" >> "$LOG" 2>&1 < /dev/null &
 echo $! > "$PID_FILE"
 
 for _ in $(seq 1 60); do
-  if curl -fs "http://localhost:$PORT/actuator/health" >/dev/null 2>&1; then
+  if curl -fs "http://localhost:$PORT$CTX/actuator/health" >/dev/null 2>&1; then
     echo "✅ 기동 완료 — http://localhost:$PORT  (PID $(cat "$PID_FILE"), 로그 $LOG)"; exit 0
   fi
   sleep 1

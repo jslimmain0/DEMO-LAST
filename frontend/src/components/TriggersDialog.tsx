@@ -1,3 +1,4 @@
+import { appUrl } from '../lib/appBase'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { CSSProperties } from 'react'
 import { useState } from 'react'
@@ -44,7 +45,7 @@ export function TriggersDialog({ flowId, onClose }: { flowId: string; onClose: (
   })
 
   const list = q.data ?? []
-  const origin = window.location.origin
+  const origin = appUrl('') // 오리진 + context path — 웹훅 URL 은 밖에서 부르는 절대 주소
 
   return (
     <Modal onClose={onClose} ariaLabel="트리거" width={620} maxWidth="96vw" maxHeight="88vh">

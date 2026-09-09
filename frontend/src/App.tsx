@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useEffect } from 'react'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
+import { appBase } from './lib/appBase'
 import { AuthProvider } from './auth/AuthContext'
 import { Toasts } from './components/toast'
 import { applyTheme, getTheme } from './design/theme'
@@ -23,7 +24,7 @@ export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
-        <BrowserRouter>
+        <BrowserRouter basename={appBase() || undefined}>
           <Routes>
             <Route path="/" element={<Navigate to="/flows" replace />} />
             <Route path="/flows" element={<Dashboard />} />

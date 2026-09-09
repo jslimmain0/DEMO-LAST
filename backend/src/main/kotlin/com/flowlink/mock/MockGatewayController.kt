@@ -54,7 +54,7 @@ class MockGatewayController(
         val prevTenant = TenantContext.getTenantId()
         return try {
             // slug 는 팀 스코프 — /mock/{tenant}/{slug}/… 우선, 실패 시 레거시 /mock/{slug}/…(default 테넌트)
-            val resolved = MockPathResolver.resolve(request.requestURI) { t, s ->
+            val resolved = MockPathResolver.resolve(pathInApp(request)) { t, s ->
                 service.findForServing(t, s).orElse(null)
             } ?: return jsonError(404, "mock 서버가 없거나 비활성화됨: $first")
             val server = resolved.server
@@ -170,8 +170,15 @@ class MockGatewayController(
 
     // ---------- 요청 파싱 ----------
 
+    /** context path(`/flowlink`) 를 뗀 앱 내부 경로 — requestURI 는 접두사를 포함하므로 slug 파싱 전에 벗긴다. */
+    private fun pathInApp(request: HttpServletRequest): String {
+        val uri = request.requestURI
+        val ctx = request.contextPath ?: ""
+        return if (ctx.isNotEmpty() && uri.startsWith(ctx)) uri.substring(ctx.length) else uri
+    }
+
     private fun parse(prefix: String, request: HttpServletRequest): MockRequest {
-        val raw = request.requestURI
+        val raw = pathInApp(request)
         val rawPath = if (raw.length > prefix.length) raw.substring(prefix.length) else "/"
         val path = MockHttp.decodePath(rawPath)
 

@@ -3,6 +3,8 @@ import react from '@vitejs/plugin-react'
 
 // 개발 서버 5173, /api 는 백엔드(18080)로 프록시 — 동일 오리진처럼 동작(CORS 회피)
 export default defineConfig({
+  // 상대 경로 빌드 — index.html 의 <base href> 를 서버가 context path 로 바꿔 넣으면 자산이 그 밑에서 로드된다
+  base: './',
   plugins: [react()],
   server: {
     port: 5173,

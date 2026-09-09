@@ -1,3 +1,4 @@
+import { appBase, appUrl } from '../lib/appBase'
 import axios from 'axios'
 import type {
   AssistantChatRequest,
@@ -29,15 +30,15 @@ import type {
   TcpPreview,
 } from './types'
 
-// Vite 프록시(/api → 18080) 기준 동일 오리진 호출. (운영 절대경로 주입은 후속)
+// 동일 오리진 호출 — dev 는 Vite 프록시(/api → 18080), 운영은 context path(appBase, `<base href>`) 를 앞에 붙인다
 export const http = axios.create({
-  baseURL: '/api/v1',
+  baseURL: `${appBase()}/api/v1`,
   headers: { 'Content-Type': 'application/json' },
 })
 
 // 멀티파트(파일 업로드)용 — 기본 JSON 헤더 없이 axios가 boundary 를 설정하게 둔다.
 // (auth 모듈이 두 인스턴스 모두에 Bearer 인터셉터를 부착한다)
-export const uploadHttp = axios.create({ baseURL: '/api/v1' })
+export const uploadHttp = axios.create({ baseURL: `${appBase()}/api/v1` })
 
 export const flowsApi = {
   list: (workspaceId?: string) =>
@@ -204,7 +205,7 @@ export function mockBaseUrl(slug: string, tenant?: string | null): string {
     const host = window.location.hostname || 'localhost'
     return `http://${host}:18080/mock/${seg}`
   }
-  return `${window.location.origin}/mock/${seg}`
+  return appUrl(`/mock/${seg}`)
 }
 
 /** 런타임 설정 — 콜백 수신 주소(relay base). value=저장된 오버라이드(null=자동), effective=실제 적용값, auto=접속 주소 자동값 */

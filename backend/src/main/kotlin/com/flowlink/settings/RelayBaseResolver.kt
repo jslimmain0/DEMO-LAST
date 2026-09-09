@@ -30,7 +30,7 @@ class RelayBaseResolver(
         return requestOrigin() ?: "http://localhost:18080"
     }
 
-    /** 현재 HTTP 요청의 접속 오리진(scheme://host[:port]). 요청 스레드가 아니면 null. */
+    /** 현재 HTTP 요청의 접속 오리진(scheme://host[:port]) + context path(`/flowlink`, 있으면). 요청 스레드가 아니면 null. */
     fun requestOrigin(): String? {
         val attrs = RequestContextHolder.getRequestAttributes() as? ServletRequestAttributes ?: return null
         val req = attrs.request
@@ -38,6 +38,8 @@ class RelayBaseResolver(
         val host = req.serverName ?: return null
         val port = req.serverPort
         val defaultPort = (scheme == "http" && port == 80) || (scheme == "https" && port == 443)
-        return if (defaultPort || port <= 0) "$scheme://$host" else "$scheme://$host:$port"
+        val origin = if (defaultPort || port <= 0) "$scheme://$host" else "$scheme://$host:$port"
+        val ctx = (req.contextPath ?: "").trimEnd('/')
+        return origin + ctx // 콜백 수신 URL(/relay/…)이 접두사 뒤에 있으므로 base 에 포함
     }
 }

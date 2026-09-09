@@ -5,6 +5,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PID_FILE="$ROOT/.run/flowlink.pid"
 PORT="${FLOWLINK_PORT:-18080}"
+CTX="${FLOWLINK_CONTEXT_PATH:-}"; CTX="${CTX#/}"; CTX="${CTX%/}"; [ -n "$CTX" ] && CTX="/$CTX"
 
 RUNNING=0
 if [ -f "$PID_FILE" ] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null; then
@@ -13,7 +14,7 @@ else
   echo "프로세스: 중지됨"
 fi
 
-if curl -fs "http://localhost:$PORT/actuator/health" >/dev/null 2>&1; then
+if curl -fs "http://localhost:$PORT$CTX/actuator/health" >/dev/null 2>&1; then
   echo "헬스   : ✅ UP (http://localhost:$PORT)"
   exit 0
 else

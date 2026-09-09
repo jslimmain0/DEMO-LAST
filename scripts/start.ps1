@@ -2,6 +2,7 @@
 #   powershell -ExecutionPolicy Bypass -File scripts\start.ps1          # run existing jar (default H2)
 #   powershell -ExecutionPolicy Bypass -File scripts\start.ps1 -Build   # rebuild frontend+backend then run
 # Inject DB/auth via env: $env:SPRING_PROFILES_ACTIVE, $env:FLOWLINK_DB_URL, ... Port: $env:FLOWLINK_PORT (default 18080).
+# Path prefix (context path): $env:FLOWLINK_CONTEXT_PATH='/flowlink' -> app served at http://host:port/flowlink/ (leading slash, no trailing slash).
 # (ASCII-only on purpose: Windows PowerShell 5.1 mis-parses UTF-8 non-ASCII in .ps1 files.)
 param([switch]$Build)
 $ErrorActionPreference = 'Stop'
@@ -13,6 +14,9 @@ $PidFile = Join-Path $RunDir 'flowlink.pid'
 $Log = Join-Path $RunDir 'flowlink.log'
 $Jar = Join-Path $Root 'backend\build\libs\flowlink.jar'
 $Port = if ($env:FLOWLINK_PORT) { $env:FLOWLINK_PORT } else { '18080' }
+$Ctx = if ($env:FLOWLINK_CONTEXT_PATH) { '/' + $env:FLOWLINK_CONTEXT_PATH.Trim('/') } else { '' }
+if ($Ctx -eq '/') { $Ctx = '' }
+$env:FLOWLINK_CONTEXT_PATH = $Ctx   # normalized form for Spring (leading slash, no trailing slash)
 
 # Resolve JDK 21: PATH -> JAVA_HOME -> ~\.jdks\*21*
 if (-not (Get-Command java -ErrorAction SilentlyContinue)) {
@@ -61,8 +65,8 @@ $p = Start-Process -FilePath 'java' -ArgumentList $jvmArgs -RedirectStandardOutp
 $p.Id | Out-File -Encoding ascii $PidFile
 
 for ($i = 0; $i -lt 60; $i++) {
-  try { if ((Invoke-WebRequest -UseBasicParsing "http://localhost:$Port/actuator/health" -TimeoutSec 2).StatusCode -eq 200) {
-    Write-Host "OK: up at http://localhost:$Port (PID $($p.Id), log $Log)"; exit 0 } } catch {}
+  try { if ((Invoke-WebRequest -UseBasicParsing "http://localhost:$Port$Ctx/actuator/health" -TimeoutSec 2).StatusCode -eq 200) {
+    Write-Host "OK: up at http://localhost:$Port$Ctx (PID $($p.Id), log $Log)"; exit 0 } } catch {}
   Start-Sleep -Seconds 1
 }
 Write-Host "WARN: health not UP within 60s. Check log: $Log"; exit 1

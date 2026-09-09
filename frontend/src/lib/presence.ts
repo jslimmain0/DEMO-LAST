@@ -1,3 +1,4 @@
+import { appBase } from './appBase'
 import { toast } from '../components/toast'
 import { usePresenceStore, type Peer } from '../store/presenceStore'
 
@@ -41,7 +42,7 @@ class PresenceSession {
   private open() {
     if (!this.flowId) return
     const proto = location.protocol === 'https:' ? 'wss' : 'ws'
-    let url = `${proto}://${location.host}/ws/presence?flowId=${this.flowId}&name=${encodeURIComponent(this.name)}`
+    let url = `${proto}://${location.host}${appBase()}/ws/presence?flowId=${this.flowId}&name=${encodeURIComponent(this.name)}`
     const token = this.tokenFn?.()
     if (token) url += `&token=${encodeURIComponent(token)}`
     const ws = new WebSocket(url)

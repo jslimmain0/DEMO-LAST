@@ -34,6 +34,10 @@ spring:
 
 server:
   port: ${FLOWLINK_PORT:18080}
+  servlet:
+    # 경로 접두사 배포(예: https://host/flowlink/) — "/flowlink" 형태(앞 슬래시 필수, 끝 슬래시 없음). 비우면 루트.
+    # 프론트 <base href>·콜백 수신 주소·Mock base URL·웹훅 URL 이 전부 이 값을 따른다(SpaStaticConfig·RelayBaseResolver).
+    context-path: ${FLOWLINK_CONTEXT_PATH:}
   shutdown: graceful           # 실행 중 워크플로 안전 종료 대비
 
 management:

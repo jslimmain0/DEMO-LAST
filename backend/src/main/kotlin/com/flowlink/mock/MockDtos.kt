@@ -9,6 +9,13 @@ import java.util.UUID
 /** Mock 서버 관리 API DTO 모음(FolderDtos 패턴). */
 object MockDtos {
 
+    /** 이 Mock 을 호출하는 워크플로(현재 그래프에 base URL 포함). */
+    data class FlowRef(val id: UUID, val name: String)
+
+    /**
+     * 목록 카드용 요약 — 라우트/TCP 요약(spec 에서 서버가 1회 추출·캐시), 살아있음 지표(요청 기록 기반), 현재 버전.
+     * usedBy 는 별도 엔드포인트(`/usages`)로(플로우 그래프 스캔 비용).
+     */
     data class MockServerSummary(
         val id: UUID,
         val name: String,
@@ -16,7 +23,18 @@ object MockDtos {
         val kind: String,
         val enabled: Boolean,
         val updatedAt: Instant,
-        val workspaceId: UUID? = null
+        val workspaceId: UUID? = null,
+        val routeCount: Int = 0,
+        val methods: List<String> = emptyList(),   // 라우트 메서드(정의 순서, 중복 제거, 최대 6)
+        val paths: List<String> = emptyList(),     // 라우트 경로(검색·카드 표시, 최대 6)
+        val tcpPort: Int? = null,
+        val tcpEnabled: Boolean? = null,
+        val hasCodec: Boolean = false,
+        val environment: String? = null,
+        val lastRequestAt: Instant? = null,
+        val recentRequests: Int = 0,               // 최근 60초 요청 수(살아있음 점)
+        val requestCount: Int = 0,                 // 요청 기록 수(최근 100 상한)
+        val currentVersion: Int = 0,
     )
 
     data class MockServerDetail(
@@ -28,7 +46,20 @@ object MockDtos {
         val spec: JsonNode,
         val createdAt: Instant,
         val updatedAt: Instant,
-        val workspaceId: UUID? = null
+        val workspaceId: UUID? = null,
+        val currentVersion: Int = 0,
+    )
+
+    /** 정의 스냅샷 요약(버전 기록 목록). */
+    data class MockVersionSummary(
+        val id: UUID,
+        val versionNo: Int,
+        val note: String?,
+        val createdBy: String?,
+        val createdAt: Instant,
+        val pinned: Boolean,
+        val routeCount: Int,
+        val tcpPort: Int?,
     )
 
     // 요청 DTO: @get:JvmName 금지 — jackson-module-kotlin 이 오인식해 역직렬화가 깨진다(spec JsonNode 바인딩 등).
@@ -47,12 +78,19 @@ object MockDtos {
 
     data class UpdateMockServerRequest(
         val name: String?,
-        val enabled: Boolean?
+        val enabled: Boolean?,
+        /** 워크스페이스 이동 — 'public'/null 무시(변경 없음), "public" 문자열=공용, UUID=팀/개인. 양쪽 쓰기 권한 필요. */
+        val workspaceId: String? = null
     )
 
+    /** spec 저장 — 내용이 바뀌었으면 버전 스냅샷 1개(note=커밋 메시지, pinned=📌 보존). */
     data class UpdateMockSpecRequest(
-        val spec: JsonNode?
+        val spec: JsonNode?,
+        val note: String? = null,
+        val pinned: Boolean? = null
     )
+
+    data class PinRequest(val pinned: Boolean = true)
 
     /** 요청 기록 1건 — mock 에 온 실제 요청(디버깅·검증용). */
     /** TCP 미리보기 요청 — 편집 중 tcp 섹션(미저장) + 샘플 요청 전문(문자열, tcp.charset 으로 인코딩) + 코덱/시크릿 환경(미저장). */

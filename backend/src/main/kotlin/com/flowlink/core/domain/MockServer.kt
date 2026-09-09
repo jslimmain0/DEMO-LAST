@@ -68,6 +68,12 @@ class MockServer {
     @Column(name = "workspace_id")
     var workspaceId: UUID? = null
 
+    /** 정의 스냅샷 현재 버전 번호(MockServerVersion.versionNo) — null=0(스냅샷 없음, 레거시/import). */
+    @Column(name = "current_version")
+    var currentVersion: Int? = null
+
+    fun currentVersionOrZero(): Int = currentVersion ?: 0
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     lateinit var createdAt: Instant

@@ -165,10 +165,18 @@ export const mocksApi = {
     http.get<{ slug: string; available: boolean }>('/mock-servers/slug-check', { params: { slug } }).then((r) => r.data),
   create: (body: { name: string; slug: string; type?: 'HTTP' | 'TCP'; workspaceId?: string | null }) =>
     http.post<import('./types').MockServerDetail>('/mock-servers', body).then((r) => r.data),
-  update: (id: string, body: { name?: string; enabled?: boolean }) =>
+  update: (id: string, body: { name?: string; enabled?: boolean; workspaceId?: string | null }) =>
     http.patch<import('./types').MockServerDetail>(`/mock-servers/${id}`, body).then((r) => r.data),
-  updateSpec: (id: string, spec: import('./types').MockServerSpec) =>
-    http.put<import('./types').MockServerDetail>(`/mock-servers/${id}/spec`, { spec }).then((r) => r.data),
+  // spec 저장 — 내용이 바뀌면 버전 스냅샷(note=메시지, pinned=📌 보존)
+  updateSpec: (id: string, spec: import('./types').MockServerSpec, opts?: { note?: string; pinned?: boolean }) =>
+    http.put<import('./types').MockServerDetail>(`/mock-servers/${id}/spec`, { spec, note: opts?.note, pinned: opts?.pinned }).then((r) => r.data),
+  // 사용처(이 워크스페이스 Mock 을 호출하는 워크플로) — mockId → [{id,name}]
+  usages: (workspaceId?: string) =>
+    http.get<Record<string, import('./types').MockFlowRef[]>>('/mock-servers/usages', { params: workspaceId && workspaceId !== 'public' ? { workspaceId } : undefined }).then((r) => r.data),
+  versions: (id: string) => http.get<import('./types').MockVersionSummary[]>(`/mock-servers/${id}/versions`).then((r) => r.data),
+  version: (id: string, no: number) => http.get<import('./types').MockServerSpec>(`/mock-servers/${id}/versions/${no}`).then((r) => r.data),
+  restoreVersion: (id: string, no: number) => http.post<import('./types').MockVersionSummary>(`/mock-servers/${id}/versions/${no}/restore`).then((r) => r.data),
+  pinVersion: (id: string, no: number, pinned: boolean) => http.put<import('./types').MockVersionSummary>(`/mock-servers/${id}/versions/${no}/pin`, { pinned }).then((r) => r.data),
   remove: (id: string) => http.delete(`/mock-servers/${id}`).then(() => undefined),
   requests: (id: string) => http.get<import('./types').MockRequestLog[]>(`/mock-servers/${id}/requests`).then((r) => r.data),
   clearRequests: (id: string) => http.delete(`/mock-servers/${id}/requests`).then(() => undefined),

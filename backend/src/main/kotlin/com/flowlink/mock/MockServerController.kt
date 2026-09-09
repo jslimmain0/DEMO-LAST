@@ -44,9 +44,27 @@ class MockServerController(private val service: MockServerService) {
     fun update(@PathVariable id: UUID, @RequestBody req: UpdateMockServerRequest): MockServerDetail =
         service.updateMeta(id, req)
 
+    /** 이 워크스페이스 Mock 들의 사용처(워크플로) — mockId → [{id,name}]. */
+    @GetMapping("/usages")
+    fun usages(@org.springframework.web.bind.annotation.RequestParam(required = false) workspaceId: String?): Map<UUID, List<MockDtos.FlowRef>> =
+        service.usages(workspaceId)
+
+    @GetMapping("/{id}/versions")
+    fun versions(@PathVariable id: UUID): List<MockDtos.MockVersionSummary> = service.listVersions(id)
+
+    @GetMapping("/{id}/versions/{no}")
+    fun version(@PathVariable id: UUID, @PathVariable no: Int): com.fasterxml.jackson.databind.JsonNode = service.getVersionSpec(id, no)
+
+    @PostMapping("/{id}/versions/{no}/restore")
+    fun restore(@PathVariable id: UUID, @PathVariable no: Int): MockDtos.MockVersionSummary = service.restoreVersion(id, no)
+
+    @PutMapping("/{id}/versions/{no}/pin")
+    fun pin(@PathVariable id: UUID, @PathVariable no: Int, @RequestBody req: MockDtos.PinRequest): MockDtos.MockVersionSummary =
+        service.setVersionPinned(id, no, req.pinned)
+
     @PutMapping("/{id}/spec")
     fun updateSpec(@PathVariable id: UUID, @RequestBody req: UpdateMockSpecRequest): MockServerDetail =
-        service.updateSpec(id, req.spec)
+        service.updateSpec(id, req.spec, req.note, req.pinned == true)
 
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)

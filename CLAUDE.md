@@ -1174,6 +1174,15 @@ API 도구 UX·비주얼/IA·플로우 통합 3관점 병렬 비평 → 확정 �
 - 검증: 단위(MockTemplate 6·MockCodecV2 7 + 기존) + 전체 스위트 그린 + **라이브 e2e 14**(fields 코덱 pin/**AES card.no key·iv 시크릿 포트**/헤더 디코딩·점경로·응답 필드 인코딩·**HMAC X-Signature(dev 시크릿 오버레이) 검증**·라우트 `{}` 무효화·journal 마스킹·codec-try 3·TCP fields+body+시크릿 필드·tcp-preview 코덱·v1 호환) + 브라우저(시크릿 환경 셀렉트·요청 기록→예상 필드로·피커 소스 5종·본문 캐럿 삽입·헤더 칩·조건 datalist·코덱 헤더 대상+파라미터 칩+시험해보기·저장 후 서빙 X-Auth/X-Sig·규칙 초안). 가이드 [10장](docs/guide/10-Mock-서버.md) 재작성.
 - ⚠ 코덱 fields 대상은 JSON/urlencoded 본문만. codec-try 는 시크릿을 간접 노출할 수 있어 승인 사용자 게이트. Mock 시크릿 캐시 10초(저장 직후 반영 지연 가능). 예상 요청(expect)은 문서일 뿐 매칭에 영향 없음.
 
+## 최근 변경 (2026-09-09) — Mock 을 제품 수준으로: 목록 대시보드화 · 편집기 좌목록/우상세/하단트래픽 · 버전 기록
+"워크플로는 거의 제품인데 Mock 도 그렇게" 요청. 3단계(목록 → 편집기 구조 → 버전 기록) 전부 구현.
+- **백엔드**: [MockServerSummary](backend/src/main/kotlin/com/flowlink/mock/MockDtos.kt) 에 spec 요약(routeCount/methods/paths/tcpPort/tcpEnabled/hasCodec/environment — `updatedAt` 키 digest 캐시) + 살아있음 지표(journal 기반 lastRequestAt/recentRequests(60초)/requestCount) + currentVersion. `GET /mock-servers/usages`(이 Mock 의 `/mock/{slug}` 를 현재 그래프에 가진 워크플로 — 테넌트별 30초 인덱스 캐시, 읽기 가능 워크스페이스만). `PATCH` 에 `workspaceId`(이동, 양쪽 쓰기 권한).
+  **버전 기록**: [MockServerVersion](backend/src/main/kotlin/com/flowlink/core/domain/MockServerVersion.kt)(`flowlink_mock_server_version`, V21 + `flowlink_mock_server.current_version`) — 생성 v1, `PUT /spec`{spec, note, pinned} 은 **내용이 바뀌었을 때만** 스냅샷, `GET /{id}/versions`·`/versions/{no}`·`POST …/restore`(새 버전+서빙 즉시 반영)·`PUT …/pin`. mock 당 최근 50개 유지(📌 제외), 삭제 시 cascade. [MockServerVersionTest](backend/src/test/kotlin/com/flowlink/mock/MockServerVersionTest.kt) 3종.
+- **목록** [MockServers](frontend/src/routes/MockServers.tsx): 검색(`/`·Ctrl+F, 경로/포트 포함)·정렬·필터 세그먼트·즐겨찾기(`fl:mockfav:{ws}`)·선택 모드(일괄 켜기/끄기/삭제)·카드(메서드 칩·살아있음 점·마지막 요청·↗ 워크플로 N 팝오버·코덱/환경/vN 배지)·⋯ 메뉴(즐겨찾기/이름/복제/내보내기/워크스페이스 이동/삭제). 5초 폴링(살아있음).
+- **편집기** [MockServerEditor](frontend/src/routes/MockServerEditor.tsx) 재작성: 헤더(이름 인라인·미저장·자동 저장 `fl:mock:autosave`·Ctrl+S·이탈 경고·🕘 버전·⋯ 도구·JSON 모달·단축키) | **좌 nav**(라우트 목록: 메서드·경로·히트 배지·드래그 정렬·검색 / TCP 전문 / 전문 코덱 ON / 설정 / 개요) | **우 상세**(선택 라우트 = [RouteCard](frontend/src/components/MockRouteEditor.tsx) export, TCP 편집기, 코덱, 설정(서빙 주소·시크릿 환경·OpenAPI·이동·위험 구역), 개요 타일) | **하단 트래픽**(요청 기록 3초 폴링·무매칭 빨강·라우트 필터·예상 필드로/규칙 초안/재전송·상태 요약·보내보기 탭). [MockVersionHistoryDialog](frontend/src/components/MockVersionHistoryDialog.tsx) + [lib/mockDiff](frontend/src/lib/mockDiff.ts)(라우트 id 대조 diff). OpenAPI 변환은 [lib/mockOpenApi](frontend/src/lib/mockOpenApi.ts) 로 분리.
+- 검증: 백엔드 전체 스위트 + API e2e(요약 통계·usages·버전 list/get/restore/pin·동일 내용 스킵·cascade) + 브라우저(목록 툴바/검색/필터/즐겨찾기/이름변경/일괄 끄기 · 편집기 nav/히트/상세 전환/미저장·Ctrl+S/JSON/버전 diff·복원/이탈 경고/설정/트래픽 규칙 초안 · TCP nav) + 기존 스위트 재적응. 가이드 10장 목록/편집기/버전 섹션 재작성.
+- ⚠ usages 는 현재 그래프 문자열 매칭(`/mock/{slug}` 경계) — env 변수로 base URL 을 넣은 워크플로는 못 잡음. 살아있음 점은 journal(최근 100건) 기준.
+
 ## 참고 문서
 - `backend/README.md` — 백엔드 구조·설정·API 요약 · `frontend/README.md` · `infra/README.md`(배포)
 - **`docs/guide/`** — 실사용자 가이드(심플+심화 15챕터, 스크린샷) · `docs/사용가이드.md` — 한 페이지 요약본

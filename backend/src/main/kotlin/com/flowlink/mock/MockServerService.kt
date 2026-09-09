@@ -13,6 +13,7 @@ import com.flowlink.mock.MockDtos.MockServerSummary
 import com.flowlink.mock.MockDtos.UpdateMockServerRequest
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import java.time.Instant
 import java.util.Locale
 import java.util.Optional
 import java.util.UUID
@@ -28,6 +29,9 @@ class MockServerService(
     private val workspace: com.flowlink.workspace.WorkspaceService,
     private val secretProvider: MockSecretProvider,
     private val transforms: com.flowlink.transform.TransformRegistry,
+    private val versionRepo: com.flowlink.core.repository.MockServerVersionRepository,
+    private val flowRepo: com.flowlink.core.repository.FlowRepository,
+    private val flowVersionRepo: com.flowlink.core.repository.FlowVersionRepository,
 ) {
 
     @Transactional(readOnly = true)
@@ -37,6 +41,38 @@ class MockServerService(
         return repository.findByTenantIdOrderByUpdatedAtDesc(tenant())
             .filter { it.workspaceId == wsId }
             .map { toSummary(it) }
+    }
+
+    /**
+     * 이 워크스페이스 Mock 들을 호출하는 워크플로 — 읽을 수 있는 워크플로의 **현재 그래프**에 `/mock/{slug}` 가 있으면 사용처.
+     * 그래프 전량 스캔이라 테넌트 단위 30초 캐시(목록 새로고침마다 도는 비용 방지). 결과: mockId → [flow].
+     */
+    @Transactional(readOnly = true)
+    fun usages(workspaceIdRaw: String? = null): Map<UUID, List<MockDtos.FlowRef>> {
+        val wsId = workspace.resolveId(workspaceIdRaw)
+        val me = workspace.currentUsername()
+        workspace.requireRead(me, wsId)
+        val mocks = repository.findByTenantIdOrderByUpdatedAtDesc(tenant()).filter { it.workspaceId == wsId }
+        if (mocks.isEmpty()) return emptyMap()
+        val t = tenant()
+        val now = System.currentTimeMillis()
+        val cached = usageCache[t]
+        val index: List<Pair<com.flowlink.core.domain.Flow, String>> = if (cached != null && now - cached.first < USAGE_TTL_MS) cached.second else {
+            val flows = flowRepo.findByTenantIdAndArchivedFalseOrderByUpdatedAtDesc(t)
+            val graphs = if (flows.isEmpty()) emptyMap() else flowVersionRepo.findCurrentByFlowIds(flows.map { it.id }).associateBy { it.flowId }
+            val built = flows.mapNotNull { f -> graphs[f.id]?.graphJson?.let { g -> f to g } }
+            usageCache[t] = now to built
+            built
+        }
+        val readable = HashMap<UUID?, Boolean>()
+        fun canRead(ws: UUID?): Boolean = readable.getOrPut(ws) { try { workspace.requireRead(me, ws); true } catch (e: Exception) { false } }
+        val out = LinkedHashMap<UUID, List<MockDtos.FlowRef>>()
+        for (m in mocks) {
+            val re = Regex("/mock/(?:[^/\"\\s]+/)?" + Regex.escape(m.slug) + "(?=[/\"?\\s]|$)")
+            val refs = index.filter { (f, g) -> canRead(f.workspaceId) && re.containsMatchIn(g) }.map { (f, _) -> MockDtos.FlowRef(f.id, f.name) }
+            if (refs.isNotEmpty()) out[m.id] = refs
+        }
+        return out
     }
 
     @Transactional
@@ -59,7 +95,9 @@ class MockServerService(
         val entity = MockServer.create(tenant(), req.name, slug, kind, spec)
         entity.workspaceId = wsId
         val saved = repository.saveAndFlush(entity)
+        snapshot(saved, "생성", pinned = false) // v1 = 초기 정의
         tcpRegistry.sync(saved) // TCP 면 pickFreePort 로 고른 빈 포트에 바인딩(충돌 없음)
+        usageCache.clear()
         return toDetail(saved)
     }
 
@@ -75,13 +113,22 @@ class MockServerService(
         if (req.enabled != null) {
             m.isEnabled = req.enabled
         }
+        if (req.workspaceId != null) {
+            // 워크스페이스 이동 — 대상에도 쓰기 권한. slug 는 테넌트 전역 유니크라 충돌 없음.
+            val target = workspace.resolveId(req.workspaceId)
+            if (target != m.workspaceId) {
+                workspace.requireWrite(workspace.currentUsername(), target)
+                m.workspaceId = target
+                usageCache.clear()
+            }
+        }
         val saved = repository.save(m)
         tcpRegistry.sync(saved) // enabled 토글에 맞춰 TCP 리스너 열기/닫기
         return toDetail(saved)
     }
 
     @Transactional
-    fun updateSpec(id: UUID, spec: JsonNode?): MockServerDetail {
+    fun updateSpec(id: UUID, spec: JsonNode?, note: String? = null, pinned: Boolean = false): MockServerDetail {
         val m = find(id)
         if (spec == null || spec.isNull) {
             throw BadRequestException("spec 이 없습니다.")
@@ -89,18 +136,80 @@ class MockServerService(
         val raw = spec.toString()
         // 저장 전 파싱 검증 — 깨진 spec 이 게이트웨이에서 500 을 만들지 않게 한다
         parseSpec(raw)
+        // 구조 비교 — 저장된 spec 이 pretty-print(생성 기본값/복원)라도 내용이 같으면 스냅샷을 만들지 않는다
+        val changed = try { json.readTree(raw) != json.readTree(m.specJson ?: "{}") } catch (e: Exception) { true }
         m.specJson = raw
         val saved = repository.save(m)
+        // 내용이 바뀌었거나 📌 보존 요청이면 스냅샷(같은 내용 재저장은 버전 낭비 방지)
+        if (changed || pinned || !note.isNullOrBlank()) snapshot(saved, note?.trim()?.takeIf { it.isNotEmpty() }, pinned)
         tcpRegistry.sync(saved) // 포트 바인딩 실패/충돌은 BadRequest → 저장 롤백
+        digestCache.remove(m.id)
         return toDetail(saved)
     }
 
     @Transactional
     fun delete(id: UUID) {
         val m = find(id)
+        versionRepo.deleteByMockServerId(m.id)
         repository.delete(m)
         tcpRegistry.stop(m.id)
         store.forget(m.id)
+        digestCache.remove(m.id)
+        usageCache.clear()
+    }
+
+    // ---------- 버전 기록(정의 스냅샷) ----------
+
+    /** 스냅샷 1개 추가 + 정리(mock 당 최근 VERSIONS_KEEP 개 유지, 📌 제외). */
+    private fun snapshot(m: MockServer, note: String?, pinned: Boolean): com.flowlink.core.domain.MockServerVersion {
+        val next = m.currentVersionOrZero() + 1
+        val v = com.flowlink.core.domain.MockServerVersion.create(m.id, next, m.specJson ?: "{}", note, workspace.currentUsername())
+        if (pinned) v.pinned = true
+        val saved = versionRepo.saveAndFlush(v)
+        m.currentVersion = next
+        repository.save(m)
+        for (old in versionRepo.findPrunable(m.id, next - VERSIONS_KEEP + 1)) versionRepo.delete(old)
+        return saved
+    }
+
+    @Transactional(readOnly = true)
+    fun listVersions(id: UUID): List<MockDtos.MockVersionSummary> {
+        findReadable(id)
+        return versionRepo.findByMockServerIdOrderByVersionNoDesc(id).map { toVersionSummary(it) }
+    }
+
+    @Transactional(readOnly = true)
+    fun getVersionSpec(id: UUID, versionNo: Int): JsonNode {
+        findReadable(id)
+        val v = versionRepo.findByMockServerIdAndVersionNo(id, versionNo).orElseThrow { NotFoundException("버전이 없습니다: v$versionNo") }
+        return json.readTree(v.specJson)
+    }
+
+    /** 과거 스냅샷을 **새 버전으로** 복원(이력 보존) + 서빙 즉시 반영. */
+    @Transactional
+    fun restoreVersion(id: UUID, versionNo: Int): MockDtos.MockVersionSummary {
+        val m = find(id)
+        val src = versionRepo.findByMockServerIdAndVersionNo(id, versionNo).orElseThrow { NotFoundException("버전이 없습니다: v$versionNo") }
+        parseSpec(src.specJson)
+        m.specJson = src.specJson
+        val saved = repository.save(m)
+        val v = snapshot(saved, "v$versionNo 복원", pinned = false)
+        tcpRegistry.sync(saved)
+        digestCache.remove(m.id)
+        return toVersionSummary(v)
+    }
+
+    @Transactional
+    fun setVersionPinned(id: UUID, versionNo: Int, pinned: Boolean): MockDtos.MockVersionSummary {
+        find(id)
+        val v = versionRepo.findByMockServerIdAndVersionNo(id, versionNo).orElseThrow { NotFoundException("버전이 없습니다: v$versionNo") }
+        v.pinned = pinned
+        return toVersionSummary(versionRepo.saveAndFlush(v))
+    }
+
+    private fun toVersionSummary(v: com.flowlink.core.domain.MockServerVersion): MockDtos.MockVersionSummary {
+        val d = digestOf(v.specJson)
+        return MockDtos.MockVersionSummary(v.id, v.versionNo, v.note, v.createdBy, v.createdAt, v.pinned == true, d.routeCount, d.tcpPort)
     }
 
     /** 요청 기록(journal, 최신순) — 테넌트 소유 확인 후. */
@@ -218,8 +327,33 @@ class MockServerService(
         return m
     }
 
-    private fun toSummary(m: MockServer): MockServerSummary =
-        MockServerSummary(m.id, m.name, m.slug, m.kind.name, m.isEnabled, m.updatedAt, m.workspaceId)
+    /** spec 요약(라우트 수/메서드/경로/TCP/코덱) — updatedAt 키 캐시(spec 은 저장 때만 바뀜). */
+    private data class SpecDigest(val routeCount: Int, val methods: List<String>, val paths: List<String>, val tcpPort: Int?, val tcpEnabled: Boolean?, val hasCodec: Boolean, val environment: String?)
+    private val digestCache = java.util.concurrent.ConcurrentHashMap<UUID, Pair<Instant, SpecDigest>>()
+    /** 사용처 인덱스(플로우 현재 그래프) — 테넌트별 30초 캐시. */
+    private val usageCache = java.util.concurrent.ConcurrentHashMap<String, Pair<Long, List<Pair<com.flowlink.core.domain.Flow, String>>>>()
+
+    private fun digestOf(specJson: String?): SpecDigest {
+        val spec = try { parseSpec(specJson) } catch (e: Exception) { return SpecDigest(0, emptyList(), emptyList(), null, null, false, null) }
+        val routes = spec.routesOrEmpty()
+        val methods = routes.mapNotNull { it.method?.uppercase(Locale.ROOT) }.distinct().take(6)
+        val paths = routes.mapNotNull { it.path }.take(6)
+        val hasCodec = spec.codec?.let { !(it.request.isNullOrEmpty() && it.response.isNullOrEmpty()) } == true || routes.any { it.codec != null }
+        return SpecDigest(routes.size, methods, paths, spec.tcp?.port, spec.tcp?.let { it.enabled != false }, hasCodec, spec.environment?.takeIf { it.isNotBlank() })
+    }
+
+    private fun toSummary(m: MockServer): MockServerSummary {
+        val hit = digestCache[m.id]
+        val d = if (hit != null && hit.first == m.updatedAt) hit.second else digestOf(m.specJson).also { digestCache[m.id] = m.updatedAt to it }
+        val journal = store.journal(m.id)
+        val now = Instant.now()
+        val recent = journal.count { java.time.Duration.between(it.at, now).seconds <= 60 }
+        return MockServerSummary(
+            m.id, m.name, m.slug, m.kind.name, m.isEnabled, m.updatedAt, m.workspaceId,
+            d.routeCount, d.methods, d.paths, d.tcpPort, d.tcpEnabled, d.hasCodec, d.environment,
+            journal.firstOrNull()?.at, recent, journal.size, m.currentVersionOrZero(),
+        )
+    }
 
     private fun toDetail(m: MockServer): MockServerDetail {
         val specJson = m.specJson
@@ -230,7 +364,7 @@ class MockServerService(
         }
         return MockServerDetail(
             m.id, m.name, m.slug, m.kind.name,
-            m.isEnabled, spec, m.createdAt, m.updatedAt, m.workspaceId
+            m.isEnabled, spec, m.createdAt, m.updatedAt, m.workspaceId, m.currentVersionOrZero()
         )
     }
 
@@ -257,6 +391,9 @@ class MockServerService(
 
     companion object {
         private val SLUG: Pattern = Pattern.compile("[a-z0-9-]{3,40}")
+        /** mock 당 유지할 정의 스냅샷 수(📌 보존 제외). */
+        const val VERSIONS_KEEP = 50
+        const val USAGE_TTL_MS = 30_000L
     }
 
     private fun tenant(): String = TenantContext.getTenantId()

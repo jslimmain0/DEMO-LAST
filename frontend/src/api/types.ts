@@ -604,11 +604,26 @@ export interface MockServerSummary {
   enabled: boolean
   updatedAt: string | null
   workspaceId?: string | null
+  // 목록 카드 요약(서버가 spec 에서 추출·캐시) + 살아있음 지표(요청 기록) + 현재 버전
+  routeCount?: number
+  methods?: string[]
+  paths?: string[]
+  tcpPort?: number | null
+  tcpEnabled?: boolean | null
+  hasCodec?: boolean
+  environment?: string | null
+  lastRequestAt?: string | null
+  recentRequests?: number   // 최근 60초 요청 수
+  requestCount?: number     // 요청 기록 수(최근 100 상한)
+  currentVersion?: number
 }
+export interface MockFlowRef { id: string; name: string }
+export interface MockVersionSummary { id: string; versionNo: number; note: string | null; createdBy: string | null; createdAt: string; pinned: boolean; routeCount: number; tcpPort: number | null }
 
 export interface MockServerDetail extends MockServerSummary {
   spec: MockServerSpec
   createdAt: string | null
+  currentVersion?: number
 }
 
 // Mock AI 어시스턴트 — 자연어로 mock spec 생성/수정 (플로우 어시스턴트의 mock 판, Copilot 자격 공유)

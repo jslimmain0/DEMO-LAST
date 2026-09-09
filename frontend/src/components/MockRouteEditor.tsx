@@ -91,7 +91,7 @@ export function RoutesEditor({ base, ensureSaved, mockId, spec, secrets, routes,
 
 // ---------- 라우트 카드 ----------
 
-function RouteCard({ base, ensureSaved, mockId, spec, secrets, route, readOnly, onChange, onRemove, onDup, onUp, onDown }: {
+export function RouteCard({ base, ensureSaved, mockId, spec, secrets, route, readOnly, onChange, onRemove, onDup, onUp, onDown }: {
   base: string; ensureSaved: () => Promise<boolean>; mockId: string; spec: MockServerSpec; secrets: SecretView[]
   route: MockRouteSpec; readOnly?: boolean
   onChange: (r: MockRouteSpec) => void; onRemove: () => void; onDup: () => void; onUp: () => void; onDown: () => void

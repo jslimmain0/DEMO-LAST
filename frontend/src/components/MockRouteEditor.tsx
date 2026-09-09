@@ -9,7 +9,7 @@ import type { BindableSource } from '../binding/upstream'
 import { METHOD_COLOR } from '../canvas/nodeMeta'
 import { bindingToToken } from '../lib/tokenGrammar'
 import { responseBodyKeys, stepCount } from '../lib/mockCodecOps'
-import { expectKeys, insertAtCaret, mockSources, pathParamNames } from '../lib/mockSources'
+import { expectKeys, insertAtCaret, mockSources, pathParamNames, sampleValuesFor } from '../lib/mockSources'
 import { newId } from '../lib/ids'
 import { BigTextEditor, ExpandCorner } from './BigTextEditor'
 import { FieldCodecButton } from './FieldCodecButton'
@@ -419,9 +419,11 @@ function RuleCard({ rule, index, total, route, sources, readOnly, codec, onCodec
           value={rule.body ?? ''}
           onChange={(v) => onChange({ ...rule, body: v })}
           onClose={() => setBig(null)}
+          sources={sources}
+          samples={sampleValuesFor(route)}
           language={rule.contentType === 'html' ? 'html' : rule.contentType === 'json' ? 'json' : rule.contentType === 'xml' ? 'xml' : 'auto'}
           placeholder={'응답 본문 템플릿 — HTML/JSON. 예: {{ id@path }} {{ q@query }} {{ 필드@body }} {{ x@state }} {{ uuid }} {{ now }}'}
-          hint="입력 즉시 반영됩니다(Esc 로 닫기). contentType 이 html 이면 브라우저에 페이지로 렌더됩니다 — 결제창/인증창 패턴. {{템플릿}} 토큰이 문법 경고로 표시될 수 있습니다(무해)."
+          hint="입력 즉시 반영됩니다(Esc 로 닫기). html 이면 [미리보기]로 결제창/인증창을 샘플 값으로 렌더해 보며 고칩니다. {{ 를 치면 요청 필드·상태·시크릿 자동완성."
         />
       )}
       {big === 'cb' && (
@@ -430,6 +432,8 @@ function RuleCard({ rule, index, total, route, sources, readOnly, codec, onCodec
           value={cb.body ?? ''}
           onChange={(v) => setCb({ body: v })}
           onClose={() => setBig(null)}
+          sources={sources}
+          samples={sampleValuesFor(route)}
           language="text"
           placeholder="resultCode=0000&orderId={{ orderId@body }}"
           hint="응답 후 발사되는 콜백(웹훅)의 본문(urlencoded) — 템플릿 문법 동일."

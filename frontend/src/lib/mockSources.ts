@@ -66,6 +66,27 @@ export function mockSources(o: MockSourceOpts): BindableSource[] {
   return out
 }
 
+/**
+ * 큰 편집기 미리보기용 샘플 값 — 예상 요청 예시값(`orderId@body`)·경로 파라미터(`id@path`='1')·본문 전체(`body` = 예시 JSON).
+ * templatePreview 의 샘플 맵 규약(`key@source`)과 일치.
+ */
+export function sampleValuesFor(route: MockRouteSpec | null | undefined): Record<string, string> {
+  const out: Record<string, string> = {}
+  if (!route) return out
+  for (const p of pathParamNames(route.path)) out[`${p}@path`] = '1'
+  const bodyObj: Record<string, string> = {}
+  for (const [src, rows] of [['body', route.expect?.body], ['query', route.expect?.query], ['header', route.expect?.header]] as const) {
+    for (const f of rows ?? []) {
+      const k = f.key?.trim()
+      if (!k) continue
+      out[`${k}@${src}`] = f.example ?? ''
+      if (src === 'body') bodyObj[k] = f.example ?? ''
+    }
+  }
+  if (Object.keys(bodyObj).length) out.body = JSON.stringify(bodyObj)
+  return out
+}
+
 /** 예상 요청(expect)에서 조건/코덱 필드 후보 키. */
 export function expectKeys(route: MockRouteSpec | null | undefined, source: 'body' | 'query' | 'header' | 'path'): string[] {
   if (!route) return []

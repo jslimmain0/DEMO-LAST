@@ -1192,6 +1192,17 @@ API 도구 UX·비주얼/IA·플로우 통합 3관점 병렬 비평 → 확정 �
 - 검증: 백엔드 전체 스위트 그린 + API e2e 17/14/15/16 무회귀 + 브라우저 신규 **split.mjs 47**(탭·현황 필터·미니 스트립·최근 트래픽·◈ 팝오버→배지→요약→서빙 end-to-end(요청 base64 풀기+응답 감싸기)·위저드 필드 체크·TCP nav/연결/레이아웃 ◈·미리보기 탭·실제 TCP 전문 → 전문 기록 행·레거시 분리) + 기존 product 25·ui 18·codecv2 17·tcp 20·picker 15 재적응. 가이드 10장 재작성(목록·HTTP/TCP 편집기·코덱 "필드에서 시작").
 - ⚠ TCP 사용처(↗ 워크플로)는 자동 감지 안 함(HTTP base URL 만). 응답 필드 칩은 규칙 본문이 JSON 일 때만(깊이 3·40개). 같은 필드의 ◈ 는 예상 요청·응답 칩 양쪽에 같은 배지를 보인다(한 코덱). 레거시 분리는 되돌리기 없음(버전 기록으로 원본 spec 복원 가능).
 
+### 큰 편집기 IDE 급 — 정렬(js-beautify) · 미리보기(샌드박스 iframe/JSON 트리) · `{{` 자동완성 (2026-09-09, 사용자: "HTML 편집기 자동정렬·IDE급·미리보기")
+가벼운 쪽(js-beautify, prettier 아님 — 사용자 선택)으로. 전부 프론트, 편집기 lazy 청크 안에서만 커짐(본 번들 무변화).
+- **[lib/codeFormat](frontend/src/lib/codeFormat.ts)**(순수): `protectTokens`(`{{…}}` → `__FLTKn__` 식별자 자리표시자 → 복원) · `formatWithTokens(text, fmt)` · `formatJson`(파싱→2칸; **따옴표 없는 토큰**(`"n": {{ x@body }}`)은 자리표시자를 문자열로 감싸 파싱하고 원래 bare 였던 것만 따옴표를 벗김) · `formatCode(text, lang, beautifyHtml)`. 실패는 null(원문 유지).
+- **[lib/templatePreview](frontend/src/lib/templatePreview.ts)**(순수): `parseTemplateToken`(칩 `{{ k@src }}`·dot `{{body.k}}`/`{{req.k}}`·내장 uuid/seq/now/body/req·`{{req:o:l}}` → 정규화 id `k@src`) · `templateTokens`(중복 제거) · `renderTemplatePreview(text, samples)`(샘플 `k@src` → `k` → 내장 → `«k»`) · `previewDocument`(fragment 를 문서로 감싸고 `<base target="_self">`).
+- **[CodeEditor](frontend/src/components/CodeEditor.tsx)**: forwardRef 핸들 `format()/focus()`, `Shift-Alt-f` 키맵, js-beautify html(2칸·inner html 들여쓰기, xml 도 같은 포맷터), **`EditorState.languageData` 전역 자동완성**(`{{` 뒤 — sources 의 `{{ key@sourceId }}` + 내장, HTML 안의 JS/CSS 에서도 동작), 줄바꿈 Compartment, `onStatus`(줄:열·선택·줄 수). 명시 deps `@codemirror/state·view·autocomplete` 추가.
+- **[BigTextEditor](frontend/src/components/BigTextEditor.tsx)**: 툴바 `⇥ 정렬 · ↩ 줄바꿈 · 👁 미리보기`(localStorage `fl:bigedit:wrap/preview`) + 하단 상태바/단축키 안내. `PreviewPane`: HTML = `<iframe sandbox="allow-scripts allow-forms allow-modals allow-popups">`(same-origin 없음 — 앱 세션·쿠키 접근 불가) srcDoc 300ms 디바운스 / JSON = JsonTree; **샘플 값** 폼(문서의 토큰 목록, 내장은 자동, 호출처 `samples` 초기값). props `sources`(자동완성)·`samples`.
+  호출처: [MockRouteEditor](frontend/src/components/MockRouteEditor.tsx) 규칙 본문/콜백 본문에 `sources` + `sampleValuesFor(route)`([mockSources](frontend/src/lib/mockSources.ts) — 예상 요청 예시값 `k@body/query/header`, 경로 파라미터 `=1`, `body`=예시 JSON) · [PropertyPanel](frontend/src/panels/PropertyPanel.tsx) raw 바디/콜백 응답에 `sources`(상위 노드 출력).
+- **[useEscapeClose](frontend/src/components/useEscapeClose.ts)**: `e.defaultPrevented` 면 무시 — CodeMirror 가 처리한 Esc(검색 패널·자동완성 닫기)가 모달까지 닫지 않게.
+- 검증: 순수 단위 11(토큰 보호/JSON bare 토큰/정규화/치환/문서 감싸기) + 브라우저 bigedit 스위트(정렬 결과·토큰 보존·CSS/JS 정렬·noop·미리보기 srcdoc 치환+base+sandbox 속성·iframe 안 DOM/스크립트·샘플 수정 재렌더·`{{` 자동완성 목록/Enter 삽입·실시간 미리보기·Esc 스택·JSON 정렬/트리·닫은 뒤 반영) + tsc/lint/build. 가이드 10장 "큰 편집기" 절 추가.
+- ⚠ 미리보기 iframe 에서 폼 제출/링크는 iframe 안에서 이동(외부 URL 로 실제 요청이 나갈 수 있음 — 샘플 값 주의). 정렬은 문법이 깨진 문서엔 실패(원문 유지). JSON 미리보기는 따옴표 없는 토큰의 샘플 값이 숫자여야 파싱된다. XML 정렬은 html 포맷터라 self-closing/namespace 가 특이한 문서는 결과 확인 필요.
+
 ## 참고 문서
 - `backend/README.md` — 백엔드 구조·설정·API 요약 · `frontend/README.md` · `infra/README.md`(배포)
 - **`docs/guide/`** — 실사용자 가이드(심플+심화 15챕터, 스크린샷) · `docs/사용가이드.md` — 한 페이지 요약본

@@ -13,7 +13,7 @@ export function registerEscapeClose(onClose: () => void): () => void {
   const token = { fire: onClose }
   escStack.push(token)
   const onKey = (e: KeyboardEvent) => {
-    if (e.key === 'Escape' && escStack[escStack.length - 1] === token) token.fire()
+    if (e.key === 'Escape' && !e.defaultPrevented && escStack[escStack.length - 1] === token) token.fire() // 편집기(CodeMirror)가 이미 처리한 Esc(검색 패널·자동완성 닫기)는 모달까지 안 닫는다
   }
   window.addEventListener('keydown', onKey)
   return () => {

@@ -1605,6 +1605,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
           value={node.rawBody ?? ''}
           onChange={(v) => update(id, { rawBody: v })}
           onClose={() => setBigEdit(null)}
+          sources={sources}
           language={node.bodyType === 'json' ? 'json' : node.bodyType === 'xml' ? 'xml' : node.bodyType === 'urlencoded' || node.bodyType === 'form' ? 'text' : 'auto'}
           placeholder={rawBodyPlaceholder(node.bodyType)}
           hint="입력 즉시 반영됩니다(Esc 로 닫기). {{ 키@노드 }} 토큰은 텍스트로 직접 쓸 수 있습니다(문법 경고로 표시될 수 있음 — 무해)."
@@ -1616,6 +1617,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
           value={node.callbackRespBody ?? ''}
           onChange={(v) => update(id, { callbackRespBody: v })}
           onClose={() => setBigEdit(null)}
+          sources={sources}
           language={node.callbackRespType === 'html' ? 'html' : node.callbackRespType === 'json' ? 'json' : 'text'}
           placeholder={node.callbackRespType === 'html' ? '<!doctype html>\n<p>인증 완료 — 창을 닫으세요</p>' : 'OK'}
           hint="콜백을 보낸 쪽이 받을 응답 — HTML 이면 결제/인증 창에 그대로 렌더됩니다('창을 닫으세요' 패턴)."

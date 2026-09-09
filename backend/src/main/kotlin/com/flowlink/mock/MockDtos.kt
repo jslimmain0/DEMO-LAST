@@ -29,11 +29,15 @@ object MockDtos {
         val paths: List<String> = emptyList(),     // 라우트 경로(검색·카드 표시, 최대 6)
         val tcpPort: Int? = null,
         val tcpEnabled: Boolean? = null,
+        val routeLabels: List<String> = emptyList(),  // "GET /pay" — 목록 카드 라우트 미니 스트립(앞 8개)
+        val tcpRuleCount: Int = 0,
+        val tcpFieldCount: Int = 0,
         val hasCodec: Boolean = false,
         val environment: String? = null,
         val lastRequestAt: Instant? = null,
         val recentRequests: Int = 0,               // 최근 60초 요청 수(살아있음 점)
         val requestCount: Int = 0,                 // 요청 기록 수(최근 100 상한)
+        val unmatchedRequests: Int = 0,            // 규칙 무매칭(404) 요청 수 — 대시보드 현황/필터
         val currentVersion: Int = 0,
     )
 

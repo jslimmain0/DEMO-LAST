@@ -610,11 +610,15 @@ export interface MockServerSummary {
   paths?: string[]
   tcpPort?: number | null
   tcpEnabled?: boolean | null
+  routeLabels?: string[]    // "GET /pay" — 카드 라우트 미니 스트립(앞 8개)
+  tcpRuleCount?: number     // TCP 규칙 수
+  tcpFieldCount?: number    // TCP 요청 레이아웃 필드 수
   hasCodec?: boolean
   environment?: string | null
   lastRequestAt?: string | null
   recentRequests?: number   // 최근 60초 요청 수
   requestCount?: number     // 요청 기록 수(최근 100 상한)
+  unmatchedRequests?: number // 규칙 무매칭(404) 요청 수 — 대시보드 현황
   currentVersion?: number
 }
 export interface MockFlowRef { id: string; name: string }

@@ -200,6 +200,18 @@ class TcpMockRegistry(
                     val secrets = secretProvider.secrets(l.tenantId, l.environment)
                     val processed = TcpMockEngine.process(tcp, l.codec, body, cs, store.seqNext(l.mockId), secrets, lookup)
                     val respBytes = processed.body
+                    // 요청 기록 — HTTP 와 같은 journal(method="TCP", path=":포트"). 본문=디코딩 전문(시크릿 마스킹), 규칙 무매칭은 404 로 표기.
+                    try {
+                        val masks = com.flowlink.execution.engine.SecretMasker.variants(secrets.values)
+                        val rawText = String(body, cs)
+                        val hasReqCodec = !l.codec?.request.isNullOrEmpty()
+                        store.record(l.mockId, MockRuntimeStore.JournalEntry(
+                            java.time.Instant.now(), "TCP", ":${l.port}", emptyMap(), mapOf("bytes" to body.size.toString(), "response-bytes" to respBytes.size.toString()),
+                            (com.flowlink.execution.engine.SecretMasker.mask(rawText, masks) ?: rawText).take(MockRuntimeStore.BODY_CAP),
+                            processed.rule?.id, if (processed.rule != null) 200 else 404, 0, false,
+                            if (hasReqCodec) (com.flowlink.execution.engine.SecretMasker.mask(processed.reqText, masks) ?: processed.reqText).take(MockRuntimeStore.BODY_CAP) else null,
+                        ))
+                    } catch (e: Exception) { log.debug("TCP journal 기록 실패: {}", e.message) }
                     if (prefixLen > 0) {
                         val declared = if (tcp.prefixIncludesSelf == true) respBytes.size + prefixLen else respBytes.size
                         out.write(String.format("%0${prefixLen}d", declared).toByteArray(StandardCharsets.US_ASCII))

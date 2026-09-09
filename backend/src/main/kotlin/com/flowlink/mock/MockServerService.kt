@@ -328,7 +328,7 @@ class MockServerService(
     }
 
     /** spec 요약(라우트 수/메서드/경로/TCP/코덱) — updatedAt 키 캐시(spec 은 저장 때만 바뀜). */
-    private data class SpecDigest(val routeCount: Int, val methods: List<String>, val paths: List<String>, val tcpPort: Int?, val tcpEnabled: Boolean?, val hasCodec: Boolean, val environment: String?)
+    private data class SpecDigest(val routeCount: Int, val methods: List<String>, val paths: List<String>, val tcpPort: Int?, val tcpEnabled: Boolean?, val hasCodec: Boolean, val environment: String?, val tcpRuleCount: Int = 0, val tcpFieldCount: Int = 0, val routeLabels: List<String> = emptyList())
     private val digestCache = java.util.concurrent.ConcurrentHashMap<UUID, Pair<Instant, SpecDigest>>()
     /** 사용처 인덱스(플로우 현재 그래프) — 테넌트별 30초 캐시. */
     private val usageCache = java.util.concurrent.ConcurrentHashMap<String, Pair<Long, List<Pair<com.flowlink.core.domain.Flow, String>>>>()
@@ -339,7 +339,9 @@ class MockServerService(
         val methods = routes.mapNotNull { it.method?.uppercase(Locale.ROOT) }.distinct().take(6)
         val paths = routes.mapNotNull { it.path }.take(6)
         val hasCodec = spec.codec?.let { !(it.request.isNullOrEmpty() && it.response.isNullOrEmpty()) } == true || routes.any { it.codec != null }
-        return SpecDigest(routes.size, methods, paths, spec.tcp?.port, spec.tcp?.let { it.enabled != false }, hasCodec, spec.environment?.takeIf { it.isNotBlank() })
+        val labels = routes.take(8).map { "${it.method?.uppercase(Locale.ROOT) ?: "ANY"} ${it.path ?: "/"}" }
+        return SpecDigest(routes.size, methods, paths, spec.tcp?.port, spec.tcp?.let { it.enabled != false }, hasCodec, spec.environment?.takeIf { it.isNotBlank() },
+            spec.tcp?.rulesOrEmpty()?.size ?: 0, spec.tcp?.requestFieldsOrEmpty()?.size ?: 0, labels)
     }
 
     private fun toSummary(m: MockServer): MockServerSummary {
@@ -350,8 +352,8 @@ class MockServerService(
         val recent = journal.count { java.time.Duration.between(it.at, now).seconds <= 60 }
         return MockServerSummary(
             m.id, m.name, m.slug, m.kind.name, m.isEnabled, m.updatedAt, m.workspaceId,
-            d.routeCount, d.methods, d.paths, d.tcpPort, d.tcpEnabled, d.hasCodec, d.environment,
-            journal.firstOrNull()?.at, recent, journal.size, m.currentVersionOrZero(),
+            d.routeCount, d.methods, d.paths, d.tcpPort, d.tcpEnabled, d.routeLabels, d.tcpRuleCount, d.tcpFieldCount, d.hasCodec, d.environment,
+            journal.firstOrNull()?.at, recent, journal.size, journal.count { it.matchedRuleId == null }, m.currentVersionOrZero(),
         )
     }
 

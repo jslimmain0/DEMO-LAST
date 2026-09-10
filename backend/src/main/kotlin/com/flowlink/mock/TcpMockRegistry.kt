@@ -48,6 +48,14 @@ class TcpMockRegistry(
     )
 
     private val listeners = ConcurrentHashMap<UUID, Listener>() // mock 서버 id → 리스너
+    /** 기동 시 바인딩 실패(포트 선점 등) — 저장 시점 실패는 400 으로 롤백되지만 재기동 실패는 조용해서 서버 현황에 빨간불로 노출한다. */
+    private val failures = ConcurrentHashMap<UUID, String>()
+
+    /** 실제로 열려 있는 리스너 포트(없으면 null) — spec 의 port 와 달리 "지금 소켓이 바인딩돼 있는가". */
+    fun listeningPort(id: UUID): Int? = listeners[id]?.port
+
+    /** 기동 시 바인딩 실패 메시지(없으면 null). */
+    fun bindFailure(id: UUID): String? = failures[id]
 
     @EventListener(ApplicationReadyEvent::class)
     fun startAll() {
@@ -55,8 +63,9 @@ class TcpMockRegistry(
             try {
                 sync(m)
             } catch (e: Exception) {
-                // 기동 시 실패(포트 선점 등)는 로그만 — 서버 전체를 죽이지 않는다
+                // 기동 시 실패(포트 선점 등)는 로그만 — 서버 전체를 죽이지 않는다. 서버 현황(fleet)이 빨간불로 보여준다.
                 log.warn("TCP mock 기동 실패(slug={}): {}", m.slug, e.message)
+                failures[m.id] = e.message ?: "바인딩 실패"
             }
         }
     }
@@ -76,6 +85,7 @@ class TcpMockRegistry(
         val want = m.isEnabled && tcp != null && tcp.enabled != false && tcp.port != null
         if (!want) {
             stop(m.id)
+            failures.remove(m.id)
             return
         }
         val port = tcp!!.port!!
@@ -87,6 +97,7 @@ class TcpMockRegistry(
             cur.tcp = tcp // 같은 포트 — 규칙/문자셋/코덱/시크릿 환경만 핫스왑
             cur.codec = spec?.codec
             cur.environment = spec?.environment
+            failures.remove(m.id)
             return
         }
         // 포트 변경/신규: **새 소켓을 먼저 확보한 뒤에야** 기존 리스너를 닫는다.
@@ -102,6 +113,7 @@ class TcpMockRegistry(
         if (cur != null) stop(m.id) // 새 소켓 확보 성공 후에만 기존 포트 리스너 종료
         val listener = Listener(m.id, m.tenantId, port, ss, tcp, spec?.codec, spec?.environment)
         listeners[m.id] = listener
+        failures.remove(m.id)
         Thread({ acceptLoop(m.slug, listener) }, "tcp-mock-$port").apply {
             isDaemon = true
             start()
@@ -110,6 +122,7 @@ class TcpMockRegistry(
     }
 
     fun stop(id: UUID) {
+        failures.remove(id)
         listeners.remove(id)?.let {
             runCatching { it.socket.close() }
             log.info("TCP mock 중지: port={}", it.port)

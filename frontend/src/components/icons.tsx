@@ -11,6 +11,20 @@ export function DataInsertIcon({ size = 14 }: { size?: number }) {
   )
 }
 
+/** 서버(랙) — Mock 서버 현황 타일. 두 칸 랙 + 상태등 자리(색은 currentColor). */
+export function ServerIcon({ size = 20 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden style={{ display: 'block' }}>
+      <rect x="3" y="3" width="18" height="7" rx="1.5" />
+      <rect x="3" y="14" width="18" height="7" rx="1.5" />
+      <circle cx="7" cy="6.5" r="0.9" fill="currentColor" stroke="none" />
+      <circle cx="7" cy="17.5" r="0.9" fill="currentColor" stroke="none" />
+      <path d="M11 6.5h6M11 17.5h6" strokeWidth="1.4" opacity=".6" />
+    </svg>
+  )
+}
+
 /** 복사. */
 export function CopyIcon({ size = 14 }: { size?: number }) {
   return (

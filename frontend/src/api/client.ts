@@ -174,6 +174,8 @@ export const mocksApi = {
   // 사용처(이 워크스페이스 Mock 을 호출하는 워크플로) — mockId → [{id,name}]
   usages: (workspaceId?: string) =>
     http.get<Record<string, import('./types').MockFlowRef[]>>('/mock-servers/usages', { params: workspaceId && workspaceId !== 'public' ? { workspaceId } : undefined }).then((r) => r.data),
+  // 서버 현황 — 모든 워크스페이스의 Mock + 워크스페이스 + 포트 맵(접근 불가 워크스페이스는 이름·포트·상태만)
+  fleet: () => http.get<import('./types').MockFleet>('/mock-servers/fleet').then((r) => r.data),
   versions: (id: string) => http.get<import('./types').MockVersionSummary[]>(`/mock-servers/${id}/versions`).then((r) => r.data),
   version: (id: string, no: number) => http.get<import('./types').MockServerSpec>(`/mock-servers/${id}/versions/${no}`).then((r) => r.data),
   restoreVersion: (id: string, no: number) => http.post<import('./types').MockVersionSummary>(`/mock-servers/${id}/versions/${no}/restore`).then((r) => r.data),

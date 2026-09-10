@@ -279,6 +279,21 @@ button:disabled { cursor: not-allowed !important; opacity: 0.6; }
 .fl-node-running {
   animation: fl-run-pulse 1.2s ease-out infinite;
 }
+/* Mock 서버 현황 — 트래픽 들어오는 서버의 LED 펄스(reduced-motion 이면 위 전역 규칙으로 정지) */
+@keyframes fl-led-pulse {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--fl-ok) 55%, transparent); }
+  70% { box-shadow: 0 0 0 7px transparent; }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+.fl-led-live { animation: fl-led-pulse 1.6s ease-out infinite; }
+@keyframes fl-blink { 0%, 100% { opacity: 1; } 50% { opacity: .12; } }
+.fl-blink { animation: fl-blink 0.9s steps(1) infinite; }
+/* 토폴로지 맵 — 워크스페이스 존은 뒤에 깔린 표시용(팬/클릭이 통과), 헤더만 잡힌다 */
+.react-flow__node-fzone { pointer-events: none; }
+.react-flow__node-fzone .fl-zone-head { pointer-events: auto; }
+.fl-topology .react-flow__node { cursor: default; }
+.fl-topology .react-flow__node-fmachine { cursor: pointer; }
+
 @keyframes fl-spin {
   to { transform: rotate(360deg); }
 }

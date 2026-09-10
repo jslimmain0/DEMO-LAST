@@ -32,6 +32,7 @@ class MockServerService(
     private val versionRepo: com.flowlink.core.repository.MockServerVersionRepository,
     private val flowRepo: com.flowlink.core.repository.FlowRepository,
     private val flowVersionRepo: com.flowlink.core.repository.FlowVersionRepository,
+    private val env: org.springframework.core.env.Environment,
 ) {
 
     @Transactional(readOnly = true)
@@ -41,6 +42,54 @@ class MockServerService(
         return repository.findByTenantIdOrderByUpdatedAtDesc(tenant())
             .filter { it.workspaceId == wsId }
             .map { toSummary(it) }
+    }
+
+    /**
+     * 서버 현황(fleet) — **모든 워크스페이스**의 Mock 을 워크스페이스·포트와 함께 한 번에.
+     * 접근 권한이 없는 워크스페이스의 Mock 도 "무엇이 떠 있는지"(이름·종류·켜짐·포트·살아있음)는 보이고 정의 내용은 비운다 —
+     * 서빙 주소(/mock/{slug})와 TCP 포트는 전역 자원이라 충돌·점유를 누구나 알 수 있어야 한다(내용은 여전히 roleFor 게이트).
+     * 그룹핑용 mine 은 멤버십 기준(관리자 OWNER 우회와 별개) — "내 워크스페이스가 아니면 읽기 전용" 표시의 근거.
+     */
+    @Transactional(readOnly = true)
+    fun fleet(): MockDtos.MockFleet {
+        val me = workspace.currentUsername()
+        val roles = HashMap<UUID?, String?>()
+        fun role(ws: UUID?): String? = roles.getOrPut(ws) { workspace.roleFor(me, ws) }
+        val wsViews = ArrayList<MockDtos.FleetWorkspace>()
+        wsViews.add(MockDtos.FleetWorkspace(com.flowlink.workspace.WorkspaceService.PUBLIC_ID, "공용", "PUBLIC", role(null), mine = true))
+        for (ws in workspace.listAll()) {
+            val mine = if (ws.kind == com.flowlink.core.domain.Workspace.KIND_PERSONAL) ws.ownerUsername == me else workspace.isMember(me, ws.id)
+            wsViews.add(MockDtos.FleetWorkspace(ws.id.toString(), ws.name, ws.kind, role(ws.id), mine, ws.ownerUsername))
+        }
+        val servers = repository.findByTenantIdOrderByUpdatedAtDesc(tenant()).map { m ->
+            val r = role(m.workspaceId)
+            val readable = r != null
+            val s = toSummary(m)
+            val listeningPort = tcpRegistry.listeningPort(m.id)
+            val shouldListen = m.isEnabled && s.tcpPort != null && s.tcpEnabled != false
+            MockDtos.FleetServer(
+                m.id, m.name, m.slug, m.kind.name, m.isEnabled, m.workspaceId?.toString() ?: com.flowlink.workspace.WorkspaceService.PUBLIC_ID, readable, r,
+                s.tcpPort, s.tcpEnabled, listeningPort != null,
+                if (shouldListen && listeningPort == null) (tcpRegistry.bindFailure(m.id) ?: "리스너가 열려 있지 않습니다") else null,
+                s.routeCount, if (readable) s.routeLabels else emptyList(), s.tcpRuleCount, s.tcpFieldCount, s.hasCodec, if (readable) s.environment else null,
+                s.lastRequestAt, s.recentRequests, s.requestCount, s.unmatchedRequests, s.currentVersion, m.updatedAt,
+            )
+        }
+        val httpPort = env.getProperty("local.server.port")?.toIntOrNull()?.takeIf { it > 0 } ?: env.getProperty("server.port")?.toIntOrNull()?.takeIf { it > 0 } ?: 18080
+        val contextPath = env.getProperty("server.servlet.context-path") ?: ""
+        val ports = ArrayList<MockDtos.FleetPort>()
+        ports.add(MockDtos.FleetPort(httpPort, "HTTP", "LISTENING", count = servers.count { it.kind != "TCP" && it.enabled }))
+        for (s in servers) {
+            val p = s.tcpPort ?: continue
+            val state = when {
+                s.listening -> "LISTENING"
+                s.listenError != null -> "FAILED"
+                else -> "OFF"
+            }
+            ports.add(MockDtos.FleetPort(p, "TCP", state, s.id, s.name, s.slug, s.workspaceId, s.readable, 1, s.listenError))
+        }
+        ports.sortWith(compareBy({ it.kind != "HTTP" }, { it.port }, { it.mockName ?: "" })) // HTTP 게이트웨이 먼저, TCP 는 포트순
+        return MockDtos.MockFleet(wsViews, servers, ports, httpPort, contextPath, Instant.now())
     }
 
     /**

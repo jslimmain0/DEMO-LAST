@@ -622,6 +622,28 @@ export interface MockServerSummary {
   currentVersion?: number
 }
 export interface MockFlowRef { id: string; name: string }
+
+// 서버 현황(fleet) — 모든 워크스페이스의 Mock 을 "실제 서버처럼"(워크스페이스·포트·실제 리스너 상태)
+export type WorkspaceRole = 'OWNER' | 'EDITOR' | 'VIEWER'
+export interface MockFleetWorkspace { id: string; name: string; kind: 'PUBLIC' | 'PERSONAL' | 'TEAM'; myRole: WorkspaceRole | null; mine: boolean; ownerUsername?: string | null }
+export interface MockFleetServer {
+  id: string; name: string; slug: string; kind: MockKind; enabled: boolean
+  workspaceId: string            // 'public' 또는 UUID
+  readable: boolean              // false = 접근 권한 없는 워크스페이스(이름·포트·상태만)
+  myRole: WorkspaceRole | null
+  tcpPort?: number | null; tcpEnabled?: boolean | null
+  listening: boolean             // TCP: 실제 소켓 열림
+  listenError?: string | null    // 켜져 있어야 하는데 안 열림
+  routeCount: number; routeLabels: string[]; tcpRuleCount: number; tcpFieldCount: number
+  hasCodec: boolean; environment?: string | null
+  lastRequestAt?: string | null; recentRequests: number; requestCount: number; unmatchedRequests: number
+  currentVersion: number; updatedAt?: string | null
+}
+export interface MockFleetPort {
+  port: number; kind: 'HTTP' | 'TCP'; state: 'LISTENING' | 'FAILED' | 'OFF'
+  mockId?: string | null; mockName?: string | null; slug?: string | null; workspaceId?: string | null; readable: boolean; count: number; error?: string | null
+}
+export interface MockFleet { workspaces: MockFleetWorkspace[]; servers: MockFleetServer[]; ports: MockFleetPort[]; httpPort: number; contextPath: string; generatedAt: string }
 export interface MockVersionSummary { id: string; versionNo: number; note: string | null; createdBy: string | null; createdAt: string; pinned: boolean; routeCount: number; tcpPort: number | null }
 
 export interface MockServerDetail extends MockServerSummary {

@@ -41,6 +41,72 @@ object MockDtos {
         val currentVersion: Int = 0,
     )
 
+    // ---------- 서버 현황(fleet) — 모든 워크스페이스의 Mock 을 "실제 서버처럼" 한 화면에 ----------
+
+    /** 워크스페이스 한 줄 — myRole=null 은 접근 불가(이름·개수만), mine=내 소속(공용·내 개인·멤버인 팀). */
+    data class FleetWorkspace(
+        val id: String,            // 'public' 또는 UUID
+        val name: String,
+        val kind: String,          // PUBLIC | PERSONAL | TEAM
+        val myRole: String?,       // OWNER | EDITOR | VIEWER | null(접근 불가)
+        val mine: Boolean,
+        val ownerUsername: String? = null,
+    )
+
+    /**
+     * 서버 한 대 — readable=false(접근 권한 없는 워크스페이스)면 이름·slug·종류·켜짐·포트·살아있음만 싣고
+     * 라우트 목록/경로/환경 같은 정의 내용은 비운다(서빙 주소·포트는 어차피 전역 자원이라 노출 — 정의는 비공개).
+     */
+    data class FleetServer(
+        val id: UUID,
+        val name: String,
+        val slug: String,
+        val kind: String,
+        val enabled: Boolean,
+        val workspaceId: String,   // 'public' 또는 UUID
+        val readable: Boolean,
+        val myRole: String?,
+        val tcpPort: Int? = null,
+        val tcpEnabled: Boolean? = null,
+        val listening: Boolean = false,      // TCP: 지금 소켓이 열려 있는가(spec 이 아니라 실제 리스너)
+        val listenError: String? = null,     // 켜져 있어야 하는데 안 열림(기동 시 바인딩 실패 등)
+        val routeCount: Int = 0,
+        val routeLabels: List<String> = emptyList(),
+        val tcpRuleCount: Int = 0,
+        val tcpFieldCount: Int = 0,
+        val hasCodec: Boolean = false,
+        val environment: String? = null,
+        val lastRequestAt: Instant? = null,
+        val recentRequests: Int = 0,
+        val requestCount: Int = 0,
+        val unmatchedRequests: Int = 0,
+        val currentVersion: Int = 0,
+        val updatedAt: Instant? = null,
+    )
+
+    /** 포트 한 줄 — HTTP 게이트웨이(앱 포트, 켜진 HTTP Mock 수) + TCP 리스너(mock 별). state=LISTENING | FAILED | OFF. */
+    data class FleetPort(
+        val port: Int,
+        val kind: String,          // HTTP | TCP
+        val state: String,
+        val mockId: UUID? = null,
+        val mockName: String? = null,
+        val slug: String? = null,
+        val workspaceId: String? = null,
+        val readable: Boolean = true,
+        val count: Int = 1,        // HTTP 게이트웨이: 서빙 중인 Mock 수
+        val error: String? = null,
+    )
+
+    data class MockFleet(
+        val workspaces: List<FleetWorkspace>,
+        val servers: List<FleetServer>,
+        val ports: List<FleetPort>,
+        val httpPort: Int,
+        val contextPath: String,
+        val generatedAt: Instant,
+    )
+
     data class MockServerDetail(
         val id: UUID,
         val name: String,

@@ -163,6 +163,18 @@ class WorkspaceService(
         }
     }
 
+    /**
+     * 테넌트의 **모든** 워크스페이스(공용 제외) — 접근 권한과 무관. Mock 서버 현황(fleet)처럼 "다른 팀이 무엇을 띄워 뒀는지"를
+     * 이름·개수 수준으로만 보여줄 때 쓴다(내용 접근은 여전히 roleFor 로 판정).
+     */
+    @Transactional(readOnly = true)
+    fun listAll(): List<Workspace> = wsRepo.findByTenantIdOrderByCreatedAtAsc(tenant())
+
+    /** 팀 멤버십 행이 있는가(관리자 우회 없음) — "내 워크스페이스" 그룹핑용(권한 판정은 roleFor). */
+    @Transactional(readOnly = true)
+    fun isMember(username: String, workspaceId: UUID): Boolean =
+        memberRepo.findByWorkspaceIdAndUsername(workspaceId, username).isPresent
+
     /** 내가 볼 수 있는 워크스페이스 목록 — 공용 + 개인 + 멤버 팀(+관리자는 전체 팀/개인). */
     @Transactional
     fun listMine(): List<WorkspaceView> {

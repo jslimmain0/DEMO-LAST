@@ -44,6 +44,10 @@ class MockServerController(private val service: MockServerService) {
     fun update(@PathVariable id: UUID, @RequestBody req: UpdateMockServerRequest): MockServerDetail =
         service.updateMeta(id, req)
 
+    /** 서버 현황 — 모든 워크스페이스의 Mock(접근 불가는 이름·포트·상태만) + 워크스페이스 + 포트 맵. */
+    @GetMapping("/fleet")
+    fun fleet(): MockDtos.MockFleet = service.fleet()
+
     /** 이 워크스페이스 Mock 들의 사용처(워크플로) — mockId → [{id,name}]. */
     @GetMapping("/usages")
     fun usages(@org.springframework.web.bind.annotation.RequestParam(required = false) workspaceId: String?): Map<UUID, List<MockDtos.FlowRef>> =

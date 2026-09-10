@@ -10,6 +10,7 @@ import { useAuth, usePermissions } from '../auth/AuthContext'
 import { METHOD_COLOR } from '../canvas/nodeMeta'
 import { AskDialog } from '../components/AskDialog'
 import type { AskSpec } from '../components/AskDialog'
+import { MockFleetView } from '../components/MockFleetView'
 import { MockExportDialog, MockImportDialog } from '../components/MockTransferDialog'
 import { toast } from '../components/toast'
 import { apiErrorMessage } from '../lib/apiError'
@@ -18,9 +19,11 @@ import { relTime } from '../lib/format'
 type SortKey = 'updated' | 'name' | 'traffic'
 type FilterKey = 'all' | 'on' | 'off' | 'live' | 'unmatched'
 type Tab = 'HTTP' | 'TCP'
+type View = 'list' | 'fleet'
 
 /**
- * Mock 대시보드 — **HTTP Mock | TCP Mock** 탭(섞이지 않음) · 현황 스트립(전체·서빙 중·요청 들어오는 중·무매칭 — 클릭=필터) ·
+ * Mock 대시보드 — [📋 목록 | 🖧 서버 현황] 보기. 목록은 현재 워크스페이스, 서버 현황([MockFleetView])은 **모든 워크스페이스**를 실제 서버처럼(포트 맵·LED·읽기 전용).
+ * 목록: **HTTP Mock | TCP Mock** 탭(섞이지 않음) · 현황 스트립(전체·서빙 중·요청 들어오는 중·무매칭 — 클릭=필터) ·
  * 최근 트래픽 · 2열 카드(라우트 미니 스트립 / TCP 포트·레이아웃·규칙) · 검색·정렬·즐겨찾기·선택 모드(일괄 켜기/끄기/삭제) · 사용처 워크플로 · ⋯ 메뉴.
  * 저장 즉시 /mock/{slug}/** (HTTP) 또는 포트 리스너(TCP)로 서빙(별도 프로세스 없음).
  */
@@ -51,6 +54,9 @@ export function MockServers() {
   const servers = useQuery({ queryKey: ['mock-servers', wsId], queryFn: () => mocksApi.list(wsId), refetchInterval: 5000 })
   const usages = useQuery({ queryKey: ['mock-usages', wsId], queryFn: () => mocksApi.usages(wsId), refetchInterval: 30000, retry: false })
   const [tab, setTabRaw] = useState<Tab>(() => { try { return (localStorage.getItem('fl:mock:tab') as Tab) === 'TCP' ? 'TCP' : 'HTTP' } catch { return 'HTTP' } })
+  // 보기 — 목록(현재 워크스페이스) | 서버 현황(모든 워크스페이스, 실제 서버처럼)
+  const [view, setViewRaw] = useState<View>(() => { try { return localStorage.getItem('fl:mock:view') === 'fleet' ? 'fleet' : 'list' } catch { return 'list' } })
+  const setView = (v: View) => { setViewRaw(v); setSelected(new Set()); setSelectMode(false); try { localStorage.setItem('fl:mock:view', v) } catch { /* */ } }
   const setTab = (t: Tab) => { setTabRaw(t); setFilter('all'); setSelected(new Set()); setSelectMode(false); setCreating(null); try { localStorage.setItem('fl:mock:tab', t) } catch { /* */ } }
   const [ask, setAsk] = useState<AskSpec | null>(null)
   const [name, setName] = useState('')
@@ -177,34 +183,30 @@ export function MockServers() {
               <h1 style={{ fontFamily: 'var(--fl-font-head)', fontSize: 'var(--fl-fs-2xl)', letterSpacing: '-.02em', margin: 0 }}>Mock 서버</h1>
               <span style={metaMono}>{all.length}</span>
             </div>
-            <p style={{ margin: '6px 0 0', fontSize: 13.5, color: 'var(--fl-text-muted)', maxWidth: 620 }}>
-              미완성 대상 시스템을 흉내 내는 가짜 서버. <b>HTTP</b> 는 경로마다 응답·조건 분기·콜백, <b>TCP</b> 는 포트에 고정길이 전문 — 워크플로 노드가 바로 호출합니다.
+            <p style={{ margin: '6px 0 0', fontSize: 13.5, color: 'var(--fl-text-muted)', maxWidth: 640 }}>
+              {view === 'fleet'
+                ? <>모든 워크스페이스의 Mock 을 <b>실제 서버처럼</b> — 서빙 상태·주소·열린 포트를 한눈에. 내 워크스페이스가 아니면 읽기 전용입니다.</>
+                : <>미완성 대상 시스템을 흉내 내는 가짜 서버. <b>HTTP</b> 는 경로마다 응답·조건 분기·콜백, <b>TCP</b> 는 포트에 고정길이 전문 — 워크플로 노드가 바로 호출합니다.</>}
             </p>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            <select aria-label="워크스페이스" value={wsId} onChange={(e) => setWsId(e.target.value)} style={selectStyle}>
-              {(wsOptions.length ? wsOptions : [{ id: 'public', name: '공용', kind: 'PUBLIC' } as WorkspaceView]).map((w) => (
-                <option key={w.id} value={w.id}>{w.kind === 'PERSONAL' ? '🔒' : w.kind === 'TEAM' ? '👥' : '🌐'} {w.name}</option>
-              ))}
-            </select>
+            <div style={segWrap} role="group" aria-label="보기">
+              <button onClick={() => setView('list')} aria-pressed={view === 'list'} style={{ ...segBtn, ...(view === 'list' ? segOn : null) }} title="현재 워크스페이스의 Mock 목록">📋 목록</button>
+              <button onClick={() => setView('fleet')} aria-pressed={view === 'fleet'} style={{ ...segBtn, ...(view === 'fleet' ? segOn : null) }} title="모든 워크스페이스의 서버 현황 — 포트 맵·서빙 상태">🖧 서버 현황</button>
+            </div>
+            {view === 'list' ? (
+              <select aria-label="워크스페이스" value={wsId} onChange={(e) => setWsId(e.target.value)} style={selectStyle}>
+                {(wsOptions.length ? wsOptions : [{ id: 'public', name: '공용', kind: 'PUBLIC' } as WorkspaceView]).map((w) => (
+                  <option key={w.id} value={w.id}>{w.kind === 'PERSONAL' ? '🔒' : w.kind === 'TEAM' ? '👥' : '🌐'} {w.name}</option>
+                ))}
+              </select>
+            ) : (
+              <span style={{ ...metaMono, padding: '0 4px' }} title={`새 Mock 은 현재 선택된 워크스페이스(${wsOptions.find((w) => w.id === wsId)?.name ?? '공용'})에 만들어집니다`}>모든 워크스페이스</span>
+            )}
             {canEdit && <button onClick={() => setImporting(true)} style={ghostBtn} title="내보내기 JSON 을 붙여넣어 새 Mock 서버로">⬇ 가져오기</button>}
             {canEdit && <button onClick={() => { setCreating('HTTP'); setTabRaw('HTTP'); setError(null) }} style={{ ...primaryBtn, ...(creating === 'HTTP' ? { opacity: 0.6 } : null) }}>+ HTTP Mock</button>}
             {canEdit && <button onClick={() => { setCreating('TCP'); setTabRaw('TCP'); setError(null) }} style={{ ...primaryBtn, background: 'var(--fl-cat-tcp, #7c5cff)', ...(creating === 'TCP' ? { opacity: 0.6 } : null) }}>+ TCP Mock</button>}
           </div>
-        </div>
-
-        {/* 탭 — HTTP 는 HTTP 만, TCP 는 TCP 만 */}
-        <div style={tabBar} role="tablist" aria-label="Mock 종류">
-          {(['HTTP', 'TCP'] as Tab[]).map((t) => {
-            const n = t === 'TCP' ? tcpList.length : httpList.length
-            const live = (t === 'TCP' ? tcpList : httpList).filter((s) => (s.recentRequests ?? 0) > 0).length
-            return (
-              <button key={t} role="tab" aria-selected={tab === t} onClick={() => setTab(t)} style={{ ...tabBtn, ...(tab === t ? tabOn : null) }}>
-                {t === 'HTTP' ? '🌐 HTTP Mock' : '🔌 TCP Mock'} <span style={{ ...countBadge, ...(tab === t ? { background: 'var(--fl-primary)', color: '#fff', borderColor: 'transparent' } : null) }}>{n}</span>
-                {live > 0 && <span aria-label={`요청 들어오는 중 ${live}`} style={{ width: 7, height: 7, borderRadius: 999, background: 'var(--fl-ok)', marginLeft: 6, boxShadow: '0 0 0 3px color-mix(in srgb, var(--fl-ok) 25%, transparent)' }} />}
-              </button>
-            )
-          })}
         </div>
 
         {creating && (
@@ -226,6 +228,24 @@ export function MockServers() {
           </div>
         )}
         {error && <p style={{ color: 'var(--fl-fail)', fontSize: 12.5, marginTop: 8 }}>{error}</p>}
+
+        {view === 'fleet' && (
+          <MockFleetView tenant={me?.tenant} canEditGlobal={canEditGlobal} onOpenWorkspace={(id) => { setWsId(id); setView('list') }} />
+        )}
+        {view === 'list' && <>
+        {/* 탭 — HTTP 는 HTTP 만, TCP 는 TCP 만 */}
+        <div style={tabBar} role="tablist" aria-label="Mock 종류">
+          {(['HTTP', 'TCP'] as Tab[]).map((t) => {
+            const n = t === 'TCP' ? tcpList.length : httpList.length
+            const live = (t === 'TCP' ? tcpList : httpList).filter((s) => (s.recentRequests ?? 0) > 0).length
+            return (
+              <button key={t} role="tab" aria-selected={tab === t} onClick={() => setTab(t)} style={{ ...tabBtn, ...(tab === t ? tabOn : null) }}>
+                {t === 'HTTP' ? '🌐 HTTP Mock' : '🔌 TCP Mock'} <span style={{ ...countBadge, ...(tab === t ? { background: 'var(--fl-primary)', color: '#fff', borderColor: 'transparent' } : null) }}>{n}</span>
+                {live > 0 && <span aria-label={`요청 들어오는 중 ${live}`} style={{ width: 7, height: 7, borderRadius: 999, background: 'var(--fl-ok)', marginLeft: 6, boxShadow: '0 0 0 3px color-mix(in srgb, var(--fl-ok) 25%, transparent)' }} />}
+              </button>
+            )
+          })}
+        </div>
 
         {/* 현황 스트립 — 클릭 = 필터 */}
         {list.length > 0 && (
@@ -320,6 +340,7 @@ export function MockServers() {
           )}
           {servers.isSuccess && list.length > 0 && filtered.length === 0 && <p style={{ color: 'var(--fl-text-muted)', fontSize: 13, padding: '20px 0', textAlign: 'center' }}>검색/필터와 일치하는 Mock 이 없습니다. <button style={{ ...miniBtn, marginLeft: 6 }} onClick={() => { setFilter('all'); setQ('') }}>초기화</button></p>}
         </div>
+        </>}
       </div>
       {ask && <AskDialog spec={ask} onClose={() => setAsk(null)} />}
       {importing && <MockImportDialog workspaceId={wsId === 'public' ? null : wsId} onClose={() => setImporting(false)} onImported={() => void invalidate()} />}

@@ -286,18 +286,12 @@ button:disabled { cursor: not-allowed !important; opacity: 0.6; }
   100% { box-shadow: 0 0 0 0 transparent; }
 }
 .fl-led-live { animation: fl-led-pulse 1.6s ease-out infinite; }
-/* 요청이 흐르는 서버 노드 — 은은한 글로우(reduced-motion 이면 전역 규칙으로 정지) */
-@keyframes fl-node-glow {
-  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--fl-ok) 40%, transparent), var(--fl-shadow); }
-  50% { box-shadow: 0 0 0 5px transparent, var(--fl-shadow); }
-}
-.fl-node-live:not([data-selected]) { animation: fl-node-glow 2s ease-out infinite; }
-/* 토폴로지 맵 — 워크스페이스 존·스파인은 뒤에 깔린 표시용(팬/클릭이 통과), 존 헤더만 잡힌다 */
-.react-flow__node-fzone, .react-flow__node-fspine { pointer-events: none; }
-.react-flow__node-fzone .fl-zone-head { pointer-events: auto; }
-.fl-topology .react-flow__node { cursor: default; }
-.fl-topology .react-flow__node-fserver { cursor: pointer; }
-.fl-topology .react-flow__node-fserver:hover { z-index: 100 !important; } /* 호버 카드·메뉴가 이웃 서버 위로 */
+/* Mock 인벤토리 행 — 포트 칩 클릭으로 찾아간 행을 잠깐 강조 */
+@keyframes fl-row-flash { 0% { background: color-mix(in srgb, var(--fl-primary) 28%, var(--fl-surface)); } 100% { background: transparent; } }
+.fl-row-flash { animation: fl-row-flash 1.6s ease-out 1; }
+.fl-mock-row:hover { background: color-mix(in srgb, var(--fl-primary) 5%, var(--fl-surface)); }
+.fl-mock-row:focus-visible { outline: 2px solid var(--fl-primary); outline-offset: -2px; }
+@media (prefers-reduced-motion: reduce) { .fl-row-flash { animation: none; } }
 
 @keyframes fl-spin {
   to { transform: rotate(360deg); }

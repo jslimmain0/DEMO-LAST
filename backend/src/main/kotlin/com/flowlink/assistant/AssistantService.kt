@@ -127,8 +127,10 @@ class AssistantService(
         val uri = URI.create(plan.baseUrl + path)
         try { ssrfGuard.check(uri) } catch (e: Exception) { throw BadRequestException("AI 엔드포인트가 차단됐습니다: ${e.message}") }
 
-        val body = if (plan.openai) openAiBody(mapper, plan.model, props.maxTokens, system, messages)
-                   else anthropicBody(mapper, plan.model, props.maxTokens, system, messages)
+        // Copilot(OpenAI 호환)은 모델별 출력 한도를 넘는 max_tokens 에 400 을 주므로 /models 의 한도로 클램프
+        val maxTokens = if (plan.openai) (runCatching { oauth.outputLimit(plan.model) }.getOrNull()?.let { minOf(props.maxTokens, it) } ?: props.maxTokens) else props.maxTokens
+        val body = if (plan.openai) openAiBody(mapper, plan.model, maxTokens, system, messages)
+                   else anthropicBody(mapper, plan.model, maxTokens, system, messages)
 
         var reqB = HttpRequest.newBuilder(uri)
             .timeout(Duration.ofSeconds(90))

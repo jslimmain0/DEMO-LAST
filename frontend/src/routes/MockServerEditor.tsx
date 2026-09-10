@@ -290,7 +290,7 @@ export function MockServerEditor() {
                   </div>
                 </>
               )}
-              {canEdit && isHttp && <button style={{ ...ghostBtn, border: '1px solid var(--fl-primary)', color: 'var(--fl-primary)' }} title="AI 로 mock 만들기/고치기" onClick={() => setAiOpen((v) => !v)}>✨ AI</button>}
+              {canEdit && <button style={{ ...ghostBtn, border: '1px solid var(--fl-primary)', color: 'var(--fl-primary)' }} title={isHttp ? 'AI 로 mock 만들기/고치기' : 'AI 로 TCP 전문 mock(레이아웃·규칙·응답 필드) 만들기/고치기'} onClick={() => setAiOpen((v) => !v)}>✨ AI</button>}
               <button style={{ ...primaryBtn, opacity: dirty && canEdit ? 1 : 0.55 }} disabled={!dirty || save.isPending || !canEdit} title={canEdit ? '저장 (Ctrl+S)' : 'viewer 역할은 저장할 수 없습니다'} onClick={() => save.mutate()}>💾 저장</button>
             </div>
           </header>

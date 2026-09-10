@@ -28,6 +28,16 @@ class MockAssistantService(
     private fun buildSystemPrompt(spec: JsonNode?): String = buildString {
         append(MockSchemaPrompt.SYSTEM)
         append(skills.promptBlock()) // 팀 지침 공유
+        // 현재 Mock 의 종류를 못박는다 — TCP Mock 편집기에서 열면 routes 를 만들지 말고 tcp 섹션(포트 유지)을 고치게
+        val hasTcp = spec != null && !spec.isNull && spec.path("tcp").isObject
+        val hasRoutes = spec != null && !spec.isNull && spec.path("routes").isArray && spec.path("routes").size() > 0
+        if (hasTcp && !hasRoutes) {
+            append("\n\n## THIS MOCK IS TCP-ONLY\n")
+            append("이 Mock 은 TCP 전문 mock 이다. **routes 는 빈 배열로 두고 tcp 섹션만** 만들거나 고쳐라. tcp.port 는 현재 값을 유지하고(사용자가 바꾸라고 하지 않는 한), ")
+            append("요청 레이아웃(tcp.requestFields)·규칙(tcp.rules: contains/when + responseFields 또는 response)·인코딩·프리픽스를 사용자의 말에 맞게 정의한다. 기존 필드/규칙 id 는 유지.")
+        } else if (hasRoutes && !hasTcp) {
+            append("\n\n## THIS MOCK IS HTTP-ONLY\n이 Mock 은 HTTP mock 이다. tcp 는 null 로 두고 routes 만 만들거나 고쳐라(라우트/규칙 id 유지).")
+        }
         append("\n\n## CURRENT MOCK SPEC (edit this, keep route ids)\n")
         append(if (spec == null || spec.isNull) "(빈 spec)" else clip(json.toJson(spec), 16000))
     }

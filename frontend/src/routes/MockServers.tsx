@@ -2,25 +2,26 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { CSSProperties } from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import type { MockFleetPort, MockFleetServer, MockServerDetail } from '../api/types'
+import type { MockFleetServer, MockServerDetail } from '../api/types'
 import { mockBaseUrl, mocksApi } from '../api/client'
 import { AppShellTier1 } from '../app/AppShell'
 import { useAuth, usePermissions } from '../auth/AuthContext'
 import { AskDialog } from '../components/AskDialog'
 import type { AskSpec } from '../components/AskDialog'
 import { MockExportDialog, MockImportDialog } from '../components/MockTransferDialog'
-import { MockTopology, serverState } from '../components/MockTopology'
-import type { FleetFilter, ServerAction } from '../components/MockTopology'
+import { MockInventory, serverState } from '../components/MockInventory'
+import type { FleetFilter, ServerAction } from '../components/MockInventory'
 import { toast } from '../components/toast'
 import { apiErrorMessage } from '../lib/apiError'
 
 type Kind = 'HTTP' | 'TCP'
 
 /**
- * Mock 서버 화면 = **서버 현황(토폴로지) 하나**(목록/카드 없음). 모든 워크스페이스의 Mock 을 실제 서버처럼 —
- * 현황 스트립(클릭=필터) · 검색/필터/선택 · 만들기(대상 워크스페이스 선택) · 가져오기 · [MockTopology](../components/MockTopology.tsx)
- * (노드 호버 도구 ⏻/⋯ 로 켜기/끄기·이름·복제·내보내기·이동·삭제·즐겨찾기·URL 복사·↗ 워크플로, Ctrl+클릭/선택 모드로 일괄 작업) · 포트 맵 칩.
- * 5초 폴링(살아있음·리스너 상태). 편집은 노드 클릭 → 편집기.
+ * Mock 서버 화면 = **서버 인벤토리 하나**(카드/그래프 없음). 모든 워크스페이스의 Mock 을 실제 서버처럼 —
+ * 현황 스트립(클릭=필터) · 검색/필터/선택 · 만들기(대상 워크스페이스 선택) · 가져오기 · [MockInventory](../components/MockInventory.tsx)
+ * (상단 포트 스트립 + 워크스페이스 그룹(내 것 먼저, 남의 것 접힘·🔒) + 서버 행(LED·포트·주소·이름·상태·구성·트래픽·↗·vN·⏻·⋯ —
+ * 켜기/끄기·이름·복제·내보내기·이동·삭제·즐겨찾기·URL 복사·↗ 워크플로, Ctrl+클릭/선택 모드로 일괄 작업)).
+ * 5초 폴링(살아있음·리스너 상태). 편집은 행 클릭 → 편집기.
  */
 export function MockServers() {
   const qc = useQueryClient()
@@ -173,7 +174,7 @@ export function MockServers() {
               <span style={metaMono}>{servers.length}</span>
             </div>
             <p style={{ margin: '6px 0 0', fontSize: 13.5, color: 'var(--fl-text-muted)', maxWidth: 680 }}>
-              모든 워크스페이스의 Mock 을 <b>실제 서버처럼</b> — 어떤 포트가 열려 있고 무엇이 서빙 중인지 한눈에. 노드를 클릭하면 편집기, 마우스를 올리면 도구(⏻ 켜기/끄기 · ⋯ 메뉴). 내 워크스페이스가 아니면 읽기 전용입니다.
+              모든 워크스페이스의 Mock 을 <b>실제 서버처럼</b> — 어떤 포트가 열려 있고 무엇이 서빙 중인지 한눈에. 워크스페이스별 행 목록이며, 행을 클릭하면 편집기, 행 끝의 ⏻ 로 켜고 끄고 ⋯ 로 나머지 작업을 합니다. 내 워크스페이스가 아니면 읽기 전용(🔒)입니다.
             </p>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -265,29 +266,15 @@ export function MockServers() {
           </div>
         )}
 
-        {/* 토폴로지 — 유일한 보기 */}
+        {/* 인벤토리 — 유일한 보기 */}
         {f && servers.length > 0 && (
           <div style={{ marginTop: 14 }}>
             <div style={sectionHead}>
-              <span style={sectionLabel}>🖧 토폴로지</span>
-              <span style={{ ...metaMono, marginLeft: 8 }}>{host} · 실제 리스너 기준 · {new Date(f.generatedAt).toLocaleTimeString()} 갱신 · 휠=이동 · Ctrl+휠=줌</span>
+              <span style={sectionLabel}>🖧 서버 인벤토리</span>
+              <span style={{ ...metaMono, marginLeft: 8 }}>{host} · 실제 리스너 기준 · {new Date(f.generatedAt).toLocaleTimeString()} 갱신 · 행 클릭=편집기 · Ctrl+클릭=선택</span>
             </div>
-            <MockTopology fleet={f} host={host} tenant={me?.tenant} match={matchActive ? match : null} selected={selected} selectMode={selectMode} favs={favs}
+            <MockInventory fleet={f} host={host} tenant={me?.tenant} match={matchActive ? match : null} selected={selected} selectMode={selectMode} favs={favs}
               canEditGlobal={canEditGlobal} wsOptions={wsWritable} onOpen={onOpen} onToggleSelect={onToggleSelect} onAction={onAction} onCreateIn={onCreateIn} />
-          </div>
-        )}
-
-        {/* 포트 맵 — 실제 소켓 상태 */}
-        {f && servers.length > 0 && (
-          <div style={{ marginTop: 18 }}>
-            <div style={sectionHead}>
-              <span style={sectionLabel}>🔌 포트 맵</span>
-              <span style={{ ...metaMono, marginLeft: 8 }}>실제 리스너 기준 · 칩 클릭=열기</span>
-            </div>
-            <div style={portRow} aria-label="포트 맵">
-              {f.ports.map((p, i) => <PortChip key={`${p.port}-${p.mockId ?? 'http'}-${i}`} p={p} host={host} contextPath={f.contextPath} tenant={me?.tenant}
-                onOpen={() => { if (p.mockId && p.readable) navigate(`/mocks/${p.mockId}`); else if (p.mockId) toast('접근 권한이 없는 워크스페이스의 서버입니다 — 포트·상태만 보입니다.', 'error') }} />)}
-            </div>
           </div>
         )}
 
@@ -309,31 +296,6 @@ export function MockServers() {
       {importing && <MockImportDialog workspaceId={createWs === 'public' ? null : createWs} onClose={() => setImporting(false)} onImported={() => invalidate()} />}
       {exporting && <MockExportDialog mock={exporting} onClose={() => setExporting(null)} />}
     </AppShellTier1>
-  )
-}
-
-// ---------- 포트 칩 ----------
-
-function PortChip({ p, host, contextPath, tenant, onOpen }: { p: MockFleetPort; host: string; contextPath: string; tenant?: string | null; onOpen: () => void }) {
-  const color = p.state === 'LISTENING' ? 'var(--fl-ok)' : p.state === 'FAILED' ? 'var(--fl-fail)' : 'var(--fl-text-muted)'
-  const isHttp = p.kind === 'HTTP'
-  const title = isHttp
-    ? `HTTP 게이트웨이 — 앱 포트 ${p.port}${contextPath ? ` (${contextPath})` : ''} 에서 켜진 HTTP Mock ${p.count}개를 /mock/{slug}/** 로 서빙`
-    : p.state === 'LISTENING' ? `TCP 리스너 열림 — ${host}:${p.port} · ${p.mockName}` : p.state === 'FAILED' ? `켜져 있지만 리스너가 안 열림 — ${p.error ?? ''}` : `꺼짐 — ${p.mockName}`
-  const Tag = isHttp ? 'div' : 'button'
-  return (
-    <Tag onClick={isHttp ? undefined : onOpen} title={title} aria-label={`포트 ${p.port} ${p.kind} ${p.state}`} data-state={p.state}
-      style={{ ...portChip, borderStyle: p.state === 'OFF' ? 'dashed' : 'solid', cursor: isHttp ? 'default' : p.readable ? 'pointer' : 'not-allowed', opacity: p.state === 'OFF' ? 0.75 : 1, borderColor: p.state === 'FAILED' ? 'color-mix(in srgb, var(--fl-fail) 50%, var(--fl-border))' : undefined }}>
-      <span style={{ ...led, background: color, boxShadow: p.state === 'LISTENING' ? `0 0 0 3px color-mix(in srgb, ${color} 22%, transparent)` : undefined }} />
-      <b style={{ fontFamily: 'var(--fl-font-mono)', fontSize: 13, color: 'var(--fl-text)' }}>:{p.port}</b>
-      <span style={{ ...kindTag, color: isHttp ? 'var(--fl-cat-http, var(--fl-primary))' : 'var(--fl-cat-tcp, #7c5cff)' }}>{p.kind}</span>
-      <span style={{ fontSize: 12, color: 'var(--fl-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 180 }}>
-        {isHttp ? `게이트웨이 · ${p.count}개 서빙` : p.mockName}
-      </span>
-      {!isHttp && !p.readable && <span aria-label="접근 없음" style={{ fontSize: 11 }}>🔒</span>}
-      {p.state === 'FAILED' && <span style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--fl-fail)' }}>바인딩 실패</span>}
-      {isHttp && tenant && tenant !== 'default' && <span style={{ ...metaMono, fontSize: 10.5 }}>/{tenant}</span>}
-    </Tag>
   )
 }
 
@@ -361,7 +323,3 @@ const ghostBtn: CSSProperties = { height: 38, border: '1px solid var(--fl-border
 const miniBtn: CSSProperties = { padding: '5px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 12, cursor: 'pointer' }
 const emptyBox: CSSProperties = { border: '1.5px dashed var(--fl-border)', borderRadius: 16, padding: '48px 40px', textAlign: 'center', color: 'var(--fl-text-muted)', marginTop: 24 }
 const codeChip: CSSProperties = { fontFamily: 'var(--fl-font-mono)', fontSize: 11.5, background: 'var(--fl-surface-2)', padding: '1px 6px', borderRadius: 5 }
-const portRow: CSSProperties = { display: 'flex', gap: 8, flexWrap: 'wrap', padding: 12, border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius)', background: 'var(--fl-surface-2)' }
-const portChip: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 7, padding: '6px 11px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-pill)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 12, maxWidth: '100%' }
-const led: CSSProperties = { display: 'inline-block', width: 8, height: 8, borderRadius: 999, flexShrink: 0 }
-const kindTag: CSSProperties = { fontSize: 9.5, fontWeight: 800, letterSpacing: '.04em', padding: '1px 6px', borderRadius: 999, border: '1px solid currentColor', lineHeight: 1.5 }

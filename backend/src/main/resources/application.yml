@@ -88,7 +88,7 @@ flowlink:
     api-key: ${FLOWLINK_ASSISTANT_API_KEY:}          # 비면 시크릿 볼트 → 둘 다 없으면 stub
     model: ${FLOWLINK_ASSISTANT_MODEL:claude-sonnet-5}
     base-url: ${FLOWLINK_ASSISTANT_BASE_URL:https://api.anthropic.com}
-    max-tokens: ${FLOWLINK_ASSISTANT_MAX_TOKENS:4096}
+    max-tokens: ${FLOWLINK_ASSISTANT_MAX_TOKENS:16384}   # 응답 최대 토큰. Copilot 은 모델별 출력 한도(/models max_output_tokens)로 자동 클램프
   # HashiCorp Vault(KV v2) 연동 — enabled=true 면 Vault 시크릿을 시크릿 볼트에 오버레이(공통 기본층, DB 가 덮어씀).
   # infra 도커의 Vault dev 서버(infra/docker-compose.yml)에 붙거나, 운영 Vault 로 env 를 바꾼다. 미설정이면 완전 비활성.
   #   FLOWLINK_VAULT_ENABLED=true  FLOWLINK_VAULT_ADDRESS=http://localhost:8200  FLOWLINK_VAULT_TOKEN=<토큰>

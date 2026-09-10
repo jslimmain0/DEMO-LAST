@@ -236,6 +236,19 @@ class AssistantOAuthService(
      * 실패 시 빈 목록.
      */
     fun availableModels(): List<Map<String, Any>> {
+        modelCache?.let { (at, list) -> if (System.currentTimeMillis() - at < MODEL_CACHE_MS && list.isNotEmpty()) return list }
+        val fetched = fetchModels()
+        if (fetched.isNotEmpty()) modelCache = System.currentTimeMillis() to fetched
+        return fetched
+    }
+
+    /** 모델의 출력 토큰 한도(`/models` 의 limits.max_output_tokens) — 모르면 null. max_tokens 클램프용(초과 요청은 Copilot 이 400). */
+    fun outputLimit(model: String): Int? =
+        availableModels().firstOrNull { it["id"] == model }?.get("outputTokens")?.let { it as? Int }?.takeIf { it > 0 }
+
+    @Volatile private var modelCache: Pair<Long, List<Map<String, Any>>>? = null
+
+    private fun fetchModels(): List<Map<String, Any>> {
         val bearer = copilotBearer() ?: return emptyList()
         return try {
             val uri = URI.create("$COPILOT_CHAT_BASE/models")
@@ -261,6 +274,7 @@ class AssistantOAuthService(
                     "recommended" to isRecommendedModel(id),
                     "vendor" to m.path("vendor").asText(""),
                     "contextTokens" to ctx,
+                    "outputTokens" to caps.path("limits").path("max_output_tokens").asInt(0),
                     "vision" to !caps.path("limits").path("vision").isMissingNode,
                     "preview" to m.path("preview").asBoolean(false),
                 )
@@ -361,6 +375,7 @@ class AssistantOAuthService(
     private fun enc(s: String): String = URLEncoder.encode(s, StandardCharsets.UTF_8)
 
     companion object {
+        private const val MODEL_CACHE_MS = 10 * 60_000L // /models 캐시(출력 한도 클램프·모델 목록)
         // GitHub Copilot(에디터 플러그인) 공개 OAuth client_id — 디바이스 플로우용.
         const val COPILOT_CLIENT_ID = "Iv1.b507a08c87ecfe98"
         const val DEVICE_CODE_URL = "https://github.com/login/device/code"

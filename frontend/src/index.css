@@ -293,6 +293,7 @@ button:disabled { cursor: not-allowed !important; opacity: 0.6; }
 .react-flow__node-fzone .fl-zone-head { pointer-events: auto; }
 .fl-topology .react-flow__node { cursor: default; }
 .fl-topology .react-flow__node-fmachine { cursor: pointer; }
+.fl-topology .react-flow__node-fmachine:hover { z-index: 100 !important; } /* 호버 카드가 이웃 서버 위로 */
 
 @keyframes fl-spin {
   to { transform: rotate(360deg); }

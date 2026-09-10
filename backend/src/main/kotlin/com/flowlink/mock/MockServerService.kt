@@ -61,6 +61,8 @@ class MockServerService(
             val mine = if (ws.kind == com.flowlink.core.domain.Workspace.KIND_PERSONAL) ws.ownerUsername == me else workspace.isMember(me, ws.id)
             wsViews.add(MockDtos.FleetWorkspace(ws.id.toString(), ws.name, ws.kind, role(ws.id), mine, ws.ownerUsername))
         }
+        val index = usageIndex()
+        val canRead: (UUID?) -> Boolean = { ws -> role(ws) != null }
         val servers = repository.findByTenantIdOrderByUpdatedAtDesc(tenant()).map { m ->
             val r = role(m.workspaceId)
             val readable = r != null
@@ -73,6 +75,7 @@ class MockServerService(
                 if (shouldListen && listeningPort == null) (tcpRegistry.bindFailure(m.id) ?: "리스너가 열려 있지 않습니다") else null,
                 s.routeCount, if (readable) s.routeLabels else emptyList(), s.tcpRuleCount, s.tcpFieldCount, s.hasCodec, if (readable) s.environment else null,
                 s.lastRequestAt, s.recentRequests, s.requestCount, s.unmatchedRequests, s.currentVersion, m.updatedAt,
+                if (readable) usedBy(m.slug, index, canRead) else emptyList(),
             )
         }
         val httpPort = env.getProperty("local.server.port")?.toIntOrNull()?.takeIf { it > 0 } ?: env.getProperty("server.port")?.toIntOrNull()?.takeIf { it > 0 } ?: 18080
@@ -103,25 +106,34 @@ class MockServerService(
         workspace.requireRead(me, wsId)
         val mocks = repository.findByTenantIdOrderByUpdatedAtDesc(tenant()).filter { it.workspaceId == wsId }
         if (mocks.isEmpty()) return emptyMap()
-        val t = tenant()
-        val now = System.currentTimeMillis()
-        val cached = usageCache[t]
-        val index: List<Pair<com.flowlink.core.domain.Flow, String>> = if (cached != null && now - cached.first < USAGE_TTL_MS) cached.second else {
-            val flows = flowRepo.findByTenantIdAndArchivedFalseOrderByUpdatedAtDesc(t)
-            val graphs = if (flows.isEmpty()) emptyMap() else flowVersionRepo.findCurrentByFlowIds(flows.map { it.id }).associateBy { it.flowId }
-            val built = flows.mapNotNull { f -> graphs[f.id]?.graphJson?.let { g -> f to g } }
-            usageCache[t] = now to built
-            built
-        }
+        val index = usageIndex()
         val readable = HashMap<UUID?, Boolean>()
         fun canRead(ws: UUID?): Boolean = readable.getOrPut(ws) { try { workspace.requireRead(me, ws); true } catch (e: Exception) { false } }
         val out = LinkedHashMap<UUID, List<MockDtos.FlowRef>>()
         for (m in mocks) {
-            val re = Regex("/mock/(?:[^/\"\\s]+/)?" + Regex.escape(m.slug) + "(?=[/\"?\\s]|$)")
-            val refs = index.filter { (f, g) -> canRead(f.workspaceId) && re.containsMatchIn(g) }.map { (f, _) -> MockDtos.FlowRef(f.id, f.name) }
+            val refs = usedBy(m.slug, index, ::canRead)
             if (refs.isNotEmpty()) out[m.id] = refs
         }
         return out
+    }
+
+    /** 사용처 인덱스(플로우 → 현재 그래프 JSON) — 테넌트별 30초 캐시. */
+    private fun usageIndex(): List<Pair<com.flowlink.core.domain.Flow, String>> {
+        val t = tenant()
+        val now = System.currentTimeMillis()
+        val cached = usageCache[t]
+        if (cached != null && now - cached.first < USAGE_TTL_MS) return cached.second
+        val flows = flowRepo.findByTenantIdAndArchivedFalseOrderByUpdatedAtDesc(t)
+        val graphs = if (flows.isEmpty()) emptyMap() else flowVersionRepo.findCurrentByFlowIds(flows.map { it.id }).associateBy { it.flowId }
+        val built = flows.mapNotNull { f -> graphs[f.id]?.graphJson?.let { g -> f to g } }
+        usageCache[t] = now to built
+        return built
+    }
+
+    /** slug 의 서빙 경로(`/mock/{slug}` 경계)를 현재 그래프에 가진, 읽을 수 있는 워크플로. */
+    private fun usedBy(slug: String, index: List<Pair<com.flowlink.core.domain.Flow, String>>, canRead: (UUID?) -> Boolean): List<MockDtos.FlowRef> {
+        val re = Regex("/mock/(?:[^/\"\\s]+/)?" + Regex.escape(slug) + "(?=[/\"?\\s]|$)")
+        return index.filter { (f, g) -> canRead(f.workspaceId) && re.containsMatchIn(g) }.map { (f, _) -> MockDtos.FlowRef(f.id, f.name) }
     }
 
     @Transactional

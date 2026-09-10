@@ -82,6 +82,7 @@ object MockDtos {
         val unmatchedRequests: Int = 0,
         val currentVersion: Int = 0,
         val updatedAt: Instant? = null,
+        val usedBy: List<FlowRef> = emptyList(),   // 이 Mock 의 base URL 을 현재 그래프에 가진(읽을 수 있는) 워크플로 — readable 일 때만
     )
 
     /** 포트 한 줄 — HTTP 게이트웨이(앱 포트, 켜진 HTTP Mock 수) + TCP 리스너(mock 별). state=LISTENING | FAILED | OFF. */

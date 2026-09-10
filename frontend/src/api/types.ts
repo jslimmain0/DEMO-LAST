@@ -638,6 +638,7 @@ export interface MockFleetServer {
   hasCodec: boolean; environment?: string | null
   lastRequestAt?: string | null; recentRequests: number; requestCount: number; unmatchedRequests: number
   currentVersion: number; updatedAt?: string | null
+  usedBy?: MockFlowRef[]        // 이 Mock 의 base URL 을 쓰는(읽을 수 있는) 워크플로 — readable 일 때만
 }
 export interface MockFleetPort {
   port: number; kind: 'HTTP' | 'TCP'; state: 'LISTENING' | 'FAILED' | 'OFF'

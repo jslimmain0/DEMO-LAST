@@ -48,7 +48,7 @@ export FLOWLINK_AUTH_GITHUB_ENABLED=true
 export FLOWLINK_AUTH_JWT_SECRET=<강한 시크릿>              # 앱 JWT 서명키(로컬). 운영은 env 대신 Vault 권장(아래 §4)
 export FLOWLINK_AUTH_ALLOWED_LOGINS=alice,bob             # 선택. 허용 GitHub 로그인 목록(비우면 전체 허용, 기동 시 WARN)
 
-# Vault 시크릿 끌어오기
+# Vault KV 시크릿 오버레이(선택) — ENABLED 는 KV 조회 스위치. Transit(KEK)만 쓸 때는 ENABLED 없이 ADDRESS+인증+FLOWLINK_VAULT_TRANSIT_ENABLED=true 만(운영가이드 §6)
 export FLOWLINK_VAULT_ENABLED=true
 export FLOWLINK_VAULT_ADDRESS=http://<vault호스트>:8200
 export FLOWLINK_VAULT_TOKEN=<Vault 토큰>

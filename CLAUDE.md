@@ -955,6 +955,7 @@ design/   theme(라이트/다크) · index.css(CSS 변수)
 - **성능**: `activeSecrets` 복호화를 `decryptAll`(Transit batch 1회)로 묶음. KEK 로테이션은 `transit/keys/{key}/rotate` — 데이터 재암호화 불필요.
 - 검증: 단위 15종(Transit 프로토콜/배치/오류 전파·Routing 접두사/순서 보존·Config 빈 선택/fail-closed·@DataJpaTest 재암호화 이관) + 전체 스위트 그린 + **라이브**(도커 Vault transit 실키): 기동 3로그(Transit 활성·헬스체크 OK·시크릿 2건 재암호화) → `{{ payApiKey@secret }}` 실행 SUCCEEDED + `Bearer ••••••` 마스킹 → Vault 다운 상태 기동 = Connection refused 로 부팅 실패(fail-closed) 확인.
 - ⚠ Transit 모드는 Vault **상시 의존**(다운 시 시크릿 실행·재개·재시작 불가 — HA 권장). 상세: [docs/운영가이드.md](docs/운영가이드.md) §6.
+- **(2026-09-11) `FLOWLINK_VAULT_ENABLED` 는 KV 오버레이 전용 — Transit 과 독립**: Transit 은 `transit.enabled`+주소+인증만 본다([CryptoConfig](backend/src/main/kotlin/com/flowlink/common/crypto/CryptoConfig.kt)·`VaultTokenSource.of`). 둘 다 켜고 AppRole 정책에 KV read 가 없으면 `activeSecrets`/`listNames` 의 모든 호출처(워크플로 실행·시크릿 피커·Mock 게이트웨이·TCP 리스너)에서 `GET /v1/secret/data/flowlink` 403 이 60초마다 WARN 으로 반복됐다(TCP mock 만의 문제가 아님 — 실측 orca 18080). [VaultSecretSource](backend/src/main/kotlin/com/flowlink/secret/VaultSecretSource.kt) 는 이제 경로별 **첫 실패만 WARN**(실제 요청 URL + 원인별 힌트 — Transit 이면 "ENABLED 를 끄세요"), 반복은 DEBUG, 복구는 INFO(`VaultSecretSourceTest` 3종 — RestClient.Builder/clock 주입). 옛 로그의 `주소 마운트/경로` 표기(URL 에 공백처럼 보임)도 제거. 운영가이드 §6·문제 해결 표·infra/README 갱신.
 
 ### AppRole 인증 (후속 — `feat/vault-approle` 브랜치)
 static 토큰 대신 **AppRole 로그인 + 자동 갱신**(정석). [VaultTokenSource](backend/src/main/kotlin/com/flowlink/secret/VaultTokenSource.kt) —

@@ -1235,6 +1235,11 @@ API 도구 UX·비주얼/IA·플로우 통합 3관점 병렬 비평 → 확정 �
 - **TCP 편집기에 ✨ AI 버튼**([MockServerEditor](frontend/src/routes/MockServerEditor.tsx) — 이전엔 `isHttp &&` 로 HTTP 만). [MockAssistantService.buildSystemPrompt](backend/src/main/kotlin/com/flowlink/assistant/MockAssistantService.kt) 가 현재 spec 을 보고 **"THIS MOCK IS TCP-ONLY"**(routes 빈 배열 유지·tcp 섹션만·포트/필드·규칙 id 유지) 또는 **"HTTP-ONLY"**(tcp null 유지) 힌트를 붙인다.
 - `flowlink.assistant.max-tokens` yml 기본 4096 → **16384**(`FLOWLINK_ASSISTANT_MAX_TOKENS`, 코드 기본과 일치). Copilot 은 모델별 `max_output_tokens` 를 넘는 `max_tokens` 에 400 을 주므로 [AssistantOAuthService.outputLimit](backend/src/main/kotlin/com/flowlink/assistant/AssistantOAuthService.kt)(`/models` 응답을 10분 캐시, `limits.max_output_tokens`)로 [AssistantService.callLlmText](backend/src/main/kotlin/com/flowlink/assistant/AssistantService.kt) 가 **자동 클램프**(Anthropic 키 경로는 그대로). 운영가이드 §7 표 갱신.
 
+## 최근 변경 (2026-09-11) — 설계만(미구현): 초보자용 TCP/워크플로 요청 작성 파훼법 + [필드|텍스트] 전면 적용
+"TCP mock·워크플로 요청 짜기가 처음 쓰는 사람에겐 감이 안 잡힌다 / 필드↔텍스트 보기를 모든 요소에, 전환마다 실제 변환" 요청 → 에이전트 워크플로(현황 6관점 → 독립 설계안 6 → 2렌즈 심사 12)로 조사 후 **설계 문서만** 작성:
+[docs/superpowers/specs/2026-09-11-tcp-request-authoring-ux-design.md](docs/superpowers/specs/2026-09-11-tcp-request-authoring-ux-design.md).
+권고 패키지 P1 레이아웃 텍스트 계약(`TextForm<T>` + 고정길이 전문 DSL 을 TCP 노드 요청/응답·Mock 레이아웃/응답 4곳 공유 + 정의서 붙여넣기) · P2 거울 생성(`tcpMirror` — Mock⇄노드 생성/가져오기/정합성 칩, 기본값 정합) · P3 항상 켜진 바이트 자(`/api/v1/tcp/decode`) · P4 응답 trim/type(첫 성공 전제) · P5 안내(5단계 바·ⓘ·시작하기 pane) · P6 AI 추출(선택). 축 B 는 인벤토리(≈45 요소) 전부에 텍스트 폼을 확정한 표. 착수 전 사용자 결정 3개(DSL 표기·trim 기본값·AI 포함) 대기. ⚠ 프론트에 커밋된 테스트 러너가 없음(vitest 도입이 1차 첫 항목).
+
 ## 참고 문서
 - `backend/README.md` — 백엔드 구조·설정·API 요약 · `frontend/README.md` · `infra/README.md`(배포)
 - **`docs/guide/`** — 실사용자 가이드(심플+심화 15챕터, 스크린샷) · `docs/사용가이드.md` — 한 페이지 요약본

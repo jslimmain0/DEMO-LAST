@@ -171,6 +171,13 @@ class TokenResolver(private val json: JsonService) {
     private fun splitPath(key: String): List<String> =
         key.replace("]", "").split('.', '[').filter { it.isNotEmpty() }
 
+    /**
+     * 가장 가까운 상위 노드 출력에서 [key] 값(문자열). 없으면 null.
+     * bare 토큰이 "상위 노드에 같은 키가 있으면 그것이 우선"인지 판정할 때 쓴다 —
+     * 시각 토큰([timeToken])이 쓰는 것과 **같은 판정**을 TCP 길이 토큰(TcpLen) 도 재사용한다.
+     */
+    fun upstreamValue(key: String, ctx: ExecutionContext): String? = nearestUpstream(key, ctx)
+
     private fun nearestUpstream(key: String, ctx: ExecutionContext): String? {
         for (k in ctx.keysReversed()) {
             if (k.startsWith("req:")) {

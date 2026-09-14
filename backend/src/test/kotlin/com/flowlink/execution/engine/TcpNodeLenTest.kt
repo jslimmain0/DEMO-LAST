@@ -84,6 +84,23 @@ class TcpNodeLenTest {
     }
 
     @Test
+    fun `상위 노드에 len 출력이 있으면 bare 는 그 값이 우선`() {
+        // 시각 토큰(now/today/time)과 같은 규약 — 기존 그래프의 {{ len }} 바인딩이 조용히 깨지지 않게
+        val ctx = ExecutionContext().also { it.putOutput("n0", mapOf("len" to "77")) }
+        val n = node(field("길이", 4, "{{len}}", "left", "0"), field("코드", 4, "0200"))
+        assertThat(String(executor.build(n, ctx).message, euc)).isEqualTo("0008" + "0077" + "0200")
+        // 상위에 len 이 없으면 본문 길이(8)
+        assertThat(String(executor.build(n, ExecutionContext()).message, euc)).isEqualTo("0008" + "0008" + "0200")
+    }
+
+    @Test
+    fun `상위에 len 이 있어도 명시형은 항상 길이`() {
+        val ctx = ExecutionContext().also { it.putOutput("n0", mapOf("len" to "77")) }
+        val n = node(field("길이", 4, "{{len:4}}"), field("프레임", 4, "{{len:frame:4}}"), field("코드", 4, "0200"))
+        assertThat(String(executor.build(n, ctx).message, euc)).isEqualTo("0012" + "0012" + "0016" + "0200")
+    }
+
+    @Test
     fun `길이 토큰이 없으면 기존 동작 그대로(무회귀)`() {
         val n = node(field("길이", 4, "0200"), field("고객명", 6, "홍길동"))
         assertThat(String(executor.build(n, ExecutionContext()).message, euc)).isEqualTo("0010" + "0200" + "홍길동")

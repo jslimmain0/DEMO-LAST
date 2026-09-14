@@ -62,6 +62,23 @@ class TcpLenTest {
     }
 
     @Test
+    fun `resolveBare false 면 bare 만 원문 유지 - 명시형은 그대로 치환`() {
+        assertThat(TcpLen.resolve("{{len}}", 204, 208, false)).isEqualTo("{{len}}")
+        assertThat(TcpLen.resolve("{{ len }}|{{len:4}}|{{len:frame}}", 204, 208, false)).isEqualTo("{{ len }}|0204|208")
+        assertThat(TcpLen.resolve("{{len}}", 204, 208, true)).isEqualTo("204")
+    }
+
+    @Test
+    fun `hasBareToken 은 bare 형태만 잡는다`() {
+        assertThat(TcpLen.hasBareToken("{{len}}")).isTrue()
+        assertThat(TcpLen.hasBareToken("앞{{ len }}뒤")).isTrue()
+        assertThat(TcpLen.hasBareToken("{{len:4}}")).isFalse()
+        assertThat(TcpLen.hasBareToken("{{len:frame}}")).isFalse()
+        assertThat(TcpLen.hasBareToken("{{length}}")).isFalse()
+        assertThat(TcpLen.hasBareToken(null)).isFalse()
+    }
+
+    @Test
     fun `템플릿 2패스 - 치환 결과의 바이트 길이가 토큰이 내놓은 숫자와 같다`() {
         // 본문 = 4자리 길이 + 고정 텍스트. 자리표시자(0000)와 최종 숫자의 폭이 같아 길이가 안 변한다.
         val t = "{{len:4}}0200ABCDEF"

@@ -24,6 +24,11 @@ import java.util.regex.Pattern
  *      · bare 형태는 결과와 일관된 자릿수(`w = digits(본문길이)`)를 **고정점**으로 찾는다(자릿수를 늘리면 본문도 길어지므로 단조 — 몇 번이면 수렴).
  *
  * 프리픽스 의미: `frame` = 본문 + 프리픽스 폭(프리픽스 바이트가 실제로 앞에 붙으므로). 프리픽스가 없으면(`prefixLength<=0`) `frame` = `{{len}}`.
+ *
+ * bare 우선순위(워크플로 TCP 노드): **상위 노드 출력에 `len` 키가 있으면 그 값이 이긴다**(시각 토큰 `now/today/time` 과 같은 규약 —
+ * 기존 그래프의 `{{ len }}` 바인딩이 조용히 깨지지 않게). 호출처가 [resolve] 에 `resolveBare=false` 를 주면 bare 토큰만 원문으로 남겨
+ * TokenResolver 가 상위 값으로 해석한다. 명시형(`{{len:4}}`·`{{len:frame}}`)은 형태가 분명하므로 **항상 길이**.
+ * Mock 문맥은 상위 노드 개념이 없어 bare 도 항상 길이.
  * ⚠ `prefixIncludesSelf=false` 인 mock/노드에서 **프리픽스에 쓰이는 숫자**는 본문 길이 = `{{len}}` 이다(`frame` 이 아니다).
  */
 object TcpLen {
@@ -50,14 +55,32 @@ object TcpLen {
      * 길이가 이미 확정된 경우(선언 길이 합)의 치환.
      * @param bodyLen  본문(프리픽스 제외) 바이트 수
      * @param frameLen 프리픽스 포함 전체 바이트 수(= bodyLen + 프리픽스 폭)
+     * @param resolveBare false 면 **bare `{{len}}` 만 원문 그대로 둔다**(상위 노드 출력의 `len` 키에 양보 —
+     *   워크플로 TCP 노드에서 시각 토큰 `now/today/time` 과 같은 규약). 명시형(`{{len:4}}`·`{{len:frame}}`)은 항상 길이.
      */
     @JvmStatic
-    fun resolve(text: String?, bodyLen: Int, frameLen: Int): String {
+    @JvmOverloads
+    fun resolve(text: String?, bodyLen: Int, frameLen: Int, resolveBare: Boolean = true): String {
         if (text.isNullOrEmpty() || !text.contains("{{")) return text ?: ""
         return substitute(text) { frame, width ->
-            val v = if (frame) frameLen else bodyLen
-            format(v, width ?: digits(v))
+            if (!resolveBare && !frame && width == null) {
+                null // bare {{len}} — 상위 노드 값이 이긴다(호출처가 TokenResolver 로 넘긴다)
+            } else {
+                val v = if (frame) frameLen else bodyLen
+                format(v, width ?: digits(v))
+            }
         }
+    }
+
+    /** 텍스트에 **bare `{{len}}`** 이 있는가(명시형 제외) — 상위 노드 값 양보 판정이 필요한지. */
+    @JvmStatic
+    fun hasBareToken(text: String?): Boolean {
+        if (text == null || !text.contains("{{")) return false
+        val m = TOKEN.matcher(text)
+        while (m.find()) {
+            if (m.group(1) == null && m.group(2) == null) return true
+        }
+        return false
     }
 
     /**
@@ -96,14 +119,14 @@ object TcpLen {
             format(v, width ?: if (frame) wFrame else wBody)
         }
 
-    /** 토큰마다 (frame 여부, 자리수 또는 null) → 치환 문자열. */
-    private fun substitute(text: String, f: (Boolean, Int?) -> String): String {
+    /** 토큰마다 (frame 여부, 자리수 또는 null) → 치환 문자열. 람다가 null 이면 **그 토큰은 원문 유지**. */
+    private fun substitute(text: String, f: (Boolean, Int?) -> String?): String {
         val m = TOKEN.matcher(text)
         val sb = StringBuilder()
         while (m.find()) {
             val frame = m.group(1) != null
             val width = m.group(2)?.toIntOrNull()
-            m.appendReplacement(sb, Matcher.quoteReplacement(f(frame, width)))
+            m.appendReplacement(sb, Matcher.quoteReplacement(f(frame, width) ?: m.group()))
         }
         m.appendTail(sb)
         return sb.toString()

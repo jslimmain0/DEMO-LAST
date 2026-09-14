@@ -403,7 +403,7 @@ export function MockServerEditor() {
               )}
               {nav.kind === 'rule' && selRule && (
                 <TcpRuleDetail key={selRule.id} rule={selRule} index={tcpRules.findIndex((r) => r.id === selRule.id)} total={tcpRules.length} layout={tcp.requestFields ?? []} readOnly={!canEdit} sources={sourcesFor(null)}
-                  codec={spec.codec} onCodec={(codec) => mutate((s) => ({ ...s, codec }))}
+                  codec={spec.codec} onCodec={(codec) => mutate((s) => ({ ...s, codec }))} tcpCharset={tcp.charset ?? 'EUC-KR'}
                   onChange={(patch) => setRule(selRule.id, patch)} onMove={(dir) => moveRule(selRule.id, dir)} onDup={() => dupRule(selRule.id)} onRemove={() => removeRule(selRule.id)} />
               )}
               {nav.kind === 'codec' && (

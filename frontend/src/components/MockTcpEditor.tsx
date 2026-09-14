@@ -1,12 +1,15 @@
 import type { CSSProperties } from 'react'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import type { MockCodecSpec, MockTcpCond, MockTcpPreview, MockTcpReqField, MockTcpRespField, MockTcpRuleSpec, MockTcpSpec } from '../api/types'
 import { TokenInput } from '../binding/TokenInput'
 import type { BindableSource } from '../binding/upstream'
 import { mocksApi } from '../api/client'
 import { apiErrorMessage } from '../lib/apiError'
 import { newId } from '../lib/ids'
+import { tcpLayoutForm, type LayoutRow } from '../lib/textForms'
 import { FieldCodecButton } from './FieldCodecButton'
+import { FieldTextToggle } from './FieldTextToggle'
+import { TcpLayoutPasteButtons } from './TcpLayoutPaste'
 
 const ENCODINGS = ['EUC-KR', 'MS949', 'UTF-8', 'US-ASCII']
 const COND_OPS: NonNullable<MockTcpCond['op']>[] = ['eq', 'ne', 'contains', 'startswith', 'endswith', 'regex', 'exists']
@@ -15,7 +18,9 @@ const COND_OPS: NonNullable<MockTcpCond['op']>[] = ['eq', 'ne', 'contains', 'sta
  * TCP 전문 mock 편집 조각 — TCP 편집기(좌 목록 | 우 상세)가 조립한다. 항목별 **바이트 길이·패딩**으로 전문을 정의(한글 2바이트 등은 백엔드 계산).
  * - 연결: 포트·인코딩·길이 프리픽스.
  * - 요청 레이아웃: 들어온 전문을 앞에서부터 길이대로 잘라 필드명을 붙임 → 규칙 조건·{{ 이름@req }} 토큰. 필드마다 ◈ 코덱(요청 전 풀기).
- * - 규칙 상세: 조건(AND) + 응답 [필드] 모드(길이·값·패딩·인코딩) 또는 [텍스트]. 응답 필드마다 ◈ 코덱(응답 후 감싸기).
+ *   [필드|텍스트] 토글(한 줄 = 한 필드)·📋 정의서 붙여넣기로 엑셀 정의서를 통째로 옮길 수 있다.
+ * - 규칙 상세: 조건(AND) + 응답 [필드 | 텍스트 | 템플릿(고급)]. 필드↔텍스트는 같은 모델의 두 보기(무손실),
+ *   템플릿(고급)만 responseFields 를 버리는 파괴적 전환이라 2단계 확인을 받는다. 응답 필드마다 ◈ 코덱(응답 후 감싸기).
  * - 미리보기: 샘플 요청으로 요청 분해·매칭 규칙·응답 hex/오프셋/절단·패딩을 저장 없이 확인(트래픽 패널 탭).
  */
 
@@ -64,7 +69,10 @@ export function TcpLayoutPanel({ tcp, onChange, readOnly, codec, onCodec, source
   tcp: MockTcpSpec; onChange: (patch: Partial<MockTcpSpec>) => void; readOnly?: boolean
   codec: MockCodecSpec | null | undefined; onCodec: (c: MockCodecSpec | null) => void; sources: BindableSource[]
 }) {
-  const layout = tcp.requestFields ?? []
+  // rows/form 은 안정된 참조여야 한다 — FieldTextToggle 이 이 둘을 effect 의존성으로 쓰기 때문(부모가 다른 이유로
+  // 리렌더될 때(트래픽 패널 3초 폴링 등) 새 배열/새 form 이 들어가면 텍스트 편집 중인 버퍼가 되감긴다).
+  const layout = useMemo(() => tcp.requestFields ?? [], [tcp.requestFields])
+  const layoutForm = useMemo(() => tcpLayoutForm('layout'), [])
   const setLayout = (next: MockTcpReqField[]) => onChange({ requestFields: next })
   return (
     <section style={panel}>
@@ -76,55 +84,77 @@ export function TcpLayoutPanel({ tcp, onChange, readOnly, codec, onCodec, source
         들어온 전문(프리픽스 제외)을 앞에서부터 <b>바이트 길이</b>대로 잘라 이름을 붙입니다 → 규칙 조건·응답 값의 <code style={code}>{'{{ 이름@req }}'}</code>.
         필드 값이 암호화/인코딩돼 오면 그 필드의 <b>◈</b> 로 요청 전 풀기 코덱을 겁니다(매칭·템플릿 전에 적용).
       </p>
-      <div style={{ display: 'grid', gap: 4, marginTop: 10 }}>
-        {layout.map((f, i) => {
-          const off = layout.slice(0, i).reduce((a, x) => a + (x.length ?? 0), 0)
-          return (
-            <div key={f.id} style={row}>
-              <span style={offBadge} title={`시작 바이트 오프셋 ${off}`}>@{off}</span>
-              <input style={{ ...input, flex: 2, minWidth: 140, fontFamily: 'var(--fl-font-mono)' }} value={f.name ?? ''} placeholder="필드명 (예: 전문코드)" disabled={readOnly}
-                onChange={(e) => setLayout(layout.map((x) => (x.id === f.id ? { ...x, name: e.target.value } : x)))} />
-              <input style={{ ...input, width: 64, fontFamily: 'var(--fl-font-mono)' }} type="number" value={f.length ?? 0} title="바이트 길이" disabled={readOnly}
-                onChange={(e) => setLayout(layout.map((x) => (x.id === f.id ? { ...x, length: Number(e.target.value) } : x)))} />
-              <select style={{ ...input, width: 92 }} value={f.encoding ?? ''} title="필드 인코딩(비면 서버 인코딩)" disabled={readOnly}
-                onChange={(e) => setLayout(layout.map((x) => (x.id === f.id ? { ...x, encoding: e.target.value || undefined } : x)))}>
-                <option value="">(서버)</option>{ENCODINGS.map((c) => <option key={c}>{c}</option>)}
-              </select>
-              <FieldCodecButton field={(f.name ?? '').trim()} codec={codec} onChange={onCodec} sources={sources} defaultSide="request" sides={['request']} kind="tcp" readOnly={readOnly} />
-              {!readOnly && <>
-                <button style={miniBtn} onClick={() => setLayout(move(layout, i, -1))} title="위로">↑</button>
-                <button style={miniBtn} onClick={() => setLayout(move(layout, i, 1))} title="아래로">↓</button>
-                <button style={{ ...miniBtn, color: 'var(--fl-fail)' }} onClick={() => setLayout(layout.filter((x) => x.id !== f.id))} aria-label="요청 필드 삭제">×</button>
-              </>}
-            </div>
-          )
-        })}
-        {layout.length === 0 && <span style={{ fontSize: 12, color: 'var(--fl-text-muted)' }}>레이아웃 없음 — 규칙에서 <code style={code}>{'{{req:오프셋:길이}}'}</code> 슬라이스만 쓸 수 있습니다.</span>}
+      <div style={{ marginTop: 10 }}>
+        <FieldTextToggle<LayoutRow>
+          form={layoutForm} rows={layout as LayoutRow[]} onChange={(r) => setLayout(r as MockTcpReqField[])}
+          readOnly={readOnly} ariaLabel="요청 레이아웃"
+          summary={(r) => `총 ${r.reduce((a, f) => a + (f.length ?? 0), 0)}B · ${r.length}필드`}
+          extras={<TcpLayoutPasteButtons mode="layout" rows={layout as LayoutRow[]} encoding={tcp.charset ?? 'EUC-KR'}
+            prefixLength={tcp.prefixLength ?? 4} prefixIncludesSelf={!!tcp.prefixIncludesSelf} readOnly={readOnly}
+            onApply={(rows, how) => setLayout((how === 'replace' ? rows : [...(layout as LayoutRow[]), ...rows]) as MockTcpReqField[])} />}
+        >
+          <div style={{ display: 'grid', gap: 4 }}>
+            {layout.map((f, i) => {
+              const off = layout.slice(0, i).reduce((a, x) => a + (x.length ?? 0), 0)
+              return (
+                <div key={f.id} style={row}>
+                  <span style={offBadge} title={`시작 바이트 오프셋 ${off}`}>@{off}</span>
+                  <input style={{ ...input, flex: 2, minWidth: 140, fontFamily: 'var(--fl-font-mono)' }} value={f.name ?? ''} placeholder="필드명 (예: 전문코드)" disabled={readOnly}
+                    onChange={(e) => setLayout(layout.map((x) => (x.id === f.id ? { ...x, name: e.target.value } : x)))} />
+                  <input style={{ ...input, width: 64, fontFamily: 'var(--fl-font-mono)' }} type="number" value={f.length ?? 0} title="바이트 길이" disabled={readOnly}
+                    onChange={(e) => setLayout(layout.map((x) => (x.id === f.id ? { ...x, length: Number(e.target.value) } : x)))} />
+                  <select style={{ ...input, width: 92 }} value={f.encoding ?? ''} title="필드 인코딩(비면 서버 인코딩)" disabled={readOnly}
+                    onChange={(e) => setLayout(layout.map((x) => (x.id === f.id ? { ...x, encoding: e.target.value || undefined } : x)))}>
+                    <option value="">(서버)</option>{ENCODINGS.map((c) => <option key={c}>{c}</option>)}
+                  </select>
+                  <FieldCodecButton field={(f.name ?? '').trim()} codec={codec} onChange={onCodec} sources={sources} defaultSide="request" sides={['request']} kind="tcp" readOnly={readOnly} />
+                  {!readOnly && <>
+                    <button style={miniBtn} onClick={() => setLayout(move(layout, i, -1))} title="위로">↑</button>
+                    <button style={miniBtn} onClick={() => setLayout(move(layout, i, 1))} title="아래로">↓</button>
+                    <button style={{ ...miniBtn, color: 'var(--fl-fail)' }} onClick={() => setLayout(layout.filter((x) => x.id !== f.id))} aria-label="요청 필드 삭제">×</button>
+                  </>}
+                </div>
+              )
+            })}
+            {layout.length === 0 && <span style={{ fontSize: 12, color: 'var(--fl-text-muted)' }}>레이아웃 없음 — 규칙에서 <code style={code}>{'{{req:오프셋:길이}}'}</code> 슬라이스만 쓸 수 있습니다. [텍스트] 또는 📋 로 정의서를 한 번에 옮길 수 있습니다.</span>}
+          </div>
+          {!readOnly && <button style={{ ...miniBtn, marginTop: 8 }} onClick={() => setLayout([...layout, { id: newId(), name: '', length: 10 }])}>+ 요청 필드</button>}
+        </FieldTextToggle>
       </div>
-      {!readOnly && <button style={{ ...miniBtn, marginTop: 8 }} onClick={() => setLayout([...layout, { id: newId(), name: '', length: 10 }])}>+ 요청 필드</button>}
     </section>
   )
 }
 
 // ---------- 규칙 상세 ----------
 
-export function TcpRuleDetail({ rule: r, index, total, layout, readOnly, sources, codec, onCodec, onChange, onMove, onDup, onRemove }: {
+export function TcpRuleDetail({ rule: r, index, total, layout, readOnly, sources, codec, onCodec, tcpCharset, onChange, onMove, onDup, onRemove }: {
   rule: MockTcpRuleSpec; index: number; total: number; layout: MockTcpReqField[]; readOnly?: boolean; sources: BindableSource[]
   codec: MockCodecSpec | null | undefined; onCodec: (c: MockCodecSpec | null) => void
+  tcpCharset: string // 서버 인코딩 — 붙여넣기 대화상자의 바이트 길이 대조 기준
   onChange: (patch: Partial<MockTcpRuleSpec>) => void; onMove: (d: -1 | 1) => void; onDup: () => void; onRemove: () => void
 }) {
-  const fields = r.responseFields ?? []
-  const [mode, setMode] = useState<'fields' | 'text'>(fields.length > 0 ? 'fields' : 'text')
+  const fields = useMemo(() => r.responseFields ?? [], [r.responseFields]) // 안정된 참조 — 위 TcpLayoutPanel 주석 참조
+  const respForm = useMemo(() => tcpLayoutForm('request'), []) // Mock 응답 필드 = 값·패딩이 있는 '요청' 성격(노드 응답 파싱 필드와 다름)
+  // 필드 0개 + response 템플릿만 있는 기존 규칙 = 템플릿(고급) 모드로 연다(백엔드 규약: responseFields 가 비면 텍스트 템플릿).
+  const [mode, setMode] = useState<'fields' | 'text' | 'template'>(fields.length > 0 ? 'fields' : 'template')
+  const [confirmTpl, setConfirmTpl] = useState(false)
   const conds = r.when ?? []
   const names = layout.map((f) => f.name ?? '').filter(Boolean)
   const setField = (fid: string, patch: Partial<MockTcpRespField>) => onChange({ responseFields: fields.map((f) => (f.id === fid ? { ...f, ...patch } : f)) })
   const moveField = (i: number, d: -1 | 1) => onChange({ responseFields: move(fields, i, d) })
   const bodyTotal = fields.reduce((a, f) => a + (f.length ?? 0), 0)
   const isDefault = !r.contains && conds.every((c) => !c.field)
-  const switchMode = (m: 'fields' | 'text') => {
+  // [필드 | 텍스트] 는 같은 responseFields 의 두 보기(무손실 왕복). 템플릿(고급)만 responseFields 를 버리는 파괴적 전환 → 2단계 확인.
+  const switchMode = (m: 'fields' | 'text' | 'template') => {
+    if (m === 'template') {
+      if (fields.length > 0 && !confirmTpl) { setConfirmTpl(true); return }
+      setConfirmTpl(false); setMode('template'); onChange({ responseFields: [] }) // 백엔드는 responseFields 가 비면 텍스트 템플릿 사용
+      return
+    }
+    setConfirmTpl(false)
+    // 시드는 템플릿에서 돌아올 때만 — 필드↔텍스트 전환에서 시드하면 텍스트에서 방금 파싱한 행(onChange 직후)을 덮어쓴다.
+    if (mode === 'template' && fields.length === 0) onChange({ responseFields: [{ id: newId(), name: '응답코드', length: 4, value: '0000', pad: 'right', padChar: ' ' }] })
     setMode(m)
-    if (m === 'text') onChange({ responseFields: [] }) // 백엔드는 responseFields 가 비면 텍스트 템플릿 사용
-    else if (fields.length === 0) onChange({ responseFields: [{ id: newId(), name: '응답코드', length: 4, value: '0000', pad: 'right', padChar: ' ' }] })
   }
   return (
     <section style={panel}>
@@ -169,60 +199,81 @@ export function TcpRuleDetail({ rule: r, index, total, layout, readOnly, sources
       <div style={{ ...box, marginTop: 10 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={boxTitle}>⬆ 응답 전문</span>
-          <div style={{ display: 'inline-flex', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', overflow: 'hidden' }}>
-            {(['fields', 'text'] as const).map((m) => (
-              <button key={m} disabled={readOnly} onClick={() => switchMode(m)} style={{ padding: '3px 10px', border: 'none', cursor: 'pointer', fontSize: 11.5, fontWeight: 600, background: mode === m ? 'var(--fl-primary)' : 'transparent', color: mode === m ? '#fff' : 'var(--fl-text-muted)' }}>{m === 'fields' ? '필드' : '텍스트'}</button>
-            ))}
-          </div>
           <span style={{ fontSize: 11.5, color: 'var(--fl-text-muted)' }}>값: <code style={code}>{'{{ 필드@req }}'}</code> 요청 필드 · <code style={code}>{'{{ 이름@secret }}'}</code> 시크릿 · <code style={code}>{'{{seq}}'}</code> <code style={code}>{'{{now}}'}</code> · 길이 프리픽스는 자동</span>
-          {mode === 'fields' && <span style={{ ...code, marginLeft: 'auto' }}>본문 {bodyTotal}B</span>}
+          {mode !== 'template' && <span style={{ ...code, marginLeft: 'auto' }}>본문 {bodyTotal}B</span>}
         </div>
-        {mode === 'fields' ? (
-          <div style={{ marginTop: 8 }}>
-            <div style={{ display: 'grid', gap: 4 }}>
-              {fields.map((f, i) => {
-                const off = fields.slice(0, i).reduce((a, x) => a + (x.length ?? 0), 0)
-                return (
-                  <div key={f.id} style={row}>
-                    <span style={offBadge} title={`시작 바이트 오프셋 ${off} (본문 기준)`}>@{off}</span>
-                    <input style={{ ...input, width: 110, fontFamily: 'var(--fl-font-mono)' }} value={f.name ?? ''} placeholder="이름" disabled={readOnly} onChange={(e) => setField(f.id, { name: e.target.value })} />
-                    <input style={{ ...input, width: 58, fontFamily: 'var(--fl-font-mono)' }} type="number" value={f.length ?? 0} title="바이트 길이" disabled={readOnly} onChange={(e) => setField(f.id, { length: Number(e.target.value) })} />
-                    <div style={{ flex: 1, minWidth: 180 }}>
-                      <TokenInput ariaLabel={`응답 필드 ${f.name || ''} 값`} value={f.value ?? ''} sources={sources} placeholder="값 — 고정값 또는 { } 요청 필드·시크릿" onChange={(v) => setField(f.id, { value: v })} />
-                    </div>
-                    <select style={{ ...input, width: 52 }} value={f.pad ?? 'right'} title="패딩 방향 (→ 우측 공백=문자, ← 좌측 0=숫자)" disabled={readOnly} onChange={(e) => setField(f.id, { pad: e.target.value as 'left' | 'right' })}>
-                      <option value="right">→</option><option value="left">←</option>
-                    </select>
-                    <input style={{ ...input, width: 34, fontFamily: 'var(--fl-font-mono)', textAlign: 'center' }} maxLength={1} value={f.padChar ?? ' '} title="패딩 문자" disabled={readOnly} onChange={(e) => setField(f.id, { padChar: e.target.value })} />
-                    <select style={{ ...input, width: 84 }} value={f.encoding ?? ''} title="필드 인코딩(비면 서버)" disabled={readOnly} onChange={(e) => setField(f.id, { encoding: e.target.value || undefined })}>
-                      <option value="">(서버)</option>{ENCODINGS.map((c) => <option key={c}>{c}</option>)}
-                    </select>
-                    <FieldCodecButton field={(f.name ?? '').trim()} codec={codec} onChange={onCodec} sources={sources} defaultSide="response" sides={['response']} kind="tcp" readOnly={readOnly} />
-                    {!readOnly && <>
-                      <button style={miniBtn} onClick={() => moveField(i, -1)} title="위로">↑</button>
-                      <button style={miniBtn} onClick={() => moveField(i, 1)} title="아래로">↓</button>
-                      <button style={{ ...miniBtn, color: 'var(--fl-fail)' }} onClick={() => onChange({ responseFields: fields.filter((x) => x.id !== f.id) })} aria-label="응답 필드 삭제">×</button>
-                    </>}
-                  </div>
-                )
-              })}
+        {mode === 'template' ? (
+          <div>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 11.5, color: 'var(--fl-text-muted)' }}>평문 템플릿 — 길이를 직접 맞춰야 합니다(필드 모드 권장)</span>
+              {!readOnly && <button style={miniBtn} onClick={() => switchMode('fields')}>필드 모드로</button>}
             </div>
-            {!readOnly && (
-              <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
-                {/* 문자=우측 공백패딩, 숫자=좌측 0패딩(금융 전문 관례) */}
-                <button style={miniBtn} title="우측 공백 패딩(문자 필드 관례)" onClick={() => onChange({ responseFields: [...fields, { id: newId(), name: '', length: 10, value: '', pad: 'right', padChar: ' ' }] })}>+ 문자 필드</button>
-                <button style={miniBtn} title="좌측 0 패딩(숫자/금액 필드 관례)" onClick={() => onChange({ responseFields: [...fields, { id: newId(), name: '', length: 8, value: '0', pad: 'left', padChar: '0' }] })}>+ 숫자 필드</button>
-              </div>
-            )}
-            <div style={{ fontSize: 11, color: 'var(--fl-text-muted)', marginTop: 6 }}>응답 필드가 암호화/인코딩돼 나가야 하면 그 필드의 <b>◈</b> 로 응답 후 감싸기 코덱(패딩 전에 적용).</div>
+            <textarea
+              style={{ ...input, width: '100%', minHeight: 46, marginTop: 8, fontFamily: 'var(--fl-font-mono)', fontSize: 12, resize: 'vertical', boxSizing: 'border-box' }}
+              value={r.response ?? ''} disabled={readOnly} aria-label="응답 전문 템플릿"
+              placeholder={'응답 전문 텍스트 — 예: 0000{{req.계좌번호}}홍길동    (길이 직접 맞춰야 함 — 필드 모드 권장)'}
+              onChange={(e) => onChange({ response: e.target.value })}
+            />
           </div>
         ) : (
-          <textarea
-            style={{ ...input, width: '100%', minHeight: 46, marginTop: 8, fontFamily: 'var(--fl-font-mono)', fontSize: 12, resize: 'vertical', boxSizing: 'border-box' }}
-            value={r.response ?? ''} disabled={readOnly}
-            placeholder={'응답 전문 텍스트 — 예: 0000{{req.계좌번호}}홍길동    (길이 직접 맞춰야 함 — 필드 모드 권장)'}
-            onChange={(e) => onChange({ response: e.target.value })}
-          />
+          <div style={{ marginTop: 8 }}>
+            <FieldTextToggle<LayoutRow>
+              form={respForm} rows={fields as LayoutRow[]} onChange={(rows) => onChange({ responseFields: rows as MockTcpRespField[] })}
+              readOnly={readOnly} ariaLabel="응답 필드"
+              mode={mode === 'text' ? 'text' : 'fields'} onModeChange={(m) => switchMode(m)}
+              summary={(rs) => `본문 ${rs.reduce((a, f) => a + (f.length ?? 0), 0)}B · ${rs.length}필드`}
+              extras={<>
+                <TcpLayoutPasteButtons mode="request" rows={fields as LayoutRow[]} encoding={tcpCharset} prefixLength={0} prefixIncludesSelf={false} readOnly={readOnly} compact
+                  onApply={(rows, how) => onChange({ responseFields: (how === 'replace' ? rows : [...(fields as LayoutRow[]), ...rows]) as MockTcpRespField[] })} />
+                {!readOnly && <button style={miniBtn} onClick={() => switchMode('template')} title="필드 정의를 버리고 평문 템플릿으로(고급) — 길이를 직접 맞춰야 합니다">템플릿(고급)</button>}
+                {confirmTpl && (
+                  <span style={{ fontSize: 11.5, color: 'var(--fl-put, #f5a623)', display: 'inline-flex', gap: 6, alignItems: 'center' }} role="alert">
+                    필드 {fields.length}개 정의를 버립니다
+                    <button style={miniBtn} onClick={() => switchMode('template')}>확인</button>
+                    <button style={miniBtn} onClick={() => setConfirmTpl(false)}>취소</button>
+                  </span>
+                )}
+              </>}
+            >
+              <div style={{ display: 'grid', gap: 4 }}>
+                {fields.map((f, i) => {
+                  const off = fields.slice(0, i).reduce((a, x) => a + (x.length ?? 0), 0)
+                  return (
+                    <div key={f.id} style={row}>
+                      <span style={offBadge} title={`시작 바이트 오프셋 ${off} (본문 기준)`}>@{off}</span>
+                      <input style={{ ...input, width: 110, fontFamily: 'var(--fl-font-mono)' }} value={f.name ?? ''} placeholder="이름" disabled={readOnly} onChange={(e) => setField(f.id, { name: e.target.value })} />
+                      <input style={{ ...input, width: 58, fontFamily: 'var(--fl-font-mono)' }} type="number" value={f.length ?? 0} title="바이트 길이" disabled={readOnly} onChange={(e) => setField(f.id, { length: Number(e.target.value) })} />
+                      <div style={{ flex: 1, minWidth: 180 }}>
+                        <TokenInput ariaLabel={`응답 필드 ${f.name || ''} 값`} value={f.value ?? ''} sources={sources} placeholder="값 — 고정값 또는 { } 요청 필드·시크릿" onChange={(v) => setField(f.id, { value: v })} />
+                      </div>
+                      <select style={{ ...input, width: 52 }} value={f.pad ?? 'right'} title="패딩 방향 (→ 우측 공백=문자, ← 좌측 0=숫자)" disabled={readOnly} onChange={(e) => setField(f.id, { pad: e.target.value as 'left' | 'right' })}>
+                        <option value="right">→</option><option value="left">←</option>
+                      </select>
+                      <input style={{ ...input, width: 34, fontFamily: 'var(--fl-font-mono)', textAlign: 'center' }} maxLength={1} value={f.padChar ?? ' '} title="패딩 문자" disabled={readOnly} onChange={(e) => setField(f.id, { padChar: e.target.value })} />
+                      <select style={{ ...input, width: 84 }} value={f.encoding ?? ''} title="필드 인코딩(비면 서버)" disabled={readOnly} onChange={(e) => setField(f.id, { encoding: e.target.value || undefined })}>
+                        <option value="">(서버)</option>{ENCODINGS.map((c) => <option key={c}>{c}</option>)}
+                      </select>
+                      <FieldCodecButton field={(f.name ?? '').trim()} codec={codec} onChange={onCodec} sources={sources} defaultSide="response" sides={['response']} kind="tcp" readOnly={readOnly} />
+                      {!readOnly && <>
+                        <button style={miniBtn} onClick={() => moveField(i, -1)} title="위로">↑</button>
+                        <button style={miniBtn} onClick={() => moveField(i, 1)} title="아래로">↓</button>
+                        <button style={{ ...miniBtn, color: 'var(--fl-fail)' }} onClick={() => onChange({ responseFields: fields.filter((x) => x.id !== f.id) })} aria-label="응답 필드 삭제">×</button>
+                      </>}
+                    </div>
+                  )
+                })}
+                {fields.length === 0 && <span style={{ fontSize: 12, color: 'var(--fl-text-muted)' }}>응답 필드 없음 — <b>+ 문자/숫자 필드</b>·[텍스트]·📋 로 채우세요(비운 채 저장하면 아래 평문 템플릿이 나갑니다).</span>}
+              </div>
+              {!readOnly && (
+                <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+                  {/* 문자=우측 공백패딩, 숫자=좌측 0패딩(금융 전문 관례) */}
+                  <button style={miniBtn} title="우측 공백 패딩(문자 필드 관례)" onClick={() => onChange({ responseFields: [...fields, { id: newId(), name: '', length: 10, value: '', pad: 'right', padChar: ' ' }] })}>+ 문자 필드</button>
+                  <button style={miniBtn} title="좌측 0 패딩(숫자/금액 필드 관례)" onClick={() => onChange({ responseFields: [...fields, { id: newId(), name: '', length: 8, value: '0', pad: 'left', padChar: '0' }] })}>+ 숫자 필드</button>
+                </div>
+              )}
+              <div style={{ fontSize: 11, color: 'var(--fl-text-muted)', marginTop: 6 }}>응답 필드가 암호화/인코딩돼 나가야 하면 그 필드의 <b>◈</b> 로 응답 후 감싸기 코덱(패딩 전에 적용).</div>
+            </FieldTextToggle>
+          </div>
         )}
       </div>
     </section>

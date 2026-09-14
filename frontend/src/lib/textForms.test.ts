@@ -165,8 +165,23 @@ describe('kvUrlForm — percent 대칭', () => {
     expect(text).toBe('q=a%26b%3Dc%20d&id={{ id@n1 }}-x')
     expect(kvUrlForm.fromText(text, rows).rows).toEqual(rows)
   })
-  it("'+' 는 디코딩하지 않는다(기존 raw 호환)", () => {
-    expect(kvUrlForm.fromText('a=1+2', []).rows[0].value).toBe('1+2')
+  it("'+' 는 공백으로, '%2B' 는 literal '+' 로 디코딩(urlencoded 표준)", () => {
+    const rows = kvUrlForm.fromText('a=1+2&b=x%2By', []).rows
+    expect(rows.map((r) => r.value)).toEqual(['1 2', 'x+y'])
+  })
+  it("의미 보존 왕복: 'hello+world'(공백) → 공백 → '%20'", () => {
+    const back = kvUrlForm.fromText('q=hello+world', [])
+    expect(back.rows[0].value).toBe('hello world')
+    expect(kvUrlForm.toText(back.rows)).toBe('q=hello%20world')
+  })
+})
+
+describe('키-값 폼 — toText 는 항상 성공(계약 1)', () => {
+  it('key/value 가 없는 행(가져오기·AI 그래프)에도 throw 하지 않는다', () => {
+    const broken = [{ id: 'x' } as unknown as KvRow]
+    expect(kvUrlForm.toText(broken)).toBe('')
+    expect(headersForm.toText(broken)).toBe('')
+    expect(jsonBodyForm.toText(broken)).toBe('{}')
   })
 })
 

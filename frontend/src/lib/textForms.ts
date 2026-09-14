@@ -326,16 +326,19 @@ export const jsonBodyForm: TextForm<KvRow> = {
 }
 
 const encodePart = (s: string) => segmentValue(s).map((seg) => (seg.type === 'token' ? seg.raw : encodeURIComponent(seg.text))).join('')
-const decodePercent = (s: string) => s.replace(/(?:%[0-9A-Fa-f]{2})+/g, (m) => { try { return decodeURIComponent(m) } catch { return m } })
+// urlencoded 표준 디코딩: '+' 는 공백. '%2B' 가 literal '+' 로 남도록 '+' 치환을 먼저 한다.
+const decodePercent = (s: string) => s.replace(/\+/g, ' ').replace(/(?:%[0-9A-Fa-f]{2})+/g, (m) => { try { return decodeURIComponent(m) } catch { return m } })
+// encodePart 가 토큰({{…}})을 인코딩하지 않으므로 디코딩도 토큰은 건너뛴다(정확한 역함수).
+const decodePart = (s: string) => segmentValue(s).map((seg) => (seg.type === 'token' ? seg.raw : decodePercent(seg.text))).join('')
 
 export const kvUrlForm: TextForm<KvRow> = {
   id: 'kv-url', label: 'urlencoded (키=값&키=값)', placeholder: 'a=1&b={{ x@n1 }}',
-  toText: (rows) => rows.filter((r) => r.key.trim() !== '').map((r) => `${encodePart(r.key)}=${encodePart(r.value ?? '')}`).join('&'),
+  toText: (rows) => rows.filter((r) => !!r.key?.trim()).map((r) => `${encodePart(r.key)}=${encodePart(r.value ?? '')}`).join('&'),
   fromText: (text, prev) => {
     const t = text.trim()
     const rows = t === '' ? [] : t.split('&').filter((p) => p !== '').map((pair) => {
       const i = pair.indexOf('=')
-      return { key: decodePercent((i >= 0 ? pair.slice(0, i) : pair).trim()), value: i >= 0 ? decodePercent(pair.slice(i + 1)) : '' }
+      return { key: decodePart((i >= 0 ? pair.slice(0, i) : pair).trim()), value: i >= 0 ? decodePart(pair.slice(i + 1)) : '' }
     })
     return { rows: reuseIds<KvRow>(rows, prev), warnings: [] }
   },

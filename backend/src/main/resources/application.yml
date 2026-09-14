@@ -47,11 +47,6 @@ flowlink:
       read-timeout-ms: 30000
       max-response-bytes: 5242880        # 5MB 초과 응답은 거절
     max-nodes-per-run: 200               # 폭주 방지
-    relay:
-      # wait 콜백 수신 URL base — {base}/relay/{execId}/cb/{nodeId} (백엔드가 직접 수신·재개).
-      # 미설정 시: 화면 설정(설정 다이얼로그)에 저장한 값 → 접속한 주소(오리진) 자동 순으로 결정(RelayBaseResolver).
-      # env FLOWLINK_EXECUTION_RELAY_BASEURL 또는 아래 값으로 명시하면 자동보다 우선한다.
-      base-url: ${FLOWLINK_EXECUTION_RELAY_BASEURL:}
   # AI 어시스턴트(자연어 → 플로우). 자격은 사용자별 GitHub 로그인(Copilot 연결) — 미연결이면 stub 모드(샘플 그래프).
   assistant:
     max-tokens: ${FLOWLINK_ASSISTANT_MAX_TOKENS:16384}   # 응답 최대 토큰. Copilot 은 모델별 출력 한도(/models max_output_tokens)로 자동 클램프

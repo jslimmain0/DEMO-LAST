@@ -37,7 +37,7 @@ class SecretService(
 
     /**
      * Transit(KEK) 전환 기동 시 레거시(비 `vault:` 형식) 행을 일괄 재암호화 — 한 번 부팅하면
-     * 모든 시크릿이 KEK 로 열려 이후 `FLOWLINK_EXECUTION_STATE_SECRET` env 를 제거할 수 있다.
+     * 모든 시크릿이 KEK 로 열린다.
      * 실패는 예외로 전파해 기동을 막는다(반쯤 이관된 채 조용히 뜨는 것 방지).
      */
     @EventListener(ApplicationReadyEvent::class)

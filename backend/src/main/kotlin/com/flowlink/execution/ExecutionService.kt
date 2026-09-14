@@ -235,7 +235,7 @@ class ExecutionService(
         //
         // 콜백은 백엔드(RelayController)가 직접 받아 재개한다(relay.js 불필요). 수신 URL 은 이 실행ID 기반으로 확정.
         // RunRequest.relayRunId/relayBase(구 프론트가 아직 보냄)는 하위호환 위해 무시한다.
-        // base 우선순위: 화면 설정(DB) → env/yml 명시 → 접속 오리진 자동(RelayBaseResolver)
+        // base 우선순위: 화면 설정(DB) → 접속 오리진 자동(RelayBaseResolver)
         val relayBase = relayResolver.resolve()
         val relayRunId = execId.toString()
         for (n in graph.nodesOrEmpty()) {

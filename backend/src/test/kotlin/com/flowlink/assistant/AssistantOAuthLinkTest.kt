@@ -20,8 +20,6 @@ import org.mockito.Mockito
  */
 class AssistantOAuthLinkTest {
 
-    private val secret = "test-state-secret-123"
-
     /** 인메모리 SettingsService — put/get 시점의 TenantContext 를 캡처해 (tenant,key)로 격리 저장. */
     private class FakeSettings(repo: AppSettingRepository) : SettingsService(repo) {
         val store = LinkedHashMap<Pair<String, String>, String>()
@@ -33,7 +31,7 @@ class AssistantOAuthLinkTest {
     }
 
     private fun newService(settings: SettingsService): AssistantOAuthService {
-        return AssistantOAuthService(settings, JsonService(ObjectMapper()), StateCrypto(secret))
+        return AssistantOAuthService(settings, JsonService(ObjectMapper()), StateCrypto())
     }
 
     @AfterEach
@@ -51,8 +49,8 @@ class AssistantOAuthLinkTest {
         val stored = settings.store["default" to tokenKey("octocat")]
         assertThat(stored).isNotNull()
         assertThat(stored).isNotEqualTo("gho_secret_token_xyz") // 평문 아님(암호화)
-        // 어시스턴트가 같은 시크릿으로 복호화해 읽을 수 있어야 한다
-        assertThat(StateCrypto(secret).decrypt(stored!!)).isEqualTo("gho_secret_token_xyz")
+        // 어시스턴트가 같은 고정키로 복호화해 읽을 수 있어야 한다
+        assertThat(StateCrypto().decrypt(stored!!)).isEqualTo("gho_secret_token_xyz")
     }
 
     @Test

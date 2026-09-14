@@ -13,8 +13,7 @@ import org.springframework.boot.test.autoconfigure.orm.jpa.TestEntityManager
 import org.springframework.test.context.TestPropertySource
 
 /**
- * Transit 전환 기동 시 레거시(비 vault: 형식) 시크릿 행을 일괄 재암호화 — 이후 env 의
- * FLOWLINK_EXECUTION_STATE_SECRET 을 제거해도 모든 행이 KEK 로 열린다.
+ * Transit 전환 기동 시 레거시(비 vault: 형식) 시크릿 행을 일괄 재암호화 — 이후 모든 행이 KEK 로 열린다.
  */
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)

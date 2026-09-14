@@ -1,6 +1,5 @@
 package com.flowlink.common.crypto
 
-import com.flowlink.execution.config.ExecutionProperties
 import com.flowlink.execution.engine.StateCrypto
 import com.flowlink.secret.VaultProperties
 import com.flowlink.secret.VaultTokenSource
@@ -12,7 +11,7 @@ import org.springframework.context.annotation.Configuration
 /**
  * 앱 저장 암호화([CryptoProvider]) 단일 빈 — 시크릿·재개 스냅샷·어시스턴트 토큰이 공유한다.
  *
- * - transit 미사용(기본): 기존 [StateCrypto](state-secret 파생 AES-GCM) 그대로 — 무회귀.
+ * - transit 미사용(기본): [StateCrypto](고정키 AES-GCM) — 사내망 전제.
  * - `flowlink.vault.transit.enabled=true`: 쓰기는 Vault Transit(KEK — 키가 Vault 밖으로 안 나옴),
  *   읽기는 접두사 라우팅으로 레거시 데이터 폴백([RoutingCrypto]). 토큰 미설정이면 **기동 실패**(fail-closed —
  *   조용히 로컬 키로 내려앉으면 운영자가 KEK 보호를 받는 줄 착각한다).
@@ -25,12 +24,10 @@ class CryptoConfig {
     fun vaultTokenSource(vault: VaultProperties): VaultTokenSource = VaultTokenSource.of(vault)
 
     @Bean
-    fun cryptoProvider(vault: VaultProperties, exec: ExecutionProperties, tokens: VaultTokenSource): CryptoProvider {
-        val local = StateCrypto(exec.stateSecret)
+    fun cryptoProvider(vault: VaultProperties, tokens: VaultTokenSource): CryptoProvider {
+        val local = StateCrypto()
         if (!vault.transit.enabled) {
-            if (local.isDevKey) {
-                log.warn("앱 암호화가 dev 고정키로 동작 중 — 공유 배포에선 FLOWLINK_EXECUTION_STATE_SECRET 설정(또는 Vault Transit) 권장")
-            }
+            log.warn("앱 암호화 = Transit 미사용 — 고정키로 로컬 암호화(사내망 전제)")
             return local
         }
         check(tokens.available) {

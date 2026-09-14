@@ -6,34 +6,17 @@ import org.springframework.boot.context.properties.ConfigurationProperties
 @ConfigurationProperties(prefix = "flowlink.execution")
 class ExecutionProperties(
     http: Http?,
-    relay: Relay?,
     maxNodesPerRun: Int = 0,
-    stateSecret: String? = null,
     worker: Worker? = null,
 ) {
     val http: Http = http ?: Http(5000, 30000, 5_242_880L)
-    val relay: Relay = relay ?: Relay(null)
     val maxNodesPerRun: Int = if (maxNodesPerRun <= 0) 200 else maxNodesPerRun
-
-    /** suspension run_state 암호화 키 소스(env FLOWLINK_EXECUTION_STATE_SECRET) — 미설정 시 dev 고정키. */
-    val stateSecret: String? = if (stateSecret.isNullOrBlank()) null else stateSecret
     val worker: Worker = worker ?: Worker()
 
     /** 실행 워커 풀(비동기 실행/재개 연속 실행 전용). 큐 초과 제출은 429 로 거절. */
     class Worker(poolSize: Int = 0, queueCapacity: Int = 0) {
         val poolSize: Int = if (poolSize <= 0) 8 else poolSize
         val queueCapacity: Int = if (queueCapacity <= 0) 100 else queueCapacity
-    }
-
-    /**
-     * wait(콜백 대기) 노드의 콜백 수신 URL 조립용 base — {baseUrl}/relay/{execId}/cb/{nodeId}.
-     * 백엔드가 콜백을 직접 받아 재개하므로 relay.js 없이 백엔드+프론트 2프로세스로 동작한다.
-     * 외부 게이트웨이가 콜백해야 하면 이 값을 도달 가능한 주소(터널 등)로 override 한다.
-     */
-    class Relay(baseUrl: String?) {
-        /** 명시 설정된 값(env/yml — 없으면 null). 우선순위 판단은 RelayBaseResolver 가 한다. */
-        val configured: String? = if (baseUrl.isNullOrBlank()) null else baseUrl.trim().trimEnd('/')
-        val baseUrl: String = configured ?: "http://localhost:18080"
     }
 
     class Http(

@@ -203,7 +203,7 @@ design/   theme(라이트/다크) · index.css(CSS 변수)
 
 ## 최근 변경 (2026-09-14) — 설정 트림: 안 쓰는 기능 통째 제거 (`refactor/trim-config`)
 브랜치 `refactor/trim-config` 11개 커밋 요약. OIDC·allowed-logins·SSRF·Vault KV·프로파일 정리의 상세(코드 위치·주의사항)는 문서 하단의 같은 날짜 개별 섹션 참조; 나머지(Springdoc·Actuator·CORS·capture·내장 변환)는 이 목록이 전부.
-- **제거 목록**: Springdoc/Swagger UI(`/swagger-ui.html`·`/v3/api-docs`, OpenApiConfig) · Actuator/Prometheus(`management.*`, micrometer) · SSRF 가드(`flowlink.execution.ssrf.*`, SsrfGuard·SsrfBlockedException·SsrfGuardTest) · 캡처 옵션(`capture.request-response-bodies` — HTTP 본문은 항상 SecretMasker 마스킹 후 저장) · `flowlink.security.cors-origins`(`/api/**` CORS 전체 오리진 허용) · 레거시 OIDC 모드(issuer-uri/Keycloak — 인증 모드는 dev | GitHub 둘뿐, SecurityConfig 2분기) · `FLOWLINK_AUTH_ALLOWED_LOGINS`/`FLOWLINK_AUTH_ADMIN_LOGINS` · Vault KV 오버레이(`mount/path/config-path/refresh-seconds`, VaultSecretSource, 시크릿 목록 `source=vault` 배지, Vault `flowlink-config/jwt-secret` — jwt-secret 은 env `FLOWLINK_AUTH_JWT_SECRET` 만) · 내장 변환(BuiltinTransforms).
+- **제거 목록**: Springdoc/Swagger UI(`/swagger-ui.html`·`/v3/api-docs`, OpenApiConfig) · Actuator/Prometheus(`management.*`, micrometer) · SSRF 가드(`flowlink.execution.ssrf.*`, SsrfGuard·SsrfBlockedException·SsrfGuardTest) · 캡처 옵션(`capture.request-response-bodies` — HTTP 본문은 항상 SecretMasker 마스킹 후 저장) · `flowlink.security.cors-origins`(`/api/**` CORS 전체 오리진 허용) · 레거시 OIDC 모드(issuer-uri/Keycloak — 인증 모드는 dev | GitHub 둘뿐, SecurityConfig 2분기) · `FLOWLINK_AUTH_ALLOWED_LOGINS`/`FLOWLINK_AUTH_ADMIN_LOGINS` · Vault KV 오버레이(`mount/path/config-path/refresh-seconds`, VaultSecretSource, 시크릿 목록 `source=vault` 배지, Vault `flowlink-config/jwt-secret` — jwt-secret 은 env `FLOWLINK_AUTH_JWT_SECRET` 만) · 내장 변환(BuiltinTransforms) · 콜백 base env(`flowlink.execution.relay.base-url`/`FLOWLINK_EXECUTION_RELAY_BASEURL` — RelayBaseResolver 는 화면 설정 → 접속 오리진 → localhost) · `state-secret`(`FLOWLINK_EXECUTION_STATE_SECRET` — StateCrypto 는 고정키, CryptoConfig WARN 한 줄).
 - **프로파일 변경**: `application-h2.yml` → `application-local.yml`(**`local` = H2 파일, 기본** — `spring.profiles.default`), Oracle datasource/flyway 는 새 `application-dev.yml`(**`dev` = Oracle**, `SPRING_PROFILES_ACTIVE=dev` + `FLOWLINK_DB_URL`). 구 `=oracle`/`h2` 는 무효.
 - **헬스 프로브**: `/actuator/health` → `GET {ctx}/api/v1/auth/config`(scripts start/status.(sh|ps1)·infra/connect-local.ps1). 새 헬스 컨트롤러 없음.
 - **관리자 부트스트랩**: env 화이트리스트 대신 **테넌트에 ADMIN 이 없을 때 처음 로그인하는 사용자(기존 DB 의 사용자 포함)가 자동 승인 + 전역 ADMIN**(WorkspaceService.touchUser), 이후 로그인은 PENDING → 관리 콘솔(/admin) 승인. dev 모드의 `dev` 는 항상 관리자.
@@ -585,7 +585,7 @@ design/   theme(라이트/다크) · index.css(CSS 변수)
   ① 화면(⚙ 설정)에서 저장한 값(DB) → ② env/yml 명시값(`FLOWLINK_EXECUTION_RELAY_BASEURL`) → ③ **실행 요청의
   접속 오리진 자동**(브라우저가 접속한 그 주소가 곧 도달 가능한 서버 주소 — 서버는 `/relay/**` 를 항상 리슨하므로
   base 는 "밖에 알려줄 주소" 문자열일 뿐) → ④ localhost 폴백. `application.yml` 의 base-url 기본값을 비워
-  ②를 "명시했을 때만"으로 만듦(`ExecutionProperties.Relay.configured`).
+  ②를 "명시했을 때만"으로 만듦(`ExecutionProperties.Relay.configured`). (② env 단계·`Relay.configured` 는 2026-09-14 제거됨)
 - **설정 저장소**: `AppSetting`(키-값, 테넌트 스코프, V6 마이그레이션·h2 는 ddl-auto) +
   [SettingsService](backend/src/main/kotlin/com/flowlink/settings/SettingsService.kt) ·
   `GET/PUT /api/v1/settings/relay`(value=저장값·effective=적용값·auto=접속 오리진, 빈 값 저장=삭제).
@@ -635,7 +635,7 @@ design/   theme(라이트/다크) · index.css(CSS 변수)
   숫자/불리언/객체 원형 보존(assert 숫자 비교 검증). ⚠ 스냅샷 시점 한정: **wait/input/form/client 중단 지점**(HTTP 응답 등 비직렬화 상태 없음).
 - **suspension DB 내구화**: `execution_suspension` 테이블(V8 — execution_id PK·pending_node_id·run_state(암호문)·outcome_json·
   wait_deadline). run_state 는 **AES-GCM 암호화**([StateCrypto](backend/src/main/kotlin/com/flowlink/execution/engine/StateCrypto.kt) —
-  키는 SHA-256(`flowlink.execution.state-secret`), **미설정 시 dev 폴백 키 + 기동 WARN**(운영에선 반드시 설정)) — ctx 에 시크릿/응답 본문이 실리므로.
+  키는 SHA-256(`flowlink.execution.state-secret`), **미설정 시 dev 폴백 키 + 기동 WARN**(운영에선 반드시 설정)) (state-secret 은 2026-09-14 제거됨 — 고정키) — ctx 에 시크릿/응답 본문이 실리므로.
   outcome_json 은 평문(pending 명세 — GET 폴링이 재시작 후에도 pendingWait 등을 반환하는 소스).
 - **이중 재개 방지 CAS**: 재개 경쟁(콜백/타임아웃/수동 resume/⏹)은 전부 **suspension 행 조건부 DELETE(영향 행수 1=승자)** 로 판정
   ([ExecutionSuspensionRepository](backend/src/main/kotlin/com/flowlink/core/repository/ExecutionSuspensionRepository.kt)
@@ -958,7 +958,7 @@ design/   theme(라이트/다크) · index.css(CSS 변수)
   [RoutingCrypto](backend/src/main/kotlin/com/flowlink/common/crypto/RoutingCrypto.kt)(쓰기=Transit, 읽기=`vault:` 접두사 라우팅+레거시 폴백).
   [CryptoConfig](backend/src/main/kotlin/com/flowlink/common/crypto/CryptoConfig.kt) 가 단일 빈 선택(3곳 자가 생성 제거) + 기동 헬스체크(encrypt→decrypt 왕복, **fail-closed**) + dev 키 WARN 이관.
 - 설정: `flowlink.vault.transit.{enabled,mount,key}`(env `FLOWLINK_VAULT_TRANSIT_*`, 기본 transit/flowlink) — address/token 은 기존 vault 설정 재사용. 토큰 없이 켜면 기동 실패.
-- **자동 이관**: 기동 시 `secret` 테이블 레거시 행 일괄 재암호화([SecretService.reencryptLegacyOnStartup](backend/src/main/kotlin/com/flowlink/secret/SecretService.kt)) → 이후 `FLOWLINK_EXECUTION_STATE_SECRET` 제거 가능. suspension 은 단명이라 읽기 폴백으로 충분, Copilot 토큰은 재저장 시 이관.
+- **자동 이관**: 기동 시 `secret` 테이블 레거시 행 일괄 재암호화([SecretService.reencryptLegacyOnStartup](backend/src/main/kotlin/com/flowlink/secret/SecretService.kt)) → 이후 `FLOWLINK_EXECUTION_STATE_SECRET` 제거 가능(2026-09-14 env 자체 제거됨). suspension 은 단명이라 읽기 폴백으로 충분, Copilot 토큰은 재저장 시 이관.
 - **성능**: `activeSecrets` 복호화를 `decryptAll`(Transit batch 1회)로 묶음. KEK 로테이션은 `transit/keys/{key}/rotate` — 데이터 재암호화 불필요.
 - 검증: 단위 15종(Transit 프로토콜/배치/오류 전파·Routing 접두사/순서 보존·Config 빈 선택/fail-closed·@DataJpaTest 재암호화 이관) + 전체 스위트 그린 + **라이브**(도커 Vault transit 실키): 기동 3로그(Transit 활성·헬스체크 OK·시크릿 2건 재암호화) → `{{ payApiKey@secret }}` 실행 SUCCEEDED + `Bearer ••••••` 마스킹 → Vault 다운 상태 기동 = Connection refused 로 부팅 실패(fail-closed) 확인.
 - ⚠ Transit 모드는 Vault **상시 의존**(다운 시 시크릿 실행·재개·재시작 불가 — HA 권장). 상세: [docs/운영가이드.md](docs/운영가이드.md) §6.
@@ -1263,6 +1263,12 @@ API 도구 UX·비주얼/IA·플로우 통합 3관점 병렬 비평 → 확정 �
 - `application-h2.yml` → [application-local.yml](backend/src/main/resources/application-local.yml)(이름만), Oracle datasource(url/user/password)·flyway 블록을 `application.yml` 에서 새 [application-dev.yml](backend/src/main/resources/application-dev.yml) 로 분리. `application.yml` 은 공통 + `spring.profiles.default: local`(프로파일 미지정 = local). `scripts/start.*` 기본도 `local`. Kotlin 코드에 프로파일 문자열 판정은 없어 코드 변경 0.
 - ⚠ 기존 `SPRING_PROFILES_ACTIVE=oracle`(구 scripts 기본 `h2` 도 동일)은 **무효** — 그 이름의 프로파일 파일이 없어 Boot 가 내장 인메모리 H2 를 자동 구성하고, flyway-core 가 classpath 에 있어 Flyway 기본 위치(`classpath:db/migration` 재귀)의 Oracle `V1__init.sql` 을 H2 에 실행하다 `Migration V1__init.sql failed` 로 **기동 실패**한다(fail-fast — 조용히 빈 DB 로 뜨지 않음). 배포 env 를 `dev`(Oracle)/`local`(H2) 로 바꿀 것.
 - `hibernate.type.preferred_uuid_jdbc_type: CHAR` 는 공통 `application.yml` 에 남김 — 구 h2 프로파일도 base 를 상속해 CHAR 였으므로 기존 `.mv.db` 의 uuid 컬럼(CHAR(36))과 호환. dev 로 옮기면 local 의 uuid 매핑이 바뀌어 기존 파일 DB 와 충돌한다.
+
+## 최근 변경 (2026-09-14) — relay base-url env / state-secret 제거 (`refactor/trim-config`)
+- 삭제: `ExecutionProperties.Relay`·`stateSecret`(생성자는 `(http, maxNodesPerRun, worker)`), `application.yml` 의 `execution.relay` 블록, [StateCrypto](backend/src/main/kotlin/com/flowlink/execution/engine/StateCrypto.kt) 생성자 인자·`isDevKey`(인자 없는 `StateCrypto()` 하나), [CryptoConfig](backend/src/main/kotlin/com/flowlink/common/crypto/CryptoConfig.kt) 의 `ExecutionProperties` 주입(Transit 미사용이면 무조건 WARN 한 줄 "Transit 미사용 — 고정키로 로컬 암호화(사내망 전제)"), [RelayBaseResolver](backend/src/main/kotlin/com/flowlink/settings/RelayBaseResolver.kt) 의 env 단계(화면 설정 → 접속 오리진 → `http://localhost:18080`), StateCryptoTest 의 wrongKeyFails/devKeyFlag(테스트 189→187).
+- 유지: `StateCrypto.DEV_SECRET` 값 그대로 → env 미설정(dev 키)으로 쓰던 로컬 DB 는 그대로 열린다.
+- ⚠ `FLOWLINK_EXECUTION_STATE_SECRET` 을 설정해 운영하던 DB 는 시크릿·대기 스냅샷·Copilot 토큰 **전부 복호화 불가**(AEADBadTagException — Transit 모드의 레거시 폴백도 고정키). 배포 전 구 버전에서 Transit 전환 기동으로 재암호화 이관을 끝내거나 시크릿 재입력.
+- ⚠ 남아 있는 `FLOWLINK_EXECUTION_RELAY_BASEURL` env 는 조용히 무시된다(relaxed binding·unknown field) — 스케줄/웹훅 실행(요청 컨텍스트 없음)의 콜백 base 가 localhost 로 떨어지므로 ⚙ 설정에 저장할 것.
 
 ## 참고 문서
 - `backend/README.md` — 백엔드 구조·설정·API 요약 · `frontend/README.md` · `infra/README.md`(배포)

@@ -11,14 +11,13 @@ import javax.crypto.spec.SecretKeySpec
  * suspension run_state 암호화(AES-256-GCM) — ctx 에는 SET 시크릿이 **비마스킹**으로 들어 있어
  * DB 영속 시 평문 노출을 막는다.
  *
- * 키 = SHA-256(secret). secret 미설정 시 dev 고정키([DEV_SECRET]) — 로컬 개발 편의용이며
- * dev 고정키로 동작하면 CryptoConfig 가 기동 시 WARN 을 남긴다. 포맷: base64(iv(12) || ciphertext+tag).
+ * 키 = SHA-256(고정 문자열 [DEV_SECRET]) — Transit 미사용 시 로컬 고정키(사내망 전제). CryptoConfig 가 기동 시
+ * WARN 한 줄을 남긴다. 포맷: base64(iv(12) || ciphertext+tag).
  */
-class StateCrypto(secret: String?) : com.flowlink.common.crypto.CryptoProvider {
+class StateCrypto : com.flowlink.common.crypto.CryptoProvider {
 
-    val isDevKey: Boolean = secret.isNullOrBlank()
     private val key = SecretKeySpec(
-        MessageDigest.getInstance("SHA-256").digest((secret?.ifBlank { null } ?: DEV_SECRET).toByteArray(Charsets.UTF_8)),
+        MessageDigest.getInstance("SHA-256").digest(DEV_SECRET.toByteArray(Charsets.UTF_8)),
         "AES"
     )
     private val random = SecureRandom()

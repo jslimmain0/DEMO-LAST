@@ -1,6 +1,5 @@
 package com.flowlink.common.crypto
 
-import com.flowlink.execution.config.ExecutionProperties
 import com.flowlink.execution.engine.StateCrypto
 import com.flowlink.secret.VaultProperties
 import com.flowlink.secret.VaultTokenSource
@@ -19,9 +18,7 @@ class CryptoConfigTest {
         transit = VaultProperties.Transit(enabled = transitEnabled, mount = null, key = null),
     )
 
-    private fun exec() = ExecutionProperties(null, null, 0, "unit-test-secret", null)
-
-    private fun provider(v: VaultProperties) = CryptoConfig().cryptoProvider(v, exec(), VaultTokenSource.of(v))
+    private fun provider(v: VaultProperties) = CryptoConfig().cryptoProvider(v, VaultTokenSource.of(v))
 
     @Test
     fun `transit 미사용이면 기존 StateCrypto 그대로(무회귀)`() {

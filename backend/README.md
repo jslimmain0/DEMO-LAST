@@ -64,7 +64,7 @@ JWT 클레임(`preferred_username`·`tenant`·`realm_access.roles`) → [JwtRole
 | `flowlink.auth.*` | `FLOWLINK_AUTH_GITHUB_ENABLED`, `FLOWLINK_AUTH_JWT_SECRET`, `FLOWLINK_AUTH_ALLOWED_LOGINS` | GitHub 로그인 |
 | `flowlink.vault.*` | `FLOWLINK_VAULT_ENABLED`, `FLOWLINK_VAULT_ADDRESS`, `FLOWLINK_VAULT_TOKEN` | HashiCorp Vault 시크릿 |
 | `flowlink.assistant.*` | `FLOWLINK_ASSISTANT_API_KEY`, `FLOWLINK_ASSISTANT_MODEL` | AI 어시스턴트(Anthropic 키·모델) |
-| `flowlink.security.*` | `FLOWLINK_SECURITY_CORS_ORIGINS` | 테넌트 클레임·CORS |
+| `flowlink.security.*` | — | 테넌트 클레임 |
 
 ## DB 마이그레이션
 

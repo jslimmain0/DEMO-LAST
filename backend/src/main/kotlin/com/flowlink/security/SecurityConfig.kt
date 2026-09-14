@@ -118,9 +118,9 @@ class SecurityConfig {
     }
 
     @Bean
-    fun corsConfigurationSource(props: SecurityProperties): CorsConfigurationSource {
+    fun corsConfigurationSource(): CorsConfigurationSource {
         val config = CorsConfiguration()
-        config.allowedOrigins = props.corsOrigins
+        config.allowedOriginPatterns = listOf("*")
         config.allowedMethods = listOf("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
         config.allowedHeaders = listOf("*")
         config.allowCredentials = true

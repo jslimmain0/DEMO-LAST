@@ -15,7 +15,7 @@ Spring Boot 3.3.5 / Kotlin 1.9(Java 21 toolchain) / JPA + Flyway / **Oracle**(�
 bash scripts/start.sh --build      # 또는 Windows: powershell -File scripts\start.ps1 -Build
 
 # 백엔드만 (프론트 dist 없이 API 개발용)
-cd backend && sh gradlew bootRun   # http://localhost:18080/swagger-ui.html
+cd backend && sh gradlew bootRun   # http://localhost:18080
 ```
 - **DB**: 프로파일 미지정이면 **Oracle**(base `application.yml`). **로컬 dev 는 `h2` 프로파일**(scripts 기본 — H2 파일 DB, Flyway off·`ddl-auto: update`, SSRF off). 운영 Oracle 기동은 `SPRING_PROFILES_ACTIVE=oracle`(scripts 의 h2 기본을 벗어나는 스위치 — Oracle 설정은 base 에 있음) + `FLOWLINK_DB_URL`.
 - **DB override**: `FLOWLINK_DB_URL`·`FLOWLINK_DB_USER`·`FLOWLINK_DB_PASSWORD` · 포트 `FLOWLINK_PORT`.
@@ -43,7 +43,7 @@ secret/      시크릿 볼트(AES-GCM) + HashiCorp Vault 오버레이(VaultSecre
 settings/    런타임 설정(키-값, 콜백 base·알림 웹훅)      trigger/     자동 실행(cron 스케줄러·webhook)
 assistant/   AI 어시스턴트(자연어→플로우) — Anthropic / GitHub Copilot(디바이스 플로우) / stub
 presence/    실시간 협업(WebSocket 커서·편집중·그래프 릴레이)   notify/  실행 실패 알림(Slack/Teams 웹훅)
-suite/       테스트 스위트 일괄 실행     transform/   변환 SPI + JAR 플러그인     common/  error·json·tenant·openapi·web(SPA)
+suite/       테스트 스위트 일괄 실행     transform/   변환 SPI + JAR 플러그인     common/  error·json·tenant·web(SPA)
 ```
 Gradle 멀티모듈: 루트(앱) + `transform-spi`(변환 계약) + `plugin-sample`(참고 플러그인).
 
@@ -79,4 +79,4 @@ JWT 클레임(`preferred_username`·`tenant`·`realm_access.roles`) → [JwtRole
 - **기타**: `/mock-servers` · `/secrets` · `/settings` · `/flows/{id}/triggers` · `/assistant/**` · `/plugins` · `/suites/run`
 - **무인증(외부)**: `/relay/**`(콜백) · `/mock/**`(Mock 서빙) · `/hooks/**`(웹훅) · `/ws/**`(presence)
 
-Swagger UI: `/swagger-ui.html` · Health: `/actuator/health` · Prometheus: `/actuator/prometheus`.
+Health: `/actuator/health` · Prometheus: `/actuator/prometheus`.

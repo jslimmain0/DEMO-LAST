@@ -130,9 +130,3 @@ flowlink:
 #       resourceserver:
 #         jwt:
 #           issuer-uri: https://your-idp/realms/flowlink
-
-springdoc:
-  swagger-ui:
-    path: /swagger-ui.html
-  api-docs:
-    path: /v3/api-docs

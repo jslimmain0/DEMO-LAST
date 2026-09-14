@@ -27,7 +27,6 @@ powershell -ExecutionPolicy Bypass -File scripts\status.ps1
 powershell -ExecutionPolicy Bypass -File scripts\stop.ps1
 ```
 > ⚠️ 스크립트는 세트로 써야 한다(.sh 는 .sh 끼리, .ps1 은 .ps1 끼리) — .sh 는 Git Bash PID 를, .ps1 은 Windows PID 를 PID 파일에 쓰므로 섞으면 stop/status 가 서로의 프로세스를 못 찾는다.
-- Swagger UI: `http://localhost:18080/swagger-ui.html`
 - Health: `http://localhost:18080/actuator/health` · Prometheus: `/actuator/prometheus`
 - DB 접속 override: `FLOWLINK_DB_URL`, `FLOWLINK_DB_USER`, `FLOWLINK_DB_PASSWORD` · 포트: `FLOWLINK_PORT` · **경로 접두사(context path)**: `FLOWLINK_CONTEXT_PATH=/flowlink`(앱 전체가 `/flowlink/` 밑에서 — 운영가이드 §3)
 - 프로파일/인증/Vault 는 env 로 주입(운영): `SPRING_PROFILES_ACTIVE=oracle`, `FLOWLINK_AUTH_GITHUB_ENABLED=true`, `FLOWLINK_VAULT_ENABLED=true` — 하단 "최근 변경 (2026-07-19)" 섹션 참조.
@@ -97,7 +96,7 @@ mock/        Mock 서버 기능 — 워크플로가 호출할 가짜 대상 시�
  │           MockRuntime(라우트 매칭·조건·템플릿)·MockCallbackDispatcher(콜백 발사)
 security/    OIDC 리소스서버 골격 + TenantClaimFilter·TenantContext (멀티테넌시)
 transform/   변환 SPI + JAR 플러그인 (TransformRegistry·PluginController·BuiltinTransforms)
-common/      error·json·tenant·openapi
+common/      error·json·tenant
 ```
 
 ### Gradle 멀티모듈 (2026-07-08 물리 모듈 분리 1단계 — 플러그인 SPI 경계)

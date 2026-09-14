@@ -5,7 +5,7 @@ import { GitHubLogin } from './GitHubLogin'
 interface AuthState {
   /** 부트스트랩 완료 여부 — false 동안은 화면을 그리지 않는다. */
   ready: boolean
-  /** 인증 모드 여부(github|oidc). false=dev(로그인 없음). */
+  /** 인증 모드 여부(github). false=dev(로그인 없음). */
   enabled: boolean
   /** github 모드에서 로그인하지 않은 게스트 — 앱은 전부 쓰되 AI 만 로그인 필요. */
   isGuest: boolean
@@ -24,8 +24,6 @@ interface Boot {
   me: Me | null
   /** github 모드 + 토큰 없음 — 로그인 화면 대신 게스트 진입. */
   guest?: boolean
-  /** OIDC 등 SPA 셀프 로그인이 없는 인증 모드인데 유효 토큰이 없음 — 로그인 화면 대신 안내. */
-  blockedOidc?: boolean
 }
 
 /** github 게스트 모드에서 /me 실패 시 로컬 폴백 — 백엔드 guest 응답과 동일 구조. */
@@ -45,7 +43,7 @@ async function boot(): Promise<Boot> {
     const me = await authApi.me().catch(() => null)
     return { mode: 'none', me }
   }
-  // 인증 모드(github | oidc)
+  // 인증 모드(github)
   attachAuthInterceptors()
   if (getAccessToken()) {
     try {
@@ -61,13 +59,9 @@ async function boot(): Promise<Boot> {
       }
     }
   }
-  if (cfg.mode === 'github') {
-    // 게스트 진입 — github 모드는 앱 개방(AI 만 로그인 게이트). /me 는 permitAll(guest 응답).
-    const me = await authApi.me().catch(() => GUEST_ME)
-    return { mode: 'github', me, guest: true }
-  }
-  // oidc — SPA 셀프 로그인 흐름이 없다(외부 IdP 토큰 필요). 조용히 깨지지 않게 안내 화면.
-  return { mode: 'oidc', me: null, blockedOidc: true }
+  // 게스트 진입 — github 모드는 앱 개방(AI 만 로그인 게이트). /me 는 permitAll(guest 응답).
+  const me = await authApi.me().catch(() => GUEST_ME)
+  return { mode: 'github', me, guest: true }
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -88,17 +82,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return <div style={centered}>로그인 확인 중…</div>
   }
   const b = state.boot
-  if (b.blockedOidc) {
-    return (
-      <div style={centered}>
-        <div style={{ maxWidth: 420, textAlign: 'center', lineHeight: 1.6 }}>
-          <div style={{ fontWeight: 800, fontSize: 20, marginBottom: 8 }}>외부 IdP 인증 필요</div>
-          이 인스턴스는 OIDC(외부 IdP) 토큰 인증 모드입니다. 화면 자체 로그인은 제공되지 않습니다 —
-          유효한 액세스 토큰으로 API 를 호출하거나, GitHub 로그인 모드로 전환하세요.
-        </div>
-      </div>
-    )
-  }
   return (
     <AuthContext.Provider
       value={{

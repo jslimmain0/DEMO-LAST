@@ -43,7 +43,7 @@ powershell -ExecutionPolicy Bypass -File scripts\stop.ps1
 **운영(EC2)에서 켜는 것들** — 앱 프로세스 env 로 준다(도커 아님):
 
 ```bash
-# GitHub 로그인 (Keycloak 대체)
+# GitHub 로그인
 export FLOWLINK_AUTH_GITHUB_ENABLED=true
 export FLOWLINK_AUTH_JWT_SECRET=<강한 시크릿>              # 앱 JWT 서명키(로컬). 운영은 env 대신 Vault 권장(아래 §4)
 export FLOWLINK_AUTH_ALLOWED_LOGINS=alice,bob             # 선택. 허용 GitHub 로그인 목록(비우면 전체 허용, 기동 시 WARN)
@@ -66,14 +66,13 @@ bash scripts/start.sh
 
 ## 3. GitHub 로그인 (운영 인증)
 
-Keycloak/OIDC 대신 **GitHub 계정으로 로그인**한다(어시스턴트 Copilot 연결과 동일한 device flow).
+**GitHub 계정으로 로그인**한다(어시스턴트 Copilot 연결과 동일한 device flow).
 로그인하면 앱이 자체 JWT(HMAC)를 발급하고 그 JWT 를 검증 → 인증 필수 + 팀(tenant) 격리.
 
 1. 앱을 `FLOWLINK_AUTH_GITHUB_ENABLED=true` + 서명 시크릿(**로컬** `FLOWLINK_AUTH_JWT_SECRET` / **운영** Vault `flowlink-config/jwt-secret`, §4)으로 기동.
 2. 브라우저로 접속 → **GitHub 로 로그인** 버튼 → 표시된 코드로 github.com/login/device 인증 → 자동 로그인.
 3. (선택) `FLOWLINK_AUTH_ALLOWED_LOGINS` 로 허용 계정을 제한(비우면 전체 허용). ⚠ github 모드는 `jwt-secret` 이 없으면 기동 실패(토큰 위조 방지).
 - 미설정(기본)이면 dev 모드(로그인 없음, permitAll) — 로컬 개발용.
-- 표준 OIDC IdP(Auth0/Entra/Keycloak)를 쓰고 싶으면 `application.yml` 의 issuer-uri 를 설정하면 그쪽으로 동작(코드 IdP 비종속).
 
 ## 4. Vault 인프라 (도커)
 

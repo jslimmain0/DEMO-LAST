@@ -72,7 +72,7 @@ bash scripts/start.sh
 
 docker compose -f infra/docker-compose.yml up -d      # Vault(시크릿 저장소)
 ```
-- **로그인**: 미설정이면 dev(로그인 없음). `FLOWLINK_AUTH_GITHUB_ENABLED=true` 면 GitHub 계정(디바이스 플로우)으로 로그인 → **같은 로그인이 어시스턴트 Copilot 연결까지 이어짐**. 게스트도 앱 사용 가능(AI 만 로그인 게이트). 표준 OIDC(Auth0/Entra 등)도 issuer-uri 로 지원.
+- **로그인**: 미설정이면 dev(로그인 없음). `FLOWLINK_AUTH_GITHUB_ENABLED=true` 면 GitHub 계정(디바이스 플로우)으로 로그인 → **같은 로그인이 어시스턴트 Copilot 연결까지 이어짐**. 게스트도 앱 사용 가능(AI 만 로그인 게이트).
 - 상세 런북: **[infra/README.md](infra/README.md)**.
 
 ## 더 보기

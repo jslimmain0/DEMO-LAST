@@ -55,17 +55,7 @@ class PresenceHandshakeInterceptorTest {
     }
 
     @Test
-    fun `OIDC - 토큰 없음 또는 무효 토큰은 401 거절`() {
-        val bad = JwtDecoder { throw JwtException("bad") }
-        val i = PresenceHandshakeInterceptor(bad, "tenant") { _, _ -> true }
-        val (ok1, _, res1) = run(i, "flowId=$flowId")
-        assertFalse(ok1); assertEquals(HttpStatus.UNAUTHORIZED.value(), res1.status)
-        val (ok2, _, res2) = run(i, "flowId=$flowId&token=zzz")
-        assertFalse(ok2); assertEquals(HttpStatus.UNAUTHORIZED.value(), res2.status)
-    }
-
-    @Test
-    fun `OIDC - 유효 토큰 + 접근 가능한 flow 는 허용, 이름은 preferred_username`() {
+    fun `토큰 - 유효 토큰 + 접근 가능한 flow 는 허용, 이름은 preferred_username`() {
         val dec = JwtDecoder { jwt("team-a") }
         var checked: Pair<UUID, String>? = null
         val i = PresenceHandshakeInterceptor(dec, "tenant") { id, u -> checked = id to u; true }
@@ -77,7 +67,7 @@ class PresenceHandshakeInterceptorTest {
     }
 
     @Test
-    fun `OIDC - 다른 테넌트의 flow 는 403 거절`() {
+    fun `토큰 - 다른 테넌트의 flow 는 403 거절`() {
         val dec = JwtDecoder { jwt("team-b") }
         val i = PresenceHandshakeInterceptor(dec, "tenant") { _, _ -> false }
         val (ok, _, res) = run(i, "flowId=$flowId&token=tok")
@@ -87,7 +77,7 @@ class PresenceHandshakeInterceptorTest {
     @Test
     fun `게스트 허용 - 토큰 없으면 dev 방식(쿼리 name)으로 허용`() {
         val dec = JwtDecoder { jwt("default") }
-        val i = PresenceHandshakeInterceptor(dec, "tenant", guestAllowed = true) { _, _ -> true }
+        val i = PresenceHandshakeInterceptor(dec, "tenant") { _, _ -> true }
         val (ok, attrs, _) = run(i, "flowId=$flowId&name=%EA%B2%8C%EC%8A%A4%ED%8A%B8-ab12")
         assertTrue(ok)
         assertEquals("게스트-ab12", attrs["name"])
@@ -96,7 +86,7 @@ class PresenceHandshakeInterceptorTest {
     @Test
     fun `게스트 허용 - name 파라미터 없음 또는 빈값이면 기본값 게스트`() {
         val dec = JwtDecoder { jwt("default") }
-        val i = PresenceHandshakeInterceptor(dec, "tenant", guestAllowed = true) { _, _ -> true }
+        val i = PresenceHandshakeInterceptor(dec, "tenant") { _, _ -> true }
         val (ok1, attrs1, _) = run(i, "flowId=$flowId")
         assertTrue(ok1)
         assertEquals("게스트", attrs1["name"])
@@ -108,7 +98,7 @@ class PresenceHandshakeInterceptorTest {
     @Test
     fun `게스트 허용 - 무효 토큰은 여전히 401(조용한 다운그레이드 금지)`() {
         val bad = JwtDecoder { throw JwtException("bad") }
-        val i = PresenceHandshakeInterceptor(bad, "tenant", guestAllowed = true) { _, _ -> true }
+        val i = PresenceHandshakeInterceptor(bad, "tenant") { _, _ -> true }
         val (ok, _, res) = run(i, "flowId=$flowId&token=zzz")
         assertFalse(ok)
         assertEquals(HttpStatus.UNAUTHORIZED.value(), res.status)
@@ -117,7 +107,7 @@ class PresenceHandshakeInterceptorTest {
     @Test
     fun `게스트 허용 - 유효 토큰은 JWT 사용자명 사용`() {
         val dec = JwtDecoder { jwt("default") }
-        val i = PresenceHandshakeInterceptor(dec, "tenant", guestAllowed = true) { _, _ -> true }
+        val i = PresenceHandshakeInterceptor(dec, "tenant") { _, _ -> true }
         val (ok, attrs, _) = run(i, "flowId=$flowId&token=tok&name=ignored")
         assertTrue(ok)
         assertEquals("alice", attrs["name"])

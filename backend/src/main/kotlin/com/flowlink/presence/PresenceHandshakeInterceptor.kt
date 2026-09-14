@@ -14,15 +14,13 @@ import java.util.UUID
 /**
  * presence 핸드셰이크 검증.
  * - dev 모드(decoder=null): 무인증 — flowId 만 UUID 검사, 이름은 쿼리 name(40자 클램프).
- * - OIDC 모드: 브라우저 WebSocket 은 Authorization 헤더를 못 실으므로 쿼리 `?token=` JWT 를 검증하고
- *   flow 가 토큰 테넌트 소유인지 확인(교차 테넌트 훔쳐보기 차단). 이름은 JWT preferred_username.
- * - github 게스트 모드(guestAllowed=true): 토큰 없는 접속을 dev 방식(쿼리 name)으로 허용 — 앱이 게스트 개방이므로.
- *   토큰이 있으면 기존대로 검증(무효 토큰은 401 — 게스트로 조용히 다운그레이드하지 않는다).
+ * - github 게스트 모드(decoder 있음): 토큰 없는 접속은 dev 방식(쿼리 name)으로 허용 — 앱이 게스트 개방이므로.
+ *   브라우저 WebSocket 은 Authorization 헤더를 못 실으므로 토큰이 있으면 쿼리 `?token=` JWT 를 검증하고
+ *   flow 접근 권한을 확인. 이름은 JWT preferred_username(무효 토큰은 401 — 게스트로 조용히 다운그레이드하지 않는다).
  */
 class PresenceHandshakeInterceptor(
     private val decoder: JwtDecoder?,
     private val tenantClaim: String,
-    private val guestAllowed: Boolean = false,
     private val flowAccessCheck: (UUID, String) -> Boolean,
 ) : HandshakeInterceptor {
 
@@ -39,7 +37,7 @@ class PresenceHandshakeInterceptor(
             return true
         }
         val token = params.getFirst("token")
-        if (token == null && guestAllowed) {
+        if (token == null) {
             // github 게스트 모드 — 앱 자체가 게스트 개방이므로 WS 도 dev 방식(쿼리 name)으로 허용.
             // 단 팀/개인 워크스페이스 flow 의 방은 게스트 입장 거부(누가 어느 노드를 편집 중인지 노출 방지).
             if (!flowAccessCheck(uuid, "guest")) return refuse(response, HttpStatus.FORBIDDEN)
@@ -47,7 +45,6 @@ class PresenceHandshakeInterceptor(
             attributes["name"] = decoded(params.getFirst("name")).ifBlank { "게스트" }.take(40)
             return true
         }
-        if (token == null) return refuse(response, HttpStatus.UNAUTHORIZED)
         val jwt = try { decoder.decode(token) } catch (e: JwtException) {
             return refuse(response, HttpStatus.UNAUTHORIZED)
         }

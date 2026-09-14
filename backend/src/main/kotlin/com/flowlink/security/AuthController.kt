@@ -1,9 +1,7 @@
 package com.flowlink.security
 
 import com.flowlink.common.tenant.TenantContext
-import org.springframework.beans.factory.ObjectProvider
 import org.springframework.security.core.context.SecurityContextHolder
-import org.springframework.security.oauth2.jwt.JwtDecoder
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PostMapping
@@ -14,7 +12,7 @@ import org.springframework.web.bind.annotation.RestController
 /**
  * 인증 부트스트랩 + GitHub 로그인 API.
  *
- * - `GET /auth/config` (public): 인증 모드 발견 — "github"(GitHub 로그인) | "oidc"(레거시 issuer) | "none"(dev).
+ * - `GET /auth/config` (public): 인증 모드 발견 — "github"(GitHub 로그인) | "none"(dev).
  * - `GET /auth/me` (github 게스트 모드·dev 모드는 무인증도 허용): 현재 사용자·팀·역할.
  *   인증된 요청은 JWT 클레임을 쓰고, 비인증 요청은 github 게스트 모드에서 "guest", dev 모드에서 "dev" 전권 가짜 사용자를 반환한다.
  * - `POST /auth/github/device/start` + `GET /auth/github/device/poll` (public): GitHub 디바이스 로그인.
@@ -25,7 +23,6 @@ import org.springframework.web.bind.annotation.RestController
 class AuthController(
     private val authProps: AuthProperties,
     private val githubAuth: GithubAuthService,
-    private val jwtDecoder: ObjectProvider<JwtDecoder>,
 ) {
 
     data class AuthConfigResponse(val enabled: Boolean, val mode: String)
@@ -33,12 +30,7 @@ class AuthController(
 
     @GetMapping("/config")
     fun config(): AuthConfigResponse {
-        // github > oidc(issuer-uri 로 JwtDecoder 자동등록) > none(dev). oidc 는 SPA 셀프 로그인이 없어 외부 토큰이 필요하다.
-        val mode = when {
-            authProps.githubEnabled -> "github"
-            jwtDecoder.ifAvailable != null -> "oidc"
-            else -> "none"
-        }
+        val mode = if (authProps.githubEnabled) "github" else "none"
         return AuthConfigResponse(enabled = mode != "none", mode = mode)
     }
 

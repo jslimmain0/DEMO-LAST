@@ -93,7 +93,7 @@ folder/      폴더 관리
 mock/        Mock 서버 기능 — 워크플로가 호출할 가짜 대상 시스템을 정의·서빙(1급 리소스)
  │           MockServerController(관리 CRUD)·MockGatewayController(/mock/{slug}/** 서빙)
  │           MockRuntime(라우트 매칭·조건·템플릿)·MockCallbackDispatcher(콜백 발사)
-security/    OIDC 리소스서버 골격 + TenantClaimFilter·TenantContext (멀티테넌시)
+security/    GitHub 로그인(자체 JWT 리소스서버) + TenantClaimFilter·TenantContext (멀티테넌시)
 transform/   변환 SPI + JAR 플러그인 (TransformRegistry·PluginController·BuiltinTransforms)
 common/      error·json·tenant
 ```
@@ -139,7 +139,7 @@ graphJson 파싱 → Kahn 위상정렬 → 노드 순차 처리 → IF는 단일
 - `ddl-auto: validate` + Flyway가 스키마 소유
 
 ### 보안
-- OIDC: `issuer-uri` 설정 시 자동 활성, 미설정 시 dev permitAll
+- 인증: `FLOWLINK_AUTH_GITHUB_ENABLED=true` 면 GitHub 게스트 모드(자체 JWT 검증), 미설정 시 dev permitAll
 - 멀티테넌시: JWT claim(기본 "tenant") → `TenantContext`(ThreadLocal) → 쿼리 `tenant_id` 필터
 - SSRF 가드: 사설/루프백/링크로컬/메타데이터 대역 차단 + 스킴 allowlist (HTTP 아웃바운드 + mock 콜백 발사).
   **`flowlink.execution.ssrf.allow-loopback`**: true면 localhost/127.0.0.1/::1 허용(사설망은 여전히 차단) — **h2(로컬) 프로파일 기본 true**.
@@ -883,7 +883,7 @@ design/   theme(라이트/다크) · index.css(CSS 변수)
 - **프론트**([auth/](frontend/src/auth/)): oidc-client-ts 제거 → localStorage 토큰([auth.ts](frontend/src/auth/auth.ts)) + [GitHubLogin](frontend/src/auth/GitHubLogin.tsx)(디바이스 코드 카드·폴링) +
   [AuthContext](frontend/src/auth/AuthContext.tsx) github 모드. axios Bearer + 401 시 토큰 폐기·재로그인. `usePermissions()` 게이팅 불변.
 - **env**: `FLOWLINK_AUTH_GITHUB_ENABLED`(기본 false=dev permitAll). github-enabled=true 면 **서명 시크릿 필수**(없으면 공개 dev 키로 토큰 위조 → [GithubAuthStartupValidator](backend/src/main/kotlin/com/flowlink/security/AuthConfig.kt) 가 기동 실패). 서명 시크릿은 **로컬 env `FLOWLINK_AUTH_JWT_SECRET`, 운영 Vault**([AppJwt](backend/src/main/kotlin/com/flowlink/security/AppJwt.kt) 가 env 우선 → 없으면 Vault `flowlink-config` 경로 key `jwt-secret` — 워크플로에 미노출). `FLOWLINK_AUTH_ALLOWED_LOGINS` 는 **선택**(비우면 GitHub 인증한 누구나 로그인/전권 — 전체 허용, 기동 WARN).
-  client_id 는 Copilot 공개 client 기본(`AuthProperties.clientId`). 표준 OIDC(Auth0/Entra 등)도 여전히 지원 — `application.yml` issuer-uri 설정 시 그쪽으로(IdP 비종속).
+  client_id 는 Copilot 공개 client 기본(`AuthProperties.clientId`).
 - 검증: 자체서명 HS256 토큰으로 `/me`·`/flows` 인증 통과·역할 매핑·위조서명 401·무토큰 401·실제 GitHub device 코드 발급·브라우저 로그인 화면 렌더.
 
 ### 배포 재편: `deploy/` → `infra/`, 앱은 도커 밖, Vault 인프라
@@ -1231,6 +1231,11 @@ API 도구 UX·비주얼/IA·플로우 통합 3관점 병렬 비평 → 확정 �
 ### Mock 어시스턴트: TCP Mock 에도 ✨ AI · max-tokens 16384 · Copilot 출력 한도 클램프 (같은 날)
 - **TCP 편집기에 ✨ AI 버튼**([MockServerEditor](frontend/src/routes/MockServerEditor.tsx) — 이전엔 `isHttp &&` 로 HTTP 만). [MockAssistantService.buildSystemPrompt](backend/src/main/kotlin/com/flowlink/assistant/MockAssistantService.kt) 가 현재 spec 을 보고 **"THIS MOCK IS TCP-ONLY"**(routes 빈 배열 유지·tcp 섹션만·포트/필드·규칙 id 유지) 또는 **"HTTP-ONLY"**(tcp null 유지) 힌트를 붙인다.
 - `flowlink.assistant.max-tokens` yml 기본 4096 → **16384**(`FLOWLINK_ASSISTANT_MAX_TOKENS`, 코드 기본과 일치). Copilot 은 모델별 `max_output_tokens` 를 넘는 `max_tokens` 에 400 을 주므로 [AssistantOAuthService.outputLimit](backend/src/main/kotlin/com/flowlink/assistant/AssistantOAuthService.kt)(`/models` 응답을 10분 캐시, `limits.max_output_tokens`)로 [AssistantService.callLlmText](backend/src/main/kotlin/com/flowlink/assistant/AssistantService.kt) 가 **자동 클램프**(Anthropic 키 경로는 그대로). 운영가이드 §7 표 갱신.
+
+## 최근 변경 (2026-09-14) — OIDC(issuer-uri) 리소스 서버 모드 제거 (`refactor/trim-config`)
+- [SecurityConfig](backend/src/main/kotlin/com/flowlink/security/SecurityConfig.kt) **2분기**(GitHub 게스트 모드 / dev permitAll) — `issuer-uri` 기반 OIDC RBAC 분기·`PUBLIC_PATHS`·issuer-uri WARN 삭제. `GET /auth/config` 는 `mode=github|none` 만 반환. 프론트 [AuthContext](frontend/src/auth/AuthContext.tsx) 의 oidc 안내 화면(`blockedOidc`) 삭제. presence 인터셉터의 `guestAllowed` 파라미터 제거(decoder 있음 = github 모드 = 무토큰은 게스트). `application.yml` 의 issuer-uri 대안 주석 삭제.
+- 유지: JwtRoleConverter·TenantClaimFilter·`flowlink.security.tenant-claim`·`spring-boot-starter-oauth2-resource-server` — GitHub 모드의 자체 JWT 검증이 그대로 사용.
+- ⚠ `spring.security.oauth2.resourceserver.jwt.issuer-uri` 를 주면 Boot 자동설정이 JwtDecoder 빈을 만들지만 SecurityConfig 는 이를 무시(github-enabled 아니면 dev permitAll) — 경고 없이 조용히 개방되므로 운영 env 에서 제거할 것.
 
 ## 참고 문서
 - `backend/README.md` — 백엔드 구조·설정·API 요약 · `frontend/README.md` · `infra/README.md`(배포)

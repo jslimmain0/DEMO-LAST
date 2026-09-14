@@ -38,7 +38,7 @@ definition/  플로우 CRUD·버전(불변)·import/export        execution/   �
  └ engine    FlowExecutor·HttpNodeExecutor·TcpNodeExecutor·TokenResolver·ExpressionEvaluator·SsrfGuard
              ·RelayController(wait 콜백 수신·자동 재개)·StateCrypto(AES-GCM)·RunStateSnapshot(내구 재개)
 folder/      폴더(중첩 트리)                              mock/        내장 Mock 서버(HTTP/TCP 게이트웨이·상태·순차응답)
-security/    인증(IdP 비종속) — GitHub 로그인(자체 JWT) / OIDC 리소스서버 / dev permitAll · TenantContext · RBAC
+security/    인증 — GitHub 로그인(자체 JWT) / dev permitAll · TenantContext · RBAC
 secret/      시크릿 볼트(AES-GCM) + HashiCorp Vault 오버레이(VaultSecretSource)
 settings/    런타임 설정(키-값, 콜백 base·알림 웹훅)      trigger/     자동 실행(cron 스케줄러·webhook)
 assistant/   AI 어시스턴트(자연어→플로우) — Anthropic / GitHub Copilot(디바이스 플로우) / stub
@@ -47,12 +47,11 @@ suite/       테스트 스위트 일괄 실행     transform/   변환 SPI + JAR
 ```
 Gradle 멀티모듈: 루트(앱) + `transform-spi`(변환 계약) + `plugin-sample`(참고 플러그인).
 
-## 인증 (IdP 비종속)
+## 인증
 
-`JwtDecoder` 빈 유무로 모드가 자동 결정된다:
+`FLOWLINK_AUTH_GITHUB_ENABLED` 로 모드가 결정된다:
 - **GitHub 로그인**: `FLOWLINK_AUTH_GITHUB_ENABLED=true` → 디바이스 플로우 로그인 후 앱이 자체 JWT(HS256) 발급·검증([security/AppJwt](src/main/kotlin/com/flowlink/security/AppJwt.kt)). 같은 로그인이 어시스턴트 Copilot 연결로도 이어짐.
-- **표준 OIDC**: `application.yml` 에 `issuer-uri` 설정 시 그 IdP(Auth0/Entra/Keycloak) 리소스 서버로 동작.
-- **dev**: 둘 다 미설정이면 permitAll(로컬).
+- **dev**: 미설정이면 permitAll(로컬).
 
 JWT 클레임(`preferred_username`·`tenant`·`realm_access.roles`) → [JwtRoleConverter](src/main/kotlin/com/flowlink/security/JwtRoleConverter.kt) `ROLE_*` + TenantClaimFilter → 쿼리 `tenant_id` 격리. (워크플로/폴더/버전은 전역 공유, 실행·mock·secret 은 사용자별.)
 

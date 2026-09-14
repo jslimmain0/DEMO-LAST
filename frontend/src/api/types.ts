@@ -136,6 +136,10 @@ export interface TcpRespField {
   name?: string
   length?: number
   encoding?: string
+  /** 슬라이스 후 패딩 제거(문자=후행 공백, 숫자=선행 0·공백). 새 노드 기본 true, 저장된 그래프의 undefined 는 false(무회귀). */
+  trim?: boolean
+  /** 출력 타입 — number 면 trim 후 숫자 원형(조건식 숫자 비교). 기본 string. */
+  type?: 'string' | 'number'
 }
 
 export interface TransformParam {

@@ -7,7 +7,6 @@ import com.fasterxml.jackson.databind.node.ObjectNode
 import com.flowlink.common.error.BadRequestException
 import com.flowlink.common.error.TooManyRequestsException
 import com.flowlink.common.json.JsonService
-import com.flowlink.secret.SecretService
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import java.net.URI
@@ -19,17 +18,16 @@ import java.util.concurrent.Semaphore
 import java.util.concurrent.TimeUnit
 
 /**
- * 자연어 → 플로우 어시스턴트. Claude(Anthropic Messages API)에 현재 그래프 + 스키마 프롬프트를 주고
+ * 자연어 → 플로우 어시스턴트. GitHub Copilot(OpenAI 호환 chat/completions)에 현재 그래프 + 스키마 프롬프트를 주고
  * `{reply, graph}` 를 받아 캔버스에 적용 가능한 FlowGraph 를 반환한다.
  *
- * 키(env/yml 또는 시크릿 볼트 `anthropic-api-key`)가 없으면 **stub 모드**로 키워드 기반 샘플 플로우를 만들어
- * 키 없이도 기능이 완결된다(데모/오프라인).
+ * Copilot 이 연결돼 있지 않으면 **stub 모드**로 키워드 기반 샘플 플로우를 만들어
+ * 연결 없이도 기능이 완결된다(데모/오프라인).
  */
 @Service
 class AssistantService(
     private val props: AssistantProperties,
     private val json: JsonService,
-    private val secretService: SecretService,
     private val skills: SkillService,
     private val oauth: AssistantOAuthService,
 ) {
@@ -40,37 +38,26 @@ class AssistantService(
     private val gate = Semaphore(props.maxConcurrent)
 
     /**
-     * LLM 호출 계획 — 자격/엔드포인트/포맷. OAuth(GitHub) 연결 시 **GitHub Models 게이트웨이(OpenAI 호환, Bearer)**,
-     * 아니면 env/시크릿 api-key(Anthropic, x-api-key). 둘 다 없으면 null(stub).
+     * LLM 호출 계획 — 자격/엔드포인트. OAuth(GitHub) 연결 시 **Copilot 채팅 API(OpenAI 호환, Bearer)**,
+     * 연결 안 됐으면 null(stub).
      */
-    private data class Plan(val header: String, val value: String, val baseUrl: String, val model: String, val openai: Boolean, val extraHeaders: Map<String, String> = emptyMap())
+    private data class Plan(val header: String, val value: String, val baseUrl: String, val model: String, val extraHeaders: Map<String, String> = emptyMap())
 
     private fun resolvePlan(): Plan? {
         // ① GitHub Copilot 연결 → Copilot 채팅 API(OpenAI 호환, Bearer + 확장 헤더)
         try {
             oauth.copilotBearer()?.let { bearer ->
-                return Plan("Authorization", "Bearer $bearer", oauth.copilotChatBase(), oauth.copilotModel(), openai = true, extraHeaders = oauth.copilotHeaders())
+                return Plan("Authorization", "Bearer $bearer", oauth.copilotChatBase(), oauth.copilotModel(), extraHeaders = oauth.copilotHeaders())
             }
         } catch (e: Exception) { log.debug("Copilot 토큰 조회 실패(무시): {}", e.message) }
-        // ② env/yml api-key 또는 시크릿 볼트 anthropic-api-key — Anthropic, x-api-key
-        val key = props.apiKey ?: try { secretService.activeSecrets(null)["anthropic-api-key"]?.takeIf { it.isNotBlank() } } catch (e: Exception) { null }
-        return key?.let { Plan("x-api-key", it, props.baseUrl, props.model, openai = false) }
+        return null
     }
-
-    private fun hasApiKey(): Boolean =
-        props.apiKey != null || try { !secretService.activeSecrets(null)["anthropic-api-key"].isNullOrBlank() } catch (e: Exception) { false }
 
     fun config(): AssistantConfig {
         // 읽기 전용 — refresh 부작용 없이 상태만(connected 는 loadToken, 갱신 안 함)
         val oauthConnected = try { oauth.connected() } catch (e: Exception) { false }
-        val real = oauthConnected || hasApiKey()
-        val model = when {
-            oauthConnected -> "copilot/" + try { oauth.copilotModel() } catch (e: Exception) { "gpt-4o" }
-            real -> props.model
-            else -> "stub"
-        }
-        val mode = if (oauthConnected) "oauth" else if (real) "key" else "stub"
-        return AssistantConfig(available = true, usingRealLlm = real, model = model, authMode = mode)
+        val model = if (oauthConnected) "copilot/" + try { oauth.copilotModel() } catch (e: Exception) { "gpt-4o" } else "stub"
+        return AssistantConfig(available = true, usingRealLlm = oauthConnected, model = model, authMode = if (oauthConnected) "oauth" else "stub")
     }
 
     /** 대화 정리(첫 user 부터, user 로 끝) — flow·mock 어시스턴트 공용. */
@@ -80,7 +67,7 @@ class AssistantService(
         return messages
     }
 
-    /** LLM 자격이 있는지(Copilot 또는 키). 없으면 도메인별 stub. */
+    /** LLM 자격이 있는지(Copilot 연결). 없으면 도메인별 stub. */
     fun canComplete(): Boolean = resolvePlan() != null
 
     data class Completion(val text: String, val model: String)
@@ -91,7 +78,7 @@ class AssistantService(
      */
     fun complete(messages: List<ChatMessage>, system: String, modelOverride: String?): Completion? {
         var plan = resolvePlan() ?: return null
-        if (plan.openai && !modelOverride.isNullOrBlank()) plan = plan.copy(model = modelOverride.trim())
+        if (!modelOverride.isNullOrBlank()) plan = plan.copy(model = modelOverride.trim())
         if (!gate.tryAcquire(2, TimeUnit.SECONDS)) {
             throw TooManyRequestsException("AI 요청이 많습니다. 잠시 후 다시 시도하세요.")
         }
@@ -111,7 +98,7 @@ class AssistantService(
         return AssistantChatResponse(reply = reply, graph = graph, stub = false, model = completion.model)
     }
 
-    // --- 실제 LLM 호출 (Anthropic Messages / OpenAI-호환 chat/completions) ---
+    // --- 실제 LLM 호출 (Copilot — OpenAI 호환 chat/completions) ---
 
     fun buildSystemPrompt(graph: JsonNode?): String = buildString {
         append(FlowSchemaPrompt.SYSTEM)
@@ -121,13 +108,11 @@ class AssistantService(
     }
 
     private fun callLlmText(plan: Plan, messages: List<ChatMessage>, system: String): String {
-        val path = if (plan.openai) "/chat/completions" else "/v1/messages"
-        val uri = URI.create(plan.baseUrl + path)
+        val uri = URI.create(plan.baseUrl + "/chat/completions")
 
         // Copilot(OpenAI 호환)은 모델별 출력 한도를 넘는 max_tokens 에 400 을 주므로 /models 의 한도로 클램프
-        val maxTokens = if (plan.openai) (runCatching { oauth.outputLimit(plan.model) }.getOrNull()?.let { minOf(props.maxTokens, it) } ?: props.maxTokens) else props.maxTokens
-        val body = if (plan.openai) openAiBody(mapper, plan.model, maxTokens, system, messages)
-                   else anthropicBody(mapper, plan.model, maxTokens, system, messages)
+        val maxTokens = runCatching { oauth.outputLimit(plan.model) }.getOrNull()?.let { minOf(props.maxTokens, it) } ?: props.maxTokens
+        val body = openAiBody(mapper, plan.model, maxTokens, system, messages)
 
         var reqB = HttpRequest.newBuilder(uri)
             .timeout(Duration.ofSeconds(90))
@@ -135,7 +120,6 @@ class AssistantService(
             .header("accept", "application/json")
             .header(plan.header, plan.value)
         for ((k, v) in plan.extraHeaders) reqB = reqB.header(k, v) // Copilot: Editor-Version 등
-        if (!plan.openai) reqB = reqB.header("anthropic-version", "2023-06-01")
         val request = reqB.POST(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(body))).build()
 
         val res: HttpResponse<String> = try {
@@ -162,7 +146,7 @@ class AssistantService(
             throw BadRequestException("AI 호출 실패: " + (extractErr(res.body()) ?: "상태 ${res.statusCode()}"))
         }
 
-        return if (plan.openai) extractOpenAiText(mapper, res.body()) else extractAnthropicText(mapper, res.body())
+        return extractOpenAiText(mapper, res.body())
     }
 
     private fun extractErr(bodyJson: String): String? =
@@ -213,12 +197,11 @@ class AssistantService(
 
     private fun clip(s: String, max: Int): String = if (s.length <= max) s else s.substring(0, max) + "…(생략)"
 
-    // --- stub(키 없음) 모드 ---
+    // --- stub(Copilot 미연결) 모드 ---
 
     private fun stub(messages: List<ChatMessage>, graph: JsonNode?): AssistantChatResponse {
         val q = messages.last().content.lowercase()
-        val hint = "\n\n(⚠ AI 키가 설정되지 않아 샘플 플로우를 생성했습니다. 시크릿 볼트에 `anthropic-api-key` 를 추가하거나 " +
-            "FLOWLINK_ASSISTANT_API_KEY 를 설정하면 실제 AI 가 요청대로 만들어 줍니다.)"
+        val hint = "\n\n(⚠ Copilot 미연결로 샘플 플로우를 생성했습니다. GitHub 로그인(Copilot 연결)을 하면 실제 모델이 요청대로 만들어 줍니다.)"
         val (reply, gjson) = when {
             has(q, "결제", "payment", "pay", "콜백", "callback") ->
                 "결제창을 열고 콜백을 기다렸다가 승인 여부로 분기하는 샘플 플로우입니다." to STUB_PAYMENT
@@ -238,15 +221,7 @@ class AssistantService(
     private fun has(q: String, vararg keys: String): Boolean = keys.any { q.contains(it) }
 
     companion object {
-        /** Anthropic Messages 요청 본문. */
-        internal fun anthropicBody(mapper: ObjectMapper, model: String, maxTokens: Int, system: String, messages: List<ChatMessage>): ObjectNode =
-            mapper.createObjectNode().apply {
-                put("model", model); put("max_tokens", maxTokens); put("system", system)
-                val arr: ArrayNode = putArray("messages")
-                for (m in messages) arr.add(mapper.createObjectNode().put("role", m.role).put("content", m.content))
-            }
-
-        /** OpenAI 호환(GitHub Models 등) 요청 본문 — system 을 첫 메시지로. */
+        /** OpenAI 호환(Copilot) 요청 본문 — system 을 첫 메시지로. */
         internal fun openAiBody(mapper: ObjectMapper, model: String, maxTokens: Int, system: String, messages: List<ChatMessage>): ObjectNode =
             mapper.createObjectNode().apply {
                 put("model", model); put("max_tokens", maxTokens)
@@ -254,13 +229,6 @@ class AssistantService(
                 arr.add(mapper.createObjectNode().put("role", "system").put("content", system))
                 for (m in messages) arr.add(mapper.createObjectNode().put("role", m.role).put("content", m.content))
             }
-
-        /** Anthropic 응답 content[].text 이어붙이기. */
-        internal fun extractAnthropicText(mapper: ObjectMapper, bodyJson: String): String = try {
-            val sb = StringBuilder()
-            mapper.readTree(bodyJson).path("content").forEach { b -> if (b.path("type").asText() == "text") sb.append(b.path("text").asText()) }
-            sb.toString()
-        } catch (e: Exception) { bodyJson }
 
         /** OpenAI 호환 응답 choices[0].message.content. */
         internal fun extractOpenAiText(mapper: ObjectMapper, bodyJson: String): String =

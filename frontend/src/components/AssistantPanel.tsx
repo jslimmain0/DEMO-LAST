@@ -145,7 +145,7 @@ export function AssistantPanel({ width, onClose }: { width: number; onClose: () 
         ) : canConnect && canEdit ? (
           <button onClick={connect} title="GitHub 로그인으로 Copilot 연결(디바이스 코드)" style={connectBtn}>Copilot 연결</button>
         ) : (
-          <span style={badge(cfg.data?.usingRealLlm)} title={cfg.data?.usingRealLlm ? `모델: ${cfg.data?.model}` : 'Copilot/API 키 미설정 — 샘플(stub) 모드'}>
+          <span style={badge(cfg.data?.usingRealLlm)} title={cfg.data?.usingRealLlm ? `모델: ${cfg.data?.model}` : 'Copilot 미연결 — 샘플(stub) 모드'}>
             {cfg.data?.usingRealLlm ? cfg.data?.model : 'stub'}
           </span>
         )}

@@ -41,7 +41,7 @@ folder/      폴더(중첩 트리)                              mock/        내
 security/    인증 — GitHub 로그인(자체 JWT) / dev permitAll · TenantClaimFilter · 롤 클레임 매핑
 secret/      시크릿 볼트(AES-GCM 또는 Vault Transit KEK)
 settings/    런타임 설정(키-값, 콜백 base·알림 웹훅)      trigger/     자동 실행(cron 스케줄러·webhook)
-assistant/   AI 어시스턴트(자연어→플로우) — Anthropic / GitHub Copilot(디바이스 플로우) / stub
+assistant/   AI 어시스턴트(자연어→플로우) — GitHub Copilot(디바이스 플로우) / stub
 presence/    실시간 협업(WebSocket 커서·편집중·그래프 릴레이)   notify/  실행 실패 알림(Slack/Teams 웹훅)
 suite/       테스트 스위트 일괄 실행     transform/   변환 SPI + JAR 플러그인     common/  error·json·tenant·web(SPA)
 ```
@@ -62,7 +62,7 @@ JWT 클레임(`preferred_username`·`tenant`·`realm_access.roles`) → [JwtRole
 | `flowlink.execution.*` | `FLOWLINK_EXECUTION_STATE_SECRET`, `FLOWLINK_EXECUTION_RELAY_BASEURL` | http 타임아웃·워커 풀·suspension 암호키·콜백 base |
 | `flowlink.auth.*` | `FLOWLINK_AUTH_GITHUB_ENABLED`, `FLOWLINK_AUTH_JWT_SECRET` | GitHub 로그인 |
 | `flowlink.vault.*` | `FLOWLINK_VAULT_TRANSIT_ENABLED`, `FLOWLINK_VAULT_ADDRESS`, `FLOWLINK_VAULT_TOKEN`(또는 `FLOWLINK_VAULT_APPROLE_*`) | Vault Transit(KEK) 봉투 암호화 |
-| `flowlink.assistant.*` | `FLOWLINK_ASSISTANT_API_KEY`, `FLOWLINK_ASSISTANT_MODEL` | AI 어시스턴트(Anthropic 키·모델) |
+| `flowlink.assistant.*` | `FLOWLINK_ASSISTANT_MAX_TOKENS` | AI 어시스턴트(응답 토큰 상한 — 자격은 사용자별 GitHub 로그인/Copilot 연결, 서버 키 없음) |
 | `flowlink.security.*` | — | 테넌트 클레임 |
 
 ## DB 마이그레이션

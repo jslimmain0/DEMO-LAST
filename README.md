@@ -45,7 +45,7 @@ powershell -ExecutionPolicy Bypass -File scripts\stop.ps1
 - **변환 플러그인**: 변환은 플러그인 JAR 로 제공 — 참고 구현 [backend/plugin-sample](backend/plugin-sample)(mask, hmac-sha256). `cd backend && sh gradlew :plugin-sample:jar` 후 플러그인 디렉터리(`scripts/` 기동 시 리포 루트 `plugins/`, `bootRun` 시 `backend/plugins/` — 운영가이드 §8)에 배치.
 - **콜백 대기**: `wait` 노드 콜백을 **백엔드가 `/relay/{execId}/cb/{nodeId}` 로 직접 받아** 자동 재개(별도 프로세스 없음, 탭 닫아도 완결). → [폼·콜백 연동 가이드](docs/guide/15-폼-콜백-연동.md)
 - **내장 Mock 서버**: "Mock 서버" 탭에서 가짜 대상 시스템(HTTP/TCP)을 정의·서빙(`/mock/{slug}/**`). 상태·순차응답·콜백 발사·요청로그 지원. → [Mock 가이드](docs/guide/10-Mock-서버.md)
-- **AI 어시스턴트**: 에디터 우측 ✨ AI 패널에서 자연어로 플로우 생성/수정. 키 없이 stub 모드, 또는 GitHub Copilot·Anthropic 키 연동.
+- **AI 어시스턴트**: 에디터 우측 ✨ AI 패널에서 자연어로 플로우 생성/수정. GitHub 로그인(Copilot 연결) 시 실제 모델, 미연결이면 stub 모드.
 - **실행 정확성**: 비동기 워커 풀 + 내구 재개(서버 재시작 생존), 트리거(cron·webhook), 실행 이력·비교·스위트, 버전 히스토리, 시크릿 볼트, 환경(dev/staging/prod), 실시간 협업.
 
 ![실행 로그](docs/guide/images/run-log.png)

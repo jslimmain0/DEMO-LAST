@@ -200,7 +200,7 @@ export interface FlowGraph {
 export interface AssistantMessage { role: 'user' | 'assistant'; content: string }
 export interface AssistantChatRequest { messages: AssistantMessage[]; graph?: FlowGraph | null; model?: string }
 export interface AssistantChatResponse { reply: string; graph: FlowGraph | null; stub: boolean; model: string }
-export interface AssistantConfig { available: boolean; usingRealLlm: boolean; model: string; authMode: 'oauth' | 'key' | 'stub' }
+export interface AssistantConfig { available: boolean; usingRealLlm: boolean; model: string; authMode: 'oauth' | 'stub' }
 // AI 어시스턴트 GitHub Copilot 연결(디바이스 플로우 — 확장과 동일)
 export interface OAuthStatus { connected: boolean; pending: boolean; error: string | null }
 export interface DeviceStart { userCode: string; verificationUri: string; expiresIn: number; intervalSec: number }

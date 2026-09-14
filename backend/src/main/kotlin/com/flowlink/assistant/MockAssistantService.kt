@@ -7,7 +7,7 @@ import org.springframework.stereotype.Service
 /**
  * 자연어 → Mock 서버 spec 어시스턴트. 플로우 어시스턴트(AssistantService)의 LLM 파이프라인
  * (Copilot 자격·벌크헤드·429·JSON 추출)을 재사용하고, 시스템 프롬프트만 MockSchemaPrompt 로 바꾼다.
- * 자격이 없으면 키워드 기반 stub spec 으로 키 없이도 기능이 완결된다.
+ * 자격이 없으면 키워드 기반 stub spec 으로 연결 없이도 기능이 완결된다.
  */
 @Service
 class MockAssistantService(
@@ -48,7 +48,7 @@ class MockAssistantService(
 
     private fun stub(messages: List<ChatMessage>): MockAssistantChatResponse {
         val q = messages.last().content.lowercase()
-        val hint = "\n\n(⚠ AI 키/Copilot 미연결로 샘플 spec 을 생성했습니다. Copilot 을 연결하면 요청대로 만들어 줍니다.)"
+        val hint = "\n\n(⚠ Copilot 미연결로 샘플 spec 을 생성했습니다. GitHub 로그인(Copilot 연결)을 하면 실제 모델이 요청대로 만들어 줍니다.)"
         val (reply, sjson) = when {
             has(q, "결제", "payment", "pay", "콜백", "callback", "노티") ->
                 "결제창(HTML)을 띄우고 returnUrl 로 콜백하는 샘플 mock 입니다." to STUB_PAY

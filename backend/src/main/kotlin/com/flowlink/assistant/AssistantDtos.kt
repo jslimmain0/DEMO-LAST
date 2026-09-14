@@ -18,7 +18,7 @@ data class AssistantChatRequest(
 /**
  * 채팅 응답.
  * [reply] 자연어 답변, [graph] 제안 그래프(FlowGraph JSON, 없으면 순수 대화),
- * [stub] LLM 키 없이 샘플로 생성했는지, [model] 사용 모델(또는 "stub").
+ * [stub] Copilot 미연결로 샘플 생성했는지, [model] 사용 모델(또는 "stub").
  */
 data class AssistantChatResponse(
     val reply: String,
@@ -30,7 +30,7 @@ data class AssistantChatResponse(
 /** 어시스턴트 가용 상태 — 프론트 패널이 stub/실제 여부·모델·인증 방식을 표시. */
 data class AssistantConfig(
     val available: Boolean, // 항상 true(stub 폴백) — 패널을 열 수 있는지
-    val usingRealLlm: Boolean, // 실제 LLM 자격(OAuth 또는 키)이 있는지
+    val usingRealLlm: Boolean, // Copilot 연결 여부
     val model: String,
-    val authMode: String, // "oauth" | "key" | "stub"
+    val authMode: String, // "oauth" | "stub"
 )

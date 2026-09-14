@@ -86,7 +86,7 @@ core/        도메인·그래프·리포지토리 (코어, 다른 모듈이 의
 definition/  플로우 CRUD·버전·import/export  (FlowController/FlowService)
 execution/   실행 엔진 + 실행 API  (ExecutionController/ExecutionService)
  ├─ engine   FlowExecutor·ExecutionContext·ExpressionEvaluator·TokenResolver
- │           HttpNodeExecutor·SsrfGuard·NodeRecorder
+ │           HttpNodeExecutor·NodeRecorder
  │           RelayController(wait 콜백 수신 → 자동 재개)
  └─ config   ExecutionProperties·HttpClientConfig
 folder/      폴더 관리
@@ -141,14 +141,12 @@ graphJson 파싱 → Kahn 위상정렬 → 노드 순차 처리 → IF는 단일
 ### 보안
 - 인증: `FLOWLINK_AUTH_GITHUB_ENABLED=true` 면 GitHub 게스트 모드(자체 JWT 검증), 미설정 시 dev permitAll
 - 멀티테넌시: JWT claim(기본 "tenant") → `TenantContext`(ThreadLocal) → 쿼리 `tenant_id` 필터
-- SSRF 가드: 사설/루프백/링크로컬/메타데이터 대역 차단 + 스킴 allowlist (HTTP 아웃바운드 + mock 콜백 발사).
-  **`flowlink.execution.ssrf.allow-loopback`**: true면 localhost/127.0.0.1/::1 허용(사설망은 여전히 차단) — **h2(로컬) 프로파일 기본 true**.
 - redaction deny-by-default: HTTP req/res 본문 기본 미저장 (`flowlink.execution.capture.request-response-bodies`로 옵트인).
   **h2(로컬) 프로파일은 true** — 실행 로그에 요청/응답 본문 그대로 표시(디버그).
 - IF 표현식: SpEL `SimpleEvaluationContext`(읽기전용) 샌드박스
 
 ### 주요 설정 (`application.yml` / `ExecutionProperties`)
-`flowlink.execution.*`: http 타임아웃·max-response-bytes(5MB)·ssrf·capture·max-nodes-per-run(200)
+`flowlink.execution.*`: http 타임아웃·max-response-bytes(5MB)·capture·max-nodes-per-run(200)
 (외부 콜백은 백엔드가 `/relay/{execId}/cb/{nodeId}` 로 직접 수신 → 자동 재개. 별도 relay 프로세스·설정 없음)
 
 ---
@@ -187,7 +185,6 @@ design/   theme(라이트/다크) · index.css(CSS 변수)
 - **동기 실행** → 비동기 큐/워커·내구성 실행 미구현 (가장 큰 아키텍처 부채). Build vs Buy(Temporal/Camunda) 설계 토론 결론 반영 예정
 - **재개 상태 인메모리**(`ExecutionService.suspensions`) — 서버 재시작 시 진행 중 실행 소실. API 로 직접 실행(브라우저 없이)하면 wait 에서 WAITING 으로 남음(브라우저가 타임아웃을 구동)
 - **트리거** CRON/WEBHOOK/EVENT는 enum만, MANUAL만 동작
-- **SSRF DNS 리바인딩** 갭 — check-time 해석만, connect-time IP 핀닝 미적용 (`SsrfGuard.kt`)
 - **플러그인 JAR 샌드박스 없음** — 업로드 JAR가 전체 권한으로 실행, RBAC 게이트 필요(현재 permitAll)
 - **RBAC/RLS·시크릿 볼트** 미구현 — 멀티테넌시는 `tenant_id` 컬럼 필터링만
 - **SET 노드 시크릿** UI 마스킹만, 실제 KMS 연동 없음
@@ -200,7 +197,7 @@ design/   theme(라이트/다크) · index.css(CSS 변수)
 - OpenAPI 파서: ref 1단계만, YAML 미지원, `allOf/oneOf/anyOf` 미처리
 
 ### 테스트 현황
-- 백엔드 단위 테스트 4개: `ExpressionEvaluatorTest`·`SsrfGuardTest`·`TokenResolverTest`·`MockRuntimeTest` (DB 불필요)
+- 백엔드 단위 테스트 4개: `ExpressionEvaluatorTest`·`TokenResolverTest`·`MockRuntimeTest` (DB 불필요)
 - E2E/통합 테스트 없음, 프론트 테스트 없음
 
 ---
@@ -1241,6 +1238,9 @@ API 도구 UX·비주얼/IA·플로우 통합 3관점 병렬 비평 → 확정 �
 - env 화이트리스트/관리자 목록(`FLOWLINK_AUTH_ALLOWED_LOGINS`/`ADMIN_LOGINS`, `AuthProperties.allows/isBootstrapAdmin`) 삭제. **테넌트에 ADMIN 이 없으면 처음 등록되는 사용자가 ADMIN+APPROVED**([WorkspaceService.touchUser](backend/src/main/kotlin/com/flowlink/workspace/WorkspaceService.kt) 단일 등록 경로 — GithubAuthService.complete 도 이걸 호출, `existsByTenantIdAndGlobalRole` 1개 추가, INFO 로그, 동시 첫 로그인 레이스 무시). 신규 사용자는 전부 PENDING, dev 는 항상 관리자(부트스트랩 대상 아님 — 로컬 dev H2 를 github 모드로 켜도 dev 행이 ADMIN 을 선점하지 않게). putMember/putUser 사전 등록 경로는 부트스트랩 대상 아님(초대받은 사람이 관리자가 되는 사고 방지).
 - ⚠ 기존 운영 DB 에 globalRole=ADMIN 행이 없으면(관리자가 env 로만 지정돼 있었다면) **배포 후 처음 로그인하는 신규 사용자**가 ADMIN 이 된다 — 배포 전에 `UPDATE flowlink_app_user SET global_role='ADMIN' WHERE username='<운영자>'` 로 지정할 것.
 - 검증: GithubAuthStartupValidatorTest 3종 + WorkspaceRbacTest 부트스트랩 케이스 + 전체 스위트.
+
+## 최근 변경 (2026-09-14) — SSRF 가드 제거 (`refactor/trim-config`)
+- `SsrfGuard`·`SsrfBlockedException`·`SsrfGuardTest`·`ExecutionProperties.Ssrf`·yml `flowlink.execution.ssrf.*` 삭제. HTTP/TCP 노드(서버 모드)·Mock 콜백·어시스턴트(Anthropic/Copilot)·GitHub 로그인의 아웃바운드는 **무검사** — 사설망·클라우드 메타데이터·loopback 자유 호출. 스킴 allowlist(http/https)도 함께 사라짐(비 http/https URL 은 RestClient/HttpClient 가 실패시킴 → 노드 실패 `⚠ 요청 실패: …`). h2 프로파일은 이미 `enabled: false` 였으므로 로컬 동작 동일. **사내망 배포 전제.** NotificationService 의 자체 스킴 검증은 유지.
 
 ## 참고 문서
 - `backend/README.md` — 백엔드 구조·설정·API 요약 · `frontend/README.md` · `infra/README.md`(배포)

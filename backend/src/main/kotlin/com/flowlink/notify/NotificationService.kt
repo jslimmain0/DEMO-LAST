@@ -17,7 +17,7 @@ import java.util.concurrent.Executors
 /**
  * 실행 실패 알림 — 테넌트가 설정한 웹훅 URL(Slack/Teams incoming webhook 등)로 `{text}` JSON 을 발송.
  * 무인 실행(스케줄/웹훅)에서 실패를 즉시 통보하는 용도. 파이어&포겟(백그라운드), 실패해도 실행에 영향 없음.
- * ⚠ URL 은 admin 이 설정(RBAC)하므로 사내 URL 허용 — 스킴(http/https)만 검증(전체 SsrfGuard 미적용, 문서화된 트레이드오프).
+ * ⚠ URL 은 admin 이 설정(RBAC)하므로 사내 URL 허용 — 스킴(http/https)만 검증.
  */
 @Service
 class NotificationService(

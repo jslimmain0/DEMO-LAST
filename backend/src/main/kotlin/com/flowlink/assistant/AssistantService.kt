@@ -7,7 +7,6 @@ import com.fasterxml.jackson.databind.node.ObjectNode
 import com.flowlink.common.error.BadRequestException
 import com.flowlink.common.error.TooManyRequestsException
 import com.flowlink.common.json.JsonService
-import com.flowlink.execution.engine.SsrfGuard
 import com.flowlink.secret.SecretService
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
@@ -24,14 +23,13 @@ import java.util.concurrent.TimeUnit
  * `{reply, graph}` 를 받아 캔버스에 적용 가능한 FlowGraph 를 반환한다.
  *
  * 키(env/yml 또는 시크릿 볼트 `anthropic-api-key`)가 없으면 **stub 모드**로 키워드 기반 샘플 플로우를 만들어
- * 키 없이도 기능이 완결된다(데모/오프라인). SSRF 가드는 api.anthropic.com 을 통과한다.
+ * 키 없이도 기능이 완결된다(데모/오프라인).
  */
 @Service
 class AssistantService(
     private val props: AssistantProperties,
     private val json: JsonService,
     private val secretService: SecretService,
-    private val ssrfGuard: SsrfGuard,
     private val skills: SkillService,
     private val oauth: AssistantOAuthService,
 ) {
@@ -89,7 +87,7 @@ class AssistantService(
 
     /**
      * **스키마 무관 LLM 코어** — 시스템 프롬프트 + 대화를 넣어 모델 원문 텍스트를 받는다(flow·mock 공용).
-     * 자격 없으면 null(호출자가 stub). 벌크헤드·SSRF·429/쿼터·Copilot 헤더는 여기서 처리.
+     * 자격 없으면 null(호출자가 stub). 벌크헤드·429/쿼터·Copilot 헤더는 여기서 처리.
      */
     fun complete(messages: List<ChatMessage>, system: String, modelOverride: String?): Completion? {
         var plan = resolvePlan() ?: return null
@@ -125,7 +123,6 @@ class AssistantService(
     private fun callLlmText(plan: Plan, messages: List<ChatMessage>, system: String): String {
         val path = if (plan.openai) "/chat/completions" else "/v1/messages"
         val uri = URI.create(plan.baseUrl + path)
-        try { ssrfGuard.check(uri) } catch (e: Exception) { throw BadRequestException("AI 엔드포인트가 차단됐습니다: ${e.message}") }
 
         // Copilot(OpenAI 호환)은 모델별 출력 한도를 넘는 max_tokens 에 400 을 주므로 /models 의 한도로 클램프
         val maxTokens = if (plan.openai) (runCatching { oauth.outputLimit(plan.model) }.getOrNull()?.let { minOf(props.maxTokens, it) } ?: props.maxTokens) else props.maxTokens

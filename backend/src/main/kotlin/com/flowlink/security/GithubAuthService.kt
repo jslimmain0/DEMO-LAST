@@ -4,7 +4,6 @@ import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.flowlink.common.error.BadRequestException
 import com.flowlink.common.tenant.TenantContext
-import com.flowlink.execution.engine.SsrfGuard
 import org.slf4j.LoggerFactory
 import org.springframework.context.ApplicationEventPublisher
 import org.springframework.stereotype.Service
@@ -29,7 +28,6 @@ import java.util.concurrent.Executors
 class GithubAuthService(
     private val props: AuthProperties,
     private val appJwt: AppJwt,
-    private val ssrfGuard: SsrfGuard,
     private val events: ApplicationEventPublisher,
     private val workspace: com.flowlink.workspace.WorkspaceService,
 ) {
@@ -128,7 +126,6 @@ class GithubAuthService(
 
     private fun postForm(url: String, form: String): JsonNode {
         val uri = URI.create(url)
-        try { ssrfGuard.check(uri) } catch (e: Exception) { throw BadRequestException("차단됨(SSRF): ${e.message}") }
         val req = HttpRequest.newBuilder(uri).timeout(Duration.ofSeconds(20))
             .header("content-type", "application/x-www-form-urlencoded").header("accept", "application/json")
             .POST(HttpRequest.BodyPublishers.ofString(form)).build()
@@ -139,7 +136,6 @@ class GithubAuthService(
 
     private fun getWithAuth(url: String, auth: String): JsonNode {
         val uri = URI.create(url)
-        ssrfGuard.check(uri)
         val req = HttpRequest.newBuilder(uri).timeout(Duration.ofSeconds(20))
             .header("Authorization", auth).header("accept", "application/json")
             .header("User-Agent", "FlowLink").GET().build()

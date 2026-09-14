@@ -21,12 +21,11 @@ class RunStateSnapshotTest {
     // FlowGraph(코틀린 data class) 파싱에 KotlinModule 필요 — 프로덕션 Spring mapper 와 동일 조건
     private val json = JsonService(jacksonObjectMapper())
     private val tokens = TokenResolver(json)
-    private val props = ExecutionProperties(null, null, null, null, 0)
-    private val ssrf = SsrfGuard(props)
+    private val props = ExecutionProperties(null, null, null, 0)
     private val executor = FlowExecutor(
         tokens, ExpressionEvaluator(tokens),
-        HttpNodeExecutor(RestClient.create(), tokens, ssrf, json, props),
-        json, TransformRegistry("build/tmp/no-plugins"), TcpNodeExecutor(tokens, ssrf, json)
+        HttpNodeExecutor(RestClient.create(), tokens, json, props),
+        json, TransformRegistry("build/tmp/no-plugins"), TcpNodeExecutor(tokens, json)
     )
     private val mapper = jacksonObjectMapper()
 

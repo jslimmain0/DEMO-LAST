@@ -26,13 +26,12 @@ import javax.xml.parsers.DocumentBuilderFactory
 
 /**
  * HTTP 요청 노드를 <b>서버사이드</b>로 실행한다. (프로토타입은 브라우저 fetch → CORS 한계,
- * 시크릿 노출. 서버 실행으로 그 한계를 제거하되 SSRF 가드를 강제.)
+ * 시크릿 노출. 서버 실행으로 그 한계를 제거.)
  */
 @Component
 class HttpNodeExecutor(
     @Qualifier(HttpClientConfig.NODE_REST_CLIENT) private val restClient: RestClient,
     private val tokens: TokenResolver,
-    private val ssrfGuard: SsrfGuard,
     private val json: JsonService,
     props: ExecutionProperties
 ) {
@@ -192,7 +191,7 @@ class HttpNodeExecutor(
         return BuiltRequest(method, url, headers, bodyString, reqStr, reqValues)
     }
 
-    /** server 모드: 서버가 직접 호출한다(SSRF 가드 강제). */
+    /** server 모드: 서버가 직접 호출한다. */
     fun execute(node: GraphNode, ctx: ExecutionContext): NodeResult {
         val req = build(node, ctx)
 
@@ -200,11 +199,6 @@ class HttpNodeExecutor(
             URI.create(req.url)
         } catch (e: IllegalArgumentException) {
             return NodeResult.fail(0, req.requestText, "⚠ 잘못된 URL: " + e.message)
-        }
-        try {
-            ssrfGuard.check(uri)
-        } catch (e: SsrfBlockedException) {
-            return NodeResult.fail(0, req.requestText, "⚠ 차단됨(SSRF 가드): " + e.message)
         }
 
         return try {
@@ -238,7 +232,7 @@ class HttpNodeExecutor(
 
     /**
      * client 모드: 브라우저가 대신 호출하고 돌려준 결과({@code status}/{@code body})를 NodeResult 로 변환한다.
-     * 서버는 전송하지 않으므로 SSRF 가드 대상이 아니다(브라우저의 동일출처/CORS 정책이 적용됨).
+     * 서버는 전송하지 않는다(브라우저의 동일출처/CORS 정책이 적용됨).
      */
     fun clientResult(node: GraphNode, req: BuiltRequest, status: Int, body: String?, error: String?): NodeResult {
         if (error != null && !error.isBlank()) {

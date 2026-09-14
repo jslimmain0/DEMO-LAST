@@ -5,7 +5,6 @@ import com.flowlink.common.json.JsonService
 import com.flowlink.common.tenant.TenantContext
 import com.flowlink.core.repository.AppSettingRepository
 import com.flowlink.execution.config.ExecutionProperties
-import com.flowlink.execution.engine.SsrfGuard
 import com.flowlink.execution.engine.StateCrypto
 import com.flowlink.security.GithubLoginEvent
 import com.flowlink.settings.SettingsService
@@ -34,8 +33,7 @@ class AssistantOAuthLinkTest {
     }
 
     private fun newService(settings: SettingsService): AssistantOAuthService {
-        val ssrf = Mockito.mock(SsrfGuard::class.java)
-        return AssistantOAuthService(settings, JsonService(ObjectMapper()), ssrf, StateCrypto(secret))
+        return AssistantOAuthService(settings, JsonService(ObjectMapper()), StateCrypto(secret))
     }
 
     @AfterEach

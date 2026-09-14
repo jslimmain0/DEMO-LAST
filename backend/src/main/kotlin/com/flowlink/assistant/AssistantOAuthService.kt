@@ -4,7 +4,6 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.flowlink.common.error.BadRequestException
 import com.flowlink.common.json.JsonService
 import com.flowlink.common.tenant.TenantContext
-import com.flowlink.execution.engine.SsrfGuard
 import com.flowlink.security.GithubLoginEvent
 import com.flowlink.settings.SettingsService
 import org.slf4j.LoggerFactory
@@ -32,7 +31,6 @@ import java.util.concurrent.Executors
 class AssistantOAuthService(
     private val settings: SettingsService,
     private val json: JsonService,
-    private val ssrfGuard: SsrfGuard,
     private val crypto: com.flowlink.common.crypto.CryptoProvider,
 ) {
     private val log = LoggerFactory.getLogger(AssistantOAuthService::class.java)
@@ -189,7 +187,6 @@ class AssistantOAuthService(
     /** 인증 GET → JsonNode(4xx 는 예외). copilot_internal 계열은 확장 헤더도 부착. */
     private fun getRaw(url: String, auth: String): com.fasterxml.jackson.databind.JsonNode {
         val uri = URI.create(url)
-        ssrfGuard.check(uri)
         var b = HttpRequest.newBuilder(uri).timeout(Duration.ofSeconds(20)).header("Authorization", auth).header("accept", "application/json")
         copilotHeaders().forEach { (k, v) -> b = b.header(k, v) }
         val res = http.send(b.GET().build(), HttpResponse.BodyHandlers.ofString())
@@ -252,7 +249,6 @@ class AssistantOAuthService(
         val bearer = copilotBearer() ?: return emptyList()
         return try {
             val uri = URI.create("$COPILOT_CHAT_BASE/models")
-            ssrfGuard.check(uri)
             var b = HttpRequest.newBuilder(uri).timeout(Duration.ofSeconds(20))
                 .header("Authorization", "Bearer $bearer").header("accept", "application/json")
             copilotHeaders().forEach { (k, v) -> b = b.header(k, v) }
@@ -351,7 +347,6 @@ class AssistantOAuthService(
 
     private fun postForm(url: String, form: String, auth: String?): com.fasterxml.jackson.databind.JsonNode {
         val uri = URI.create(url)
-        try { ssrfGuard.check(uri) } catch (e: Exception) { throw BadRequestException("차단됨(SSRF): ${e.message}") }
         var b = HttpRequest.newBuilder(uri).timeout(Duration.ofSeconds(20))
             .header("content-type", "application/x-www-form-urlencoded").header("accept", "application/json")
         if (auth != null) b = b.header("Authorization", auth)
@@ -362,7 +357,6 @@ class AssistantOAuthService(
 
     private fun getWithAuth(url: String, auth: String): com.fasterxml.jackson.databind.JsonNode {
         val uri = URI.create(url)
-        try { ssrfGuard.check(uri) } catch (e: Exception) { throw BadRequestException("차단됨(SSRF): ${e.message}") }
         val req = HttpRequest.newBuilder(uri).timeout(Duration.ofSeconds(20))
             .header("Authorization", auth).header("accept", "application/json")
             .header("Editor-Version", EDITOR_VERSION).header("Editor-Plugin-Version", PLUGIN_VERSION)

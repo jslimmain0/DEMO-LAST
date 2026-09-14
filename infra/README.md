@@ -61,7 +61,7 @@ bash scripts/start.sh
 ```
 - **콜백 수신 주소는 자동** — wait(콜백 대기) 수신 URL 의 밑둥은 기본적으로 **접속한 주소(오리진)** 를 쓴다.
   다른 주소로 받아야 하면 화면 ⚙ 설정에 저장하거나 env `FLOWLINK_EXECUTION_RELAY_BASEURL`.
-- 로컬 개발 기본은 h2 프로파일(H2 파일 DB + SSRF allow-loopback + 인증 없음) — env 를 안 주면 이 모드.
+- 로컬 개발 기본은 h2 프로파일(H2 파일 DB + 인증 없음) — env 를 안 주면 이 모드.
 
 ## 3. GitHub 로그인 (운영 인증)
 

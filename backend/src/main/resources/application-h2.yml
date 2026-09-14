@@ -23,11 +23,8 @@ spring:
       enabled: true
       path: /h2-console
 
-# 로컬(개발) 전용 완화: localhost 호출 허용 + 요청/응답 본문 로그 표시(redaction off)
+# 로컬(개발) 전용 완화: 요청/응답 본문 로그 표시(redaction off)
 flowlink:
   execution:
-    ssrf:
-      enabled: false                     # 내부망 전용 — SSRF 가드 완전 비활성(사설/내부 대역·임의 스킴 자유 호출)
-      allow-loopback: true               # (참고) enabled=false 면 무의미 — 켤 때만 localhost 허용에 사용
     capture:
       request-response-bodies: true      # 실행 로그에 HTTP 요청/응답 본문 그대로 표시(디버그)

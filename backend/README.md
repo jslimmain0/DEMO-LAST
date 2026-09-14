@@ -17,7 +17,7 @@ bash scripts/start.sh --build      # 또는 Windows: powershell -File scripts\st
 # 백엔드만 (프론트 dist 없이 API 개발용)
 cd backend && sh gradlew bootRun   # http://localhost:18080
 ```
-- **DB**: 프로파일 미지정이면 **Oracle**(base `application.yml`). **로컬 dev 는 `h2` 프로파일**(scripts 기본 — H2 파일 DB, Flyway off·`ddl-auto: update`, SSRF off). 운영 Oracle 기동은 `SPRING_PROFILES_ACTIVE=oracle`(scripts 의 h2 기본을 벗어나는 스위치 — Oracle 설정은 base 에 있음) + `FLOWLINK_DB_URL`.
+- **DB**: 프로파일 미지정이면 **Oracle**(base `application.yml`). **로컬 dev 는 `h2` 프로파일**(scripts 기본 — H2 파일 DB, Flyway off·`ddl-auto: update`). 운영 Oracle 기동은 `SPRING_PROFILES_ACTIVE=oracle`(scripts 의 h2 기본을 벗어나는 스위치 — Oracle 설정은 base 에 있음) + `FLOWLINK_DB_URL`.
 - **DB override**: `FLOWLINK_DB_URL`·`FLOWLINK_DB_USER`·`FLOWLINK_DB_PASSWORD` · 포트 `FLOWLINK_PORT`.
 - **H2 파일**: 기본 `~/flowlink-h2db/flowlink.mv.db`(변경 `FLOWLINK_H2_FILE`, 초기화=그 파일 삭제).
 
@@ -35,7 +35,7 @@ sh gradlew test    # 전 단위 테스트 (DB 불필요, H2 인메모리)
 ```
 core/        도메인·그래프·리포지토리 (Flow→FlowVersion / Execution→NodeExecution / Folder / Secret / FlowTrigger …)
 definition/  플로우 CRUD·버전(불변)·import/export        execution/   실행 엔진(비동기 워커 풀)+ 실행 API
- └ engine    FlowExecutor·HttpNodeExecutor·TcpNodeExecutor·TokenResolver·ExpressionEvaluator·SsrfGuard
+ └ engine    FlowExecutor·HttpNodeExecutor·TcpNodeExecutor·TokenResolver·ExpressionEvaluator
              ·RelayController(wait 콜백 수신·자동 재개)·StateCrypto(AES-GCM)·RunStateSnapshot(내구 재개)
 folder/      폴더(중첩 트리)                              mock/        내장 Mock 서버(HTTP/TCP 게이트웨이·상태·순차응답)
 security/    인증 — GitHub 로그인(자체 JWT) / dev permitAll · TenantContext · RBAC
@@ -59,7 +59,7 @@ JWT 클레임(`preferred_username`·`tenant`·`realm_access.roles`) → [JwtRole
 
 | 블록 | env(예) | 용도 |
 |---|---|---|
-| `flowlink.execution.*` | `FLOWLINK_EXECUTION_STATE_SECRET`, `FLOWLINK_EXECUTION_RELAY_BASEURL` | http 타임아웃·SSRF·capture·워커 풀·suspension 암호키·콜백 base |
+| `flowlink.execution.*` | `FLOWLINK_EXECUTION_STATE_SECRET`, `FLOWLINK_EXECUTION_RELAY_BASEURL` | http 타임아웃·capture·워커 풀·suspension 암호키·콜백 base |
 | `flowlink.auth.*` | `FLOWLINK_AUTH_GITHUB_ENABLED`, `FLOWLINK_AUTH_JWT_SECRET` | GitHub 로그인 |
 | `flowlink.vault.*` | `FLOWLINK_VAULT_ENABLED`, `FLOWLINK_VAULT_ADDRESS`, `FLOWLINK_VAULT_TOKEN` | HashiCorp Vault 시크릿 |
 | `flowlink.assistant.*` | `FLOWLINK_ASSISTANT_API_KEY`, `FLOWLINK_ASSISTANT_MODEL` | AI 어시스턴트(Anthropic 키·모델) |

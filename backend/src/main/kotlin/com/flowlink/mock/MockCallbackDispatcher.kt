@@ -1,6 +1,5 @@
 package com.flowlink.mock
 
-import com.flowlink.execution.engine.SsrfGuard
 import com.flowlink.mock.MockHttp.FiredCallback
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Component
@@ -17,11 +16,10 @@ import java.util.concurrent.TimeUnit
 /**
  * mock 의 콜백(웹훅) 발사기 — 승인노티/입금노티 패턴.
  * 응답 반환 후 비동기로 발사하고, retryUntilOk 면 응답 본문이 "OK" 가 아닐 때 2초 간격 최대 3회 재발송
- * (PG 노티 "OK 못 받으면 재발송" 규약의 축소판). 발사 대상 URL 은 SsrfGuard 를 통과해야 한다
- * (로컬 프로파일은 loopback 허용 → relay 콜백 가능).
+ * (PG 노티 "OK 못 받으면 재발송" 규약의 축소판).
  */
 @Component
-class MockCallbackDispatcher(private val ssrf: SsrfGuard) {
+class MockCallbackDispatcher {
 
     private val exec: ScheduledExecutorService = Executors.newScheduledThreadPool(2) { r ->
         val t = Thread(r, "mock-callback")
@@ -47,7 +45,6 @@ class MockCallbackDispatcher(private val ssrf: SsrfGuard) {
     private fun attempt(cb: FiredCallback, attempt: Int) {
         try {
             val uri = URI.create(cb.url)
-            ssrf.check(uri)
             val b = HttpRequest.newBuilder(uri)
                 .timeout(Duration.ofSeconds(10))
                 .header("Content-Type", cb.contentType)

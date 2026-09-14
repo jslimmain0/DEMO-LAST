@@ -23,7 +23,6 @@ import java.util.Arrays
 @Component
 class TcpNodeExecutor(
     private val tokens: TokenResolver,
-    private val ssrfGuard: SsrfGuard,
     private val json: JsonService
 ) {
 
@@ -143,14 +142,7 @@ class TcpNodeExecutor(
         val message = built.message
         val reqText = built.reqText
 
-        // 3) SSRF
-        try {
-            ssrfGuard.checkHostPort(host, port)
-        } catch (e: SsrfBlockedException) {
-            return NodeResult.fail(0, reqText, "⚠ 차단됨(SSRF 가드): " + e.message)
-        }
-
-        // 4) 송수신
+        // 3) 송수신
         return try {
             Socket().use { socket ->
                 socket.connect(InetSocketAddress(host, port), timeout)

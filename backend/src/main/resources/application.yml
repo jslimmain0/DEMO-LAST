@@ -51,16 +51,6 @@ flowlink:
       connect-timeout-ms: 5000
       read-timeout-ms: 30000
       max-response-bytes: 5242880        # 5MB 초과 응답은 거절
-    ssrf:
-      enabled: true
-      block-private-networks: true       # RFC1918/loopback/link-local 차단
-      allow-loopback: true               # 앱이 자기 내장 mock(/mock/**)을 localhost 로 호출 → 허용(사설망은 여전히 차단). h2 프로파일은 ssrf 전체 off
-      blocked-hosts:                     # 클라우드 메타데이터 등 명시 차단
-        - 169.254.169.254
-        - metadata.google.internal
-      allowed-schemes:
-        - http
-        - https
     capture:
       request-response-bodies: false     # redaction deny-by-default. true 로 켜면 HTTP req/res 본문 저장(디버그용). h2 프로파일은 true
     max-nodes-per-run: 200               # 폭주 방지

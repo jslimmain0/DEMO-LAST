@@ -6,7 +6,6 @@ import org.springframework.boot.context.properties.ConfigurationProperties
 @ConfigurationProperties(prefix = "flowlink.execution")
 class ExecutionProperties(
     http: Http?,
-    ssrf: Ssrf?,
     capture: Capture?,
     relay: Relay?,
     maxNodesPerRun: Int = 0,
@@ -14,7 +13,6 @@ class ExecutionProperties(
     worker: Worker? = null,
 ) {
     val http: Http = http ?: Http(5000, 30000, 5_242_880L)
-    val ssrf: Ssrf = ssrf ?: Ssrf(true, true, false, listOf("169.254.169.254"), listOf("http", "https"))
     val capture: Capture = capture ?: Capture(false)
     val relay: Relay = relay ?: Relay(null)
     val maxNodesPerRun: Int = if (maxNodesPerRun <= 0) 200 else maxNodesPerRun
@@ -54,17 +52,5 @@ class ExecutionProperties(
         val connectTimeoutMs: Int = if (connectTimeoutMs <= 0) 5000 else connectTimeoutMs
         val readTimeoutMs: Int = if (readTimeoutMs <= 0) 30000 else readTimeoutMs
         val maxResponseBytes: Long = if (maxResponseBytes <= 0) 5_242_880L else maxResponseBytes
-    }
-
-    class Ssrf(
-        val enabled: Boolean = false,
-        val blockPrivateNetworks: Boolean = false,
-        val allowLoopback: Boolean = false,        // 로컬 배포용: true 면 localhost/127.0.0.1/::1 허용(사설망은 여전히 차단)
-        blockedHosts: List<String>? = null,
-        allowedSchemes: List<String>? = null,
-    ) {
-        val blockedHosts: List<String> = blockedHosts ?: listOf()
-        val allowedSchemes: List<String> =
-            if (allowedSchemes.isNullOrEmpty()) listOf("http", "https") else allowedSchemes
     }
 }

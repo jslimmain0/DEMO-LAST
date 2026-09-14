@@ -20,7 +20,7 @@ class CryptoConfigTest {
         transit = VaultProperties.Transit(enabled = transitEnabled, mount = null, key = null),
     )
 
-    private fun exec() = ExecutionProperties(null, null, null, null, 0, "unit-test-secret", null)
+    private fun exec() = ExecutionProperties(null, null, null, 0, "unit-test-secret", null)
 
     private fun provider(v: VaultProperties) = CryptoConfig().cryptoProvider(v, exec(), VaultTokenSource.of(v))
 

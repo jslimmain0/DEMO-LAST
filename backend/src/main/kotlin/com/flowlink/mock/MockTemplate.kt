@@ -38,6 +38,7 @@ class MockContext(
  *  - 워크플로 문법(칩 호환): `{{ x@body }}` `{{ x@query }}` `{{ x@path }}` `{{ x@header }}` `{{ x@state }}` `{{ 이름@secret }}` `{{ x@req }}`(TCP)
  *  - dot 문법(기존): `{{body.x}}` `{{query.x}}` `{{path.x}}` `{{header.x}}` `{{state.x}}` `{{req.x}}` · `{{body}}` `{{method}}` `{{uuid}}` `{{seq}}` `{{now}}` · `{{req}}` `{{req:오프셋:길이}}`
  *  - 현재 일시([NowTokens]): `{{ now }}`(ISO UTC) `{{ now:yyyyMMddHHmmss }}`(패턴, 기본 KST) `{{ today }}`(yyyyMMdd) `{{ time }}`(HHmmss) `{{ now:yyyyMMdd@UTC }}`(타임존)
+ *  - 전문 길이([TcpLen], **TCP 문맥 전용**): `{{len}}` `{{len:4}}` `{{len:frame}}` `{{len:frame:4}}` — 여기선 **원문 보존**하고 [TcpMockEngine] 이 길이를 확정해 채운다.
  * body 키는 **점 경로**(`user.addr.city`, `items[0].id`)로 본문 JSON 을 파고들 수 있다(최상위 실키 우선).
  * 미해석 토큰은 빈 문자열(기존 규약 — 워크플로 바인딩과 다른 문맥).
  */
@@ -70,6 +71,9 @@ object MockTemplate {
         val t = rawToken.trim()
         // 0) 현재 일시 — now / now:패턴 / today / time (+@타임존). `time@body` 같은 소스 참조는 시각 토큰이 아니라 아래로 흐른다
         com.flowlink.common.text.NowTokens.resolveExpr(t)?.let { return it }
+        // 0.5) 전문 길이 토큰({{len}}·{{len:4}}·{{len:frame}}) — **TCP 문맥에서만**, 여기선 해석하지 않고 원문 그대로 남긴다.
+        //      본문 길이는 다른 토큰이 다 렌더된 뒤에야 알 수 있어 [TcpMockEngine] 이 2패스로 채운다(HTTP 응답은 기존대로 빈 문자열).
+        if (ctx.tcpReq != null && com.flowlink.common.tcp.TcpLen.isToken(t)) return "{{$t}}"
         // 1) 워크플로 문법 key@source
         val at = AT.matcher(t)
         if (at.matches()) {

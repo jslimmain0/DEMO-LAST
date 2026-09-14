@@ -2,6 +2,7 @@ package com.flowlink.execution.engine
 
 import com.flowlink.common.json.JsonService
 import com.flowlink.common.tcp.TcpBytes
+import com.flowlink.common.tcp.TcpLen
 import com.flowlink.core.graph.GraphNode
 import com.flowlink.core.graph.TcpField
 import com.flowlink.core.graph.TcpRespField
@@ -20,6 +21,8 @@ import java.util.Arrays
  * 고정길이 금융 전문 TCP 노드 실행기.
  * 요청 필드를 바이트 단위 고정길이로 조립해 길이-프리픽스 전문으로 전송하고,
  * 응답 전문을 응답 필드 길이대로 잘라 출력으로 만든다. (인코딩 노드/필드별 선택)
+ * 요청 필드 값에는 전문 길이 토큰([TcpLen]: `{{len}}`·`{{len:4}}`·`{{len:frame}}`·`{{len:frame:4}}`)을 쓸 수 있다 —
+ * 본문 길이 = 요청 필드 **선언 길이의 합**, frame = 그 값 + 길이 프리픽스 폭.
  */
 @Component
 class TcpNodeExecutor(
@@ -76,12 +79,17 @@ class TcpNodeExecutor(
             if (declaredTotal > MAX_TCP_MESSAGE) throw IllegalArgumentException("요청 전문 총 길이가 상한(${MAX_TCP_MESSAGE}B)을 초과했습니다.")
         }
 
+        // 전문 길이 토큰({{len}}·{{len:4}}·{{len:frame}}) — 모든 필드가 고정길이라 본문 길이 = **선언 길이의 합**(순환 없음).
+        // 프레임은 프리픽스 바이트가 실제로 앞에 붙으므로 본문 + 프리픽스 폭(프리픽스 없으면 본문 길이 그대로).
+        val lenBody = declaredTotal.toInt()
+        val lenFrame = lenBody + (if (prefixLen > 0) prefixLen else 0)
+
         val reqValues = LinkedHashMap<String, Any?>()
         val bodyBuf = ByteArrayOutputStream()
         val slices = ArrayList<FieldSlice>()
         var offset = 0
         for (f in node.tcpRequest ?: emptyList()) {
-            val v = resolveField(f, ctx)
+            val v = resolveField(f, ctx, lenBody, lenFrame)
             if (f.name != null && !f.name.isBlank()) reqValues[f.name] = v
             val cs = charset(f.encoding, nodeCs)
             val declared = f.lengthOrZero()
@@ -199,11 +207,16 @@ class TcpNodeExecutor(
         }
     }
 
-    private fun resolveField(f: TcpField, ctx: ExecutionContext): String {
+    /**
+     * 필드 값 — 바인딩이면 그 값, 아니면 리터럴 토큰 치환.
+     * **길이 토큰([TcpLen])을 먼저** 치환한다(상위 노드 바인딩이 아니라 전문 자체의 길이라 TokenResolver 가 알 수 없다 —
+     * bare `{{len}}` 이 미해석 바인딩으로 빈 값이 되지 않게). 치환 후 남은 토큰만 기존 해석기로.
+     */
+    private fun resolveField(f: TcpField, ctx: ExecutionContext, lenBody: Int, lenFrame: Int): String {
         if (f.bound != null) {
             return tokens.stringify(tokens.resolveBinding(f.bound, ctx))
         }
-        val v = f.value
+        val v = if (TcpLen.hasToken(f.value)) TcpLen.resolve(f.value, lenBody, lenFrame) else f.value
         // 인라인 토큰 규칙 공용(resolveLiteral) — 어차피 고정길이 문자열로 직렬화되므로 stringify
         return if (v != null && v.contains("{{")) tokens.stringify(tokens.resolveLiteral(v, ctx)) else (v ?: "")
     }

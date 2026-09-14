@@ -1,6 +1,7 @@
 package com.flowlink.mock
 
 import com.flowlink.common.tcp.TcpBytes
+import com.flowlink.common.tcp.TcpLen
 import com.flowlink.mock.MockSpec.MockTcp
 import com.flowlink.mock.MockSpec.MockTcpCond
 import com.flowlink.mock.MockSpec.MockTcpRule
@@ -11,7 +12,7 @@ import java.util.Locale
 import java.util.regex.Pattern
 
 /**
- * TCP mock 순수 엔진 — 요청 전문 필드 슬라이싱 · 규칙 매칭(contains + 필드 조건) · 응답 조립(텍스트 템플릿 또는 필드별 바이트)
+ * TCP mock 순수 엔진 — 요청 전문 필드 슬라이싱 · 규칙 매칭(contains + 필드 조건) · 응답 조립(텍스트 템플릿 또는 필드별 바이트, 전문 길이 토큰 [TcpLen])
  * · 코덱(요청 전 body/fields, 응답 후 fields(패딩 전)/body). 소켓/스레드 없음(리스너·미리보기 API 공용). 길이는 전부 바이트(TcpBytes).
  */
 object TcpMockEngine {
@@ -117,17 +118,24 @@ object TcpMockEngine {
     /**
      * 규칙 응답 본문(프리픽스 제외) — 필드 모드면 바이트 조립, 아니면 텍스트 템플릿.
      * [respSteps] 가 있으면 필드 모드에서 target=fields 단계를 **패딩 전** 값에 적용한다(body 단계는 [process] 가 전체에 적용).
+     *
+     * 전문 길이 토큰([TcpLen]): 필드 모드는 **응답 필드 선언 길이의 합**으로 바로 치환하고,
+     * 템플릿 모드는 다른 토큰을 먼저 렌더한 뒤 [TcpLen.resolveRendered] 2패스로 채운다(`{{uuid}}`·`{{now}}` 를 두 번 렌더하지 않도록).
+     * [prefixLen] 은 `{{len:frame}}`(본문 + 프리픽스 폭) 계산에만 쓰인다 — 프리픽스 자체는 호출처(리스너/미리보기)가 붙인다.
      */
     @JvmStatic
     fun render(
         rule: MockTcpRule?, req: ByteArray, cs: Charset, reqFields: List<ReqField>, seq: Long,
         base: MockContext? = null, respSteps: List<MockSpec.MockCodecStep>? = null, lookup: (String) -> FlowTransform? = NO_LOOKUP,
-        trace: MutableList<MockCodec.StepTrace>? = null,
+        trace: MutableList<MockCodec.StepTrace>? = null, prefixLen: Int = 0,
     ): Rendered {
         val ctx = ctxOf(req, cs, reqFields, seq, base)
+        val pre = maxOf(prefixLen, 0)
         val fields = rule?.responseFieldsOrEmpty() ?: emptyList()
         if (fields.isEmpty()) {
-            return Rendered(MockTemplate.render(rule?.response ?: "", ctx).toByteArray(cs), emptyList())
+            // 템플릿 모드 — 길이 토큰은 MockTemplate 이 원문 보존하고(TCP 문맥), 여기서 2패스로 확정한다.
+            val rendered = MockTemplate.render(rule?.response ?: "", ctx)
+            return Rendered(TcpLen.resolveRendered(rendered, pre, cs).toByteArray(cs), emptyList())
         }
         var total = 0L
         for (f in fields) {
@@ -136,12 +144,15 @@ object TcpMockEngine {
             total += len
             if (total > MAX_FIELD_TOTAL) throw IllegalArgumentException("응답 전문 총 길이가 상한(${MAX_FIELD_TOTAL}B)을 초과했습니다.")
         }
+        val lenBody = total.toInt()
+        val lenFrame = lenBody + pre
         val buf = ByteArrayOutputStream()
         val slices = ArrayList<RespSlice>()
         var offset = 0
         for (f in fields) {
             val fcs = TcpBytes.charset(f.encoding, cs)
-            var v = MockTemplate.render(f.value ?: "", ctx)
+            // 길이 토큰 먼저(선언 합으로 확정) → 남은 토큰은 기존 템플릿 해석
+            var v = MockTemplate.render(if (TcpLen.hasToken(f.value)) TcpLen.resolve(f.value, lenBody, lenFrame) else (f.value ?: ""), ctx)
             val name = f.name?.trim().orEmpty()
             if (name.isNotEmpty() && !respSteps.isNullOrEmpty()) v = MockCodec.applyTcpField(respSteps, name, v, ctx, lookup, trace)
             val declared = f.length ?: 0
@@ -199,7 +210,9 @@ object TcpMockEngine {
         }
         val rule = matchRule(tcp.rulesOrEmpty(), text, fields)
         val respSteps = codec?.response
-        val rendered = render(rule, bytes, cs, fields, seq, base, respSteps, lookup, traces)
+        // 프리픽스 폭은 `{{len:frame}}` 계산에만 — 리스너/미리보기와 같은 기본값(4)
+        val prefixLen = maxOf(tcp.prefixLength ?: 4, 0)
+        val rendered = render(rule, bytes, cs, fields, seq, base, respSteps, lookup, traces, prefixLen)
         var body = rendered.body
         if (!respSteps.isNullOrEmpty() && respSteps.any { it.targetOrBody() == "body" }) {
             val ctx = ctxOf(bytes, cs, fields, seq, base)

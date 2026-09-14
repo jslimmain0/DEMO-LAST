@@ -10,8 +10,7 @@ import org.junit.jupiter.api.Test
 class VaultTokenSourceSelectionTest {
 
     private fun props(token: String?, roleId: String?, secretId: String?) = VaultProperties(
-        enabled = true, address = null, token = token,
-        mount = null, path = null, configPath = null, refreshSeconds = null, transit = null,
+        address = null, token = token, transit = null,
         approle = VaultProperties.AppRole(roleId = roleId, secretId = secretId, mount = null),
     )
 

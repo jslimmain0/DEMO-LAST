@@ -28,7 +28,7 @@ powershell -ExecutionPolicy Bypass -File scripts\stop.ps1
 ```
 > ⚠️ 스크립트는 세트로 써야 한다(.sh 는 .sh 끼리, .ps1 은 .ps1 끼리) — .sh 는 Git Bash PID 를, .ps1 은 Windows PID 를 PID 파일에 쓰므로 섞으면 stop/status 가 서로의 프로세스를 못 찾는다.
 - DB 접속 override: `FLOWLINK_DB_URL`, `FLOWLINK_DB_USER`, `FLOWLINK_DB_PASSWORD` · 포트: `FLOWLINK_PORT` · **경로 접두사(context path)**: `FLOWLINK_CONTEXT_PATH=/flowlink`(앱 전체가 `/flowlink/` 밑에서 — 운영가이드 §3)
-- 프로파일/인증/Vault 는 env 로 주입(운영): `SPRING_PROFILES_ACTIVE=oracle`, `FLOWLINK_AUTH_GITHUB_ENABLED=true`, `FLOWLINK_VAULT_ENABLED=true` — 하단 "최근 변경 (2026-07-19)" 섹션 참조.
+- 프로파일/인증/Vault 는 env 로 주입(운영): `SPRING_PROFILES_ACTIVE=oracle`, `FLOWLINK_AUTH_GITHUB_ENABLED=true`, `FLOWLINK_VAULT_TRANSIT_ENABLED=true` — 하단 "최근 변경 (2026-07-19)" 섹션 참조.
 - **TLS 신뢰(사내 프록시)**: `start.ps1` 은 Windows 인증서 저장소를 신뢰(`-Djavax.net.ssl.trustStoreType=WINDOWS-ROOT`)해 사내 TLS 가로채기 프록시 뒤에서도 아웃바운드 TLS(AI/Copilot 등)가 된다(끄기 `FLOWLINK_WINROOT=0`). 추가 JVM 옵션은 `FLOWLINK_JAVA_OPTS`(Linux 는 커스텀 truststore 를 이걸로).
   - **최후수단 `FLOWLINK_TLS_INSECURE=true`**: 아웃바운드 TLS 인증서/호스트명 검증을 **전부 끈다**(모든 인증서 신뢰, [FlowlinkApplication.main](backend/src/main/kotlin/com/flowlink/FlowlinkApplication.kt) 이 빈 생성 전 기본 SSLContext 를 trust-all 로 교체). ⚠ MITM 취약 — 신뢰 가능한 사내망 전용, 기동 시 큰 WARN. 정석(WINDOWS-ROOT/CA 추가)이 안 될 때만.
 - **H2 파일 위치**: 기본 `~/flowlink-h2db/flowlink.mv.db` (사용자 홈). 변경: `FLOWLINK_H2_FILE`. 초기화: 그 `.mv.db` 삭제.
@@ -878,13 +878,13 @@ design/   theme(라이트/다크) · index.css(CSS 변수)
   [AuthController](backend/src/main/kotlin/com/flowlink/security/AuthController.kt)(`/auth/config` mode=github|none · `/me` · `/github/device/start` · `/github/device/poll`, 전자 3개 permitAll).
 - **프론트**([auth/](frontend/src/auth/)): oidc-client-ts 제거 → localStorage 토큰([auth.ts](frontend/src/auth/auth.ts)) + [GitHubLogin](frontend/src/auth/GitHubLogin.tsx)(디바이스 코드 카드·폴링) +
   [AuthContext](frontend/src/auth/AuthContext.tsx) github 모드. axios Bearer + 401 시 토큰 폐기·재로그인. `usePermissions()` 게이팅 불변.
-- **env**: `FLOWLINK_AUTH_GITHUB_ENABLED`(기본 false=dev permitAll). github-enabled=true 면 **서명 시크릿 필수**(없으면 공개 dev 키로 토큰 위조 → [GithubAuthStartupValidator](backend/src/main/kotlin/com/flowlink/security/AuthConfig.kt) 가 기동 실패). 서명 시크릿은 **로컬 env `FLOWLINK_AUTH_JWT_SECRET`, 운영 Vault**([AppJwt](backend/src/main/kotlin/com/flowlink/security/AppJwt.kt) 가 env 우선 → 없으면 Vault `flowlink-config` 경로 key `jwt-secret` — 워크플로에 미노출).
+- **env**: `FLOWLINK_AUTH_GITHUB_ENABLED`(기본 false=dev permitAll). github-enabled=true 면 **서명 시크릿 필수**(없으면 공개 dev 키로 토큰 위조 → [GithubAuthStartupValidator](backend/src/main/kotlin/com/flowlink/security/AuthConfig.kt) 가 기동 실패). 서명 시크릿은 env `FLOWLINK_AUTH_JWT_SECRET`([AppJwt](backend/src/main/kotlin/com/flowlink/security/AppJwt.kt)).
   client_id 는 Copilot 공개 client 기본(`AuthProperties.clientId`).
 - 검증: 자체서명 HS256 토큰으로 `/me`·`/flows` 인증 통과·역할 매핑·위조서명 401·무토큰 401·실제 GitHub device 코드 발급·브라우저 로그인 화면 렌더.
 
 ### 배포 재편: `deploy/` → `infra/`, 앱은 도커 밖, Vault 인프라
 - **메인 앱은 도커에 안 올린다** — 서버(EC2)에서 `scripts/start.sh`(위 실행 방법)로 단일 jar 실행. [infra/Dockerfile](infra/) 제거.
-- **[infra/docker-compose.yml](infra/docker-compose.yml)** = 지원 인프라만: **Vault**(dev, KV v2, :8200) + **Oracle**(`--profile oracle`, 로컬 테스트용).
+- **[infra/docker-compose.yml](infra/docker-compose.yml)** = 지원 인프라만: **Vault**(dev, Transit, :8200) + **Oracle**(`--profile oracle`, 로컬 테스트용).
   Keycloak 서비스·realm·`keycloak-dev.compose.yml` 전부 제거. 앱 서비스도 제거. `docker compose -f infra/docker-compose.yml up -d`.
 - **기본 DB = Oracle**(Postgres 지원 제거) — base `application.yml` 이 Oracle(ddl-auto none·uuid CHAR·flyway {vendor}=oracle·ssrf allow-loopback).
   구 `application-oracle.yml`·`db/migration/postgresql/`·PG 드라이버/flyway-pg/testcontainers-pg 제거. **로컬 dev 는 h2 프로파일**(scripts 기본).
@@ -892,6 +892,7 @@ design/   theme(라이트/다크) · index.css(CSS 변수)
 - [infra/README.md](infra/README.md)·`.env.example`·SERVER-DEVELOPMENT.md 를 새 구조로 재작성. 구 lifecycle(flowlink-start/stop·server-rebuild)은 `scripts/` 로 통합.
 
 ### HashiCorp Vault 시크릿 연동 (시크릿 볼트에 오버레이)
+> **2026-09-14 제거됨** — KV 오버레이·config-path jwt-secret 은 삭제, Transit/AppRole 만 유지(하단 최근 변경 참조).
 - **[VaultProperties](backend/src/main/kotlin/com/flowlink/secret/VaultProperties.kt)**(`flowlink.vault.*`: enabled/address/token/mount/path/**config-path**/refresh-seconds) +
   **[VaultSecretSource](backend/src/main/kotlin/com/flowlink/secret/VaultSecretSource.kt)**: `GET {addr}/v1/{mount}/data/{path}`(X-Vault-Token, KV v2 봉투 `data.data`) → 시크릿 맵. **경로별 TTL 캐시**(3초 타임아웃, 실패 시 이전 캐시 유지 → 무중단). `secrets()`=워크플로 경로, `appSecret(key)`=**config 경로**(앱 설정 비밀).
 - **두 경로 분리**: (a) 워크플로 시크릿 `path`(기본 flowlink) → [SecretService](backend/src/main/kotlin/com/flowlink/secret/SecretService.kt) `activeSecrets` 가 **공통 기본층**으로 오버레이(우선순위: 활성환경 DB > 공통 DB > Vault), `listNames` 에 `source=vault`(읽기전용) 노출 → 피커/다이얼로그(`SecretView.source`, [SecretsDialog](frontend/src/components/SecretsDialog.tsx) `Vault` 배지). (b) 앱 설정 비밀 `config-path`(기본 flowlink-config) → **워크플로에 미노출**. 서명키 등 앱 내부 비밀을 바인딩과 분리.
@@ -953,7 +954,7 @@ design/   theme(라이트/다크) · index.css(CSS 변수)
 ### AppRole 인증 (후속 — `feat/vault-approle` 브랜치)
 static 토큰 대신 **AppRole 로그인 + 자동 갱신**(정석). [VaultTokenSource](backend/src/main/kotlin/com/flowlink/secret/VaultTokenSource.kt) —
 선택 규칙: `approle.role-id`+`secret-id` 설정 시 [AppRoleTokenSource](backend/src/main/kotlin/com/flowlink/secret/VaultTokenSource.kt)(`auth/{mount}/login` → 수명 절반에 `renew-self` → 실패/만료 시 재로그인, 게으른 갱신·synchronized), 아니면 StaticTokenSource(기존 env 토큰, 무회귀).
-KV([VaultSecretSource](backend/src/main/kotlin/com/flowlink/secret/VaultSecretSource.kt))와 Transit([TransitCrypto](backend/src/main/kotlin/com/flowlink/common/crypto/TransitCrypto.kt))이 **단일 빈을 공유**(이중 로그인 방지, CryptoConfig 등록). env: `FLOWLINK_VAULT_APPROLE_ROLE_ID`/`SECRET_ID`/`MOUNT`(기본 approle).
+Transit([TransitCrypto](backend/src/main/kotlin/com/flowlink/common/crypto/TransitCrypto.kt))이 CryptoConfig 의 단일 빈을 사용. env: `FLOWLINK_VAULT_APPROLE_ROLE_ID`/`SECRET_ID`/`MOUNT`(기본 approle).
 fail-closed 메시지가 "토큰 또는 AppRole" 로 확장. 검증: 단위 10종(로그인/캐시/절반 갱신/실패 재로그인/만료 직행 재로그인/전파·선택 규칙 4종) + 라이브(도커 Vault: approle 활성 + **스코프 정책 flowlink-app**(4경로) + token_period=180 role) — 토큰 env 없이 기동(AppRole 로그인 → Transit 헬스체크 OK) → 시크릿 플로우 SUCCEEDED+마스킹 → **만료 후 접근에서 자동 재로그인** 로그 실측. 운영가이드 §6 AppRole 준비 절차 추가.
 
 ### 단일 노드 실행 시크릿 평문 유출 수정 (2026-08-28, `fix/single-run-secret-mask`)
@@ -1240,6 +1241,11 @@ API 도구 UX·비주얼/IA·플로우 통합 3관점 병렬 비평 → 확정 �
 
 ## 최근 변경 (2026-09-14) — SSRF 가드 제거 (`refactor/trim-config`)
 - `SsrfGuard`·`SsrfBlockedException`·`SsrfGuardTest`·`ExecutionProperties.Ssrf`·yml `flowlink.execution.ssrf.*` 삭제. HTTP/TCP 노드(서버 모드)·Mock 콜백·어시스턴트(Anthropic/Copilot)·GitHub 로그인의 아웃바운드는 **무검사** — 사설망·클라우드 메타데이터·loopback 자유 호출. 스킴 allowlist(http/https)도 함께 사라짐(비 http/https URL 은 RestClient/HttpClient 가 실패시킴 → 노드 실패 `⚠ 요청 실패: …`). h2 프로파일은 이미 `enabled: false` 였으므로 로컬 동작 동일. **사내망 배포 전제.** NotificationService 의 자체 스킴 검증은 유지.
+
+## 최근 변경 (2026-09-14) — Vault KV 제거(Transit/AppRole 만 유지) (`refactor/trim-config`)
+- 삭제: `VaultSecretSource`(KV v2 클라이언트·TTL 캐시), [SecretService](backend/src/main/kotlin/com/flowlink/secret/SecretService.kt) 의 Vault 오버레이(listNames/activeSecrets)·`SecretView.source`(프론트 SecretsDialog `Vault` 배지/읽기전용 그룹 포함), [AppJwt](backend/src/main/kotlin/com/flowlink/security/AppJwt.kt) 의 Vault `jwt-secret` 조회, `VaultProperties` enabled/mount/path/config-path/refresh-seconds, env `FLOWLINK_VAULT_ENABLED`/`MOUNT`/`PATH`/`CONFIG_PATH`/`REFRESH_SECONDS`.
+- 유지: `VaultTokenSource`(정적 토큰+AppRole)·`TransitCrypto`·`RoutingCrypto`·`CryptoConfig`·재암호화 이관. **스위치는 `flowlink.vault.transit.enabled` 하나.**
+- ⚠ github 모드 jwt-secret 은 env `FLOWLINK_AUTH_JWT_SECRET` **필수** — Vault KV 에만 두던 배포는 기동 실패(fail-closed). AppRole 정책도 `transit/encrypt|decrypt/flowlink` 2경로면 충분.
 
 ## 참고 문서
 - `backend/README.md` — 백엔드 구조·설정·API 요약 · `frontend/README.md` · `infra/README.md`(배포)

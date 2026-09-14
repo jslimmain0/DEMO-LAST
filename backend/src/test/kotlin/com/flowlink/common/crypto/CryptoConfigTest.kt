@@ -15,8 +15,7 @@ import org.junit.jupiter.api.Test
 class CryptoConfigTest {
 
     private fun vault(transitEnabled: Boolean, token: String?) = VaultProperties(
-        enabled = false, address = null, token = token, mount = null, path = null,
-        configPath = null, refreshSeconds = null,
+        address = null, token = token,
         transit = VaultProperties.Transit(enabled = transitEnabled, mount = null, key = null),
     )
 

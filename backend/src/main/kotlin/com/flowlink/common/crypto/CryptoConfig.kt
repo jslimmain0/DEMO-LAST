@@ -20,7 +20,7 @@ import org.springframework.context.annotation.Configuration
 @Configuration
 class CryptoConfig {
 
-    /** Vault 인증 토큰 소스 단일 빈 — KV 조회와 Transit 이 같은 로그인 상태를 공유한다(AppRole 이중 로그인 방지). */
+    /** Vault 인증 토큰 소스 단일 빈 — Transit 이 사용한다. */
     @Bean
     fun vaultTokenSource(vault: VaultProperties): VaultTokenSource = VaultTokenSource.of(vault)
 

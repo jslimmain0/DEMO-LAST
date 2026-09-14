@@ -38,7 +38,7 @@ export function applicableSecretNames(secrets: SecretView[] | undefined, environ
   const env = environment?.trim() || null
   const names = new Set<string>()
   for (const s of secrets ?? []) {
-    if (!s.environment || s.environment === env || s.source === 'vault') names.add(s.name)
+    if (!s.environment || s.environment === env) names.add(s.name)
   }
   return [...names].sort((a, b) => a.localeCompare(b))
 }

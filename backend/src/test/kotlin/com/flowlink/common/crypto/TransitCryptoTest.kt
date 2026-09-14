@@ -23,8 +23,7 @@ import java.util.Base64
 class TransitCryptoTest {
 
     private fun props() = VaultProperties(
-        enabled = true, address = "http://vault.test:8200", token = "tkn",
-        mount = null, path = null, configPath = null, refreshSeconds = null,
+        address = "http://vault.test:8200", token = "tkn",
         transit = VaultProperties.Transit(enabled = true, mount = "transit", key = "flowlink-kek"),
     )
 

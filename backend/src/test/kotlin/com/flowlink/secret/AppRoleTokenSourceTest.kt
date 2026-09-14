@@ -25,8 +25,7 @@ class AppRoleTokenSourceTest {
     private var now = 1_000_000L // 제어 가능한 시계(ms)
 
     private fun props() = VaultProperties(
-        enabled = true, address = "http://vault.test:8200", token = null,
-        mount = null, path = null, configPath = null, refreshSeconds = null, transit = null,
+        address = "http://vault.test:8200", token = null, transit = null,
         approle = VaultProperties.AppRole(roleId = "rid", secretId = "sid", mount = null),
     )
 

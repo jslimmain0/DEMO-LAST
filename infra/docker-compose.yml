@@ -9,12 +9,12 @@
 #   초기화(볼륨 삭제):    docker compose -f infra/docker-compose.yml down -v
 #
 # 값 오버라이드는 infra/.env (infra/.env.example 복사). 앱이 Vault 를 쓰게 하려면(EC2 앱 프로세스 env):
-#   FLOWLINK_VAULT_ENABLED=true  FLOWLINK_VAULT_ADDRESS=http://<vault호스트>:8200  FLOWLINK_VAULT_TOKEN=<토큰>
+#   FLOWLINK_VAULT_TRANSIT_ENABLED=true  FLOWLINK_VAULT_ADDRESS=http://<vault호스트>:8200  FLOWLINK_VAULT_TOKEN=<토큰>(또는 AppRole)
 name: flowlink-infra
 
 services:
-  # HashiCorp Vault — 앱이 시크릿을 끌어오는 곳. dev 모드: 인메모리(재시작 시 초기화), 고정 루트 토큰, KV v2 가 secret/ 에 자동 마운트.
-  #   시크릿 넣기:  docker exec flowlink-vault vault kv put -address=http://127.0.0.1:8200 secret/flowlink API_TOKEN=s3cr3t
+  # HashiCorp Vault — 앱 저장 암호화 KEK(Transit). dev 모드: 인메모리(재시작 시 초기화), 고정 루트 토큰.
+  #   Transit 준비(1회):  docker exec flowlink-vault vault secrets enable -address=http://127.0.0.1:8200 transit && docker exec flowlink-vault vault write -address=http://127.0.0.1:8200 -f transit/keys/flowlink
   #   ⚠ dev 모드는 비영속 — 운영은 파일/통합 스토리지 + unseal 구성으로 교체.
   vault:
     image: hashicorp/vault:1.17

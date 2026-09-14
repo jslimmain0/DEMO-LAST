@@ -38,7 +38,7 @@ class SecretReencryptMigrationTest {
     }
 
     private fun service(crypto: CryptoProvider) =
-        SecretService(repo, VaultSecretSource(VaultProperties()), crypto)
+        SecretService(repo, crypto)
 
     @Test
     fun `RoutingCrypto 면 레거시 행만 Transit 형식으로 재암호화한다`() {

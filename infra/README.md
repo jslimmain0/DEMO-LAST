@@ -5,7 +5,7 @@
 | 무엇 | 어디서 | 어떻게 |
 |---|---|---|
 | **메인 앱** (flowlink.jar, 화면+API 단일 프로세스 :18080) | EC2 등 실제 서버 | `scripts/start.sh` (Linux) / `scripts/start.ps1` (Windows) |
-| **Vault** (시크릿 저장소) | 도커 (`infra/docker-compose.yml`) | `docker compose -f infra/docker-compose.yml up -d` |
+| **Vault** (Transit KEK) | 도커 (`infra/docker-compose.yml`) | `docker compose -f infra/docker-compose.yml up -d` |
 | **Oracle** (운영 DB) | 나중에 별도/사내 서버 | 앱 env `FLOWLINK_DB_URL` 로 연결 (DDL 은 Flyway 가 소유) |
 | **로그인** | GitHub 계정 (Copilot 과 동일한 디바이스 플로우) | 앱 env `FLOWLINK_AUTH_GITHUB_ENABLED=true` |
 
@@ -45,12 +45,12 @@ powershell -ExecutionPolicy Bypass -File scripts\stop.ps1
 ```bash
 # GitHub 로그인
 export FLOWLINK_AUTH_GITHUB_ENABLED=true
-export FLOWLINK_AUTH_JWT_SECRET=<강한 시크릿>              # 앱 JWT 서명키(로컬). 운영은 env 대신 Vault 권장(아래 §4)
+export FLOWLINK_AUTH_JWT_SECRET=<강한 시크릿>              # 앱 JWT 서명키(github 모드 필수)
 
-# Vault 시크릿 끌어오기
-export FLOWLINK_VAULT_ENABLED=true
+# Vault Transit(KEK) 봉투 암호화(선택)
+export FLOWLINK_VAULT_TRANSIT_ENABLED=true
 export FLOWLINK_VAULT_ADDRESS=http://<vault호스트>:8200
-export FLOWLINK_VAULT_TOKEN=<Vault 토큰>
+export FLOWLINK_VAULT_TOKEN=<Vault 토큰>                   # 또는 FLOWLINK_VAULT_APPROLE_ROLE_ID/SECRET_ID
 
 # 운영 DB(Oracle) — 나중에 붙일 때
 export SPRING_PROFILES_ACTIVE=oracle
@@ -68,29 +68,23 @@ bash scripts/start.sh
 **GitHub 계정으로 로그인**한다(어시스턴트 Copilot 연결과 동일한 device flow).
 로그인하면 앱이 자체 JWT(HMAC)를 발급하고 그 JWT 를 검증 → 인증 필수 + 팀(tenant) 격리.
 
-1. 앱을 `FLOWLINK_AUTH_GITHUB_ENABLED=true` + 서명 시크릿(**로컬** `FLOWLINK_AUTH_JWT_SECRET` / **운영** Vault `flowlink-config/jwt-secret`, §4)으로 기동.
+1. 앱을 `FLOWLINK_AUTH_GITHUB_ENABLED=true` + 서명 시크릿(`FLOWLINK_AUTH_JWT_SECRET`)으로 기동.
 2. 브라우저로 접속 → **GitHub 로 로그인** 버튼 → 표시된 코드로 github.com/login/device 인증 → 자동 로그인.
 3. **처음 로그인하는 계정이 자동으로 전역 관리자(ADMIN)** 가 되고, 이후 사용자는 관리 콘솔(/admin)에서 승인한다. ⚠ github 모드는 `jwt-secret` 이 없으면 기동 실패(토큰 위조 방지).
 - 미설정(기본)이면 dev 모드(로그인 없음, permitAll) — 로컬 개발용.
 
-## 4. Vault 인프라 (도커)
+## 4. Vault 인프라 (도커) — Transit KEK
 
-앱이 시크릿을 끌어오는 저장소. dev 모드 Vault 를 도커로 띄운다.
+앱 저장 암호화(시크릿·재개 스냅샷·Copilot 토큰)의 KEK 를 보관. dev 모드 Vault 를 도커로 띄운다.
 
 ```bash
 docker compose -f infra/docker-compose.yml up -d          # Vault(:8200) 기동
 DEX="docker exec -e VAULT_ADDR=http://127.0.0.1:8200 -e VAULT_TOKEN=flowlink-root flowlink-vault"
-# ① 워크플로 시크릿 (secret/flowlink) — {{ 이름@secret }} 로 워크플로에서 참조
-$DEX vault kv put secret/flowlink API_TOKEN=s3cr3t DB_PASS=...
-# ② 앱 설정 비밀 (secret/flowlink-config) — jwt-secret 등. 워크플로엔 노출 안 됨
-$DEX vault kv put secret/flowlink-config jwt-secret=<강한 서명 시크릿>
+$DEX vault secrets enable transit                          # Transit 준비(1회)
+$DEX vault write -f transit/keys/flowlink
 docker compose -f infra/docker-compose.yml down -v         # 초기화
 ```
-- **워크플로 시크릿**(`secret/flowlink`): 앱이 `FLOWLINK_VAULT_*` env 로 붙어 **시크릿 볼트에 오버레이**(공통 기본층, DB 가 덮어씀).
-  `{{ 이름@secret }}` 로 참조(피커에 `Vault` 배지·읽기전용, 로그 마스킹 ••••••).
-- **앱 서명 시크릿**(`secret/flowlink-config` key `jwt-secret`): GitHub 로그인 JWT 서명키를 **운영에선 env 대신 여기서** 끌어온다
-  (우선순위: env `FLOWLINK_AUTH_JWT_SECRET` > Vault). 워크플로 피커엔 안 보인다(서명키 노출 방지). 경로 변경: `FLOWLINK_VAULT_CONFIG_PATH`.
-- `secret/flowlink`·`secret` 마운트는 `FLOWLINK_VAULT_PATH`·`FLOWLINK_VAULT_MOUNT` 로 변경.
+- 앱 env `FLOWLINK_VAULT_TRANSIT_ENABLED=true` + 토큰/AppRole(운영가이드 §6).
 - ⚠ dev 모드 Vault 는 인메모리(재시작 시 초기화). 운영은 파일/통합 스토리지 + unseal 구성으로 교체.
 
 ## 5. Oracle (나중에 연결)
@@ -110,7 +104,7 @@ docker compose -f infra/docker-compose.yml --profile oracle up -d   # 로컬 Ora
 2. 워크플로 열고 **새로고침**(`/flows/{id}`) → 404 없이 뜬다 (SPA fallback)
 3. 플로우 하나 실행 → SUCCEEDED
 4. wait 노드 실행 → 수신 URL 이 `http://서버IP:18080/relay/...` → 다른 PC 에서 그 URL 로 `curl -X POST` → 재개
-5. (Vault) 시크릿 볼트에 `Vault` 배지 시크릿이 보이고 `{{ 이름@secret }}` 실행이 값을 씀
+5. (Vault Transit) 기동 로그에 "Vault Transit 헬스체크 OK" 가 찍히고 `{{ 이름@secret }}` 실행이 값을 씀
 
 ## 7. 운영
 

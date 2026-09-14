@@ -118,7 +118,7 @@ TCP Mock 은 지정 포트에 **고정길이 전문(길이 프리픽스) 리스�
 | `{{ orderId@body }}` | `{{body.orderId}}` | 요청 본문 필드 — **점 경로** `{{ user.addr.city@body }}`, `{{ items[0].id@body }}` 로 JSON 안쪽도 |
 | `{{ q@query }}` `{{ id@path }}` `{{ x-token@header }}` `{{ status@state }}` | `{{query.q}}` … | 쿼리·경로 파라미터·요청 헤더·서버 상태 |
 | `{{ 계좌번호@req }}` | `{{req.계좌번호}}` | TCP 요청 레이아웃 필드 |
-| **`{{ apiKey@secret }}`** | — | **시크릿 볼트** 값(공통 + Vault + 이 Mock 의 **시크릿 환경** 오버레이). 응답 헤더 `Bearer {{ apiKey@secret }}`, 코덱의 키/IV 등 |
+| **`{{ apiKey@secret }}`** | — | **시크릿 볼트** 값(공통 + 이 Mock 의 **시크릿 환경** 오버레이). 응답 헤더 `Bearer {{ apiKey@secret }}`, 코덱의 키/IV 등 |
 | `{{ body }}` `{{ uuid }}` `{{ seq }}` `{{ now }}` | 동일 | 본문 전체·랜덤·카운터·현재시각(ISO UTC) |
 | **`{{ now:yyyyMMddHHmmss }}`** `{{ today }}` `{{ time }}` | — | **현재 일시** — `now:패턴`은 Java DateTimeFormatter 패턴(`yyyy-MM-dd HH:mm:ss`, `a h시` …), `today`=`yyyyMMdd`, `time`=`HHmmss`. 기본 **KST**, 타임존은 `{{ now:yyyyMMdd@UTC }}` `{{ today@UTC }}` 처럼 `@`. 전송일시·거래일자 같은 전문 필드에 그대로 |
 

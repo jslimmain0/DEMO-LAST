@@ -64,13 +64,13 @@ cd frontend && npm install && npm run dev    # http://localhost:5173  (/api·/re
 메인 앱은 도커가 아니라 서버(EC2 등)에서 `scripts/` 로 뜬다. 지원 인프라(Vault)만 도커로 띄운다.
 
 ```bash
-# GitHub 로그인 + Vault 시크릿 + Oracle 을 켜서 기동(예)
+# GitHub 로그인 + Vault Transit + Oracle 을 켜서 기동(예)
 export FLOWLINK_AUTH_GITHUB_ENABLED=true FLOWLINK_AUTH_JWT_SECRET=<시크릿>
-export FLOWLINK_VAULT_ENABLED=true FLOWLINK_VAULT_ADDRESS=http://<vault>:8200 FLOWLINK_VAULT_TOKEN=<토큰>
+export FLOWLINK_VAULT_TRANSIT_ENABLED=true FLOWLINK_VAULT_ADDRESS=http://<vault>:8200 FLOWLINK_VAULT_TOKEN=<토큰>
 export SPRING_PROFILES_ACTIVE=oracle FLOWLINK_DB_URL='jdbc:oracle:thin:@//<host>:1521/FREEPDB1'
 bash scripts/start.sh
 
-docker compose -f infra/docker-compose.yml up -d      # Vault(시크릿 저장소)
+docker compose -f infra/docker-compose.yml up -d      # Vault(Transit KEK)
 ```
 - **로그인**: 미설정이면 dev(로그인 없음). `FLOWLINK_AUTH_GITHUB_ENABLED=true` 면 GitHub 계정(디바이스 플로우)으로 로그인 → **같은 로그인이 어시스턴트 Copilot 연결까지 이어짐**. 게스트도 앱 사용 가능(AI 만 로그인 게이트).
 - 상세 런북: **[infra/README.md](infra/README.md)**.

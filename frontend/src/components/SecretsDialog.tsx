@@ -49,7 +49,7 @@ export function SecretsDialog({ onClose }: { onClose: () => void }) {
   useEffect(() => {
     if (collapsedInit || !q.data) return
     setCollapsed(new Set(q.data
-      .filter((s) => s.source !== 'vault' && s.environment && s.environment !== envStore.active)
+      .filter((s) => s.environment && s.environment !== envStore.active)
       .map((s) => `g-${s.environment}`)))
     setCollapsedInit(true)
   }, [q.data, collapsedInit, envStore.active])
@@ -61,16 +61,14 @@ export function SecretsDialog({ onClose }: { onClose: () => void }) {
   const f = filter.trim().toLowerCase()
   const shown = f ? sorted.filter((s) => s.name.toLowerCase().includes(f)) : sorted
 
-  // 실행 시 실제 적용될 항목 계산 — 우선순위: 활성환경 DB > 공통 DB > Vault (SecretService.activeSecrets 미러)
+  // 실행 시 실제 적용될 항목 계산 — 우선순위: 활성환경 > 공통 (SecretService.activeSecrets 미러)
   const act = envStore.active
   const effect = (s: (typeof list)[number]): 'win' | 'shadowed' | 'inactive' => {
-    const isVault = s.source === 'vault'
-    if (!isVault && s.environment && s.environment !== act) return 'inactive' // 다른 환경 스코프
+    if (s.environment && s.environment !== act) return 'inactive' // 다른 환경 스코프
     const sameName = list.filter((x) => x.name === s.name)
-    const envRow = act ? sameName.find((x) => x.source !== 'vault' && x.environment === act) : undefined
-    const commonRow = sameName.find((x) => x.source !== 'vault' && !x.environment)
-    const vaultRow = sameName.find((x) => x.source === 'vault')
-    const winner = envRow ?? commonRow ?? vaultRow
+    const envRow = act ? sameName.find((x) => x.environment === act) : undefined
+    const commonRow = sameName.find((x) => !x.environment)
+    const winner = envRow ?? commonRow
     return winner === s ? 'win' : 'shadowed'
   }
 
@@ -99,9 +97,9 @@ export function SecretsDialog({ onClose }: { onClose: () => void }) {
         <div style={{ display: 'grid', gap: 6, margin: '12px 0', overflowY: 'auto', minHeight: 0, flex: '1 1 auto', alignContent: 'start' }}>
           {sorted.length === 0 && !q.isLoading && <p style={{ ...hint, color: 'var(--fl-text-muted)' }}>저장된 시크릿이 없습니다.</p>}
           {f && shown.length === 0 && sorted.length > 0 && <p style={{ ...hint, color: 'var(--fl-text-muted)' }}>검색과 일치하는 시크릿이 없습니다.</p>}
-          {/* 스코프별 그룹 — 실행 우선순위 순서(활성 환경 → 공통 → Vault), 미적용 환경은 뒤에 접힘 */}
+          {/* 스코프별 그룹 — 실행 우선순위 순서(활성 환경 → 공통), 미적용 환경은 뒤에 접힘 */}
           {(() => {
-            const db = shown.filter((s) => s.source !== 'vault')
+            const db = shown
             const groups: Array<{ id: string; title: string; rows: typeof shown; dimmed?: boolean }> = []
             if (act) {
               const r = db.filter((s) => s.environment === act)
@@ -109,8 +107,6 @@ export function SecretsDialog({ onClose }: { onClose: () => void }) {
             }
             const common = db.filter((s) => !s.environment)
             if (common.length) groups.push({ id: 'g-common', title: '공통', rows: common })
-            const vault = shown.filter((s) => s.source === 'vault')
-            if (vault.length) groups.push({ id: 'g-vault', title: 'Vault (읽기전용)', rows: vault })
             for (const e of [...new Set(db.filter((s) => s.environment && s.environment !== act).map((s) => s.environment as string))].sort()) {
               groups.push({ id: `g-${e}`, title: `환경 · ${e} — 미적용`, rows: db.filter((s) => s.environment === e), dimmed: true })
             }
@@ -127,23 +123,18 @@ export function SecretsDialog({ onClose }: { onClose: () => void }) {
                 {!isCollapsed && (
                   <div style={{ display: 'grid', gap: 6, marginTop: 2 }}>
                     {grp.rows.map((s) => {
-                      const isVault = s.source === 'vault'
                       const eff = effect(s)
                       return (
-                      <div key={`${s.source ?? 'db'}:${s.environment ?? '*'}:${s.name}`} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', opacity: eff === 'inactive' ? 0.55 : 1 }}
+                      <div key={`${s.environment ?? '*'}:${s.name}`} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', opacity: eff === 'inactive' ? 0.55 : 1 }}
                         title={eff === 'inactive' ? '다른 환경 스코프 — 현재 활성 환경에선 미적용' : undefined}>
-                        {isVault
-                          ? <span title="HashiCorp Vault 에서 끌어온 읽기전용 시크릿" style={{ fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 999, background: 'rgba(255,209,102,.16)', color: '#e0a800', border: '1px solid rgba(255,209,102,.4)' }}>Vault</span>
-                          : <span style={envBadge(s.environment)}>{s.environment ?? '공통'}</span>}
+                        <span style={envBadge(s.environment)}>{s.environment ?? '공통'}</span>
                         <code style={{ flex: 1, fontFamily: 'var(--fl-font-mono)', fontSize: 12.5 }}>{s.name}</code>
-                        {/* 활성 환경 기준 실제 적용 여부 — 같은 이름의 오버레이(환경>공통>Vault)를 눈으로 확인 */}
+                        {/* 활성 환경 기준 실제 적용 여부 — 같은 이름의 오버레이(환경>공통)를 눈으로 확인 */}
                         {eff === 'win' && <span title="실행 시 이 값이 적용됩니다" style={effBadge(true)}>✓ 적용</span>}
-                        {eff === 'shadowed' && <span title="같은 이름의 더 높은 우선순위(활성환경 > 공통 > Vault) 값에 덮입니다" style={effBadge(false)}>덮임</span>}
+                        {eff === 'shadowed' && <span title="같은 이름의 더 높은 우선순위(활성환경 > 공통) 값에 덮입니다" style={effBadge(false)}>덮임</span>}
                         <span style={{ fontFamily: 'var(--fl-font-mono)', fontSize: 12, color: 'var(--fl-text-muted)', letterSpacing: 2 }}>••••••</span>
                         <button onClick={() => copy(`{{ ${s.name}@secret }}`)} title="바인딩 토큰 복사" style={miniBtn}>토큰</button>
-                        {isVault
-                          ? <span title="Vault 관리 — 여기서 삭제 불가" style={{ ...miniBtn, opacity: .4, cursor: 'default' }}>읽기전용</span>
-                          : <button onClick={() => del.mutate({ name: s.name, environment: s.environment })} aria-label="삭제" style={miniBtn}>×</button>}
+                        <button onClick={() => del.mutate({ name: s.name, environment: s.environment })} aria-label="삭제" style={miniBtn}>×</button>
                       </div>
                       )
                     })}

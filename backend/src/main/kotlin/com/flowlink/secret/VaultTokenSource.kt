@@ -7,7 +7,7 @@ import org.springframework.http.client.SimpleClientHttpRequestFactory
 import org.springframework.web.client.RestClient
 
 /**
- * Vault 인증 토큰 소스 — KV 조회·Transit 암복호가 매 요청에 실을 `X-Vault-Token` 을 공급한다.
+ * Vault 인증 토큰 소스 — Transit 암복호가 매 요청에 실을 `X-Vault-Token` 을 공급한다.
  * AppRole(role_id/secret_id)이 설정되면 로그인·자동 갱신([AppRoleTokenSource]), 아니면 기존 static 토큰.
  */
 interface VaultTokenSource {

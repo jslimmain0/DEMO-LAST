@@ -692,7 +692,6 @@ class ExecutionService(
         if (orphans.isNotEmpty() || rows.isNotEmpty() || reconciled > 0) {
             log.info("기동 복구: suspension {}건 재무장, RUNNING→WAITING 화해 {}건, 고아 {}건 FAILED", rows.size, reconciled, orphans.size)
         }
-        // dev 고정키 경고는 CryptoConfig(공용 빈 생성 시점)로 이동
     }
 
     /**

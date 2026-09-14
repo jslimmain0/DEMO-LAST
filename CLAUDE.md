@@ -653,7 +653,7 @@ design/   theme(라이트/다크) · index.css(CSS 변수)
 - 검증: 단위 10종(RunStateSnapshotTest·StateCryptoTest 포함) PASS + **P2 e2e 22/22**(`node e2e/saas-p2-durable.mjs` —
   비동기 즉시 반환·wait 콜백 재개·**재시작 후 WAITING 유지→콜백→rehydrate 완주**·재시작 후 타임아웃 재무장·RUNNING 고아 FAILED·
   resume 멱등·input 재개·⏹ CANCELLED. 스크립트가 백엔드를 3회 재시작) + 브라우저(폴링 루프 대기 배너/카운트다운/수신 URL/콜백 자동 완료) PASS.
-- ⚠ 스냅샷 암호키 미설정 시 dev 키(로컬 전용). 실행 이력의 대량 폴링은 여전히 GET(SSE 아님). 워커 풀은 단일 인스턴스 스코프 —
+- ⚠ 스냅샷 암호키 미설정 시 dev 키(로컬 전용). (state-secret 은 2026-09-14 제거됨 — 항상 고정키) 실행 이력의 대량 폴링은 여전히 GET(SSE 아님). 워커 풀은 단일 인스턴스 스코프 —
   수평 확장(공유 큐) 은 범위 밖. `Execution` 고아 정리는 기동 시 1회(주기 스윕 없음).
 
 ## 최근 변경 (2026-07-16) — SaaS 전환 P3: 실시간 협업 presence (`saas-overhaul` 브랜치)
@@ -1266,7 +1266,7 @@ API 도구 UX·비주얼/IA·플로우 통합 3관점 병렬 비평 → 확정 �
 - `hibernate.type.preferred_uuid_jdbc_type: CHAR` 는 공통 `application.yml` 에 남김 — 구 h2 프로파일도 base 를 상속해 CHAR 였으므로 기존 `.mv.db` 의 uuid 컬럼(CHAR(36))과 호환. dev 로 옮기면 local 의 uuid 매핑이 바뀌어 기존 파일 DB 와 충돌한다.
 
 ## 최근 변경 (2026-09-14) — relay base-url env / state-secret 제거 (`refactor/trim-config`)
-- 삭제: `ExecutionProperties.Relay`·`stateSecret`(생성자는 `(http, maxNodesPerRun, worker)`), `application.yml` 의 `execution.relay` 블록, [StateCrypto](backend/src/main/kotlin/com/flowlink/execution/engine/StateCrypto.kt) 생성자 인자·`isDevKey`(인자 없는 `StateCrypto()` 하나), [CryptoConfig](backend/src/main/kotlin/com/flowlink/common/crypto/CryptoConfig.kt) 의 `ExecutionProperties` 주입(Transit 미사용이면 무조건 WARN 한 줄 "Transit 미사용 — 고정키로 로컬 암호화(사내망 전제)"), [RelayBaseResolver](backend/src/main/kotlin/com/flowlink/settings/RelayBaseResolver.kt) 의 env 단계(화면 설정 → 접속 오리진 → `http://localhost:18080`), StateCryptoTest 의 wrongKeyFails/devKeyFlag(테스트 189→187).
+- 삭제: `ExecutionProperties.Relay`·`stateSecret`(생성자는 `(http, maxNodesPerRun, worker)`), `application.yml` 의 `execution.relay` 블록, [StateCrypto](backend/src/main/kotlin/com/flowlink/execution/engine/StateCrypto.kt) 생성자 인자·`isDevKey`(인자 없는 `StateCrypto()` 하나), [CryptoConfig](backend/src/main/kotlin/com/flowlink/common/crypto/CryptoConfig.kt) 의 `ExecutionProperties` 주입(Transit 미사용이면 무조건 WARN 한 줄 "Transit 미사용 — 고정키로 로컬 암호화(사내망 전제)"), [RelayBaseResolver](backend/src/main/kotlin/com/flowlink/settings/RelayBaseResolver.kt) 의 env 단계(화면 설정 → 접속 오리진 → `http://localhost:18080`), StateCryptoTest 의 wrongKeyFails/devKeyFlag(테스트 187→185).
 - 유지: `StateCrypto.DEV_SECRET` 값 그대로 → env 미설정(dev 키)으로 쓰던 로컬 DB 는 그대로 열린다.
 - ⚠ `FLOWLINK_EXECUTION_STATE_SECRET` 을 설정해 운영하던 DB 는 시크릿·대기 스냅샷·Copilot 토큰 **전부 복호화 불가**(AEADBadTagException — Transit 모드의 레거시 폴백도 고정키). 배포 전 구 버전에서 Transit 전환 기동으로 재암호화 이관을 끝내거나 시크릿 재입력.
 - ⚠ 남아 있는 `FLOWLINK_EXECUTION_RELAY_BASEURL` env 는 조용히 무시된다(relaxed binding·unknown field) — 스케줄/웹훅 실행(요청 컨텍스트 없음)의 콜백 base 가 localhost 로 떨어지므로 ⚙ 설정에 저장할 것.

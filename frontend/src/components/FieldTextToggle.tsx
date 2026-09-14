@@ -7,7 +7,9 @@ import type { ParseWarning, TextForm } from '../lib/textForms'
  * 전환할 때마다 실제 변환(toText/fromText). 텍스트 편집은 300ms 디바운스로 필드에 반영되고, 실패 줄은 경고로 남는다(텍스트는 보존).
  */
 export function FieldTextToggle<T>({ form, rows, onChange, children, title, extras, readOnly, mode: modeProp, onModeChange, summary, ariaLabel }: {
-  form: TextForm<T>; rows: T[]; onChange: (rows: T[]) => void
+  form: TextForm<T>; rows: T[]
+  /** 낸 배열을 참조 그대로 저장할 것 — 복사/정규화하면 텍스트 편집 중 재동기화가 타이핑을 덮는다. */
+  onChange: (rows: T[]) => void
   children: ReactNode; title?: ReactNode; extras?: ReactNode; readOnly?: boolean
   mode?: 'fields' | 'text'; onModeChange?: (m: 'fields' | 'text') => void
   summary?: (rows: T[]) => ReactNode; ariaLabel?: string
@@ -21,6 +23,7 @@ export function FieldTextToggle<T>({ form, rows, onChange, children, title, extr
   const timer = useRef<number | null>(null)
 
   // 텍스트 모드 진입/외부 변경 시 버퍼 재생성(내가 emit 한 rows 면 건너뜀 — 커서 점프 방지)
+  // 참조 동일성 비교 — onChange 로 낸 배열을 그대로(복사/정규화 없이) 되받는다는 전제
   useEffect(() => {
     if (mode !== 'text') return
     if (lastEmitted.current === rows) return
@@ -34,13 +37,14 @@ export function FieldTextToggle<T>({ form, rows, onChange, children, title, extr
     onChange(r.rows)
   }
   const onText = (text: string) => {
+    if (readOnly) return
     setBuf(text)
     if (timer.current) window.clearTimeout(timer.current)
     timer.current = window.setTimeout(() => apply(text), 300)
   }
   const toFields = () => {
     if (timer.current) { window.clearTimeout(timer.current); timer.current = null }
-    apply(buf)
+    if (!readOnly) apply(buf)
     setMode('fields')
   }
   useEffect(() => () => { if (timer.current) window.clearTimeout(timer.current) }, [])
@@ -66,7 +70,7 @@ export function FieldTextToggle<T>({ form, rows, onChange, children, title, extr
             rows={Math.max(4, Math.min(16, buf.split('\n').length + 1))}
           />
           <div style={{ fontSize: 11, color: 'var(--fl-text-muted)', marginTop: 4, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-            <span>{form.label} · 300ms 뒤 필드에 반영</span>
+            <span>{readOnly ? '읽기 전용' : `${form.label} · 300ms 뒤 필드에 반영`}</span>
             {summary && <span>{summary(rows)}</span>}
           </div>
           {warnings.length > 0 && (

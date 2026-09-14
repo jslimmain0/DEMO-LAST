@@ -1,10 +1,10 @@
 import type { CSSProperties } from 'react'
-import { useMemo, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useEffect, useMemo, useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { flowsApi, mocksApi } from '../api/client'
 import type { GraphNode, MockFleetServer } from '../api/types'
 import { apiErrorMessage } from '../lib/apiError'
-import { mirrorDiff, mockTcpToNode, nodeToMockTcp } from '../lib/tcpMirror'
+import { alignPatch, mirrorDiff, mockTcpToNode, nodeToMockTcp } from '../lib/tcpMirror'
 import { toast } from './toast'
 
 // 노드 대상이 "이 서버"를 가리킬 때만 내장 Mock 과 같은 포트로 볼 수 있다(원격 호스트는 남의 시스템).
@@ -21,18 +21,43 @@ export function TcpMockLink({ node, flowId, canEdit, onApply }: { node: GraphNod
   const linked = useMemo(() => (LOCAL_HOSTS.has(node.tcpHost ?? '') ? tcpServers.find((s) => s.tcpPort === node.tcpPort) : undefined), [tcpServers, node.tcpHost, node.tcpPort])
   const detail = useQuery({ queryKey: ['mock-server', linked?.id], queryFn: () => mocksApi.get(linked!.id), enabled: !!linked?.readable, staleTime: 5000 })
   const diff = useMemo(() => (detail.data?.spec.tcp ? mirrorDiff(node, detail.data.spec.tcp, detail.data.spec.tcp.rules?.[0] ?? null) : null), [detail.data, node])
+  const qc = useQueryClient()
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
+  // 다른 노드를 고르면 열린 드롭다운은 닫는다(이 패널은 노드마다 다시 그려지지 않고 props 만 바뀐다)
+  useEffect(() => { setOpen(false) }, [node.id])
+  // Esc — 열려 있는 동안 **캡처 단계에서 삼킨다**: 부모 속성 모달(Esc 스택)도, 캔버스의 '선택 해제'(Editor 전역 핸들러)도
+  // 같이 반응하면 고르던 중에 노드 선택까지 풀린다.
+  useEffect(() => {
+    if (!open) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      e.preventDefault(); e.stopPropagation()
+      setOpen(false)
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [open])
 
+  /** 전체 가져오기 — 연결·레이아웃·응답 필드를 Mock 것으로 교체한다(요청 값·토큰은 비워진다). */
   const pick = async (s: MockFleetServer) => {
     setBusy(true)
     try {
       const d = await mocksApi.get(s.id)
       if (!d.spec.tcp) { toast('이 Mock 에는 TCP 정의가 없습니다', 'error'); return }
       onApply(mockTcpToNode(d.spec.tcp, d.spec.tcp.rules?.[0] ?? null, window.location.hostname || 'localhost'))
-      toast(`'${d.name}' 의 연결·레이아웃·응답 필드를 가져왔습니다`, 'ok')
+      toast(`'${d.name}' 의 연결·레이아웃·응답 필드를 가져왔습니다 — 요청 값은 비워졌으니 다시 입력하세요`, 'ok')
       setOpen(false)
     } catch (e) { toast(apiErrorMessage(e, '가져오기 실패'), 'error') } finally { setBusy(false) }
+  }
+  /** 항목별 맞추기 — 다른 항목(연결·응답 길이)만 패치하고 값·토큰은 그대로 둔다. */
+  const align = () => {
+    const tcp = detail.data?.spec.tcp
+    if (!tcp) return
+    const { patch, skipped } = alignPatch(node, tcp, tcp.rules?.[0] ?? null)
+    if (Object.keys(patch).length) onApply(patch)
+    if (skipped.length) toast(`${skipped.join(' · ')} 은(는) 표 구조가 달라 맞추지 못했습니다 — [Mock 에서 고르기] 로 통째로 가져오세요(요청 값은 비워집니다)`, 'info')
+    else if (Object.keys(patch).length) toast('Mock 값에 맞췄습니다 — 요청 값·토큰은 그대로입니다', 'ok')
   }
   const createMock = async () => {
     setBusy(true)
@@ -50,6 +75,9 @@ export function TcpMockLink({ node, flowId, canEdit, onApply }: { node: GraphNod
         await mocksApi.remove(created.id).catch(() => {})
         throw e
       }
+      // fleet/목록을 즉시 갱신 — 안 하면 최대 5초(폴링)동안 칩이 '같은 포트의 내장 Mock 없음' 인 채라 또 만들 수 있다
+      void qc.invalidateQueries({ queryKey: ['mock-fleet'] })
+      void qc.invalidateQueries({ queryKey: ['mock-servers'] })
       onApply({ tcpHost: window.location.hostname || 'localhost', tcpPort: port })
       toast(`대상 Mock '${created.name}' 을 만들고 노드 대상을 :${port} 로 맞췄습니다`, 'ok')
     } catch (e) { toast(apiErrorMessage(e, 'Mock 만들기 실패'), 'error') } finally { setBusy(false) }
@@ -66,11 +94,12 @@ export function TcpMockLink({ node, flowId, canEdit, onApply }: { node: GraphNod
         ? <span style={chip('ok')}>✓ 레이아웃 일치</span>
         : <details style={{ fontSize: 11.5 }}><summary style={{ cursor: 'pointer', color: 'var(--fl-put, #f5a623)' }}>⚠ 불일치 {diff.length}</summary>
             <ul style={{ margin: '4px 0 0', paddingLeft: 16 }}>{diff.map((x) => <li key={x.field}>{x.field}: 노드 {x.node} / Mock {x.mock}</li>)}</ul>
-            {canEdit && linked && <button style={btn} disabled={busy} onClick={() => void pick(linked)}>Mock 값으로 맞추기</button>}
+            {canEdit && linked && <button style={btn} disabled={busy} onClick={align} title="다른 항목(포트·인코딩·프리픽스·응답 필드 길이)만 Mock 값으로 맞춥니다 — 요청 값·토큰은 그대로">Mock 값으로 맞추기</button>}
           </details>)}
       {canEdit && (
         <span style={{ position: 'relative' }}>
-          <button style={btn} disabled={busy} onClick={() => setOpen((v) => !v)} aria-expanded={open}>Mock 에서 고르기 ▾</button>
+          <button style={btn} disabled={busy} onClick={() => setOpen((v) => !v)} aria-expanded={open} title="고른 Mock 의 연결·레이아웃·응답 필드를 통째로 가져옵니다(요청 값은 비워집니다)">Mock 에서 고르기 ▾</button>
+          {open && <div style={{ position: 'fixed', inset: 0, zIndex: 49 }} onClick={() => setOpen(false)} />}
           {open && (
             <div style={menu} role="menu">
               {tcpServers.length === 0 && <div style={{ padding: 8, fontSize: 12, color: 'var(--fl-text-muted)' }}>TCP Mock 이 없습니다</div>}

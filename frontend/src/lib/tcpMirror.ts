@@ -37,3 +37,31 @@ export function mirrorDiff(node: GraphNode, tcp: MockTcpSpec, rule: MockTcpRuleS
   else nr.forEach((f, i) => cmp(`응답 필드 ${f.name || i + 1} 길이`, f.length ?? 0, mr[i].length ?? 0))
   return out
 }
+
+/**
+ * [Mock 값으로 맞추기] — **다른 항목만** 골라 패치한다(통째 교체가 아니다).
+ * 맞추는 것: 연결(포트·인코딩·프리픽스)과 응답 필드 '길이'(개수가 같을 때 인덱스로).
+ * 요청 값·{{ 토큰 }}·바인딩·응답 필드 이름/trim/type·출력 키는 **손대지 않는다**.
+ * 표 구조 자체가 다른 항목(요청 길이 합·응답 필드 수)은 patch 하지 않고 `skipped` 로 돌려주고,
+ * 호출자가 "[Mock 에서 고르기] 로 통째로 가져오라"고 안내한다(그쪽은 값이 비워지는 전체 가져오기).
+ */
+export function alignPatch(node: GraphNode, tcp: MockTcpSpec, rule: MockTcpRuleSpec | null): { patch: Partial<GraphNode>; skipped: string[] } {
+  const patch: Partial<GraphNode> = {}
+  const skipped: string[] = []
+  const isRespLen = (field: string) => field.startsWith('응답 필드 ') && field.endsWith(' 길이')
+  for (const d of mirrorDiff(node, tcp, rule)) {
+    switch (d.field) {
+      case '포트': patch.tcpPort = tcp.port ?? node.tcpPort; break
+      case '인코딩': patch.tcpEncoding = tcp.charset ?? 'EUC-KR'; break
+      case '프리픽스 길이': patch.tcpPrefixLength = tcp.prefixLength ?? 4; break
+      case '프리픽스 자기 포함': patch.tcpPrefixIncludesSelf = !!tcp.prefixIncludesSelf; break
+      default: if (!isRespLen(d.field)) skipped.push(d.field)   // 요청 길이 합 · 응답 필드 수
+    }
+  }
+  // 응답 필드 길이: 개수가 같을 때만 인덱스로 맞춘다(이름·trim·type 은 그대로 → outputs 도 그대로 유효).
+  const nr = node.tcpResponse ?? [], mr = rule?.responseFields ?? []
+  if (nr.length === mr.length && nr.some((f, i) => (f.length ?? 0) !== (mr[i].length ?? 0))) {
+    patch.tcpResponse = nr.map((f, i) => ((f.length ?? 0) === (mr[i].length ?? 0) ? f : { ...f, length: mr[i].length ?? 0 }))
+  }
+  return { patch, skipped }
+}

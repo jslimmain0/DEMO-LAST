@@ -85,6 +85,20 @@ describe('tcp DSL — 엑셀 TSV 헤더 매핑', () => {
       ['전문코드', 4, 'right', ' ', '0200'], ['계좌번호', 12, 'left', '0', ''], ['고객명', 10, 'right', ' ', ''],
     ])
   })
+  it('구분 줄 판정은 선형 — 대시 200개 + 텍스트 줄도 멈추지 않는다(파국적 백트래킹 회귀)', () => {
+    const evil = '-'.repeat(200) + ' 비고'
+    const t0 = performance.now()
+    const r = parseTcpLayout(`코드 4\n${evil}`, 'request')
+    const ms = performance.now() - t0
+    expect(ms).toBeLessThan(50)
+    expect(r.rows.map((x) => x.name)).toEqual(['코드'])   // 구분 줄이 아니므로 필드로 읽다 실패 → 버려진 줄(경고)
+    expect(r.warnings.map((w) => w.line)).toEqual([2])
+  })
+  it('진짜 구분 줄(|---|:--:|)은 계속 건너뛴다', () => {
+    const r = parseTcpLayout('| 항목 | 길이 |\n|---|:--:|\n| 코드 | 4 |', 'layout')
+    expect(r.warnings).toEqual([])
+    expect(r.rows.map((x) => [x.name, x.length])).toEqual([['코드', 4]])
+  })
   it('마크다운 표(| 구분·--- 줄)도 같은 규칙', () => {
     const md = '| 항목 | 길이 | 유형 |\n|---|---|---|\n| 코드 | 4 | X |\n| 금액 | 8 | 9 |'
     const r = parseTcpLayout(md, 'layout')
@@ -168,6 +182,10 @@ describe('kvUrlForm — percent 대칭', () => {
   it("'+' 는 공백으로, '%2B' 는 literal '+' 로 디코딩(urlencoded 표준)", () => {
     const rows = kvUrlForm.fromText('a=1+2&b=x%2By', []).rows
     expect(rows.map((r) => r.value)).toEqual(['1 2', 'x+y'])
+  })
+  it("토큰 안의 '+' 는 보존, 값의 '+' 만 공백(시각 토큰 회귀)", () => {
+    const rows = kvUrlForm.fromText('t={{ now:HH+mm }}&a=1+2', []).rows
+    expect(rows.map((r) => [r.key, r.value])).toEqual([['t', '{{ now:HH+mm }}'], ['a', '1 2']])
   })
   it("의미 보존 왕복: 'hello+world'(공백) → 공백 → '%20'", () => {
     const back = kvUrlForm.fromText('q=hello+world', [])

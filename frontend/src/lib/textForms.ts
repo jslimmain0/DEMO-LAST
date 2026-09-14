@@ -139,7 +139,13 @@ function splitCells(line: string): string[] {
 function mergePic(toks: string[], at: number): string[] {
   return toks.length > at + 1 && toks[at].toUpperCase() === 'PIC' ? [...toks.slice(0, at), `${toks[at]} ${toks[at + 1]}`, ...toks.slice(at + 2)] : toks
 }
-const isSepRow = (line: string) => /^\s*\|?(\s*:?-{2,}:?\s*\|?)+\s*$/.test(line)
+/**
+ * 마크다운 표의 구분 줄(`|---|:--:|`) 판정 — 선형(한 번 훑기).
+ * ⚠ 이전 정규식 `/^\s*\|?(\s*:?-{2,}:?\s*\|?)+\s*$/` 은 중첩 수량자라 대시가 많고 끝이 안 맞는 줄에서
+ * 파국적 백트래킹이 났다(대시 38개 ≈ 1.3초, 50개면 탭이 멈춤). 이 파서는 붙여넣기 다이얼로그의 타이핑마다·
+ * 텍스트 모드 300ms 반영마다 돌기 때문에 입력 길이에 선형인 검사만 쓴다.
+ */
+const isSepRow = (line: string) => /^[\s|:-]+$/.test(line) && line.includes('--')
 
 export function normalizeLayoutRow(r: LayoutRow, mode: LayoutMode): LayoutRow {
   const out: LayoutRow = { id: r.id, name: r.name ?? '', length: r.length ?? 0 }

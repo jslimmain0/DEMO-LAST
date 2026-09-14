@@ -20,6 +20,8 @@ export function FieldTextToggle<T>({ form, rows, onChange, children, title, extr
   const [buf, setBuf] = useState('')
   const [warnings, setWarnings] = useState<ParseWarning[]>([])
   const lastEmitted = useRef<T[] | null>(null)
+  /** 지금 버퍼를 만들 때 쓴 텍스트 — 편집 없이 [필드] 로 돌아가는 순수 보기 전환을 알아본다. */
+  const genRef = useRef<string | null>(null)
   const timer = useRef<number | null>(null)
 
   // 텍스트 모드 진입/외부 변경 시 버퍼 재생성(내가 emit 한 rows 면 건너뜀 — 커서 점프 방지)
@@ -27,12 +29,22 @@ export function FieldTextToggle<T>({ form, rows, onChange, children, title, extr
   useEffect(() => {
     if (mode !== 'text') return
     if (lastEmitted.current === rows) return
-    setBuf(form.toText(rows)); setWarnings([])
+    // 참조는 달라도 내용이 같으면(저장 후 재조회·서버 에코·부모의 setState 재생성) 내 버퍼를 지키지 않으면
+    // 주석·빈 줄·경고 줄과 커서가 통째로 날아간다(Mock 편집기는 저장마다 spec 을 새 배열로 다시 만든다).
+    const text = form.toText(rows)
+    if ((lastEmitted.current && text === form.toText(lastEmitted.current)) || (genRef.current !== null && text === genRef.current)) {
+      lastEmitted.current = rows
+      return
+    }
+    genRef.current = text
+    setBuf(text); setWarnings([])
   }, [mode, rows, form])
 
   const apply = (text: string) => {
     const r = form.fromText(text, rows)
     setWarnings(r.warnings)
+    // 내용이 그대로면 onChange 를 내지 않는다 — 보기만 바꿨는데 '미저장'이 되는 것을 막는다.
+    if (form.toText(r.rows) === form.toText(rows)) { lastEmitted.current = rows; return }
     lastEmitted.current = r.rows
     onChange(r.rows)
   }
@@ -44,7 +56,8 @@ export function FieldTextToggle<T>({ form, rows, onChange, children, title, extr
   }
   const toFields = () => {
     if (timer.current) { window.clearTimeout(timer.current); timer.current = null }
-    if (!readOnly) apply(buf)
+    // 텍스트 모드에서 실제로 고친 게 있을 때만 반영(이미 필드 모드거나 생성된 그대로면 no-op)
+    if (!readOnly && mode === 'text' && buf !== genRef.current) apply(buf)
     setMode('fields')
   }
   useEffect(() => () => { if (timer.current) window.clearTimeout(timer.current) }, [])

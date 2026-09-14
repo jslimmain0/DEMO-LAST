@@ -605,7 +605,11 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
     } else if (oldStruct && !nextStruct) {
       // 구조형 → raw/xml(텍스트 전용): 현재 내용을 텍스트로 보이게 + jsonRaw 정리
       let raw = node.rawBody ?? ''
-      if (!node.jsonRaw) raw = bodyForm(old).toText(bodyRows(true))
+      if (!node.jsonRaw) {
+        // [필드→Raw] 토글과 같은 가드 — 토큰화 불가 바인딩은 텍스트로 못 쓰므로 조용히 유실되기 전에 막는다
+        if (blockRawForBound(node.fields?.body ?? [])) return
+        raw = bodyForm(old).toText(bodyRows(true))
+      }
       update(id, { bodyType: next, rawBody: raw, jsonRaw: false })
     } else if (!oldStruct && nextStruct) {
       // raw/xml → 구조형: rawBody 파싱 시도(실패하면 Raw 모드 유지해 원문 보존)
@@ -1477,7 +1481,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
                 </FieldTextToggle>
               )
             })()}
-            <p style={{ fontSize: 11.5, color: 'var(--fl-text-muted)', marginTop: 8 }}>응답 필드 이름이 그대로 출력 키가 되어 하위 노드에서 바인딩됩니다. 내장 Mock 서버의 TCP 탭으로 가짜 대상 시스템을 세울 수 있습니다.</p>
+            <p style={{ fontSize: 11.5, color: 'var(--fl-text-muted)', marginTop: 8 }}>응답 필드 이름이 그대로 출력 키가 되어 하위 노드에서 바인딩됩니다. 내장 Mock 서버에 TCP Mock 을 만들어 가짜 대상 시스템을 세울 수 있습니다(이 노드의 Mock 에서 고르기 / 대상 Mock 만들기 버튼).</p>
 
             {canEdit && (
               <div style={{ marginTop: 10, borderTop: '1px dashed var(--fl-border)', paddingTop: 10 }}>

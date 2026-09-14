@@ -93,7 +93,9 @@ export function MockServerEditor() {
   const loadedRef = useRef<string | null>(null)
   useEffect(() => {
     if (!detail.data) return
-    setSpec(detail.data.spec ?? { routes: [] })
+    // 저장 직후 재조회는 대개 내용이 같다 — 같으면 참조를 유지해 편집 중인 텍스트 버퍼([필드|텍스트])가 재생성되지 않게 한다.
+    const loaded = detail.data.spec ?? { routes: [] }
+    setSpec((cur) => (JSON.stringify(cur) === JSON.stringify(loaded) ? cur : loaded))
     setName(detail.data.name)
     setDirty(false)
     if (loadedRef.current !== detail.data.id) {

@@ -43,7 +43,13 @@ export function TcpMockLink({ node, flowId, canEdit, onApply }: { node: GraphNod
       const created = await mocksApi.create({ name: `${node.name || 'TCP'} (Mock)`, slug, type: 'TCP', workspaceId: flow.data?.workspaceId ?? 'public' })
       // 노드 대상 = 실제로 저장되는 Mock 포트(nodeToMockTcp 의 폴백과 같은 값이라 양쪽이 항상 일치)
       const port = created.spec.tcp?.port ?? node.tcpPort ?? 9091
-      await mocksApi.updateSpec(created.id, { ...created.spec, tcp: nodeToMockTcp(node, { port }) }, { note: '워크플로 TCP 노드에서 생성' })
+      try {
+        await mocksApi.updateSpec(created.id, { ...created.spec, tcp: nodeToMockTcp(node, { port }) }, { note: '워크플로 TCP 노드에서 생성' })
+      } catch (e) {
+        // spec 저장 실패(포트 충돌 등)면 기본 정의로 서빙되는 빈 mock 이 남지 않게 정리(slug·포트는 전역 자원)
+        await mocksApi.remove(created.id).catch(() => {})
+        throw e
+      }
       onApply({ tcpHost: window.location.hostname || 'localhost', tcpPort: port })
       toast(`대상 Mock '${created.name}' 을 만들고 노드 대상을 :${port} 로 맞췄습니다`, 'ok')
     } catch (e) { toast(apiErrorMessage(e, 'Mock 만들기 실패'), 'error') } finally { setBusy(false) }

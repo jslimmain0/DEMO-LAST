@@ -168,17 +168,20 @@ export function MockServerEditor() {
   }
 
   // ▶ 노드 만들기 — 이 TCP Mock 을 부르는 워크플로 TCP 노드(연결·요청 레이아웃·응답 필드 거울)를 만든다.
-  // 화면의 편집 중 spec(tcp/tcpRules)을 그대로 쓰므로 "보이는 정의 = 만들어지는 노드".
+  // 만들어진 노드는 "실제로 서빙되는 정의"의 거울이어야 하므로 두 액션 모두 ensureSaved() 로 미저장 편집을 먼저 반영한다
+  // (SPA navigate 는 beforeunload 가드를 타지 않아 미저장 편집이 조용히 버려진다. 저장 못 하면 ensureSaved 가 토스트 후 false).
   const buildTcpNode = () => {
     const rule = tcpRules[0] ?? null
     const n = makeNode('tcp', 300, 120)
     return { ...n, ...mockTcpToNode(tcp, rule, window.location.hostname || 'localhost'), name: `${d?.name ?? 'TCP'} 호출` }
   }
-  const copyTcpNode = () => {
+  const copyTcpNode = async () => {
+    if (!(await ensureSaved())) return
     try { localStorage.setItem('fl:node-clipboard', JSON.stringify({ nodes: [buildTcpNode()], edges: [] })); toast('TCP 노드를 복사했습니다 — 워크플로 에디터 캔버스에서 Ctrl+V', 'ok') }
     catch { toast('복사 실패(localStorage)', 'error') }
   }
   const newFlowWithTcpNode = async () => {
+    if (!(await ensureSaved())) return
     try {
       const start = makeNode('start', 60, 120)
       const tcpNode = buildTcpNode()
@@ -304,8 +307,8 @@ export function MockServerEditor() {
                   <div style={{ position: 'fixed', inset: 0, zIndex: 90 }} onClick={() => setToolsOpen(false)} />
                   <div style={toolsMenu} role="menu">
                     {canEdit && <button style={toolItem} onClick={() => { duplicate.mutate(); setToolsOpen(false) }}>⧉ 이 Mock 복제</button>}
-                    {isTcp && canEditGlobal && <button style={toolItem} onClick={() => { void newFlowWithTcpNode(); setToolsOpen(false) }}>▶ 이 Mock 을 부르는 TCP 노드 만들기 (새 워크플로)</button>}
-                    {isTcp && <button style={toolItem} onClick={() => { copyTcpNode(); setToolsOpen(false) }}>⧉ TCP 노드 복사 (에디터에서 Ctrl+V)</button>}
+                    {isTcp && canEdit && <button style={toolItem} onClick={() => { void newFlowWithTcpNode(); setToolsOpen(false) }}>▶ 이 Mock 을 부르는 TCP 노드 만들기 (새 워크플로)</button>}
+                    {isTcp && <button style={toolItem} onClick={() => { void copyTcpNode(); setToolsOpen(false) }}>⧉ TCP 노드 복사 (에디터에서 Ctrl+V)</button>}
                     <button style={toolItem} onClick={() => { setJsonOpen(true); setToolsOpen(false) }}>{'{ } 정의 JSON 보기'}</button>
                     <button style={toolItem} onClick={() => { setTransfer('export'); setToolsOpen(false) }}>⬆ 내보내기(복사)</button>
                     {canEdit && <button style={toolItem} onClick={() => { setTransfer('import'); setToolsOpen(false) }}>⬇ 가져오기(덮어쓰기)</button>}

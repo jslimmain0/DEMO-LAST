@@ -36,6 +36,35 @@ describe('tcp DSL — request 모드(값·패딩)', () => {
     expect(rows.map((r) => r.name)).toEqual(['ok', 'fine'])
     expect(warnings.map((w) => w.line)).toEqual([2, 3])
   })
+  it('경고의 dropped — 그 줄이 모델에서 빠졌는지 구분한다', () => {
+    const bad = parseTcpLayout('ok 4\n길이없음\n이상 abc', 'request')
+    expect(bad.warnings.map((w) => w.dropped)).toEqual([true, true])
+    // 살아남은 줄의 부분 경고(알 수 없는 속성 / "= 값" 무시)는 dropped 미설정
+    const kept = parseTcpLayout('ok 4 웬속성\n이름 10 = 무시됨', 'response')
+    expect(kept.rows).toHaveLength(2)
+    expect(kept.warnings.map((w) => w.dropped)).toEqual([undefined, undefined])
+  })
+  it('패딩 문자 이스케이프 — _ 와 " 도 왕복하고 뒤의 값을 삼키지 않는다', () => {
+    const rows: LayoutRow[] = [
+      { id: 'u', name: 'u', length: 3, value: 'x', pad: 'left', padChar: '_' },
+      { id: 'q', name: 'q', length: 3, value: 'x', pad: 'left', padChar: '"' },
+    ]
+    const text = tcpLayoutToText(rows, 'request')
+    expect(text).toBe('u 3 L\\_ = x\nq 3 L\\" = x')
+    const back = parseTcpLayout(text, 'request', rows)
+    expect(back.warnings).toEqual([])
+    expect(back.rows.map((r) => [r.padChar, r.value])).toEqual([['_', 'x'], ['"', 'x']])
+    expect(strip(back.rows, 'request')).toEqual(strip(rows, 'request'))
+  })
+  it("COBOL 'PIC 9(10)' — 공백으로 띄운 접두도 길이로 읽는다(순번 열과 함께도)", () => {
+    const { rows, warnings } = parseTcpLayout('금액 PIC 9(10)\n이름 PIC X(20)\n1 코드 PIC 9(4) EUC-KR', 'request')
+    expect(warnings).toEqual([])
+    expect(rows.map((r) => [r.name, r.length, r.pad, r.padChar, r.encoding])).toEqual([
+      ['금액', 10, 'left', '0', undefined],
+      ['이름', 20, 'right', ' ', undefined],
+      ['코드', 4, 'left', '0', 'EUC-KR'],
+    ])
+  })
   it('bound 복원: 텍스트가 같은 토큰이면 prev 의 bound 유지', () => {
     const prev: LayoutRow[] = [{ id: 'x', name: 'k', length: 4, value: null, bound: { key: 'amt', sourceId: 'n1', scope: 'out' } as never }]
     const text = tcpLayoutToText(prev, 'request')
@@ -69,6 +98,25 @@ describe('tcp DSL — response/layout 모드', () => {
     expect(r.rows.map((x) => [x.name, x.length, x.type, x.trim])).toEqual([['응답코드', 4, 'string', true], ['잔액', 12, 'number', true], ['고객명', 10, undefined, undefined]])
     expect(r.warnings).toHaveLength(1)
     expect(tcpLayoutToText(r.rows, 'response')).toBe('응답코드 4 문자\n잔액 12 숫자\n고객명 10')
+  })
+  it('response: 원문(패딩 유지) — trim:false 가 텍스트로 표현되고 왕복한다', () => {
+    const rows: LayoutRow[] = [
+      { id: 'f', name: 'f', length: 4, type: 'string', trim: false },
+      { id: 'g', name: 'g', length: 4, trim: false },
+      { id: 'h', name: 'h', length: 8, type: 'number', trim: false },
+      { id: 'i', name: 'i', length: 8, type: 'number', trim: true },
+    ]
+    const text = tcpLayoutToText(rows, 'response')
+    expect(text).toBe('f 4 문자 원문\ng 4 원문\nh 8 숫자 원문\ni 8 숫자')
+    const back = parseTcpLayout(text, 'response', rows)
+    expect(back.warnings).toEqual([])
+    expect(back.rows.map((r) => [r.type, r.trim])).toEqual([['string', false], [undefined, false], ['number', false], ['number', true]])
+    expect(strip(back.rows, 'response')).toEqual(strip(rows, 'response'))
+  })
+  it('response: 원문 별칭(raw·notrim), 종류와 함께 / 단독', () => {
+    const r = parseTcpLayout('잔액 12 숫자 원문\n코드 4 문자 raw\n이름 10 notrim', 'response')
+    expect(r.warnings).toEqual([])
+    expect(r.rows.map((x) => [x.name, x.type, x.trim])).toEqual([['잔액', 'number', false], ['코드', 'string', false], ['이름', undefined, false]])
   })
   it('layout: 이름·길이·인코딩만', () => {
     const rows: LayoutRow[] = [{ id: '1', name: '전문코드', length: 4 }, { id: '2', name: '고객명', length: 10, encoding: 'EUC-KR' }]

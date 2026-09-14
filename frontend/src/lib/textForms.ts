@@ -9,7 +9,7 @@ import { bindingToToken, segmentValue } from './tokenGrammar'
  * (3) fromText(toText(rows)) ≡ rows (id 제외, 정규화 기준) 을 각 폼의 테스트가 고정한다
  * (4) prev 는 id 승계(React key·TokenInput 안정)와 bound 복원에 쓴다.
  */
-export interface ParseWarning { line: number; text: string; reason: string }
+export interface ParseWarning { line: number; text: string; reason: string; /** 그 줄이 모델에서 빠졌는지(true) — 살아남은 줄의 부분 경고는 미설정. */ dropped?: boolean }
 export interface TextForm<T> {
   id: string
   label: string
@@ -21,9 +21,10 @@ export interface TextForm<T> {
 // ───────────────────────── 고정길이 전문 레이아웃 DSL ─────────────────────────
 // 한 줄 = 한 필드:  이름 길이 [종류] [패딩] [인코딩] [= 값]
 //   이름   공백/,/|/=/#/" 가 들어가면 "…" 로 감싼다(JSON 문자열 규칙)
-//   길이   바이트 정수 | PIC — X(10) 9(12) S9(10)V99 A(3) N(4) (PIC 접두 허용, 길이=합)
+//   길이   바이트 정수 | PIC — X(10) 9(12) S9(10)V99 A(3) N(4) ('PIC 9(10)' 처럼 공백으로 띄운 접두도 허용, 길이=합)
 //   종류   문자|숫자|한글|영숫자|AN|X|A|C|K|H|N|9|S9   (N/9/S9/숫자 → 좌측 0 패딩·숫자, 그 외 → 우측 공백·문자)
-//   패딩   L? | R? — 방향 + 문자 1개('_'=공백, '\,' '\#' '\ ' 이스케이프). 종류보다 우선.
+//   원문   (응답 전용) 원문|raw|notrim — 패딩을 떼지 않는다(trim=false). 종류와 같이 써도 되고 단독으로도 된다.
+//   패딩   L? | R? — 방향 + 문자 1개('_'=공백, '\,' '\#' '\ ' '\_' '\"' 이스케이프). 종류보다 우선.
 //   인코딩 EUC-KR|MS949|UTF-8|US-ASCII
 //   값     첫 '=' 이후 줄 끝(양끝 공백 제거). {{ 토큰 }} 그대로. 앞뒤 공백/개행/따옴표가 필요하면 "…"
 // 엑셀에서 복사한 TSV/CSV/마크다운 표는 첫 줄이 헤더(항목명/길이/타입/기본값…)면 열 매핑으로 읽는다. 순번 열은 버린다.
@@ -45,6 +46,8 @@ export interface LayoutRow {
 const ENCODINGS: Record<string, string> = { 'euc-kr': 'EUC-KR', 'ms949': 'MS949', 'utf-8': 'UTF-8', 'utf8': 'UTF-8', 'us-ascii': 'US-ASCII', 'ascii': 'US-ASCII' }
 const NUM_KINDS = new Set(['숫자', 'n', '9', 's9', 'num', 'number'])
 const CHAR_KINDS = new Set(['문자', '한글', '영숫자', 'an', 'x', 'a', 'c', 'k', 'h', 'char', 'string', 'str'])
+/** 응답 모드 전용 속성 — 패딩을 떼지 않음(trim=false). */
+const NO_TRIM_KINDS = new Set(['원문', 'raw', 'notrim'])
 const HEADER_KEYS = {
   name: ['항목명', '항목', '필드명', '필드', '이름', '명칭', 'name', 'field'],
   length: ['길이', '바이트', 'len', 'length', 'size', 'bytes'],
@@ -110,7 +113,8 @@ function quoteValue(v: string): string {
   return v !== v.trim() || /[\r\n]/.test(v) || v.startsWith('"') ? JSON.stringify(v) : v
 }
 function padSpecText(pad: 'left' | 'right', ch: string): string {
-  const c = ch === ' ' ? '_' : /[,|=#\\\s]/.test(ch) ? '\\' + ch : ch
+  // '_' 는 공백의 표기라 리터럴 '_' 는 반드시 이스케이프. '"' 도 이스케이프해야 토큰화가 따옴표를 열지 않는다(뒤의 '= 값' 유실 방지).
+  const c = ch === ' ' ? '_' : /[,|=#\\\s_"]/.test(ch) ? '\\' + ch : ch
   return (pad === 'left' ? 'L' : 'R') + c
 }
 
@@ -131,6 +135,10 @@ function splitCells(line: string): string[] {
   if (line.includes(',')) return line.split(',')
   return line.split(/\s{2,}/)
 }
+/** COBOL 'PIC 9(10)' — 공백으로 끊긴 PIC 접두를 뒤 토큰과 합쳐 하나의 길이 토큰으로. 아니면 그대로. */
+function mergePic(toks: string[], at: number): string[] {
+  return toks.length > at + 1 && toks[at].toUpperCase() === 'PIC' ? [...toks.slice(0, at), `${toks[at]} ${toks[at + 1]}`, ...toks.slice(at + 2)] : toks
+}
 const isSepRow = (line: string) => /^\s*\|?(\s*:?-{2,}:?\s*\|?)+\s*$/.test(line)
 
 export function normalizeLayoutRow(r: LayoutRow, mode: LayoutMode): LayoutRow {
@@ -142,7 +150,9 @@ export function normalizeLayoutRow(r: LayoutRow, mode: LayoutMode): LayoutRow {
     if (r.bound) { out.bound = r.bound; out.value = null } else out.value = r.value ?? ''
   } else if (mode === 'response') {
     if (r.type) out.type = r.type
-    if (r.trim !== undefined) out.trim = r.trim
+    // type·trim 중 하나라도 정해졌으면 trim 을 boolean 으로 확정 — 레거시 undefined = false(백엔드 규약)이자
+    // '원문' 표기가 텍스트 왕복에서 살아남는 근거(fromText(toText(rows)) ≡ rows).
+    if (r.type !== undefined || r.trim !== undefined) out.trim = !!r.trim
   }
   return out
 }
@@ -159,6 +169,8 @@ export function tcpLayoutToText(rows: LayoutRow[], mode: LayoutMode): string {
     } else if (mode === 'response') {
       if (r.type === 'number') parts.push('숫자')
       else if (r.type === 'string' || r.trim) parts.push('문자')
+      // 정규화가 type·trim 중 하나라도 있을 때만 trim 을 채우므로, 둘 다 없는 행은 '이름 길이' 로만 나간다.
+      if (r.trim === false) parts.push('원문')
     }
     if (r.encoding) parts.push(r.encoding)
     if (mode === 'request') {
@@ -179,32 +191,36 @@ export function parseTcpLayout(text: string, mode: LayoutMode, prev: LayoutRow[]
     const lineNo = idx + 1
     const line = rawLine.trim()
     if (line === '' || line.startsWith('#') || isSepRow(line)) return
-    let draft: { name: string; length: number; kind: Kind | null; padSpec: ReturnType<typeof parsePadSpec>; encoding?: string; value: string | null } | null = null
+    let draft: { name: string; length: number; kind: Kind | null; noTrim?: boolean; padSpec: ReturnType<typeof parsePadSpec>; encoding?: string; value: string | null } | null = null
     if (header) {
       const cells = splitCells(rawLine).map((c) => c.trim())
       const len = parseLength(cells[header.length!] ?? '')
       const name = unquote(cells[header.name!] ?? '')
-      if (!len || name === '') { warnings.push({ line: lineNo, text: rawLine, reason: '이름 또는 길이 열을 읽을 수 없음' }); return }
+      if (!len || name === '') { warnings.push({ line: lineNo, text: rawLine, reason: '이름 또는 길이 열을 읽을 수 없음', dropped: true }); return }
       const typeTok = header.type !== undefined ? (cells[header.type] ?? '') : ''
       draft = { name, length: len.length, kind: (typeTok && kindOf(typeTok)) || len.kind, padSpec: null,
         encoding: header.encoding !== undefined ? ENCODINGS[(cells[header.encoding] ?? '').toLowerCase()] : undefined,
         value: header.value !== undefined ? unquote(cells[header.value] ?? '') : null }
     } else {
       const { tokens, value } = tokenize(line)
+      // 'PIC 9(10)' 처럼 공백으로 끊긴 길이 토큰을 먼저 합친다 — 이름 뒤(1), 순번 열이 앞에 붙은 경우(2) 둘 다.
+      // 헤더 판정·순번 열 판정이 모두 합쳐진 토큰을 보게 하려고 가장 앞에서 한다.
+      const merged = mergePic(mergePic(tokens, 2), 1)
       // 첫 유효 줄이 필드로 안 읽히고 헤더 키워드를 품으면 열 매핑 모드
-      if (rows.length === 0 && !headerMapped && (tokens.length < 2 || !parseLength(tokens[1]) && !(tokens.length >= 3 && /^\d+$/.test(tokens[0]) && parseLength(tokens[2])))) {
+      if (rows.length === 0 && !headerMapped && (merged.length < 2 || !parseLength(merged[1]) && !(merged.length >= 3 && /^\d+$/.test(merged[0]) && parseLength(merged[2])))) {
         const h = mapHeader(splitCells(rawLine))
         if (h) { header = h; headerMapped = true; return }
       }
-      let toks = tokens
+      let toks = merged
       if (toks.length >= 3 && /^\d+$/.test(toks[0]) && !parseLength(toks[1]) && parseLength(toks[2])) toks = toks.slice(1) // 순번 열
-      if (toks.length < 2) { warnings.push({ line: lineNo, text: rawLine, reason: '이름과 길이가 필요합니다 (예: 계좌번호 12 숫자)' }); return }
+      if (toks.length < 2) { warnings.push({ line: lineNo, text: rawLine, reason: '이름과 길이가 필요합니다 (예: 계좌번호 12 숫자)', dropped: true }); return }
       const len = parseLength(toks[1])
-      if (!len) { warnings.push({ line: lineNo, text: rawLine, reason: `길이를 읽을 수 없음: '${toks[1]}'` }); return }
+      if (!len) { warnings.push({ line: lineNo, text: rawLine, reason: `길이를 읽을 수 없음: '${toks[1]}'`, dropped: true }); return }
       draft = { name: unquote(toks[0]), length: len.length, kind: len.kind, padSpec: null, value }
       for (const a of toks.slice(2)) {
         const k = kindOf(a); const ps = parsePadSpec(a); const enc = ENCODINGS[a.toLowerCase()]
-        if (k) draft.kind = k
+        if (NO_TRIM_KINDS.has(a.toLowerCase())) draft.noTrim = true
+        else if (k) draft.kind = k
         else if (ps) draft.padSpec = ps
         else if (enc) draft.encoding = enc
         else warnings.push({ line: lineNo, text: rawLine, reason: `알 수 없는 속성 '${a}' 무시` })
@@ -219,7 +235,12 @@ export function parseTcpLayout(text: string, mode: LayoutMode, prev: LayoutRow[]
       row.value = draft.value === null ? '' : unquote(draft.value)
     } else {
       if (draft.value !== null && draft.value !== '') warnings.push({ line: lineNo, text: rawLine, reason: '이 목록은 값이 없습니다 — "= 값" 무시' })
-      if (mode === 'response' && draft.kind) { row.type = draft.kind === 'num' ? 'number' : 'string'; row.trim = true }
+      if (mode === 'response') {
+        if (draft.kind) row.type = draft.kind === 'num' ? 'number' : 'string'
+        // 원문 = 패딩 유지(trim=false). 종류 없이 단독으로 쓰면 type 은 그대로 미정.
+        if (draft.noTrim) row.trim = false
+        else if (draft.kind) row.trim = true
+      }
     }
     rows.push(row)
   })
@@ -239,7 +260,7 @@ export function tcpLayoutForm(mode: LayoutMode): TextForm<LayoutRow> {
   const placeholder = mode === 'request'
     ? '한 줄에 필드 하나 — 이름 길이 종류 [= 값]\n전문코드 4 문자 = 0200\n계좌번호 12 숫자 = {{ acct@set1 }}\n(엑셀 정의서 행을 그대로 붙여넣어도 됩니다: 항목명 / 길이 / 타입 / 기본값)'
     : mode === 'response'
-      ? '한 줄에 필드 하나 — 이름 길이 [종류]\n응답코드 4 문자\n잔액 12 숫자   (숫자 = 선행 0 제거 + 숫자 출력)\n고객명 10'
+      ? '한 줄에 필드 하나 — 이름 길이 [종류] [원문]\n응답코드 4 문자\n잔액 12 숫자   (숫자 = 선행 0 제거 + 숫자 출력)\n고객명 10 문자 원문   (원문 = 패딩을 떼지 않음)'
       : '한 줄에 필드 하나 — 이름 길이 [인코딩]\n전문코드 4\n계좌번호 10\n고객명 10 EUC-KR'
   return {
     id: `tcp-${mode}`,

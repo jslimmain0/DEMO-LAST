@@ -19,30 +19,8 @@ const COND_OPS: NonNullable<MockTcpCond['op']>[] = ['eq', 'ne', 'contains', 'sta
  * - 미리보기: 샘플 요청으로 요청 분해·매칭 규칙·응답 hex/오프셋/절단·패딩을 저장 없이 확인(트래픽 패널 탭).
  */
 
-/** 새 TCP mock 기본 정의 — 필드 모드 스타터(잔액조회 전문). */
-export function defaultTcpSpec(prev?: MockTcpSpec | null): MockTcpSpec {
-  const t = prev ?? {}
-  return {
-    enabled: true, port: t.port ?? 9091, charset: t.charset ?? 'EUC-KR', prefixLength: t.prefixLength ?? 4, prefixIncludesSelf: t.prefixIncludesSelf ?? false,
-    requestFields: t.requestFields?.length ? t.requestFields : [{ id: newId(), name: '전문코드', length: 4 }, { id: newId(), name: '계좌번호', length: 10 }],
-    rules: t.rules?.length ? t.rules : [defaultTcpRule()],
-  }
-}
-export function defaultTcpRule(): MockTcpRuleSpec {
-  return { id: newId(), contains: '', when: [], response: '', responseFields: [
-    { id: newId(), name: '응답코드', length: 4, value: '0000', pad: 'right', padChar: ' ' },
-    { id: newId(), name: '계좌번호', length: 10, value: '{{req.계좌번호}}', pad: 'right', padChar: ' ' },
-    { id: newId(), name: '잔액', length: 12, value: '1500000', pad: 'left', padChar: '0' },
-    { id: newId(), name: '고객명', length: 10, value: '홍길동', pad: 'right', padChar: ' ' },
-  ] }
-}
-/** 규칙 한 줄 요약(좌측 목록·개요) — "contains BAL1 · 전문코드 = 0200" / "(기본)". */
-export function tcpRuleSummary(r: MockTcpRuleSpec): string {
-  const parts: string[] = []
-  if (r.contains?.trim()) parts.push(`포함 "${r.contains.trim()}"`)
-  for (const c of r.when ?? []) if (c.field) parts.push(`${c.field} ${c.op ?? 'eq'}${c.op === 'exists' ? '' : ` ${c.value ?? ''}`}`)
-  return parts.length ? parts.join(' · ') : '조건 없음 (기본)'
-}
+// 순수 기본값(React/axios 무의존, vitest node 환경에서 안전 — nodeFactory.ts 의 새 TCP 노드와 거울 고정 테스트가 이쪽을 직접 import).
+export { defaultTcpSpec, defaultTcpRule, tcpRuleSummary } from '../lib/tcpDefaults'
 
 // ---------- 연결 ----------
 

@@ -46,13 +46,22 @@ export function makeNode(type: NodeType, x: number, y: number): GraphNode {
         waitFields: [{ id: newId(), key: 'otp', label: 'OTP', type: 'string' }],
       }
     case 'tcp':
+      // 새 TCP Mock 시드(잔액조회 전문)와 바이트 단위로 같은 전문 — "그냥 연결"하면 첫 실행이 성공하게(tcpDefaults.test 가 고정)
       return {
         id, name: 'TCP 전문', type: 'tcp', cat: 'tcp', x, y,
-        tcpHost: '127.0.0.1', tcpPort: 9000, tcpEncoding: 'EUC-KR', tcpTimeoutMs: 5000,
+        tcpHost: '127.0.0.1', tcpPort: 9091, tcpEncoding: 'EUC-KR', tcpTimeoutMs: 5000,
         tcpPrefixLength: 4, tcpPrefixIncludesSelf: false,
-        tcpRequest: [{ id: newId(), name: 'msgType', length: 4, value: '', pad: 'right', padChar: ' ' }],
-        tcpResponse: [{ id: newId(), name: 'result', length: 10 }],
-        outputs: [{ key: 'result', type: 'string' }],
+        tcpRequest: [
+          { id: newId(), name: '전문코드', length: 4, value: '0200', pad: 'right', padChar: ' ' },
+          { id: newId(), name: '계좌번호', length: 10, value: '1234567890', pad: 'right', padChar: ' ' },
+        ],
+        tcpResponse: [
+          { id: newId(), name: '응답코드', length: 4, trim: true, type: 'string' },
+          { id: newId(), name: '계좌번호', length: 10, trim: true, type: 'string' },
+          { id: newId(), name: '잔액', length: 12, trim: true, type: 'number' },
+          { id: newId(), name: '고객명', length: 10, trim: true, type: 'string' },
+        ],
+        outputs: [{ key: '응답코드', type: 'string' }, { key: '계좌번호', type: 'string' }, { key: '잔액', type: 'number' }, { key: '고객명', type: 'string' }],
       }
     case 'note':
       return { id, name: '메모', type: 'note', cat: 'note', x, y, noteText: '', noteColor: 'yellow' }

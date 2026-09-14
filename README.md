@@ -42,6 +42,7 @@ powershell -ExecutionPolicy Bypass -File scripts\stop.ps1
 ## 무엇이 되나
 
 - **워크플로**: START→…→END 그래프. HTTP(서버/클라이언트)·SET·IF·SWITCH·ASSERT·FORM·WAIT(콜백)·INPUT·TRANSFORM·TCP 노드. `{{ 키@노드 }}` 토큰 바인딩.
+- **변환 플러그인**: 변환은 플러그인 JAR 로 제공 — 참고 구현 [backend/plugin-sample](backend/plugin-sample)(mask, hmac-sha256). `sh gradlew :plugin-sample:jar` 후 `plugins/` 에 배치.
 - **콜백 대기**: `wait` 노드 콜백을 **백엔드가 `/relay/{execId}/cb/{nodeId}` 로 직접 받아** 자동 재개(별도 프로세스 없음, 탭 닫아도 완결). → [폼·콜백 연동 가이드](docs/guide/15-폼-콜백-연동.md)
 - **내장 Mock 서버**: "Mock 서버" 탭에서 가짜 대상 시스템(HTTP/TCP)을 정의·서빙(`/mock/{slug}/**`). 상태·순차응답·콜백 발사·요청로그 지원. → [Mock 가이드](docs/guide/10-Mock-서버.md)
 - **AI 어시스턴트**: 에디터 우측 ✨ AI 패널에서 자연어로 플로우 생성/수정. 키 없이 stub 모드, 또는 GitHub Copilot·Anthropic 키 연동.

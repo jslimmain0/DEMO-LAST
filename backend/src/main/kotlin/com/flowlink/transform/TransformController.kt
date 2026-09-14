@@ -10,7 +10,7 @@ import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
 
-/** 사용 가능한 변환 목록(내장+플러그인) + 미리보기 — 프론트 transform 노드 UI가 소비. */
+/** 사용 가능한 변환 목록(플러그인) + 미리보기 — 프론트 transform 노드 UI가 소비. */
 @RestController
 @RequestMapping("/api/v1/transforms")
 class TransformController(private val registry: TransformRegistry) {

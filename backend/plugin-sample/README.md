@@ -35,7 +35,7 @@ gradle :plugin-sample:deploy
 ## 새 플러그인 만들기 (체크리스트)
 
 1. 이 모듈을 복사(예: `plugin-내이름/`)하고 `settings.gradle.kts` 의 `include(...)` 에 추가
-2. `FlowTransform` 구현 — `id()` 는 전역 유니크(내장과 겹치면 **플러그인이 내장을 덮어씀**), UI 텍스트는 한국어
+2. `FlowTransform` 구현 — `id()` 는 전역 유니크(같은 id 는 나중에 로드된 JAR 가 덮어씀), UI 텍스트는 한국어
 3. `META-INF/services/com.flowlink.transform.FlowTransform` 에 구현 클래스 FQCN 을 한 줄씩 등록
 4. 단위 테스트(순수 함수라 DB/스프링 불필요) 후 `jar` → 업로드
 5. 의존성 규칙: **SPI 는 반드시 `compileOnly`**. 외부 라이브러리가 필요하면 plain jar 에는 안 들어가므로

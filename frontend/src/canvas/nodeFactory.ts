@@ -62,8 +62,7 @@ export function makeNode(type: NodeType, x: number, y: number): GraphNode {
     case 'transform':
       return {
         id, name: '변환', type: 'transform', cat: 'transform', x, y,
-        transformId: 'split',
-        config: { delimiter: ',', index: '0' },
+        config: {},
         fields: { params: [], headers: [], body: [{ id: newId(), key: 'input', value: '' }] },
         outputs: [{ key: 'result', type: 'string' }],
       }

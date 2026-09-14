@@ -1,7 +1,7 @@
 package com.flowlink.transform
 
 /**
- * 변환(transform) SPI. 내장 변환과 JAR 플러그인이 동일하게 구현한다.
+ * 변환(transform) SPI. JAR 플러그인이 구현한다.
  *
  * 플러그인은 [inputs]/[outputs] 로 **입력/출력 개수와 이름**을 직접 선언하고,
  * [apply] 에서 이름별 입력을 받아 이름별 출력을 돌려준다. 속성 패널은 선언된 입력 수만큼

@@ -12,7 +12,7 @@ import java.util.ServiceLoader
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * 변환 레지스트리 — 내장 변환 + 플러그인 디렉토리의 JAR(ServiceLoader)을 보유한다.
+ * 변환 레지스트리 — 플러그인 디렉토리의 JAR(ServiceLoader)을 보유한다.
  * (신뢰 JAR 전용 — 샌드박스 없음. 관리자만 업로드)
  */
 @Component
@@ -25,20 +25,14 @@ class TransformRegistry(@Value("\${flowlink.plugins.dir:plugins}") dir: String) 
         reload()
     }
 
-    /** 내장 + 플러그인을 다시 스캔해 등록. (JAR 업로드 후 호출) */
+    /** 플러그인을 다시 스캔해 등록. (JAR 업로드 후 호출) */
     @Synchronized
     final fun reload() {
         val next = LinkedHashMap<String, FlowTransform>()
-        for (t in BuiltinTransforms.all()) {
-            next[t.id()] = t
-        }
         val pluginCount = loadPlugins(next)
         byId.clear()
         byId.putAll(next)
-        log.info(
-            "변환 레지스트리 로드: 내장 {}, 플러그인 {} (총 {})",
-            BuiltinTransforms.all().size, pluginCount, byId.size
-        )
+        log.info("변환 플러그인 {}개", pluginCount)
     }
 
     private fun loadPlugins(map: MutableMap<String, FlowTransform>): Int {
@@ -57,7 +51,7 @@ class TransformRegistry(@Value("\${flowlink.plugins.dir:plugins}") dir: String) 
                 }
                 val cl = URLClassLoader(jars.toTypedArray(), javaClass.classLoader)
                 for (t in ServiceLoader.load(FlowTransform::class.java, cl)) {
-                    map[t.id()] = t // 플러그인이 내장을 덮어쓸 수 있음
+                    map[t.id()] = t
                     count++
                 }
             }

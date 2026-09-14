@@ -94,7 +94,7 @@ mock/        Mock 서버 기능 — 워크플로가 호출할 가짜 대상 시�
  │           MockServerController(관리 CRUD)·MockGatewayController(/mock/{slug}/** 서빙)
  │           MockRuntime(라우트 매칭·조건·템플릿)·MockCallbackDispatcher(콜백 발사)
 security/    GitHub 로그인(자체 JWT 리소스서버) + TenantClaimFilter·TenantContext (멀티테넌시)
-transform/   변환 SPI + JAR 플러그인 (TransformRegistry·PluginController·BuiltinTransforms)
+transform/   변환 SPI + JAR 플러그인 (TransformRegistry·PluginController)
 common/      error·json·tenant
 ```
 
@@ -109,7 +109,7 @@ backend/                루트 = Spring Boot 앱 (implementation(project(":trans
   `gradle :plugin-sample:jar` → `POST /api/v1/plugins` 업로드(즉시 reload) 또는 `:plugin-sample:deploy`(로컬
   `backend/plugins/` 배치, gitignore 됨). 상세 가이드: [plugin-sample/README.md](backend/plugin-sample/README.md).
 - SPI 패키지(`com.flowlink.transform.FlowTransform`)는 모듈만 옮기고 FQCN 불변 — 기존 JAR 호환.
-  id 가 내장과 겹치면 플러그인이 내장을 덮어쓴다(레지스트리 규약). 나머지 모듈 경계는 여전히 패키지로 표현.
+  나머지 모듈 경계는 여전히 패키지로 표현.
 
 ### 도메인 모델 (모두 UUID + tenant_id)
 - **Flow** (논리 컨테이너) 1:N **FlowVersion** (불변 그래프 스냅샷, `graph_json` text)

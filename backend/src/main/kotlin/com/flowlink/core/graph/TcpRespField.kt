@@ -8,7 +8,11 @@ data class TcpRespField(
     val id: String?,
     val name: String?,
     val length: Int?,
-    val encoding: String?
+    val encoding: String?,
+    /** 슬라이스 후 패딩 제거 — 문자=후행 공백, 숫자=선행 0·공백. null(레거시)=false. */
+    val trim: Boolean? = null,
+    /** "string"(기본) | "number" — number 면 숫자 원형(Long/Double)으로 출력해 조건식 숫자 비교가 된다. */
+    val type: String? = null,
 ) {
     fun lengthOrZero(): Int = length ?: 0
 }

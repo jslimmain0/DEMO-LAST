@@ -4,6 +4,7 @@ import com.flowlink.common.json.JsonService
 import com.flowlink.common.tcp.TcpBytes
 import com.flowlink.core.graph.GraphNode
 import com.flowlink.core.graph.TcpField
+import com.flowlink.core.graph.TcpRespField
 import org.springframework.stereotype.Component
 import java.io.ByteArrayOutputStream
 import java.io.IOException
@@ -186,7 +187,7 @@ class TcpNodeExecutor(
                     val slice = Arrays.copyOfRange(respBody, Math.min(offset, respBody.size), end)
                     val decoded = String(slice, charset(rf.encoding, nodeCs))
                     if (rf.name != null && !rf.name.isBlank()) {
-                        value[rf.name] = decoded
+                        value[rf.name] = postProcess(decoded, rf)
                     }
                     offset += len
                 }
@@ -231,6 +232,20 @@ class TcpNodeExecutor(
         private fun printable(bytes: ByteArray, cs: Charset): String = TcpBytes.printable(bytes, cs)
 
         private fun hexDump(bytes: ByteArray): String = TcpBytes.hexDump(bytes)
+
+        /** 응답 필드 후처리(순수) — trim/type 규칙. 레거시(둘 다 null)는 원문 그대로(무회귀). */
+        @JvmStatic
+        fun postProcess(decoded: String, rf: TcpRespField): Any? {
+            val number = rf.type == "number"
+            val trimmed = when {
+                rf.trim == true && number -> decoded.trim().trimStart('0').ifEmpty { "0" }
+                rf.trim == true -> decoded.trimEnd()
+                else -> decoded
+            }
+            if (!number) return trimmed
+            val t = trimmed.trim().trimStart('0').ifEmpty { "0" }
+            return t.toLongOrNull() ?: t.toDoubleOrNull() ?: trimmed
+        }
     }
 }
 

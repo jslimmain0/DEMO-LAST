@@ -66,7 +66,7 @@ cd frontend && npm install && npm run dev    # http://localhost:5173  (/api·/re
 
 ```bash
 # GitHub 로그인 + Vault Transit + Oracle 을 켜서 기동(예)
-export FLOWLINK_AUTH_GITHUB_ENABLED=true FLOWLINK_AUTH_JWT_SECRET=<시크릿>
+export FLOWLINK_AUTH_GITHUB_ENABLED=true
 export FLOWLINK_VAULT_TRANSIT_ENABLED=true FLOWLINK_VAULT_ADDRESS=http://<vault>:8200 FLOWLINK_VAULT_TOKEN=<토큰>
 export SPRING_PROFILES_ACTIVE=dev FLOWLINK_DB_URL='jdbc:oracle:thin:@//<host>:1521/FREEPDB1'
 bash scripts/start.sh

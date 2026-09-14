@@ -63,11 +63,10 @@ flowlink:
   # 앱 인증 — GitHub 로그인(Copilot 과 동일한 디바이스 플로우). 로그인하면 앱이 자체 JWT(HMAC)를 발급하고,
   # 그 JWT 를 리소스 서버로 검증 → 로그인 사용자 신원 인식 + 테넌트 격리(앱은 게스트 개방, /api/v1/assistant/** 만 로그인 필수).
   # 미설정이면 dev permitAll.
-  # ⚠ github-enabled=true 면 서명 시크릿 **필수**(없으면 토큰 위조 가능 → 기동 실패).
-  #   서명 시크릿: env FLOWLINK_AUTH_JWT_SECRET
+  # 서명 시크릿(jwt-secret): 미설정이면 기동 시 자동 생성해 설정 테이블(auth.jwt-secret)에 저장(재시작에도 유지).
+  #   env FLOWLINK_AUTH_JWT_SECRET 을 주면 그것이 우선.
   # 운영(EC2)에선 env 로 켠다:
   #   FLOWLINK_AUTH_GITHUB_ENABLED=true
-  #   FLOWLINK_AUTH_JWT_SECRET=<강한 시크릿>
   auth:
     github-enabled: ${FLOWLINK_AUTH_GITHUB_ENABLED:false}
     jwt-secret: ${FLOWLINK_AUTH_JWT_SECRET:}

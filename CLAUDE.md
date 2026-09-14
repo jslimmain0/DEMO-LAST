@@ -203,7 +203,7 @@ design/   theme(라이트/다크) · index.css(CSS 변수)
 
 ## 최근 변경 (2026-09-14) — 설정 트림: 안 쓰는 기능 통째 제거 (`refactor/trim-config`)
 브랜치 `refactor/trim-config` 11개 커밋 요약. OIDC·allowed-logins·SSRF·Vault KV·프로파일 정리의 상세(코드 위치·주의사항)는 문서 하단의 같은 날짜 개별 섹션 참조; 나머지(Springdoc·Actuator·CORS·capture·내장 변환)는 이 목록이 전부.
-- **제거 목록**: Springdoc/Swagger UI(`/swagger-ui.html`·`/v3/api-docs`, OpenApiConfig) · Actuator/Prometheus(`management.*`, micrometer) · SSRF 가드(`flowlink.execution.ssrf.*`, SsrfGuard·SsrfBlockedException·SsrfGuardTest) · 캡처 옵션(`capture.request-response-bodies` — HTTP 본문은 항상 SecretMasker 마스킹 후 저장) · `flowlink.security.cors-origins`(`/api/**` CORS 전체 오리진 허용) · 레거시 OIDC 모드(issuer-uri/Keycloak — 인증 모드는 dev | GitHub 둘뿐, SecurityConfig 2분기) · `FLOWLINK_AUTH_ALLOWED_LOGINS`/`FLOWLINK_AUTH_ADMIN_LOGINS` · Vault KV 오버레이(`mount/path/config-path/refresh-seconds`, VaultSecretSource, 시크릿 목록 `source=vault` 배지, Vault `flowlink-config/jwt-secret` — jwt-secret 은 env `FLOWLINK_AUTH_JWT_SECRET` 만) · 내장 변환(BuiltinTransforms) · 콜백 base env(`flowlink.execution.relay.base-url`/`FLOWLINK_EXECUTION_RELAY_BASEURL` — RelayBaseResolver 는 화면 설정 → 접속 오리진 → localhost) · `state-secret`(`FLOWLINK_EXECUTION_STATE_SECRET` — StateCrypto 는 고정키, CryptoConfig WARN 한 줄).
+- **제거 목록**: Springdoc/Swagger UI(`/swagger-ui.html`·`/v3/api-docs`, OpenApiConfig) · Actuator/Prometheus(`management.*`, micrometer) · SSRF 가드(`flowlink.execution.ssrf.*`, SsrfGuard·SsrfBlockedException·SsrfGuardTest) · 캡처 옵션(`capture.request-response-bodies` — HTTP 본문은 항상 SecretMasker 마스킹 후 저장) · `flowlink.security.cors-origins`(`/api/**` CORS 전체 오리진 허용) · 레거시 OIDC 모드(issuer-uri/Keycloak — 인증 모드는 dev | GitHub 둘뿐, SecurityConfig 2분기) · `FLOWLINK_AUTH_ALLOWED_LOGINS`/`FLOWLINK_AUTH_ADMIN_LOGINS` · Vault KV 오버레이(`mount/path/config-path/refresh-seconds`, VaultSecretSource, 시크릿 목록 `source=vault` 배지, Vault `flowlink-config/jwt-secret` — jwt-secret 은 env `FLOWLINK_AUTH_JWT_SECRET` 만) · GithubAuthStartupValidator(jwt-secret 필수 기동 가드 — 미설정 시 자동 생성·DB 저장으로 대체) · 내장 변환(BuiltinTransforms) · 콜백 base env(`flowlink.execution.relay.base-url`/`FLOWLINK_EXECUTION_RELAY_BASEURL` — RelayBaseResolver 는 화면 설정 → 접속 오리진 → localhost) · `state-secret`(`FLOWLINK_EXECUTION_STATE_SECRET` — StateCrypto 는 고정키, CryptoConfig WARN 한 줄).
 - **프로파일 변경**: `application-h2.yml` → `application-local.yml`(**`local` = H2 파일, 기본** — `spring.profiles.default`), Oracle datasource/flyway 는 새 `application-dev.yml`(**`dev` = Oracle**, `SPRING_PROFILES_ACTIVE=dev` + `FLOWLINK_DB_URL`). 구 `=oracle`/`h2` 는 무효.
 - **헬스 프로브**: `/actuator/health` → `GET {ctx}/api/v1/auth/config`(scripts start/status.(sh|ps1)·infra/connect-local.ps1). 새 헬스 컨트롤러 없음.
 - **관리자 부트스트랩**: env 화이트리스트 대신 **테넌트에 ADMIN 이 없을 때 처음 로그인하는 사용자(기존 DB 의 사용자 포함)가 자동 승인 + 전역 ADMIN**(WorkspaceService.touchUser), 이후 로그인은 PENDING → 관리 콘솔(/admin) 승인. dev 모드의 `dev` 는 항상 관리자.
@@ -890,7 +890,7 @@ design/   theme(라이트/다크) · index.css(CSS 변수)
   [AuthController](backend/src/main/kotlin/com/flowlink/security/AuthController.kt)(`/auth/config` mode=github|none · `/me` · `/github/device/start` · `/github/device/poll`, 전자 3개 permitAll).
 - **프론트**([auth/](frontend/src/auth/)): oidc-client-ts 제거 → localStorage 토큰([auth.ts](frontend/src/auth/auth.ts)) + [GitHubLogin](frontend/src/auth/GitHubLogin.tsx)(디바이스 코드 카드·폴링) +
   [AuthContext](frontend/src/auth/AuthContext.tsx) github 모드. axios Bearer + 401 시 토큰 폐기·재로그인. `usePermissions()` 게이팅 불변.
-- **env**: `FLOWLINK_AUTH_GITHUB_ENABLED`(기본 false=dev permitAll). github-enabled=true 면 **서명 시크릿 필수**(없으면 공개 dev 키로 토큰 위조 → [GithubAuthStartupValidator](backend/src/main/kotlin/com/flowlink/security/AuthConfig.kt) 가 기동 실패). 서명 시크릿은 env `FLOWLINK_AUTH_JWT_SECRET`([AppJwt](backend/src/main/kotlin/com/flowlink/security/AppJwt.kt)).
+- **env**: `FLOWLINK_AUTH_GITHUB_ENABLED`(기본 false=dev permitAll). github-enabled=true 면 **서명 시크릿 필수**(없으면 공개 dev 키로 토큰 위조 → [GithubAuthStartupValidator](backend/src/main/kotlin/com/flowlink/security/AuthConfig.kt) 가 기동 실패). 서명 시크릿은 env `FLOWLINK_AUTH_JWT_SECRET`([AppJwt](backend/src/main/kotlin/com/flowlink/security/AppJwt.kt)). (2026-09-14 기동 가드 제거·자동 생성으로 대체)
   client_id 는 Copilot 공개 client 기본(`AuthProperties.clientId`).
 - 검증: 자체서명 HS256 토큰으로 `/me`·`/flows` 인증 통과·역할 매핑·위조서명 401·무토큰 401·실제 GitHub device 코드 발급·브라우저 로그인 화면 렌더.
 
@@ -923,16 +923,16 @@ design/   theme(라이트/다크) · index.css(CSS 변수)
   [GithubLoginEvent](backend/src/main/kotlin/com/flowlink/security/GithubLoginEvent.kt) 로 발행 → [AssistantOAuthService.onGithubLogin](backend/src/main/kotlin/com/flowlink/assistant/AssistantOAuthService.kt) 이
   어시스턴트 토큰 저장소(AES-GCM)에 넣어 **한 번 로그인 = 앱 접속 + Copilot 연결**. Copilot client 일 때만 채택, 폴 스레드에서 event.tenant 스코프 세팅/복원.
 - **적대적 멀티에이전트 리뷰(4관점 → 발견별 검증, 7건 확정) 반영**:
-  (1)[high] github-enabled + jwt-secret 미설정 → 공개 dev 키로 토큰 위조 → **fail-closed 기동 실패**(GithubAuthStartupValidator). (2)[high] 빈 allowed-logins → 누구나 admin: 초기엔 필수화했으나 **사용자 결정으로 선택 유지**(비면 전체 허용 + 기동 WARN)(2026-09-14 제거됨) — jwt-secret 강제는 유지.
+  (1)[high] github-enabled + jwt-secret 미설정 → 공개 dev 키로 토큰 위조 → **fail-closed 기동 실패**(GithubAuthStartupValidator)(2026-09-14 제거됨). (2)[high] 빈 allowed-logins → 누구나 admin: 초기엔 필수화했으나 **사용자 결정으로 선택 유지**(비면 전체 허용 + 기동 WARN)(2026-09-14 제거됨) — jwt-secret 강제는 유지.
   (3)[med] 무인증 device/start 남용 → 폴러 스레드 폭주 → **동시 세션 상한(MAX_SESSIONS=20)**. (4)[med] issuer-uri OIDC 인데 config 가 mode=none 반환 → **`oidc` 모드 반환**(JwtDecoder 유무).
   (5)[med] Vault 블로킹 호출이 @Transactional 안 → DB 커넥션 점유 → **activeSecrets/listNames 트랜잭션 밖으로**. (6)[med] 프론트 일시 /me 실패에 유효 토큰 폐기 → **401/403 일 때만 폐기**. (7)[med] OIDC 모드 프론트가 dev 로 오인 → **oidc 안내 화면**. ((2) allowed-logins·(4)(7) oidc 모드·(5) Vault KV 호출은 2026-09-14 제거됨)
-- 검증: 백엔드 test 전종(GithubAuthStartupValidatorTest·AssistantOAuthLinkTest 포함) + fail-closed 라이브(allowed-logins 없이 github 기동 시 IllegalStateException 으로 중단 — allowed-logins 는 2026-09-14 제거됨, 현재 기동 가드는 jwt-secret 만) + tsc/build.
+- 검증: 백엔드 test 전종(GithubAuthStartupValidatorTest·AssistantOAuthLinkTest 포함) + fail-closed 라이브(allowed-logins 없이 github 기동 시 IllegalStateException 으로 중단 — allowed-logins 는 2026-09-14 제거됨, 현재 기동 가드는 jwt-secret 만(2026-09-14 제거됨)) + tsc/build.
 
 ## 최근 변경 (2026-07-28) — 게스트 모드: github 모드에서 로그인 없이 앱 사용, AI만 로그인 게이트
 
 설계: [docs/superpowers/specs/2026-07-28-guest-mode-design.md](docs/superpowers/specs/2026-07-28-guest-mode-design.md).
 **github 모드(`FLOWLINK_AUTH_GITHUB_ENABLED=true`)의 의미 변경** — 앱 전체 잠금이 아니라 **"앱은 게스트에게 개방, GitHub 로그인 = AI 사용 + 신원 표시 게이트"**. 별도 플래그 없음(github 모드면 항상 게스트 허용).
-- **백엔드**: [SecurityConfig](backend/src/main/kotlin/com/flowlink/security/SecurityConfig.kt) 3분기(OIDC 분기는 2026-09-14 제거 → 현 2분기) — github 게스트 모드는 `/api/v1/assistant/**` 만 `authenticated()`, 나머지 permitAll(Bearer 는 계속 인식 — 로그인 사용자 triggeredBy·Copilot 연결 유지). 레거시 OIDC(issuer-uri) 모드는 기존 엄격 RBAC 그대로, dev 도 무변경. `/auth/me` 비인증은 github 모드에서 `guest`(전권) 반환. jwt-secret fail-closed 기동 가드 유지. `FLOWLINK_AUTH_ALLOWED_LOGINS` 는 "로그인(=AI) 가능 계정" 목록이 됨. (레거시 OIDC 모드·ALLOWED_LOGINS 는 2026-09-14 제거됨)
+- **백엔드**: [SecurityConfig](backend/src/main/kotlin/com/flowlink/security/SecurityConfig.kt) 3분기(OIDC 분기는 2026-09-14 제거 → 현 2분기) — github 게스트 모드는 `/api/v1/assistant/**` 만 `authenticated()`, 나머지 permitAll(Bearer 는 계속 인식 — 로그인 사용자 triggeredBy·Copilot 연결 유지). 레거시 OIDC(issuer-uri) 모드는 기존 엄격 RBAC 그대로, dev 도 무변경. `/auth/me` 비인증은 github 모드에서 `guest`(전권) 반환. jwt-secret fail-closed 기동 가드 유지(2026-09-14 제거됨). `FLOWLINK_AUTH_ALLOWED_LOGINS` 는 "로그인(=AI) 가능 계정" 목록이 됨. (레거시 OIDC 모드·ALLOWED_LOGINS 는 2026-09-14 제거됨)
 - **presence**: [PresenceHandshakeInterceptor](backend/src/main/kotlin/com/flowlink/presence/PresenceHandshakeInterceptor.kt) — github 모드에서 토큰 없는 WS 접속을 dev 방식(쿼리 name, 게스트 닉네임)으로 허용(무효 토큰은 여전히 401). 게스트도 커서·공동편집 참여.
 - **프론트**: [AuthContext](frontend/src/auth/AuthContext.tsx) — github 모드 + 무토큰이면 로그인 화면 대신 **게스트 부트**(`isGuest`), `requestLogin()` 으로 [GitHubLogin](frontend/src/auth/GitHubLogin.tsx) 디바이스 로그인 **모달**. AI 패널 자리엔 [AssistantLoginGate](frontend/src/components/AssistantLoginGate.tsx)(에디터·Mock 편집기), 사이드바 칩은 "게스트 · 로그인". 무토큰 401 은 리로드하지 않음(리로드 루프 방지 — 토큰 있을 때만 폐기·재부트).
 - 검증: [GuestModeSecurityTest](backend/src/test/kotlin/com/flowlink/security/GuestModeSecurityTest.kt)(@SpringBootTest — 게스트 CRUD 허용/assistant 401/로그인 200/무효토큰 401/guest me) + presence 인터셉터 단위 3종 + 라이브 curl(게스트 flows 200·POST 201·assistant 401) + tsc/build/oxlint.
@@ -1249,7 +1249,7 @@ API 도구 UX·비주얼/IA·플로우 통합 3관점 병렬 비평 → 확정 �
 ## 최근 변경 (2026-09-14) — allowed-logins / admin-logins 제거 + 최초 사용자 관리자 부트스트랩 (`refactor/trim-config`)
 - env 화이트리스트/관리자 목록(`FLOWLINK_AUTH_ALLOWED_LOGINS`/`ADMIN_LOGINS`, `AuthProperties.allows/isBootstrapAdmin`) 삭제. **테넌트에 ADMIN 이 없으면 처음 등록되는 사용자가 ADMIN+APPROVED**([WorkspaceService.touchUser](backend/src/main/kotlin/com/flowlink/workspace/WorkspaceService.kt) 단일 등록 경로 — GithubAuthService.complete 도 이걸 호출, `existsByTenantIdAndGlobalRole` 1개 추가, INFO 로그, 동시 첫 로그인 레이스 무시). 신규 사용자는 전부 PENDING, dev 는 항상 관리자(부트스트랩 대상 아님 — 로컬 dev H2 를 github 모드로 켜도 dev 행이 ADMIN 을 선점하지 않게). putMember/putUser 사전 등록 경로는 부트스트랩 대상 아님(초대받은 사람이 관리자가 되는 사고 방지).
 - ⚠ 기존 운영 DB 에 globalRole=ADMIN 행이 없으면(관리자가 env 로만 지정돼 있었다면) **배포 후 처음 로그인하는 신규 사용자**가 ADMIN 이 된다 — 배포 전에 `UPDATE flowlink_app_user SET global_role='ADMIN' WHERE username='<운영자>'` 로 지정할 것.
-- 검증: GithubAuthStartupValidatorTest 3종 + WorkspaceRbacTest 부트스트랩 케이스 + 전체 스위트.
+- 검증: GithubAuthStartupValidatorTest 3종(2026-09-14 삭제됨) + WorkspaceRbacTest 부트스트랩 케이스 + 전체 스위트.
 
 ## 최근 변경 (2026-09-14) — SSRF 가드 제거 (`refactor/trim-config`)
 - `SsrfGuard`·`SsrfBlockedException`·`SsrfGuardTest`·`ExecutionProperties.Ssrf`·yml `flowlink.execution.ssrf.*` 삭제. HTTP/TCP 노드(서버 모드)·Mock 콜백·어시스턴트(Anthropic/Copilot)·GitHub 로그인의 아웃바운드는 **무검사** — 사설망·클라우드 메타데이터·loopback 자유 호출. 스킴 allowlist(http/https)도 함께 사라짐(비 http/https URL 은 RestClient/HttpClient 가 실패시킴 → 노드 실패 `⚠ 요청 실패: …`). h2 프로파일(2026-09-14 `local` 로 개명)은 이미 `enabled: false` 였으므로 로컬 동작 동일. **사내망 배포 전제.** NotificationService 의 자체 스킴 검증은 유지.
@@ -1257,7 +1257,7 @@ API 도구 UX·비주얼/IA·플로우 통합 3관점 병렬 비평 → 확정 �
 ## 최근 변경 (2026-09-14) — Vault KV 제거(Transit/AppRole 만 유지) (`refactor/trim-config`)
 - 삭제: `VaultSecretSource`(KV v2 클라이언트·TTL 캐시), [SecretService](backend/src/main/kotlin/com/flowlink/secret/SecretService.kt) 의 Vault 오버레이(listNames/activeSecrets)·`SecretView.source`(프론트 SecretsDialog `Vault` 배지/읽기전용 그룹 포함), [AppJwt](backend/src/main/kotlin/com/flowlink/security/AppJwt.kt) 의 Vault `jwt-secret` 조회, `VaultProperties` enabled/mount/path/config-path/refresh-seconds, env `FLOWLINK_VAULT_ENABLED`/`MOUNT`/`PATH`/`CONFIG_PATH`/`REFRESH_SECONDS`.
 - 유지: `VaultTokenSource`(정적 토큰+AppRole)·`TransitCrypto`·`RoutingCrypto`·`CryptoConfig`·재암호화 이관. **스위치는 `flowlink.vault.transit.enabled` 하나.**
-- ⚠ github 모드 jwt-secret 은 env `FLOWLINK_AUTH_JWT_SECRET` **필수** — Vault KV 에만 두던 배포는 기동 실패(fail-closed). AppRole 정책도 `transit/encrypt|decrypt/flowlink` 2경로면 충분.
+- ⚠ github 모드 jwt-secret 은 env `FLOWLINK_AUTH_JWT_SECRET` **필수** — Vault KV 에만 두던 배포는 기동 실패(fail-closed). AppRole 정책도 `transit/encrypt|decrypt/flowlink` 2경로면 충분.(2026-09-14 자동 생성으로 대체 — 필수 아님)
 
 ## 최근 변경 (2026-09-14) — 프로파일 정리: local(H2 파일, 기본) / dev(Oracle) (`refactor/trim-config`)
 - `application-h2.yml` → [application-local.yml](backend/src/main/resources/application-local.yml)(이름만), Oracle datasource(url/user/password)·flyway 블록을 `application.yml` 에서 새 [application-dev.yml](backend/src/main/resources/application-dev.yml) 로 분리. `application.yml` 은 공통 + `spring.profiles.default: local`(프로파일 미지정 = local). `scripts/start.*` 기본도 `local`. Kotlin 코드에 프로파일 문자열 판정은 없어 코드 변경 0.
@@ -1269,6 +1269,11 @@ API 도구 UX·비주얼/IA·플로우 통합 3관점 병렬 비평 → 확정 �
 - 유지: `StateCrypto.DEV_SECRET` 값 그대로 → env 미설정(dev 키)으로 쓰던 로컬 DB 는 그대로 열린다.
 - ⚠ `FLOWLINK_EXECUTION_STATE_SECRET` 을 설정해 운영하던 DB 는 시크릿·대기 스냅샷·Copilot 토큰 **전부 복호화 불가**(AEADBadTagException — Transit 모드의 레거시 폴백도 고정키). 배포 전 구 버전에서 Transit 전환 기동으로 재암호화 이관을 끝내거나 시크릿 재입력.
 - ⚠ 남아 있는 `FLOWLINK_EXECUTION_RELAY_BASEURL` env 는 조용히 무시된다(relaxed binding·unknown field) — 스케줄/웹훅 실행(요청 컨텍스트 없음)의 콜백 base 가 localhost 로 떨어지므로 ⚙ 설정에 저장할 것.
+
+## 최근 변경 (2026-09-14) — jwt-secret 자동 생성·저장, 기동 가드 제거 (`refactor/trim-config`)
+- [AppJwt](backend/src/main/kotlin/com/flowlink/security/AppJwt.kt) 가 서명 시크릿을 env `FLOWLINK_AUTH_JWT_SECRET` → [SettingsService](backend/src/main/kotlin/com/flowlink/settings/SettingsService.kt) `auth.jwt-secret`(default 테넌트) → SecureRandom 32B Base64 생성·저장(INFO 한 줄) 순으로 결정. SHA-256 32B 파생은 동일. `github-enabled` 와 무관하게 항상 수행(dev 모드에도 행 하나 생김).
+- 삭제: `GithubAuthStartupValidator`(AuthConfig.kt)·`AppJwt.hasSecret`·dev 폴백 키·WARN, `GithubAuthStartupValidatorTest`. GuestModeSecurityTest 는 jwt-secret 프로퍼티를 빼 자동 생성 경로를 커버.
+- ⚠ 시크릿이 `flowlink_app_setting` 에 **평문** 저장 — DB 읽기 권한 = 관리자 토큰 위조 가능(사내망 전제). 다중 인스턴스가 같은 DB 로 동시에 첫 기동하면 `uq_app_setting` 충돌로 한쪽 기동 실패 가능(EC2 단일 jar 라 실제 영향 낮음). DB 를 새로 만들면 재생성 → 기존 토큰 무효(재로그인만).
 
 ## 참고 문서
 - `backend/README.md` — 백엔드 구조·설정·API 요약 · `frontend/README.md` · `infra/README.md`(배포)

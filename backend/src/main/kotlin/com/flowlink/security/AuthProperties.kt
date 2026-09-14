@@ -8,9 +8,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties
  *
  * @property githubEnabled true 면 GitHub 게스트 모드(앱은 개방, assistant API(`/api/v1/assistant/…`)만 로그인 필수 — 앱이 자체 JWT 검증).
  *   false/미설정이면 dev(permitAll).
- *   ⚠ 활성 시 [GithubAuthStartupValidator] 가 jwtSecret 을 **강제**(미설정 시 기동 실패 — 토큰 위조 방지).
- * @property jwtSecret 앱 JWT 서명/검증 HMAC 시크릿(SHA-256 파생 32B). **github-enabled 시 필수**(미설정 시 기동 실패 —
- *   없으면 공개 dev 키로 서명돼 누구나 위조 가능). dev 모드(github-disabled)에선 미사용이라 폴백 키 + WARN.
+ * @property jwtSecret 앱 JWT 서명/검증 HMAC 시크릿(SHA-256 파생 32B). 미설정이면 [AppJwt] 가 기동 시 자동 생성해
+ *   설정 테이블(auth.jwt-secret)에 저장(재시작에도 유지). env 로 주면 그것이 우선.
  * @property tokenTtlHours 발급 JWT 유효시간(기본 12h).
  * @property clientId GitHub 디바이스 플로우 client_id(기본 Copilot 공개 client — 코파일럿 로그인과 동일 UX).
  */

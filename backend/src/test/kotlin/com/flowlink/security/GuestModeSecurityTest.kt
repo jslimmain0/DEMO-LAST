@@ -13,6 +13,7 @@ import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 
 /**
  * github 게스트 모드 보안 경계 — 앱은 로그인 없이 개방되고 assistant API(/api/v1/assistant 이하)만 로그인 필수.
+ * (jwt-secret 미설정 → 자동 생성 경로)
  * (스키마: H2 인메모리 + create-drop, Flyway off — ExecutionSuspensionRepositoryTest 와 동일 관례.)
  */
 @SpringBootTest
@@ -25,7 +26,6 @@ import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
     "spring.flyway.enabled=false",
     "spring.jpa.hibernate.ddl-auto=create-drop",
     "flowlink.auth.github-enabled=true",
-    "flowlink.auth.jwt-secret=guest-mode-test-secret",
 ])
 class GuestModeSecurityTest {
 

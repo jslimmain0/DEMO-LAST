@@ -31,7 +31,6 @@ class SecurityConfig {
     @Bean
     fun securityFilterChain(http: HttpSecurity,
                             jwtDecoder: ObjectProvider<JwtDecoder>,
-                            props: SecurityProperties,
                             authProps: AuthProperties): SecurityFilterChain {
         http
             .csrf { it.disable() }          // 상태 비저장 토큰 인증
@@ -53,7 +52,7 @@ class SecurityConfig {
                 .oauth2ResourceServer { oauth ->
                     oauth.jwt { jwt -> jwt.jwtAuthenticationConverter(JwtRoleConverter()) }
                 }
-                .addFilterAfter(TenantClaimFilter(props.tenantClaim),
+                .addFilterAfter(TenantClaimFilter(),
                     BearerTokenAuthenticationFilter::class.java)
             log.info("보안: GitHub 게스트 모드 — 앱 개방(로그인 선택), /api/v1/assistant/** 만 로그인 필수")
         } else {

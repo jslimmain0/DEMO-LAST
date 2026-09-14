@@ -76,6 +76,42 @@ docker compose -f infra/docker-compose.yml up -d      # Vault(Transit KEK)
 - **로그인**: 미설정이면 dev(로그인 없음). `FLOWLINK_AUTH_GITHUB_ENABLED=true` 면 GitHub 계정(디바이스 플로우)으로 로그인 → **같은 로그인이 어시스턴트 Copilot 연결까지 이어짐**. 게스트도 앱 사용 가능(AI 만 로그인 게이트). **첫 로그인 사용자가 전역 관리자로 부트스트랩**되고 이후 사용자는 관리 콘솔에서 승인.
 - 상세 런북: **[infra/README.md](infra/README.md)**.
 
+## 환경변수
+
+`flowlink.*` 는 yml 에 없고 코드 기본값(backend `*Properties.kt`) — env 로만 덮어쓴다.
+
+| 변수 | 기본 | 용도 |
+|---|---|---|
+| `SPRING_PROFILES_ACTIVE` | `local` | `local`=H2 파일 / `dev`=Oracle |
+| `FLOWLINK_PORT` | `18080` | 서버 포트 |
+| `FLOWLINK_CONTEXT_PATH` | (비움=루트) | 경로 접두사 배포(`/flowlink` — 앞 슬래시 필수, 끝 슬래시 없음) |
+| `FLOWLINK_H2_FILE` | `~/flowlink-h2db/flowlink` | local DB 파일 |
+| `FLOWLINK_DB_URL` | `jdbc:oracle:thin:@//localhost:1521/FREEPDB1` | dev Oracle |
+| `FLOWLINK_DB_USER` / `FLOWLINK_DB_PASSWORD` | `flowlink` / `flowlink` | dev Oracle 계정 |
+| `FLOWLINK_AUTH_GITHUB_ENABLED` | `false` | GitHub 게스트 모드(미설정=dev permitAll) |
+| `FLOWLINK_AUTH_JWT_SECRET` | (자동 생성) | 앱 JWT 서명키 — 미설정이면 기동 시 생성해 설정 테이블(`auth.jwt-secret`)에 저장, env 가 우선 |
+| `FLOWLINK_AUTH_TOKEN_TTL_HOURS` | `12` | 발급 JWT 유효시간 |
+| `FLOWLINK_AUTH_CLIENT_ID` | Copilot 공개 client | 디바이스 플로우 client_id |
+| `FLOWLINK_EXECUTION_HTTP_CONNECT_TIMEOUT_MS` | `5000` | HTTP 노드 연결 타임아웃 |
+| `FLOWLINK_EXECUTION_HTTP_READ_TIMEOUT_MS` | `30000` | HTTP 노드 읽기 타임아웃 |
+| `FLOWLINK_EXECUTION_HTTP_MAX_RESPONSE_BYTES` | `5242880` | 초과 응답은 노드 실패 |
+| `FLOWLINK_EXECUTION_MAX_NODES_PER_RUN` | `200` | 한 실행의 노드 수 상한 |
+| `FLOWLINK_EXECUTION_WORKER_POOL_SIZE` | `8` | 비동기 실행/재개 스레드 풀 |
+| `FLOWLINK_EXECUTION_WORKER_QUEUE_CAPACITY` | `100` | 초과 제출은 429 |
+| `FLOWLINK_VAULT_TRANSIT_ENABLED` | `false` | Vault Transit(KEK) 봉투 암호화 스위치 |
+| `FLOWLINK_VAULT_ADDRESS` | `http://localhost:8200` | Vault 주소 |
+| `FLOWLINK_VAULT_TOKEN` | (없음) | 정적 토큰(AppRole 미설정 시) |
+| `FLOWLINK_VAULT_TRANSIT_MOUNT` / `FLOWLINK_VAULT_TRANSIT_KEY` | `transit` / `flowlink` | Transit 마운트 / KEK 키 이름 |
+| `FLOWLINK_VAULT_APPROLE_ROLE_ID` / `FLOWLINK_VAULT_APPROLE_SECRET_ID` | (없음) | AppRole 인증 — 둘 다 주면 정적 토큰보다 우선 |
+| `FLOWLINK_VAULT_APPROLE_MOUNT` | `approle` | AppRole 마운트 |
+| `FLOWLINK_ASSISTANT_MAX_TOKENS` | `16384` | 어시스턴트 응답 최대 토큰(Copilot 모델 한도로 자동 클램프) |
+| `FLOWLINK_ASSISTANT_MAX_CONCURRENT` | `4` | 동시 LLM 호출 상한(초과 429) |
+| `FLOWLINK_RETENTION_EXECUTION_DAYS` | `90` | 끝난 실행 이력 보존 일수(0=끄기) |
+| `FLOWLINK_RETENTION_FLOW_VERSIONS_KEEP` | `100` | flow 당 유지할 버전 수(0=끄기) |
+| `FLOWLINK_PLUGINS_DIR` | `plugins` | 변환 플러그인 JAR 디렉터리(작업 디렉터리 기준) |
+
+스크립트/JVM 전용(`FLOWLINK_JAVA_OPTS`·`FLOWLINK_WINROOT`·`FLOWLINK_TLS_INSECURE`)은 [운영가이드 §10](docs/운영가이드.md).
+
 ## 더 보기
 
 - **[docs/guide/](docs/guide/README.md)** — 사용 가이드 (심플 + 심화 15챕터, 스크린샷)

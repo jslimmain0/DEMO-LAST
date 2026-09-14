@@ -140,12 +140,12 @@ graphJson 파싱 → Kahn 위상정렬 → 노드 순차 처리 → IF는 단일
 
 ### 보안
 - 인증: `FLOWLINK_AUTH_GITHUB_ENABLED=true` 면 GitHub 게스트 모드(자체 JWT 검증), 미설정 시 dev permitAll
-- 멀티테넌시: JWT claim(기본 "tenant") → `TenantContext`(ThreadLocal) → 쿼리 `tenant_id` 필터
+- 멀티테넌시: JWT claim "tenant"(AppJwt.CLAIM_TENANT 고정, 설정 없음) → `TenantContext`(ThreadLocal) → 쿼리 `tenant_id` 필터
 - HTTP req/res 본문은 항상 저장하되 시크릿 마스킹(SecretMasker) 적용. 마스킹은 시크릿 볼트 값에 한정(노드에 직접 적은 토큰은 그대로 저장), 시크릿 조회 실패 시 마스킹 없이 저장(WARN).
 - IF 표현식: SpEL `SimpleEvaluationContext`(읽기전용) 샌드박스
 
-### 주요 설정 (`application.yml` / `ExecutionProperties`)
-`flowlink.execution.*`: http 타임아웃·max-response-bytes(5MB)·max-nodes-per-run(200)
+### 주요 설정 (env)
+`flowlink.*` 는 yml 에 없고 코드 기본값(`*Properties.kt`) — env 로만 덮어쓴다(전체 표: [README '환경변수'](README.md#환경변수)). `application.yml` 은 Spring 공통(profiles.default local·JPA·업로드 20MB·FLOWLINK_PORT/CONTEXT_PATH 플레이스홀더·graceful)만.
 (외부 콜백은 백엔드가 `/relay/{execId}/cb/{nodeId}` 로 직접 수신 → 자동 재개. 별도 relay 프로세스·설정 없음)
 
 ---
@@ -209,6 +209,7 @@ design/   theme(라이트/다크) · index.css(CSS 변수)
 - **관리자 부트스트랩**: env 화이트리스트 대신 **테넌트에 ADMIN 이 없을 때 처음 로그인하는 사용자(기존 DB 의 사용자 포함)가 자동 승인 + 전역 ADMIN**(WorkspaceService.touchUser), 이후 로그인은 PENDING → 관리 콘솔(/admin) 승인. dev 모드의 `dev` 는 항상 관리자.
 - **변환은 플러그인 전용**: 새 인스턴스는 JAR 업로드 전까지 변환 목록이 비어 있음(`backend/plugin-sample` 참고). 같은 id 는 나중에 로드된 JAR 가 덮어씀.
 - **어시스턴트 Anthropic 직접(api-key) 경로 제거**: `flowlink.assistant.api-key/model/base-url`(`FLOWLINK_ASSISTANT_API_KEY/MODEL/BASE_URL`)·시크릿 볼트 `anthropic-api-key` 조회·Anthropic Messages 포맷(anthropicBody/extractAnthropicText, x-api-key)·authMode "key" 삭제. 자격은 사용자별 GitHub 로그인(Copilot, OpenAI 호환) → 없으면 stub 뿐. AssistantService 의 SecretService 주입 제거. 기존에 Anthropic 키로 쓰던 인스턴스는 무경고로 stub 이 된다.
+- **yml 다이어트**: application.yml 에서 코드 기본값과 같은 줄(spring.application.name·hikari·format_sql·flowlink.* 전부) 삭제 → Spring 공통 30줄만. `SecurityProperties`/`flowlink.security.tenant-claim` 삭제 — 클레임 이름은 [AppJwt.CLAIM_TENANT](backend/src/main/kotlin/com/flowlink/security/AppJwt.kt) 고정, TenantClaimFilter 무인자, PresenceHandshakeInterceptor 의 안 쓰던 tenantClaim 파라미터 제거. env 전체 표는 README '환경변수'.
 - Vault 는 Transit(KEK) 봉투 암호화 + 정적 토큰/AppRole 만 남음(스위치 `FLOWLINK_VAULT_TRANSIT_ENABLED`). 이력 본문의 옛 서술에는 "(2026-09-14 제거됨)" 표기만 덧붙였고 문장은 고치지 않았다.
 
 ## 최근 변경 (2026-06-29)
@@ -584,7 +585,7 @@ design/   theme(라이트/다크) · index.css(CSS 변수)
 - **[RelayBaseResolver](backend/src/main/kotlin/com/flowlink/settings/RelayBaseResolver.kt)** — 우선순위:
   ① 화면(⚙ 설정)에서 저장한 값(DB) → ② env/yml 명시값(`FLOWLINK_EXECUTION_RELAY_BASEURL`) → ③ **실행 요청의
   접속 오리진 자동**(브라우저가 접속한 그 주소가 곧 도달 가능한 서버 주소 — 서버는 `/relay/**` 를 항상 리슨하므로
-  base 는 "밖에 알려줄 주소" 문자열일 뿐) → ④ localhost 폴백. `application.yml` 의 base-url 기본값을 비워
+  base 는 "밖에 알려줄 주소" 문자열일 뿐) → ④ localhost 폴백. `application.yml` 의 base-url 기본값을 비워(yml 줄은 2026-09-14 제거됨 — 코드 기본 null 동일)
   ②를 "명시했을 때만"으로 만듦(`ExecutionProperties.Relay.configured`). (② env 단계·`Relay.configured` 는 2026-09-14 제거됨)
 - **설정 저장소**: `AppSetting`(키-값, 테넌트 스코프, V6 마이그레이션·h2 는 ddl-auto) +
   [SettingsService](backend/src/main/kotlin/com/flowlink/settings/SettingsService.kt) ·
@@ -1239,11 +1240,11 @@ API 도구 UX·비주얼/IA·플로우 통합 3관점 병렬 비평 → 확정 �
 
 ### Mock 어시스턴트: TCP Mock 에도 ✨ AI · max-tokens 16384 · Copilot 출력 한도 클램프 (같은 날)
 - **TCP 편집기에 ✨ AI 버튼**([MockServerEditor](frontend/src/routes/MockServerEditor.tsx) — 이전엔 `isHttp &&` 로 HTTP 만). [MockAssistantService.buildSystemPrompt](backend/src/main/kotlin/com/flowlink/assistant/MockAssistantService.kt) 가 현재 spec 을 보고 **"THIS MOCK IS TCP-ONLY"**(routes 빈 배열 유지·tcp 섹션만·포트/필드·규칙 id 유지) 또는 **"HTTP-ONLY"**(tcp null 유지) 힌트를 붙인다.
-- `flowlink.assistant.max-tokens` yml 기본 4096 → **16384**(`FLOWLINK_ASSISTANT_MAX_TOKENS`, 코드 기본과 일치). Copilot 은 모델별 `max_output_tokens` 를 넘는 `max_tokens` 에 400 을 주므로 [AssistantOAuthService.outputLimit](backend/src/main/kotlin/com/flowlink/assistant/AssistantOAuthService.kt)(`/models` 응답을 10분 캐시, `limits.max_output_tokens`)로 [AssistantService.callLlmText](backend/src/main/kotlin/com/flowlink/assistant/AssistantService.kt) 가 **자동 클램프**(Anthropic 키 경로는 그대로)(2026-09-14 제거됨). 운영가이드 §7 표 갱신.
+- `flowlink.assistant.max-tokens` yml 기본 4096 → **16384**(yml 줄은 2026-09-14 제거됨 — 코드 기본 16384)(`FLOWLINK_ASSISTANT_MAX_TOKENS`, 코드 기본과 일치). Copilot 은 모델별 `max_output_tokens` 를 넘는 `max_tokens` 에 400 을 주므로 [AssistantOAuthService.outputLimit](backend/src/main/kotlin/com/flowlink/assistant/AssistantOAuthService.kt)(`/models` 응답을 10분 캐시, `limits.max_output_tokens`)로 [AssistantService.callLlmText](backend/src/main/kotlin/com/flowlink/assistant/AssistantService.kt) 가 **자동 클램프**(Anthropic 키 경로는 그대로)(2026-09-14 제거됨). 운영가이드 §7 표 갱신.
 
 ## 최근 변경 (2026-09-14) — OIDC(issuer-uri) 리소스 서버 모드 제거 (`refactor/trim-config`)
 - [SecurityConfig](backend/src/main/kotlin/com/flowlink/security/SecurityConfig.kt) **2분기**(GitHub 게스트 모드 / dev permitAll) — `issuer-uri` 기반 OIDC RBAC 분기·`PUBLIC_PATHS`·issuer-uri WARN 삭제. `GET /auth/config` 는 `mode=github|none` 만 반환. 프론트 [AuthContext](frontend/src/auth/AuthContext.tsx) 의 oidc 안내 화면(`blockedOidc`) 삭제. presence 인터셉터의 `guestAllowed` 파라미터 제거(decoder 있음 = github 모드 = 무토큰은 게스트). `application.yml` 의 issuer-uri 대안 주석 삭제.
-- 유지: JwtRoleConverter·TenantClaimFilter·`flowlink.security.tenant-claim`·`spring-boot-starter-oauth2-resource-server` — GitHub 모드의 자체 JWT 검증이 그대로 사용.
+- 유지: JwtRoleConverter·TenantClaimFilter·`flowlink.security.tenant-claim`(2026-09-14 제거됨 — AppJwt.CLAIM_TENANT 고정)·`spring-boot-starter-oauth2-resource-server` — GitHub 모드의 자체 JWT 검증이 그대로 사용.
 - ⚠ `spring.security.oauth2.resourceserver.jwt.issuer-uri` 를 주면 Boot 자동설정이 JwtDecoder 빈을 만들지만 SecurityConfig 는 이를 무시(github-enabled 아니면 dev permitAll) — 경고 없이 조용히 개방되므로 운영 env 에서 제거할 것.
 
 ## 최근 변경 (2026-09-14) — allowed-logins / admin-logins 제거 + 최초 사용자 관리자 부트스트랩 (`refactor/trim-config`)

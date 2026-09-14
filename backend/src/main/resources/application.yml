@@ -1,13 +1,8 @@
+# flowlink.* 설정은 전부 코드 기본값(*Properties) — env 로만 덮어쓴다(README '환경변수' 표).
 spring:
-  application:
-    name: flowlink
   # 공통 설정. DB 는 프로파일별: local=H2 파일(application-local.yml, 기본) / dev=Oracle(application-dev.yml).
   profiles:
     default: local
-  datasource:
-    hikari:
-      maximum-pool-size: 10
-      pool-name: flowlink-pool
   jpa:
     hibernate:
       # dev(Oracle): 엔티티 columnDefinition="text"(PG 문법) 12곳이 validate 와 충돌 → Flyway 가 스키마 단독 소유.
@@ -15,7 +10,6 @@ spring:
     open-in-view: false
     properties:
       hibernate.jdbc.time_zone: UTC
-      hibernate.format_sql: false
       # uuid → 문자열(36) 바인딩 — dev(Oracle varchar2)·local(H2 파일 DB) 공통. 구 h2 프로파일도 이 값을 상속했으므로
       # 기존 .mv.db 의 uuid 컬럼이 CHAR(36) — dev 로 옮기면 local 매핑이 바뀌어 기존 파일 DB 와 충돌한다.
       hibernate.type.preferred_uuid_jdbc_type: CHAR
@@ -34,40 +28,3 @@ server:
     # 프론트 <base href>·콜백 수신 주소·Mock base URL·웹훅 URL 이 전부 이 값을 따른다(SpaStaticConfig·RelayBaseResolver).
     context-path: ${FLOWLINK_CONTEXT_PATH:}
   shutdown: graceful           # 실행 중 워크플로 안전 종료 대비
-
-# Flowlink 고유 설정
-flowlink:
-  # DB 무한 성장 방지 자동 보존 정책 — 6시간 주기 스윕(기동 90초 후 1회 포함). 0 = 끄기.
-  retention:
-    execution-days: 90        # 90일 이전의 끝난 실행(+노드 기록) 자동 삭제 (env FLOWLINK_RETENTION_EXECUTION_DAYS)
-    flow-versions-keep: 100   # flow 당 최신 100개 버전 유지 — 실행/트리거가 참조하는 버전은 보호 (env FLOWLINK_RETENTION_FLOW_VERSIONS_KEEP)
-  execution:
-    http:
-      connect-timeout-ms: 5000
-      read-timeout-ms: 30000
-      max-response-bytes: 5242880        # 5MB 초과 응답은 거절
-    max-nodes-per-run: 200               # 폭주 방지
-  # AI 어시스턴트(자연어 → 플로우). 자격은 사용자별 GitHub 로그인(Copilot 연결) — 미연결이면 stub 모드(샘플 그래프).
-  assistant:
-    max-tokens: ${FLOWLINK_ASSISTANT_MAX_TOKENS:16384}   # 응답 최대 토큰. Copilot 은 모델별 출력 한도(/models max_output_tokens)로 자동 클램프
-  # HashiCorp Vault — Transit(KEK) 봉투 암호화·AppRole 인증. 스위치는 transit.enabled(FLOWLINK_VAULT_TRANSIT_ENABLED) 뿐.
-  # infra 도커의 Vault dev 서버(infra/docker-compose.yml)에 붙거나, 운영 Vault 로 env 를 바꾼다.
-  # 사전 준비: vault secrets enable transit && vault write -f transit/keys/flowlink
-  #   FLOWLINK_VAULT_TRANSIT_ENABLED=true  FLOWLINK_VAULT_ADDRESS=http://localhost:8200  FLOWLINK_VAULT_TOKEN=<토큰>(또는 AppRole)
-  vault:
-    address: ${FLOWLINK_VAULT_ADDRESS:http://localhost:8200}
-    token: ${FLOWLINK_VAULT_TOKEN:}                   # dev 루트 토큰 등 정적 토큰. AppRole 미설정 시 사용
-  # 보안. github-enabled 미설정이면 dev permitAll(로컬).
-  security:
-    tenant-claim: tenant                 # JWT 에서 테넌트(팀) 식별자를 읽을 클레임 이름
-  # 앱 인증 — GitHub 로그인(Copilot 과 동일한 디바이스 플로우). 로그인하면 앱이 자체 JWT(HMAC)를 발급하고,
-  # 그 JWT 를 리소스 서버로 검증 → 로그인 사용자 신원 인식 + 테넌트 격리(앱은 게스트 개방, /api/v1/assistant/** 만 로그인 필수).
-  # 미설정이면 dev permitAll.
-  # 서명 시크릿(jwt-secret): 미설정이면 기동 시 자동 생성해 설정 테이블(auth.jwt-secret)에 저장(재시작에도 유지).
-  #   env FLOWLINK_AUTH_JWT_SECRET 을 주면 그것이 우선.
-  # 운영(EC2)에선 env 로 켠다:
-  #   FLOWLINK_AUTH_GITHUB_ENABLED=true
-  auth:
-    github-enabled: ${FLOWLINK_AUTH_GITHUB_ENABLED:false}
-    jwt-secret: ${FLOWLINK_AUTH_JWT_SECRET:}
-    token-ttl-hours: ${FLOWLINK_AUTH_TOKEN_TTL_HOURS:12}

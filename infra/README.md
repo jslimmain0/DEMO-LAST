@@ -40,7 +40,7 @@ powershell -ExecutionPolicy Bypass -File scripts\status.ps1
 powershell -ExecutionPolicy Bypass -File scripts\stop.ps1
 ```
 
-**운영(EC2)에서 켜는 것들** — 앱 프로세스 env 로 준다(도커 아님):
+**운영(EC2)에서 켜는 것들** — 앱 프로세스 env 로 준다(도커 아님; 전체 env 표: 루트 README '환경변수'):
 
 ```bash
 # GitHub 로그인

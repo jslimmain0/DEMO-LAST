@@ -55,15 +55,16 @@ Gradle 멀티모듈: 루트(앱) + `transform-spi`(변환 계약) + `plugin-samp
 
 JWT 클레임(`preferred_username`·`tenant`·`realm_access.roles`) → [JwtRoleConverter](src/main/kotlin/com/flowlink/security/JwtRoleConverter.kt) `ROLE_*` + TenantClaimFilter → 쿼리 `tenant_id` 격리. (워크플로/폴더/버전은 전역 공유, 실행·mock·secret 은 사용자별.)
 
-## 주요 설정 (`application.yml` / env)
+## 주요 설정 (env)
 
 | 블록 | env(예) | 용도 |
 |---|---|---|
-| `flowlink.execution.*` | — | http 타임아웃·워커 풀·max-nodes-per-run |
+| `flowlink.execution.*` | `FLOWLINK_EXECUTION_HTTP_*`, `FLOWLINK_EXECUTION_WORKER_*`, `FLOWLINK_EXECUTION_MAX_NODES_PER_RUN` | http 타임아웃·워커 풀·max-nodes-per-run |
 | `flowlink.auth.*` | `FLOWLINK_AUTH_GITHUB_ENABLED`, `FLOWLINK_AUTH_JWT_SECRET`(선택, 미설정 시 자동 생성) | GitHub 로그인 |
 | `flowlink.vault.*` | `FLOWLINK_VAULT_TRANSIT_ENABLED`, `FLOWLINK_VAULT_ADDRESS`, `FLOWLINK_VAULT_TOKEN`(또는 `FLOWLINK_VAULT_APPROLE_*`) | Vault Transit(KEK) 봉투 암호화 |
 | `flowlink.assistant.*` | `FLOWLINK_ASSISTANT_MAX_TOKENS` | AI 어시스턴트(응답 토큰 상한 — 자격은 사용자별 GitHub 로그인/Copilot 연결, 서버 키 없음) |
-| `flowlink.security.*` | — | 테넌트 클레임 |
+
+전체 env 목록·기본값: 루트 [README '환경변수'](../README.md#환경변수). `application.yml` 은 Spring 공통(프로파일 기본·JPA·업로드 20MB·port/context-path/graceful)만 남아 있다.
 
 ## DB 마이그레이션
 

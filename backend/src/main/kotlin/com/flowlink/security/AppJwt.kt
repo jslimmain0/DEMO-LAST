@@ -45,7 +45,7 @@ class AppJwt(props: AuthProperties, settings: SettingsService) {
         val claims = JWTClaimsSet.Builder()
             .subject(login)
             .claim("preferred_username", login)
-            .claim("tenant", tenant)
+            .claim(CLAIM_TENANT, tenant)
             .claim("realm_access", mapOf("roles" to roles))
             .issuer("flowlink")
             .issueTime(Date.from(now))
@@ -64,6 +64,8 @@ class AppJwt(props: AuthProperties, settings: SettingsService) {
 
     companion object {
         const val KEY_JWT_SECRET = "auth.jwt-secret"
+        /** 발급 JWT 의 테넌트 클레임 이름 — TenantClaimFilter 가 같은 이름으로 읽는다. */
+        const val CLAIM_TENANT = "tenant"
         val FULL_ROLES = listOf("admin", "editor", "platform-admin") // 자기 도구 — GitHub 인증 사용자에게 전권
     }
 }

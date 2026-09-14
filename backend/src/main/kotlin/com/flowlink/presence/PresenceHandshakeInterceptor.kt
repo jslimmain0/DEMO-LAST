@@ -20,7 +20,6 @@ import java.util.UUID
  */
 class PresenceHandshakeInterceptor(
     private val decoder: JwtDecoder?,
-    private val tenantClaim: String,
     private val flowAccessCheck: (UUID, String) -> Boolean,
 ) : HandshakeInterceptor {
 

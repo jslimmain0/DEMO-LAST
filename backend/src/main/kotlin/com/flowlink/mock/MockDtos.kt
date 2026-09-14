@@ -39,6 +39,8 @@ object MockDtos {
         val requestCount: Int = 0,                 // 요청 기록 수(최근 100 상한)
         val unmatchedRequests: Int = 0,            // 규칙 무매칭(404) 요청 수 — 대시보드 현황/필터
         val currentVersion: Int = 0,
+        /** 응답 전에 실패한 요청 수(프레이밍·코덱 실패 등) — 규칙 무매칭과 구분해서 센다. */
+        val failedRequests: Int = 0,
     )
 
     // ---------- 서버 현황(fleet) — 모든 워크스페이스의 Mock 을 "실제 서버처럼" 한 화면에 ----------
@@ -83,6 +85,7 @@ object MockDtos {
         val currentVersion: Int = 0,
         val updatedAt: Instant? = null,
         val usedBy: List<FlowRef> = emptyList(),   // 이 Mock 의 base URL 을 현재 그래프에 가진(읽을 수 있는) 워크플로 — readable 일 때만
+        val failedRequests: Int = 0,               // 응답 전에 실패한 요청 수(프레이밍·코덱 실패) — 무매칭과 구분
     )
 
     /** 포트 한 줄 — HTTP 게이트웨이(앱 포트, 켜진 HTTP Mock 수) + TCP 리스너(mock 별). state=LISTENING | FAILED | OFF. */

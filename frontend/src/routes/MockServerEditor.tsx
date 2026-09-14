@@ -435,6 +435,7 @@ export function MockServerEditor() {
               {nav.kind === 'rule' && selRule && (
                 <TcpRuleDetail key={selRule.id} rule={selRule} index={tcpRules.findIndex((r) => r.id === selRule.id)} total={tcpRules.length} layout={tcp.requestFields ?? []} readOnly={!canEdit} sources={sourcesFor(null)}
                   codec={spec.codec} onCodec={(codec) => mutate((s) => ({ ...s, codec }))} tcpCharset={tcp.charset ?? 'EUC-KR'}
+                  prefixLength={tcp.prefixLength ?? 4} prefixIncludesSelf={!!tcp.prefixIncludesSelf}
                   onChange={(patch) => setRule(selRule.id, patch)} onMove={(dir) => moveRule(selRule.id, dir)} onDup={() => dupRule(selRule.id)} onRemove={() => removeRule(selRule.id)} />
               )}
               {nav.kind === 'codec' && (
@@ -641,6 +642,13 @@ function TrafficPanel({ id, canEdit, base, spec, onSpec, journal, open, onToggle
   }
   const stateKeys = Object.keys(st.data?.state ?? {})
   const failed = journal.filter((r) => r.error).length // 응답 전에 죽은 요청(프레이밍·코덱 실패 등)
+  // 실패 행의 bodyText 는 **프리픽스를 포함한** 수신 바이트(성공 행은 본문만) — 미리보기로 넘길 땐 떼어낸다.
+  const previewSampleOf = (r: MockRequestLog) => {
+    if (!r.error) return r.bodyText
+    const n = tcp.prefixLength ?? 4
+    if (n > 0 && r.bodyText.length > n && /^[\d\s]+$/.test(r.bodyText.slice(0, n))) return r.bodyText.slice(n)
+    return r.bodyText
+  }
   const tabs: Array<['log' | 'send' | 'preview', string]> = isTcp ? [['log', '전문 기록'], ['preview', '🔍 전문 미리보기']] : [['log', '요청 기록'], ['send', '보내보기']]
   return (
     <section style={{ ...trafficWrap, height: open ? 300 : 36 }} aria-label="트래픽 패널">
@@ -696,7 +704,9 @@ function TrafficPanel({ id, canEdit, base, spec, onSpec, journal, open, onToggle
                           {!isTcpRow && canEdit && <button style={{ ...miniBtn, padding: '3px 8px' }} onClick={() => expectFrom(r)} title="이 요청의 본문/쿼리/헤더 키를 라우트의 예상 요청 필드로">예상 필드로</button>}
                           {!isTcpRow && canEdit && <button style={{ ...miniBtn, padding: '3px 8px' }} onClick={() => draftRule(r)} title="이 요청에 맞는 라우트/규칙 초안(요청 값 eq 조건)">규칙 초안</button>}
                           {!isTcpRow && <button style={{ ...miniBtn, padding: '3px 8px' }} onClick={() => { void replay(r) }} title="같은 요청을 다시 보냅니다">재전송</button>}
-                          {isTcpRow && <button style={{ ...miniBtn, padding: '3px 8px' }} onClick={() => { onPreviewSample(r.bodyText); onTab('preview') }} title="이 전문을 샘플로 미리보기(미저장 편집 반영)">🔍 이 전문으로 미리보기</button>}
+                          {isTcpRow && <button style={{ ...miniBtn, padding: '3px 8px' }} onClick={() => { onPreviewSample(previewSampleOf(r)); onTab('preview') }}
+                            title={r.error ? '받은 바이트에서 길이 프리픽스를 떼고 본문만 샘플로 넘깁니다(미저장 편집 반영)' : '이 전문을 샘플로 미리보기(미저장 편집 반영)'}>
+                            🔍 이 전문으로 미리보기{r.error ? ' (프리픽스 제외)' : ''}</button>}
                         </div>
                       </div>
                     )}

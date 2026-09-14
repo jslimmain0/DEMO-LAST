@@ -237,14 +237,16 @@ class TcpMockRegistry(
                     }
                 }
             } catch (e: MockCodec.CodecException) {
+                // 요청 디코딩·응답 인코딩 어느 쪽이든 같은 예외라 단계 중립 문구로(엔진 메시지가 단계 번호를 담는다).
                 log.warn("TCP mock 코덱 실패(port={}): {}", l.port, e.message) // 전문이 깨진 것 — 연결 종료 + 로그 + 기록
-                recordFailure(l, cs, received ?: ByteArray(0), 500, "요청 코덱 실패: ${e.message}")
+                recordFailure(l, cs, received ?: ByteArray(0), 500, "전문 코덱 실패: ${e.message}")
             } catch (e: Exception) {
                 // 타임아웃/파싱 실패/상대 강제종료 — 연결만 닫는다(리스너는 계속).
                 // 바이트를 이미 받았다면 조용히 사라지지 않게 기록한다(무엇이 왔고 왜 죽었는지).
                 received?.let {
-                    log.warn("TCP mock 처리 실패(port={}, {}바이트): {}", l.port, it.size, e.message ?: e.javaClass.simpleName)
-                    recordFailure(l, cs, it, 500, e.message ?: e.javaClass.simpleName)
+                    val why = e.message ?: e.javaClass.simpleName
+                    log.warn("TCP mock 처리 실패(port={}, {}바이트): {}", l.port, it.size, why)
+                    recordFailure(l, cs, it, 500, "전문 처리 실패: $why")
                 }
             }
         }
@@ -256,15 +258,19 @@ class TcpMockRegistry(
             val secrets = secretProvider.secrets(l.tenantId, l.environment)
             val masks = SecretMasker.variants(secrets.values)
             val raw = String(bytes, cs)
+            val masked = SecretMasker.mask(raw, masks) ?: raw
             val headers = LinkedHashMap<String, String>()
             headers["bytes"] = bytes.size.toString()
             if (bytes.isNotEmpty()) {
-                headers["hex"] = TcpBytes.hexDump(TcpBytes.slice(bytes, 0, HEX_CAP)) + (if (bytes.size > HEX_CAP) " …" else "")
+                // hex 도 마스킹을 지킨다 — 시크릿이 걸렸으면 마스킹된 전문을 다시 인코딩해서 뜬다(원문 바이트 노출 금지).
+                val hexSrc = if (masked == raw) bytes else masked.toByteArray(cs)
+                headers["hex"] = TcpBytes.hexDump(TcpBytes.slice(hexSrc, 0, HEX_CAP)) +
+                    (if (hexSrc.size > HEX_CAP) " …" else "") + (if (masked == raw) "" else " (시크릿 마스킹됨)")
             }
             store.record(l.mockId, MockRuntimeStore.JournalEntry(
                 Instant.now(), "TCP", ":${l.port}", emptyMap(), headers,
-                (SecretMasker.mask(raw, masks) ?: raw).take(MockRuntimeStore.BODY_CAP),
-                null, status, 0, false, null, error.take(ERROR_CAP),
+                masked.take(MockRuntimeStore.BODY_CAP),
+                null, status, 0, false, null, (SecretMasker.mask(error, masks) ?: error).take(ERROR_CAP),
             ))
         } catch (e: Exception) {
             log.debug("TCP 실패 기록 실패: {}", e.message)
@@ -302,6 +308,9 @@ class TcpMockRegistry(
                 if (all.isEmpty()) {
                     return FrameResult.Closed // 아무것도 안 옴 — 정상 종료로 취급(빈 기록 잡음 방지)
                 }
+                if (f == Fill.BROKEN) {
+                    return FrameResult.Bad("전문 ${all.size}바이트를 받는 중 연결이 끊겼습니다 — 보낸 쪽이 전송을 끝내기 전에 연결을 리셋했습니다", all)
+                }
                 if (f != Fill.FULL_EOF) {
                     return FrameResult.Bad(
                         "전문 ${all.size}바이트를 받았지만 상대가 연결을 닫지 않아 전문의 끝을 알 수 없습니다(${SOCKET_TIMEOUT_MS / 1000}초 대기) — 길이 프리픽스를 쓰는 상대라면 연결의 '길이 프리픽스(바이트)'를 설정하세요",
@@ -317,7 +326,8 @@ class TcpMockRegistry(
             }
             if (pf != Fill.FULL) {
                 return FrameResult.Bad(
-                    "길이 프리픽스 ${prefixLen}바이트를 기다렸지만 ${pre.size}바이트만 도착했습니다 — 연결의 '길이 프리픽스(바이트)' 설정을 확인하세요",
+                    if (pf == Fill.BROKEN) "길이 프리픽스 ${prefixLen}바이트를 받는 중 연결이 끊겼습니다(${pre.size}바이트 수신) — 보낸 쪽이 전송을 끝내기 전에 연결을 리셋했습니다"
+                    else "길이 프리픽스 ${prefixLen}바이트를 기다렸지만 ${pre.size}바이트만 도착했습니다 — 연결의 '길이 프리픽스(바이트)' 설정을 확인하세요",
                     pre,
                 )
             }
@@ -338,19 +348,20 @@ class TcpMockRegistry(
             val all = got.toByteArray()
             if (bf != Fill.FULL) {
                 return FrameResult.Bad(
-                    "본문 ${len}바이트를 기다렸지만 ${all.size - prefixLen}바이트만 도착했습니다 — 보낸 쪽의 길이 값이 자기 자신을 포함한다면 '프리픽스 포함 길이'를 켜세요",
+                    if (bf == Fill.BROKEN) "본문 ${len}바이트를 받는 중 연결이 끊겼습니다(${all.size - prefixLen}바이트 수신) — 보낸 쪽이 전송을 끝내기 전에 연결을 리셋했습니다"
+                    else "본문 ${len}바이트를 기다렸지만 ${all.size - prefixLen}바이트만 도착했습니다 — 보낸 쪽의 길이 값이 자기 자신을 포함한다면 '프리픽스 포함 길이'를 켜세요",
                     all,
                 )
             }
             return FrameResult.Ok(all.copyOfRange(prefixLen, all.size))
         }
 
-        /** [fill] 결과 — 요청량 충족 / EOF(상대가 닫음) / 타임아웃. */
-        private enum class Fill { FULL, FULL_EOF, TIMEOUT }
+        /** [fill] 결과 — 요청량 충족 / EOF(상대가 정상적으로 닫음) / 타임아웃 / 연결 끊김(RST 등 I/O 오류). */
+        private enum class Fill { FULL, FULL_EOF, TIMEOUT, BROKEN }
 
         /**
-         * [want] 바이트(음수면 EOF 까지)를 [sink] 로 읽는다. 중간에 끊기거나 타임아웃이어도
-         * 읽은 바이트는 [sink] 에 그대로 남는다(부분 수신 보존).
+         * [want] 바이트(음수면 EOF 까지)를 [sink] 로 읽는다. 타임아웃이든 연결 리셋이든
+         * 읽은 바이트는 [sink] 에 그대로 남는다(부분 수신 보존 — 조용히 버려지지 않게).
          */
         private fun fill(input: InputStream, sink: ByteArrayOutputStream, want: Int): Fill {
             val buf = ByteArray(8192)
@@ -363,6 +374,8 @@ class TcpMockRegistry(
                     return Fill.TIMEOUT
                 } catch (e: EOFException) {
                     return Fill.FULL_EOF
+                } catch (e: IOException) {
+                    return Fill.BROKEN // 상대가 전송 중 연결을 끊음(RST) — 모아둔 바이트는 살린다
                 }
                 if (n < 0) {
                     return Fill.FULL_EOF

@@ -625,6 +625,7 @@ export interface MockServerSummary {
   requestCount?: number     // 요청 기록 수(최근 100 상한)
   unmatchedRequests?: number // 규칙 무매칭(404) 요청 수 — 대시보드 현황
   currentVersion?: number
+  failedRequests?: number   // 응답 전에 실패한 요청 수(프레이밍·코덱 실패) — 무매칭과 구분
 }
 export interface MockFlowRef { id: string; name: string }
 
@@ -644,6 +645,7 @@ export interface MockFleetServer {
   lastRequestAt?: string | null; recentRequests: number; requestCount: number; unmatchedRequests: number
   currentVersion: number; updatedAt?: string | null
   usedBy?: MockFlowRef[]        // 이 Mock 의 base URL 을 쓰는(읽을 수 있는) 워크플로 — readable 일 때만
+  failedRequests?: number       // 응답 전에 실패한 요청 수(프레이밍·코덱 실패) — 무매칭과 구분
 }
 export interface MockFleetPort {
   port: number; kind: 'HTTP' | 'TCP'; state: 'LISTENING' | 'FAILED' | 'OFF'

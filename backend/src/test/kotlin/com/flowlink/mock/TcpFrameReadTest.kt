@@ -5,6 +5,7 @@ import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import java.io.ByteArrayInputStream
 import java.io.InputStream
+import java.net.SocketException
 import java.net.SocketTimeoutException
 import java.nio.charset.StandardCharsets
 
@@ -26,6 +27,19 @@ class TcpFrameReadTest {
             override fun read(b: ByteArray, off: Int, len: Int): Int {
                 val n = src.read(b, off, len)
                 if (n < 0) throw SocketTimeoutException("Read timed out")
+                return n
+            }
+        }
+    }
+
+    /** 바이트를 다 주고 나면 상대가 연결을 리셋하는 스트림(RST → SocketException). */
+    private fun reset(s: String): InputStream {
+        val src = ByteArrayInputStream(s.toByteArray(StandardCharsets.US_ASCII))
+        return object : InputStream() {
+            override fun read(): Int = throw UnsupportedOperationException()
+            override fun read(b: ByteArray, off: Int, len: Int): Int {
+                val n = src.read(b, off, len)
+                if (n < 0) throw SocketException("Connection reset")
                 return n
             }
         }
@@ -92,6 +106,24 @@ class TcpFrameReadTest {
         val bad = TcpMockRegistry.readFrame(hanging("0010ABCDE"), 4, false, MAX) as FrameResult.Bad
         assertThat(bad.reason).contains("본문 10바이트를 기다렸지만 5바이트")
         assertThat(String(bad.received, StandardCharsets.US_ASCII)).isEqualTo("0010ABCDE")
+    }
+
+    @Test
+    fun `전송_중_연결이_끊기면_RST_부분_바이트를_보존한다`() {
+        // 프리픽스는 왔고 본문 전송 중 상대가 리셋(SocketException) — 예전엔 밖으로 던져져 모아둔 바이트가 버려졌다
+        val bad = TcpMockRegistry.readFrame(reset("0010ABC"), 4, false, MAX) as FrameResult.Bad
+        assertThat(bad.reason).contains("본문 10바이트를 받는 중 연결이 끊겼습니다", "3바이트 수신", "리셋")
+        assertThat(String(bad.received, StandardCharsets.US_ASCII)).isEqualTo("0010ABC")
+        // 프리픽스 도중 리셋
+        val pre = TcpMockRegistry.readFrame(reset("00"), 4, false, MAX) as FrameResult.Bad
+        assertThat(pre.reason).contains("길이 프리픽스 4바이트를 받는 중 연결이 끊겼습니다")
+        assertThat(pre.received).hasSize(2)
+        // 한 바이트도 못 받고 리셋되면 정상 종료 취급(기록 잡음 방지)
+        assertThat(TcpMockRegistry.readFrame(reset(""), 4, false, MAX)).isSameAs(FrameResult.Closed)
+        // EOF 모드에서도 부분 보존
+        val eof = TcpMockRegistry.readFrame(reset("0200RAW"), 0, false, MAX) as FrameResult.Bad
+        assertThat(eof.reason).contains("전문 7바이트를 받는 중 연결이 끊겼습니다")
+        assertThat(String(eof.received, StandardCharsets.US_ASCII)).isEqualTo("0200RAW")
     }
 
     @Test

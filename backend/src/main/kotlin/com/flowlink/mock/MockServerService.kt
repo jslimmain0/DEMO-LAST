@@ -75,7 +75,7 @@ class MockServerService(
                 if (shouldListen && listeningPort == null) (tcpRegistry.bindFailure(m.id) ?: "리스너가 열려 있지 않습니다") else null,
                 s.routeCount, if (readable) s.routeLabels else emptyList(), s.tcpRuleCount, s.tcpFieldCount, s.hasCodec, if (readable) s.environment else null,
                 s.lastRequestAt, s.recentRequests, s.requestCount, s.unmatchedRequests, s.currentVersion, m.updatedAt,
-                if (readable) usedBy(m.slug, index, canRead) else emptyList(),
+                if (readable) usedBy(m.slug, index, canRead) else emptyList(), s.failedRequests,
             )
         }
         val httpPort = env.getProperty("local.server.port")?.toIntOrNull()?.takeIf { it > 0 } ?: env.getProperty("server.port")?.toIntOrNull()?.takeIf { it > 0 } ?: 18080
@@ -414,7 +414,9 @@ class MockServerService(
         return MockServerSummary(
             m.id, m.name, m.slug, m.kind.name, m.isEnabled, m.updatedAt, m.workspaceId,
             d.routeCount, d.methods, d.paths, d.tcpPort, d.tcpEnabled, d.routeLabels, d.tcpRuleCount, d.tcpFieldCount, d.hasCodec, d.environment,
-            journal.firstOrNull()?.at, recent, journal.size, journal.count { it.matchedRuleId == null }, m.currentVersionOrZero(),
+            // 무매칭(규칙 문제)과 실패(프레이밍·코덱 — 응답 단계 전에 죽음)를 분리해서 센다.
+            journal.firstOrNull()?.at, recent, journal.size, journal.count { it.matchedRuleId == null && it.error == null },
+            m.currentVersionOrZero(), journal.count { it.error != null },
         )
     }
 

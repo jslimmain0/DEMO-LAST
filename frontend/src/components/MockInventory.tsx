@@ -193,6 +193,7 @@ function InventoryRow({ s, host, tenant, httpPort, contextPath, selected, select
         {live && <span style={{ color: 'var(--fl-ok)', fontWeight: 700 }}>● {s.recentRequests}건/60초 · </span>}
         {s.lastRequestAt ? relTime(s.lastRequestAt) : '요청 없음'}
         {s.unmatchedRequests > 0 && <span style={{ color: 'var(--fl-fail)', fontWeight: 700 }} title="규칙에 안 맞은 요청"> · 무매칭 {s.unmatchedRequests}</span>}
+        {(s.failedRequests ?? 0) > 0 && <span style={{ color: 'var(--fl-fail)', fontWeight: 700 }} title="응답 전에 실패한 요청(길이 프리픽스 불일치·코덱 실패 등) — 편집기 트래픽 패널에서 사유 확인"> · ⚠ 실패 {s.failedRequests}</span>}
       </span>
       <span style={{ textAlign: 'center' }}>
         {usedBy.length > 0

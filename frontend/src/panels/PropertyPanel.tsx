@@ -25,6 +25,10 @@ import { TcpMockLink } from '../components/TcpMockLink'
 import { duplicateKeys, parseOutputKeys } from '../lib/bulkPaste'
 import { parseCurl, toCurl } from '../lib/curl'
 import { computeReachInfo, isUnreachableExecutable } from '../lib/reachable'
+import {
+  isLenFieldName, lenFieldWarning, lenToken, receivedBytes, receivedCompare,
+  requestFrameLine, sumFieldBytes, tcpFrame, type TcpFrame,
+} from '../lib/tcpLen'
 import { useEnvStore, activeEnvVars, activeEnvName } from '../lib/environments'
 import { useRunInput } from '../lib/runInput'
 import { bindingToToken, isTokenizable, tokenRegex } from '../lib/tokenGrammar'
@@ -1405,6 +1409,12 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
         )}
 
         {node.type === 'tcp' && (() => {
+          // 길이가 둘(소켓 프리픽스 / 전문 안 길이 필드)이라 헷갈리는 지점 — 산술을 늘 펼쳐 보여준다.
+          const reqFrame = tcpFrame(sumFieldBytes(node.tcpRequest), node.tcpPrefixLength, node.tcpPrefixIncludesSelf)
+          const respFrame = tcpFrame(sumFieldBytes(node.tcpResponse), node.tcpPrefixLength, node.tcpPrefixIncludesSelf)
+          // 방금 실행한 결과가 있으면 그것만(실패해서 수신 바이트가 없으면 비교도 없음 — 지난 기록으로 되돌아가 오해를 주지 않게)
+          const gotBytes = single ? receivedBytes(single.responseText) : receivedBytes(lastNe?.responseText)
+          const respCmp = gotBytes != null && (node.tcpResponse?.length ?? 0) > 0 ? receivedCompare(respFrame.body, gotBytes) : null
           const reqCol = (
           <>
             <label style={label}>대상 (host:port)</label>
@@ -1441,12 +1451,17 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
               form={TCP_REQ_FORM} rows={(node.tcpRequest ?? NO_LAYOUT_ROWS) as LayoutRow[]} ariaLabel="요청 필드" readOnly={!canEdit}
               onChange={(r) => update(id, { tcpRequest: r as TcpField[] })}
               title={<label style={{ ...label, margin: 0 }}>요청 필드 (고정길이 · 위→아래 순서로 연결)</label>}
-              summary={(r) => `총 ${r.reduce((a, f) => a + (f.length ?? 0), 0)} 바이트`}
+              summary={(r) => `${r.length}필드`}
               extras={<TcpLayoutPasteButtons mode="request" rows={(node.tcpRequest ?? NO_LAYOUT_ROWS) as LayoutRow[]} encoding={node.tcpEncoding ?? 'EUC-KR'} prefixLength={node.tcpPrefixLength ?? 0} prefixIncludesSelf={!!node.tcpPrefixIncludesSelf} compact readOnly={!canEdit}
                 onApply={(rows, how) => update(id, { tcpRequest: (how === 'replace' ? rows : [...(node.tcpRequest ?? []), ...rows]) as TcpField[] })} />}
             >
-              <TcpReqEditor fields={node.tcpRequest ?? []} sources={sources} sourceType={sourceType} onChange={(r) => update(id, { tcpRequest: r })} />
+              <TcpReqEditor fields={node.tcpRequest ?? []} frame={reqFrame} readOnly={!canEdit} sources={sources} sourceType={sourceType} onChange={(r) => update(id, { tcpRequest: r })} />
             </FieldTextToggle>
+            {/* 길이 산술을 늘 보이게 — 소켓 프리픽스(자동)와 전문 안 길이 필드(수기)가 헷갈리던 지점 */}
+            <div style={lenLine} title="본문 = 요청 필드 선언 길이의 합 · 프리픽스는 소켓 앞에 자동으로 붙습니다">{requestFrameLine(reqFrame)}</div>
+            <p style={{ ...hintP, marginTop: 4 }}>
+              전문 안 길이 필드는 <code style={codeTag}>{'{{len:4}}'}</code>(본문 바이트) · <code style={codeTag}>{'{{len:frame:4}}'}</code>(프리픽스 포함 전체)로 자동으로 채웁니다.
+            </p>
 
           </>
           )
@@ -1473,7 +1488,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
                   form={TCP_RESP_FORM} rows={(node.tcpResponse ?? NO_LAYOUT_ROWS) as LayoutRow[]} ariaLabel="응답 필드" readOnly={!canEdit}
                   onChange={(r) => syncResp(r as TcpRespField[])}
                   title={<label style={{ ...label, margin: 0 }}>응답 필드 (고정길이 → 출력)</label>}
-                  summary={(r) => `총 ${r.reduce((a, f) => a + (f.length ?? 0), 0)} 바이트`}
+                  summary={(r) => `${r.length}필드`}
                   extras={<TcpLayoutPasteButtons mode="response" rows={(node.tcpResponse ?? NO_LAYOUT_ROWS) as LayoutRow[]} encoding={node.tcpEncoding ?? 'EUC-KR'} prefixLength={node.tcpPrefixLength ?? 0} prefixIncludesSelf={!!node.tcpPrefixIncludesSelf} compact readOnly={!canEdit}
                     onApply={(rows, how) => syncResp((how === 'replace' ? rows : [...(node.tcpResponse ?? []), ...rows]) as TcpRespField[])} />}
                 >
@@ -1481,6 +1496,17 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
                 </FieldTextToggle>
               )
             })()}
+            {/* 응답도 같은 산술 — 선언한 합계와 실제로 받은 바이트가 다르면 그 자리에서 보이게 */}
+            <div style={lenLine} title="응답 필드 선언 길이의 합(프리픽스 제외 본문 기준)">
+              응답 필드 합계 {respFrame.body}B
+              {respFrame.prefix > 0 && <> · 수신 전문은 프리픽스 {respFrame.prefix}B 를 떼고 본문만 슬라이싱</>}
+            </div>
+            {respCmp && (
+              <div style={{ ...lenLine, marginTop: 2, color: respCmp.ok ? 'var(--fl-ok)' : 'var(--fl-put)', fontWeight: 600 }}
+                title={respCmp.ok ? '선언한 응답 필드 합계와 실제 수신 바이트가 같습니다' : '선언한 응답 필드 합계와 실제 수신 바이트가 다릅니다 — 필드 길이나 상대 전문 규격을 확인하세요'}>
+                {respCmp.text}
+              </div>
+            )}
             <p style={{ fontSize: 11.5, color: 'var(--fl-text-muted)', marginTop: 8 }}>응답 필드 이름이 그대로 출력 키가 되어 하위 노드에서 바인딩됩니다. 내장 Mock 서버에 TCP Mock 을 만들어 가짜 대상 시스템을 세울 수 있습니다(이 노드의 Mock 에서 고르기 / 대상 Mock 만들기 버튼).</p>
 
             {canEdit && (
@@ -2009,14 +2035,16 @@ function RowMove({ i, len, onMove }: { i: number; len: number; onMove: (dir: -1 
 }
 
 /** TCP 요청 필드 편집기 — 값은 텍스트+토큰 칩 혼합(TokenInput), 토큰화 불가 bound 는 구조적 칩 유지. */
-function TcpReqEditor({ fields, sources, sourceType, onChange }: { fields: TcpField[]; sources: BindableSource[]; sourceType: (b: Binding) => string | undefined; onChange: (f: TcpField[]) => void }) {
+function TcpReqEditor({ fields, frame, readOnly, sources, sourceType, onChange }: { fields: TcpField[]; frame: TcpFrame; readOnly?: boolean; sources: BindableSource[]; sourceType: (b: Binding) => string | undefined; onChange: (f: TcpField[]) => void }) {
   const upd = (fid: string, patch: Partial<TcpField>) => onChange(fields.map((f) => (f.id === fid ? { ...f, ...patch } : f)))
   let off = 0
-  const total = fields.reduce((a, f) => a + (f.length ?? 0), 0)
   return (
     <>
       {fields.map((f, i) => {
         const start = off; off += f.length ?? 0
+        // 전문 안 길이 필드(length/len/길이…)에 손으로 적은 숫자가 본문·전송 어느 쪽과도 안 맞으면 자문 경고 — 편집은 막지 않는다.
+        const lenish = isLenFieldName(f.name)
+        const warn = lenFieldWarning({ name: f.name, length: f.length, value: f.bound ? null : f.value }, frame)
         return (
         <div key={f.id} style={{ border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', padding: 8, marginBottom: 6 }}>
           <div style={{ display: 'flex', gap: 6, marginBottom: 6, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -2032,6 +2060,14 @@ function TcpReqEditor({ fields, sources, sourceType, onChange }: { fields: TcpFi
             <select style={{ ...field, width: 78 }} value={f.encoding ?? ''} aria-label="필드 인코딩" title="필드 인코딩(비면 노드 인코딩)" onChange={(e) => upd(f.id, { encoding: e.target.value || undefined })}>
               <option value="">(노드)</option>{TCP_ENCODINGS.map((c) => <option key={c} value={c}>{c}</option>)}
             </select>
+            {lenish && !readOnly && (
+              <button
+                onClick={() => upd(f.id, { value: lenToken(f.length), bound: null })}
+                aria-label={`${f.name || '길이'} 필드에 길이 토큰 넣기`}
+                title={`전문 길이를 자동으로 채웁니다 — ${lenToken(f.length)}(본문 ${frame.body}B). 프리픽스 포함 전체(${frame.frame}B)가 필요하면 값을 {{len:frame:${f.length ?? 0}}} 로 고치세요.`}
+                style={lenBtn}
+              >{'{{len}}'}</button>
+            )}
             <RowMove i={i} len={fields.length} onMove={(d) => onChange(moveInList(fields, i, d))} />
             <button onClick={() => onChange(fields.filter((x) => x.id !== f.id))} aria-label="삭제" style={{ width: 26, flexShrink: 0, border: '1px solid var(--fl-border)', borderRadius: 6, background: 'var(--fl-surface)', cursor: 'pointer' }}>×</button>
           </div>
@@ -2046,10 +2082,10 @@ function TcpReqEditor({ fields, sources, sourceType, onChange }: { fields: TcpFi
               placeholder="값 또는 { } 로 데이터 삽입"
             />
           )}
+          {warn && <div style={lenWarn} role="status" title={warn}>⚠ {warn}</div>}
         </div>
       ) })}
-      <div style={{ fontSize: 11, color: 'var(--fl-text-muted)', margin: '2px 0 6px', fontFamily: 'var(--fl-font-mono)' }}>총 {total} 바이트</div>
-      <div style={{ display: 'flex', gap: 6 }}>
+      <div style={{ display: 'flex', gap: 6, marginTop: 2 }}>
         {/* 문자=우측 공백패딩, 숫자=좌측 0패딩(금융 전문 관례) — 새 필드에 관례 기본값을 미리 채운다 */}
         <button onClick={() => onChange([...fields, { id: newId(), name: '', length: 10, value: '', pad: 'right', padChar: ' ' }])} style={{ ...addDashed, flex: 1 }} title="우측 공백 패딩(문자 필드 관례)">+ 문자 필드</button>
         <button onClick={() => onChange([...fields, { id: newId(), name: '', length: 8, value: '', pad: 'left', padChar: '0' }])} style={{ ...addDashed, flex: 1 }} title="좌측 0 패딩(숫자/금액 필드 관례)">+ 숫자 필드</button>
@@ -2061,7 +2097,6 @@ function TcpReqEditor({ fields, sources, sourceType, onChange }: { fields: TcpFi
 function TcpRespEditor({ fields, onChange }: { fields: TcpRespField[]; onChange: (f: TcpRespField[]) => void }) {
   const upd = (fid: string, patch: Partial<TcpRespField>) => onChange(fields.map((f) => (f.id === fid ? { ...f, ...patch } : f)))
   let off = 0
-  const total = fields.reduce((a, f) => a + (f.length ?? 0), 0)
   return (
     <>
       {fields.map((f, i) => {
@@ -2084,8 +2119,7 @@ function TcpRespEditor({ fields, onChange }: { fields: TcpRespField[]; onChange:
           <button onClick={() => onChange(fields.filter((x) => x.id !== f.id))} aria-label="삭제" style={{ width: 26, flexShrink: 0, border: '1px solid var(--fl-border)', borderRadius: 6, background: 'var(--fl-surface)', cursor: 'pointer' }}>×</button>
         </div>
       ) })}
-      <div style={{ fontSize: 11, color: 'var(--fl-text-muted)', margin: '2px 0 6px', fontFamily: 'var(--fl-font-mono)' }}>총 {total} 바이트</div>
-      <button onClick={() => onChange([...fields, { id: newId(), name: '', length: 10, trim: true, type: 'string' }])} style={addDashed}>+ 응답 필드</button>
+      <button onClick={() => onChange([...fields, { id: newId(), name: '', length: 10, trim: true, type: 'string' }])} style={{ ...addDashed, marginTop: 2 }}>+ 응답 필드</button>
     </>
   )
 }
@@ -2152,6 +2186,12 @@ const ghostMini: CSSProperties = { padding: '5px 10px', border: '1px solid var(-
 const smartLink: CSSProperties = { marginTop: 6, padding: '4px 8px', border: 'none', background: 'transparent', color: 'var(--fl-primary)', cursor: 'pointer', fontSize: 12, fontWeight: 600, textAlign: 'left' }
 const snippetChip: CSSProperties = { padding: '2px 8px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-pill)', background: 'var(--fl-surface-2)', color: 'var(--fl-text)', cursor: 'pointer', fontSize: 11.5, fontFamily: 'var(--fl-font-mono)' }
 const offBadge: CSSProperties = { flexShrink: 0, fontSize: 10, fontFamily: 'var(--fl-font-mono)', color: 'var(--fl-text-muted)', background: 'var(--fl-surface-2)', borderRadius: 4, padding: '2px 4px', minWidth: 26, textAlign: 'center' }
+// TCP 길이 산술 — 본문/프리픽스/전송 세 숫자를 늘 보여주는 한 줄(숫자가 많아 mono)
+const lenLine: CSSProperties = { fontSize: 11, color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)', marginTop: 6, lineHeight: 1.5, wordBreak: 'keep-all' }
+// 전문 안 길이 필드 불일치 — 자문(주황), 편집을 막지 않는다
+const lenWarn: CSSProperties = { fontSize: 11, color: 'var(--fl-put)', marginTop: 5, lineHeight: 1.5 }
+const lenBtn: CSSProperties = { flexShrink: 0, padding: '0 6px', height: 26, border: '1px solid color-mix(in srgb, var(--fl-primary) 45%, var(--fl-border))', borderRadius: 6, background: 'var(--fl-surface)', color: 'var(--fl-primary)', cursor: 'pointer', fontSize: 10.5, fontFamily: 'var(--fl-font-mono)', fontWeight: 700 }
+const codeTag: CSSProperties = { fontFamily: 'var(--fl-font-mono)', fontSize: 11, background: 'var(--fl-surface-2)', padding: '1px 4px', borderRadius: 4 }
 function rowMoveBtn(disabled: boolean): CSSProperties {
   return { width: 18, height: 11, border: 'none', background: 'transparent', color: disabled ? 'var(--fl-border)' : 'var(--fl-text-muted)', cursor: disabled ? 'default' : 'pointer', fontSize: 8, lineHeight: '11px', padding: 0 }
 }

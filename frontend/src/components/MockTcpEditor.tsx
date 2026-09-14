@@ -7,6 +7,9 @@ import { mocksApi } from '../api/client'
 import { apiErrorMessage } from '../lib/apiError'
 import { newId } from '../lib/ids'
 import { tcpLayoutForm, type LayoutRow } from '../lib/textForms'
+import {
+  incomingFrameLine, isLenFieldName, lenFieldWarning, lenToken, outgoingFrameLine, sumFieldBytes, tcpFrame,
+} from '../lib/tcpLen'
 import { FieldCodecButton } from './FieldCodecButton'
 import { FieldTextToggle } from './FieldTextToggle'
 import { TcpLayoutPasteButtons } from './TcpLayoutPaste'
@@ -74,21 +77,25 @@ export function TcpLayoutPanel({ tcp, onChange, readOnly, codec, onCodec, source
   const layout = useMemo(() => tcp.requestFields ?? [], [tcp.requestFields])
   const layoutForm = useMemo(() => tcpLayoutForm('layout'), [])
   const setLayout = (next: MockTcpReqField[]) => onChange({ requestFields: next })
+  // 들어올 전문의 모습(본문 · 프리픽스 값) — 길이가 둘이라 헷갈리는 지점을 늘 펴 보여준다.
+  const frame = tcpFrame(sumFieldBytes(layout), tcp.prefixLength ?? 4, tcp.prefixIncludesSelf)
   return (
     <section style={panel}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <h2 style={h2}>⬇ 요청 레이아웃</h2>
-        <span style={{ ...code, marginLeft: 'auto' }}>총 {layout.reduce((a, f) => a + (f.length ?? 0), 0)}B</span>
+        <span style={{ ...code, marginLeft: 'auto' }}>본문 {frame.body}B</span>
       </div>
       <p style={hint}>
         들어온 전문(프리픽스 제외)을 앞에서부터 <b>바이트 길이</b>대로 잘라 이름을 붙입니다 → 규칙 조건·응답 값의 <code style={code}>{'{{ 이름@req }}'}</code>.
         필드 값이 암호화/인코딩돼 오면 그 필드의 <b>◈</b> 로 요청 전 풀기 코덱을 겁니다(매칭·템플릿 전에 적용).
       </p>
+      {/* 들어올 전문의 길이 산술 — 프리픽스 값이 본문만인지 프리픽스까지 포함인지가 여기서 갈린다 */}
+      <div style={lenLine} title="본문 = 요청 필드 선언 길이의 합. 앞에 붙는 길이 프리픽스는 연결 설정에서 정합니다.">{incomingFrameLine(frame)}</div>
       <div style={{ marginTop: 10 }}>
         <FieldTextToggle<LayoutRow>
           form={layoutForm} rows={layout as LayoutRow[]} onChange={(r) => setLayout(r as MockTcpReqField[])}
           readOnly={readOnly} ariaLabel="요청 레이아웃"
-          summary={(r) => `총 ${r.reduce((a, f) => a + (f.length ?? 0), 0)}B · ${r.length}필드`}
+          summary={(r) => `본문 ${sumFieldBytes(r)}B · ${r.length}필드`}
           extras={<TcpLayoutPasteButtons mode="layout" rows={layout as LayoutRow[]} encoding={tcp.charset ?? 'EUC-KR'}
             prefixLength={tcp.prefixLength ?? 4} prefixIncludesSelf={!!tcp.prefixIncludesSelf} readOnly={readOnly}
             onApply={(rows, how) => setLayout((how === 'replace' ? rows : [...(layout as LayoutRow[]), ...rows]) as MockTcpReqField[])} />}
@@ -127,10 +134,12 @@ export function TcpLayoutPanel({ tcp, onChange, readOnly, codec, onCodec, source
 
 // ---------- 규칙 상세 ----------
 
-export function TcpRuleDetail({ rule: r, index, total, layout, readOnly, sources, codec, onCodec, tcpCharset, onChange, onMove, onDup, onRemove }: {
+export function TcpRuleDetail({ rule: r, index, total, layout, readOnly, sources, codec, onCodec, tcpCharset, prefixLength, prefixIncludesSelf, onChange, onMove, onDup, onRemove }: {
   rule: MockTcpRuleSpec; index: number; total: number; layout: MockTcpReqField[]; readOnly?: boolean; sources: BindableSource[]
   codec: MockCodecSpec | null | undefined; onCodec: (c: MockCodecSpec | null) => void
   tcpCharset: string // 서버 인코딩 — 붙여넣기 대화상자의 바이트 길이 대조 기준
+  // 연결 설정의 길이 프리픽스 — 나가는 전문 길이 산술용(선택: 안 넘기면 프리픽스 산술을 생략하고 본문만 표시).
+  prefixLength?: number | null; prefixIncludesSelf?: boolean | null
   onChange: (patch: Partial<MockTcpRuleSpec>) => void; onMove: (d: -1 | 1) => void; onDup: () => void; onRemove: () => void
 }) {
   const fields = useMemo(() => r.responseFields ?? [], [r.responseFields]) // 안정된 참조 — 위 TcpLayoutPanel 주석 참조
@@ -142,7 +151,10 @@ export function TcpRuleDetail({ rule: r, index, total, layout, readOnly, sources
   const names = layout.map((f) => f.name ?? '').filter(Boolean)
   const setField = (fid: string, patch: Partial<MockTcpRespField>) => onChange({ responseFields: fields.map((f) => (f.id === fid ? { ...f, ...patch } : f)) })
   const moveField = (i: number, d: -1 | 1) => onChange({ responseFields: move(fields, i, d) })
-  const bodyTotal = fields.reduce((a, f) => a + (f.length ?? 0), 0)
+  const bodyTotal = sumFieldBytes(fields)
+  // 나가는 전문의 길이 산술 — 프리픽스 폭을 모르면(부모가 안 넘김) 프리픽스 산술과 불일치 경고를 생략한다(오경고 방지).
+  const prefixKnown = prefixLength != null
+  const outFrame = tcpFrame(bodyTotal, prefixLength ?? 0, prefixIncludesSelf)
   const isDefault = !r.contains && conds.every((c) => !c.field)
   // [필드 | 텍스트] 는 같은 responseFields 의 두 보기(무손실 왕복). 템플릿(고급)만 responseFields 를 버리는 파괴적 전환 → 2단계 확인.
   const switchMode = (m: 'fields' | 'text' | 'template') => {
@@ -197,10 +209,15 @@ export function TcpRuleDetail({ rule: r, index, total, layout, readOnly, sources
 
       {/* 응답 */}
       <div style={{ ...box, marginTop: 10 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <span style={boxTitle}>⬆ 응답 전문</span>
-          <span style={{ fontSize: 11.5, color: 'var(--fl-text-muted)' }}>값: <code style={code}>{'{{ 필드@req }}'}</code> 요청 필드 · <code style={code}>{'{{ 이름@secret }}'}</code> 시크릿 · <code style={code}>{'{{seq}}'}</code> <code style={code}>{'{{now}}'}</code> · 길이 프리픽스는 자동</span>
-          {mode !== 'template' && <span style={{ ...code, marginLeft: 'auto' }}>본문 {bodyTotal}B</span>}
+          <span style={{ fontSize: 11.5, color: 'var(--fl-text-muted)' }}>값: <code style={code}>{'{{ 필드@req }}'}</code> 요청 필드 · <code style={code}>{'{{ 이름@secret }}'}</code> 시크릿 · <code style={code}>{'{{seq}}'}</code> <code style={code}>{'{{now}}'}</code> · 전문 안 길이 필드는 <code style={code}>{'{{len:4}}'}</code>(본문)·<code style={code}>{'{{len:frame:4}}'}</code>(프리픽스 포함) · 길이 프리픽스 자체는 자동</span>
+          {/* 응답 길이 산술 — 필드 합계에 길이 프리픽스가 붙어 나간다(둘을 한 줄에) */}
+          {mode !== 'template' && (
+            <span style={{ ...code, marginLeft: 'auto' }} title="응답 필드 선언 길이의 합 + 연결 설정의 길이 프리픽스 = 실제로 나가는 바이트">
+              {prefixKnown ? outgoingFrameLine(outFrame) : `응답 본문 ${bodyTotal}B · 프리픽스는 연결 설정대로 자동`}
+            </span>
+          )}
         </div>
         {mode === 'template' ? (
           <div>
@@ -237,9 +254,13 @@ export function TcpRuleDetail({ rule: r, index, total, layout, readOnly, sources
             >
               <div style={{ display: 'grid', gap: 4 }}>
                 {fields.map((f, i) => {
-                  const off = fields.slice(0, i).reduce((a, x) => a + (x.length ?? 0), 0)
+                  const off = sumFieldBytes(fields.slice(0, i))
+                  // 전문 안 길이 필드(length/len/길이…)에 손으로 적은 숫자 대조 — 자문일 뿐 편집을 막지 않는다.
+                  const lenish = isLenFieldName(f.name)
+                  const warn = prefixKnown ? lenFieldWarning({ name: f.name, length: f.length, value: f.value }, outFrame) : null
                   return (
-                    <div key={f.id} style={row}>
+                    <div key={f.id} style={{ display: 'contents' }}>
+                    <div style={row}>
                       <span style={offBadge} title={`시작 바이트 오프셋 ${off} (본문 기준)`}>@{off}</span>
                       <input style={{ ...input, width: 110, fontFamily: 'var(--fl-font-mono)' }} value={f.name ?? ''} placeholder="이름" disabled={readOnly} onChange={(e) => setField(f.id, { name: e.target.value })} />
                       <input style={{ ...input, width: 58, fontFamily: 'var(--fl-font-mono)' }} type="number" value={f.length ?? 0} title="바이트 길이" disabled={readOnly} onChange={(e) => setField(f.id, { length: Number(e.target.value) })} />
@@ -255,11 +276,19 @@ export function TcpRuleDetail({ rule: r, index, total, layout, readOnly, sources
                         <option value="">(서버)</option>{ENCODINGS.map((c) => <option key={c}>{c}</option>)}
                       </select>
                       <FieldCodecButton field={(f.name ?? '').trim()} codec={codec} onChange={onCodec} sources={sources} defaultSide="response" sides={['response']} kind="tcp" readOnly={readOnly} />
+                      {lenish && !readOnly && (
+                        <button style={lenBtn} onClick={() => setField(f.id, { value: lenToken(f.length) })}
+                          aria-label={`${f.name || '길이'} 필드에 길이 토큰 넣기`}
+                          title={`응답 전문 길이를 자동으로 채웁니다 — ${lenToken(f.length)}(본문 ${bodyTotal}B). 프리픽스 포함 전체가 필요하면 값을 {{len:frame:${f.length ?? 0}}} 로 고치세요.`}
+                        >{'{{len}}'}</button>
+                      )}
                       {!readOnly && <>
                         <button style={miniBtn} onClick={() => moveField(i, -1)} title="위로">↑</button>
                         <button style={miniBtn} onClick={() => moveField(i, 1)} title="아래로">↓</button>
                         <button style={{ ...miniBtn, color: 'var(--fl-fail)' }} onClick={() => onChange({ responseFields: fields.filter((x) => x.id !== f.id) })} aria-label="응답 필드 삭제">×</button>
                       </>}
+                    </div>
+                    {warn && <div style={lenWarn} role="status" title={warn}>⚠ {warn}</div>}
                     </div>
                   )
                 })}
@@ -392,6 +421,11 @@ const code: CSSProperties = { fontFamily: 'var(--fl-font-mono)', fontSize: 11, b
 const input: CSSProperties = { padding: '6px 9px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 12.5 }
 const miniBtn: CSSProperties = { padding: '5px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 12, cursor: 'pointer' }
 const lbl: CSSProperties = { fontSize: 12, fontWeight: 700 }
+// TCP 길이 산술 — 본문/프리픽스/전송 세 숫자를 늘 보여주는 한 줄(숫자가 많아 mono)
+const lenLine: CSSProperties = { fontSize: 11.5, color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)', marginTop: 6, lineHeight: 1.5 }
+// 전문 안 길이 필드 불일치 — 자문(주황), 편집을 막지 않는다
+const lenWarn: CSSProperties = { fontSize: 11, color: 'var(--fl-put)', lineHeight: 1.5, paddingLeft: 36 }
+const lenBtn: CSSProperties = { flexShrink: 0, padding: '4px 6px', border: '1px solid color-mix(in srgb, var(--fl-primary) 45%, var(--fl-border))', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-primary)', cursor: 'pointer', fontSize: 10.5, fontFamily: 'var(--fl-font-mono)', fontWeight: 700 }
 const box: CSSProperties = { border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', padding: 12, background: 'var(--fl-surface-2)' }
 const boxTitle: CSSProperties = { fontSize: 12.5, fontWeight: 700 }
 const subTitle: CSSProperties = { fontSize: 10.5, color: 'var(--fl-text-muted)', fontWeight: 700, margin: '4px 0 3px' }

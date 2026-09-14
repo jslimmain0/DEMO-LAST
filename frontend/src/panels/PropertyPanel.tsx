@@ -18,7 +18,6 @@ import { bindableSources } from '../binding/upstream'
 import type { BindableSource } from '../binding/upstream'
 import { asGraphNode } from '../canvas/graphAdapter'
 import { ANNO_COLORS, catColor, METHOD_COLOR, typeIcon, typeLabel } from '../canvas/nodeMeta'
-import { fieldsToRaw, rawToFields } from '../lib/bodyConvert'
 import { headersForm, jsonBodyForm, kvUrlForm, tcpLayoutForm, type KvRow, type LayoutRow } from '../lib/textForms'
 import { FieldTextToggle } from '../components/FieldTextToggle'
 import { TcpLayoutPasteButtons } from '../components/TcpLayoutPaste'
@@ -498,23 +497,28 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
   // fromText 경고 → 한 줄 안내(없으면 null)
   const warnNote = (ws: Array<{ line: number; reason: string }>): string | null =>
     ws.length ? ws.map((w) => `${w.line}행: ${w.reason}`).join(' · ') : null
+  // 구조형 바디의 텍스트 폼 — [필드|Raw] 토글과 bodyType 변경이 **같은 규약**을 써야 percent 인코딩이 대칭이 된다
+  // (예전엔 토글만 폼을 쓰고 changeBodyType 은 구 bodyConvert 라, Form→JSON 프리셋에서 %2B 가 값으로 굳었다).
+  const bodyForm = (bt: BodyType) => (bt === 'json' ? jsonBodyForm : kvUrlForm)
+  // 현재 본문 필드 → KvRow(id 승계용 prev 겸 직렬화 입력). bound 는 토큰 문자열로.
+  const bodyRows = (withBound: boolean): KvRow[] => (node.fields?.body ?? []).map((f) => ({
+    id: f.id, key: f.key ?? '', value: withBound && f.bound ? bindingToToken(f.bound) : (f.value ?? ''), type: f.type,
+  }))
 
   // [필드 ↔ Raw] 전환 시 현재 내용을 서로 변환(치환). 텍스트 폼(textForms)이 양방향의 단일 규약 — id 는 승계된다.
   const switchBodyMode = (raw: boolean) => {
     if (raw === !!node.jsonRaw) return // 이미 그 모드
     const bt = node.bodyType ?? 'json'
-    const form = bt === 'json' ? jsonBodyForm : kvUrlForm
+    const form = bodyForm(bt)
     const bodyFields = node.fields?.body ?? []
     if (raw) {
       // 필드 → Raw: 키-값(바인딩은 토큰, 타입 보존)을 본문 텍스트로 직렬화
       if (blockRawForBound(bodyFields)) return
-      const rows: KvRow[] = bodyFields.map((f) => ({ id: f.id, key: f.key ?? '', value: f.bound ? bindingToToken(f.bound) : (f.value ?? ''), type: f.type }))
       setBodyConvNote(null)
-      update(id, { jsonRaw: true, rawBody: form.toText(rows) })
+      update(id, { jsonRaw: true, rawBody: form.toText(bodyRows(true)) })
     } else {
       // Raw → 필드: 본문 텍스트를 키-값으로 파싱(실패 시 원문 보존 + 안내)
-      const prevRows: KvRow[] = bodyFields.map((f) => ({ id: f.id, key: f.key ?? '', value: f.value ?? '', type: f.type }))
-      const r = form.fromText(node.rawBody ?? '', prevRows)
+      const r = form.fromText(node.rawBody ?? '', bodyRows(false))
       if (r.rows.length === 0 && r.warnings.length) {
         setBodyConvNote(`Raw 본문을 필드로 변환하지 못했어요: ${r.warnings[0].reason}. 원문은 Raw 에 그대로 있습니다.`)
         update(id, { jsonRaw: false })
@@ -564,11 +568,9 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
     if (raw) {
       if (blockRawForBound(bodyFields)) return
       setBodyConvNote(null)
-      const rows: KvRow[] = bodyFields.map((f) => ({ id: f.id, key: f.key ?? '', value: f.bound ? bindingToToken(f.bound) : (f.value ?? '') }))
-      update(id, { jsonRaw: true, rawBody: kvUrlForm.toText(rows) })
+      update(id, { jsonRaw: true, rawBody: kvUrlForm.toText(bodyRows(true)) })
     } else {
-      const prevRows: KvRow[] = bodyFields.map((f) => ({ id: f.id, key: f.key ?? '', value: f.value ?? '' }))
-      const r = kvUrlForm.fromText(node.rawBody ?? '', prevRows)
+      const r = kvUrlForm.fromText(node.rawBody ?? '', bodyRows(false))
       setBodyConvNote(warnNote(r.warnings))
       const body: NodeField[] = r.rows.map((kv) => ({ id: kv.id, key: kv.key, value: kv.value }))
       update(id, { jsonRaw: false, fields: { params: fields.params ?? [], headers: fields.headers ?? [], body } })
@@ -586,29 +588,35 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
     const oldStruct = STRUCTURED_BODY.includes(old)
     const nextStruct = STRUCTURED_BODY.includes(next)
     if (oldStruct && nextStruct) {
-      // 구조형↔구조형: 필드는 공용이라 그대로. Raw 모드면 rawBody 를 새 포맷으로 변환.
+      // 구조형↔구조형: 필드는 공용이라 그대로. Raw 모드면 rawBody 를 옛 폼으로 읽어 새 폼으로 다시 쓴다
+      // (urlencoded 는 percent 디코딩/인코딩을 거치므로 a+b/c= 같은 값이 %2B 로 굳지 않는다).
       if (node.jsonRaw) {
-        const kvs = rawToFields(node.rawBody ?? '', old)
-        update(id, { bodyType: next, rawBody: kvs ? fieldsToRaw(kvs, next) : (node.rawBody ?? '') })
+        const r = bodyForm(old).fromText(node.rawBody ?? '', bodyRows(false))
+        if (r.rows.length === 0 && r.warnings.length) {
+          setBodyConvNote(`본문을 ${next} 로 변환하지 못했어요: ${r.warnings[0].reason}. 원문은 Raw 에 그대로 있습니다.`)
+          update(id, { bodyType: next, rawBody: node.rawBody ?? '' })
+        } else {
+          setBodyConvNote(warnNote(r.warnings))
+          update(id, { bodyType: next, rawBody: bodyForm(next).toText(r.rows) })
+        }
       } else {
         update(id, { bodyType: next })
       }
     } else if (oldStruct && !nextStruct) {
       // 구조형 → raw/xml(텍스트 전용): 현재 내용을 텍스트로 보이게 + jsonRaw 정리
       let raw = node.rawBody ?? ''
-      if (!node.jsonRaw) {
-        const kvs = (node.fields?.body ?? []).map((f) => ({ key: f.key ?? '', value: f.bound ? bindingToToken(f.bound) : (f.value ?? ''), type: f.type }))
-        raw = fieldsToRaw(kvs, old)
-      }
+      if (!node.jsonRaw) raw = bodyForm(old).toText(bodyRows(true))
       update(id, { bodyType: next, rawBody: raw, jsonRaw: false })
     } else if (!oldStruct && nextStruct) {
       // raw/xml → 구조형: rawBody 파싱 시도(실패하면 Raw 모드 유지해 원문 보존)
-      const kvs = rawToFields(node.rawBody ?? '', next)
-      if (kvs) {
-        const body: NodeField[] = kvs.map((kv) => ({ id: newId(), key: kv.key, value: kv.value, type: kv.type }))
-        update(id, { bodyType: next, jsonRaw: false, fields: { params: fields.params ?? [], headers: fields.headers ?? [], body } })
-      } else {
+      const r = bodyForm(next).fromText(node.rawBody ?? '', bodyRows(false))
+      if (r.rows.length === 0 && r.warnings.length) {
+        setBodyConvNote(`본문을 필드로 변환하지 못했어요: ${r.warnings[0].reason}. 원문은 Raw 에 그대로 있습니다.`)
         update(id, { bodyType: next, jsonRaw: true })
+      } else {
+        setBodyConvNote(warnNote(r.warnings))
+        const body: NodeField[] = r.rows.map((kv) => ({ id: kv.id, key: kv.key, value: kv.value, type: kv.type }))
+        update(id, { bodyType: next, jsonRaw: false, fields: { params: fields.params ?? [], headers: fields.headers ?? [], body } })
       }
     } else {
       update(id, { bodyType: next }) // raw ↔ xml (둘 다 텍스트)

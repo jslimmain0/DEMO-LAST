@@ -50,7 +50,7 @@ class ExecutionController(private val service: ExecutionService) {
     /**
      * TCP 요청 전문 미리보기(전송 없음) — 조립 바이트(hex)·필드 오프셋·오버플로.
      * 본문에 편집 중 노드를 실으면(미저장 편집 실시간 반영) 그걸, 없으면 저장된 그래프의 노드를 조립한다.
-     * 순수 계산(SSRF/네트워크/DB 쓰기 없음)이라 본문 노드는 그대로 조립한다.
+     * 순수 계산(네트워크/DB 쓰기 없음)이라 본문 노드는 그대로 조립한다.
      */
     @PostMapping("/flows/{flowId}/nodes/{nodeId}/tcp-preview")
     fun tcpPreview(

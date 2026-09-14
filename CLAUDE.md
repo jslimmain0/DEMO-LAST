@@ -28,7 +28,7 @@ powershell -ExecutionPolicy Bypass -File scripts\stop.ps1
 ```
 > ⚠️ 스크립트는 세트로 써야 한다(.sh 는 .sh 끼리, .ps1 은 .ps1 끼리) — .sh 는 Git Bash PID 를, .ps1 은 Windows PID 를 PID 파일에 쓰므로 섞으면 stop/status 가 서로의 프로세스를 못 찾는다.
 - DB 접속 override: `FLOWLINK_DB_URL`, `FLOWLINK_DB_USER`, `FLOWLINK_DB_PASSWORD` · 포트: `FLOWLINK_PORT` · **경로 접두사(context path)**: `FLOWLINK_CONTEXT_PATH=/flowlink`(앱 전체가 `/flowlink/` 밑에서 — 운영가이드 §3)
-- 프로파일/인증/Vault 는 env 로 주입(운영): `SPRING_PROFILES_ACTIVE=dev`(Oracle), `FLOWLINK_AUTH_GITHUB_ENABLED=true`, `FLOWLINK_VAULT_TRANSIT_ENABLED=true` — 하단 "최근 변경 (2026-07-19)" 섹션 참조.
+- 프로파일/인증/Vault 는 env 로 주입(운영): `SPRING_PROFILES_ACTIVE=dev`(Oracle), `FLOWLINK_AUTH_GITHUB_ENABLED=true`, `FLOWLINK_VAULT_TRANSIT_ENABLED=true` — 하단 "최근 변경 (2026-09-14)" 섹션 참조.
 - **TLS 신뢰(사내 프록시)**: `start.ps1` 은 Windows 인증서 저장소를 신뢰(`-Djavax.net.ssl.trustStoreType=WINDOWS-ROOT`)해 사내 TLS 가로채기 프록시 뒤에서도 아웃바운드 TLS(AI/Copilot 등)가 된다(끄기 `FLOWLINK_WINROOT=0`). 추가 JVM 옵션은 `FLOWLINK_JAVA_OPTS`(Linux 는 커스텀 truststore 를 이걸로).
   - **최후수단 `FLOWLINK_TLS_INSECURE=true`**: 아웃바운드 TLS 인증서/호스트명 검증을 **전부 끈다**(모든 인증서 신뢰, [FlowlinkApplication.main](backend/src/main/kotlin/com/flowlink/FlowlinkApplication.kt) 이 빈 생성 전 기본 SSLContext 를 trust-all 로 교체). ⚠ MITM 취약 — 신뢰 가능한 사내망 전용, 기동 시 큰 WARN. 정석(WINDOWS-ROOT/CA 추가)이 안 될 때만.
 - **H2 파일 위치**(local 프로파일): 기본 `~/flowlink-h2db/flowlink.mv.db` (사용자 홈). 변경: `FLOWLINK_H2_FILE`. 초기화: 그 `.mv.db` 삭제.
@@ -196,16 +196,25 @@ design/   theme(라이트/다크) · index.css(CSS 변수)
 - OpenAPI 파서: ref 1단계만, YAML 미지원, `allOf/oneOf/anyOf` 미처리
 
 ### 테스트 현황
-- 백엔드 단위 테스트 4개: `ExpressionEvaluatorTest`·`TokenResolverTest`·`MockRuntimeTest` (DB 불필요)
+- 백엔드 단위 테스트: `ExpressionEvaluatorTest`·`TokenResolverTest`·`MockRuntimeTest` 등 (DB 불필요)
 - E2E/통합 테스트 없음, 프론트 테스트 없음
 
 ---
+
+## 최근 변경 (2026-09-14) — 설정 트림: 안 쓰는 기능 통째 제거 (`refactor/trim-config`)
+브랜치 `refactor/trim-config` 11개 커밋 요약. 각 항목의 상세(코드 위치·주의사항)는 문서 하단의 같은 날짜 개별 섹션 참조.
+- **제거 목록**: Springdoc/Swagger UI(`/swagger-ui.html`·`/v3/api-docs`, OpenApiConfig) · Actuator/Prometheus(`management.*`, micrometer) · SSRF 가드(`flowlink.execution.ssrf.*`, SsrfGuard·SsrfBlockedException·SsrfGuardTest) · 캡처 옵션(`capture.request-response-bodies` — HTTP 본문은 항상 SecretMasker 마스킹 후 저장) · `flowlink.security.cors-origins`(`/api/**` CORS 전체 오리진 허용) · 레거시 OIDC 모드(issuer-uri/Keycloak — 인증 모드는 dev | GitHub 둘뿐, SecurityConfig 2분기) · `FLOWLINK_AUTH_ALLOWED_LOGINS`/`FLOWLINK_AUTH_ADMIN_LOGINS` · Vault KV 오버레이(`mount/path/config-path/refresh-seconds`, VaultSecretSource, 시크릿 목록 `source=vault` 배지, Vault `flowlink-config/jwt-secret` — jwt-secret 은 env `FLOWLINK_AUTH_JWT_SECRET` 만) · 내장 변환(BuiltinTransforms).
+- **프로파일 변경**: `application-h2.yml` → `application-local.yml`(**`local` = H2 파일, 기본** — `spring.profiles.default`), Oracle datasource/flyway 는 새 `application-dev.yml`(**`dev` = Oracle**, `SPRING_PROFILES_ACTIVE=dev` + `FLOWLINK_DB_URL`). 구 `=oracle`/`h2` 는 무효.
+- **헬스 프로브**: `/actuator/health` → `GET {ctx}/api/v1/auth/config`(scripts start/status.(sh|ps1)·infra/connect-local.ps1). 새 헬스 컨트롤러 없음.
+- **관리자 부트스트랩**: env 화이트리스트 대신 **테넌트에 ADMIN 이 없을 때 처음 등록(로그인)되는 사용자가 자동 승인 + 전역 ADMIN**(WorkspaceService.touchUser), 이후 로그인은 PENDING → 관리 콘솔(/admin) 승인. dev 모드의 `dev` 는 항상 관리자.
+- **변환은 플러그인 전용**: 새 인스턴스는 JAR 업로드 전까지 변환 목록이 비어 있음(`backend/plugin-sample` 참고). 같은 id 는 나중에 로드된 JAR 가 덮어씀.
+- Vault 는 Transit(KEK) 봉투 암호화 + 정적 토큰/AppRole 만 남음(스위치 `FLOWLINK_VAULT_TRANSIT_ENABLED`). 이력 본문의 옛 서술에는 "(2026-09-14 제거됨)" 표기만 덧붙였고 문장은 고치지 않았다.
 
 ## 최근 변경 (2026-06-29)
 
 ### HTTP 노드 요청 방식: 서버→서버 / 클라이언트→서버 (`reqMode`)
 - HTTP 노드에 `reqMode: 'server' | 'client'` 선택. PropertyPanel `ReqModeToggle`, NodeCard 배지(S→S/C→S)
-- **server**(기본): 백엔드 실행 엔진이 호출(SSRF 가드 적용, 동기) — 기존 동작
+- **server**(기본): 백엔드 실행 엔진이 호출(SSRF 가드 적용(2026-09-14 제거됨), 동기) — 기존 동작
 - **client**: 브라우저가 직접 호출. 실행 엔진이 client 노드에서 `WAITING`으로 중단하고 조립된 요청을
   `ExecutionDetail.pendingClient`로 반환 → 프론트가 `fetch` → `POST /executions/{id}/resume`로 결과 전송 → 재개.
   이 루프를 [Editor.tsx](frontend/src/routes/Editor.tsx) `onRun`의 while + `callClientRequest`로 반복.
@@ -344,7 +353,7 @@ design/   theme(라이트/다크) · index.css(CSS 변수)
   - `MockRuntime`(순수): 라우트 매칭(`/users/{id}` 파라미터·ANY·정의순서 첫매칭)·조건 규칙(AND, eq/ne/exists/contains)·
     응답 템플릿(`{{path.x}}`·`{{query.x}}`·`{{body.x}}`·`{{header.x}}`·`{{body}}`·`{{uuid}}`·`{{seq}}`·`{{now}}`)·
     charset(EUC-KR/MS949→windows-949)·지연 cap·콜백 발사 명세. 단위테스트 7종.
-  - `MockCallbackDispatcher`: 지연 발사 + "OK" 미수신 시 2초 간격 3회 재발송(노티 규약), SsrfGuard 적용.
+  - `MockCallbackDispatcher`: 지연 발사 + "OK" 미수신 시 2초 간격 3회 재발송(노티 규약), SsrfGuard 적용(2026-09-14 제거됨).
 - **ASSERT 노드**: 위 노드 타입 설명 참조. SpEL 조건 거짓 → 노드 실패 → 실행 FAILED.
 - **프론트**: 상단 "Mock 서버" 탭 — 목록(생성·enabled 토글·base URL 복사·삭제) + 편집기(라우트/규칙/템플릿/콜백 편집·보내보기).
   `routes/MockServers.tsx`·`MockServerEditor.tsx`.
@@ -356,7 +365,7 @@ design/   theme(라이트/다크) · index.css(CSS 변수)
   urlencoded 본문이 Spring FormContentFilter 에 소진돼 `getInputStream()` 이 빈 값 → 파라미터 맵에서 `recoverFormBody` 로 복원.
 - **PG 프리셋 제거(사용자 피드백)**: 상태 있는 가짜 결제 게이트웨이(`MockPgSimulator`)는 범용 mock 도구에 특정 도메인을 하드코딩한
   것이라 걷어냄. "결제창 뜨고 콜백"은 커스텀 라우트(HTML 응답+콜백 발사)로 충분. `MockServer.Kind` 는 CUSTOM 하나만.
-- ⚠️ mock 서빙 무인증(테스트 도구 전제, slug 는 비밀값 아님)·상태 없음(범용 목)·콜백 SsrfGuard 적용(운영 프로파일은 사설망 발사 차단).
+- ⚠️ mock 서빙 무인증(테스트 도구 전제, slug 는 비밀값 아님)·상태 없음(범용 목)·콜백 SsrfGuard 적용(운영 프로파일은 사설망 발사 차단)(2026-09-14 제거됨).
 
 ### mock 대상 시스템(mock-server.js) + 데모 워크플로 스위트(demos/)
 설계: [docs/superpowers/specs/2026-07-04-mock-demo-suite-design.md](docs/superpowers/specs/2026-07-04-mock-demo-suite-design.md).
@@ -886,9 +895,9 @@ design/   theme(라이트/다크) · index.css(CSS 변수)
 - **메인 앱은 도커에 안 올린다** — 서버(EC2)에서 `scripts/start.sh`(위 실행 방법)로 단일 jar 실행. [infra/Dockerfile](infra/) 제거.
 - **[infra/docker-compose.yml](infra/docker-compose.yml)** = 지원 인프라만: **Vault**(dev, Transit, :8200) + **Oracle**(`--profile oracle`, 로컬 테스트용).
   Keycloak 서비스·realm·`keycloak-dev.compose.yml` 전부 제거. 앱 서비스도 제거. `docker compose -f infra/docker-compose.yml up -d`.
-- **기본 DB = Oracle**(Postgres 지원 제거) — base `application.yml` 이 Oracle(ddl-auto none·uuid CHAR·flyway {vendor}=oracle·ssrf allow-loopback).
+- **기본 DB = Oracle**(Postgres 지원 제거) — base `application.yml` 이 Oracle(ddl-auto none·uuid CHAR·flyway {vendor}=oracle·ssrf allow-loopback(SSRF 가드 2026-09-14 제거됨)).
   구 `application-oracle.yml`·`db/migration/postgresql/`·PG 드라이버/flyway-pg/testcontainers-pg 제거. **로컬 dev 는 h2 프로파일**(scripts 기본).
-  Oracle 로 기동: `SPRING_PROFILES_ACTIVE=oracle`(scripts h2 기본을 벗어나는 스위치 — 설정은 base) + `FLOWLINK_DB_URL`. 사내/별도 Oracle 로는 URL 만 교체(스키마는 Flyway `db/migration/oracle` 통합 V1+V9~V12 가 생성).
+  Oracle 로 기동: `SPRING_PROFILES_ACTIVE=oracle`(scripts h2 기본을 벗어나는 스위치 — 설정은 base) + `FLOWLINK_DB_URL`. 사내/별도 Oracle 로는 URL 만 교체(스키마는 Flyway `db/migration/oracle` 통합 V1+V9~V12 가 생성). (2026-09-14 프로파일 정리로 대체 — `local`(H2, 기본)/`dev`(Oracle), `=oracle` 무효)
 - [infra/README.md](infra/README.md)·`.env.example`·SERVER-DEVELOPMENT.md 를 새 구조로 재작성. 구 lifecycle(flowlink-start/stop·server-rebuild)은 `scripts/` 로 통합.
 
 ### HashiCorp Vault 시크릿 연동 (시크릿 볼트에 오버레이)
@@ -913,19 +922,19 @@ design/   theme(라이트/다크) · index.css(CSS 변수)
 - **적대적 멀티에이전트 리뷰(4관점 → 발견별 검증, 7건 확정) 반영**:
   (1)[high] github-enabled + jwt-secret 미설정 → 공개 dev 키로 토큰 위조 → **fail-closed 기동 실패**(GithubAuthStartupValidator). (2)[high] 빈 allowed-logins → 누구나 admin: 초기엔 필수화했으나 **사용자 결정으로 선택 유지**(비면 전체 허용 + 기동 WARN) — jwt-secret 강제는 유지.
   (3)[med] 무인증 device/start 남용 → 폴러 스레드 폭주 → **동시 세션 상한(MAX_SESSIONS=20)**. (4)[med] issuer-uri OIDC 인데 config 가 mode=none 반환 → **`oidc` 모드 반환**(JwtDecoder 유무).
-  (5)[med] Vault 블로킹 호출이 @Transactional 안 → DB 커넥션 점유 → **activeSecrets/listNames 트랜잭션 밖으로**. (6)[med] 프론트 일시 /me 실패에 유효 토큰 폐기 → **401/403 일 때만 폐기**. (7)[med] OIDC 모드 프론트가 dev 로 오인 → **oidc 안내 화면**.
+  (5)[med] Vault 블로킹 호출이 @Transactional 안 → DB 커넥션 점유 → **activeSecrets/listNames 트랜잭션 밖으로**. (6)[med] 프론트 일시 /me 실패에 유효 토큰 폐기 → **401/403 일 때만 폐기**. (7)[med] OIDC 모드 프론트가 dev 로 오인 → **oidc 안내 화면**. ((2) allowed-logins·(4)(7) oidc 모드는 2026-09-14 제거됨)
 - 검증: 백엔드 test 전종(GithubAuthStartupValidatorTest·AssistantOAuthLinkTest 포함) + fail-closed 라이브(allowed-logins 없이 github 기동 시 IllegalStateException 으로 중단) + tsc/build.
 
 ## 최근 변경 (2026-07-28) — 게스트 모드: github 모드에서 로그인 없이 앱 사용, AI만 로그인 게이트
 
 설계: [docs/superpowers/specs/2026-07-28-guest-mode-design.md](docs/superpowers/specs/2026-07-28-guest-mode-design.md).
 **github 모드(`FLOWLINK_AUTH_GITHUB_ENABLED=true`)의 의미 변경** — 앱 전체 잠금이 아니라 **"앱은 게스트에게 개방, GitHub 로그인 = AI 사용 + 신원 표시 게이트"**. 별도 플래그 없음(github 모드면 항상 게스트 허용).
-- **백엔드**: [SecurityConfig](backend/src/main/kotlin/com/flowlink/security/SecurityConfig.kt) 3분기 — github 게스트 모드는 `/api/v1/assistant/**` 만 `authenticated()`, 나머지 permitAll(Bearer 는 계속 인식 — 로그인 사용자 triggeredBy·Copilot 연결 유지). 레거시 OIDC(issuer-uri) 모드는 기존 엄격 RBAC 그대로, dev 도 무변경. `/auth/me` 비인증은 github 모드에서 `guest`(전권) 반환. jwt-secret fail-closed 기동 가드 유지. `FLOWLINK_AUTH_ALLOWED_LOGINS` 는 "로그인(=AI) 가능 계정" 목록이 됨.
+- **백엔드**: [SecurityConfig](backend/src/main/kotlin/com/flowlink/security/SecurityConfig.kt) 3분기 — github 게스트 모드는 `/api/v1/assistant/**` 만 `authenticated()`, 나머지 permitAll(Bearer 는 계속 인식 — 로그인 사용자 triggeredBy·Copilot 연결 유지). 레거시 OIDC(issuer-uri) 모드는 기존 엄격 RBAC 그대로, dev 도 무변경. `/auth/me` 비인증은 github 모드에서 `guest`(전권) 반환. jwt-secret fail-closed 기동 가드 유지. `FLOWLINK_AUTH_ALLOWED_LOGINS` 는 "로그인(=AI) 가능 계정" 목록이 됨. (레거시 OIDC 모드·ALLOWED_LOGINS 는 2026-09-14 제거됨)
 - **presence**: [PresenceHandshakeInterceptor](backend/src/main/kotlin/com/flowlink/presence/PresenceHandshakeInterceptor.kt) — github 모드에서 토큰 없는 WS 접속을 dev 방식(쿼리 name, 게스트 닉네임)으로 허용(무효 토큰은 여전히 401). 게스트도 커서·공동편집 참여.
 - **프론트**: [AuthContext](frontend/src/auth/AuthContext.tsx) — github 모드 + 무토큰이면 로그인 화면 대신 **게스트 부트**(`isGuest`), `requestLogin()` 으로 [GitHubLogin](frontend/src/auth/GitHubLogin.tsx) 디바이스 로그인 **모달**. AI 패널 자리엔 [AssistantLoginGate](frontend/src/components/AssistantLoginGate.tsx)(에디터·Mock 편집기), 사이드바 칩은 "게스트 · 로그인". 무토큰 401 은 리로드하지 않음(리로드 루프 방지 — 토큰 있을 때만 폐기·재부트).
 - 검증: [GuestModeSecurityTest](backend/src/test/kotlin/com/flowlink/security/GuestModeSecurityTest.kt)(@SpringBootTest — 게스트 CRUD 허용/assistant 401/로그인 200/무효토큰 401/guest me) + presence 인터셉터 단위 3종 + 라이브 curl(게스트 flows 200·POST 201·assistant 401) + tsc/build/oxlint.
-- ⚠ **github 모드는 더 이상 앱 잠금이 아니다**(앱 접근 잠금은 레거시 OIDC 뿐). **플러그인 JAR 업로드도 게스트 가능**(dev 모드와 동일 수준 — 사내망 전제, 사용자 승인). 게스트 실행은 triggeredBy 미기록.
-  블랭킷 `permitAll` 이라 (h2 프로파일의) `/h2-console` 등 나머지 비-assistant 경로도 함께 무인증 개방된다.
+- ⚠ **github 모드는 더 이상 앱 잠금이 아니다**(앱 접근 잠금은 레거시 OIDC 뿐 — 2026-09-14 제거됨). **플러그인 JAR 업로드도 게스트 가능**(dev 모드와 동일 수준 — 사내망 전제, 사용자 승인). 게스트 실행은 triggeredBy 미기록.
+  블랭킷 `permitAll` 이라 (h2 프로파일(2026-09-14 `local` 로 개명)의) `/h2-console` 등 나머지 비-assistant 경로도 함께 무인증 개방된다.
 
 ## 최근 변경 (2026-08-12) — 스크린샷 사용가이드 세트 (`docs/guide/`)
 

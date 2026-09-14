@@ -10,7 +10,7 @@
 | **로그인** | GitHub 계정 (Copilot 과 동일한 디바이스 플로우) | 앱 env `FLOWLINK_AUTH_GITHUB_ENABLED=true` |
 
 프론트(dist)는 **jar 안에 동봉**되어 내장 톰캣이 화면+API 를 한 프로세스로 서빙한다(nginx 불필요).
-앱은 도커에 넣지 않는다 — 서버에서 `java -jar` 로 직접 뜨고, 도커엔 앱이 의존하는 Vault 만 상시 띄운다.
+앱은 도커에 넣지 않는다 — 서버에서 `java -jar` 로 직접 뜨고, 도커엔 (선택) Vault 만 띄운다.
 
 ---
 

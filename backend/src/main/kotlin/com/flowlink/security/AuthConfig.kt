@@ -8,7 +8,7 @@ import org.springframework.stereotype.Component
 
 /**
  * GitHub 로그인 모드 활성 시 앱 자체 JWT(HS256) 디코더를 리소스 서버 빈으로 등록.
- * 이 빈이 존재하면 [SecurityConfig] 가 인증 필수 모드로 전환된다(issuer-uri 없이도).
+ * 이 빈이 존재하면 [SecurityConfig] 가 인증 필수 모드로 전환된다.
  * github.enabled=false(dev)면 빈 없음 → permitAll.
  */
 @Configuration

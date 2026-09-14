@@ -1,7 +1,7 @@
 # FlowLink 인프라(도커) — 앱이 의존하는 "지원 서비스"만 띄운다.
 #
 #   ⚠ 메인 앱(flowlink.jar)은 도커에 올리지 않는다 — EC2 등 실제 서버에서 scripts/start.sh 로 실행(단일 jar).
-#      여기 도커엔 Vault(시크릿 저장소)만 상시 뜨고, Oracle 은 나중에 별도/사내 서버로 붙일 예정이라
+#      여기 도커엔 Vault(Transit KEK, 선택)만 뜨고, Oracle 은 나중에 별도/사내 서버로 붙일 예정이라
 #      기본 미기동(로컬 테스트용으로만 --profile oracle 로 켤 수 있게 남겨둠 — DDL 은 Flyway db/migration/oracle 이 소유).
 #
 #   Vault 기동:          docker compose -f infra/docker-compose.yml up -d

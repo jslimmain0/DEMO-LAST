@@ -1,5 +1,5 @@
 import type { CSSProperties } from 'react'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { mocksApi } from '../api/client'
 import type { MockTcpPreview } from '../api/types'
 import { parseTcpLayout, tcpLayoutToText, type LayoutMode, type LayoutRow, type ParseWarning } from '../lib/textForms'
@@ -42,16 +42,20 @@ function PasteDialog({ mode, prev, encoding, prefixLength, prefixIncludesSelf, o
   const prefix = useMemo(() => detectPrefix(sample, prefixLength), [sample, prefixLength])
 
   // 샘플 전문 대조 — 기존 tcp-preview 에 일회용 spec(프리픽스 0 = 샘플을 본문으로) 을 실어 레이아웃대로 잘라 본다(저장·소켓 없음)
+  // 요청마다 일련번호를 매겨, 먼저 보낸 느린 응답이 나중 응답을 덮어쓰지 않게 한다(마지막 요청만 반영).
+  const seq = useRef(0)
   useEffect(() => {
-    if (!sample.trim() || parsed.rows.length === 0) { setPreview(null); setPrevErr(null); return }
+    if (!sample.trim() || parsed.rows.length === 0) { seq.current++; setPreview(null); setPrevErr(null); return }
     const body = prefix.kind === 'excl' || prefix.kind === 'incl' ? sample.slice(prefixLength) : sample
+    const ticket = seq // 정리 함수에서 쓸 동일 ref 객체(카운터라 최신 값이 필요 — exhaustive-deps 의 권장 회피)
     const t = window.setTimeout(() => {
+      const my = ++seq.current
       mocksApi.tcpPreview({ charset: encoding, prefixLength: 0, prefixIncludesSelf: false, enabled: false, port: 0,
         requestFields: parsed.rows.map((r) => ({ id: r.id, name: r.name, length: r.length, encoding: r.encoding })), rules: [] }, body)
-        .then((p) => { setPreview(p); setPrevErr(null) })
-        .catch((e) => { setPreview(null); setPrevErr(e instanceof Error ? e.message : String(e)) })
+        .then((p) => { if (my === seq.current) { setPreview(p); setPrevErr(null) } })
+        .catch((e) => { if (my === seq.current) { setPreview(null); setPrevErr(e instanceof Error ? e.message : String(e)) } })
     }, 300)
-    return () => window.clearTimeout(t)
+    return () => { ticket.current++; window.clearTimeout(t) }
   }, [sample, parsed.rows, encoding, prefixLength, prefix.kind])
 
   const sampleValues = preview?.requestFields ?? []
@@ -66,7 +70,7 @@ function PasteDialog({ mode, prev, encoding, prefixLength, prefixIncludesSelf, o
             placeholder={'항목명\t길이\t타입\t기본값\n전문코드\t4\tAN\t0200\n계좌번호\t12\tN\n고객명\t10\tK\n\n또는\n전문코드 4 문자 = 0200\n계좌번호 12 숫자 = {{ acct@set1 }}'} />
           <label style={{ ...lbl, marginTop: 10 }}>샘플 전문(선택) — 로그에서 복사한 실제 전문 한 줄</label>
           <input aria-label="샘플 전문" value={sample} onChange={(e) => setSample(e.target.value)} style={{ ...ta, minHeight: 0, fontFamily: 'var(--fl-font-mono)' }} placeholder="001402001234567890" />
-          {prefix.message && <p style={{ ...hint, color: prefix.kind === 'mismatch' ? 'var(--fl-put, #f5a623)' : 'var(--fl-ok)' }}>{prefix.message}{(prefix.kind === 'excl') !== !prefixIncludesSelf && prefix.kind !== 'none' && prefix.kind !== 'mismatch' ? ' — 현재 설정과 다릅니다' : ''}</p>}
+          {prefix.message && <p style={{ ...hint, color: prefix.kind === 'mismatch' ? 'var(--fl-put, #f5a623)' : prefix.kind === 'none' ? 'var(--fl-text-muted)' : 'var(--fl-ok)' }}>{prefix.message}{(prefix.kind === 'excl') !== !prefixIncludesSelf && prefix.kind !== 'none' && prefix.kind !== 'mismatch' ? ' — 현재 설정과 다릅니다' : ''}</p>}
         </div>
         <div style={{ minWidth: 0 }}>
           <div style={h}>미리보기 <span style={{ fontWeight: 400, color: 'var(--fl-text-muted)' }}>{parsed.rows.length}필드 · 총 {total}B{parsed.headerMapped ? ' · 헤더 열 매핑' : ''}</span></div>

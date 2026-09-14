@@ -95,6 +95,8 @@ function jsonValueLiteral(value: string, type: string | undefined): string {
   // 그 자체로 유효 JSON 이라 실제 배열/객체로 심는다(문자열로 감싸면 필드⇄Raw 왕복이 깨짐).
   // number/boolean 은 아래 분기가 비정합 값을 어차피 따옴표 문자열로 처리한다.
   switch (type) {
+    case 'raw': // 이미 JSON 리터럴/bare 토큰 — 그대로(jsonBodyForm 이 number/boolean/json 타입의 단일 토큰에 씀)
+      return v
     case 'number':
       return v.trim() !== '' && Number.isFinite(Number(v)) ? String(Number(v)) : JSON.stringify(v)
     case 'boolean': {

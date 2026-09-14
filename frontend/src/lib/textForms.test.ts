@@ -82,3 +82,50 @@ describe('tcp DSL — response/layout 모드', () => {
     expect(strip(form.fromText(form.toText(rows), rows).rows, 'request')).toEqual(strip(rows, 'request'))
   })
 })
+
+import { headersForm, jsonBodyForm, kvUrlForm, protectBareTokens, type KvRow } from './textForms'
+
+describe('jsonBodyForm — bare 토큰', () => {
+  it('number+단일 토큰은 따옴표 없이, 되돌리면 prev 타입 승계', () => {
+    const rows: KvRow[] = [{ id: '1', key: 'amount', value: '{{ amt@prev }}', type: 'number' }, { id: '2', key: 'url', value: '/o/{{ id@n1 }}', type: 'string' }]
+    const text = jsonBodyForm.toText(rows)
+    expect(text).toContain('"amount": {{ amt@prev }}')
+    expect(text).toContain('"url": "/o/{{ id@n1 }}"')
+    const back = jsonBodyForm.fromText(text, rows)
+    expect(back.warnings).toEqual([])
+    expect(back.rows).toEqual(rows)
+  })
+  it('문자열 안의 {{ }} 는 건드리지 않는다', () => {
+    const { json, tokens } = protectBareTokens('{"a": "x {{ t@n }} y", "b": {{ u@n }}}')
+    expect(tokens).toEqual(['{{ u@n }}'])
+    expect(JSON.parse(json)).toEqual({ a: 'x {{ t@n }} y', b: '__FLTK0__' })
+  })
+  it('prev 에 없는 bare 토큰은 json 타입', () => {
+    const back = jsonBodyForm.fromText('{"n": {{ x@y }}}', [])
+    expect(back.rows[0]).toMatchObject({ key: 'n', value: '{{ x@y }}', type: 'json' })
+  })
+  it('깨진 JSON 은 rows 비움 + 경고 1', () => {
+    const back = jsonBodyForm.fromText('{"a": ', [])
+    expect(back.rows).toEqual([]); expect(back.warnings).toHaveLength(1)
+  })
+})
+
+describe('kvUrlForm — percent 대칭', () => {
+  it('값의 & = 공백은 인코딩, 토큰은 그대로, 왕복 동일', () => {
+    const rows: KvRow[] = [{ id: '1', key: 'q', value: 'a&b=c d' }, { id: '2', key: 'id', value: '{{ id@n1 }}-x' }]
+    const text = kvUrlForm.toText(rows)
+    expect(text).toBe('q=a%26b%3Dc%20d&id={{ id@n1 }}-x')
+    expect(kvUrlForm.fromText(text, rows).rows).toEqual(rows)
+  })
+  it("'+' 는 디코딩하지 않는다(기존 raw 호환)", () => {
+    expect(kvUrlForm.fromText('a=1+2', []).rows[0].value).toBe('1+2')
+  })
+})
+
+describe('headersForm — 부분 허용', () => {
+  it('콜론 없는 줄은 경고, 나머지는 변환', () => {
+    const back = headersForm.fromText('A: 1\nbroken\nB: {{ t@secret }}', [])
+    expect(back.rows.map((r) => [r.key, r.value])).toEqual([['A', '1'], ['B', '{{ t@secret }}']])
+    expect(back.warnings).toEqual([{ line: 2, text: 'broken', reason: '"이름: 값" 형식이 아닙니다' }])
+  })
+})

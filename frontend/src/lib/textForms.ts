@@ -1,6 +1,7 @@
 import type { Binding } from '../api/types'
+import { fieldsToRaw, headersToRaw, rawToFields } from './bodyConvert'
 import { newId } from './ids'
-import { bindingToToken } from './tokenGrammar'
+import { bindingToToken, segmentValue } from './tokenGrammar'
 
 /**
  * 텍스트 폼 계약 — 구조화 표(필드 목록) ⇄ 사람이 쓰는 텍스트. 순수(런타임 의존성 0).
@@ -247,4 +248,92 @@ export function tcpLayoutForm(mode: LayoutMode): TextForm<LayoutRow> {
     toText: (rows) => tcpLayoutToText(rows, mode),
     fromText: (text, prev) => { const r = parseTcpLayout(text, mode, prev); return { rows: r.rows, warnings: r.warnings } },
   }
+}
+
+// ───────────────────────── 키-값 폼(HTTP 본문/쿼리/헤더) ─────────────────────────
+export interface KvRow { id: string; key: string; value: string; type?: string }
+const BARE_TYPES = new Set(['number', 'boolean', 'json', 'array'])
+const isSingleToken = (v: string) => /^\{\{[^{}]*\}\}$/.test(v.trim())
+
+/** 문자열 밖의 {{…}} 를 "__FLTKn__" 문자열 리터럴로 치환(문자열 안은 그대로) — JSON.parse 가능하게. */
+export function protectBareTokens(text: string): { json: string; tokens: string[] } {
+  const tokens: string[] = []
+  let out = ''
+  let inStr = false
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i]
+    if (inStr) {
+      out += ch
+      if (ch === '\\' && i + 1 < text.length) { out += text[i + 1]; i++ } else if (ch === '"') inStr = false
+      continue
+    }
+    if (ch === '"') { inStr = true; out += ch; continue }
+    if (ch === '{' && text[i + 1] === '{') {
+      const end = text.indexOf('}}', i + 2)
+      if (end > 0) { tokens.push(text.slice(i, end + 2)); out += `"__FLTK${tokens.length - 1}__"`; i = end + 1; continue }
+    }
+    out += ch
+  }
+  return { json: out, tokens }
+}
+
+/** 파싱 결과 행에 prev 의 id 를 승계(같은 위치·같은 키 우선 → 키 첫 매칭 → 새 id). React key·TokenInput 안정. */
+function reuseIds<T extends { id: string; key: string }>(rows: Array<Omit<T, 'id'>>, prev: T[]): T[] {
+  const used = new Set<string>()
+  return rows.map((r, i) => {
+    const p = (prev[i] && prev[i].key === r.key && !used.has(prev[i].id) ? prev[i] : undefined) ?? prev.find((x) => !used.has(x.id) && x.key === r.key)
+    if (p) used.add(p.id)
+    return { ...r, id: p ? p.id : newId() } as T
+  })
+}
+
+export const jsonBodyForm: TextForm<KvRow> = {
+  id: 'json-body', label: 'JSON 본문', placeholder: '{\n  "name": "kim",\n  "amount": {{ amt@prev }}\n}',
+  toText: (rows) => fieldsToRaw(rows.map((r) => (r.type && BARE_TYPES.has(r.type) && isSingleToken(r.value ?? '') ? { ...r, type: 'raw' } : r)), 'json'),
+  fromText: (text, prev) => {
+    const { json, tokens } = protectBareTokens(text)
+    const parsed = rawToFields(json, 'json')
+    if (parsed === null) return { rows: [], warnings: [{ line: 1, text: text.slice(0, 80), reason: '유효한 JSON 객체가 아닙니다' }] }
+    const rows = parsed.map((kv) => {
+      const m = /^__FLTK(\d+)__$/.exec(kv.value)
+      if (!m) return { key: kv.key, value: kv.value.replace(/__FLTK(\d+)__/g, (_s, n) => tokens[Number(n)] ?? _s), type: kv.type }
+      const pt = prev.find((p) => p.key === kv.key)?.type
+      return { key: kv.key, value: tokens[Number(m[1])] ?? kv.value, type: pt && BARE_TYPES.has(pt) ? pt : 'json' }
+    })
+    return { rows: reuseIds<KvRow>(rows, prev), warnings: [] }
+  },
+}
+
+const encodePart = (s: string) => segmentValue(s).map((seg) => (seg.type === 'token' ? seg.raw : encodeURIComponent(seg.text))).join('')
+const decodePercent = (s: string) => s.replace(/(?:%[0-9A-Fa-f]{2})+/g, (m) => { try { return decodeURIComponent(m) } catch { return m } })
+
+export const kvUrlForm: TextForm<KvRow> = {
+  id: 'kv-url', label: 'urlencoded (키=값&키=값)', placeholder: 'a=1&b={{ x@n1 }}',
+  toText: (rows) => rows.filter((r) => r.key.trim() !== '').map((r) => `${encodePart(r.key)}=${encodePart(r.value ?? '')}`).join('&'),
+  fromText: (text, prev) => {
+    const t = text.trim()
+    const rows = t === '' ? [] : t.split('&').filter((p) => p !== '').map((pair) => {
+      const i = pair.indexOf('=')
+      return { key: decodePercent((i >= 0 ? pair.slice(0, i) : pair).trim()), value: i >= 0 ? decodePercent(pair.slice(i + 1)) : '' }
+    })
+    return { rows: reuseIds<KvRow>(rows, prev), warnings: [] }
+  },
+}
+
+export const headersForm: TextForm<KvRow> = {
+  id: 'headers', label: '헤더 (이름: 값 줄바꿈)', placeholder: 'Content-Type: application/json\nX-Api-Key: {{ key@secret }}',
+  toText: (rows) => headersToRaw(rows),
+  fromText: (text, prev) => {
+    const warnings: ParseWarning[] = []
+    const rows: Array<Omit<KvRow, 'id'>> = []
+    text.split(/\r?\n/).forEach((raw, idx) => {
+      const l = raw.trim()
+      if (l === '') return
+      const i = l.indexOf(':')
+      const key = i > 0 ? l.slice(0, i).trim() : ''
+      if (!key) { warnings.push({ line: idx + 1, text: raw, reason: '"이름: 값" 형식이 아닙니다' }); return }
+      rows.push({ key, value: l.slice(i + 1).trim() })
+    })
+    return { rows: reuseIds<KvRow>(rows, prev), warnings }
+  },
 }

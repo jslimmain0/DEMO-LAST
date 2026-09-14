@@ -9,7 +9,7 @@ import javax.crypto.spec.SecretKeySpec
 
 /**
  * suspension run_state 암호화(AES-256-GCM) — ctx 에는 SET 시크릿이 **비마스킹**으로 들어 있어
- * DB 영속 시 평문 노출을 막는다(redaction deny-by-default 정책과 정합).
+ * DB 영속 시 평문 노출을 막는다.
  *
  * 키 = SHA-256(secret). secret 미설정 시 dev 고정키([DEV_SECRET]) — 로컬 개발 편의용이며
  * OIDC(공유) 모드에선 ExecutionService 가 기동 시 WARN 을 남긴다. 포맷: base64(iv(12) || ciphertext+tag).

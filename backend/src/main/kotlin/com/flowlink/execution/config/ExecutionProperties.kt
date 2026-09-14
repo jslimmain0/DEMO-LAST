@@ -6,14 +6,12 @@ import org.springframework.boot.context.properties.ConfigurationProperties
 @ConfigurationProperties(prefix = "flowlink.execution")
 class ExecutionProperties(
     http: Http?,
-    capture: Capture?,
     relay: Relay?,
     maxNodesPerRun: Int = 0,
     stateSecret: String? = null,
     worker: Worker? = null,
 ) {
     val http: Http = http ?: Http(5000, 30000, 5_242_880L)
-    val capture: Capture = capture ?: Capture(false)
     val relay: Relay = relay ?: Relay(null)
     val maxNodesPerRun: Int = if (maxNodesPerRun <= 0) 200 else maxNodesPerRun
 
@@ -26,12 +24,6 @@ class ExecutionProperties(
         val poolSize: Int = if (poolSize <= 0) 8 else poolSize
         val queueCapacity: Int = if (queueCapacity <= 0) 100 else queueCapacity
     }
-
-    /**
-     * 실행 로그 캡처 정책(redaction). 기본은 deny-by-default — 요청/응답 본문은 저장하지 않는다.
-     * (본문엔 Authorization 헤더·토큰 등 시크릿이 섞일 수 있어 기본 미저장)
-     */
-    data class Capture(val requestResponseBodies: Boolean = false)
 
     /**
      * wait(콜백 대기) 노드의 콜백 수신 URL 조립용 base — {baseUrl}/relay/{execId}/cb/{nodeId}.

@@ -141,12 +141,11 @@ graphJson 파싱 → Kahn 위상정렬 → 노드 순차 처리 → IF는 단일
 ### 보안
 - 인증: `FLOWLINK_AUTH_GITHUB_ENABLED=true` 면 GitHub 게스트 모드(자체 JWT 검증), 미설정 시 dev permitAll
 - 멀티테넌시: JWT claim(기본 "tenant") → `TenantContext`(ThreadLocal) → 쿼리 `tenant_id` 필터
-- redaction deny-by-default: HTTP req/res 본문 기본 미저장 (`flowlink.execution.capture.request-response-bodies`로 옵트인).
-  **h2(로컬) 프로파일은 true** — 실행 로그에 요청/응답 본문 그대로 표시(디버그).
+- HTTP req/res 본문은 항상 저장하되 시크릿 마스킹(SecretMasker) 적용.
 - IF 표현식: SpEL `SimpleEvaluationContext`(읽기전용) 샌드박스
 
 ### 주요 설정 (`application.yml` / `ExecutionProperties`)
-`flowlink.execution.*`: http 타임아웃·max-response-bytes(5MB)·capture·max-nodes-per-run(200)
+`flowlink.execution.*`: http 타임아웃·max-response-bytes(5MB)·max-nodes-per-run(200)
 (외부 콜백은 백엔드가 `/relay/{execId}/cb/{nodeId}` 로 직접 수신 → 자동 재개. 별도 relay 프로세스·설정 없음)
 
 ---

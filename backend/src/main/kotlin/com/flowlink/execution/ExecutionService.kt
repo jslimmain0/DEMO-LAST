@@ -543,8 +543,7 @@ class ExecutionService(
 
     /**
      * 노드별 결과를 짧은 독립 트랜잭션으로 즉시 저장하는 콜백. run()/resume() 이 공유한다.
-     * redaction deny-by-default: HTTP 노드의 요청/응답 본문(토큰·시크릿 섞일 수 있음)은
-     * capture 가 켜진 경우에만 저장하고, 제어 노드(start/if/set 등)의 무해한 표시는 그대로 둔다.
+     * 요청/응답 본문은 시크릿 마스킹(SecretMasker) 후 저장한다.
      */
     /** 실행 시작 시점의 시크릿 맵(테넌트 + 활성 환경 오버레이). 실패해도 실행은 진행(빈 맵). */
     private fun secretMap(envName: String?): Map<String, String> =
@@ -560,15 +559,13 @@ class ExecutionService(
         (state.context().raw("secret") as? Map<*, *>)?.values?.mapNotNull { it as? String } ?: emptyList()
 
     private fun recorder(execId: UUID, secretValues: Collection<String> = emptyList()): NodeRecorder {
-        val captureBodies = props.capture.requestResponseBodies
         // 마스킹 규칙은 SecretMasker(원문+URL 인코딩·JSON 이스케이프 변형, 긴 값 우선) — 단일 노드 실행 응답과 공유.
         val masks = SecretMasker.variants(secretValues)
         return NodeRecorder { node, seq, result, status, durationMs ->
             val ne = NodeExecution.of(execId, node.id!!, node.name, node.type, seq)
             val outputJson = if (result.storedValue != null) SecretMasker.mask(json.toJson(result.storedValue), masks) else null
-            val redact = !captureBodies && node.nodeType() == NodeType.HTTP
-            val requestText = if (redact) "(redacted — capture 비활성)" else SecretMasker.mask(result.requestText, masks)
-            val responseText = if (redact) "(redacted — capture 비활성)" else SecretMasker.mask(result.responseText, masks)
+            val requestText = SecretMasker.mask(result.requestText, masks)
+            val responseText = SecretMasker.mask(result.responseText, masks)
             ne.complete(
                 status, result.ok, result.httpStatus,
                 requestText, responseText, outputJson, durationMs

@@ -59,7 +59,7 @@ JWT 클레임(`preferred_username`·`tenant`·`realm_access.roles`) → [JwtRole
 
 | 블록 | env(예) | 용도 |
 |---|---|---|
-| `flowlink.execution.*` | `FLOWLINK_EXECUTION_STATE_SECRET`, `FLOWLINK_EXECUTION_RELAY_BASEURL` | http 타임아웃·capture·워커 풀·suspension 암호키·콜백 base |
+| `flowlink.execution.*` | `FLOWLINK_EXECUTION_STATE_SECRET`, `FLOWLINK_EXECUTION_RELAY_BASEURL` | http 타임아웃·워커 풀·suspension 암호키·콜백 base |
 | `flowlink.auth.*` | `FLOWLINK_AUTH_GITHUB_ENABLED`, `FLOWLINK_AUTH_JWT_SECRET` | GitHub 로그인 |
 | `flowlink.vault.*` | `FLOWLINK_VAULT_ENABLED`, `FLOWLINK_VAULT_ADDRESS`, `FLOWLINK_VAULT_TOKEN` | HashiCorp Vault 시크릿 |
 | `flowlink.assistant.*` | `FLOWLINK_ASSISTANT_API_KEY`, `FLOWLINK_ASSISTANT_MODEL` | AI 어시스턴트(Anthropic 키·모델) |

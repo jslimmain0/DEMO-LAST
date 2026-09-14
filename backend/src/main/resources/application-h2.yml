@@ -22,9 +22,3 @@ spring:
     console:
       enabled: true
       path: /h2-console
-
-# 로컬(개발) 전용 완화: 요청/응답 본문 로그 표시(redaction off)
-flowlink:
-  execution:
-    capture:
-      request-response-bodies: true      # 실행 로그에 HTTP 요청/응답 본문 그대로 표시(디버그)

@@ -51,8 +51,6 @@ flowlink:
       connect-timeout-ms: 5000
       read-timeout-ms: 30000
       max-response-bytes: 5242880        # 5MB 초과 응답은 거절
-    capture:
-      request-response-bodies: false     # redaction deny-by-default. true 로 켜면 HTTP req/res 본문 저장(디버그용). h2 프로파일은 true
     max-nodes-per-run: 200               # 폭주 방지
     relay:
       # wait 콜백 수신 URL base — {base}/relay/{execId}/cb/{nodeId} (백엔드가 직접 수신·재개).

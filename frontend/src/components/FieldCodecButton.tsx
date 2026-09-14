@@ -72,7 +72,7 @@ function StepPopover({ field, kind, list, sources, sides, defaultSide, editing, 
   onClose: () => void; onSave: (side: CodecSide, step: MockCodecStep) => void; onRemove?: () => void
 }) {
   const [side, setSide] = useState<CodecSide>(defaultSide)
-  const [pluginId, setPluginId] = useState<string>(editing?.step.id ?? (defaultSide === 'request' ? 'base64-decode' : 'base64-encode'))
+  const [pluginId, setPluginId] = useState<string>(editing?.step.id ?? '')
   const [inputs, setInputs] = useState<MockCodecInput[]>(editing?.step.inputs ?? [])
   const [config, setConfig] = useState<Array<{ key: string; value: string }>>(editing?.step.config ?? [])
   const [outputKey, setOutputKey] = useState<string | undefined>(editing?.step.outputKey)
@@ -98,7 +98,7 @@ function StepPopover({ field, kind, list, sources, sides, defaultSide, editing, 
       </div>
       <div style={{ display: 'inline-flex', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', overflow: 'hidden', marginTop: 8 }}>
         {sides.map((s) => (
-          <button key={s} onClick={() => { setSide(s); if (!editing) setPluginId(s === 'request' ? 'base64-decode' : 'base64-encode') }}
+          <button key={s} onClick={() => { setSide(s); if (!editing) setPluginId('') }}
             style={{ padding: '4px 12px', border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 600, background: side === s ? 'var(--fl-primary)' : 'transparent', color: side === s ? '#fff' : 'var(--fl-text-muted)' }}>
             {s === 'request' ? '⬇ 요청 전 풀기' : '⬆ 응답 후 감싸기'}
           </button>

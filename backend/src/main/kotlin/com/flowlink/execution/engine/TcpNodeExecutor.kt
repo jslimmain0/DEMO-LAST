@@ -143,6 +143,7 @@ class TcpNodeExecutor(
         val reqText = built.reqText
 
         // 3) 송수신
+        if (host.isBlank()) throw IllegalArgumentException("호스트가 없습니다.")
         return try {
             Socket().use { socket ->
                 socket.connect(InetSocketAddress(host, port), timeout)

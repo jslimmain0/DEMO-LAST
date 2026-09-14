@@ -206,7 +206,7 @@ design/   theme(라이트/다크) · index.css(CSS 변수)
 - **제거 목록**: Springdoc/Swagger UI(`/swagger-ui.html`·`/v3/api-docs`, OpenApiConfig) · Actuator/Prometheus(`management.*`, micrometer) · SSRF 가드(`flowlink.execution.ssrf.*`, SsrfGuard·SsrfBlockedException·SsrfGuardTest) · 캡처 옵션(`capture.request-response-bodies` — HTTP 본문은 항상 SecretMasker 마스킹 후 저장) · `flowlink.security.cors-origins`(`/api/**` CORS 전체 오리진 허용) · 레거시 OIDC 모드(issuer-uri/Keycloak — 인증 모드는 dev | GitHub 둘뿐, SecurityConfig 2분기) · `FLOWLINK_AUTH_ALLOWED_LOGINS`/`FLOWLINK_AUTH_ADMIN_LOGINS` · Vault KV 오버레이(`mount/path/config-path/refresh-seconds`, VaultSecretSource, 시크릿 목록 `source=vault` 배지, Vault `flowlink-config/jwt-secret` — jwt-secret 은 env `FLOWLINK_AUTH_JWT_SECRET` 만) · 내장 변환(BuiltinTransforms).
 - **프로파일 변경**: `application-h2.yml` → `application-local.yml`(**`local` = H2 파일, 기본** — `spring.profiles.default`), Oracle datasource/flyway 는 새 `application-dev.yml`(**`dev` = Oracle**, `SPRING_PROFILES_ACTIVE=dev` + `FLOWLINK_DB_URL`). 구 `=oracle`/`h2` 는 무효.
 - **헬스 프로브**: `/actuator/health` → `GET {ctx}/api/v1/auth/config`(scripts start/status.(sh|ps1)·infra/connect-local.ps1). 새 헬스 컨트롤러 없음.
-- **관리자 부트스트랩**: env 화이트리스트 대신 **테넌트에 ADMIN 이 없을 때 처음 등록(로그인)되는 사용자가 자동 승인 + 전역 ADMIN**(WorkspaceService.touchUser), 이후 로그인은 PENDING → 관리 콘솔(/admin) 승인. dev 모드의 `dev` 는 항상 관리자.
+- **관리자 부트스트랩**: env 화이트리스트 대신 **테넌트에 ADMIN 이 없을 때 처음 로그인하는 사용자(기존 DB 의 사용자 포함)가 자동 승인 + 전역 ADMIN**(WorkspaceService.touchUser), 이후 로그인은 PENDING → 관리 콘솔(/admin) 승인. dev 모드의 `dev` 는 항상 관리자.
 - **변환은 플러그인 전용**: 새 인스턴스는 JAR 업로드 전까지 변환 목록이 비어 있음(`backend/plugin-sample` 참고). 같은 id 는 나중에 로드된 JAR 가 덮어씀.
 - Vault 는 Transit(KEK) 봉투 암호화 + 정적 토큰/AppRole 만 남음(스위치 `FLOWLINK_VAULT_TRANSIT_ENABLED`). 이력 본문의 옛 서술에는 "(2026-09-14 제거됨)" 표기만 덧붙였고 문장은 고치지 않았다.
 
@@ -879,7 +879,7 @@ design/   theme(라이트/다크) · index.css(CSS 변수)
 - **동작**: `FLOWLINK_AUTH_GITHUB_ENABLED=true` 면 GitHub 계정(어시스턴트 Copilot 연결과 동일한 **디바이스 플로우**)으로 로그인 →
   앱이 **자체 JWT(HS256)** 를 발급하고 그 JWT 를 리소스 서버로 검증. 클레임 구조를 Keycloak JWT 와 동일하게
   (`preferred_username`·`tenant`·`realm_access.roles`) 맞춰 기존 [JwtRoleConverter](backend/src/main/kotlin/com/flowlink/security/JwtRoleConverter.kt)·
-  TenantClaimFilter·[SecurityConfig](backend/src/main/kotlin/com/flowlink/security/SecurityConfig.kt) OIDC 브랜치를 **무변경 재사용**.
+  TenantClaimFilter·[SecurityConfig](backend/src/main/kotlin/com/flowlink/security/SecurityConfig.kt) OIDC 브랜치를 **무변경 재사용** (OIDC 브랜치는 2026-09-14 제거됨 — 지금은 GitHub 모드 분기 하나가 같은 필터를 쓴다).
 - **코드**: [AuthProperties](backend/src/main/kotlin/com/flowlink/security/AuthProperties.kt)(`flowlink.auth.*`) ·
   [AppJwt](backend/src/main/kotlin/com/flowlink/security/AppJwt.kt)(Nimbus HS256 발급 `issue()` + 검증 `decoder()`, 키=SHA-256(secret) 32B) ·
   [GithubAuthService](backend/src/main/kotlin/com/flowlink/security/GithubAuthService.kt)(device/code → 백그라운드 폴 → `api.github.com/user` → 가입 등록(WorkspaceService.touchUser) → appJwt) ·

@@ -83,14 +83,24 @@ class WorkspaceService(
     fun touchUser(username: String): AppUser? {
         if (!isAuthenticated(username)) return null
         val u = userRepo.findByTenantIdAndUsername(tenant(), username).orElseGet {
-            val bootstrap = username != DEV_USER && !userRepo.existsByTenantIdAndGlobalRole(tenant(), AppUser.ROLE_ADMIN)
-            val row = AppUser.of(tenant(), username, if (bootstrap) AppUser.STATUS_APPROVED else defaultStatus(username))
-            if (bootstrap) { row.globalRole = AppUser.ROLE_ADMIN; log.info("최초 사용자 관리자 부트스트랩: {}", username) }
-            else log.info("가입 신청 등록: {} ({})", username, row.status)
-            userRepo.save(row)
+            log.info("가입 신청 등록: {} ({})", username, defaultStatus(username))
+            userRepo.save(AppUser.of(tenant(), username, defaultStatus(username)))
+        }
+        // 최초 관리자 부트스트랩 — 테넌트에 ADMIN 이 한 명도 없으면 지금 로그인한 사용자(기존 DB 의 사용자 포함)를 ADMIN+APPROVED 로.
+        // ponytail: 관리자가 한 번 확인되면 exists 조회를 건너뛴다. 동시 첫 로그인 레이스는 무시(내부망 도구).
+        if (username != DEV_USER && u.globalRole != AppUser.ROLE_ADMIN && !adminExists()) {
+            u.globalRole = AppUser.ROLE_ADMIN; u.status = AppUser.STATUS_APPROVED; adminSeen = true
+            invalidateRoleCache(username)
+            log.info("최초 사용자 관리자 부트스트랩: {}", username)
         }
         u.lastSeenAt = Instant.now()
         return userRepo.save(u)
+    }
+
+    @Volatile private var adminSeen = false
+    private fun adminExists(): Boolean {
+        if (!adminSeen) adminSeen = userRepo.existsByTenantIdAndGlobalRole(tenant(), AppUser.ROLE_ADMIN)
+        return adminSeen
     }
 
     /** 신규 등록 기본 상태 — dev 는 APPROVED, 그 외 PENDING(가입 신청). */

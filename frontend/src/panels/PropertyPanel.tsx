@@ -699,7 +699,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
       ) : lastNe.responseText ? (
         <pre style={{ ...singlePre, maxHeight: '30vh' }}>{lastNe.responseText}</pre>
       ) : (
-        <div style={{ padding: '8px 12px', fontSize: 12, color: 'var(--fl-text-muted)' }}>기록된 출력이 없습니다 (본문 캡처 꺼짐 또는 미도달).</div>
+        <div style={{ padding: '8px 12px', fontSize: 12, color: 'var(--fl-text-muted)' }}>기록된 출력이 없습니다 (미도달).</div>
       )}
     </div>
   ) : null

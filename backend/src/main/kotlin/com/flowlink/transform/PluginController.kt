@@ -18,8 +18,7 @@ import java.nio.file.StandardCopyOption
  * 변환 플러그인 JAR 업로드/조회.
  *
  * **보안**: 신뢰 JAR 전용 — 샌드박스 없음. 업로드된 JAR은 전체 권한으로 실행된다.
- * OIDC 모드(SaaS P1)에서는 plugins 하위 경로를 전역 `platform-admin` 롤로 게이트한다(SecurityConfig).
- * github/dev 모드에서는 업로드를 **워크스페이스 관리자(ADMIN)** 로 게이트 — 게스트/승인 대기 계정의
+ * 업로드는 **워크스페이스 관리자(ADMIN)** 로 게이트 — 게스트/승인 대기 계정의
  * 무인증 JAR 업로드(=RCE, 적대 리뷰 [H])를 서비스 레벨에서 봉인(dev 모드의 'dev' 는 항상 관리자라 로컬 무마찰).
  */
 @RestController

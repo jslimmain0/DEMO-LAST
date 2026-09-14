@@ -60,7 +60,8 @@ form: {"id":"f1","type":"form","cat":"form","x":480,"y":180,"formAction":"http:/
    form opens a popup and does NOT wait — pair with a wait node for the callback.
 wait: {"id":"w1","type":"wait","cat":"wait","x":700,"y":180,"waitTimeoutSec":120,"callbackRespType":"text","callbackRespBody":"OK","outputs":[{"key":"resultCode","type":"string"}]}
 input: {"id":"i1","type":"input","cat":"input","x":480,"y":180,"waitMsg":"OTP 입력","waitFields":[{"id":"w","key":"otp","label":"OTP","type":"string"}]}
-transform: {"id":"t1","type":"transform","cat":"transform","x":700,"y":180,"transformId":"concat","config":{},"fields":{"params":[],"headers":[],"body":[{"id":"b1","key":"a","value":"완료: "},{"id":"b2","key":"b","value":"{{ name@h1 }}"}]},"outputs":[{"key":"result","type":"string"}]}
+transform: {"id":"t1","type":"transform","cat":"transform","x":700,"y":180,"transformId":"<플러그인 id>","config":{},"fields":{"params":[],"headers":[],"body":[{"id":"b1","key":"a","value":"완료: "},{"id":"b2","key":"b","value":"{{ name@h1 }}"}]},"outputs":[{"key":"result","type":"string"}]}
+   transformId 는 업로드된 변환 플러그인 id 만 — 목록이 비어 있으면 transform 노드를 만들지 마라.
 tcp: {"id":"tc1","type":"tcp","cat":"tcp","x":480,"y":180,"tcpHost":"127.0.0.1","tcpPort":9000,"tcpEncoding":"EUC-KR","tcpPrefixLength":4,"tcpPrefixIncludesSelf":false,"tcpRequest":[{"id":"r1","name":"msgType","length":4,"value":"0012","pad":"right","padChar":" "}],"tcpResponse":[{"id":"o1","name":"result","length":10}],"outputs":[{"key":"result","type":"string"}]}
 note: {"id":"n1","type":"note","cat":"note","x":300,"y":360,"noteText":"메모","noteColor":"yellow"}   // 실행 제외
 group: {"id":"g1","type":"group","cat":"group","x":220,"y":140,"groupW":396,"groupH":264,"noteColor":"gray"}   // 표시용 박스

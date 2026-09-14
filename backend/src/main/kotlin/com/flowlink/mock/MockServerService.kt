@@ -328,7 +328,7 @@ class MockServerService(
     fun requests(id: UUID): List<MockDtos.MockRequestLog> {
         findReadable(id)
         return store.journal(id).map {
-            MockDtos.MockRequestLog(it.at, it.method, it.path, it.query, it.headers, it.bodyText, it.matchedRuleId, it.status, it.delayMs, it.callbackFired, it.decodedBody)
+            MockDtos.MockRequestLog(it.at, it.method, it.path, it.query, it.headers, it.bodyText, it.matchedRuleId, it.status, it.delayMs, it.callbackFired, it.decodedBody, it.error)
         }
     }
 

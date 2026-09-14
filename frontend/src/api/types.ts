@@ -507,6 +507,7 @@ export interface MockRequestLog {
   at: string; method: string; path: string; query: Record<string, string>; headers: Record<string, string>
   bodyText: string; matchedRuleId: string | null; status: number; delayMs: number; callbackFired: boolean
   decodedBody?: string | null // 요청 코덱 적용 결과(코덱 없으면 null)
+  error?: string | null       // 처리 실패 사유(성공이면 없음) — 길이 프리픽스 불일치·불완전 수신·코덱 실패
 }
 export interface MockStateView { state: Record<string, string>; seq: number; hits: Record<string, number>; requestCount: number }
 

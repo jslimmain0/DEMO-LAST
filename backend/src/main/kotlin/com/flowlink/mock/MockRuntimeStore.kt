@@ -75,6 +75,11 @@ class MockRuntimeStore {
         val callbackFired: Boolean,
         /** 요청 코덱을 거친 전문(코덱 없으면 null) — 원문(bodyText)과 나란히 보여 디코딩 결과를 확인. */
         val decodedBody: String? = null,
+        /**
+         * 처리 실패 사유(성공이면 null) — 응답 단계 전에 죽은 요청도 기록에 남기려고.
+         * 예: TCP 길이 프리픽스 불일치·불완전 수신·요청 코덱 실패. UI 가 ⚠ 로 표시한다.
+         */
+        val error: String? = null,
     )
 
     data class Snapshot(val state: Map<String, String>, val seq: Long, val hits: Map<String, Int>, val requestCount: Int)

@@ -237,7 +237,7 @@ export function MockServerEditor() {
     for (const r of journal) if (r.method === 'TCP' && r.matchedRuleId) m.set(r.matchedRuleId, (m.get(r.matchedRuleId) ?? 0) + 1)
     return m
   }, [journal])
-  const unmatched = journal.filter((r) => r.matchedRuleId == null).length
+  const unmatched = journal.filter((r) => r.matchedRuleId == null && !r.error).length // 실패(⚠)는 따로 센다
 
   // ── HTTP 라우트 조작 ──
   const selRoute = nav.kind === 'route' ? routes.find((r) => r.id === nav.id) ?? null : null
@@ -640,12 +640,14 @@ function TrafficPanel({ id, canEdit, base, spec, onSpec, journal, open, onToggle
     } catch (e) { toast(`재전송 실패: ${(e as Error).message}`, 'error') }
   }
   const stateKeys = Object.keys(st.data?.state ?? {})
+  const failed = journal.filter((r) => r.error).length // 응답 전에 죽은 요청(프레이밍·코덱 실패 등)
   const tabs: Array<['log' | 'send' | 'preview', string]> = isTcp ? [['log', '전문 기록'], ['preview', '🔍 전문 미리보기']] : [['log', '요청 기록'], ['send', '보내보기']]
   return (
     <section style={{ ...trafficWrap, height: open ? 300 : 36 }} aria-label="트래픽 패널">
       <div style={trafficBar}>
         <button style={{ ...miniBtn, fontWeight: 700, border: 'none', background: 'transparent' }} onClick={onToggle} aria-expanded={open}>{open ? '▾' : '▸'} 트래픽</button>
         <span style={metaMono}>{isTcp ? '전문' : '요청'} 기록 {journal.length}{unmatched ? ` · 무매칭 ${unmatched}` : ''}{stateKeys.length ? ` · 상태 ${stateKeys.length}` : ''}{st.data ? ` · seq ${st.data.seq}` : ''}</span>
+        {failed > 0 && <span style={{ fontSize: 11, color: 'var(--fl-fail)', fontWeight: 700 }} title="응답 전에 실패한 요청 — 행을 열어 사유를 보세요">⚠ 실패 {failed}</span>}
         {open && (
           <div style={{ display: 'inline-flex', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', overflow: 'hidden', marginLeft: 8 }}>
             {tabs.map(([t, label]) => (
@@ -666,26 +668,31 @@ function TrafficPanel({ id, canEdit, base, spec, onSpec, journal, open, onToggle
                 const ri = isTcpRow ? -1 : findRouteIndex(routes, r.method, r.path)
                 const ruleIdx = isTcpRow && r.matchedRuleId ? tcpRules.findIndex((x) => x.id === r.matchedRuleId) : -1
                 return (
-                  <div key={`${r.at}-${i}`} style={{ border: '1px solid var(--fl-border)', borderRadius: 6, overflow: 'hidden', borderLeft: `3px solid ${r.matchedRuleId == null ? 'var(--fl-fail)' : 'var(--fl-border)'}` }}>
+                  <div key={`${r.at}-${i}`} style={{ border: `1px solid ${r.error ? 'var(--fl-fail)' : 'var(--fl-border)'}`, borderRadius: 6, overflow: 'hidden', borderLeft: `3px solid ${r.matchedRuleId == null ? 'var(--fl-fail)' : 'var(--fl-border)'}`, background: r.error ? 'rgba(220, 70, 70, 0.07)' : undefined }}>
                     <button style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '5px 10px', background: 'transparent', border: 'none', cursor: 'pointer', textAlign: 'left', color: 'var(--fl-text)' }} onClick={() => setOpenReq(openReq === i ? null : i)}>
                       <span style={{ fontSize: 10.5, fontWeight: 700, color: isTcpRow ? 'var(--fl-cat-tcp, #7c5cff)' : methodColor(r.method), minWidth: 44 }}>{r.method}</span>
                       {isTcpRow
                         ? <code style={{ fontFamily: 'var(--fl-font-mono)', fontSize: 12, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.bodyText}>{r.bodyText || '(빈 전문)'}</code>
                         : <code style={{ fontFamily: 'var(--fl-font-mono)', fontSize: 12, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.path}{Object.keys(r.query).length ? '?' + Object.entries(r.query).map(([k, v]) => `${k}=${v}`).join('&') : ''}</code>}
-                      {isTcpRow && <span style={metaMono}>{r.headers.bytes ?? '?'}B → {r.headers['response-bytes'] ?? '?'}B</span>}
+                      {isTcpRow && <span style={metaMono}>{r.headers.bytes ?? '?'}B{r.headers['response-bytes'] ? ` → ${r.headers['response-bytes']}B` : ''}</span>}
                       {ri >= 0 && <span style={{ ...metaMono, cursor: 'pointer' }} onClick={(e) => { e.stopPropagation(); onSelectRoute(routes[ri].id) }} title="이 라우트 열기">{routes[ri].path}</span>}
                       {ruleIdx >= 0 && <span style={{ ...metaMono, cursor: 'pointer' }} onClick={(e) => { e.stopPropagation(); onSelectRule(tcpRules[ruleIdx].id) }} title="이 규칙 열기">규칙 {ruleIdx + 1}</span>}
-                      {!isTcpRow && <span style={{ fontSize: 11, color: r.status >= 400 ? 'var(--fl-fail)' : 'var(--fl-ok)', fontFamily: 'var(--fl-font-mono)' }}>{r.status}</span>}
-                      {r.matchedRuleId == null && <span style={{ fontSize: 10, color: 'var(--fl-fail)', fontWeight: 700 }}>무매칭</span>}
+                      {(!isTcpRow || r.error) && <span style={{ fontSize: 11, color: r.status >= 400 ? 'var(--fl-fail)' : 'var(--fl-ok)', fontFamily: 'var(--fl-font-mono)' }}>{r.status}</span>}
+                      {r.error
+                        ? <span style={{ fontSize: 10, color: 'var(--fl-fail)', fontWeight: 700 }}>⚠ 실패</span>
+                        : r.matchedRuleId == null && <span style={{ fontSize: 10, color: 'var(--fl-fail)', fontWeight: 700 }}>무매칭</span>}
                       <span style={metaMono}>{relTime(r.at)}</span>
                     </button>
+                    {/* 실패 사유는 접힌 상태에서도 보인다 — 이 요청이 왜 응답 없이 끊겼는지 */}
+                    {r.error && <div style={errLine} title={r.error}>⚠ {r.error}</div>}
                     {openReq === i && (
                       <div style={{ padding: '0 10px 8px', display: 'grid', gap: 5 }}>
                         {!isTcpRow && Object.keys(r.headers).length > 0 && <pre style={reqPre}>{Object.entries(interestingHeaders(r.headers)).map(([k, v]) => `${k}: ${v}`).join('\n') || '(표준 헤더만)'}</pre>}
                         {r.bodyText && <pre style={reqPre}>{isTcpRow ? '전문: ' : 'body: '}{r.bodyText}</pre>}
+                        {isTcpRow && r.headers.hex && <pre style={reqPre}>hex: {r.headers.hex}</pre>}
                         {r.decodedBody != null && <pre style={{ ...reqPre, borderLeft: '3px solid var(--fl-primary)' }}>코덱 적용 후: {r.decodedBody}</pre>}
                         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-                          <span style={{ fontSize: 10.5, color: 'var(--fl-text-muted)' }}>{r.matchedRuleId ? (isTcpRow ? `규칙 ${ruleIdx + 1}` : `규칙 ${r.matchedRuleId}`) : `매칭 규칙 없음${isTcpRow ? '(빈 응답)' : '(404)'}`}{r.callbackFired ? ' · 콜백 발사' : ''}{r.delayMs ? ` · 지연 ${r.delayMs}ms` : ''}</span>
+                          <span style={{ fontSize: 10.5, color: 'var(--fl-text-muted)' }}>{r.error ? '응답 전에 실패 — 응답을 보내지 못했습니다' : r.matchedRuleId ? (isTcpRow ? `규칙 ${ruleIdx + 1}` : `규칙 ${r.matchedRuleId}`) : `매칭 규칙 없음${isTcpRow ? '(빈 응답)' : '(404)'}`}{r.callbackFired ? ' · 콜백 발사' : ''}{r.delayMs ? ` · 지연 ${r.delayMs}ms` : ''}</span>
                           {!isTcpRow && canEdit && <button style={{ ...miniBtn, padding: '3px 8px' }} onClick={() => expectFrom(r)} title="이 요청의 본문/쿼리/헤더 키를 라우트의 예상 요청 필드로">예상 필드로</button>}
                           {!isTcpRow && canEdit && <button style={{ ...miniBtn, padding: '3px 8px' }} onClick={() => draftRule(r)} title="이 요청에 맞는 라우트/규칙 초안(요청 값 eq 조건)">규칙 초안</button>}
                           {!isTcpRow && <button style={{ ...miniBtn, padding: '3px 8px' }} onClick={() => { void replay(r) }} title="같은 요청을 다시 보냅니다">재전송</button>}
@@ -756,6 +763,8 @@ const tile: CSSProperties = { display: 'grid', gap: 4, textAlign: 'left', paddin
 const kbd: CSSProperties = { fontFamily: 'var(--fl-font-mono)', fontSize: 11.5, padding: '1px 6px', border: '1px solid var(--fl-border)', borderRadius: 4, background: 'var(--fl-surface-2)', marginRight: 6 }
 const lbl: CSSProperties = { fontSize: 12, fontWeight: 700, marginBottom: 6 }
 const metaMono: CSSProperties = { fontSize: 11, color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)' }
+/** 요청 기록 행의 실패 사유 한 줄(⚠) — 접힌 상태에서도 보이게. */
+const errLine: CSSProperties = { padding: '0 10px 7px 12px', fontSize: 11.5, lineHeight: 1.45, color: 'var(--fl-fail)', fontWeight: 600, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }
 const reqPre: CSSProperties = { margin: 0, padding: '6px 8px', fontSize: 11, fontFamily: 'var(--fl-font-mono)', color: 'var(--fl-text)', background: 'var(--fl-surface-2)', borderRadius: 5, whiteSpace: 'pre-wrap', wordBreak: 'break-all', maxHeight: 140, overflow: 'auto' }
 const panel: CSSProperties = { padding: 18, border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius)', background: 'var(--fl-surface)' }
 const h2: CSSProperties = { fontFamily: 'var(--fl-font-head)', fontSize: 16, margin: 0 }

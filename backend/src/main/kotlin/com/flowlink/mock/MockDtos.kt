@@ -204,6 +204,7 @@ object MockDtos {
         val delayMs: Int,
         val callbackFired: Boolean,
         val decodedBody: String? = null, // 요청 코덱 적용 결과(코덱 없으면 null)
+        val error: String? = null,       // 처리 실패 사유(성공이면 null) — 프레이밍/코덱 실패도 기록에 남는다
     )
 
     /** 런타임 상태 스냅샷 — 상태 있는 목 디버깅용. */

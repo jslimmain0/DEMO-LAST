@@ -67,8 +67,11 @@ FlowLink 안에서 **가짜 대상 시스템을 만들고 켜는 1급 기능**. 
 
 ### 테스트
 ```powershell
-$env:JAVA_HOME="C:\Users\jslim\.jdks\corretto-21.0.10"
-./gradlew test   # 백엔드 단위 테스트 전종 (DB 불필요, H2 인메모리)
+$env:JAVA_HOME="C:\Users\jslim0126\.jdks\corretto-21.0.10"
+./gradlew :test  # 백엔드 단위 테스트 전종 (DB 불필요, H2 인메모리) — 루트 `test` 는 :plugin-sample 의존성 해석 실패로 깨질 수 있음
+```
+```bash
+cd frontend && npm test   # 프론트 순수 lib 단위 테스트(vitest)
 ```
 ⚠️ **Gradle 포크 테스트 워커가 한글/비ASCII 경로를 cp949로 잘못 디코딩하는 알려진 이슈**가 있음.
 `build.gradle.kts`에 `-Dfile.encoding=UTF-8 -Dsun.jnu.encoding=UTF-8` 회피책 적용됨.
@@ -1235,10 +1238,15 @@ API 도구 UX·비주얼/IA·플로우 통합 3관점 병렬 비평 → 확정 �
 - **TCP 편집기에 ✨ AI 버튼**([MockServerEditor](frontend/src/routes/MockServerEditor.tsx) — 이전엔 `isHttp &&` 로 HTTP 만). [MockAssistantService.buildSystemPrompt](backend/src/main/kotlin/com/flowlink/assistant/MockAssistantService.kt) 가 현재 spec 을 보고 **"THIS MOCK IS TCP-ONLY"**(routes 빈 배열 유지·tcp 섹션만·포트/필드·규칙 id 유지) 또는 **"HTTP-ONLY"**(tcp null 유지) 힌트를 붙인다.
 - `flowlink.assistant.max-tokens` yml 기본 4096 → **16384**(`FLOWLINK_ASSISTANT_MAX_TOKENS`, 코드 기본과 일치). Copilot 은 모델별 `max_output_tokens` 를 넘는 `max_tokens` 에 400 을 주므로 [AssistantOAuthService.outputLimit](backend/src/main/kotlin/com/flowlink/assistant/AssistantOAuthService.kt)(`/models` 응답을 10분 캐시, `limits.max_output_tokens`)로 [AssistantService.callLlmText](backend/src/main/kotlin/com/flowlink/assistant/AssistantService.kt) 가 **자동 클램프**(Anthropic 키 경로는 그대로). 운영가이드 §7 표 갱신.
 
-## 최근 변경 (2026-09-11) — 설계만(미구현): 초보자용 TCP/워크플로 요청 작성 파훼법 + [필드|텍스트] 전면 적용
-"TCP mock·워크플로 요청 짜기가 처음 쓰는 사람에겐 감이 안 잡힌다 / 필드↔텍스트 보기를 모든 요소에, 전환마다 실제 변환" 요청 → 에이전트 워크플로(현황 6관점 → 독립 설계안 6 → 2렌즈 심사 12)로 조사 후 **설계 문서만** 작성:
-[docs/superpowers/specs/2026-09-11-tcp-request-authoring-ux-design.md](docs/superpowers/specs/2026-09-11-tcp-request-authoring-ux-design.md).
-권고 패키지 P1 레이아웃 텍스트 계약(`TextForm<T>` + 고정길이 전문 DSL 을 TCP 노드 요청/응답·Mock 레이아웃/응답 4곳 공유 + 정의서 붙여넣기) · P2 거울 생성(`tcpMirror` — Mock⇄노드 생성/가져오기/정합성 칩, 기본값 정합) · P3 항상 켜진 바이트 자(`/api/v1/tcp/decode`) · P4 응답 trim/type(첫 성공 전제) · P5 안내(5단계 바·ⓘ·시작하기 pane) · P6 AI 추출(선택). 축 B 는 인벤토리(≈45 요소) 전부에 텍스트 폼을 확정한 표. 착수 전 사용자 결정 3개(DSL 표기·trim 기본값·AI 포함) 대기. ⚠ 프론트에 커밋된 테스트 러너가 없음(vitest 도입이 1차 첫 항목).
+## 최근 변경 (2026-09-14) — 1차 구현: 초보자용 TCP 요청 작성 파훼법 — 레이아웃 텍스트 계약·[필드|텍스트]·정의서 붙여넣기·거울 생성·응답 trim/type
+설계: [docs/superpowers/specs/2026-09-11-tcp-request-authoring-ux-design.md](docs/superpowers/specs/2026-09-11-tcp-request-authoring-ux-design.md) §5 **1차 7항목** 구현(사용자 결정: DSL=공백 구분 `이름 길이 종류 [패딩] [인코딩] [= 값]` · trim 은 새 노드만 기본 true · AI 추출은 3차).
+- **텍스트 계약 + vitest 도입**: 순수 [lib/textForms.ts](frontend/src/lib/textForms.ts) — `TextForm<T>`(toText/fromText+줄 단위 경고, 왕복 무손실) + 고정길이 전문 DSL(종류 문자/숫자/AN/N/X/9/`PIC X(n)`·패딩 `L0`/`R_`·응답 전용 `원문`·엑셀 TSV/CSV/마크다운 표 헤더 매핑(항목명/길이/타입/기본값)·순번 열 무시·따옴표 이름) + `jsonBodyForm`(문자열 상태 추적 스캐너로 **bare 토큰**)·`kvUrlForm`(percent 대칭)·`headersForm`(콜론 없는 줄만 경고). `npm test`(vitest) 5파일 34케이스.
+- **[필드|텍스트] 공용 토글**: [components/FieldTextToggle.tsx](frontend/src/components/FieldTextToggle.tsx)(300ms 디바운스 반영·경고·readOnly) 를 TCP 노드 요청/응답·Mock 요청 레이아웃/규칙 응답 4곳에 적용하고, 기존 4토글(HTTP 본문/쿼리/헤더 + 폼 노드 폼 데이터)을 같은 폼으로 이관(**bound `isTokenizable` 가드**·number/boolean 토큰 타입 승계·percent 대칭). Mock TCP 응답은 **[필드 | 텍스트 | 템플릿(고급)]** — 파괴적 전환만 2단계 확인.
+- **정의서 붙여넣기**: [components/TcpLayoutPaste.tsx](frontend/src/components/TcpLayoutPaste.tsx) 📋(미리보기 표·**샘플 전문 대조**(`tcp-preview` 일회용 spec)·`앞 4자리 "0014" = 본문 14자 → 자기 미포함` 프리픽스 판정·교체/추가)·⧉ 텍스트 복사 — 같은 텍스트가 노드⇄Mock 을 오간다.
+- **거울 생성**: [lib/tcpMirror.ts](frontend/src/lib/tcpMirror.ts)(nodeToMockTcp/mockTcpToNode/mirrorDiff) + [nodeFactory](frontend/src/canvas/nodeFactory.ts) 새 TCP 노드 기본값 = 백엔드 `defaultTcpSpec`(9091·전문코드4+계좌번호10 / 응답 4필드, `tcpDefaults.test` 가 고정) + Mock 편집기 ⋯ **▶ 이 Mock 을 부르는 TCP 노드 만들기(새 워크플로)**·**⧉ TCP 노드 복사**(둘 다 미저장이면 먼저 저장) + 노드 패널 [TcpMockLink](frontend/src/components/TcpMockLink.tsx)(fleet 5초 폴링 — 🔌 같은 포트 Mock 칩·✓일치/⚠불일치 N+[Mock 값으로 맞추기]·[Mock 에서 고르기 ▾]·[대상 Mock 만들기]).
+- **백엔드 2건**: `RunRequest.node` — **▶ 이 노드만 실행이 편집 중(미저장) 노드 본문으로** 실행(id 일치 시만, tcp-preview 와 같은 override 규약) · `TcpRespField.trim/type` — [TcpNodeExecutor](backend/src/main/kotlin/com/flowlink/execution/engine/TcpNodeExecutor.kt) 가 슬라이스 후 패딩 제거(문자=후행 공백/숫자=선행 0)하고 number 는 숫자 원형(조건식 비교 동작).
+- 검증: vitest **34** · 백엔드 `./gradlew :test` **220** · 브라우저 e2e **35 단언**(격리 :18081 — 레이아웃 텍스트→필드→TSV 붙여넣기→저장·응답 DSL 왕복·템플릿 2단계 확인/취소·▶ 노드 만들기→칩/✓일치→미저장 값으로 단일 실행(에코 override·잔액 숫자 1500000)·샘플 대조 ✓·HTTP 토글 왕복/헤더 경고·콘솔 0), 기존 split 45·tcp 20·product 24 무회귀. 가이드 [03장](docs/guide/03-노드-레퍼런스.md)·[10장](docs/guide/10-Mock-서버.md) 갱신.
+- ⚠ DSL **직렬화는 공백 구분 1종**(대괄호 표기는 안 씀 — 파서는 TSV/`,`/`|` 도 읽음). `trim` 은 **새 노드만 기본 true**(저장된 그래프는 null=꺼짐 유지 — 패딩 비교 조건식 무회귀). Mock 규칙 응답 필드의 📋 는 **프리픽스 없이 샘플 전체를 본문으로** 대조한다(응답 프리픽스는 서버가 자동으로 붙이므로 판정 문구도 없음). **2차**(바이트 자·`/api/v1/tcp/decode`·5단계 바·kv/.env 폼·JSON 모달 편집)·**3차**(나머지 인벤토리·AI 추출)는 스펙 §5.
 
 ## 참고 문서
 - `backend/README.md` — 백엔드 구조·설정·API 요약 · `frontend/README.md` · `infra/README.md`(배포)

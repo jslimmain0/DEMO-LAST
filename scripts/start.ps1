@@ -65,7 +65,7 @@ $p = Start-Process -FilePath 'java' -ArgumentList $jvmArgs -RedirectStandardOutp
 $p.Id | Out-File -Encoding ascii $PidFile
 
 for ($i = 0; $i -lt 60; $i++) {
-  try { if ((Invoke-WebRequest -UseBasicParsing "http://localhost:$Port$Ctx/actuator/health" -TimeoutSec 2).StatusCode -eq 200) {
+  try { if ((Invoke-WebRequest -UseBasicParsing "http://localhost:$Port$Ctx/api/v1/auth/config" -TimeoutSec 2).StatusCode -eq 200) {
     Write-Host "OK: up at http://localhost:$Port$Ctx (PID $($p.Id), log $Log)"; exit 0 } } catch {}
   Start-Sleep -Seconds 1
 }

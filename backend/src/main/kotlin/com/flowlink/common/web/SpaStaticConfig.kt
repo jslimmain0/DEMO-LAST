@@ -71,7 +71,7 @@ class SpaStaticConfig(
     companion object {
         private val BASE_TAG = Regex("<base\\s+href=\"[^\"]*\"\\s*/?>", RegexOption.IGNORE_CASE)
         private val NO_FALLBACK_PREFIXES = listOf(
-            "api/", "mock/", "relay/", "hooks/", "actuator/", "h2-console", "ws/",
+            "api/", "mock/", "relay/", "hooks/", "h2-console", "ws/",
         )
 
         /** index.html 의 `<base href="…">` 를 주어진 base 로 교체(순수). 태그가 없으면 원문 그대로. */

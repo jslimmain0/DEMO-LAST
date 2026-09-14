@@ -30,7 +30,7 @@ cd ../backend && sh gradlew bootJar          # ② dist 를 jar 에 동봉 → b
 # Linux / macOS / Git Bash
 bash scripts/start.sh            # 기존 jar 실행 (없으면 안내). 기본 프로파일 h2(로컬 파일 DB)
 bash scripts/start.sh --build    # 프론트+백엔드 재빌드 후 실행
-bash scripts/status.sh           # PID 생존 + /actuator/health
+bash scripts/status.sh           # PID 생존 + 헬스(GET /api/v1/auth/config)
 bash scripts/stop.sh
 ```
 ```powershell

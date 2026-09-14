@@ -17,7 +17,7 @@ REST API 워크플로 오케스트레이션 플랫폼. 클라이언트 전용 �
 ```bash
 # Linux/macOS/Git Bash — 기본 프로파일 h2(로컬 파일 DB). 없으면 --build 로 빌드 후 실행.
 bash scripts/start.sh            # (또는 --build)
-bash scripts/status.sh           # PID 생존 + /actuator/health
+bash scripts/status.sh           # PID 생존 + 헬스(GET /api/v1/auth/config)
 bash scripts/stop.sh
 ```
 ```powershell
@@ -27,7 +27,6 @@ powershell -ExecutionPolicy Bypass -File scripts\status.ps1
 powershell -ExecutionPolicy Bypass -File scripts\stop.ps1
 ```
 > ⚠️ 스크립트는 세트로 써야 한다(.sh 는 .sh 끼리, .ps1 은 .ps1 끼리) — .sh 는 Git Bash PID 를, .ps1 은 Windows PID 를 PID 파일에 쓰므로 섞으면 stop/status 가 서로의 프로세스를 못 찾는다.
-- Health: `http://localhost:18080/actuator/health` · Prometheus: `/actuator/prometheus`
 - DB 접속 override: `FLOWLINK_DB_URL`, `FLOWLINK_DB_USER`, `FLOWLINK_DB_PASSWORD` · 포트: `FLOWLINK_PORT` · **경로 접두사(context path)**: `FLOWLINK_CONTEXT_PATH=/flowlink`(앱 전체가 `/flowlink/` 밑에서 — 운영가이드 §3)
 - 프로파일/인증/Vault 는 env 로 주입(운영): `SPRING_PROFILES_ACTIVE=oracle`, `FLOWLINK_AUTH_GITHUB_ENABLED=true`, `FLOWLINK_VAULT_ENABLED=true` — 하단 "최근 변경 (2026-07-19)" 섹션 참조.
 - **TLS 신뢰(사내 프록시)**: `start.ps1` 은 Windows 인증서 저장소를 신뢰(`-Djavax.net.ssl.trustStoreType=WINDOWS-ROOT`)해 사내 TLS 가로채기 프록시 뒤에서도 아웃바운드 TLS(AI/Copilot 등)가 된다(끄기 `FLOWLINK_WINROOT=0`). 추가 JVM 옵션은 `FLOWLINK_JAVA_OPTS`(Linux 는 커스텀 truststore 를 이걸로).
@@ -929,7 +928,7 @@ design/   theme(라이트/다크) · index.css(CSS 변수)
 - **프론트**: [AuthContext](frontend/src/auth/AuthContext.tsx) — github 모드 + 무토큰이면 로그인 화면 대신 **게스트 부트**(`isGuest`), `requestLogin()` 으로 [GitHubLogin](frontend/src/auth/GitHubLogin.tsx) 디바이스 로그인 **모달**. AI 패널 자리엔 [AssistantLoginGate](frontend/src/components/AssistantLoginGate.tsx)(에디터·Mock 편집기), 사이드바 칩은 "게스트 · 로그인". 무토큰 401 은 리로드하지 않음(리로드 루프 방지 — 토큰 있을 때만 폐기·재부트).
 - 검증: [GuestModeSecurityTest](backend/src/test/kotlin/com/flowlink/security/GuestModeSecurityTest.kt)(@SpringBootTest — 게스트 CRUD 허용/assistant 401/로그인 200/무효토큰 401/guest me) + presence 인터셉터 단위 3종 + 라이브 curl(게스트 flows 200·POST 201·assistant 401) + tsc/build/oxlint.
 - ⚠ **github 모드는 더 이상 앱 잠금이 아니다**(앱 접근 잠금은 레거시 OIDC 뿐). **플러그인 JAR 업로드도 게스트 가능**(dev 모드와 동일 수준 — 사내망 전제, 사용자 승인). 게스트 실행은 triggeredBy 미기록.
-  블랭킷 `permitAll` 이라 `/actuator/metrics`·(h2 프로파일의) `/h2-console` 등 나머지 비-assistant 경로도 함께 무인증 개방된다.
+  블랭킷 `permitAll` 이라 (h2 프로파일의) `/h2-console` 등 나머지 비-assistant 경로도 함께 무인증 개방된다.
 
 ## 최근 변경 (2026-08-12) — 스크린샷 사용가이드 세트 (`docs/guide/`)
 
@@ -1213,7 +1212,7 @@ API 도구 UX·비주얼/IA·플로우 통합 3관점 병렬 비평 → 확정 �
 "상대 경로/context path 되나?" → 안 되던 것을 **앱이 접두사를 아는 방식(1안)** 으로. 접두사를 벗기는 프록시(`X-Forwarded-Prefix`) 방식은 미지원(의도).
 - **백엔드**: `server.servlet.context-path: ${FLOWLINK_CONTEXT_PATH:}`(application.yml — Spring 규약 `/flowlink`, 앞 슬래시 필수·끝 슬래시 없음). [SpaStaticConfig](backend/src/main/kotlin/com/flowlink/common/web/SpaStaticConfig.kt) 가 `index.html` 의 `<base href="/">` 를 `<base href="{ctx}/">` 로 **1회 변환해 캐시**(루트 WelcomePage forward 와 SPA fallback 양쪽 — `rewriteBase` 순수). [RelayBaseResolver.requestOrigin](backend/src/main/kotlin/com/flowlink/settings/RelayBaseResolver.kt) 이 `contextPath` 를 포함(콜백 수신 URL `…/flowlink/relay/…`, ⚙ 설정 auto 값). [MockGatewayController](backend/src/main/kotlin/com/flowlink/mock/MockGatewayController.kt) 는 `requestURI` 에서 context path 를 뗀 `pathInApp` 으로 slug 파싱(안 떼면 `/flowlink/mock/…` 가 slug 로 오인). 컨트롤러 매핑·SecurityConfig·WS 핸들러는 Spring 이 context-relative 라 무변경.
 - **프론트**: Vite `base: './'`(상대 자산) + `index.html` 에 `<base href="/" />`(dev 는 그대로 `/`) → [lib/appBase](frontend/src/lib/appBase.ts) `appBase()`(=`document.baseURI` pathname, `''` 또는 `/flowlink`)·`appUrl(path)` 가 유일한 접두사 소스. 적용: `BrowserRouter basename`, axios `baseURL`(`{ctx}/api/v1`), presence WebSocket(`{ctx}/ws/presence`), `mockBaseUrl`(화면의 Mock base URL·보내보기·▶ 테스트·재전송), TriggersDialog 웹훅 URL. RunPanel 테스트 콜백은 수신 URL 의 pathname 을 그대로 써서 이미 접두사 포함. favicon 은 `./favicon.svg`.
-- **scripts**: `start/status.(ps1|sh)` 가 `FLOWLINK_CONTEXT_PATH` 를 정규화(`flowlink`·`/flowlink/` → `/flowlink`)해 앱에 넘기고 health URL(`…/flowlink/actuator/health`)도 접두사로. ⚠ Git Bash 에서 `FLOWLINK_CONTEXT_PATH=/flowlink java …` 로 직접 띄우면 **MSYS 경로 변환**이 `/flowlink` 를 `C:/Program Files/Git/flowlink` 로 바꿔 기동 실패("ContextPath must start with '/'") — `MSYS_NO_PATHCONV=1` 또는 scripts 사용.
+- **scripts**: `start/status.(ps1|sh)` 가 `FLOWLINK_CONTEXT_PATH` 를 정규화(`flowlink`·`/flowlink/` → `/flowlink`)해 앱에 넘기고 health URL(`…/flowlink/api/v1/auth/config`)도 접두사로. ⚠ Git Bash 에서 `FLOWLINK_CONTEXT_PATH=/flowlink java …` 로 직접 띄우면 **MSYS 경로 변환**이 `/flowlink` 를 `C:/Program Files/Git/flowlink` 로 바꿔 기동 실패("ContextPath must start with '/'") — `MSYS_NO_PATHCONV=1` 또는 scripts 사용.
 - 검증: `/flowlink` 인스턴스(:18082) 브라우저 스위트 **24**(index `<base>`·상대 자산 로드·루트 404·딥링크 fallback·API 미fallback·health·relay auto/effective·Mock 서빙 접두사/루트 404·SPA 부팅 리다이렉트·목록/편집기 라우팅·새로고침·헤더/설정의 Mock base URL·보내보기 200·presence WS URL·트리거 다이얼로그·**wait 수신 URL 접두사 → 콜백 POST → SUCCEEDED**·콘솔/4xx 0) + 루트 인스턴스(:18081) 무회귀(product 25·ui 18) + 백엔드 전체 스위트. 운영가이드 §3 에 env·프록시 구성 규칙.
 - ⚠ 접두사를 주면 루트(`/`)는 404(Spring 규약). 프록시는 접두사를 **유지한 채** 전달해야 한다. `appBase()` 는 `<base href>` 가 있어야 정확 — 다른 정적 서버로 dist 를 직접 서빙하면 `<base href>` 를 직접 맞출 것.
 

@@ -14,7 +14,7 @@ if (Test-Path $PidFile) {
 if (-not $running) { Write-Host "Process: stopped" }
 
 try {
-  if ((Invoke-WebRequest -UseBasicParsing "http://localhost:$Port$Ctx/actuator/health" -TimeoutSec 2).StatusCode -eq 200) {
+  if ((Invoke-WebRequest -UseBasicParsing "http://localhost:$Port$Ctx/api/v1/auth/config" -TimeoutSec 2).StatusCode -eq 200) {
     Write-Host "Health : UP (http://localhost:$Port$Ctx)"; exit 0
   }
 } catch {}

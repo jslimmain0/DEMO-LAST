@@ -14,7 +14,7 @@ else
   echo "프로세스: 중지됨"
 fi
 
-if curl -fs "http://localhost:$PORT$CTX/actuator/health" >/dev/null 2>&1; then
+if curl -fs "http://localhost:$PORT$CTX/api/v1/auth/config" >/dev/null 2>&1; then
   echo "헬스   : ✅ UP (http://localhost:$PORT)"
   exit 0
 else

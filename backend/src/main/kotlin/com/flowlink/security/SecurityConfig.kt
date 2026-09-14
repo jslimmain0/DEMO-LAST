@@ -134,7 +134,6 @@ class SecurityConfig {
         private val log = LoggerFactory.getLogger(SecurityConfig::class.java)
 
         private val PUBLIC_PATHS = arrayOf(
-            "/actuator/health/**", "/actuator/info", "/actuator/prometheus",
             // wait(콜백 대기) 노드의 콜백을 백엔드가 직접 받아 재개한다(RelayController). 외부 시스템(게이트웨이/노티)이
             // 부르는 무인증 엔드포인트 — execId 는 추측 불가한 UUID(테스트 도구 전제, 사내망).
             "/relay/**",

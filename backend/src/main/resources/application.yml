@@ -40,19 +40,6 @@ server:
     context-path: ${FLOWLINK_CONTEXT_PATH:}
   shutdown: graceful           # 실행 중 워크플로 안전 종료 대비
 
-management:
-  endpoints:
-    web:
-      exposure:
-        include: health,info,prometheus,metrics
-  endpoint:
-    health:
-      probes:
-        enabled: true
-  metrics:
-    tags:
-      application: flowlink
-
 # Flowlink 고유 설정
 flowlink:
   # DB 무한 성장 방지 자동 보존 정책 — 6시간 주기 스윕(기동 90초 후 1회 포함). 0 = 끄기.

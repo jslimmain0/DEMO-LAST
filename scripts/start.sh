@@ -59,7 +59,7 @@ nohup env FLOWLINK_PORT="$PORT" FLOWLINK_CONTEXT_PATH="$CTX" java $JVM_OPTS -jar
 echo $! > "$PID_FILE"
 
 for _ in $(seq 1 60); do
-  if curl -fs "http://localhost:$PORT$CTX/actuator/health" >/dev/null 2>&1; then
+  if curl -fs "http://localhost:$PORT$CTX/api/v1/auth/config" >/dev/null 2>&1; then
     echo "✅ 기동 완료 — http://localhost:$PORT  (PID $(cat "$PID_FILE"), 로그 $LOG)"; exit 0
   fi
   sleep 1

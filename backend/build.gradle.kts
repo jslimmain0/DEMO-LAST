@@ -49,10 +49,6 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-security")
     implementation("org.springframework.boot:spring-boot-starter-oauth2-resource-server")
 
-    // --- Observability ---
-    implementation("org.springframework.boot:spring-boot-starter-actuator")
-    implementation("io.micrometer:micrometer-registry-prometheus")
-
     // --- 표현식 샌드박스(IF 노드) ---
     implementation("org.springframework:spring-expression")
 

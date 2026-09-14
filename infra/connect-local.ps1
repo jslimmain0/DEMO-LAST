@@ -15,11 +15,9 @@ if (-not (Test-Path -LiteralPath $keyPath)) {
 }
 
 try {
-    $health = Invoke-RestMethod -Uri "http://127.0.0.1:$LocalPort/actuator/health" -TimeoutSec 2
-    if ($health.status -eq 'UP') {
-        Write-Host "FlowLink is already available at http://localhost:$LocalPort" -ForegroundColor Green
-        exit 0
-    }
+    Invoke-RestMethod -Uri "http://127.0.0.1:$LocalPort/api/v1/auth/config" -TimeoutSec 2 | Out-Null
+    Write-Host "FlowLink is already available at http://localhost:$LocalPort" -ForegroundColor Green
+    exit 0
 }
 catch {
     # The tunnel is not running yet.

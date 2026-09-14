@@ -78,5 +78,3 @@ JWT 클레임(`preferred_username`·`tenant`·`realm_access.roles`) → [JwtRole
 - **인증**: `GET /auth/config|me` · `POST /auth/github/device/start` · `GET /auth/github/device/poll`
 - **기타**: `/mock-servers` · `/secrets` · `/settings` · `/flows/{id}/triggers` · `/assistant/**` · `/plugins` · `/suites/run`
 - **무인증(외부)**: `/relay/**`(콜백) · `/mock/**`(Mock 서빙) · `/hooks/**`(웹훅) · `/ws/**`(presence)
-
-Health: `/actuator/health` · Prometheus: `/actuator/prometheus`.

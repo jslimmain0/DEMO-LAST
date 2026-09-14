@@ -585,7 +585,7 @@ design/   theme(라이트/다크) · index.css(CSS 변수)
 - **[RelayBaseResolver](backend/src/main/kotlin/com/flowlink/settings/RelayBaseResolver.kt)** — 우선순위:
   ① 화면(⚙ 설정)에서 저장한 값(DB) → ② env/yml 명시값(`FLOWLINK_EXECUTION_RELAY_BASEURL`) → ③ **실행 요청의
   접속 오리진 자동**(브라우저가 접속한 그 주소가 곧 도달 가능한 서버 주소 — 서버는 `/relay/**` 를 항상 리슨하므로
-  base 는 "밖에 알려줄 주소" 문자열일 뿐) → ④ localhost 폴백. `application.yml` 의 base-url 기본값을 비워(yml 줄은 2026-09-14 제거됨 — 코드 기본 null 동일)
+  base 는 "밖에 알려줄 주소" 문자열일 뿐) → ④ localhost 폴백. `application.yml` 의 base-url 기본값을 비워(yml 줄은 2026-09-14 제거됨)
   ②를 "명시했을 때만"으로 만듦(`ExecutionProperties.Relay.configured`). (② env 단계·`Relay.configured` 는 2026-09-14 제거됨)
 - **설정 저장소**: `AppSetting`(키-값, 테넌트 스코프, V6 마이그레이션·h2 는 ddl-auto) +
   [SettingsService](backend/src/main/kotlin/com/flowlink/settings/SettingsService.kt) ·

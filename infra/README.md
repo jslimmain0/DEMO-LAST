@@ -110,7 +110,7 @@ docker compose -f infra/docker-compose.yml --profile oracle up -d   # 로컬 Ora
 | 작업 | 방법 |
 |---|---|
 | 업데이트 | 새 jar 빌드 → `scripts/stop.sh` → 교체 → `scripts/start.sh` |
-| 로그 | `tail -f .run/flowlink.log` (또는 `FLOWLINK_HOME` 지정 시 그 경로) |
+| 로그 | `tail -f .run/flowlink.log` |
 | 백업(local) | 종료 후 H2 `.mv.db` 파일 복사 |
 | 플러그인 추가 | UI/API 업로드(즉시 반영) 또는 `plugins/` 에 JAR 두고 재시작 |
 

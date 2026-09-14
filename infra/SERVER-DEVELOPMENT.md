@@ -8,9 +8,9 @@ under `.run/`, and the H2 database defaults to `~/flowlink-h2db/` (or set
 # Connect from Windows
 ssh -i "C:\Users\jslim\Documents\docker\keys\local-ec2" -p 2222 ubuntu@localhost
 
-# Edit
+# Configure (변수 목록은 루트 README "환경변수")
 cd ~/apps/DEMO-LAST
-nano backend/src/main/resources/application.yml
+export FLOWLINK_PORT=18080
 
 # Rebuild (frontend + jar) and restart in one go
 bash scripts/start.sh --build

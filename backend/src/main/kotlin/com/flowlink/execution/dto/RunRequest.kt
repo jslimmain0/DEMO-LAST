@@ -22,4 +22,6 @@ data class RunRequest(
      * 전체 실행(runs)에서는 무시된다.
      */
     val upstream: JsonNode? = null,
+    /** 단일 노드 실행 전용 — 편집 중(미저장) 노드 본문. id 가 경로의 nodeId 와 같을 때만 저장본 대신 실행한다(tcp-preview 와 같은 override 규약). */
+    val node: com.flowlink.core.graph.GraphNode? = null,
 )

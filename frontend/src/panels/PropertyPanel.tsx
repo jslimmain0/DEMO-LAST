@@ -177,6 +177,8 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
       envName: activeEnvName(),
       ...(Object.keys(env).length ? { env } : {}),
       ...(Object.keys(upstream).length ? { upstream } : {}),
+      // 편집 중(미저장) 노드 본문을 실어 저장본 대신 그 값으로 실행(백엔드 RunRequest.node override).
+      ...(rf ? { node: asGraphNode(rf.data) } : {}),
     }
     try { setSingle(await runsApi.runNode(flowId, selectedId, body)) }
     catch (e) { setSingle({ ok: false, httpStatus: null, output: null, requestText: null, responseText: e instanceof Error ? e.message : String(e) }) }

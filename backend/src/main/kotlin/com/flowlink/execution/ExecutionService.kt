@@ -135,7 +135,7 @@ class ExecutionService(
         val version = versionRepo.findByFlowIdAndVersionNo(flowId, flow.currentVersion)
             .orElseThrow { NotFoundException.of("FlowVersion", "$flowId/v${flow.currentVersion}") }
         val graph = json.parseGraph(version.graphJson)
-        val node = graph.nodesOrEmpty().find { it.id == nodeId }
+        val node = pickSingleNode(graph.nodesOrEmpty().find { it.id == nodeId }, req?.node, nodeId)
             ?: throw NotFoundException.of("Node", nodeId)
 
         // 전체 실행과 동일하게 input/env 시드 + 활성 환경 시크릿 오버레이 시드(명시 스코프에만 보이는 putSeed).
@@ -813,6 +813,11 @@ class ExecutionService(
         private val WORKER_SEQ = java.util.concurrent.atomic.AtomicInteger()
 
         private fun waitSecs(timeoutSec: Int): Long = if (timeoutSec <= 0) 120L else timeoutSec.toLong()
+
+        /** 단일 실행 노드 선택 — 편집 중 노드(override)의 id 가 경로와 같으면 그것(미저장 편집 반영), 아니면 저장본. */
+        @JvmStatic
+        fun pickSingleNode(saved: com.flowlink.core.graph.GraphNode?, override: com.flowlink.core.graph.GraphNode?, nodeId: String): com.flowlink.core.graph.GraphNode? =
+            if (override != null && override.id == nodeId) override else saved
 
         private fun toResumeInput(req: ResumeRequest?): FlowExecutor.ResumeInput {
             if (req == null) {

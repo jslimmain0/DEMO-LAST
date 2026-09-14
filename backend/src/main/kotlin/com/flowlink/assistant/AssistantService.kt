@@ -41,13 +41,13 @@ class AssistantService(
      * LLM 호출 계획 — 자격/엔드포인트. OAuth(GitHub) 연결 시 **Copilot 채팅 API(OpenAI 호환, Bearer)**,
      * 연결 안 됐으면 null(stub).
      */
-    private data class Plan(val header: String, val value: String, val baseUrl: String, val model: String, val extraHeaders: Map<String, String> = emptyMap())
+    private data class Plan(val bearer: String, val baseUrl: String, val model: String, val extraHeaders: Map<String, String> = emptyMap())
 
     private fun resolvePlan(): Plan? {
         // ① GitHub Copilot 연결 → Copilot 채팅 API(OpenAI 호환, Bearer + 확장 헤더)
         try {
             oauth.copilotBearer()?.let { bearer ->
-                return Plan("Authorization", "Bearer $bearer", oauth.copilotChatBase(), oauth.copilotModel(), extraHeaders = oauth.copilotHeaders())
+                return Plan(bearer, oauth.copilotChatBase(), oauth.copilotModel(), extraHeaders = oauth.copilotHeaders())
             }
         } catch (e: Exception) { log.debug("Copilot 토큰 조회 실패(무시): {}", e.message) }
         return null
@@ -118,7 +118,7 @@ class AssistantService(
             .timeout(Duration.ofSeconds(90))
             .header("content-type", "application/json")
             .header("accept", "application/json")
-            .header(plan.header, plan.value)
+            .header("Authorization", "Bearer ${plan.bearer}")
         for ((k, v) in plan.extraHeaders) reqB = reqB.header(k, v) // Copilot: Editor-Version 등
         val request = reqB.POST(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(body))).build()
 

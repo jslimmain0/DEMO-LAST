@@ -8,7 +8,7 @@ import { apiErrorMessage } from '../lib/apiError'
 import { newId } from '../lib/ids'
 import { tcpLayoutForm, type LayoutRow } from '../lib/textForms'
 import {
-  incomingFrameLine, isLenFieldName, lenFieldWarning, lenToken, outgoingFrameLine, sumFieldBytes, tcpFrame,
+  incomingFrameLine, isLenFieldName, lenFieldWarning, lenFrameToken, lenToken, outgoingFrameLine, sumFieldBytes, tcpFrame,
 } from '../lib/tcpLen'
 import { FieldCodecButton } from './FieldCodecButton'
 import { FieldTextToggle } from './FieldTextToggle'
@@ -279,7 +279,7 @@ export function TcpRuleDetail({ rule: r, index, total, layout, readOnly, sources
                       {lenish && !readOnly && (
                         <button style={lenBtn} onClick={() => setField(f.id, { value: lenToken(f.length) })}
                           aria-label={`${f.name || '길이'} 필드에 길이 토큰 넣기`}
-                          title={`응답 전문 길이를 자동으로 채웁니다 — ${lenToken(f.length)}(본문 ${bodyTotal}B). 프리픽스 포함 전체가 필요하면 값을 {{len:frame:${f.length ?? 0}}} 로 고치세요.`}
+                          title={`응답 전문 길이를 자동으로 채웁니다 — ${lenToken(f.length)}(본문 ${bodyTotal}B). 프리픽스 포함 전체가 필요하면 값을 ${lenFrameToken(f.length)} 로 고치세요.`}
                         >{'{{len}}'}</button>
                       )}
                       {!readOnly && <>

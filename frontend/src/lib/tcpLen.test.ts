@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
-  incomingFrameLine, isLenFieldName, lenFieldWarning, lenToken, literalLenValue,
+  incomingFrameLine, isBuiltinTokenKey, isLenFieldName, isLenTokenKey, isTimeTokenKey,
+  lenFieldWarning, lenFrameToken, lenToken, literalLenValue,
   outgoingFrameLine, padNum, receivedBytes, receivedCompare, requestFrameLine, sumFieldBytes, tcpFrame,
 } from './tcpLen'
+import { tokenRegex } from './tokenGrammar'
 
 describe('tcpFrame — 본문 / 프리픽스 / 전송', () => {
   it('프리픽스 포함 길이 켜짐 = 프리픽스에 전송 길이(사용자 실제 사례 204/4/208)', () => {
@@ -97,6 +99,63 @@ describe('전문 안 길이 필드 판별', () => {
     expect(lenToken(6)).toBe('{{len:6}}')
     expect(lenToken(0)).toBe('{{len}}')
     expect(lenToken(null)).toBe('{{len}}')
+  })
+
+  it('폭은 백엔드가 인정하는 3자리(999)로 클램프 — {{len:1000}} 은 치환이 안 돼 조용히 깨진다', () => {
+    expect(lenToken(999)).toBe('{{len:999}}')
+    expect(lenToken(1000)).toBe('{{len:999}}')
+    expect(lenToken(4096)).toBe('{{len:999}}')
+    expect(lenToken(-3)).toBe('{{len}}')
+    // 만들어 낸 토큰은 전부 백엔드가 인정하는 형태여야 한다
+    for (const w of [1, 4, 999, 1000, 4096, 0, null]) {
+      expect(isLenTokenKey(lenToken(w).slice(2, -2)), String(w)).toBe(true)
+      expect(isLenTokenKey(lenFrameToken(w).slice(2, -2)), String(w)).toBe(true)
+    }
+  })
+
+  it('안내 문구의 프리픽스 포함 토큰도 같은 정규화(길이 없는 필드에 {{len:frame:0}} 금지)', () => {
+    expect(lenFrameToken(4)).toBe('{{len:frame:4}}')
+    expect(lenFrameToken(0)).toBe('{{len:frame}}')
+    expect(lenFrameToken(undefined)).toBe('{{len:frame}}')
+    expect(lenFrameToken(1000)).toBe('{{len:frame:999}}')
+  })
+})
+
+describe('소스 없는 내장 토큰 — "이전 노드 값 입력" 후보에서 제외', () => {
+  it('길이 토큰 형태만 인식(백엔드 TcpLen.INNER 미러)', () => {
+    for (const k of ['len', 'len:4', 'len:999', 'len:frame', 'len:frame:4', 'len : frame : 4', ' len ', 'len:1'])
+      expect(isLenTokenKey(k), k).toBe(true)
+    for (const k of ['length', 'lenient', 'LEN', 'Len:4', 'len:x', 'len:1234', 'len:frame:1234', 'lens', '길이', 'frame', '', 'len:4:frame'])
+      expect(isLenTokenKey(k), k).toBe(false)
+  })
+
+  it('시각 토큰 형태(now/today/time · now:패턴)', () => {
+    for (const k of ['now', 'today', 'time', 'now:yyyyMMdd', 'now:yyyy-MM-dd HH:mm', 'today:yyyyMMdd'])
+      expect(isTimeTokenKey(k), k).toBe(true)
+    for (const k of ['nowhere', 'timeout', 'NOW', 'now:', '시각', 'time2'])
+      expect(isTimeTokenKey(k), k).toBe(false)
+  })
+
+  it('isBuiltinTokenKey = 길이 ∪ 시각 · 상위 노드 출력 키는 그대로 후보', () => {
+    expect(isBuiltinTokenKey('len:4')).toBe(true)
+    expect(isBuiltinTokenKey('now:yyyyMMdd')).toBe(true)
+    for (const k of ['amount', '계좌번호', 'user.name', 'items[0].id', 'length', 'timeout'])
+      expect(isBuiltinTokenKey(k), k).toBe(false)
+  })
+
+  it('실제 토큰 문법으로 뽑은 키에도 그대로 적용된다(PropertyPanel 의 detectUpstreamTokens 경로)', () => {
+    const graph = JSON.stringify({ a: '{{len:4}}', b: '{{ now:yyyyMMdd }}', c: '{{ 계좌번호@n1 }}', d: '{{ amount }}', e: '{{len:frame:4}}' })
+    // 전제: 길이/시각 토큰도 문법상 토큰이라 스캐너에 잡힌다(그래서 걸러내야 한다)
+    expect(graph.match(tokenRegex())).toHaveLength(5)
+    const re = tokenRegex()
+    const asked: string[] = []
+    for (let m = re.exec(graph); m; m = re.exec(graph)) {
+      const key = m[1]
+      const src = m[3] ?? null
+      if (src == null && isBuiltinTokenKey(key)) continue // PropertyPanel 과 같은 판정
+      asked.push(`${key}@${src ?? ''}`)
+    }
+    expect(asked).toEqual(['계좌번호@n1', 'amount@'])
   })
 })
 

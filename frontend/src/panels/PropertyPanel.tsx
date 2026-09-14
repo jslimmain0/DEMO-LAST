@@ -26,8 +26,8 @@ import { duplicateKeys, parseOutputKeys } from '../lib/bulkPaste'
 import { parseCurl, toCurl } from '../lib/curl'
 import { computeReachInfo, isUnreachableExecutable } from '../lib/reachable'
 import {
-  isLenFieldName, lenFieldWarning, lenToken, receivedBytes, receivedCompare,
-  requestFrameLine, sumFieldBytes, tcpFrame, type TcpFrame,
+  isBuiltinTokenKey, isLenFieldName, lenFieldWarning, lenFrameToken, lenToken,
+  receivedBytes, receivedCompare, requestFrameLine, sumFieldBytes, tcpFrame, type TcpFrame,
 } from '../lib/tcpLen'
 import { useEnvStore, activeEnvVars, activeEnvName } from '../lib/environments'
 import { useRunInput } from '../lib/runInput'
@@ -69,6 +69,8 @@ const RESP_TYPES: RespType[] = ['json', 'xml', 'urlencoded', 'query', 'text', 'b
 
 // 단일 실행 시 값을 물어볼 상류 토큰 — env/input/secret/req: 스코프·자기 자신 제외, 중복 제거.
 // 노드 설정 전체(JSON 직렬화)에서 {{ 키(@노드) }} 를 스캔한다.
+// ⚠ 소스 없는 내장 토큰({{len:4}}·{{now:yyyyMMdd}} 등)은 백엔드가 스스로 채우므로 물어보지 않는다 —
+//   명시형은 TokenResolver 앞에서 이미 치환돼 입력이 무시되고, bare 는 반대로 조용한 오버라이드가 된다.
 function detectUpstreamTokens(n: GraphNode): Array<{ key: string; sourceId: string | null }> {
   const out = new Map<string, { key: string; sourceId: string | null }>()
   const re = tokenRegex()
@@ -78,6 +80,7 @@ function detectUpstreamTokens(n: GraphNode): Array<{ key: string; sourceId: stri
     const isReq = !!m[2]
     const src = m[3] ?? null
     if (isReq) continue
+    if (src == null && isBuiltinTokenKey(key)) continue // 길이·시각 토큰(백엔드 자동)
     if (src === 'env' || src === 'input' || src === 'secret') continue
     if (src === n.id) continue // wait url 자기 참조 등
     const k = `${src ?? ''}|${key}`
@@ -2064,7 +2067,7 @@ function TcpReqEditor({ fields, frame, readOnly, sources, sourceType, onChange }
               <button
                 onClick={() => upd(f.id, { value: lenToken(f.length), bound: null })}
                 aria-label={`${f.name || '길이'} 필드에 길이 토큰 넣기`}
-                title={`전문 길이를 자동으로 채웁니다 — ${lenToken(f.length)}(본문 ${frame.body}B). 프리픽스 포함 전체(${frame.frame}B)가 필요하면 값을 {{len:frame:${f.length ?? 0}}} 로 고치세요.`}
+                title={`전문 길이를 자동으로 채웁니다 — ${lenToken(f.length)}(본문 ${frame.body}B). 프리픽스 포함 전체(${frame.frame}B)가 필요하면 값을 ${lenFrameToken(f.length)} 로 고치세요.`}
                 style={lenBtn}
               >{'{{len}}'}</button>
             )}

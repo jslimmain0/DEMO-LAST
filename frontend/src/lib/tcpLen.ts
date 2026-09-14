@@ -69,10 +69,48 @@ export function outgoingFrameLine(f: TcpFrame): string {
   return `응답 본문 ${f.body}B + 프리픽스 ${f.prefix}B = 나가는 전문 ${f.frame}B`
 }
 
+/**
+ * 토큰 폭 상한 — 백엔드 `TcpLen` 이 `\d{1,3}` 까지만 토큰으로 인정한다(오타 방지).
+ * 넘는 폭을 그대로 쓰면 치환이 안 되고 `{{len:1000}}` 문자열이 그대로 전문에 실려 조용히 깨지므로 여기서 막는다.
+ * (폭을 999 로 줄여도 숫자 값은 같고 나머지는 필드 패딩이 채운다.)
+ */
+const MAX_TOKEN_WIDTH = 999
+
+const clampWidth = (width?: number | null): number => {
+  const w = Math.floor(width ?? 0)
+  if (!Number.isFinite(w) || w <= 0) return 0
+  return Math.min(w, MAX_TOKEN_WIDTH)
+}
+
 /** 이 길이를 자동으로 채우는 토큰 — 폭이 있으면 0 패딩(`{{len:4}}`). */
 export function lenToken(width?: number | null): string {
-  const w = Math.max(0, Math.floor(width ?? 0))
+  const w = clampWidth(width)
   return w > 0 ? `{{len:${w}}}` : '{{len}}'
+}
+
+/** 프리픽스까지 포함한 전체 길이 토큰 — 안내 문구에서 "이렇게 고치세요" 로 제시하는 형태. */
+export function lenFrameToken(width?: number | null): string {
+  const w = clampWidth(width)
+  return w > 0 ? `{{len:frame:${w}}}` : '{{len:frame}}'
+}
+
+// ── 소스 없는 내장 토큰(백엔드가 스스로 채운다) ──
+// 상위 노드 바인딩 후보로 오해하면 "이전 노드 값 입력" 에 값을 물어보게 되는데, 명시형은 백엔드가
+// TokenResolver 앞에서 이미 치환하므로 그 입력은 효과가 없고 bare 는 조용한 오버라이드가 된다.
+
+/** 백엔드 TcpLen.INNER 미러 — `len` · `len:4` · `len:frame` · `len:frame:4`(공백 허용, 소문자 고정, 자리수 1~3). */
+export function isLenTokenKey(key?: string | null): boolean {
+  return /^len(?:\s*:\s*frame)?(?:\s*:\s*\d{1,3})?$/.test((key ?? '').trim())
+}
+
+/** 현재 일시 토큰 — `now`/`today`/`time` 과 `now:패턴`(tokenGrammar 의 시각 갈래 미러). */
+export function isTimeTokenKey(key?: string | null): boolean {
+  return /^(?:now|today|time)(?::[^@{}\s][^@{}]*)?$/.test((key ?? '').trim())
+}
+
+/** 소스 없이도 백엔드가 채우는 내장 토큰인가 — 상위 노드 바인딩 후보에서 빼야 하는 것들. */
+export function isBuiltinTokenKey(key?: string | null): boolean {
+  return isLenTokenKey(key) || isTimeTokenKey(key)
 }
 
 const LEN_WORDS = [

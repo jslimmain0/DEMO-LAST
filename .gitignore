@@ -19,3 +19,6 @@ infra/.env
 # 멀티에이전트 프로젝트 평가 문서 — 커밋 제외(로컬 전용)
 docs/flowlink-user-critique.md
 site/
+
+# 런타임 플러그인 JAR 디렉터리(업로드/배치) — 커밋 제외
+plugins/

@@ -3,10 +3,11 @@ import type { CSSProperties } from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import type { HttpMethod, MockRequestLog, MockRouteSpec, MockServerSpec, MockTcpRuleSpec, MockTcpSpec } from '../api/types'
-import { adminApi, mockBaseUrl, mocksApi, secretsApi, workspacesApi } from '../api/client'
+import { adminApi, flowsApi, mockBaseUrl, mocksApi, secretsApi, workspacesApi } from '../api/client'
 import type { SecretView } from '../api/client'
 import { AppShellTier1 } from '../app/AppShell'
 import { useAuth, usePermissions } from '../auth/AuthContext'
+import { makeNode } from '../canvas/nodeFactory'
 import { METHOD_COLOR } from '../canvas/nodeMeta'
 import { AskDialog } from '../components/AskDialog'
 import type { AskSpec } from '../components/AskDialog'
@@ -26,6 +27,7 @@ import { stepCount } from '../lib/mockCodecOps'
 import { openApiToMockRoutes } from '../lib/mockOpenApi'
 import { bodyKeys, findRouteIndex, interestingHeaders, mergeExpect } from '../lib/mockRequestLog'
 import { mockSources } from '../lib/mockSources'
+import { mockTcpToNode } from '../lib/tcpMirror'
 import { relTime } from '../lib/format'
 
 const methodColor = (m: string): string => METHOD_COLOR[m as HttpMethod] ?? 'var(--fl-cat-generic)'
@@ -165,6 +167,28 @@ export function MockServerEditor() {
     try { await save.mutateAsync(); return true } catch { toast('저장 실패 — 미저장 편집을 반영하지 못했습니다.', 'error'); return false }
   }
 
+  // ▶ 노드 만들기 — 이 TCP Mock 을 부르는 워크플로 TCP 노드(연결·요청 레이아웃·응답 필드 거울)를 만든다.
+  // 화면의 편집 중 spec(tcp/tcpRules)을 그대로 쓰므로 "보이는 정의 = 만들어지는 노드".
+  const buildTcpNode = () => {
+    const rule = tcpRules[0] ?? null
+    const n = makeNode('tcp', 300, 120)
+    return { ...n, ...mockTcpToNode(tcp, rule, window.location.hostname || 'localhost'), name: `${d?.name ?? 'TCP'} 호출` }
+  }
+  const copyTcpNode = () => {
+    try { localStorage.setItem('fl:node-clipboard', JSON.stringify({ nodes: [buildTcpNode()], edges: [] })); toast('TCP 노드를 복사했습니다 — 워크플로 에디터 캔버스에서 Ctrl+V', 'ok') }
+    catch { toast('복사 실패(localStorage)', 'error') }
+  }
+  const newFlowWithTcpNode = async () => {
+    try {
+      const start = makeNode('start', 60, 120)
+      const tcpNode = buildTcpNode()
+      const f = await flowsApi.create({ name: `${d?.name ?? 'TCP'} 호출`, workspaceId: d?.workspaceId ?? 'public' })
+      await flowsApi.saveVersion(f.id, { graph: { nodes: [start, tcpNode], edges: [{ id: newId(), from: start.id, to: tcpNode.id, fromPort: 'out' }] }, note: 'TCP Mock 에서 생성' })
+      toast(`워크플로 '${f.name}' 을 만들었습니다`, 'ok')
+      navigate(`/flows/${f.id}`)
+    } catch (e) { toast(apiErrorMessage(e, '워크플로 만들기 실패'), 'error') }
+  }
+
   // Ctrl+S 저장(입력 중에도) · Esc 메뉴 닫기
   const saveRef = useRef<() => void>(() => {})
   useEffect(() => { saveRef.current = () => { if (dirty && canEdit && !save.isPending) save.mutate() } }, [dirty, canEdit, save])
@@ -280,6 +304,8 @@ export function MockServerEditor() {
                   <div style={{ position: 'fixed', inset: 0, zIndex: 90 }} onClick={() => setToolsOpen(false)} />
                   <div style={toolsMenu} role="menu">
                     {canEdit && <button style={toolItem} onClick={() => { duplicate.mutate(); setToolsOpen(false) }}>⧉ 이 Mock 복제</button>}
+                    {isTcp && canEditGlobal && <button style={toolItem} onClick={() => { void newFlowWithTcpNode(); setToolsOpen(false) }}>▶ 이 Mock 을 부르는 TCP 노드 만들기 (새 워크플로)</button>}
+                    {isTcp && <button style={toolItem} onClick={() => { copyTcpNode(); setToolsOpen(false) }}>⧉ TCP 노드 복사 (에디터에서 Ctrl+V)</button>}
                     <button style={toolItem} onClick={() => { setJsonOpen(true); setToolsOpen(false) }}>{'{ } 정의 JSON 보기'}</button>
                     <button style={toolItem} onClick={() => { setTransfer('export'); setToolsOpen(false) }}>⬆ 내보내기(복사)</button>
                     {canEdit && <button style={toolItem} onClick={() => { setTransfer('import'); setToolsOpen(false) }}>⬇ 가져오기(덮어쓰기)</button>}

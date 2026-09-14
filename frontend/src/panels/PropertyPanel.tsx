@@ -22,6 +22,7 @@ import { fieldsToRaw, rawToFields } from '../lib/bodyConvert'
 import { headersForm, jsonBodyForm, kvUrlForm, tcpLayoutForm, type KvRow, type LayoutRow } from '../lib/textForms'
 import { FieldTextToggle } from '../components/FieldTextToggle'
 import { TcpLayoutPasteButtons } from '../components/TcpLayoutPaste'
+import { TcpMockLink } from '../components/TcpMockLink'
 import { duplicateKeys, parseOutputKeys } from '../lib/bulkPaste'
 import { parseCurl, toCurl } from '../lib/curl'
 import { computeReachInfo, isUnreachableExecutable } from '../lib/reachable'
@@ -1407,6 +1408,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
                 else update(id, { tcpHost: v, tcpPort: node.tcpPort ?? 0 })
               }}
             />
+            {flowId && <TcpMockLink node={node} flowId={flowId} canEdit={canEdit} onApply={(patch) => update(id, patch)} />}
             <div style={{ display: 'flex', gap: 6 }}>
               <div style={{ flex: 1 }}>
                 <label style={label}>인코딩</label>

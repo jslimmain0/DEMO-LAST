@@ -2,6 +2,7 @@
 //   {{ key }}            bare (가장 가까운 상위 노드 출력)
 //   {{ key@id }}         명시 소스
 //   {{ key@req:id }}     요청값 스코프
+//   {{ len:4 }}          TCP 전문 길이(백엔드 TcpLen — 소스 없음)
 // key 클래스 [\w.-]+, sourceId 클래스 [\w-]+ (가져온 그래프의 kebab/snake id 호환)
 import type { Binding } from '../api/types'
 
@@ -14,7 +15,10 @@ export function bindingToToken(b: Pick<Binding, 'key' | 'sourceId' | 'scope'>): 
 // 백엔드 TokenResolver.TOKEN 패턴과 동일(그룹: key / req: / sourceId). key 클래스에 한글 포함(응답 키가 한글인 API)
 // + 중첩 경로 문자(. [ ] — {{ user.name@노드 }}·{{ items[0].id@노드 }}).
 // 현재 일시 토큰(now/today/time)은 `:패턴`(공백·기호 허용, @·중괄호 제외)이 붙을 수 있어 별도 갈래 — {{ now:yyyy-MM-dd HH:mm }} · {{ now:yyyyMMdd@UTC }}.
-const TOKEN_SRC = String.raw`\{\{\s*((?:(?:now|today|time)(?::[^@{}\s][^@{}]*?)?|[\w.\[\]가-힣-]+))(?:@(req:)?([\w-]+))?\s*\}\}`
+// TCP 전문 길이 토큰(백엔드 common/tcp/TcpLen)도 `:` 를 쓰므로 별도 갈래 — {{len}} · {{len:4}} · {{len:frame}} · {{len:frame:4}}.
+//   소스(@)가 붙지 않는 형태만(뒤에 }} 가 바로 오는지 lookahead) — {{ len@노드 }} 는 예전처럼 노드 바인딩이고,
+//   {{ len:4@노드 }} 처럼 어느 백엔드 해석기도 못 읽는 형태는 토큰이 아니다(원문 유지).
+const TOKEN_SRC = String.raw`\{\{\s*((?:(?:now|today|time)(?::[^@{}\s][^@{}]*?)?|len(?:\s*:\s*frame)?(?:\s*:\s*\d{1,3})?(?=\s*\}\})|[\w.\[\]가-힣-]+))(?:@(req:)?([\w-]+))?\s*\}\}`
 
 /** 토큰 매칭용 정규식(호출마다 새 인스턴스 — lastIndex 공유 버그 방지). */
 export function tokenRegex(): RegExp {

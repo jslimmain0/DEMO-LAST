@@ -46,7 +46,6 @@ powershell -ExecutionPolicy Bypass -File scripts\stop.ps1
 # GitHub 로그인
 export FLOWLINK_AUTH_GITHUB_ENABLED=true
 export FLOWLINK_AUTH_JWT_SECRET=<강한 시크릿>              # 앱 JWT 서명키(로컬). 운영은 env 대신 Vault 권장(아래 §4)
-export FLOWLINK_AUTH_ALLOWED_LOGINS=alice,bob             # 선택. 허용 GitHub 로그인 목록(비우면 전체 허용, 기동 시 WARN)
 
 # Vault 시크릿 끌어오기
 export FLOWLINK_VAULT_ENABLED=true
@@ -71,7 +70,7 @@ bash scripts/start.sh
 
 1. 앱을 `FLOWLINK_AUTH_GITHUB_ENABLED=true` + 서명 시크릿(**로컬** `FLOWLINK_AUTH_JWT_SECRET` / **운영** Vault `flowlink-config/jwt-secret`, §4)으로 기동.
 2. 브라우저로 접속 → **GitHub 로 로그인** 버튼 → 표시된 코드로 github.com/login/device 인증 → 자동 로그인.
-3. (선택) `FLOWLINK_AUTH_ALLOWED_LOGINS` 로 허용 계정을 제한(비우면 전체 허용). ⚠ github 모드는 `jwt-secret` 이 없으면 기동 실패(토큰 위조 방지).
+3. **처음 로그인하는 계정이 자동으로 전역 관리자(ADMIN)** 가 되고, 이후 사용자는 관리 콘솔(/admin)에서 승인한다. ⚠ github 모드는 `jwt-secret` 이 없으면 기동 실패(토큰 위조 방지).
 - 미설정(기본)이면 dev 모드(로그인 없음, permitAll) — 로컬 개발용.
 
 ## 4. Vault 인프라 (도커)

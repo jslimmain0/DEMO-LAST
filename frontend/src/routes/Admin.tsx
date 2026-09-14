@@ -50,7 +50,7 @@ export function Admin() {
           <h2 style={{ fontFamily: 'var(--fl-font-head)', margin: '12px 0 8px' }}>관리자만 접근할 수 있습니다</h2>
           <p style={{ color: 'var(--fl-text-muted)', fontSize: 13.5, lineHeight: 1.7 }}>
             관리 콘솔은 전역 ADMIN 권한이 필요합니다.<br />
-            운영자에게 권한을 요청하거나 env <code>FLOWLINK_AUTH_ADMIN_LOGINS</code> 를 확인하세요.
+            운영자(전역 ADMIN)에게 권한을 요청하세요.
           </p>
         </div>
       </AppShellTier1>
@@ -393,8 +393,7 @@ function UsersTab({ myName, users, teams, loading, onRefresh }: {
       </div>
       <p style={hint}>
         <b>로그인 = 가입 신청</b> — 승인해야 개인 워크스페이스·팀 배정·AI 가 열리고, <b>차단</b>은 로그인 자체를 거부합니다.
-        전역 <b>ADMIN</b> 은 모든 워크스페이스의 OWNER 격 + 이 콘솔 접근
-        (env <code>FLOWLINK_AUTH_ADMIN_LOGINS</code> 부트스트랩 관리자와 <code>FLOWLINK_AUTH_ALLOWED_LOGINS</code> 화이트리스트는 자동 승인).
+        전역 <b>ADMIN</b> 은 모든 워크스페이스의 OWNER 격 + 이 콘솔 접근(ADMIN 이 아직 없을 때 처음 로그인한 사용자가 자동으로 ADMIN).
       </p>
     </div>
   )

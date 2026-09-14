@@ -24,4 +24,5 @@ interface WorkspaceMemberRepository : JpaRepository<WorkspaceMember, UUID> {
 interface AppUserRepository : JpaRepository<AppUser, UUID> {
     fun findByTenantIdAndUsername(tenantId: String, username: String): Optional<AppUser>
     fun findByTenantIdOrderByUsernameAsc(tenantId: String): List<AppUser>
+    fun existsByTenantIdAndGlobalRole(tenantId: String, globalRole: String): Boolean // 최초 관리자 부트스트랩 판정
 }

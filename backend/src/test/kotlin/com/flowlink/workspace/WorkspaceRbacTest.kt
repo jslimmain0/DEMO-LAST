@@ -177,6 +177,11 @@ class WorkspaceRbacTest {
     @Test
     fun `가입 신청 승인 모델 - 신규 활동은 PENDING, 승인 전엔 개인 ws·팀 생성 불가, 차단은 미승인`() {
         val t = com.flowlink.common.tenant.TenantContext.SHARED_FLOW_TENANT
+        // ADMIN 을 먼저 심는다 — 없으면 newbie 가 최초 사용자 부트스트랩(ADMIN+APPROVED)돼 PENDING 단언이 깨진다
+        userRepo.findByTenantIdAndUsername(t, "root").orElseGet {
+            userRepo.save(com.flowlink.core.domain.AppUser.of(t, "root", com.flowlink.core.domain.AppUser.STATUS_APPROVED)
+                .apply { globalRole = com.flowlink.core.domain.AppUser.ROLE_ADMIN })
+        }
         asUser("newbie")
         ws.touchUser("newbie") // 첫 활동 = 가입 신청(PENDING) 자동 등록
         val row = userRepo.findByTenantIdAndUsername(t, "newbie").get()
@@ -195,6 +200,26 @@ class WorkspaceRbacTest {
         assertFalse(ws.isApproved("newbie"))
 
         assertTrue(ws.isApproved("dev")) // dev/관리자는 항상 승인
+    }
+
+    @Test
+    fun `최초 사용자 부트스트랩 - ADMIN 없으면 첫 등록 사용자가 ADMIN+APPROVED, 다음 사용자는 PENDING`() {
+        val t = com.flowlink.common.tenant.TenantContext.SHARED_FLOW_TENANT
+        val admin = com.flowlink.core.domain.AppUser.ROLE_ADMIN
+        // 실행 순서 무관하게 전제 확보 — 테넌트의 ADMIN 을 전부 MEMBER 로 강등(isAdmin 5초 캐시도 무효화)
+        userRepo.findByTenantIdOrderByUsernameAsc(t).filter { it.globalRole == admin }.forEach {
+            it.globalRole = com.flowlink.core.domain.AppUser.ROLE_MEMBER; userRepo.save(it); ws.invalidateRoleCache(it.username)
+        }
+        val first = ws.touchUser("first")!!
+        assertEquals(admin, first.globalRole)
+        assertEquals(com.flowlink.core.domain.AppUser.STATUS_APPROVED, first.effectiveStatus())
+        assertTrue(ws.isAdmin("first"))
+        assertTrue(ws.isApproved("first"))
+
+        val second = ws.touchUser("second")!!
+        assertEquals(com.flowlink.core.domain.AppUser.ROLE_MEMBER, second.globalRole)
+        assertEquals(com.flowlink.core.domain.AppUser.STATUS_PENDING, second.effectiveStatus())
+        assertFalse(ws.isAdmin("second"))
     }
 
     @Test

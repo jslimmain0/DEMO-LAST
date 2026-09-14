@@ -877,12 +877,12 @@ design/   theme(라이트/다크) · index.css(CSS 변수)
   TenantClaimFilter·[SecurityConfig](backend/src/main/kotlin/com/flowlink/security/SecurityConfig.kt) OIDC 브랜치를 **무변경 재사용**.
 - **코드**: [AuthProperties](backend/src/main/kotlin/com/flowlink/security/AuthProperties.kt)(`flowlink.auth.*`) ·
   [AppJwt](backend/src/main/kotlin/com/flowlink/security/AppJwt.kt)(Nimbus HS256 발급 `issue()` + 검증 `decoder()`, 키=SHA-256(secret) 32B) ·
-  [GithubAuthService](backend/src/main/kotlin/com/flowlink/security/GithubAuthService.kt)(device/code → 백그라운드 폴 → `api.github.com/user` → `allows()` 화이트리스트 → appJwt) ·
+  [GithubAuthService](backend/src/main/kotlin/com/flowlink/security/GithubAuthService.kt)(device/code → 백그라운드 폴 → `api.github.com/user` → 가입 등록(WorkspaceService.touchUser) → appJwt) ·
   [AuthConfig](backend/src/main/kotlin/com/flowlink/security/AuthConfig.kt)(`github-enabled=true` 일 때만 `JwtDecoder` 빈 등록 → 인증 브랜치 활성) ·
   [AuthController](backend/src/main/kotlin/com/flowlink/security/AuthController.kt)(`/auth/config` mode=github|none · `/me` · `/github/device/start` · `/github/device/poll`, 전자 3개 permitAll).
 - **프론트**([auth/](frontend/src/auth/)): oidc-client-ts 제거 → localStorage 토큰([auth.ts](frontend/src/auth/auth.ts)) + [GitHubLogin](frontend/src/auth/GitHubLogin.tsx)(디바이스 코드 카드·폴링) +
   [AuthContext](frontend/src/auth/AuthContext.tsx) github 모드. axios Bearer + 401 시 토큰 폐기·재로그인. `usePermissions()` 게이팅 불변.
-- **env**: `FLOWLINK_AUTH_GITHUB_ENABLED`(기본 false=dev permitAll). github-enabled=true 면 **서명 시크릿 필수**(없으면 공개 dev 키로 토큰 위조 → [GithubAuthStartupValidator](backend/src/main/kotlin/com/flowlink/security/AuthConfig.kt) 가 기동 실패). 서명 시크릿은 **로컬 env `FLOWLINK_AUTH_JWT_SECRET`, 운영 Vault**([AppJwt](backend/src/main/kotlin/com/flowlink/security/AppJwt.kt) 가 env 우선 → 없으면 Vault `flowlink-config` 경로 key `jwt-secret` — 워크플로에 미노출). `FLOWLINK_AUTH_ALLOWED_LOGINS` 는 **선택**(비우면 GitHub 인증한 누구나 로그인/전권 — 전체 허용, 기동 WARN).
+- **env**: `FLOWLINK_AUTH_GITHUB_ENABLED`(기본 false=dev permitAll). github-enabled=true 면 **서명 시크릿 필수**(없으면 공개 dev 키로 토큰 위조 → [GithubAuthStartupValidator](backend/src/main/kotlin/com/flowlink/security/AuthConfig.kt) 가 기동 실패). 서명 시크릿은 **로컬 env `FLOWLINK_AUTH_JWT_SECRET`, 운영 Vault**([AppJwt](backend/src/main/kotlin/com/flowlink/security/AppJwt.kt) 가 env 우선 → 없으면 Vault `flowlink-config` 경로 key `jwt-secret` — 워크플로에 미노출).
   client_id 는 Copilot 공개 client 기본(`AuthProperties.clientId`).
 - 검증: 자체서명 HS256 토큰으로 `/me`·`/flows` 인증 통과·역할 매핑·위조서명 401·무토큰 401·실제 GitHub device 코드 발급·브라우저 로그인 화면 렌더.
 
@@ -1052,7 +1052,7 @@ API 도구 UX·비주얼/IA·플로우 통합 3관점 병렬 비평 → 확정 �
   **공용 = DB 행 없는 가상 워크스페이스**(workspace_id NULL, API 표현 `'public'`) — 모두(게스트 포함) EDITOR 라 기존 데이터/동작 100% 호환.
 - **롤 판정**([WorkspaceService](backend/src/main/kotlin/com/flowlink/workspace/WorkspaceService.kt)): 공용=모두 EDITOR ·
   개인=소유자 OWNER(로그인 사용자마다 `listMine` 시 자동 생성 "개인 — {user}") · 팀=멤버십 · **전역 ADMIN=모든 워크스페이스 OWNER 격**.
-  ADMIN 판정 = dev 모드 'dev'(항상) OR env `FLOWLINK_AUTH_ADMIN_LOGINS`(부트스트랩) OR AppUser.globalRole. 사용자명=JWT `preferred_username`(github 게스트=guest).
+  ADMIN 판정 = dev 모드 'dev'(항상) OR AppUser.globalRole(최초 관리자는 touchUser 부트스트랩). 사용자명=JWT `preferred_username`(github 게스트=guest).
   403 은 신규 [ForbiddenException](backend/src/main/kotlin/com/flowlink/common/error/ForbiddenException.kt)+핸들러.
 - **강제 지점 = definition 레이어**: [FlowService](backend/src/main/kotlin/com/flowlink/definition/FlowService.kt) `readable()/writable()`(loadFlow 가 requireRead, 쓰기 경로 전부 requireWrite — VIEWER 조회만) + `list(workspaceId)` 스코프 목록(레포 파생 쿼리 2종) + create/import 가 workspaceId 배정. [FolderService](backend/src/main/kotlin/com/flowlink/folder/FolderService.kt) 동일(하위 폴더는 상위 워크스페이스 승계, 교차 워크스페이스 이동 400). ~~워크스페이스 삭제 = 공용 승격~~(당시 기록 — 적대 리뷰에서 비공개 데이터 공개 [H] 판정, **삭제 실행자의 개인 ws 이관**으로 변경, 아래 리뷰 항목), 개인은 삭제 불가(관리자 정리는 허용), 마지막 OWNER 내보내기 400.
 - **API**: `GET/POST/DELETE /api/v1/workspaces` + `/{id}/members`(GET/PUT/DELETE) · `GET /api/v1/admin/me`(admin 여부 — 프론트 관리 메뉴 게이트) · `/admin/users`(GET/PUT/DELETE, ADMIN 전용). flows/folders 의 GET `?workspaceId=`, 생성 body `workspaceId`('public'/null=공용).
@@ -1066,8 +1066,8 @@ API 도구 UX·비주얼/IA·플로우 통합 3관점 병렬 비평 → 확정 �
   백엔드 `GET /admin/workspaces`(전체 ws+멤버+flowCount 1왕복, [AdminController](backend/src/main/kotlin/com/flowlink/workspace/WorkspaceController.kt)). 네비 "🛡 관리"는 [AppShell](frontend/src/app/AppShell.tsx) 이 `/admin/me` 로 관리자에게만 노출(+백엔드 403 이중 방어). 대시보드 ⚙ 다이얼로그에 "관리 콘솔 →" 링크.
 - **가입 신청/승인 모델(사용자 피드백 — "계정 타이핑이 이상하다, 로그인 이력=신청으로")**: 수동 사용자 등록 제거 →
   **GitHub 로그인 = 가입 신청**. [AppUser.status](backend/src/main/kotlin/com/flowlink/core/domain/AppUser.kt)(PENDING|APPROVED|BLOCKED, null=레거시 승인 간주, V14 oracle) —
-  [GithubAuthService](backend/src/main/kotlin/com/flowlink/security/GithubAuthService.kt) 가 로그인 성공 시 PENDING 등록(TransactionTemplate — 폴러 스레드)·**BLOCKED 는 토큰 발급 거부**,
-  명시 화이트리스트(allowed-logins)/부트스트랩 관리자는 자동 승인. [WorkspaceService.isApproved](backend/src/main/kotlin/com/flowlink/workspace/WorkspaceService.kt) 게이트:
+  [GithubAuthService](backend/src/main/kotlin/com/flowlink/security/GithubAuthService.kt) 가 로그인 성공 시 WorkspaceService.touchUser 로 등록(PENDING)·**BLOCKED 는 토큰 발급 거부**.
+  [WorkspaceService.isApproved](backend/src/main/kotlin/com/flowlink/workspace/WorkspaceService.kt) 게이트:
   **승인 전엔 공용만**(개인 ws 미생성·팀 생성 403·assistant chat/mock 403 — [AssistantController.requireApproved](backend/src/main/kotlin/com/flowlink/assistant/AssistantController.kt)). 팀 접근은 멤버십으로 별도(OWNER 초대≠전역 승인).
   관리 콘솔: **🔔 가입 신청 섹션**(승인/차단 버튼)+네비 "관리" 대기 수 배지(`/admin/me`.pendingCount)+상태 필(승인/대기/차단됨)+차단↔해제,
   팀 멤버 추가는 타이핑 대신 **등록 사용자 select**. `PUT /admin/users/{u}` 는 {globalRole?, status?}(자기 차단/강등 400). WorkspaceRbacTest 8종.
@@ -1078,7 +1078,7 @@ API 도구 UX·비주얼/IA·플로우 통합 3관점 병렬 비평 → 확정 �
   - **[H] resume 게이트**: [ExecutionService.resume](backend/src/main/kotlin/com/flowlink/execution/ExecutionService.kt) 에 requireWrite — 비멤버가 팀 실행에 임의 노드 출력 주입 불가(외부 콜백은 recordWaitCallback 별도 경로라 무영향). **listRecent 폐기** — `GET /executions` 는 항상 워크스페이스 스코프(무필터 경로가 게스트에게 전 워크스페이스 이력을 유출).
   - **[H] 팀/개인 ws 삭제 = 공용 공개 버그** → 내용물(flow/folder/**mock**)을 **삭제 실행자의 개인 워크스페이스로 이관**([reassignWorkspace](backend/src/main/kotlin/com/flowlink/core/repository/FlowRepository.kt) 3종). deleteUser 는 [purgeUser](backend/src/main/kotlin/com/flowlink/workspace/WorkspaceService.kt) — 멤버십 정리 + 개인 ws 흡수(GitHub 핸들 재사용자가 전임자 데이터를 물려받던 [H] 봉인).
   - **[H] github 모드 서비스 레벨 게이트**(URL RBAC 는 OIDC 전용이었음): 플러그인 JAR 업로드=관리자(게스트 RCE 봉인) · 시크릿 쓰기=승인 사용자 · 설정 쓰기=관리자(+notify GET 은 비관리자 마스킹) · assistant 지침=관리자(스토어드 프롬프트 인젝션)·skills=승인·oauth device/모델=승인+모델 화이트리스트.
-  - **RBAC 로직**: roleFor 존재확인을 admin 단축보다 먼저(없는 ws 에 flow 배정 고아 방지) · isApproved 는 BLOCKED 가 화이트리스트/DB-ADMIN 보다 우선(부트스트랩 admin 만 예외) · putMember 가드(개인 ws 400·예약계정 guest/dev 400·마지막 OWNER 강등 400) · listMine 중복/개인 멤버십 행 제외 · createTeam 이름 길이/중복 400 · 개인 ws 유니크 인덱스(V16).
+  - **RBAC 로직**: roleFor 존재확인을 admin 단축보다 먼저(없는 ws 에 flow 배정 고아 방지) · isApproved 는 BLOCKED 가 DB-ADMIN 보다 우선(dev 만 예외) · putMember 가드(개인 ws 400·예약계정 guest/dev 400·마지막 OWNER 강등 400) · listMine 중복/개인 멤버십 행 제외 · createTeam 이름 길이/중복 400 · 개인 ws 유니크 인덱스(V16).
   - **폴더/flow 교차 배치 봉인**: create/moveToFolder 가 폴더-워크스페이스 일치 검증([FlowService.requireFolderInWorkspace](backend/src/main/kotlin/com/flowlink/definition/FlowService.kt)), FolderService.create 는 상위 폴더 ws 불일치 400(승계 아님). SuiteController 는 읽기 권한 없는 flow 를 응답 전에 제외(이름 열거 유출).
   - **에디터 VIEWER 읽기전용**: [FlowDetail](backend/src/main/kotlin/com/flowlink/definition/dto/FlowDetail.kt) 에 workspaceId+myRole → [Editor](frontend/src/routes/Editor.tsx) 합성 canEdit + editorStore.readOnly 로 PropertyPanel/AssistantPanel/캔버스 우클릭 전파. 저장 403 은 서버 메시지 표시.
   - **presence 게이트**: 핸드셰이크 접근 판정을 flow 존재 → **워크스페이스 롤(username)** 로 교체(게스트/비멤버의 팀 방 입장·편집 현황 노출 차단).
@@ -1236,6 +1236,11 @@ API 도구 UX·비주얼/IA·플로우 통합 3관점 병렬 비평 → 확정 �
 - [SecurityConfig](backend/src/main/kotlin/com/flowlink/security/SecurityConfig.kt) **2분기**(GitHub 게스트 모드 / dev permitAll) — `issuer-uri` 기반 OIDC RBAC 분기·`PUBLIC_PATHS`·issuer-uri WARN 삭제. `GET /auth/config` 는 `mode=github|none` 만 반환. 프론트 [AuthContext](frontend/src/auth/AuthContext.tsx) 의 oidc 안내 화면(`blockedOidc`) 삭제. presence 인터셉터의 `guestAllowed` 파라미터 제거(decoder 있음 = github 모드 = 무토큰은 게스트). `application.yml` 의 issuer-uri 대안 주석 삭제.
 - 유지: JwtRoleConverter·TenantClaimFilter·`flowlink.security.tenant-claim`·`spring-boot-starter-oauth2-resource-server` — GitHub 모드의 자체 JWT 검증이 그대로 사용.
 - ⚠ `spring.security.oauth2.resourceserver.jwt.issuer-uri` 를 주면 Boot 자동설정이 JwtDecoder 빈을 만들지만 SecurityConfig 는 이를 무시(github-enabled 아니면 dev permitAll) — 경고 없이 조용히 개방되므로 운영 env 에서 제거할 것.
+
+## 최근 변경 (2026-09-14) — allowed-logins / admin-logins 제거 + 최초 사용자 관리자 부트스트랩 (`refactor/trim-config`)
+- env 화이트리스트/관리자 목록(`FLOWLINK_AUTH_ALLOWED_LOGINS`/`ADMIN_LOGINS`, `AuthProperties.allows/isBootstrapAdmin`) 삭제. **테넌트에 ADMIN 이 없으면 처음 등록되는 사용자가 ADMIN+APPROVED**([WorkspaceService.touchUser](backend/src/main/kotlin/com/flowlink/workspace/WorkspaceService.kt) 단일 등록 경로 — GithubAuthService.complete 도 이걸 호출, `existsByTenantIdAndGlobalRole` 1개 추가, INFO 로그, 동시 첫 로그인 레이스 무시). 신규 사용자는 전부 PENDING, dev 는 항상 관리자(부트스트랩 대상 아님 — 로컬 dev H2 를 github 모드로 켜도 dev 행이 ADMIN 을 선점하지 않게). putMember/putUser 사전 등록 경로는 부트스트랩 대상 아님(초대받은 사람이 관리자가 되는 사고 방지).
+- ⚠ 기존 운영 DB 에 globalRole=ADMIN 행이 없으면(관리자가 env 로만 지정돼 있었다면) **배포 후 처음 로그인하는 신규 사용자**가 ADMIN 이 된다 — 배포 전에 `UPDATE flowlink_app_user SET global_role='ADMIN' WHERE username='<운영자>'` 로 지정할 것.
+- 검증: GithubAuthStartupValidatorTest 3종 + WorkspaceRbacTest 부트스트랩 케이스 + 전체 스위트.
 
 ## 참고 문서
 - `backend/README.md` — 백엔드 구조·설정·API 요약 · `frontend/README.md` · `infra/README.md`(배포)

@@ -31,8 +31,7 @@ class GithubAuthService(
     private val appJwt: AppJwt,
     private val ssrfGuard: SsrfGuard,
     private val events: ApplicationEventPublisher,
-    private val userRepo: com.flowlink.core.repository.AppUserRepository,
-    private val tx: org.springframework.transaction.support.TransactionTemplate,
+    private val workspace: com.flowlink.workspace.WorkspaceService,
 ) {
     private val log = LoggerFactory.getLogger(GithubAuthService::class.java)
     private val mapper = ObjectMapper()
@@ -95,29 +94,15 @@ class GithubAuthService(
         } catch (e: Exception) { s.status = "error"; s.error = e.message ?: "오류" }
     }
 
-    /** GitHub 토큰으로 신원 확인 → 화이트리스트/차단 검사 + **가입 신청 등록** → 앱 JWT 발급. */
+    /** GitHub 토큰으로 신원 확인 → 가입 신청 등록/차단 검사 → 앱 JWT 발급. */
     private fun complete(s: Session, ghToken: String) {
         try {
             val user = getWithAuth("https://api.github.com/user", "token $ghToken")
             val login = user.path("login").asText(null)?.lowercase()
             if (login.isNullOrBlank()) { s.status = "error"; s.error = "GitHub 사용자 정보를 못 읽었습니다."; return }
-            if (!props.allows(login)) { s.status = "error"; s.error = "접근 권한이 없는 계정입니다: $login"; return }
-            // 로그인 = 가입 신청 — 처음 보는 계정은 PENDING 으로 레지스트리에 등록(관리 콘솔에서 승인),
-            // 차단(BLOCKED)된 계정은 토큰 발급 자체를 거부. 폴러 스레드라 TransactionTemplate 로 감싼다.
-            val blocked = tx.execute {
-                val tenant = TenantContext.SHARED_FLOW_TENANT
-                val u = userRepo.findByTenantIdAndUsername(tenant, login).orElseGet {
-                    val status = if (props.isBootstrapAdmin(login) || props.allowedLogins.isNotEmpty())
-                        com.flowlink.core.domain.AppUser.STATUS_APPROVED
-                    else com.flowlink.core.domain.AppUser.STATUS_PENDING
-                    log.info("가입 신청 등록: {} ({})", login, status)
-                    userRepo.save(com.flowlink.core.domain.AppUser.of(tenant, login, status))
-                }
-                u.lastSeenAt = Instant.now()
-                userRepo.save(u)
-                u.effectiveStatus() == com.flowlink.core.domain.AppUser.STATUS_BLOCKED
-            } ?: false
-            if (blocked && !props.isBootstrapAdmin(login)) {
+            // 로그인 = 가입 신청 — 등록/최초 관리자 부트스트랩은 WorkspaceService.touchUser 한 곳(@Transactional 프록시라 폴러 스레드에서도 tx 가 열린다).
+            // 차단(BLOCKED)된 계정은 토큰 발급 자체를 거부.
+            if (workspace.touchUser(login)?.effectiveStatus() == com.flowlink.core.domain.AppUser.STATUS_BLOCKED) {
                 s.status = "error"; s.error = "차단된 계정입니다: $login (관리자에게 문의)"; return
             }
             s.login = login

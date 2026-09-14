@@ -39,6 +39,7 @@ class WorkspaceService(
         const val PUBLIC_ID = "public" // 가상 공용 워크스페이스 id(API 표현)
         const val GUEST = "guest"
         const val DEV_USER = "dev"
+        private val log = org.slf4j.LoggerFactory.getLogger(WorkspaceService::class.java)
     }
 
     private fun tenant(): String = TenantContext.SHARED_FLOW_TENANT
@@ -57,7 +58,7 @@ class WorkspaceService(
     fun isAuthenticated(username: String): Boolean = username != GUEST
 
     // isAdmin DB 판정 5초 캐시 — 실행 폴링(0.4초 간격)의 requireRead 경로가 매 tick 사용자 행을 조회하던 것 완화.
-    // 롤 변경(putUser)·삭제 시 즉시 무효화. env/dev 판정은 캐시 불필요(메모리 비교).
+    // 롤 변경(putUser)·삭제 시 즉시 무효화. dev 판정은 캐시 불필요(메모리 비교).
     private val adminCache = java.util.concurrent.ConcurrentHashMap<String, Pair<Long, Boolean>>()
 
     fun invalidateRoleCache(username: String) { adminCache.remove(username.lowercase()) }
@@ -65,7 +66,6 @@ class WorkspaceService(
     @Transactional
     fun isAdmin(username: String): Boolean {
         if (username == DEV_USER) return true // dev 모드 = 로컬 단독 사용 — 전권
-        if (auth.isBootstrapAdmin(username)) return true
         val now = System.currentTimeMillis()
         adminCache[username]?.let { if (now - it.first < 5_000) return it.second }
         val v = userRepo.findByTenantIdAndUsername(tenant(), username)
@@ -75,41 +75,39 @@ class WorkspaceService(
     }
 
     /**
-     * 사용자 자동 등록/최근 활동 갱신 — 로그인 사용자의 활동 시점에 호출.
-     * **처음 관측되는 사용자는 PENDING(가입 신청)으로 등록** → 관리 콘솔에서 승인.
-     * 관리자·화이트리스트(allowed-logins 명시) 사용자는 자동 승인.
+     * 사용자 자동 등록/최근 활동 갱신 — 로그인(GithubAuthService.complete)·활동(listMine) 시 호출, 등록된 행을 돌려준다(게스트는 null).
+     * **처음 관측되는 사용자는 PENDING(가입 신청)** → 관리 콘솔에서 승인. 단 테넌트에 ADMIN 이 아직 없으면 **첫 사용자를 ADMIN+APPROVED 로 부트스트랩**
+     * (env 관리자 목록이 없으므로 유일한 최초 관리자 생성 경로). 동시 첫 로그인 레이스는 무시한다(내부망 도구).
      */
     @Transactional
-    fun touchUser(username: String) {
-        if (!isAuthenticated(username)) return
+    fun touchUser(username: String): AppUser? {
+        if (!isAuthenticated(username)) return null
         val u = userRepo.findByTenantIdAndUsername(tenant(), username).orElseGet {
-            userRepo.save(AppUser.of(tenant(), username, defaultStatus(username)))
+            val bootstrap = username != DEV_USER && !userRepo.existsByTenantIdAndGlobalRole(tenant(), AppUser.ROLE_ADMIN)
+            val row = AppUser.of(tenant(), username, if (bootstrap) AppUser.STATUS_APPROVED else defaultStatus(username))
+            if (bootstrap) { row.globalRole = AppUser.ROLE_ADMIN; log.info("최초 사용자 관리자 부트스트랩: {}", username) }
+            else log.info("가입 신청 등록: {} ({})", username, row.status)
+            userRepo.save(row)
         }
         u.lastSeenAt = Instant.now()
-        userRepo.save(u)
+        return userRepo.save(u)
     }
 
-    /** 신규 등록 기본 상태 — 관리자/명시 화이트리스트는 APPROVED, 그 외 PENDING(가입 신청). */
+    /** 신규 등록 기본 상태 — dev 는 APPROVED, 그 외 PENDING(가입 신청). */
     fun defaultStatus(username: String): String =
-        if (username == DEV_USER || auth.isBootstrapAdmin(username) ||
-            (auth.allowedLogins.isNotEmpty() && auth.allows(username))
-        ) AppUser.STATUS_APPROVED else AppUser.STATUS_PENDING
+        if (username == DEV_USER) AppUser.STATUS_APPROVED else AppUser.STATUS_PENDING
 
     /**
      * 가입 승인 여부 — **승인된 사용자만** 개인 워크스페이스·팀 생성·AI 를 쓴다(팀 접근은 멤버십으로 별도 판정).
-     * 관리자·dev·명시 화이트리스트는 항상 승인. 레거시 행(status=null)도 승인 간주.
+     * 관리자·dev 는 항상 승인. 레거시 행(status=null)도 승인 간주.
      */
     @Transactional
     fun isApproved(username: String): Boolean {
         if (!isAuthenticated(username)) return false
-        // 차단이 화이트리스트/DB-ADMIN 보다 우선 — 차단해도 allowed-logins 우회로 AI 가 살아있던 구멍 방지.
-        // (env 부트스트랩 관리자만 예외 — 관리자 전원이 서로 차단해 잠기는 사고 방지)
+        // 차단이 DB-ADMIN 보다 우선 — 차단해도 관리자 롤로 AI 가 살아있지 않게(dev 만 예외).
         val row = userRepo.findByTenantIdAndUsername(tenant(), username).orElse(null)
-        if (row?.effectiveStatus() == AppUser.STATUS_BLOCKED && !auth.isBootstrapAdmin(username) && username != DEV_USER) {
-            return false
-        }
+        if (row?.effectiveStatus() == AppUser.STATUS_BLOCKED && username != DEV_USER) return false
         if (username == DEV_USER || isAdmin(username)) return true
-        if (auth.allowedLogins.isNotEmpty() && auth.allows(username)) return true
         return row?.effectiveStatus() == AppUser.STATUS_APPROVED
     }
 

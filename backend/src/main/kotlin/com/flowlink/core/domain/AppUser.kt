@@ -13,7 +13,7 @@ import java.util.UUID
  * 앱 사용자 레지스트리 — 관리자 화면의 사용자 목록/전역 롤/가입 상태.
  * **GitHub 로그인 = 가입 신청**: 처음 로그인(활동)이 관측되면 PENDING 으로 자동 등록되고,
  * 관리자가 관리 콘솔에서 승인(APPROVED)/차단(BLOCKED)한다. 전역 롤: ADMIN | MEMBER.
- * (부트스트랩 관리자는 env `flowlink.auth.admin-logins` — DB 롤과 OR 판정. status=null 은 레거시 행 = 승인 간주)
+ * (최초 관리자는 테넌트에 ADMIN 이 없을 때 처음 등록되는 사용자 — WorkspaceService.touchUser 부트스트랩. status=null 은 레거시 행 = 승인 간주)
  */
 @Entity
 @Table(name = "flowlink_app_user", uniqueConstraints = [UniqueConstraint(columnNames = ["tenant_id", "username"])])

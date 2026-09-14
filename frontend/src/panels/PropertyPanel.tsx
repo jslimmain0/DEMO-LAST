@@ -2023,11 +2023,12 @@ function TcpReqEditor({ fields, sources, sourceType, onChange }: { fields: TcpFi
             <span title={`시작 바이트 오프셋 ${start} (길이 ${f.length ?? 0})`} style={offBadge}>@{start}</span>
             <input style={{ ...mono, flex: 2, minWidth: 90 }} value={f.name ?? ''} placeholder="이름" onChange={(e) => upd(f.id, { name: e.target.value })} />
             <input style={{ ...mono, width: 54 }} type="number" value={f.length ?? 0} title="바이트 길이" onChange={(e) => upd(f.id, { length: Number(e.target.value) })} />
-            <select style={{ ...field, width: 50 }} value={f.pad ?? 'right'} title="패딩 방향" onChange={(e) => upd(f.id, { pad: e.target.value as 'left' | 'right' })}>
-              <option value="right">→</option>
-              <option value="left">←</option>
+            {/* 방향 글리프가 네이티브 셀렉트 화살표에 잘리지 않게 — 좌우 패딩을 줄이고 폭을 확보(문자=→ 우측, 숫자=← 좌측 관례) */}
+            <select style={{ ...field, width: 86, padding: '9px 6px' }} value={f.pad ?? 'right'} aria-label="패딩 방향" title="패딩 방향 (→ 우측 공백=문자, ← 좌측 0=숫자)" onChange={(e) => upd(f.id, { pad: e.target.value as 'left' | 'right' })}>
+              <option value="right">→ 우측</option>
+              <option value="left">← 좌측</option>
             </select>
-            <input style={{ ...mono, width: 34 }} maxLength={1} value={f.padChar ?? ' '} title="패딩 문자" onChange={(e) => upd(f.id, { padChar: e.target.value })} />
+            <input style={{ ...mono, width: 46, textAlign: 'center', padding: '9px 6px' }} maxLength={1} value={f.padChar ?? ' '} aria-label="패딩 문자" title="패딩 문자(문자 필드는 공백, 숫자 필드는 0)" onChange={(e) => upd(f.id, { padChar: e.target.value })} />
             <select style={{ ...field, width: 78 }} value={f.encoding ?? ''} aria-label="필드 인코딩" title="필드 인코딩(비면 노드 인코딩)" onChange={(e) => upd(f.id, { encoding: e.target.value || undefined })}>
               <option value="">(노드)</option>{TCP_ENCODINGS.map((c) => <option key={c} value={c}>{c}</option>)}
             </select>

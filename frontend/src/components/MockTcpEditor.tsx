@@ -246,10 +246,11 @@ export function TcpRuleDetail({ rule: r, index, total, layout, readOnly, sources
                       <div style={{ flex: 1, minWidth: 180 }}>
                         <TokenInput ariaLabel={`응답 필드 ${f.name || ''} 값`} value={f.value ?? ''} sources={sources} placeholder="값 — 고정값 또는 { } 요청 필드·시크릿" onChange={(v) => setField(f.id, { value: v })} />
                       </div>
-                      <select style={{ ...input, width: 52 }} value={f.pad ?? 'right'} title="패딩 방향 (→ 우측 공백=문자, ← 좌측 0=숫자)" disabled={readOnly} onChange={(e) => setField(f.id, { pad: e.target.value as 'left' | 'right' })}>
-                        <option value="right">→</option><option value="left">←</option>
+                      {/* 방향 글리프가 네이티브 셀렉트 화살표에 잘리지 않게 — 좌우 패딩을 줄이고 폭을 확보 */}
+                      <select style={{ ...input, width: 80, padding: '6px 6px' }} value={f.pad ?? 'right'} aria-label="패딩 방향" title="패딩 방향 (→ 우측 공백=문자, ← 좌측 0=숫자)" disabled={readOnly} onChange={(e) => setField(f.id, { pad: e.target.value as 'left' | 'right' })}>
+                        <option value="right">→ 우측</option><option value="left">← 좌측</option>
                       </select>
-                      <input style={{ ...input, width: 34, fontFamily: 'var(--fl-font-mono)', textAlign: 'center' }} maxLength={1} value={f.padChar ?? ' '} title="패딩 문자" disabled={readOnly} onChange={(e) => setField(f.id, { padChar: e.target.value })} />
+                      <input style={{ ...input, width: 42, fontFamily: 'var(--fl-font-mono)', textAlign: 'center', padding: '6px 6px' }} maxLength={1} value={f.padChar ?? ' '} aria-label="패딩 문자" title="패딩 문자(문자 필드는 공백, 숫자 필드는 0)" disabled={readOnly} onChange={(e) => setField(f.id, { padChar: e.target.value })} />
                       <select style={{ ...input, width: 84 }} value={f.encoding ?? ''} title="필드 인코딩(비면 서버)" disabled={readOnly} onChange={(e) => setField(f.id, { encoding: e.target.value || undefined })}>
                         <option value="">(서버)</option>{ENCODINGS.map((c) => <option key={c}>{c}</option>)}
                       </select>

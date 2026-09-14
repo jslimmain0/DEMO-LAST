@@ -18,7 +18,10 @@ import { bindableSources } from '../binding/upstream'
 import type { BindableSource } from '../binding/upstream'
 import { asGraphNode } from '../canvas/graphAdapter'
 import { ANNO_COLORS, catColor, METHOD_COLOR, typeIcon, typeLabel } from '../canvas/nodeMeta'
-import { fieldsToRaw, rawToFields, headersToRaw, rawToHeaders } from '../lib/bodyConvert'
+import { fieldsToRaw, rawToFields } from '../lib/bodyConvert'
+import { headersForm, jsonBodyForm, kvUrlForm, tcpLayoutForm, type KvRow, type LayoutRow } from '../lib/textForms'
+import { FieldTextToggle } from '../components/FieldTextToggle'
+import { TcpLayoutPasteButtons } from '../components/TcpLayoutPaste'
 import { duplicateKeys, parseOutputKeys } from '../lib/bulkPaste'
 import { parseCurl, toCurl } from '../lib/curl'
 import { computeReachInfo, isUnreachableExecutable } from '../lib/reachable'
@@ -36,6 +39,13 @@ const mono: CSSProperties = { ...field, fontFamily: 'var(--fl-font-mono)', fontS
 const braceBtn: CSSProperties = { width: 32, height: 32, flexShrink: 0, border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-primary)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }
 
 const METHODS: HttpMethod[] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD']
+// TCP 전문 인코딩 — 노드 기본값 + 필드별 오버라이드(비면 노드 값)
+const TCP_ENCODINGS = ['EUC-KR', 'MS949', 'UTF-8', 'US-ASCII']
+// [필드|텍스트] 토글은 form·rows 를 참조로 비교해 텍스트 버퍼를 재동기화한다 —
+// 렌더마다 새 객체/새 빈 배열을 넘기면 타이핑 중 버퍼가 초기화되므로 모듈 상수로 고정.
+const TCP_REQ_FORM = tcpLayoutForm('request')
+const TCP_RESP_FORM = tcpLayoutForm('response')
+const NO_LAYOUT_ROWS: LayoutRow[] = []
 // wait(콜백 대기) 노드 — 콜백에 줄 응답 형식
 const CALLBACK_RESP_TYPES = [
   { value: 'text', label: '문자열 (text/plain)' },
@@ -477,30 +487,41 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
   })()
   const previewText = `${method} ${previewUrl}\n${previewHeaders.map((h) => `${h.key}: ${h.value}`).join('\n')}${hasBody && currentBody() ? '\n\n' + currentBody() : ''}`
 
-  // [필드 ↔ Raw] 전환 시 현재 내용을 서로 변환(치환). 바인딩은 토큰으로, id 는 새로 부여.
+  // 구조적 바인딩(토큰으로 쓸 수 없는 bound)은 텍스트로 표현할 수 없다 — Raw 전환을 막고 이유를 알린다(조용한 유실 방지).
+  const blockRawForBound = (rows: NodeField[]): boolean => {
+    const stuck = rows.filter((f) => f.bound && !isTokenizable(f.bound)).map((f) => f.key).filter(Boolean)
+    if (!stuck.length) return false
+    setBodyConvNote(`구조적 바인딩(토큰화 불가) 필드가 있어 Raw 로 바꿀 수 없습니다: ${stuck.join(', ')} — 그 필드의 바인딩을 { } 토큰으로 다시 넣으세요.`)
+    return true
+  }
+  // fromText 경고 → 한 줄 안내(없으면 null)
+  const warnNote = (ws: Array<{ line: number; reason: string }>): string | null =>
+    ws.length ? ws.map((w) => `${w.line}행: ${w.reason}`).join(' · ') : null
+
+  // [필드 ↔ Raw] 전환 시 현재 내용을 서로 변환(치환). 텍스트 폼(textForms)이 양방향의 단일 규약 — id 는 승계된다.
   const switchBodyMode = (raw: boolean) => {
     if (raw === !!node.jsonRaw) return // 이미 그 모드
     const bt = node.bodyType ?? 'json'
+    const form = bt === 'json' ? jsonBodyForm : kvUrlForm
+    const bodyFields = node.fields?.body ?? []
     if (raw) {
       // 필드 → Raw: 키-값(바인딩은 토큰, 타입 보존)을 본문 텍스트로 직렬화
-      const bodyFields = node.fields?.body ?? []
-      const rows = bodyFields.map((f) => ({ key: f.key ?? '', value: f.bound ? bindingToToken(f.bound) : (f.value ?? ''), type: f.type }))
-      // json 에서 바인딩 값은 따옴표 문자열 토큰으로 직렬화됨 → 숫자/불리언이면 문자열이 됨(안내)
-      setBodyConvNote(bt === 'json' && bodyFields.some((f) => f.bound)
-        ? '바인딩 필드는 Raw(JSON)에서 따옴표 문자열로 직렬화됩니다(숫자/불리언이면 문자열). 필요하면 Raw 에서 따옴표를 직접 제거하세요.'
-        : null)
-      update(id, { jsonRaw: true, rawBody: fieldsToRaw(rows, bt) })
+      if (blockRawForBound(bodyFields)) return
+      const rows: KvRow[] = bodyFields.map((f) => ({ id: f.id, key: f.key ?? '', value: f.bound ? bindingToToken(f.bound) : (f.value ?? ''), type: f.type }))
+      setBodyConvNote(null)
+      update(id, { jsonRaw: true, rawBody: form.toText(rows) })
     } else {
       // Raw → 필드: 본문 텍스트를 키-값으로 파싱(실패 시 원문 보존 + 안내)
-      const parsed = rawToFields(node.rawBody ?? '', bt)
-      if (parsed === null) {
-        setBodyConvNote('Raw 본문을 필드로 변환하지 못했어요(유효한 JSON/형식 확인). 원문은 Raw 에 그대로 있습니다.')
+      const prevRows: KvRow[] = bodyFields.map((f) => ({ id: f.id, key: f.key ?? '', value: f.value ?? '', type: f.type }))
+      const r = form.fromText(node.rawBody ?? '', prevRows)
+      if (r.rows.length === 0 && r.warnings.length) {
+        setBodyConvNote(`Raw 본문을 필드로 변환하지 못했어요: ${r.warnings[0].reason}. 원문은 Raw 에 그대로 있습니다.`)
         update(id, { jsonRaw: false })
-      } else {
-        setBodyConvNote(null)
-        const body: NodeField[] = parsed.map((kv) => ({ id: newId(), key: kv.key, value: kv.value, type: kv.type }))
-        update(id, { jsonRaw: false, fields: { params: fields.params ?? [], headers: fields.headers ?? [], body } })
+        return
       }
+      setBodyConvNote(warnNote(r.warnings))
+      const body: NodeField[] = r.rows.map((kv) => ({ id: kv.id, key: kv.key, value: kv.value, type: kv.type }))
+      update(id, { jsonRaw: false, fields: { params: fields.params ?? [], headers: fields.headers ?? [], body } })
     }
   }
 
@@ -508,38 +529,47 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
   const switchKvRaw = (t: 'params' | 'headers', raw: boolean) => {
     const cur = t === 'params' ? !!node.paramsRaw : !!node.headersRaw
     if (raw === cur) return
-    setBodyConvNote(null)
-    const rows = (node.fields?.[t] ?? []).map((f) => ({ key: f.key ?? '', value: f.bound ? bindingToToken(f.bound) : (f.value ?? '') }))
+    const form = t === 'params' ? kvUrlForm : headersForm
+    const src = node.fields?.[t] ?? []
     if (raw) {
-      const text = t === 'params' ? fieldsToRaw(rows, 'urlencoded') : headersToRaw(rows)
+      if (blockRawForBound(src)) return
+      setBodyConvNote(null)
+      const rows: KvRow[] = src.map((f) => ({ id: f.id, key: f.key ?? '', value: f.bound ? bindingToToken(f.bound) : (f.value ?? '') }))
+      const text = form.toText(rows)
       update(id, t === 'params' ? { paramsRaw: true, rawParams: text } : { headersRaw: true, rawHeaders: text })
     } else {
       const rawText = t === 'params' ? (node.rawParams ?? '') : (node.rawHeaders ?? '')
-      const parsed = t === 'params' ? rawToFields(rawText, 'urlencoded') : rawToHeaders(rawText)
-      if (parsed === null) {
+      const prevRows: KvRow[] = src.map((f) => ({ id: f.id, key: f.key ?? '', value: f.value ?? '' }))
+      const r = form.fromText(rawText, prevRows)
+      if (r.rows.length === 0 && r.warnings.length) {
         setBodyConvNote(t === 'headers'
           ? 'Raw 헤더를 필드로 변환하지 못했어요(각 줄이 "이름: 값" 형식인지 확인). 원문은 Raw 에 그대로 있습니다.'
           : 'Raw 를 필드로 변환하지 못했어요. 원문은 Raw 에 그대로 있습니다.')
         update(id, t === 'params' ? { paramsRaw: false } : { headersRaw: false })
-      } else {
-        const next: NodeField[] = parsed.map((kv) => ({ id: newId(), key: kv.key, value: kv.value }))
-        update(id, t === 'params'
-          ? { paramsRaw: false, fields: { ...fields, params: next } }
-          : { headersRaw: false, fields: { ...fields, headers: next } })
+        return
       }
+      setBodyConvNote(warnNote(r.warnings))
+      const next: NodeField[] = r.rows.map((kv) => ({ id: kv.id, key: kv.key, value: kv.value }))
+      update(id, t === 'params'
+        ? { paramsRaw: false, fields: { ...fields, params: next } }
+        : { headersRaw: false, fields: { ...fields, headers: next } })
     }
   }
 
   // 폼 전송(WAIT) 폼 데이터의 [필드 ↔ Raw] 전환(urlencoded). body 처럼 jsonRaw/rawBody 슬롯을 재사용.
   const switchFormRaw = (raw: boolean) => {
     if (raw === !!node.jsonRaw) return
-    setBodyConvNote(null)
+    const bodyFields = node.fields?.body ?? []
     if (raw) {
-      const rows = (node.fields?.body ?? []).map((f) => ({ key: f.key ?? '', value: f.bound ? bindingToToken(f.bound) : (f.value ?? '') }))
-      update(id, { jsonRaw: true, rawBody: fieldsToRaw(rows, 'urlencoded') })
+      if (blockRawForBound(bodyFields)) return
+      setBodyConvNote(null)
+      const rows: KvRow[] = bodyFields.map((f) => ({ id: f.id, key: f.key ?? '', value: f.bound ? bindingToToken(f.bound) : (f.value ?? '') }))
+      update(id, { jsonRaw: true, rawBody: kvUrlForm.toText(rows) })
     } else {
-      const parsed = rawToFields(node.rawBody ?? '', 'urlencoded')
-      const body: NodeField[] = (parsed ?? []).map((kv) => ({ id: newId(), key: kv.key, value: kv.value }))
+      const prevRows: KvRow[] = bodyFields.map((f) => ({ id: f.id, key: f.key ?? '', value: f.value ?? '' }))
+      const r = kvUrlForm.fromText(node.rawBody ?? '', prevRows)
+      setBodyConvNote(warnNote(r.warnings))
+      const body: NodeField[] = r.rows.map((kv) => ({ id: kv.id, key: kv.key, value: kv.value }))
       update(id, { jsonRaw: false, fields: { params: fields.params ?? [], headers: fields.headers ?? [], body } })
     }
   }
@@ -1381,7 +1411,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
               <div style={{ flex: 1 }}>
                 <label style={label}>인코딩</label>
                 <select style={field} value={node.tcpEncoding ?? 'EUC-KR'} onChange={(e) => update(id, { tcpEncoding: e.target.value })}>
-                  {['EUC-KR', 'MS949', 'UTF-8', 'US-ASCII'].map((c) => <option key={c} value={c}>{c}</option>)}
+                  {TCP_ENCODINGS.map((c) => <option key={c} value={c}>{c}</option>)}
                 </select>
               </div>
               <div style={{ flex: 1 }}><label style={label}>타임아웃(ms)</label><input style={field} type="number" value={node.tcpTimeoutMs ?? 5000} onChange={(e) => update(id, { tcpTimeoutMs: Number(e.target.value) })} /></div>
@@ -1393,8 +1423,16 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
               </label>
             </div>
 
-            <label style={label}>요청 필드 (고정길이 · 위→아래 순서로 연결)</label>
-            <TcpReqEditor fields={node.tcpRequest ?? []} sources={sources} sourceType={sourceType} onChange={(r) => update(id, { tcpRequest: r })} />
+            <FieldTextToggle<LayoutRow>
+              form={TCP_REQ_FORM} rows={(node.tcpRequest ?? NO_LAYOUT_ROWS) as LayoutRow[]} ariaLabel="요청 필드" readOnly={!canEdit}
+              onChange={(r) => update(id, { tcpRequest: r as TcpField[] })}
+              title={<label style={{ ...label, margin: 0 }}>요청 필드 (고정길이 · 위→아래 순서로 연결)</label>}
+              summary={(r) => `총 ${r.reduce((a, f) => a + (f.length ?? 0), 0)} 바이트`}
+              extras={<TcpLayoutPasteButtons mode="request" rows={(node.tcpRequest ?? NO_LAYOUT_ROWS) as LayoutRow[]} encoding={node.tcpEncoding ?? 'EUC-KR'} prefixLength={node.tcpPrefixLength ?? 0} prefixIncludesSelf={!!node.tcpPrefixIncludesSelf} compact readOnly={!canEdit}
+                onApply={(rows, how) => update(id, { tcpRequest: (how === 'replace' ? rows : [...(node.tcpRequest ?? []), ...rows]) as TcpField[] })} />}
+            >
+              <TcpReqEditor fields={node.tcpRequest ?? []} sources={sources} sourceType={sourceType} onChange={(r) => update(id, { tcpRequest: r })} />
+            </FieldTextToggle>
 
           </>
           )
@@ -1410,15 +1448,25 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
                 ))}
               </>
             )}
-            <label style={label}>응답 필드 (고정길이 → 출력)</label>
-            <TcpRespEditor
-              fields={node.tcpResponse ?? []}
-              onChange={(r) => update(id, {
+            {(() => {
+              // 응답 필드 이름 = 출력 키 — 바인딩 피커 칩과 자동 동기화(타입도 반영)
+              const syncResp = (r: TcpRespField[]) => update(id, {
                 tcpResponse: r,
-                // 응답 필드 이름 = 출력 키 — 바인딩 피커 칩과 자동 동기화
-                outputs: r.filter((f) => f.name && f.name.trim()).map((f) => ({ key: f.name!, type: 'string' })),
-              })}
-            />
+                outputs: r.filter((f) => f.name && f.name.trim()).map((f) => ({ key: f.name!, type: f.type === 'number' ? 'number' : 'string' })),
+              })
+              return (
+                <FieldTextToggle<LayoutRow>
+                  form={TCP_RESP_FORM} rows={(node.tcpResponse ?? NO_LAYOUT_ROWS) as LayoutRow[]} ariaLabel="응답 필드" readOnly={!canEdit}
+                  onChange={(r) => syncResp(r as TcpRespField[])}
+                  title={<label style={{ ...label, margin: 0 }}>응답 필드 (고정길이 → 출력)</label>}
+                  summary={(r) => `총 ${r.reduce((a, f) => a + (f.length ?? 0), 0)} 바이트`}
+                  extras={<TcpLayoutPasteButtons mode="response" rows={(node.tcpResponse ?? NO_LAYOUT_ROWS) as LayoutRow[]} encoding={node.tcpEncoding ?? 'EUC-KR'} prefixLength={node.tcpPrefixLength ?? 0} prefixIncludesSelf={!!node.tcpPrefixIncludesSelf} compact readOnly={!canEdit}
+                    onApply={(rows, how) => syncResp((how === 'replace' ? rows : [...(node.tcpResponse ?? []), ...rows]) as TcpRespField[])} />}
+                >
+                  <TcpRespEditor fields={node.tcpResponse ?? []} onChange={syncResp} />
+                </FieldTextToggle>
+              )
+            })()}
             <p style={{ fontSize: 11.5, color: 'var(--fl-text-muted)', marginTop: 8 }}>응답 필드 이름이 그대로 출력 키가 되어 하위 노드에서 바인딩됩니다. 내장 Mock 서버의 TCP 탭으로 가짜 대상 시스템을 세울 수 있습니다.</p>
 
             {canEdit && (
@@ -1957,15 +2005,18 @@ function TcpReqEditor({ fields, sources, sourceType, onChange }: { fields: TcpFi
         const start = off; off += f.length ?? 0
         return (
         <div key={f.id} style={{ border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', padding: 8, marginBottom: 6 }}>
-          <div style={{ display: 'flex', gap: 6, marginBottom: 6, alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: 6, marginBottom: 6, alignItems: 'center', flexWrap: 'wrap' }}>
             <span title={`시작 바이트 오프셋 ${start} (길이 ${f.length ?? 0})`} style={offBadge}>@{start}</span>
-            <input style={{ ...mono, flex: 2 }} value={f.name ?? ''} placeholder="이름" onChange={(e) => upd(f.id, { name: e.target.value })} />
+            <input style={{ ...mono, flex: 2, minWidth: 90 }} value={f.name ?? ''} placeholder="이름" onChange={(e) => upd(f.id, { name: e.target.value })} />
             <input style={{ ...mono, width: 54 }} type="number" value={f.length ?? 0} title="바이트 길이" onChange={(e) => upd(f.id, { length: Number(e.target.value) })} />
             <select style={{ ...field, width: 50 }} value={f.pad ?? 'right'} title="패딩 방향" onChange={(e) => upd(f.id, { pad: e.target.value as 'left' | 'right' })}>
               <option value="right">→</option>
               <option value="left">←</option>
             </select>
             <input style={{ ...mono, width: 34 }} maxLength={1} value={f.padChar ?? ' '} title="패딩 문자" onChange={(e) => upd(f.id, { padChar: e.target.value })} />
+            <select style={{ ...field, width: 78 }} value={f.encoding ?? ''} aria-label="필드 인코딩" title="필드 인코딩(비면 노드 인코딩)" onChange={(e) => upd(f.id, { encoding: e.target.value || undefined })}>
+              <option value="">(노드)</option>{TCP_ENCODINGS.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
             <RowMove i={i} len={fields.length} onMove={(d) => onChange(moveInList(fields, i, d))} />
             <button onClick={() => onChange(fields.filter((x) => x.id !== f.id))} aria-label="삭제" style={{ width: 26, flexShrink: 0, border: '1px solid var(--fl-border)', borderRadius: 6, background: 'var(--fl-surface)', cursor: 'pointer' }}>×</button>
           </div>
@@ -2001,16 +2052,25 @@ function TcpRespEditor({ fields, onChange }: { fields: TcpRespField[]; onChange:
       {fields.map((f, i) => {
         const start = off; off += f.length ?? 0
         return (
-        <div key={f.id} style={{ display: 'flex', gap: 6, marginBottom: 6, alignItems: 'center' }}>
+        <div key={f.id} style={{ display: 'flex', gap: 6, marginBottom: 6, alignItems: 'center', flexWrap: 'wrap' }}>
           <span title={`시작 바이트 오프셋 ${start} (길이 ${f.length ?? 0})`} style={offBadge}>@{start}</span>
-          <input style={{ ...mono, flex: 2 }} value={f.name ?? ''} placeholder="이름(=출력 키)" onChange={(e) => upd(f.id, { name: e.target.value })} />
+          <input style={{ ...mono, flex: 2, minWidth: 90 }} value={f.name ?? ''} placeholder="이름(=출력 키)" onChange={(e) => upd(f.id, { name: e.target.value })} />
           <input style={{ ...mono, width: 64 }} type="number" value={f.length ?? 0} title="바이트 길이" onChange={(e) => upd(f.id, { length: Number(e.target.value) })} />
+          <select style={{ ...field, width: 64 }} value={f.type ?? 'string'} aria-label="출력 타입" title="출력 타입 — 숫자면 선행 0 제거 후 숫자 원형(조건식 숫자 비교)" onChange={(e) => upd(f.id, { type: e.target.value as 'string' | 'number' })}>
+            <option value="string">문자</option><option value="number">숫자</option>
+          </select>
+          <label title="슬라이스 후 패딩 제거(문자=후행 공백, 숫자=선행 0·공백)" style={{ fontSize: 11, color: 'var(--fl-text-muted)', display: 'flex', alignItems: 'center', gap: 3, flexShrink: 0 }}>
+            <input type="checkbox" checked={!!f.trim} onChange={(e) => upd(f.id, { trim: e.target.checked })} />trim
+          </label>
+          <select style={{ ...field, width: 78 }} value={f.encoding ?? ''} aria-label="필드 인코딩" title="필드 인코딩(비면 노드 인코딩)" onChange={(e) => upd(f.id, { encoding: e.target.value || undefined })}>
+            <option value="">(노드)</option>{TCP_ENCODINGS.map((c) => <option key={c} value={c}>{c}</option>)}
+          </select>
           <RowMove i={i} len={fields.length} onMove={(d) => onChange(moveInList(fields, i, d))} />
           <button onClick={() => onChange(fields.filter((x) => x.id !== f.id))} aria-label="삭제" style={{ width: 26, flexShrink: 0, border: '1px solid var(--fl-border)', borderRadius: 6, background: 'var(--fl-surface)', cursor: 'pointer' }}>×</button>
         </div>
       ) })}
       <div style={{ fontSize: 11, color: 'var(--fl-text-muted)', margin: '2px 0 6px', fontFamily: 'var(--fl-font-mono)' }}>총 {total} 바이트</div>
-      <button onClick={() => onChange([...fields, { id: newId(), name: '', length: 10 }])} style={addDashed}>+ 응답 필드</button>
+      <button onClick={() => onChange([...fields, { id: newId(), name: '', length: 10, trim: true, type: 'string' }])} style={addDashed}>+ 응답 필드</button>
     </>
   )
 }

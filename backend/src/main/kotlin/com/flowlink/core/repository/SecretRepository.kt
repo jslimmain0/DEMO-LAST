@@ -14,7 +14,7 @@ interface SecretRepository : JpaRepository<Secret, UUID> {
     fun findByTenantIdAndEnvironmentAndName(tenantId: String, environment: String, name: String): Optional<Secret>
 
     /**
-     * 레거시 NULL environment 행을 공통('*')으로 백필 — 마이그레이션 전 H2 dev 데이터 관용.
+     * 레거시 NULL environment 행을 공통('*')으로 백필 — 마이그레이션 전 local(H2) 데이터 관용.
      * Flyway DB(PG/Oracle)는 DEFAULT '*' 라 0건(무해). "environment 는 기동 후 절대 null 아님" 불변식 확립.
      */
     @Modifying

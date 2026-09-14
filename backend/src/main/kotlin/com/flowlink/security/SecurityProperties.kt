@@ -3,7 +3,7 @@ package com.flowlink.security
 import org.springframework.boot.context.properties.ConfigurationProperties
 
 /**
- * flowlink.security.* — IdP 비종속(OIDC 표준) 보안 설정.
+ * flowlink.security.* — 보안 설정.
  *
  * @property tenantClaim JWT 에서 테넌트(팀) 식별자를 읽을 클레임 이름.
  */

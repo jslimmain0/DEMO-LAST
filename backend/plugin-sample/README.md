@@ -28,7 +28,7 @@ gradle :plugin-sample:deploy
 ```
 
 업로드 후 `GET /api/v1/transforms` 에 `mask`·`hmac-sha256` 이 나타나고,
-에디터의 변환 노드 드롭다운에서 "마스킹(플러그인)" / "HMAC-SHA256 서명(플러그인)" 을 고를 수 있다.
+에디터의 변환 노드 드롭다운에서 "마스킹" / "HMAC-SHA256 서명" 을 고를 수 있다.
 선언한 `inputs()`/`params()` 대로 속성 패널 폼이 자동 생성되고, `outputs()` 의 key 는
 하위 노드에서 `{{ hex@노드ID }}` 처럼 바인딩된다.
 

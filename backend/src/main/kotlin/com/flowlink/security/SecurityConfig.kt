@@ -15,7 +15,7 @@ import org.springframework.web.cors.CorsConfigurationSource
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource
 
 /**
- * 보안 구성 (IdP 비종속).
+ * 보안 구성.
  *
  * **동작 모드**는 `flowlink.auth.github-enabled` 설정 유무로 결정된다:
  * - **GitHub 게스트 모드(flowlink.auth.github-enabled=true)**: 앱은 로그인 없이 개방(게스트 전권),
@@ -23,8 +23,6 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource
  *   Bearer 를 실은 로그인 사용자는 자체 JWT 리소스 서버가 신원 인식, [TenantClaimFilter] 가
  *   테넌트 클레임을 [com.flowlink.common.tenant.TenantContext] 에 주입.
  * - **개발(github-enabled 미설정)**: 모든 요청 허용(permitAll) + 기본 테넌트. 로컬 개발 편의.
- *
- * 아직 보류(타깃 시장 확정 후): IdP 선택, RBAC 역할 정의, RLS 행 수준 격리, 시크릿 볼트.
  */
 @Configuration
 @EnableWebSecurity

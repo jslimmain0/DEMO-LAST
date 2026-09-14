@@ -14,7 +14,7 @@ import java.util.UUID
 
 /**
  * AI 어시스턴트 API — 자연어로 플로우를 만들고 고친다.
- * RBAC: OIDC 모드에선 assistant 경로 쓰기 규칙(editor/admin)에 걸린다. dev 모드는 permitAll.
+ * github 게스트 모드에선 assistant 경로 전체(`/api/v1/assistant/…`)가 로그인 필수. dev 모드는 permitAll.
  */
 @RestController
 @RequestMapping("/api/v1/assistant")
@@ -61,7 +61,7 @@ class AssistantController(
     /**
      * 팀 지침 저장 — **관리자만**. 지침은 모든 사용자의 시스템 프롬프트에 "항상 우선 준수"로 자동 주입되므로
      * (SkillService.promptBlock), 승인 대기 계정이 조직 전체 프롬프트를 인젝션하던 구멍(적대 리뷰 [H]) 봉인.
-     * OIDC 모드의 admin URL 규칙과 달리 github 게스트 모드에도 걸리는 서비스 레벨 게이트.
+     * github 게스트 모드에도 걸리는 서비스 레벨 게이트.
      */
     @PutMapping("/instructions")
     fun updateInstructions(@RequestBody req: InstructionsUpdateRequest): SkillsView {

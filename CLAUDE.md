@@ -17,7 +17,7 @@ REST API 워크플로 오케스트레이션 플랫폼. 클라이언트 전용 �
 ```bash
 # Linux/macOS/Git Bash — 기본 프로파일 local(H2 파일 DB). 없으면 --build 로 빌드 후 실행.
 bash scripts/start.sh            # (또는 --build)
-bash scripts/status.sh           # PID 생존 + 헬스(GET /api/v1/auth/config)
+bash scripts/status.sh           # PID 생존 + 헬스(GET /api/v1/auth/config — HTTP 응답 확인, DB 상태 미포함)
 bash scripts/stop.sh
 ```
 ```powershell
@@ -66,7 +66,7 @@ FlowLink 안에서 **가짜 대상 시스템을 만들고 켜는 1급 기능**. 
 ### 테스트
 ```powershell
 $env:JAVA_HOME="C:\Users\jslim\.jdks\corretto-21.0.10"
-./gradlew test   # 백엔드 단위 테스트 전종 (DB 불필요, H2 인메모리 — 프로파일 무관, @TestPropertySource 가 직접 지정)
+./gradlew test   # 백엔드 테스트 전종 (DB 불필요 — 기본 프로파일 local(application-local.yml) 위에 각 테스트의 @TestPropertySource 가 h2:mem URL·ddl-auto·flyway off 를 덮어씀)
 ```
 ⚠️ **Gradle 포크 테스트 워커가 한글/비ASCII 경로를 cp949로 잘못 디코딩하는 알려진 이슈**가 있음.
 `build.gradle.kts`에 `-Dfile.encoding=UTF-8 -Dsun.jnu.encoding=UTF-8` 회피책 적용됨.
@@ -141,7 +141,7 @@ graphJson 파싱 → Kahn 위상정렬 → 노드 순차 처리 → IF는 단일
 ### 보안
 - 인증: `FLOWLINK_AUTH_GITHUB_ENABLED=true` 면 GitHub 게스트 모드(자체 JWT 검증), 미설정 시 dev permitAll
 - 멀티테넌시: JWT claim(기본 "tenant") → `TenantContext`(ThreadLocal) → 쿼리 `tenant_id` 필터
-- HTTP req/res 본문은 항상 저장하되 시크릿 마스킹(SecretMasker) 적용.
+- HTTP req/res 본문은 항상 저장하되 시크릿 마스킹(SecretMasker) 적용. 마스킹은 시크릿 볼트 값에 한정(노드에 직접 적은 토큰은 그대로 저장), 시크릿 조회 실패 시 마스킹 없이 저장(WARN).
 - IF 표현식: SpEL `SimpleEvaluationContext`(읽기전용) 샌드박스
 
 ### 주요 설정 (`application.yml` / `ExecutionProperties`)
@@ -184,8 +184,8 @@ design/   theme(라이트/다크) · index.css(CSS 변수)
 - **동기 실행** → 비동기 큐/워커·내구성 실행 미구현 (가장 큰 아키텍처 부채). Build vs Buy(Temporal/Camunda) 설계 토론 결론 반영 예정
 - **재개 상태 인메모리**(`ExecutionService.suspensions`) — 서버 재시작 시 진행 중 실행 소실. API 로 직접 실행(브라우저 없이)하면 wait 에서 WAITING 으로 남음(브라우저가 타임아웃을 구동)
 - **트리거** CRON/WEBHOOK/EVENT는 enum만, MANUAL만 동작
-- **플러그인 JAR 샌드박스 없음** — 업로드 JAR가 전체 권한으로 실행, RBAC 게이트 필요(현재 permitAll)
-- **RBAC/RLS·시크릿 볼트** 미구현 — 멀티테넌시는 `tenant_id` 컬럼 필터링만
+- **플러그인 JAR 샌드박스 없음** — 업로드 JAR가 전체 권한으로 실행(업로드 자체는 관리자 게이트 — PluginController)
+- **RLS** 미도입 — 멀티테넌시는 `tenant_id` 컬럼 필터링만(시크릿 볼트·전역 ADMIN/워크스페이스 롤은 구현됨)
 - **SET 노드 시크릿** UI 마스킹만, 실제 KMS 연동 없음
 - **graph_json** text 저장 — Phase 2에 JSONB 마이그레이션 예정
 
@@ -197,12 +197,12 @@ design/   theme(라이트/다크) · index.css(CSS 변수)
 
 ### 테스트 현황
 - 백엔드 단위 테스트: `ExpressionEvaluatorTest`·`TokenResolverTest`·`MockRuntimeTest` 등 (DB 불필요)
-- E2E/통합 테스트 없음, 프론트 테스트 없음
+- 통합 테스트는 @SpringBootTest + H2 인메모리(GuestModeSecurityTest·WorkspaceRbacTest·MockFleetTest 등). E2E·프론트 테스트 없음
 
 ---
 
 ## 최근 변경 (2026-09-14) — 설정 트림: 안 쓰는 기능 통째 제거 (`refactor/trim-config`)
-브랜치 `refactor/trim-config` 11개 커밋 요약. 각 항목의 상세(코드 위치·주의사항)는 문서 하단의 같은 날짜 개별 섹션 참조.
+브랜치 `refactor/trim-config` 11개 커밋 요약. OIDC·allowed-logins·SSRF·Vault KV·프로파일 정리의 상세(코드 위치·주의사항)는 문서 하단의 같은 날짜 개별 섹션 참조; 나머지(Springdoc·Actuator·CORS·capture·내장 변환)는 이 목록이 전부.
 - **제거 목록**: Springdoc/Swagger UI(`/swagger-ui.html`·`/v3/api-docs`, OpenApiConfig) · Actuator/Prometheus(`management.*`, micrometer) · SSRF 가드(`flowlink.execution.ssrf.*`, SsrfGuard·SsrfBlockedException·SsrfGuardTest) · 캡처 옵션(`capture.request-response-bodies` — HTTP 본문은 항상 SecretMasker 마스킹 후 저장) · `flowlink.security.cors-origins`(`/api/**` CORS 전체 오리진 허용) · 레거시 OIDC 모드(issuer-uri/Keycloak — 인증 모드는 dev | GitHub 둘뿐, SecurityConfig 2분기) · `FLOWLINK_AUTH_ALLOWED_LOGINS`/`FLOWLINK_AUTH_ADMIN_LOGINS` · Vault KV 오버레이(`mount/path/config-path/refresh-seconds`, VaultSecretSource, 시크릿 목록 `source=vault` 배지, Vault `flowlink-config/jwt-secret` — jwt-secret 은 env `FLOWLINK_AUTH_JWT_SECRET` 만) · 내장 변환(BuiltinTransforms).
 - **프로파일 변경**: `application-h2.yml` → `application-local.yml`(**`local` = H2 파일, 기본** — `spring.profiles.default`), Oracle datasource/flyway 는 새 `application-dev.yml`(**`dev` = Oracle**, `SPRING_PROFILES_ACTIVE=dev` + `FLOWLINK_DB_URL`). 구 `=oracle`/`h2` 는 무효.
 - **헬스 프로브**: `/actuator/health` → `GET {ctx}/api/v1/auth/config`(scripts start/status.(sh|ps1)·infra/connect-local.ps1). 새 헬스 컨트롤러 없음.
@@ -376,7 +376,7 @@ design/   theme(라이트/다크) · index.css(CSS 변수)
   고정 문자열("홍길동")의 EUC-KR 바이트를 하드코딩, 요청 디코딩은 `TextDecoder('euc-kr')`.
   TCP 는 TcpNodeExecutor 규약(4자리 ASCII 길이 프리픽스·자기 미포함) 그대로 구현.
 - **demos/*.json 6종**: 01 결제(SET·FORM·WAIT·IF·HTTP — 타임아웃/거절 분기 포함), 02 OTP(INPUT, waitMsg 에
-  `{{ hint@… }}` 토큰), 03 주문 API(Bearer 헤더 바인딩·qty number 타입·경로 바인딩·concat TRANSFORM),
+  `{{ hint@… }}` 토큰), 03 주문 API(Bearer 헤더 바인딩·qty number 타입·경로 바인딩·concat TRANSFORM(내장 변환은 2026-09-14 제거됨)),
   04 레거시 EUC-KR(charset·urlencoded/xml respType), 05 TCP 전문(EUC-KR 고객명 슬라이싱), 06 클라이언트 모드(C→S).
   IF 분기 엣지는 `fromPort:"true"/"false"`, 일반 엣지는 생략(기본 `out`).
 - 검증: 라이브 스택(H2 백엔드+relay+mock) e2e **47/47 PASS**(승인/거절·OTP 정답/오답·EUC-KR 복원·TCP 슬라이싱·
@@ -403,7 +403,7 @@ design/   theme(라이트/다크) · index.css(CSS 변수)
 
 ### 전체 Kotlin 이관 · TCP 노드 제거 · relay/mock 프로세스 백엔드 통합
 - **백엔드 전체 Kotlin 이관**(Java 0): `src/main/kotlin`·`src/test/kotlin`만 존재. 스택 = Kotlin 1.9(Java 21 toolchain). 상세는 위 "백엔드 구조" 노트.
-- **(2026-07-06 TCP 부활로 대체)** ~~TCP 노드 완전 제거~~: `TcpNodeExecutor`·`TcpField`/`TcpRespField`·고정길이 금융 전문(BAL1) 삭제. 노드 타입 = start/end/set/if/assert/http/form/wait/input/transform (TCP 없음). SSRF 가드도 HTTP 전용.
+- **(2026-07-06 TCP 부활로 대체)** ~~TCP 노드 완전 제거~~: `TcpNodeExecutor`·`TcpField`/`TcpRespField`·고정길이 금융 전문(BAL1) 삭제. 노드 타입 = start/end/set/if/assert/http/form/wait/input/transform (TCP 없음). SSRF 가드도 HTTP 전용(2026-09-14 제거됨).
 - **relay.js → 백엔드 통합**: 구 relay.js(:8787) 프로세스 폐기. `wait` 노드 콜백을 백엔드가 `/relay/{execId}/cb/{nodeId}`([RelayController](backend/src/main/kotlin/com/flowlink/execution/RelayController.kt))로 직접 받아 자동 재개하고, 타임아웃도 백엔드 스케줄러가 구동 → **브라우저 없이 wait 완결**. 별도 프로세스·:8787 없음.
 - **mock-server.js → 내장 Mock 흡수**: 구 mock-server.js(:9090/:9091) 폐기. `demos/*.json` 은 내장 Mock(base `http://localhost:18080/mock/demo`)을 쓰고 `node demos/seed-mock.mjs` 로 라우트를 시드. demo-05(TCP)·`/openapi.json` 데모는 제외.
 - **띄우는 프로세스 2개**: 백엔드(:18080) + 프론트(:5173). 콜백 데모만 `node demos/seed-mock.mjs` 1회로 mock 을 시드한다.
@@ -497,7 +497,7 @@ design/   theme(라이트/다크) · index.css(CSS 변수)
 
 ### TCP 부활(노드+Mock) · 노드 복사/붙여넣기 · 홈=미분류 · 칩 고정폭
 - **TCP 전문 노드 부활**: 코틀린 이관 때 제거했던 TCP 노드(9481019 역방향)를 복원 — `TcpNodeExecutor`(길이 프리픽스
-  + 바이트 고정길이 필드 조립/슬라이싱, 인코딩 노드/필드별, `SsrfGuard.checkHostPort`), `NodeType.TCP`,
+  + 바이트 고정길이 필드 조립/슬라이싱, 인코딩 노드/필드별, `SsrfGuard.checkHostPort`(2026-09-14 제거됨)), `NodeType.TCP`,
   GraphNode tcp 블록, 프론트 팔레트/PropertyPanel(값은 TokenInput 인라인 칩, 응답 필드명→outputs 자동 동기화),
   upstream 이 tcpResponse 필드명을 바인딩 소스로 노출. 리터럴 토큰은 `resolveLiteral` 규칙 공용.
 - **내장 Mock 서버 TCP 지원**: spec `tcp` 섹션 — [TcpMockRegistry](backend/src/main/kotlin/com/flowlink/mock/TcpMockRegistry.kt)
@@ -656,6 +656,8 @@ design/   theme(라이트/다크) · index.css(CSS 변수)
 
 ## 최근 변경 (2026-07-16) — SaaS 전환 P3: 실시간 협업 presence (`saas-overhaul` 브랜치)
 
+> (이 섹션의 OIDC 모드·SecurityConfig `PUBLIC_PATHS` 는 2026-09-14 제거됨 — `?token=` JWT 검증은 github 모드에서 동일하게 동작, 무토큰은 게스트.)
+
 계획: [docs/superpowers/plans/2026-07-16-saas-p3-presence.md](docs/superpowers/plans/2026-07-16-saas-p3-presence.md).
 같은 워크플로를 연 사람들끼리 **커서·이름표·편집중 배지·저장 알림**이 실시간으로 보인다(공동 편집/CRDT 아님 — 그래프는 서로 불변).
 - **백엔드 릴레이**: `spring-boot-starter-websocket` + raw `TextWebSocketHandler`(STOMP 미사용) —
@@ -697,10 +699,10 @@ design/   theme(라이트/다크) · index.css(CSS 변수)
 - **Flyway vendor 분리**: 기존 V1~V8 → `db/migration/postgresql/`(체크섬 내용 기반 — 기존 PG DB 안전),
   Oracle 은 최종 상태 통합 [`db/migration/oracle/V1__init.sql`](backend/src/main/resources/db/migration/oracle/V1__init.sql)
   (uuid→varchar2(36)·text→clob·boolean→number(1)·timestamptz→timestamp with time zone·varchar 는 **char 단위**).
-  `spring.flyway.locations: classpath:db/migration/{vendor}`. h2 프로파일은 flyway off 그대로(무영향).
-- **oracle 프로파일**([application-oracle.yml](backend/src/main/resources/application-oracle.yml)): ojdbc11(runtime)+
+  `spring.flyway.locations: classpath:db/migration/{vendor}`. h2 프로파일(2026-09-14 `local` 로 개명)은 flyway off 그대로(무영향).
+- **oracle 프로파일**(`application-oracle.yml` — 파일은 제거됨, 2026-09-14 `dev`(application-dev.yml) 로 정리): ojdbc11(runtime)+
   flyway-database-oracle, `hibernate.type.preferred_uuid_jdbc_type: CHAR`, **`ddl-auto: none`**(엔티티
-  `columnDefinition="text"` 12곳이 Oracle validate 와 충돌 — Flyway 가 스키마 소유), ssrf allow-loopback(내장 mock 호출).
+  `columnDefinition="text"` 12곳이 Oracle validate 와 충돌 — Flyway 가 스키마 소유), ssrf allow-loopback(내장 mock 호출, 2026-09-14 제거됨).
   Flyway 10.10 이 "Oracle 23 untested" WARN 을 내지만 마이그레이션 정상 적용 확인.
 - **Compose**([deploy/docker-compose.yml](deploy/docker-compose.yml) + [deploy/Dockerfile](deploy/Dockerfile)):
   `oracle`(gvenzl/oracle-free:23-slim, APP_USER=flowlink, healthcheck) · `keycloak`(:8081, realm 자동 import,
@@ -835,7 +837,7 @@ design/   theme(라이트/다크) · index.css(CSS 변수)
 - **실행 이력 강화**: `GET /executions` 에 status/flowId/from/to(epoch ms)/offset([ExecutionRepository](backend/src/main/kotlin/com/flowlink/core/repository/ExecutionRepository.kt) `findFiltered` @Query, null 파라미터 무시) + `POST /executions/{id}/rerun`(원본 flowVersion+input 재현). Executions 화면 status/기간 서버 필터 + 재실행.
 - **런타임 입력 파라미터**: [runInput.ts](frontend/src/lib/runInput.ts)(플로우별 localStorage) → onRun 이 `RunRequest.input` 로 주입(seedScope "input"). 도구 → ▶ 입력값과 실행. `{{ 키@input }}` 피커 노출. **실행 상세 응답 diff**([Executions](frontend/src/routes/Executions.tsx) '⇄ 이전 실행과 비교' — 노드별 변경/동일/신규).
 - **테스트 스위트 일괄 실행**: `POST /api/v1/suites/run{folderId|flowIds}`([SuiteController](backend/src/main/kotlin/com/flowlink/suite/SuiteController.kt)) → 대시보드 '▶ 폴더/선택 실행' → [SuiteRunDialog](frontend/src/components/SuiteRunDialog.tsx) 성공/실패 매트릭스(각 실행 폴링).
-- **실행 실패 알림**: [NotificationService](backend/src/main/kotlin/com/flowlink/notify/NotificationService.kt)(FAILED settle 시 비동기 파이어&포겟) → 테넌트 설정 웹훅(Slack/Teams `{text}`). `GET/PUT /api/v1/settings/notify`(admin), SettingsDialog 알림 필드. ⚠ admin 설정 URL 이라 스킴만 검증(전체 SsrfGuard 미적용).
+- **실행 실패 알림**: [NotificationService](backend/src/main/kotlin/com/flowlink/notify/NotificationService.kt)(FAILED settle 시 비동기 파이어&포겟) → 테넌트 설정 웹훅(Slack/Teams `{text}`). `GET/PUT /api/v1/settings/notify`(admin), SettingsDialog 알림 필드. ⚠ admin 설정 URL 이라 스킴만 검증(전체 SsrfGuard 미적용 — SsrfGuard 는 2026-09-14 제거됨).
 - **시크릿 볼트(시크릿 전파 누수 부채 해소)**: [Secret](backend/src/main/kotlin/com/flowlink/core/domain/Secret.kt)(V10) + [SecretService](backend/src/main/kotlin/com/flowlink/secret/SecretService.kt)(StateCrypto AES-GCM 재사용·write-only). `{{ 이름@secret }}` 시드 + **캡처 로그 마스킹**(recorder 가 시크릿 값 문자열을 ••••••로, run·resume 양쪽). 도구 → 🔑 시크릿 볼트.
 - **상태 있는 Mock**: `MockRule.setState`(응답 후 서버 상태 갱신) + `{{state.KEY}}`·조건 `source=state`([MockRuntime](backend/src/main/kotlin/com/flowlink/mock/MockRuntime.kt) 가 state 를 default emptyMap 로 스레딩 — 기존 호출/단위테스트 무변경, [MockGatewayController](backend/src/main/kotlin/com/flowlink/mock/MockGatewayController.kt) 서버별 상태맵). "1차 pending → 2차 approved" 시나리오. MockServerEditor 에 setState 편집.
 - **정리/통합**: RunRequest 죽은 relayRunId/relayBase 제거. 공용 [Modal](frontend/src/components/Modal.tsx) 셸(신규 다이얼로그 이관) + [NodeExecutionLog](frontend/src/components/NodeExecutionLog.tsx)(RunPanel↔Executions 로그 블록 공용화 — 이력 모달도 복사 버튼).
@@ -859,7 +861,7 @@ design/   theme(라이트/다크) · index.css(CSS 변수)
 - **AI 채팅 어시스턴트(Copilot 스타일)**: 에디터 우측 ✨ AI 패널([AssistantPanel](frontend/src/components/AssistantPanel.tsx)) — 자연어로 플로우 생성/수정. 현재 캔버스(`getGraph()`)를 맥락으로 보내 제안 그래프를 받고 '캔버스에 적용'([importGraph](frontend/src/store/editorStore.ts), Ctrl+Z 되돌리기).
   - 백엔드 `com.flowlink.assistant`: `POST /api/v1/assistant/chat`([AssistantController](backend/src/main/kotlin/com/flowlink/assistant/AssistantController.kt)) → [AssistantService](backend/src/main/kotlin/com/flowlink/assistant/AssistantService.kt) 가 Claude(Anthropic Messages API) 호출. 시스템 프롬프트=[FlowSchemaPrompt](backend/src/main/kotlin/com/flowlink/assistant/FlowSchemaPrompt.kt)(노드 타입·엣지 `{from,to,fromPort}`·토큰 문법·레이아웃) + 현재 그래프. 응답 `{reply, graph}` 는 **균형 중괄호 스캐너**(문자열/이스케이프 인지)로 파싱. `GET /assistant/config`(stub/실제·모델).
   - **키 해석**: env `FLOWLINK_ASSISTANT_API_KEY`/yml → 시크릿 볼트 `anthropic-api-key`. 둘 다 없으면 **stub 모드**(키워드 기반 결정적 샘플: http/otp/결제/tcp) — 키 없이도 기능 완결. [AssistantProperties](backend/src/main/kotlin/com/flowlink/assistant/AssistantProperties.kt)(`flowlink.assistant.*`).
-  - **하드닝**(적대적 리뷰 7건): LLM 컨텍스트로 보내기 전 **SET secret=true 변수 값 마스킹**(하드코딩 토큰은 감지 불가 → 시크릿 볼트 권장) · 동시 호출 **벌크헤드**(Semaphore, `max-concurrent`=4, 초과 429) · 적용 전 크래시 안전 검증([graphValidate](frontend/src/lib/graphValidate.ts), 수동 가져오기와 공용) · Enter 전송 **IME 가드**(한글 조합 중 오전송 방지) · 좁은 화면 자동 속성패널 접기 · 깨진 JSON 본문 400([GlobalExceptionHandler](backend/src/main/kotlin/com/flowlink/common/error/GlobalExceptionHandler.kt), 앱 전역). SsrfGuard 는 api.anthropic.com 통과. RBAC=editor 이상.
+  - **하드닝**(적대적 리뷰 7건): LLM 컨텍스트로 보내기 전 **SET secret=true 변수 값 마스킹**(하드코딩 토큰은 감지 불가 → 시크릿 볼트 권장) · 동시 호출 **벌크헤드**(Semaphore, `max-concurrent`=4, 초과 429) · 적용 전 크래시 안전 검증([graphValidate](frontend/src/lib/graphValidate.ts), 수동 가져오기와 공용) · Enter 전송 **IME 가드**(한글 조합 중 오전송 방지) · 좁은 화면 자동 속성패널 접기 · 깨진 JSON 본문 400([GlobalExceptionHandler](backend/src/main/kotlin/com/flowlink/common/error/GlobalExceptionHandler.kt), 앱 전역). SsrfGuard 는 api.anthropic.com 통과(2026-09-14 제거됨). RBAC=editor 이상.
 - 검증: 단위(AssistantJsonTest 6·백엔드 무회귀) + assistant e2e 21/21(config·인텐트별 그래프 유효성(START·엣지 포맷·IF포트)·제안 그래프 저장/실행 터미널 도달·멀티턴·깨진본문 400) + 브라우저 실측(✨열기→제안→적용 3→8노드 교체·노드 접기 85→39px·폭 230 고정) + tsc/build/oxlint.
 - ⚠ 어시스턴트는 사용자 그래프를 외부 LLM(Anthropic)에 보냄(키 설정 시) — 시크릿 볼트 토큰은 이름만, SET 시크릿 값은 마스킹, 그 외 하드코딩 값은 그대로 전송(옵트인 전제). LLM 호출은 요청 스레드 동기(벌크헤드로 상한). 키 없으면 외부 호출 없음(stub 로컬).
 
@@ -920,16 +922,16 @@ design/   theme(라이트/다크) · index.css(CSS 변수)
   [GithubLoginEvent](backend/src/main/kotlin/com/flowlink/security/GithubLoginEvent.kt) 로 발행 → [AssistantOAuthService.onGithubLogin](backend/src/main/kotlin/com/flowlink/assistant/AssistantOAuthService.kt) 이
   어시스턴트 토큰 저장소(AES-GCM)에 넣어 **한 번 로그인 = 앱 접속 + Copilot 연결**. Copilot client 일 때만 채택, 폴 스레드에서 event.tenant 스코프 세팅/복원.
 - **적대적 멀티에이전트 리뷰(4관점 → 발견별 검증, 7건 확정) 반영**:
-  (1)[high] github-enabled + jwt-secret 미설정 → 공개 dev 키로 토큰 위조 → **fail-closed 기동 실패**(GithubAuthStartupValidator). (2)[high] 빈 allowed-logins → 누구나 admin: 초기엔 필수화했으나 **사용자 결정으로 선택 유지**(비면 전체 허용 + 기동 WARN) — jwt-secret 강제는 유지.
+  (1)[high] github-enabled + jwt-secret 미설정 → 공개 dev 키로 토큰 위조 → **fail-closed 기동 실패**(GithubAuthStartupValidator). (2)[high] 빈 allowed-logins → 누구나 admin: 초기엔 필수화했으나 **사용자 결정으로 선택 유지**(비면 전체 허용 + 기동 WARN)(2026-09-14 제거됨) — jwt-secret 강제는 유지.
   (3)[med] 무인증 device/start 남용 → 폴러 스레드 폭주 → **동시 세션 상한(MAX_SESSIONS=20)**. (4)[med] issuer-uri OIDC 인데 config 가 mode=none 반환 → **`oidc` 모드 반환**(JwtDecoder 유무).
-  (5)[med] Vault 블로킹 호출이 @Transactional 안 → DB 커넥션 점유 → **activeSecrets/listNames 트랜잭션 밖으로**. (6)[med] 프론트 일시 /me 실패에 유효 토큰 폐기 → **401/403 일 때만 폐기**. (7)[med] OIDC 모드 프론트가 dev 로 오인 → **oidc 안내 화면**. ((2) allowed-logins·(4)(7) oidc 모드는 2026-09-14 제거됨)
-- 검증: 백엔드 test 전종(GithubAuthStartupValidatorTest·AssistantOAuthLinkTest 포함) + fail-closed 라이브(allowed-logins 없이 github 기동 시 IllegalStateException 으로 중단) + tsc/build.
+  (5)[med] Vault 블로킹 호출이 @Transactional 안 → DB 커넥션 점유 → **activeSecrets/listNames 트랜잭션 밖으로**. (6)[med] 프론트 일시 /me 실패에 유효 토큰 폐기 → **401/403 일 때만 폐기**. (7)[med] OIDC 모드 프론트가 dev 로 오인 → **oidc 안내 화면**. ((2) allowed-logins·(4)(7) oidc 모드·(5) Vault KV 호출은 2026-09-14 제거됨)
+- 검증: 백엔드 test 전종(GithubAuthStartupValidatorTest·AssistantOAuthLinkTest 포함) + fail-closed 라이브(allowed-logins 없이 github 기동 시 IllegalStateException 으로 중단 — allowed-logins 는 2026-09-14 제거됨, 현재 기동 가드는 jwt-secret 만) + tsc/build.
 
 ## 최근 변경 (2026-07-28) — 게스트 모드: github 모드에서 로그인 없이 앱 사용, AI만 로그인 게이트
 
 설계: [docs/superpowers/specs/2026-07-28-guest-mode-design.md](docs/superpowers/specs/2026-07-28-guest-mode-design.md).
 **github 모드(`FLOWLINK_AUTH_GITHUB_ENABLED=true`)의 의미 변경** — 앱 전체 잠금이 아니라 **"앱은 게스트에게 개방, GitHub 로그인 = AI 사용 + 신원 표시 게이트"**. 별도 플래그 없음(github 모드면 항상 게스트 허용).
-- **백엔드**: [SecurityConfig](backend/src/main/kotlin/com/flowlink/security/SecurityConfig.kt) 3분기 — github 게스트 모드는 `/api/v1/assistant/**` 만 `authenticated()`, 나머지 permitAll(Bearer 는 계속 인식 — 로그인 사용자 triggeredBy·Copilot 연결 유지). 레거시 OIDC(issuer-uri) 모드는 기존 엄격 RBAC 그대로, dev 도 무변경. `/auth/me` 비인증은 github 모드에서 `guest`(전권) 반환. jwt-secret fail-closed 기동 가드 유지. `FLOWLINK_AUTH_ALLOWED_LOGINS` 는 "로그인(=AI) 가능 계정" 목록이 됨. (레거시 OIDC 모드·ALLOWED_LOGINS 는 2026-09-14 제거됨)
+- **백엔드**: [SecurityConfig](backend/src/main/kotlin/com/flowlink/security/SecurityConfig.kt) 3분기(OIDC 분기는 2026-09-14 제거 → 현 2분기) — github 게스트 모드는 `/api/v1/assistant/**` 만 `authenticated()`, 나머지 permitAll(Bearer 는 계속 인식 — 로그인 사용자 triggeredBy·Copilot 연결 유지). 레거시 OIDC(issuer-uri) 모드는 기존 엄격 RBAC 그대로, dev 도 무변경. `/auth/me` 비인증은 github 모드에서 `guest`(전권) 반환. jwt-secret fail-closed 기동 가드 유지. `FLOWLINK_AUTH_ALLOWED_LOGINS` 는 "로그인(=AI) 가능 계정" 목록이 됨. (레거시 OIDC 모드·ALLOWED_LOGINS 는 2026-09-14 제거됨)
 - **presence**: [PresenceHandshakeInterceptor](backend/src/main/kotlin/com/flowlink/presence/PresenceHandshakeInterceptor.kt) — github 모드에서 토큰 없는 WS 접속을 dev 방식(쿼리 name, 게스트 닉네임)으로 허용(무효 토큰은 여전히 401). 게스트도 커서·공동편집 참여.
 - **프론트**: [AuthContext](frontend/src/auth/AuthContext.tsx) — github 모드 + 무토큰이면 로그인 화면 대신 **게스트 부트**(`isGuest`), `requestLogin()` 으로 [GitHubLogin](frontend/src/auth/GitHubLogin.tsx) 디바이스 로그인 **모달**. AI 패널 자리엔 [AssistantLoginGate](frontend/src/components/AssistantLoginGate.tsx)(에디터·Mock 편집기), 사이드바 칩은 "게스트 · 로그인". 무토큰 401 은 리로드하지 않음(리로드 루프 방지 — 토큰 있을 때만 폐기·재부트).
 - 검증: [GuestModeSecurityTest](backend/src/test/kotlin/com/flowlink/security/GuestModeSecurityTest.kt)(@SpringBootTest — 게스트 CRUD 허용/assistant 401/로그인 200/무효토큰 401/guest me) + presence 인터셉터 단위 3종 + 라이브 curl(게스트 flows 200·POST 201·assistant 401) + tsc/build/oxlint.
@@ -964,7 +966,7 @@ design/   theme(라이트/다크) · index.css(CSS 변수)
 static 토큰 대신 **AppRole 로그인 + 자동 갱신**(정석). [VaultTokenSource](backend/src/main/kotlin/com/flowlink/secret/VaultTokenSource.kt) —
 선택 규칙: `approle.role-id`+`secret-id` 설정 시 [AppRoleTokenSource](backend/src/main/kotlin/com/flowlink/secret/VaultTokenSource.kt)(`auth/{mount}/login` → 수명 절반에 `renew-self` → 실패/만료 시 재로그인, 게으른 갱신·synchronized), 아니면 StaticTokenSource(기존 env 토큰, 무회귀).
 Transit([TransitCrypto](backend/src/main/kotlin/com/flowlink/common/crypto/TransitCrypto.kt))이 CryptoConfig 의 단일 빈을 사용. env: `FLOWLINK_VAULT_APPROLE_ROLE_ID`/`SECRET_ID`/`MOUNT`(기본 approle).
-fail-closed 메시지가 "토큰 또는 AppRole" 로 확장. 검증: 단위 10종(로그인/캐시/절반 갱신/실패 재로그인/만료 직행 재로그인/전파·선택 규칙 4종) + 라이브(도커 Vault: approle 활성 + **스코프 정책 flowlink-app**(4경로) + token_period=180 role) — 토큰 env 없이 기동(AppRole 로그인 → Transit 헬스체크 OK) → 시크릿 플로우 SUCCEEDED+마스킹 → **만료 후 접근에서 자동 재로그인** 로그 실측. 운영가이드 §6 AppRole 준비 절차 추가.
+fail-closed 메시지가 "토큰 또는 AppRole" 로 확장. 검증: 단위 10종(로그인/캐시/절반 갱신/실패 재로그인/만료 직행 재로그인/전파·선택 규칙 4종) + 라이브(도커 Vault: approle 활성 + **스코프 정책 flowlink-app**(4경로 — KV read 2경로는 2026-09-14 제거, 현재 transit 2경로) + token_period=180 role) — 토큰 env 없이 기동(AppRole 로그인 → Transit 헬스체크 OK) → 시크릿 플로우 SUCCEEDED+마스킹 → **만료 후 접근에서 자동 재로그인** 로그 실측. 운영가이드 §6 AppRole 준비 절차 추가.
 
 ### 단일 노드 실행 시크릿 평문 유출 수정 (2026-08-28, `fix/single-run-secret-mask`)
 `▶ 이 노드만 실행` 응답(SingleNodeRunResult)이 실행 이력 마스킹을 안 거쳐 **requestText 에 시크릿 평문**(`Bearer demo-...`)이 그대로 실리던 유출 —
@@ -1137,7 +1139,7 @@ API 도구 UX·비주얼/IA·플로우 통합 3관점 병렬 비평 → 확정 �
 - 검증: RetentionServiceTest(📌 v2 가 keep=2 스윕에서 생존) + `:test` 전종 그린 + API 왕복(pinned 저장→토글→목록) + 브라우저 실측(커밋 바 저장 → v8 📌 배지·해제/재보존 토글). 가이드 [09장](docs/guide/09-버전-협업.md)·운영가이드 §12 갱신.
 
 ## 최근 변경 (2026-09-08) — Mock 전문 코덱(요청 전/응답 후 플러그인) + Mock 단건 export/import (`feat/mock-codec-transfer`)
-"Mock 도 export/import 복붙 + Mock 응답에 플러그인" 요청. 플러그인은 값 하나 변환이 아니라 **전문 전체 코덱**(전문을 다 만든 뒤 나가기 전 / 들어온 전문이 매칭에 들어가기 전)으로 — 기존 FlowTransform 플러그인(내장+JAR)을 그대로 쓴다.
+"Mock 도 export/import 복붙 + Mock 응답에 플러그인" 요청. 플러그인은 값 하나 변환이 아니라 **전문 전체 코덱**(전문을 다 만든 뒤 나가기 전 / 들어온 전문이 매칭에 들어가기 전)으로 — 기존 FlowTransform 플러그인(내장+JAR — 내장 변환은 2026-09-14 제거됨)을 그대로 쓴다.
 - **모델**: [MockSpec.codec](backend/src/main/kotlin/com/flowlink/mock/MockSpec.kt) `{request:[step], response:[step]}` + `MockRoute.codec`(있으면 **통째로** 서버 codec 대체 — 필드 병합 아님, `{}` 면 그 라우트는 코덱 없음). step=`{id, config:[KV], inputKey?, outputKey?}`(기본 첫 입력→첫 출력, 다중 포트만 지정). 스키마 변경 없음(spec_json).
 - **[MockCodec](backend/src/main/kotlin/com/flowlink/mock/MockCodec.kt)**(순수, 플러그인 조회 람다 주입): 단계 순서대로 체인. 실패는 `CodecException`(플러그인 없음/예외/출력 없음) — HTTP 500 JSON(게이트웨이 catch-all)·TCP 연결 종료+WARN. 빈 id 단계는 건너뜀(편집 중).
 - **HTTP**: [MockRuntime.match](backend/src/main/kotlin/com/flowlink/mock/MockRuntime.kt) 에 `prepare` 훅(경로/메서드 매칭된 라우트에 대해 **조건 평가 전** 요청 교체) + `Match.req`(코덱 적용 요청) · `render(…, responseCodec)`(템플릿 렌더 후·문자셋 인코딩 전, 헤더/콜백 미적용). [MockGatewayController](backend/src/main/kotlin/com/flowlink/mock/MockGatewayController.kt) 가 TransformRegistry 연결, 디코딩 후 `parseBodyFields` 재파싱, journal 에 `decodedBody`(원문과 나란히 — UI "코덱 적용 후:").
@@ -1154,7 +1156,7 @@ API 도구 UX·비주얼/IA·플로우 통합 3관점 병렬 비평 → 확정 �
 "환경설정이나 이런거 DB에 넣게 해" — 브라우저 localStorage 개인 스코프였던 **환경(dev/staging/prod)+변수**와 **실행 입력값(플로우별 `{{키@input}}`)**을 서버 DB 로. 즐겨찾기·패널 크기·최근 사용 등 UI 취향은 localStorage 유지.
 - **백엔드** `environment/` 모듈: [Environment](backend/src/main/kotlin/com/flowlink/core/domain/Environment.kt)(테넌트 스코프, `(tenant_id,name)` 유니크, `vars_json` text — V19 oracle, H2 는 ddl-auto) +
   [EnvironmentService](backend/src/main/kotlin/com/flowlink/environment/EnvironmentService.kt)/[Controller](backend/src/main/kotlin/com/flowlink/environment/EnvironmentController.kt):
-  `GET /api/v1/environments` · `PUT /environments/{name}`{vars}(통째 교체, 빈 키 제거) · `POST /environments/{name}/rename`{to}(원자적, 충돌 400) · `DELETE`. **쓰기=승인 사용자**(시크릿과 같은 게이트, OIDC 는 editor). 실행 입력값은 새 테이블 없이 **AppSetting `runinput:{flowId}`** — `GET/PUT /flows/{id}/run-input`{vars}(워크스페이스 롤 read/write, 빈 값=삭제). `saveAndFlush` 로 @CreationTimestamp 즉시 반영.
+  `GET /api/v1/environments` · `PUT /environments/{name}`{vars}(통째 교체, 빈 키 제거) · `POST /environments/{name}/rename`{to}(원자적, 충돌 400) · `DELETE`. **쓰기=승인 사용자**(시크릿과 같은 게이트, OIDC 는 editor — OIDC 는 2026-09-14 제거됨). 실행 입력값은 새 테이블 없이 **AppSetting `runinput:{flowId}`** — `GET/PUT /flows/{id}/run-input`{vars}(워크스페이스 롤 read/write, 빈 값=삭제). `saveAndFlush` 로 @CreationTimestamp 즉시 반영.
 - **프론트**: [lib/environments.ts](frontend/src/lib/environments.ts)·[lib/runInput.ts](frontend/src/lib/runInput.ts) **저장 계층만 교체**(공개 API `useEnvStore/activeEnvVars/setEnvStore…` 불변 → EnvManager/EnvSwitcher/피커/시크릿 다이얼로그 무변경). 첫 구독/에디터 진입 시 `ensureEnvLoaded()` 로 서버 로드, 편집은 400ms 디바운스 diff(PUT/DELETE), 이름 변경은 서버 rename. **활성 환경만 브라우저**(`fl:env:active`). `Editor.onRun` 이 `ensureEnvLoaded()` 대기 후 env 주입.
   **1회 이관**: 서버가 비어 있고 구 `fl:environments`/`fl:runinput:{id}` 가 있으면 자동 업로드 + 토스트 + 구 키 삭제(게스트 등 권한 없으면 조용히 건너뜀).
 - 검증: EnvironmentServiceTest 3(CRUD/rename 충돌/승인 게이트/run-input) + 전체 스위트 + 브라우저 e2e 14(API·레거시 이관 토스트·구 키 삭제·활성 유지·다이얼로그 편집 → 서버 반영·새 브라우저 컨텍스트 공유·run-input 이관) + 실행 2(`{{who@env}}` 서버 환경으로 assert SUCCEEDED). 가이드 [06장](docs/guide/06-환경-시크릿-입력.md) 갱신.
@@ -1170,7 +1172,7 @@ API 도구 UX·비주얼/IA·플로우 통합 3관점 병렬 비평 → 확정 �
 ## 최근 변경 (2026-09-08) — Mock 2.0: 코덱 v2(범위·입력 포트·시크릿) · 통합 템플릿 · 예상 요청+칩 · 요청 기록 활용
 설계: [docs/superpowers/specs/2026-09-08-mock-codec-v2-design.md](docs/superpowers/specs/2026-09-08-mock-codec-v2-design.md). 사용자 피드백("왜 니맘대로 — 일부 필드/전체 선택, key·iv 입력, env·vault, Mock 도 편하게, 칩은 올 것을 미리 정의"). **환경 변수(@env)는 Mock 에 넣지 않음(사용자 결정)** — 시크릿만.
 - **통합 템플릿 [MockTemplate](backend/src/main/kotlin/com/flowlink/mock/MockTemplate.kt)** + `MockContext`(req·pathParams·seq·state·secrets·TCP req/fields·json): 워크플로 칩 문법 `{{ x@body|query|path|header|state|secret|req }}` 와 기존 dot 문법(`{{body.x}}`·`{{req:o:l}}`) 모두 해석, body 는 **점 경로**(`user.addr.city`, `items[0].id`, 최상위 실키 우선). MockRuntime(render/conditionsPass)·TcpMockEngine·MockCodec 이 공유. `JsonPaths` get/setText.
-- **시크릿**: `MockSpec.environment` = 시크릿 스코프(공통+Vault+그 환경 오버레이). [MockSecretProvider](backend/src/main/kotlin/com/flowlink/mock/MockSecretProvider.kt)(tenant+env 10초 캐시, 실패 시 빈 맵 WARN). 게이트웨이/TCP 리스너가 `TenantContext` 를 Mock 소유 테넌트로 설정. **요청 기록(headers/body/decodedBody) 시크릿 마스킹**(SecretMasker), 응답은 의도된 출력이라 마스킹 안 함.
+- **시크릿**: `MockSpec.environment` = 시크릿 스코프(공통+Vault(2026-09-14 제거됨)+그 환경 오버레이). [MockSecretProvider](backend/src/main/kotlin/com/flowlink/mock/MockSecretProvider.kt)(tenant+env 10초 캐시, 실패 시 빈 맵 WARN). 게이트웨이/TCP 리스너가 `TenantContext` 를 Mock 소유 테넌트로 설정. **요청 기록(headers/body/decodedBody) 시크릿 마스킹**(SecretMasker), 응답은 의도된 출력이라 마스킹 안 함.
 - **코덱 v2 [MockCodec](backend/src/main/kotlin/com/flowlink/mock/MockCodec.kt)**: 단계 `{id, target: body|fields|header, fields[], header, inputs[{key, mode: message|value, value}], config, outputKey}`(v1 `{id,config,inputKey,outputKey}` 호환). `applyStep`(입력 포트 message 1개 + value 템플릿, config 템플릿) · `applyRequest`(body 체인 / fields=JSON 점경로·urlencoded 값만 재직렬화 / header 값 변환) · `applyResponse`(fields / **header=본문 입력→헤더 기록(서명)** / body) · TCP `applyTcpField`(패딩 전)·`applyTcpBody`. fields 는 JSON/urlencoded 만(그 외 CodecException). `StepTrace` 로 단계 기록.
   MockRuntime.render 에 `ResponseCodec` fun interface(본문+헤더 맵+contentType) + secrets/json 파라미터. [TcpMockEngine.process](backend/src/main/kotlin/com/flowlink/mock/TcpMockEngine.kt)(요청 body/fields 코덱 → 매칭 → 렌더(필드 코덱) → 응답 body 코덱) 를 리스너·미리보기가 공유(`preview` 에 codec/secrets, `decodedRequest`·`codecSteps`).
 - **API**: `POST /mock-servers/{id}/codec-try`{codec, environment, side, message, headers, contentType} → {result, headers, fields, steps}(승인 사용자 + 읽기 권한, 시크릿 값 마스킹) · `tcp-preview` 에 codec/environment. `MockRoute.expect{body,query,header:[{key,type,example}]}`(예상 요청 — 실행 의미 없음). `MockHttp.parseBodyFields` 로 이동(게이트웨이·코덱 공용).
@@ -1249,7 +1251,7 @@ API 도구 UX·비주얼/IA·플로우 통합 3관점 병렬 비평 → 확정 �
 - 검증: GithubAuthStartupValidatorTest 3종 + WorkspaceRbacTest 부트스트랩 케이스 + 전체 스위트.
 
 ## 최근 변경 (2026-09-14) — SSRF 가드 제거 (`refactor/trim-config`)
-- `SsrfGuard`·`SsrfBlockedException`·`SsrfGuardTest`·`ExecutionProperties.Ssrf`·yml `flowlink.execution.ssrf.*` 삭제. HTTP/TCP 노드(서버 모드)·Mock 콜백·어시스턴트(Anthropic/Copilot)·GitHub 로그인의 아웃바운드는 **무검사** — 사설망·클라우드 메타데이터·loopback 자유 호출. 스킴 allowlist(http/https)도 함께 사라짐(비 http/https URL 은 RestClient/HttpClient 가 실패시킴 → 노드 실패 `⚠ 요청 실패: …`). h2 프로파일은 이미 `enabled: false` 였으므로 로컬 동작 동일. **사내망 배포 전제.** NotificationService 의 자체 스킴 검증은 유지.
+- `SsrfGuard`·`SsrfBlockedException`·`SsrfGuardTest`·`ExecutionProperties.Ssrf`·yml `flowlink.execution.ssrf.*` 삭제. HTTP/TCP 노드(서버 모드)·Mock 콜백·어시스턴트(Anthropic/Copilot)·GitHub 로그인의 아웃바운드는 **무검사** — 사설망·클라우드 메타데이터·loopback 자유 호출. 스킴 allowlist(http/https)도 함께 사라짐(비 http/https URL 은 RestClient/HttpClient 가 실패시킴 → 노드 실패 `⚠ 요청 실패: …`). h2 프로파일(2026-09-14 `local` 로 개명)은 이미 `enabled: false` 였으므로 로컬 동작 동일. **사내망 배포 전제.** NotificationService 의 자체 스킴 검증은 유지.
 
 ## 최근 변경 (2026-09-14) — Vault KV 제거(Transit/AppRole 만 유지) (`refactor/trim-config`)
 - 삭제: `VaultSecretSource`(KV v2 클라이언트·TTL 캐시), [SecretService](backend/src/main/kotlin/com/flowlink/secret/SecretService.kt) 의 Vault 오버레이(listNames/activeSecrets)·`SecretView.source`(프론트 SecretsDialog `Vault` 배지/읽기전용 그룹 포함), [AppJwt](backend/src/main/kotlin/com/flowlink/security/AppJwt.kt) 의 Vault `jwt-secret` 조회, `VaultProperties` enabled/mount/path/config-path/refresh-seconds, env `FLOWLINK_VAULT_ENABLED`/`MOUNT`/`PATH`/`CONFIG_PATH`/`REFRESH_SECONDS`.
@@ -1258,7 +1260,8 @@ API 도구 UX·비주얼/IA·플로우 통합 3관점 병렬 비평 → 확정 �
 
 ## 최근 변경 (2026-09-14) — 프로파일 정리: local(H2 파일, 기본) / dev(Oracle) (`refactor/trim-config`)
 - `application-h2.yml` → [application-local.yml](backend/src/main/resources/application-local.yml)(이름만), Oracle datasource(url/user/password)·flyway 블록을 `application.yml` 에서 새 [application-dev.yml](backend/src/main/resources/application-dev.yml) 로 분리. `application.yml` 은 공통 + `spring.profiles.default: local`(프로파일 미지정 = local). `scripts/start.*` 기본도 `local`. Kotlin 코드에 프로파일 문자열 판정은 없어 코드 변경 0.
-- ⚠ 기존 `SPRING_PROFILES_ACTIVE=oracle` 은 **무효** — Oracle 설정이 dev 파일에만 있으므로 그대로 두면 datasource 가 없어 Boot 가 내장 인메모리 H2 를 자동 구성한다(ddl-auto none → 테이블 없음). 배포 env 를 `dev` 로 바꿀 것.
+- ⚠ 기존 `SPRING_PROFILES_ACTIVE=oracle`(구 scripts 기본 `h2` 도 동일)은 **무효** — 그 이름의 프로파일 파일이 없어 Boot 가 내장 인메모리 H2 를 자동 구성하고, flyway-core 가 classpath 에 있어 Flyway 기본 위치(`classpath:db/migration` 재귀)의 Oracle `V1__init.sql` 을 H2 에 실행하다 `Migration V1__init.sql failed` 로 **기동 실패**한다(fail-fast — 조용히 빈 DB 로 뜨지 않음). 배포 env 를 `dev`(Oracle)/`local`(H2) 로 바꿀 것.
+- `hibernate.type.preferred_uuid_jdbc_type: CHAR` 는 공통 `application.yml` 에 남김 — 구 h2 프로파일도 base 를 상속해 CHAR 였으므로 기존 `.mv.db` 의 uuid 컬럼(CHAR(36))과 호환. dev 로 옮기면 local 의 uuid 매핑이 바뀌어 기존 파일 DB 와 충돌한다.
 
 ## 참고 문서
 - `backend/README.md` — 백엔드 구조·설정·API 요약 · `frontend/README.md` · `infra/README.md`(배포)

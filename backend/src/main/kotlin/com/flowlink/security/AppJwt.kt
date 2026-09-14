@@ -17,8 +17,8 @@ import javax.crypto.spec.SecretKeySpec
 
 /**
  * 앱 자체 JWT 발급/검증(HS256). GitHub 로그인 성공 시 이 토큰을 발급하고, 리소스 서버가 이 토큰을 검증한다.
- * 클레임 구조를 Keycloak JWT 와 동일하게(preferred_username·tenant·realm_access.roles) 맞춰 기존
- * [JwtRoleConverter]·[TenantClaimFilter] 를 그대로 재사용한다.
+ * 클레임 구조(preferred_username·tenant·realm_access.roles — Keycloak 호환 형식)는
+ * [JwtRoleConverter]·[TenantClaimFilter] 가 읽는다.
  */
 @Component
 class AppJwt(props: AuthProperties) {

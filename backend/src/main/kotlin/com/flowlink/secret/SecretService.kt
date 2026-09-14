@@ -28,7 +28,7 @@ class SecretService(
     // environment: null=공통(COMMON). 화면엔 공통을 null 로 보여준다.
     data class SecretView(val name: String, val environment: String?, val createdAt: Instant?)
 
-    /** 기동 시 레거시 NULL environment 행을 공통('*')으로 백필(H2 dev 관용, Flyway DB 는 0건). */
+    /** 기동 시 레거시 NULL environment 행을 공통('*')으로 백필(local(H2) 관용, Flyway DB 는 0건). */
     @EventListener(ApplicationReadyEvent::class)
     @Transactional
     fun backfillEnvironmentOnStartup() {

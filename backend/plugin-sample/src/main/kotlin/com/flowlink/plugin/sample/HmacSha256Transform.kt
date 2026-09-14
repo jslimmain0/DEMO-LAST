@@ -17,7 +17,7 @@ class HmacSha256Transform : FlowTransform {
 
     override fun id(): String = "hmac-sha256"
 
-    override fun label(): String = "HMAC-SHA256 서명(플러그인)"
+    override fun label(): String = "HMAC-SHA256 서명"
 
     override fun inputs(): List<IoSpec> = listOf(IoSpec.of("input", "서명할 문자열"))
 

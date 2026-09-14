@@ -778,7 +778,7 @@ class ExecutionService(
     }
 
     private fun currentUser(): String? {
-        // OIDC 모드면 JwtRoleConverter 가 name=preferred_username(없으면 sub)으로 세팅. dev 모드는 null.
+        // GitHub 로그인 사용자(자체 JWT)면 JwtRoleConverter 가 name=preferred_username(없으면 sub)으로 세팅. dev 모드·게스트는 null.
         val auth = SecurityContextHolder.getContext().authentication
         return if (auth is JwtAuthenticationToken) auth.name else null
     }

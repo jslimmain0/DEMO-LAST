@@ -16,7 +16,9 @@ spring:
     properties:
       hibernate.jdbc.time_zone: UTC
       hibernate.format_sql: false
-      hibernate.type.preferred_uuid_jdbc_type: CHAR   # uuid → varchar2(36) 문자열 바인딩
+      # uuid → 문자열(36) 바인딩 — dev(Oracle varchar2)·local(H2 파일 DB) 공통. 구 h2 프로파일도 이 값을 상속했으므로
+      # 기존 .mv.db 의 uuid 컬럼이 CHAR(36) — dev 로 옮기면 local 매핑이 바뀌어 기존 파일 DB 와 충돌한다.
+      hibernate.type.preferred_uuid_jdbc_type: CHAR
   mvc:
     servlet:
       load-on-startup: 1        # 시작 시 DispatcherServlet 초기화(첫 요청 지연/레이스 방지)
@@ -64,11 +66,12 @@ flowlink:
   vault:
     address: ${FLOWLINK_VAULT_ADDRESS:http://localhost:8200}
     token: ${FLOWLINK_VAULT_TOKEN:}                   # dev 루트 토큰 등 정적 토큰. AppRole 미설정 시 사용
-  # 보안 (IdP 비종속). 아무 인증도 활성 안 하면 dev permitAll(로컬).
+  # 보안. github-enabled 미설정이면 dev permitAll(로컬).
   security:
     tenant-claim: tenant                 # JWT 에서 테넌트(팀) 식별자를 읽을 클레임 이름
   # 앱 인증 — GitHub 로그인(Copilot 과 동일한 디바이스 플로우). 로그인하면 앱이 자체 JWT(HMAC)를 발급하고,
-  # 그 JWT 를 리소스 서버로 검증 → 인증 필수 + RBAC + 테넌트 격리. 미설정이면 dev permitAll.
+  # 그 JWT 를 리소스 서버로 검증 → 로그인 사용자 신원 인식 + 테넌트 격리(앱은 게스트 개방, /api/v1/assistant/** 만 로그인 필수).
+  # 미설정이면 dev permitAll.
   # ⚠ github-enabled=true 면 서명 시크릿 **필수**(없으면 토큰 위조 가능 → 기동 실패).
   #   서명 시크릿: env FLOWLINK_AUTH_JWT_SECRET
   # 운영(EC2)에선 env 로 켠다:

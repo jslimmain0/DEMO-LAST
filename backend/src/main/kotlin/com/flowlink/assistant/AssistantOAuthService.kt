@@ -45,9 +45,9 @@ class AssistantOAuthService(
     private val copilotLock = Any()
     private val poolers = Executors.newCachedThreadPool { r -> Thread(r, "copilot-devicepoll").apply { isDaemon = true } }
 
-    // --- 스코프(사용자별) — Copilot 연결은 tenant + 로그인 사용자 단위. OIDC 는 각자 자기 GitHub 로 연결. dev 는 단일 "dev". ---
+    // --- 스코프(사용자별) — Copilot 연결은 tenant + 로그인 사용자 단위. github 모드는 각자 자기 GitHub 로 연결. dev 는 단일 "dev". ---
 
-    /** 현재 로그인 사용자명 — OIDC 는 JWT preferred_username(=auth.name), dev(무인증)는 "dev". */
+    /** 현재 로그인 사용자명 — github 모드는 JWT preferred_username(=auth.name), dev(무인증)는 "dev". */
     private fun currentUser(): String {
         val auth = SecurityContextHolder.getContext().authentication
         return if (auth is JwtAuthenticationToken) auth.name else DEV_USER

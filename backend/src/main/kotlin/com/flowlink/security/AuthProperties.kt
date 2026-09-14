@@ -4,9 +4,10 @@ import org.springframework.boot.context.properties.ConfigurationProperties
 
 /**
  * flowlink.auth.* — **GitHub 로그인**(Copilot 과 동일한 디바이스 플로우) 기반 앱 인증.
- * Keycloak/OIDC 대신 GitHub 계정으로 로그인하면 앱이 자체 JWT(HMAC 서명)를 발급한다.
+ * GitHub 계정으로 로그인하면 앱이 자체 JWT(HMAC 서명)를 발급한다.
  *
- * @property githubEnabled true 면 GitHub 로그인 활성(앱이 자체 JWT 검증 → 인증 필수). false/미설정이면 dev(permitAll).
+ * @property githubEnabled true 면 GitHub 게스트 모드(앱은 개방, assistant API(`/api/v1/assistant/…`)만 로그인 필수 — 앱이 자체 JWT 검증).
+ *   false/미설정이면 dev(permitAll).
  *   ⚠ 활성 시 [GithubAuthStartupValidator] 가 jwtSecret 을 **강제**(미설정 시 기동 실패 — 토큰 위조 방지).
  * @property jwtSecret 앱 JWT 서명/검증 HMAC 시크릿(SHA-256 파생 32B). **github-enabled 시 필수**(미설정 시 기동 실패 —
  *   없으면 공개 dev 키로 서명돼 누구나 위조 가능). dev 모드(github-disabled)에선 미사용이라 폴백 키 + WARN.

@@ -34,7 +34,7 @@ class Secret {
     @Column(name = "enc_value", columnDefinition = "text", nullable = false)
     lateinit var encValue: String
 
-    // 환경(dev/staging/prod) 스코프. COMMON("*")=공통(전역). JPA nullable — H2 dev legacy 행의 NULL 관용(공통 취급).
+    // 환경(dev/staging/prod) 스코프. COMMON("*")=공통(전역). JPA nullable — local(H2) legacy 행의 NULL 관용(공통 취급).
     @Column(name = "environment", length = 120)
     var environment: String? = null
         private set

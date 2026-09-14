@@ -6,7 +6,7 @@ import org.springframework.stereotype.Service
 
 /**
  * 자연어 → Mock 서버 spec 어시스턴트. 플로우 어시스턴트(AssistantService)의 LLM 파이프라인
- * (Copilot 자격·벌크헤드·SSRF·429·JSON 추출)을 재사용하고, 시스템 프롬프트만 MockSchemaPrompt 로 바꾼다.
+ * (Copilot 자격·벌크헤드·429·JSON 추출)을 재사용하고, 시스템 프롬프트만 MockSchemaPrompt 로 바꾼다.
  * 자격이 없으면 키워드 기반 stub spec 으로 키 없이도 기능이 완결된다.
  */
 @Service

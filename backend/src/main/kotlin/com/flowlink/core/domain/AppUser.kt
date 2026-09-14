@@ -36,7 +36,7 @@ class AppUser {
     @Column(name = "global_role", nullable = false, length = 16)
     var globalRole: String = ROLE_MEMBER
 
-    /** PENDING(가입 신청) | APPROVED(승인) | BLOCKED(차단). null=레거시 행(승인 간주 — dev H2 ddl-auto 호환). */
+    /** PENDING(가입 신청) | APPROVED(승인) | BLOCKED(차단). null=레거시 행(승인 간주 — local H2 ddl-auto 호환). */
     @Column(length = 16)
     var status: String? = null
 

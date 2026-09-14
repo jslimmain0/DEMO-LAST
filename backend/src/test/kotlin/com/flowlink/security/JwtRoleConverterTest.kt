@@ -5,7 +5,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.springframework.security.oauth2.jwt.Jwt
 
-/** Keycloak JWT 롤 클레임(realm_access/resource_access) → ROLE_* 권한 매핑 검증. */
+/** 앱 자체 JWT 롤 클레임(realm_access/resource_access) → ROLE_* 권한 매핑 검증. */
 class JwtRoleConverterTest {
 
     private val converter = JwtRoleConverter()

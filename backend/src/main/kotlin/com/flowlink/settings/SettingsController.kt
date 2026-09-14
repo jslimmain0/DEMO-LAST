@@ -10,7 +10,7 @@ import org.springframework.web.bind.annotation.RestController
  * 런타임 설정 API — 콜백 수신 주소(relay base).
  * value = 저장된 오버라이드(null 이면 자동), effective = 지금 실행하면 실제로 쓰일 값.
  * 쓰기는 **관리자만**(github/dev 모드 서비스 게이트 — 게스트가 relay base 를 자기 서버로 바꿔
- * 콜백을 탈취하거나 알림 웹훅을 훔쳐보던 구멍 봉인. OIDC 모드의 admin URL 규칙과 동일 의미).
+ * 콜백을 탈취하거나 알림 웹훅을 훔쳐보던 구멍 봉인).
  */
 @RestController
 @RequestMapping("/api/v1/settings")

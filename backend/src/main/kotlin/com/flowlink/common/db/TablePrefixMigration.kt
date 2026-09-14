@@ -8,7 +8,7 @@ import java.sql.Connection
 import javax.sql.DataSource
 
 /**
- * H2 dev(ddl-auto) 관용 — 접두사 없는 구 테이블(flow/execution/…)이 있으면 **Hibernate 스키마 생성 전에**
+ * local(H2, ddl-auto) 관용 — 접두사 없는 구 테이블(flow/execution/…)이 있으면 **Hibernate 스키마 생성 전에**
  * `flowlink_*` 로 이름을 바꿔 기존 로컬 데이터를 보존한다. (Flyway DB(Oracle)는 V20 마이그레이션이 같은 일을 하므로 실행 안 함.)
  *
  * 규칙(테이블마다):

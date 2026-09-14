@@ -13,7 +13,7 @@ import org.springframework.web.bind.annotation.RestController
 
 /**
  * 시크릿 볼트 API — write-only. GET 은 이름만(값 조회 불가), PUT 로 설정, DELETE 로 제거.
- * RBAC: GET=viewer, 쓰기=editor(OIDC URL 규칙) + **승인 사용자**(github/dev 모드 서비스 게이트 —
+ * 쓰기=**승인 사용자**(github/dev 모드 서비스 게이트 —
  * 게스트/승인 대기 계정이 팀 시크릿을 덮어쓰거나 지우던 구멍 봉인). 값은 실행 시 `{{ 이름@secret }}` 로만 쓰인다.
  */
 @RestController

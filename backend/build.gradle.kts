@@ -45,7 +45,7 @@ dependencies {
     runtimeOnly("com.oracle.database.jdbc:ojdbc11")         // Oracle 드라이버
     runtimeOnly("com.h2database:h2")        // local 프로파일(기본)·테스트
 
-    // --- Security (1단계: 골격만. OIDC/RBAC는 후속 Phase) ---
+    // --- Security — GitHub 로그인(자체 JWT 를 resource-server 로 검증) ---
     implementation("org.springframework.boot:spring-boot-starter-security")
     implementation("org.springframework.boot:spring-boot-starter-oauth2-resource-server")
 

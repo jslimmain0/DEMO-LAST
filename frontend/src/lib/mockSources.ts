@@ -11,7 +11,7 @@ export interface MockSourceOpts {
   spec: MockServerSpec
   route?: MockRouteSpec | null
   secrets?: SecretView[]
-  /** 이 Mock 의 시크릿 환경(spec.environment). 공통(+Vault) + 이 환경의 시크릿이 적용 대상. */
+  /** 이 Mock 의 시크릿 환경(spec.environment). 공통 + 이 환경의 시크릿이 적용 대상. */
   environment?: string | null
   /** TCP 편집기에서 true — 요청 레이아웃 필드를 소스로. */
   tcp?: boolean
@@ -33,7 +33,7 @@ export function stateKeys(spec: MockServerSpec): string[] {
   return [...keys]
 }
 
-/** 이 Mock 에 적용되는 시크릿 이름(공통 + 환경 오버레이 + Vault). 같은 이름은 한 번. */
+/** 이 Mock 에 적용되는 시크릿 이름(공통 + 환경 오버레이). 같은 이름은 한 번. */
 export function applicableSecretNames(secrets: SecretView[] | undefined, environment: string | null | undefined): string[] {
   const env = environment?.trim() || null
   const names = new Set<string>()

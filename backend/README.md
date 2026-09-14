@@ -38,7 +38,7 @@ definition/  플로우 CRUD·버전(불변)·import/export        execution/   �
  └ engine    FlowExecutor·HttpNodeExecutor·TcpNodeExecutor·TokenResolver·ExpressionEvaluator
              ·RelayController(wait 콜백 수신·자동 재개)·StateCrypto(AES-GCM)·RunStateSnapshot(내구 재개)
 folder/      폴더(중첩 트리)                              mock/        내장 Mock 서버(HTTP/TCP 게이트웨이·상태·순차응답)
-security/    인증 — GitHub 로그인(자체 JWT) / dev permitAll · TenantContext · RBAC
+security/    인증 — GitHub 로그인(자체 JWT) / dev permitAll · TenantClaimFilter · 롤 클레임 매핑
 secret/      시크릿 볼트(AES-GCM 또는 Vault Transit KEK)
 settings/    런타임 설정(키-값, 콜백 base·알림 웹훅)      trigger/     자동 실행(cron 스케줄러·webhook)
 assistant/   AI 어시스턴트(자연어→플로우) — Anthropic / GitHub Copilot(디바이스 플로우) / stub

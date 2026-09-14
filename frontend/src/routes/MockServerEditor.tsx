@@ -437,7 +437,7 @@ export function MockServerEditor() {
                     <div>
                       <div style={lbl}>🔑 시크릿 환경</div>
                       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                        <select style={{ ...input, minWidth: 160 }} value={spec.environment ?? ''} disabled={!canEdit} onChange={(e) => mutate((s) => ({ ...s, environment: e.target.value || null }))} title="{{ 이름@secret }} 해석 스코프 — 공통 시크릿(+Vault)에 이 환경의 시크릿을 덮어씀">
+                        <select style={{ ...input, minWidth: 160 }} value={spec.environment ?? ''} disabled={!canEdit} onChange={(e) => mutate((s) => ({ ...s, environment: e.target.value || null }))} title="{{ 이름@secret }} 해석 스코프 — 공통 시크릿에 이 환경의 시크릿을 덮어씀">
                           <option value="">공통만</option>
                           {secretEnvs.map((e) => <option key={e} value={e}>{e}</option>)}
                           {spec.environment && !secretEnvs.includes(spec.environment) && <option value={spec.environment}>{spec.environment}</option>}

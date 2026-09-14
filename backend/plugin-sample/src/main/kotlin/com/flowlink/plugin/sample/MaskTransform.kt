@@ -14,7 +14,7 @@ class MaskTransform : FlowTransform {
 
     override fun id(): String = "mask"
 
-    override fun label(): String = "마스킹(플러그인)"
+    override fun label(): String = "마스킹"
 
     override fun inputs(): List<IoSpec> = listOf(IoSpec.of("input", "원문"))
 

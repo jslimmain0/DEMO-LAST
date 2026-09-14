@@ -12,7 +12,7 @@ import javax.crypto.spec.SecretKeySpec
  * DB 영속 시 평문 노출을 막는다.
  *
  * 키 = SHA-256(secret). secret 미설정 시 dev 고정키([DEV_SECRET]) — 로컬 개발 편의용이며
- * OIDC(공유) 모드에선 ExecutionService 가 기동 시 WARN 을 남긴다. 포맷: base64(iv(12) || ciphertext+tag).
+ * dev 고정키로 동작하면 CryptoConfig 가 기동 시 WARN 을 남긴다. 포맷: base64(iv(12) || ciphertext+tag).
  */
 class StateCrypto(secret: String?) : com.flowlink.common.crypto.CryptoProvider {
 

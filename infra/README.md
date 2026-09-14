@@ -66,7 +66,7 @@ bash scripts/start.sh
 ## 3. GitHub 로그인 (운영 인증)
 
 **GitHub 계정으로 로그인**한다(어시스턴트 Copilot 연결과 동일한 device flow).
-로그인하면 앱이 자체 JWT(HMAC)를 발급하고 그 JWT 를 검증 → 인증 필수 + 팀(tenant) 격리.
+로그인하면 앱이 자체 JWT(HMAC)를 발급하고 그 JWT 를 검증 → 로그인 사용자 신원 인식 + 팀(tenant) 격리(앱은 게스트 개방, AI 어시스턴트만 로그인 필수).
 
 1. 앱을 `FLOWLINK_AUTH_GITHUB_ENABLED=true` + 서명 시크릿(`FLOWLINK_AUTH_JWT_SECRET`)으로 기동.
 2. 브라우저로 접속 → **GitHub 로 로그인** 버튼 → 표시된 코드로 github.com/login/device 인증 → 자동 로그인.
@@ -100,7 +100,7 @@ docker compose -f infra/docker-compose.yml --profile oracle up -d   # 로컬 Ora
 
 ## 6. 확인 (스모크 체크)
 
-1. `http://서버IP:18080/` → 대시보드(인증 모드면 GitHub 로그인 화면)
+1. `http://서버IP:18080/` → 대시보드(github 모드면 사이드바 '게스트 · 로그인' 칩)
 2. 워크플로 열고 **새로고침**(`/flows/{id}`) → 404 없이 뜬다 (SPA fallback)
 3. 플로우 하나 실행 → SUCCEEDED
 4. wait 노드 실행 → 수신 URL 이 `http://서버IP:18080/relay/...` → 다른 PC 에서 그 URL 로 `curl -X POST` → 재개

@@ -38,12 +38,12 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-aop")
     implementation("org.springframework.boot:spring-boot-starter-websocket")   // presence 릴레이(/ws/presence)
 
-    // --- Persistence (Oracle + Flyway, 로컬 dev=H2) ---
+    // --- Persistence (dev=Oracle + Flyway, local=H2) ---
     implementation("org.springframework.boot:spring-boot-starter-data-jpa")
     implementation("org.flywaydb:flyway-core")
-    implementation("org.flywaydb:flyway-database-oracle")   // 기본 DB Oracle (db/migration/oracle)
+    implementation("org.flywaydb:flyway-database-oracle")   // dev 프로파일 Oracle (db/migration/oracle)
     runtimeOnly("com.oracle.database.jdbc:ojdbc11")         // Oracle 드라이버
-    runtimeOnly("com.h2database:h2")        // 로컬 dev 프로파일(-Dspring.profiles.active=h2)
+    runtimeOnly("com.h2database:h2")        // local 프로파일(기본)·테스트
 
     // --- Security (1단계: 골격만. OIDC/RBAC는 후속 Phase) ---
     implementation("org.springframework.boot:spring-boot-starter-security")

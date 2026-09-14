@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # FlowLink 메인 앱 기동 (Linux/macOS/Git Bash). 단일 jar(화면+API)를 백그라운드로 띄우고 헬스 대기.
 #
-#   bash scripts/start.sh              # 기존 jar 실행(없으면 --build 안내). 기본 H2.
+#   bash scripts/start.sh              # 기존 jar 실행(없으면 --build 안내). 기본 프로파일 local(H2 파일).
 #   bash scripts/start.sh --build      # 프론트+백엔드 재빌드 후 실행
 #
 # DB/인증은 env 로 주입(EC2 배포 시 외부 Oracle·Vault 연결):
-#   SPRING_PROFILES_ACTIVE=oracle FLOWLINK_DB_URL=... bash scripts/start.sh
-# 기본은 H2 파일(로컬). FLOWLINK_PORT(기본 18080)로 포트 변경.
+#   SPRING_PROFILES_ACTIVE=dev FLOWLINK_DB_URL=... bash scripts/start.sh
+# 기본은 local(H2 파일). FLOWLINK_PORT(기본 18080)로 포트 변경.
 # 경로 접두사(context path): FLOWLINK_CONTEXT_PATH=/flowlink → http://host:port/flowlink/ (앞 슬래시 필수, 끝 슬래시 없음).
 set -euo pipefail
 
@@ -46,8 +46,8 @@ if [ "$BUILD" -eq 1 ] || [ ! -f "$JAR" ]; then
 fi
 [ -f "$JAR" ] || { echo "❌ jar 이 없습니다: $JAR — 'scripts/start.sh --build' 로 빌드하세요."; exit 1; }
 
-# 기본 H2(로컬) — env 로 프로파일/DB 를 안 주면 h2
-export SPRING_PROFILES_ACTIVE="${SPRING_PROFILES_ACTIVE:-h2}"
+# 기본 local(H2 파일) — env 로 프로파일을 안 주면 local
+export SPRING_PROFILES_ACTIVE="${SPRING_PROFILES_ACTIVE:-local}"
 
 # 추가 JVM 옵션(공백 구분). 사내 TLS 가로채기 프록시 환경이면 커스텀 truststore 를 여기로:
 #   FLOWLINK_JAVA_OPTS="-Djavax.net.ssl.trustStore=/etc/pki/corp.jks -Djavax.net.ssl.trustStorePassword=..."

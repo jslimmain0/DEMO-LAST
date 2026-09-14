@@ -1,7 +1,7 @@
 # FlowLink main app start (Windows). Runs the single jar (UI+API) in background and waits for health.
-#   powershell -ExecutionPolicy Bypass -File scripts\start.ps1          # run existing jar (default H2)
+#   powershell -ExecutionPolicy Bypass -File scripts\start.ps1          # run existing jar (default profile local = H2 file)
 #   powershell -ExecutionPolicy Bypass -File scripts\start.ps1 -Build   # rebuild frontend+backend then run
-# Inject DB/auth via env: $env:SPRING_PROFILES_ACTIVE, $env:FLOWLINK_DB_URL, ... Port: $env:FLOWLINK_PORT (default 18080).
+# Inject DB/auth via env: $env:SPRING_PROFILES_ACTIVE (dev = Oracle), $env:FLOWLINK_DB_URL, ... Port: $env:FLOWLINK_PORT (default 18080).
 # Path prefix (context path): $env:FLOWLINK_CONTEXT_PATH='/flowlink' -> app served at http://host:port/flowlink/ (leading slash, no trailing slash).
 # (ASCII-only on purpose: Windows PowerShell 5.1 mis-parses UTF-8 non-ASCII in .ps1 files.)
 param([switch]$Build)
@@ -49,7 +49,7 @@ if ($Build -or -not (Test-Path $Jar)) {
 }
 if (-not (Test-Path $Jar)) { Write-Host "ERROR: jar missing: $Jar - run start.ps1 -Build"; exit 1 }
 
-if (-not $env:SPRING_PROFILES_ACTIVE) { $env:SPRING_PROFILES_ACTIVE = 'h2' } # default H2 (local)
+if (-not $env:SPRING_PROFILES_ACTIVE) { $env:SPRING_PROFILES_ACTIVE = 'local' } # default local (H2 file)
 $env:FLOWLINK_PORT = $Port
 
 # JVM args. On Windows, trust the Windows certificate store so outbound TLS (AI/Copilot, etc.) works even

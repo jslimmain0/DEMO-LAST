@@ -6,7 +6,7 @@ REST API 워크플로 오케스트레이션 플랫폼. 클라이언트 전용 �
 
 | | 스택 | 포트 |
 |---|---|---|
-| **Backend** | Spring Boot 3.3.5 / **Kotlin 1.9**(Java 21 toolchain) / JPA + Flyway / **Oracle**(기본, dev 는 H2 파일) / SpEL | 18080 |
+| **Backend** | Spring Boot 3.3.5 / **Kotlin 1.9**(Java 21 toolchain) / JPA + Flyway / **Oracle**(dev 프로파일) / H2 파일(local 프로파일, 기본) / SpEL | 18080 |
 | **Frontend** | React 19 / Vite 8 / @xyflow/react / Zustand / React Query / axios | 5173 |
 
 ---
@@ -15,7 +15,7 @@ REST API 워크플로 오케스트레이션 플랫폼. 클라이언트 전용 �
 
 ### 앱 실행 — 리포 루트 `scripts/` (단일 jar, 화면+API 한 프로세스 :18080)
 ```bash
-# Linux/macOS/Git Bash — 기본 프로파일 h2(로컬 파일 DB). 없으면 --build 로 빌드 후 실행.
+# Linux/macOS/Git Bash — 기본 프로파일 local(H2 파일 DB). 없으면 --build 로 빌드 후 실행.
 bash scripts/start.sh            # (또는 --build)
 bash scripts/status.sh           # PID 생존 + 헬스(GET /api/v1/auth/config)
 bash scripts/stop.sh
@@ -28,10 +28,10 @@ powershell -ExecutionPolicy Bypass -File scripts\stop.ps1
 ```
 > ⚠️ 스크립트는 세트로 써야 한다(.sh 는 .sh 끼리, .ps1 은 .ps1 끼리) — .sh 는 Git Bash PID 를, .ps1 은 Windows PID 를 PID 파일에 쓰므로 섞으면 stop/status 가 서로의 프로세스를 못 찾는다.
 - DB 접속 override: `FLOWLINK_DB_URL`, `FLOWLINK_DB_USER`, `FLOWLINK_DB_PASSWORD` · 포트: `FLOWLINK_PORT` · **경로 접두사(context path)**: `FLOWLINK_CONTEXT_PATH=/flowlink`(앱 전체가 `/flowlink/` 밑에서 — 운영가이드 §3)
-- 프로파일/인증/Vault 는 env 로 주입(운영): `SPRING_PROFILES_ACTIVE=oracle`, `FLOWLINK_AUTH_GITHUB_ENABLED=true`, `FLOWLINK_VAULT_TRANSIT_ENABLED=true` — 하단 "최근 변경 (2026-07-19)" 섹션 참조.
+- 프로파일/인증/Vault 는 env 로 주입(운영): `SPRING_PROFILES_ACTIVE=dev`(Oracle), `FLOWLINK_AUTH_GITHUB_ENABLED=true`, `FLOWLINK_VAULT_TRANSIT_ENABLED=true` — 하단 "최근 변경 (2026-07-19)" 섹션 참조.
 - **TLS 신뢰(사내 프록시)**: `start.ps1` 은 Windows 인증서 저장소를 신뢰(`-Djavax.net.ssl.trustStoreType=WINDOWS-ROOT`)해 사내 TLS 가로채기 프록시 뒤에서도 아웃바운드 TLS(AI/Copilot 등)가 된다(끄기 `FLOWLINK_WINROOT=0`). 추가 JVM 옵션은 `FLOWLINK_JAVA_OPTS`(Linux 는 커스텀 truststore 를 이걸로).
   - **최후수단 `FLOWLINK_TLS_INSECURE=true`**: 아웃바운드 TLS 인증서/호스트명 검증을 **전부 끈다**(모든 인증서 신뢰, [FlowlinkApplication.main](backend/src/main/kotlin/com/flowlink/FlowlinkApplication.kt) 이 빈 생성 전 기본 SSLContext 를 trust-all 로 교체). ⚠ MITM 취약 — 신뢰 가능한 사내망 전용, 기동 시 큰 WARN. 정석(WINDOWS-ROOT/CA 추가)이 안 될 때만.
-- **H2 파일 위치**: 기본 `~/flowlink-h2db/flowlink.mv.db` (사용자 홈). 변경: `FLOWLINK_H2_FILE`. 초기화: 그 `.mv.db` 삭제.
+- **H2 파일 위치**(local 프로파일): 기본 `~/flowlink-h2db/flowlink.mv.db` (사용자 홈). 변경: `FLOWLINK_H2_FILE`. 초기화: 그 `.mv.db` 삭제.
 - 백그라운드 PID/로그: 리포 루트 `.run/`(gitignore)
 - **내부 서버 배포(단일 jar)**: `npm run build` → `gradle bootJar` 하면 **frontend/dist 가 flowlink.jar 에 동봉**되어
   내장 톰캣이 화면+API 를 :18080 한 프로세스로 서빙([SpaStaticConfig](backend/src/main/kotlin/com/flowlink/common/web/SpaStaticConfig.kt)
@@ -66,7 +66,7 @@ FlowLink 안에서 **가짜 대상 시스템을 만들고 켜는 1급 기능**. 
 ### 테스트
 ```powershell
 $env:JAVA_HOME="C:\Users\jslim\.jdks\corretto-21.0.10"
-./gradlew test   # 백엔드 단위 테스트 전종 (DB 불필요, H2 인메모리)
+./gradlew test   # 백엔드 단위 테스트 전종 (DB 불필요, H2 인메모리 — 프로파일 무관, @TestPropertySource 가 직접 지정)
 ```
 ⚠️ **Gradle 포크 테스트 워커가 한글/비ASCII 경로를 cp949로 잘못 디코딩하는 알려진 이슈**가 있음.
 `build.gradle.kts`에 `-Dfile.encoding=UTF-8 -Dsun.jnu.encoding=UTF-8` 회피책 적용됨.
@@ -1246,6 +1246,10 @@ API 도구 UX·비주얼/IA·플로우 통합 3관점 병렬 비평 → 확정 �
 - 삭제: `VaultSecretSource`(KV v2 클라이언트·TTL 캐시), [SecretService](backend/src/main/kotlin/com/flowlink/secret/SecretService.kt) 의 Vault 오버레이(listNames/activeSecrets)·`SecretView.source`(프론트 SecretsDialog `Vault` 배지/읽기전용 그룹 포함), [AppJwt](backend/src/main/kotlin/com/flowlink/security/AppJwt.kt) 의 Vault `jwt-secret` 조회, `VaultProperties` enabled/mount/path/config-path/refresh-seconds, env `FLOWLINK_VAULT_ENABLED`/`MOUNT`/`PATH`/`CONFIG_PATH`/`REFRESH_SECONDS`.
 - 유지: `VaultTokenSource`(정적 토큰+AppRole)·`TransitCrypto`·`RoutingCrypto`·`CryptoConfig`·재암호화 이관. **스위치는 `flowlink.vault.transit.enabled` 하나.**
 - ⚠ github 모드 jwt-secret 은 env `FLOWLINK_AUTH_JWT_SECRET` **필수** — Vault KV 에만 두던 배포는 기동 실패(fail-closed). AppRole 정책도 `transit/encrypt|decrypt/flowlink` 2경로면 충분.
+
+## 최근 변경 (2026-09-14) — 프로파일 정리: local(H2 파일, 기본) / dev(Oracle) (`refactor/trim-config`)
+- `application-h2.yml` → [application-local.yml](backend/src/main/resources/application-local.yml)(이름만), Oracle datasource(url/user/password)·flyway 블록을 `application.yml` 에서 새 [application-dev.yml](backend/src/main/resources/application-dev.yml) 로 분리. `application.yml` 은 공통 + `spring.profiles.default: local`(프로파일 미지정 = local). `scripts/start.*` 기본도 `local`. Kotlin 코드에 프로파일 문자열 판정은 없어 코드 변경 0.
+- ⚠ 기존 `SPRING_PROFILES_ACTIVE=oracle` 은 **무효** — Oracle 설정이 dev 파일에만 있으므로 그대로 두면 datasource 가 없어 Boot 가 내장 인메모리 H2 를 자동 구성한다(ddl-auto none → 테이블 없음). 배포 env 를 `dev` 로 바꿀 것.
 
 ## 참고 문서
 - `backend/README.md` — 백엔드 구조·설정·API 요약 · `frontend/README.md` · `infra/README.md`(배포)

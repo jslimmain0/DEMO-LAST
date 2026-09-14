@@ -28,7 +28,7 @@ cd ../backend && sh gradlew bootJar          # ② dist 를 jar 에 동봉 → b
 
 ```bash
 # Linux / macOS / Git Bash
-bash scripts/start.sh            # 기존 jar 실행 (없으면 안내). 기본 프로파일 h2(로컬 파일 DB)
+bash scripts/start.sh            # 기존 jar 실행 (없으면 안내). 기본 프로파일 local(H2 파일 DB)
 bash scripts/start.sh --build    # 프론트+백엔드 재빌드 후 실행
 bash scripts/status.sh           # PID 생존 + 헬스(GET /api/v1/auth/config)
 bash scripts/stop.sh
@@ -53,7 +53,7 @@ export FLOWLINK_VAULT_ADDRESS=http://<vault호스트>:8200
 export FLOWLINK_VAULT_TOKEN=<Vault 토큰>                   # 또는 FLOWLINK_VAULT_APPROLE_ROLE_ID/SECRET_ID
 
 # 운영 DB(Oracle) — 나중에 붙일 때
-export SPRING_PROFILES_ACTIVE=oracle
+export SPRING_PROFILES_ACTIVE=dev
 export FLOWLINK_DB_URL='jdbc:oracle:thin:@//<oracle호스트>:1521/FREEPDB1'
 export FLOWLINK_DB_USER=flowlink FLOWLINK_DB_PASSWORD=<...>
 
@@ -61,7 +61,7 @@ bash scripts/start.sh
 ```
 - **콜백 수신 주소는 자동** — wait(콜백 대기) 수신 URL 의 밑둥은 기본적으로 **접속한 주소(오리진)** 를 쓴다.
   다른 주소로 받아야 하면 화면 ⚙ 설정에 저장하거나 env `FLOWLINK_EXECUTION_RELAY_BASEURL`.
-- 로컬 개발 기본은 h2 프로파일(H2 파일 DB + 인증 없음) — env 를 안 주면 이 모드.
+- 로컬 개발 기본은 local 프로파일(H2 파일 DB + 인증 없음) — env 를 안 주면 이 모드.
 
 ## 3. GitHub 로그인 (운영 인증)
 
@@ -95,7 +95,7 @@ docker compose -f infra/docker-compose.yml down -v         # 초기화
 로컬에서 Oracle 을 테스트하려면(선택):
 ```bash
 docker compose -f infra/docker-compose.yml --profile oracle up -d   # 로컬 Oracle Free(:1521)
-# 앱: SPRING_PROFILES_ACTIVE=oracle FLOWLINK_DB_URL=jdbc:oracle:thin:@//localhost:1521/FREEPDB1 bash scripts/start.sh
+# 앱: SPRING_PROFILES_ACTIVE=dev FLOWLINK_DB_URL=jdbc:oracle:thin:@//localhost:1521/FREEPDB1 bash scripts/start.sh
 ```
 
 ## 6. 확인 (스모크 체크)
@@ -112,7 +112,7 @@ docker compose -f infra/docker-compose.yml --profile oracle up -d   # 로컬 Ora
 |---|---|
 | 업데이트 | 새 jar 빌드 → `scripts/stop.sh` → 교체 → `scripts/start.sh` |
 | 로그 | `tail -f .run/flowlink.log` (또는 `FLOWLINK_HOME` 지정 시 그 경로) |
-| 백업(h2) | 종료 후 H2 `.mv.db` 파일 복사 |
+| 백업(local) | 종료 후 H2 `.mv.db` 파일 복사 |
 | 플러그인 추가 | UI/API 업로드(즉시 반영) 또는 `plugins/` 에 JAR 두고 재시작 |
 
 > 서버(EC2)에 SSH 접속·개발 흐름은 [SERVER-DEVELOPMENT.md](SERVER-DEVELOPMENT.md), 로컬 터널은 [connect-local.ps1](connect-local.ps1).

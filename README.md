@@ -8,7 +8,7 @@ REST API 워크플로 오케스트레이션 플랫폼. HTTP·조건분기·폼(�
 
 ![FlowLink 에디터](docs/guide/images/editor-overview.png)
 
-- **Backend** — Spring Boot 3.3 / Kotlin 1.9 (Java 21) / JPA + Flyway / **Oracle**(기본, 로컬 dev 는 H2 파일)
+- **Backend** — Spring Boot 3.3 / Kotlin 1.9 (Java 21) / JPA + Flyway / **Oracle**(dev 프로파일) / H2 파일(local 프로파일, 기본)
 - **Frontend** — React 19 / Vite / @xyflow/react / Zustand / React Query — **빌드하면 백엔드 jar 에 동봉**되어 한 프로세스로 서빙
 
 ## 빠른 시작 — 단일 jar (화면+API 한 프로세스 :18080)
@@ -16,7 +16,7 @@ REST API 워크플로 오케스트레이션 플랫폼. HTTP·조건분기·폼(�
 프론트(dist)가 jar 안에 들어가므로 **프로세스 하나**면 화면과 API 가 모두 뜬다(nginx·별도 프론트 서버 불필요).
 
 ```bash
-# Linux / macOS / Git Bash — 기본 프로파일 h2(로컬 파일 DB, 인증 없음)
+# Linux / macOS / Git Bash — 기본 프로파일 local(H2 파일 DB, 인증 없음)
 bash scripts/start.sh --build     # 최초 1회: 프론트+백엔드 빌드 후 실행. 이후엔 --build 없이
 bash scripts/status.sh
 bash scripts/stop.sh
@@ -68,7 +68,7 @@ cd frontend && npm install && npm run dev    # http://localhost:5173  (/api·/re
 # GitHub 로그인 + Vault Transit + Oracle 을 켜서 기동(예)
 export FLOWLINK_AUTH_GITHUB_ENABLED=true FLOWLINK_AUTH_JWT_SECRET=<시크릿>
 export FLOWLINK_VAULT_TRANSIT_ENABLED=true FLOWLINK_VAULT_ADDRESS=http://<vault>:8200 FLOWLINK_VAULT_TOKEN=<토큰>
-export SPRING_PROFILES_ACTIVE=oracle FLOWLINK_DB_URL='jdbc:oracle:thin:@//<host>:1521/FREEPDB1'
+export SPRING_PROFILES_ACTIVE=dev FLOWLINK_DB_URL='jdbc:oracle:thin:@//<host>:1521/FREEPDB1'
 bash scripts/start.sh
 
 docker compose -f infra/docker-compose.yml up -d      # Vault(Transit KEK)

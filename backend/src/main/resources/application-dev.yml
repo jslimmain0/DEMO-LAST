@@ -1,0 +1,12 @@
+# dev 프로파일: Oracle. SPRING_PROFILES_ACTIVE=dev FLOWLINK_DB_URL=... bash scripts/start.sh
+# 사내/별도 서버 Oracle 로는 FLOWLINK_DB_URL 만 그쪽으로 바꾸면 된다(스키마는 Flyway 가 생성).
+spring:
+  datasource:
+    url: ${FLOWLINK_DB_URL:jdbc:oracle:thin:@//localhost:1521/FREEPDB1}
+    username: ${FLOWLINK_DB_USER:flowlink}
+    password: ${FLOWLINK_DB_PASSWORD:flowlink}
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    # vendor 별 마이그레이션 디렉터리 — Oracle=oracle/(통합 V1 + V9~).
+    locations: classpath:db/migration/{vendor}

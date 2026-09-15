@@ -158,4 +158,70 @@ class ProtocolCodecTest {
         assertThat(com.flowlink.common.tcp.TcpBytes.decodeEscaped(broken, eucKr)).isEqualTo("A\\xB1B")
         assertThat(com.flowlink.common.tcp.TcpBytes.decodeEscaped("김".toByteArray(eucKr), eucKr)).isEqualTo("김")
     }
+
+    @Test
+    fun `패딩 4종 encode`() {
+        val padSpec = ProtocolSpec(
+            encoding = "EUC-KR", lengthField = "길이", lengthFormat = "ascii-decimal", includesSelf = false,
+            header = listOf(Field("길이", 4, "length")),
+            messages = listOf(Message("request", null, listOf(
+                Field("a", 6, "ascii", "left/zero"),
+                Field("b", 6, "ascii", "right/space"),
+                Field("c", 6, "ascii", "left/space"),
+                Field("d", 6, "ascii", "none"),
+            ))),
+        )
+        val e = ProtocolCodec.encode(padSpec, "request", mapOf("a" to "ab", "b" to "ab", "c" to "ab", "d" to "ab"))
+        assertThat(String(e.bytes.copyOfRange(4, 10), eucKr)).isEqualTo("0000ab")
+        assertThat(String(e.bytes.copyOfRange(10, 16), eucKr)).isEqualTo("ab    ")
+        assertThat(String(e.bytes.copyOfRange(16, 22), eucKr)).isEqualTo("    ab")
+        assertThat(String(e.bytes.copyOfRange(22, 28), eucKr)).isEqualTo("ab    ")
+        val d = ProtocolCodec.decode(padSpec, e.bytes, Direction.SEND)
+        assertThat(d.body!!["a"]).isEqualTo("ab")
+        assertThat(d.body!!["b"]).isEqualTo("ab")
+        assertThat(d.body!!["c"]).isEqualTo("ab")
+        assertThat(d.body!!["d"]).isEqualTo("ab    ")
+    }
+
+    @Test
+    fun `numeric 비ASCII 숫자 거부`() {
+        assertThatThrownBy { ProtocolCodec.encode(spec(), "0210", req + ("금액" to "１２")) }
+            .isInstanceOf(ProtocolCodec.ProtocolException::class.java).hasMessageContaining("숫자")
+    }
+
+    @Test
+    fun `binary 길이 범위 초과`() {
+        val big = ProtocolSpec(
+            encoding = "EUC-KR", lengthField = "len", lengthFormat = "binary", endian = "big", includesSelf = false,
+            header = listOf(Field("len", 1, "length")),
+            messages = listOf(Message("request", null, listOf(Field("body", 300, "ascii")))),
+        )
+        assertThatThrownBy { ProtocolCodec.encode(big, "request", emptyMap()) }
+            .isInstanceOf(ProtocolCodec.ProtocolException::class.java).hasMessageContaining("범위")
+    }
+
+    @Test
+    fun `인코딩 불가 문자 거부`() {
+        assertThatThrownBy { ProtocolCodec.encode(spec(), "0210", req + ("고객명" to "😀")) }
+            .isInstanceOf(ProtocolCodec.ProtocolException::class.java).hasMessageContaining("인코딩할 수 없는")
+
+        val utf8 = ProtocolSpec(
+            encoding = "UTF-8", lengthField = "len", lengthFormat = "ascii-decimal", includesSelf = false,
+            header = listOf(Field("len", 4, "length")),
+            messages = listOf(Message("request", null, listOf(Field("emoji", 5, "string")))),
+        )
+        val emoji = "😀"
+        val e = ProtocolCodec.encode(utf8, "request", mapOf("emoji" to emoji + emoji + emoji), lenient = true)
+        val off = utf8.headerLen()
+        assertThat(e.bytes.copyOfRange(off, off + 5)).isEqualTo(emoji.toByteArray(Charsets.UTF_8) + byteArrayOf(0x20))
+    }
+
+    @Test
+    fun `총합 상한`() {
+        val big = ProtocolSpec(
+            lengthField = "len", header = listOf(Field("len", 4, "length")),
+            messages = listOf(Message("request", null, listOf(Field("body", 1 shl 20, "string")))),
+        )
+        assertThat(big.validate()).anyMatch { it.contains("상한") }
+    }
 }

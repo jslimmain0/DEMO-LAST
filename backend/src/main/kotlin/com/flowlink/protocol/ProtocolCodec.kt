@@ -65,12 +65,16 @@ object ProtocolCodec {
         val off = spec.lengthFieldOffset()
         val out = frame.copyOf()
         val bytes = lengthBytes(spec, lf, declared)
-        System.arraycopy(bytes, 0, out, off, minOf(bytes.size, out.size - off))
+        System.arraycopy(bytes, 0, out, off, minOf(bytes.size, out.size - off).coerceAtLeast(0))
         return out
     }
 
     private fun lengthBytes(spec: ProtocolSpec, lf: Field, declared: Int): ByteArray {
-        if (spec.isBinaryLength()) return intToBinary(declared, lf.lenOrZero(), spec.isLittleEndian())
+        if (spec.isBinaryLength()) {
+            val max = (1L shl (8 * lf.lenOrZero())) - 1
+            if (declared < 0 || declared > max) throw ProtocolException(lf.nameOrEmpty(), "전문 길이 $declared 가 binary 길이 필드 ${lf.lenOrZero()}바이트 범위를 넘습니다.")
+            return intToBinary(declared, lf.lenOrZero(), spec.isLittleEndian())
+        }
         val s = declared.toString()
         if (s.length > lf.lenOrZero()) throw ProtocolException(lf.nameOrEmpty(), "전문 길이 $declared 가 길이 필드 ${lf.lenOrZero()}자리를 넘습니다.")
         return pad(s.toByteArray(StandardCharsets.US_ASCII), lf.lenOrZero(), lf.padOr(), false)
@@ -179,16 +183,16 @@ object ProtocolCodec {
         var raw: ByteArray = when (type) {
             "binary" -> TcpBytes.hexToBytes(v) ?: throw ProtocolException(name, "'$name' 값이 hex 형식이 아닙니다: '$v'")
             "ascii", "length" -> { v.firstOrNull { it.code > 0x7F }?.let { throw ProtocolException(name, "ascii 필드 '$name' 에 비ASCII 문자('$it')가 있습니다.") }; v.toByteArray(StandardCharsets.US_ASCII) }
-            "numeric" -> { if (v.any { !it.isDigit() }) throw ProtocolException(name, "numeric 필드 '$name' 에 숫자가 아닌 문자가 있습니다: '$v'"); v.toByteArray(StandardCharsets.US_ASCII) }
-            else -> v.toByteArray(cs)
+            "numeric" -> { if (v.any { it !in '0'..'9' }) throw ProtocolException(name, "numeric 필드 '$name' 에 숫자가 아닌 문자가 있습니다: '$v'"); v.toByteArray(StandardCharsets.US_ASCII) }
+            else -> { if (!cs.newEncoder().canEncode(v)) throw ProtocolException(name, "'$name' 값에 ${cs.name()} 로 인코딩할 수 없는 문자가 있습니다."); v.toByteArray(cs) }
         }
         val actual = raw.size
         var warn: String? = null
         if (raw.size > len) {
             if (!lenient) throw ProtocolException(name, "'$name' 값이 ${len}바이트를 초과합니다(${raw.size}바이트).")
-            // ponytail: 문자 하나씩 떼며 재인코딩 — 필드는 수십 바이트라 O(n²) 무시
+            // ponytail: 코드포인트 하나씩 떼며 재인코딩 — 필드는 수십 바이트라 O(n²) 무시
             var cut = v
-            if (binary) raw = raw.copyOf(len) else { while (cut.toByteArray(cs).size > len) cut = cut.dropLast(1); raw = cut.toByteArray(cs) }
+            if (binary) raw = raw.copyOf(len) else { while (cut.toByteArray(cs).size > len) cut = cut.substring(0, cut.offsetByCodePoints(cut.length, -1)); raw = cut.toByteArray(cs) }
             warn = "⚠ '$name' (${actual}B) → ${len}B — 초과분 잘림"
         }
         return pad(raw, len, f.padOr(), binary) to FieldSlice(name, offset, len, actual, v, warn)

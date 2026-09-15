@@ -515,52 +515,7 @@ export interface MockRouteSpec {
   expect?: MockExpect | null   // 예상 요청 필드
 }
 
-// TCP mock — 지정 포트에 고정길이 전문(길이 프리픽스) 리스너를 연다.
-// 응답 템플릿: {{req}} 요청 전문 전체 · {{req:오프셋:길이}} 바이트 슬라이스 · {{req.필드}} 요청 레이아웃 필드 · {{seq}} {{now}} {{uuid}}
-export interface MockTcpReqField { id: string; name?: string; length?: number; encoding?: string } // 요청 레이아웃(바이트 길이 누적 오프셋)
-export interface MockTcpCond { field?: string; op?: 'eq' | 'ne' | 'contains' | 'startswith' | 'endswith' | 'regex' | 'exists'; value?: string }
-export interface MockTcpRespField {
-  id: string
-  name?: string
-  length?: number       // 바이트
-  value?: string        // 템플릿
-  pad?: 'left' | 'right' // 기본 right(문자). 숫자/금액은 left + '0'
-  padChar?: string
-  encoding?: string     // 필드별(없으면 tcp.charset)
-}
-export interface MockTcpRuleSpec {
-  id: string
-  contains?: string // 디코딩된 요청 전문에 포함되면 매칭(비면 항상 = 기본 규칙). when 과 AND
-  when?: MockTcpCond[] // 요청 레이아웃 필드 조건(AND)
-  response?: string    // 텍스트 템플릿(responseFields 가 비어 있을 때)
-  responseFields?: MockTcpRespField[] // 있으면 필드별 바이트 조립이 우선
-}
-export interface MockTcpPreview {
-  encoding: string
-  requestFields: Array<{ name: string; offset: number; length: number; value: string; encoding: string }>
-  requestBytes: number
-  matchedRuleId: string | null
-  matchedRuleIndex: number | null
-  totalBytes: number
-  prefixLen: number
-  declaredPrefix: number | null
-  bodyBytes: number
-  hex: string
-  printable: string
-  fields: TcpPreviewField[]
-  decodedRequest?: string | null   // 요청 코덱이 있을 때 디코딩된 전문
-  codecSteps?: MockCodecStepTrace[]
-}
-
-export interface MockTcpSpec {
-  requestFields?: MockTcpReqField[]
-  enabled?: boolean
-  port?: number            // 1024~65535
-  charset?: string         // 기본 EUC-KR
-  prefixLength?: number    // 기본 4 (0 = 프리픽스 없음, 연결당 1전문)
-  prefixIncludesSelf?: boolean
-  rules?: MockTcpRuleSpec[]
-}
+// TCP mock — 프로토콜 참조 기반 신형 MockTcpSpec 은 파일 끝에서 정의(구 필드-레이아웃 정의 대체, Task 13 완료 전까지 사용처 컴파일 에러 예상).
 
 // 전문 코덱 — 요청 전문이 매칭·템플릿에 들어가기 전(request) / 응답 전문을 다 만든 뒤 나가기 전(response)
 // 변환 플러그인(FlowTransform)을 순서대로 적용. HTTP 본문·TCP 전문 모두 대상. 라우트 codec 이 있으면 서버 codec 대신(통째로).
@@ -656,4 +611,34 @@ export interface MockServerDetail extends MockServerSummary {
 // Mock AI 어시스턴트 — 자연어로 mock spec 생성/수정 (플로우 어시스턴트의 mock 판, Copilot 자격 공유)
 export interface MockAssistantChatRequest { messages: AssistantMessage[]; spec?: MockServerSpec | null; mockId?: string; model?: string }
 export interface MockAssistantChatResponse { reply: string; spec: MockServerSpec | null; stub: boolean; model: string }
+
+// --- 프로토콜(고정길이 전문 규격) ---
+export type FieldType = 'length' | 'string' | 'ascii' | 'numeric' | 'binary'
+export type FieldPad = 'left/zero' | 'right/space' | 'left/space' | 'none'
+export interface PluginRef { id: string; config?: Record<string, string> }
+export interface ProtocolField { name: string; len: number; type: FieldType; pad?: FieldPad; plugin?: PluginRef | null }
+export interface ProtocolMessage { key: string; label?: string; fields: ProtocolField[] }
+export interface ProtocolSpec {
+  encoding: string
+  lengthField: string
+  lengthFormat: 'ascii-decimal' | 'binary'
+  endian?: 'big' | 'little'
+  includesSelf: boolean
+  discriminator: string          // '' = 분기 없음(request/response 키)
+  header: ProtocolField[]
+  messages: ProtocolMessage[]
+  messagePlugins?: PluginRef[]
+}
+export interface ProtocolSummary { id: string; name: string; encoding: string; messageCount: number; updatedAt: string | null }
+export interface ProtocolDetail { id: string; name: string; spec: ProtocolSpec; createdAt: string; updatedAt: string | null }
+export interface ProtocolPreviewField { name: string; offset: number; len: number; actualBytes: number; value: string; warn?: string | null }
+export interface ProtocolPreview { total: number; hex: string; text: string; fields: ProtocolPreviewField[]; errors: { field?: string | null; message: string }[]; warnings?: string[] }
+export interface CodecInfo { id: string; label: string; layer: 'field' | 'message'; params: TransformParam[] }
+
+// Mock TCP — 새 프로토콜 참조 기반(구 MockTcpSpec/MockTcpRuleSpec/… 대체, 사용처는 Task 13 에서 마이그레이션)
+export interface MockTcpCond { field?: string; op?: 'eq' | 'ne' | 'contains' | 'startswith' | 'endswith' | 'regex' | 'exists'; value?: string }
+export interface MockTcpFault { delayMs?: number; splitAt?: number | null; drop?: boolean; reset?: boolean; corruptLength?: boolean }
+export interface MockTcpThen { mode: 'mock' | 'proxy'; fields?: Record<string, string> }
+export interface MockTcpRuleSpec { id: string; when?: MockTcpCond[]; then: MockTcpThen; fault?: MockTcpFault | null }
+export interface MockTcpSpec { port?: number; protocolId?: string | null; upstream?: string | null; timeoutMs?: number; rules?: MockTcpRuleSpec[] }
 

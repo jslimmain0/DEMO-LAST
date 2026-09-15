@@ -193,6 +193,18 @@ export const mocksApi = {
     http.post<import('./types').MockCodecTryResult>(`/mock-servers/${id}/codec-try`, body).then((r) => r.data),
 }
 
+export const protocolsApi = {
+  list: () => http.get<import('./types').ProtocolSummary[]>('/protocols').then((r) => r.data),
+  get: (id: string) => http.get<import('./types').ProtocolDetail>(`/protocols/${id}`).then((r) => r.data),
+  create: (name: string, spec: import('./types').ProtocolSpec) => http.post<import('./types').ProtocolDetail>('/protocols', { name, spec }).then((r) => r.data),
+  update: (id: string, body: { name?: string; spec?: import('./types').ProtocolSpec }) => http.put<import('./types').ProtocolDetail>(`/protocols/${id}`, body).then((r) => r.data),
+  remove: (id: string) => http.delete(`/protocols/${id}`).then(() => undefined),
+  // 편집 중 spec 으로 조립 미리보기(저장 없음) — 검증 실패는 errors 로 온다
+  preview: (body: { spec: import('./types').ProtocolSpec; key: string; values: Record<string, string>; direction?: 'send' | 'recv' }) =>
+    http.post<import('./types').ProtocolPreview>('/protocols/preview', body).then((r) => r.data),
+}
+export const codecsApi = { list: () => http.get<import('./types').CodecInfo[]>('/codecs').then((r) => r.data) }
+
 /**
  * mock 서빙 base URL.
  * - 프로덕션(단일 jar): 게이트웨이가 화면과 같은 오리진(내장 톰캣)이므로 현재 오리진 그대로 —

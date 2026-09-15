@@ -5,13 +5,11 @@ import com.flowlink.protocol.ProtocolCodec
 import com.flowlink.protocol.ProtocolService
 import com.flowlink.protocol.ProtocolSpec
 import org.assertj.core.api.Assertions.assertThat
-import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.test.context.TestPropertySource
 import java.net.ServerSocket
-import java.nio.charset.Charset
 
 @SpringBootTest
 @TestPropertySource(properties = [
@@ -33,14 +31,18 @@ class TcpNodeExecutorTest {
         {"id":"t1","type":"tcp","tcpHost":"127.0.0.1","tcpPort":$port,"tcpTimeoutMs":3000,"protocolId":"$pid","tcpMessage":"$msg",
          "tcpValues":${json.toJson(values)}}""", com.flowlink.core.graph.GraphNode::class.java)
 
-    /** 가짜 서버 — 요청 1개 받고 0211 응답(잔액=요청 계좌번호 앞 7자리) 후 종료. */
-    private fun fakeServer(spec: ProtocolSpec, body: () -> Unit) {
+    /** 가짜 서버 — 요청 1개 받고 [respond](기본: 0211 응답, 잔액=요청 계좌번호 앞 7자리) 후 종료. */
+    private fun fakeServer(
+        spec: ProtocolSpec,
+        respond: (ProtocolCodec.Decoded) -> ProtocolCodec.Encoded = { d -> ProtocolCodec.encode(spec, "0211", mapOf("응답코드" to "0000", "잔액" to d.body!!["계좌번호"]!!.take(7))) },
+        body: () -> Unit,
+    ) {
         ServerSocket(0).use { ss ->
             val t = Thread {
                 ss.accept().use { s ->
                     val f = com.flowlink.protocol.Framer.readFrame(s.getInputStream(), spec)!!
                     val d = ProtocolCodec.decode(spec, f.bytes, com.flowlink.protocol.Direction.SEND)
-                    val resp = ProtocolCodec.encode(spec, "0211", mapOf("응답코드" to "0000", "잔액" to d.body!!["계좌번호"]!!.take(7)))
+                    val resp = respond(d)
                     s.getOutputStream().apply { write(resp.bytes); flush() }
                 }
             }.apply { isDaemon = true; start() }
@@ -76,6 +78,21 @@ class TcpNodeExecutorTest {
         assertThat(bad.errors.map { it.field }).containsExactly("계좌번호")
         val none = executor.preview(node("00000000-0000-0000-0000-000000000000", emptyMap(), 1), ExecutionContext())
         assertThat(none.errors[0].message).contains("프로토콜")
+    }
+
+    @Test
+    fun `정의되지 않은 응답 전문은 헤더 + body raw 로 성공`() {
+        val p = protocols.create("원장계-미정의응답", json.readTree(specJson))
+        val spec = protocols.specOf(p.id)
+        fakeServer(spec, respond = { ProtocolCodec.encode(spec, "0211", mapOf("거래코드" to "0777", "응답코드" to "0000", "잔액" to "1")) }) {
+            val r = executor.execute(node(p.id.toString(), mapOf("계좌번호" to "1122334567890", "고객명" to "김철수"), port), ExecutionContext())
+            assertThat(r.ok).withFailMessage(r.responseText).isTrue()
+            @Suppress("UNCHECKED_CAST")
+            val out = r.value as Map<String, Any?>
+            assertThat(out["거래코드"]).isEqualTo("0777")
+            assertThat(out).containsKey("body")
+            assertThat(r.responseText).contains("정의되지 않은 전문")
+        }
     }
 
     @Test

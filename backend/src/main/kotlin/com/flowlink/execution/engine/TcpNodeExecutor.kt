@@ -32,7 +32,13 @@ class TcpNodeExecutor(private val tokens: TokenResolver, private val protocols: 
         val port = node.tcpPort ?: 0
         val values = LinkedHashMap<String, String>()
         for ((k, v) in node.tcpValues ?: emptyMap()) values[k] = if (v.contains("{{")) tokens.stringify(tokens.resolveLiteral(v, ctx)) else v
-        val enc = try { ProtocolCodec.encode(spec, key, values, Direction.SEND, protocols.plugins()) } catch (e: ProtocolCodec.ProtocolException) { throw IllegalArgumentException(e.message, e) }
+        val enc = try {
+            ProtocolCodec.encode(spec, key, values, Direction.SEND, protocols.plugins())
+        } catch (e: ProtocolCodec.ProtocolException) {
+            throw IllegalArgumentException(e.message, e)
+        } catch (e: RuntimeException) {
+            throw IllegalArgumentException("전문 조립 중 오류: ${e.message ?: e}", e)
+        }
         val reqText = "TCP $host:$port · $key · ${spec.charset().name()} · ${enc.bytes.size}B\n" + table(enc.fields) + "\n" + TcpBytes.printable(enc.bytes, spec.charset())
         return Built(spec, key, enc, values, host, port, if ((node.tcpTimeoutMs ?: 0) <= 0) 5000 else node.tcpTimeoutMs!!, reqText)
     }
@@ -41,13 +47,15 @@ class TcpNodeExecutor(private val tokens: TokenResolver, private val protocols: 
     fun preview(node: GraphNode, ctx: ExecutionContext): ProtocolDtos.PreviewResult = try {
         val b = build(node, ctx)
         ProtocolDtos.PreviewResult(b.encoded.bytes.size, TcpBytes.hexDump(b.encoded.bytes), TcpBytes.printable(b.encoded.bytes, b.spec.charset()), b.encoded.fields, emptyList(), b.encoded.warnings)
-    } catch (e: IllegalArgumentException) {
+    } catch (e: Exception) {
         val pe = e.cause as? ProtocolCodec.ProtocolException
         ProtocolDtos.PreviewResult(0, "", "", emptyList(), listOf(ProtocolDtos.PreviewError(pe?.field, e.message ?: "조립 실패")))
     }
 
     fun execute(node: GraphNode, ctx: ExecutionContext): NodeResult {
-        val b = try { build(node, ctx) } catch (e: IllegalArgumentException) { return NodeResult.fail(0, "", "⚠ TCP 전문 조립 실패: " + (e.message ?: e.toString())) }
+        val b = try { build(node, ctx) } catch (e: Exception) {
+            return NodeResult.fail(0, "TCP ${node.tcpHost ?: ""}:${node.tcpPort ?: 0} · ${node.tcpMessage ?: ""}", "⚠ TCP 전문 조립 실패: " + (e.message ?: e.toString()))
+        }
         if (b.host.isBlank()) return NodeResult.fail(0, b.reqText, "⚠ 호스트가 없습니다.")
         return try {
             val x = TcpClient.exchange(b.host, b.port, b.timeoutMs, b.encoded.bytes, b.spec)
@@ -60,7 +68,6 @@ class TcpNodeExecutor(private val tokens: TokenResolver, private val protocols: 
             if (x.response.chunks.size > 1) sb.append(" · 부분 수신 ${x.response.chunks.joinToString("+")}B")
             for (w in d.warnings) sb.append("\n⚠ ").append(w)
             sb.append('\n').append(table(d.fields)).append('\n').append(TcpBytes.printable(x.response.bytes, b.spec.charset()))
-            sb.append("\nHEX ").append(TcpBytes.hexDump(x.response.bytes))
             NodeResult(true, null, b.reqText, sb.toString(), out, out, LinkedHashMap<String, Any?>(b.values), null)
         } catch (e: Framer.FrameException) {
             NodeResult.fail(0, b.reqText, "⚠ 응답 프레이밍 실패: ${e.message}" + (e.raw?.let { "\nHEX " + TcpBytes.hexDump(it) } ?: ""))

@@ -37,6 +37,7 @@ assert.deepEqual(tabbed.fields, [
   { name: '금액', len: 15, type: 'numeric', pad: 'left/zero' },
   { name: '비고', len: 10, type: 'string', pad: 'right/space' },
 ])
+assert.deepEqual(parsePastedTable('STX 1 ascii 0').fields, [{ name: 'STX', len: 1, type: 'ascii', pad: 'right/space' }])
 
 const split = splitPasted(pasted.fields, spec.header)
 assert.equal(split.body.length, 3)

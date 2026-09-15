@@ -40,7 +40,7 @@ const TYPE_ALIAS: Record<string, FieldType> = {
   binary: 'binary', bin: 'binary', bytes: 'binary', 바이너리: 'binary',
 }
 const PAD_ALIAS: Record<string, FieldPad> = {
-  'left/zero': 'left/zero', zero: 'left/zero', '0': 'left/zero', 좌0: 'left/zero', left0: 'left/zero', lz: 'left/zero',
+  'left/zero': 'left/zero', zero: 'left/zero', 좌0: 'left/zero', left0: 'left/zero', lz: 'left/zero',
   'right/space': 'right/space', space: 'right/space', 공백: 'right/space', 우공백: 'right/space', rs: 'right/space',
   'left/space': 'left/space', 좌공백: 'left/space', ls: 'left/space',
   '-': 'none', none: 'none', 없음: 'none',

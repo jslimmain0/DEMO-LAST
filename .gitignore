@@ -20,5 +20,8 @@ infra/.env
 docs/flowlink-user-critique.md
 site/
 
-# 런타임 플러그인 JAR 디렉터리(업로드/배치) — 커밋 제외
-plugins/
+# plugins/ = 플러그인 소스(독립 Gradle 빌드) + 런타임 JAR 드롭 디렉터리 — JAR·빌드 산출물만 제외
+plugins/*.jar
+plugins/.gradle/
+plugins/**/build/
+plugins/**/bin/

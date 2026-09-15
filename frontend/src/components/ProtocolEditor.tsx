@@ -4,7 +4,7 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
 import type { CSSProperties } from 'react'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { codecsApi, protocolsApi } from '../api/client'
 import type { CodecInfo, PluginRef, ProtocolDetail, ProtocolField, ProtocolSpec } from '../api/types'
 import { fieldsOf, lengthNumbers, parsePastedTable, splitPasted, tableLen } from '../lib/protocolSpec'
@@ -19,6 +19,7 @@ const ENCODINGS = ['EUC-KR', 'MS949', 'UTF-8', 'US-ASCII']
 
 export function ProtocolEditor({ detail, canEdit, onSaved }: { detail: ProtocolDetail; canEdit: boolean; onSaved: () => void }) {
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [name, setName] = useState(detail.name)
   const [spec, setSpecRaw] = useState<ProtocolSpec>(() => structuredClone(detail.spec))
   const [dirty, setDirty] = useState(false)
@@ -63,6 +64,18 @@ export function ProtocolEditor({ detail, canEdit, onSaved }: { detail: ProtocolD
     window.addEventListener('keydown', h)
     return () => window.removeEventListener('keydown', h)
   }, [])
+  // ?add=KEY — Mock 전문 로그의 "이 코드로 본문 정의 만들기" 진입: 없는 전문이면 빈 정의를 만들고 그 탭으로
+  useEffect(() => {
+    const add = searchParams.get('add')
+    if (!add) return
+    setSpecRaw((cur) => {
+      if (cur.messages.some((m) => m.key === add)) return cur
+      setDirty(true)
+      return { ...cur, messages: [...cur.messages, { key: add, label: '', fields: [] }] }
+    })
+    setTab(add)
+    setSearchParams({}, { replace: true })
+  }, [searchParams, setSearchParams])
   // 미저장 이탈 경고
   useEffect(() => {
     if (!dirty) return

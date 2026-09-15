@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { CSSProperties } from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import type { HttpMethod, MockRequestLog, MockRouteSpec, MockServerSpec, MockTcpRuleSpec, MockTcpSpec } from '../api/types'
+import type { HttpMethod, MockRequestLog, MockRouteSpec, MockServerSpec, MockTcpRuleSpec, MockTcpSpec, ProtocolSpec, TcpLogEntry } from '../api/types'
 import { adminApi, mockBaseUrl, mocksApi, secretsApi, workspacesApi } from '../api/client'
 import type { SecretView } from '../api/client'
 import { AppShellTier1 } from '../app/AppShell'
@@ -14,7 +14,7 @@ import { AssistantLoginGate } from '../components/AssistantLoginGate'
 import { MockAssistantPanel } from '../components/MockAssistantPanel'
 import { MockCodecEditor } from '../components/MockCodecEditor'
 import { RouteCard } from '../components/MockRouteEditor'
-import { TcpConnectionPanel, TcpLayoutPanel, TcpPreviewPanel, TcpRuleDetail, tcpRuleSummary } from '../components/MockTcpEditor'
+import { TcpConnPanel, TcpLogPanel, TcpRuleDetail, TcpSendPanel, tcpRuleSummary } from '../components/TcpMockEditor'
 import { MockExportDialog, MockReplaceSpecDialog } from '../components/MockTransferDialog'
 import { MockVersionHistoryDialog } from '../components/MockVersionHistoryDialog'
 import { Modal } from '../components/Modal'
@@ -25,24 +25,25 @@ import { newId } from '../lib/ids'
 import { stepCount } from '../lib/mockCodecOps'
 import { openApiToMockRoutes } from '../lib/mockOpenApi'
 import { bodyKeys, findRouteIndex, interestingHeaders, mergeExpect } from '../lib/mockRequestLog'
-import { mockSources } from '../lib/mockSources'
+import { applicableSecretNames, mockSources } from '../lib/mockSources'
+import { lintTcpRules } from '../lib/protocolSpec'
+import { useProtocol } from '../panels/TcpNodePanel'
 import { relTime } from '../lib/format'
 
 const methodColor = (m: string): string => METHOD_COLOR[m as HttpMethod] ?? 'var(--fl-cat-generic)'
-const EMPTY_TCP: MockTcpSpec = { enabled: true, port: 9091, charset: 'EUC-KR', prefixLength: 4, prefixIncludesSelf: false, requestFields: [], rules: [] }
+const EMPTY_TCP: MockTcpSpec = { port: 9091, protocolId: null, upstream: null, timeoutMs: 5000, rules: [] }
 
 /** 좌측 탐색 선택 — HTTP: 라우트 = 노드 / TCP: 규칙 = 노드. 우측 상세 = 속성 패널 은유. */
 type NavSel =
   | { kind: 'route'; id: string }   // HTTP 라우트
-  | { kind: 'conn' }                // TCP 연결(포트·인코딩·프리픽스)
-  | { kind: 'layout' }              // TCP 요청 레이아웃
+  | { kind: 'conn' }                // TCP 연결(포트·프로토콜·upstream)
   | { kind: 'rule'; id: string }    // TCP 규칙
   | { kind: 'codec' } | { kind: 'settings' } | { kind: 'overview' }
 
 /**
  * Mock 편집기 — **HTTP 는 HTTP 만, TCP 는 TCP 만**(섞이지 않음). 좌 목록 | 우 상세 | 하단 트래픽 패널.
  * - HTTP: 좌 라우트 목록(메서드·경로·히트) · 본문·헤더 코덱 · 설정 · 개요. 우 = 라우트 상세(예상 요청·규칙·필드 ◈ 코덱).
- * - TCP: 좌 연결 · 요청 레이아웃 · 규칙 목록(조건 요약·히트) · 전문 코덱 · 설정. 우 = 규칙 상세(조건·응답 필드·◈ 코덱). 미리보기는 트래픽 패널 탭.
+ * - TCP: 좌 연결(포트·프로토콜·upstream) · 규칙 목록(조건 요약·히트) · 설정. 우 = 규칙 상세(조건·mock/proxy·응답 필드·장애 주입). 전문 규격은 프로토콜(/protocols)이 소유.
  * - CUSTOM(레거시, HTTP+TCP 혼합): HTTP 편집기로 열리고 상단 안내 + [TCP Mock 으로 분리].
  * 헤더: 이름 인라인·미저장 표시·자동 저장·Ctrl+S·🕘 버전·⋯ 도구·✨ AI.
  */
@@ -75,8 +76,7 @@ export function MockServerEditor() {
   const [nav, setNav] = useState<NavSel>({ kind: 'overview' })
   const [navQ, setNavQ] = useState('')
   const [trafficOpen, setTrafficOpen] = useState(() => { try { return localStorage.getItem('fl:mock:traffic') !== '0' } catch { return true } })
-  const [trafficTab, setTrafficTab] = useState<'log' | 'send' | 'preview'>('log')
-  const [previewSample, setPreviewSample] = useState('')
+  const [trafficTab, setTrafficTab] = useState<'log' | 'send'>('log')
   const secretsQ = useQuery({ queryKey: ['secrets'], queryFn: secretsApi.list, retry: false })
   const secrets: SecretView[] = secretsQ.data ?? []
   const secretEnvs = [...new Set(secrets.map((x) => x.environment).filter((x): x is string => !!x))].sort()
@@ -122,30 +122,14 @@ export function MockServerEditor() {
       let candidate = `${d.slug}-2`
       for (let n = 2; n < 30; n++) { candidate = `${d.slug.slice(0, 40 - String(n).length - 1)}-${n}`; if ((await mocksApi.slugCheck(candidate)).available) break }
       const created = await mocksApi.create({ name: `${d.name} (복제)`, slug: candidate, type: d.kind === 'TCP' ? 'TCP' : 'HTTP', workspaceId: d.workspaceId ?? null })
-      const s = spec.tcp ? { ...spec, tcp: { ...spec.tcp, enabled: false } } : spec // TCP 포트 충돌 방지 — 리스너 꺼서 복제(연결 화면에서 포트 바꾸고 켬)
+      const s = spec.tcp ? { ...spec, tcp: { ...spec.tcp, port: (spec.tcp.port ?? 9091) + 1 } } : spec // TCP 포트 충돌 방지 — 포트 +1 · 꺼서 복제(연결 화면에서 확인 후 켬)
       await mocksApi.updateSpec(created.id, s, { note: `${d.slug} 복제` })
+      if (spec.tcp) await mocksApi.update(created.id, { enabled: false })
       return created
     },
     onSuccess: (c) => { toast(`'${c.name}' 으로 복제했습니다.`, 'ok'); qc.invalidateQueries({ queryKey: ['mock-servers'] }); navigate(`/mocks/${c.id}`) },
     onError: (e) => toast(apiErrorMessage(e, '복제 실패'), 'error'),
   })
-  // 레거시(CUSTOM: HTTP+TCP 혼합) → TCP 부분을 새 TCP Mock 으로 분리하고 이 Mock 은 HTTP 만 남긴다
-  const splitTcp = useMutation({
-    mutationFn: async () => {
-      const d = detail.data!
-      let candidate = `${d.slug.slice(0, 36)}-tcp`
-      for (let n = 1; n < 30; n++) { candidate = n === 1 ? `${d.slug.slice(0, 36)}-tcp` : `${d.slug.slice(0, 40 - String(n).length - 5)}-tcp-${n}`; if ((await mocksApi.slugCheck(candidate)).available) break }
-      const created = await mocksApi.create({ name: `${d.name} (TCP)`, slug: candidate, type: 'TCP', workspaceId: d.workspaceId ?? null })
-      // 원본 리스너를 먼저 닫아야(tcp 제거 저장) 같은 포트로 새 Mock 이 열린다
-      const httpOnly: MockServerSpec = { ...spec, tcp: null }
-      await mocksApi.updateSpec(id, httpOnly, { note: 'TCP 분리 — HTTP 만 남김' })
-      await mocksApi.updateSpec(created.id, { tcp: { ...(spec.tcp ?? EMPTY_TCP), enabled: true }, codec: spec.codec ?? null, environment: spec.environment ?? null }, { note: `${d.slug} 에서 TCP 분리` })
-      return created
-    },
-    onSuccess: (c) => { toast(`TCP 부분을 '${c.name}' 으로 분리했습니다. 이 Mock 은 HTTP 만 남았습니다.`, 'ok'); setDirty(false); invalidate(); navigate(`/mocks/${c.id}`) },
-    onError: (e) => toast(apiErrorMessage(e, 'TCP 분리 실패'), 'error'),
-  })
-
   const mutate = useCallback((fn: (s: MockServerSpec) => MockServerSpec) => { setSpec((s) => fn(s)); setDirty(true); setNote(null) }, [])
   const d = detail.data
   const base = d ? mockBaseUrl(d.slug, me?.tenant) : ''
@@ -157,6 +141,11 @@ export function MockServerEditor() {
   const tcp = useMemo(() => spec.tcp ?? EMPTY_TCP, [spec.tcp])
   const tcpRules = useMemo(() => tcp.rules ?? [], [tcp.rules])
   const setTcp = useCallback((patch: Partial<MockTcpSpec>) => mutate((s) => ({ ...s, tcp: { ...(s.tcp ?? EMPTY_TCP), ...patch } })), [mutate])
+
+  const proto = useProtocol(tcp.protocolId || undefined)
+  const protoSpec: ProtocolSpec | undefined = proto.data?.spec
+  const secretNames = useMemo(() => applicableSecretNames(secretsQ.data, spec.environment), [secretsQ.data, spec.environment])
+  const tcpLints = useMemo(() => (isTcp && protoSpec ? lintTcpRules(tcp, protoSpec) : []), [isTcp, protoSpec, tcp])
 
   // 테스트/트래픽 액션은 저장된 mock 을 호출하므로 미저장 편집이 있으면 먼저 저장(권한 없으면 거절)
   const ensureSaved = async (): Promise<boolean> => {
@@ -196,18 +185,20 @@ export function MockServerEditor() {
   }
 
   // 트래픽(요청 기록) — 좌측 목록 히트 수·무매칭 배지·하단 패널 공용. 3초 폴링.
-  const reqs = useQuery({ queryKey: ['mock-requests', id], queryFn: () => mocksApi.requests(id), enabled: !!id, refetchInterval: 3000, retry: false })
+  const reqs = useQuery({ queryKey: ['mock-requests', id], queryFn: () => mocksApi.requests(id), enabled: !!id && !isTcp, refetchInterval: 3000, retry: false })
+  // TCP 규칙 히트 — 전문 로그의 ruleId 집계(TcpLogPanel 과 같은 쿼리 키라 요청은 한 번)
+  const tcpLogQ = useQuery({ queryKey: ['mock-tcp-log', id], queryFn: () => mocksApi.tcpLog(id), enabled: !!id && isTcp, refetchInterval: 3000, retry: false })
   const journal = useMemo(() => reqs.data ?? [], [reqs.data])
   const hitsByRoute = useMemo(() => {
     const m = new Map<string, number>()
-    for (const r of journal) { if (r.method === 'TCP') continue; const i = findRouteIndex(routes, r.method, r.path); if (i >= 0) m.set(routes[i].id, (m.get(routes[i].id) ?? 0) + 1) }
+    for (const r of journal) { const i = findRouteIndex(routes, r.method, r.path); if (i >= 0) m.set(routes[i].id, (m.get(routes[i].id) ?? 0) + 1) }
     return m
   }, [journal, routes])
   const hitsByRule = useMemo(() => {
     const m = new Map<string, number>()
-    for (const r of journal) if (r.method === 'TCP' && r.matchedRuleId) m.set(r.matchedRuleId, (m.get(r.matchedRuleId) ?? 0) + 1)
+    for (const e of tcpLogQ.data ?? []) if (e.ruleId) m.set(e.ruleId, (m.get(e.ruleId) ?? 0) + 1)
     return m
-  }, [journal])
+  }, [tcpLogQ.data])
   const unmatched = journal.filter((r) => r.matchedRuleId == null).length
 
   // ── HTTP 라우트 조작 ──
@@ -225,12 +216,24 @@ export function MockServerEditor() {
   const selRule = nav.kind === 'rule' ? tcpRules.find((r) => r.id === nav.id) ?? null : null
   useEffect(() => { if (nav.kind === 'rule' && !tcpRules.some((r) => r.id === nav.id)) setNav(tcpRules[0] ? { kind: 'rule', id: tcpRules[0].id } : { kind: 'conn' }) }, [tcpRules, nav])
   const addRule = () => {
-    const r: MockTcpRuleSpec = { id: newId(), contains: '', when: [], response: '', responseFields: [{ id: newId(), name: '응답코드', length: 4, value: '0000', pad: 'right', padChar: ' ' }] }
+    const r: MockTcpRuleSpec = { id: newId(), when: [], then: { mode: 'mock', fields: {} } }
     setTcp({ rules: [...tcpRules, r] }); setNav({ kind: 'rule', id: r.id })
   }
   const setRule = (rid: string, patch: Partial<MockTcpRuleSpec>) => mutate((s) => { const t = s.tcp ?? EMPTY_TCP; return { ...s, tcp: { ...t, rules: (t.rules ?? []).map((x) => (x.id === rid ? { ...x, ...patch } : x)) } } })
   const removeRule = (rid: string) => setTcp({ rules: tcpRules.filter((x) => x.id !== rid) })
-  const dupRule = (rid: string) => { const i = tcpRules.findIndex((x) => x.id === rid); if (i < 0) return; const src = tcpRules[i]; const copy: MockTcpRuleSpec = { ...src, id: newId(), responseFields: src.responseFields?.map((f) => ({ ...f, id: newId() })) }; setTcp({ rules: [...tcpRules.slice(0, i + 1), copy, ...tcpRules.slice(i + 1)] }); setNav({ kind: 'rule', id: copy.id }) }
+  const dupRule = (rid: string) => { const i = tcpRules.findIndex((x) => x.id === rid); if (i < 0) return; const src = tcpRules[i]; const copy: MockTcpRuleSpec = { ...src, id: newId(), when: src.when?.map((c) => ({ ...c })), then: { ...src.then, fields: { ...(src.then?.fields ?? {}) } } }; setTcp({ rules: [...tcpRules.slice(0, i + 1), copy, ...tcpRules.slice(i + 1)] }); setNav({ kind: 'rule', id: copy.id }) }
+  /** 전문 로그 행 → 그 전문 코드에 매칭되는 규칙 초안(응답 전문은 사용자가 고른다). */
+  const makeRuleFromLog = (e: TcpLogEntry) => {
+    const disc = protoSpec?.discriminator
+    const r: MockTcpRuleSpec = {
+      id: newId(),
+      when: disc && e.key ? [{ field: disc, op: 'eq', value: e.key }] : [],
+      then: { mode: 'mock', fields: disc ? { [disc]: '' } : {} },
+    }
+    setTcp({ rules: [...tcpRules, r] })
+    setNav({ kind: 'rule', id: r.id })
+    toast(e.key ? `전문 ${e.key} 규칙 초안을 추가했습니다 — 응답 전문을 고르세요.` : '규칙 초안을 추가했습니다.', 'ok')
+  }
   const moveRule = (rid: string, dir: -1 | 1) => { const rs = [...tcpRules]; const i = rs.findIndex((x) => x.id === rid); const j = i + dir; if (i < 0 || j < 0 || j >= rs.length) return; const t = rs[i]; rs[i] = rs[j]; rs[j] = t; setTcp({ rules: rs }) }
   // 드래그 정렬(좌측 목록 — 라우트/규칙 공용)
   const dragId = useRef<string | null>(null)
@@ -244,9 +247,7 @@ export function MockServerEditor() {
   const navRoutes = routes.filter((r) => !nq || `${r.method} ${r.path}`.toLowerCase().includes(nq))
   const codecCnt = stepCount(spec.codec)
   const codecActive = codecCnt.request + codecCnt.response > 0
-  const sourcesFor = (route?: MockRouteSpec | null) => mockSources({ spec, route, secrets, environment: spec.environment, tcp: isTcp })
-  const layoutTotal = (tcp.requestFields ?? []).reduce((a, f) => a + (f.length ?? 0), 0)
-  const tcpFieldHints = { request: (tcp.requestFields ?? []).map((f) => f.name ?? '').filter(Boolean), response: [...new Set(tcpRules.flatMap((r) => (r.responseFields ?? []).map((f) => f.name ?? '')).filter(Boolean))] }
+  const sourcesFor = (route?: MockRouteSpec | null) => mockSources({ spec, route, secrets, environment: spec.environment })
   const httpFieldHints = { request: [...new Set(routes.flatMap((r) => (r.expect?.body ?? []).map((f) => f.key)).filter(Boolean))], response: [] as string[] }
 
   return (
@@ -290,7 +291,7 @@ export function MockServerEditor() {
                   </div>
                 </>
               )}
-              {canEdit && <button style={{ ...ghostBtn, border: '1px solid var(--fl-primary)', color: 'var(--fl-primary)' }} title={isHttp ? 'AI 로 mock 만들기/고치기' : 'AI 로 TCP 전문 mock(레이아웃·규칙·응답 필드) 만들기/고치기'} onClick={() => setAiOpen((v) => !v)}>✨ AI</button>}
+              {canEdit && <button style={{ ...ghostBtn, border: '1px solid var(--fl-primary)', color: 'var(--fl-primary)' }} title={isHttp ? 'AI 로 mock 만들기/고치기' : 'AI 로 TCP 전문 mock(규칙·응답 값) 만들기/고치기'} onClick={() => setAiOpen((v) => !v)}>✨ AI</button>}
               <button style={{ ...primaryBtn, opacity: dirty && canEdit ? 1 : 0.55 }} disabled={!dirty || save.isPending || !canEdit} title={canEdit ? '저장 (Ctrl+S)' : 'viewer 역할은 저장할 수 없습니다'} onClick={() => save.mutate()}>💾 저장</button>
             </div>
           </header>
@@ -330,10 +331,7 @@ export function MockServerEditor() {
               {isTcp && (
                 <>
                   <button onClick={() => setNav({ kind: 'conn' })} style={{ ...navItem, ...(nav.kind === 'conn' ? navActive : null) }}>
-                    <span aria-hidden>🔌</span><span style={{ flex: 1 }}>연결</span><span style={metaMono}>:{tcp.port ?? '?'} · {tcp.charset ?? 'EUC-KR'}</span>
-                  </button>
-                  <button onClick={() => setNav({ kind: 'layout' })} style={{ ...navItem, ...(nav.kind === 'layout' ? navActive : null) }}>
-                    <span aria-hidden>⬇</span><span style={{ flex: 1 }}>요청 레이아웃</span><span style={metaMono}>{(tcp.requestFields ?? []).length}필드 · {layoutTotal}B</span>
+                    <span aria-hidden>🔌</span><span style={{ flex: 1 }}>연결</span><span style={metaMono}>:{tcp.port ?? '?'} · {proto.data?.name ?? (tcp.protocolId ? '…' : '프로토콜 없음')}</span>
                   </button>
                   <div style={divider} />
                   <div style={navHead}>
@@ -344,14 +342,13 @@ export function MockServerEditor() {
                     {tcpRules.map((r, i) => {
                       const active = nav.kind === 'rule' && nav.id === r.id
                       const hits = hitsByRule.get(r.id) ?? 0
-                      const summary = tcpRuleSummary(r)
+                      const summary = tcpRuleSummary(r, protoSpec)
                       return (
                         <button key={r.id} onClick={() => setNav({ kind: 'rule', id: r.id })} draggable={canEdit} onDragStart={() => { dragId.current = r.id }} onDragOver={(e) => e.preventDefault()} onDrop={() => dropOn(r.id)}
                           style={{ ...navItem, ...(active ? navActive : null), alignItems: 'flex-start' }} title={`규칙 ${i + 1} — ${summary}${hits ? ` · 요청 ${hits}` : ''}`}>
                           <span style={{ ...mchip, color: 'var(--fl-cat-tcp, #7c5cff)', minWidth: 28 }}>#{i + 1}</span>
                           <span style={{ flex: 1, minWidth: 0, display: 'grid', gap: 1 }}>
                             <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 12 }}>{summary}</span>
-                            <span style={{ ...metaMono, fontSize: 10.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{(r.responseFields?.length ?? 0) > 0 ? `응답 ${r.responseFields!.length}필드 · ${r.responseFields!.reduce((a, f) => a + (f.length ?? 0), 0)}B` : r.response ? '응답 텍스트' : '응답 없음'}</span>
                           </span>
                           {hits > 0 && <span style={hitBadge} title={`요청 기록 ${hits}건`}>{hits}</span>}
                         </button>
@@ -359,10 +356,6 @@ export function MockServerEditor() {
                     })}
                     {tcpRules.length === 0 && <div style={{ fontSize: 12, color: 'var(--fl-text-muted)', padding: '6px 8px' }}>규칙 없음 — 모든 전문에 빈 응답</div>}
                   </div>
-                  <div style={divider} />
-                  <button onClick={() => setNav({ kind: 'codec' })} style={{ ...navItem, ...(nav.kind === 'codec' ? navActive : null) }}>
-                    <span aria-hidden>◈</span><span style={{ flex: 1 }}>전문 코덱</span>{codecActive && <span style={{ ...hitBadge, background: 'var(--fl-primary)', color: '#fff' }}>{codecCnt.request + codecCnt.response}</span>}
-                  </button>
                 </>
               )}
               <button onClick={() => setNav({ kind: 'settings' })} style={{ ...navItem, ...(nav.kind === 'settings' ? navActive : null) }}>
@@ -376,9 +369,8 @@ export function MockServerEditor() {
                 <div style={legacyBanner} role="note">
                   <span style={{ fontSize: 16 }}>⚠</span>
                   <span style={{ flex: 1, fontSize: 12.5, lineHeight: 1.5 }}>
-                    <b>HTTP 라우트와 TCP 전문이 함께 있는 예전 형식</b>입니다. 이제 HTTP 와 TCP 는 따로 관리합니다 — TCP 부분(포트 {spec.tcp?.port ?? '?'} · 규칙 {spec.tcp?.rules?.length ?? 0})을 새 TCP Mock 으로 옮기면 이 Mock 은 HTTP 만 남습니다. 옮기기 전까지 TCP 리스너는 그대로 동작합니다.
+                    <b>HTTP 라우트와 TCP 전문이 함께 있는 예전 형식</b>입니다(포트 {spec.tcp?.port ?? '?'} · 규칙 {spec.tcp?.rules?.length ?? 0}). 이제 HTTP 와 TCP 는 따로 관리합니다 — TCP 는 [+ TCP Mock] 으로 새로 만들고 프로토콜을 골라 주세요.
                   </span>
-                  {canEdit && <button style={{ ...primaryBtn, padding: '6px 12px', fontSize: 12 }} disabled={splitTcp.isPending} onClick={() => setAsk({ title: 'TCP Mock 으로 분리', message: `TCP 부분을 새 Mock '${d.name} (TCP)' 으로 옮기고 이 Mock 은 HTTP 만 남깁니다. 미저장 편집은 함께 저장됩니다. 진행할까요?`, confirmLabel: '분리', onConfirm: () => splitTcp.mutate() })}>{splitTcp.isPending ? '분리 중…' : 'TCP Mock 으로 분리'}</button>}
                 </div>
               )}
               {nav.kind === 'route' && selRoute && (
@@ -386,40 +378,44 @@ export function MockServerEditor() {
                   onChange={(nr) => setRoute(selRoute.id, nr)} onRemove={() => removeRoute(selRoute.id)} onDup={() => dupRoute(selRoute.id)} onUp={() => moveRoute(selRoute.id, -1)} onDown={() => moveRoute(selRoute.id, 1)}
                   onServerCodec={(codec) => mutate((s) => ({ ...s, codec }))} onGoCodec={() => setNav({ kind: 'codec' })} />
               )}
+              {isTcp && tcpLints.length > 0 && (
+                <div style={{ ...legacyBanner, display: 'block' }} role="note">
+                  <b style={{ fontSize: 12.5 }}>⚠ 규칙 경고 {tcpLints.length}건</b>
+                  <ul style={{ margin: '4px 0 0', paddingLeft: 18, fontSize: 12, lineHeight: 1.6 }}>{tcpLints.slice(0, 8).map((m, i) => <li key={i}>{m}</li>)}</ul>
+                  <div style={{ fontSize: 11.5, color: 'var(--fl-text-muted)', marginTop: 4 }}>저장은 막지 않습니다 — 응답이 비거나 잘릴 수 있습니다.</div>
+                </div>
+              )}
               {nav.kind === 'conn' && (
                 <>
-                  {tcp.enabled === false && (
+                  {!d.enabled && (
                     <div style={{ ...legacyBanner, marginBottom: 12 }} role="note">
                       <span style={{ fontSize: 16 }}>○</span>
-                      <span style={{ flex: 1, fontSize: 12.5 }}><b>리스너가 꺼져 있습니다</b>(복제본은 포트 충돌을 막으려 꺼서 만듭니다). 포트를 확인하고 켜세요 — 저장하면 열립니다.</span>
-                      {canEdit && <button style={{ ...primaryBtn, padding: '6px 12px', fontSize: 12 }} onClick={() => setTcp({ enabled: true })}>리스너 켜기</button>}
+                      <span style={{ flex: 1, fontSize: 12.5 }}><b>리스너가 꺼져 있습니다</b>(복제본은 포트 충돌을 막으려 꺼서 만듭니다). 포트를 확인하고 켜세요.</span>
+                      {canEdit && <button style={{ ...primaryBtn, padding: '6px 12px', fontSize: 12 }} onClick={() => toggle.mutate()}>리스너 켜기</button>}
                     </div>
                   )}
-                  <TcpConnectionPanel tcp={tcp} readOnly={!canEdit} onChange={setTcp} />
+                  <TcpConnPanel tcp={tcp} readOnly={!canEdit} onChange={setTcp} />
                 </>
               )}
-              {nav.kind === 'layout' && (
-                <TcpLayoutPanel tcp={tcp} readOnly={!canEdit} onChange={setTcp} codec={spec.codec} onCodec={(codec) => mutate((s) => ({ ...s, codec }))} sources={sourcesFor(null)} />
-              )}
               {nav.kind === 'rule' && selRule && (
-                <TcpRuleDetail key={selRule.id} rule={selRule} index={tcpRules.findIndex((r) => r.id === selRule.id)} total={tcpRules.length} layout={tcp.requestFields ?? []} readOnly={!canEdit} sources={sourcesFor(null)}
-                  codec={spec.codec} onCodec={(codec) => mutate((s) => ({ ...s, codec }))}
-                  onChange={(patch) => setRule(selRule.id, patch)} onMove={(dir) => moveRule(selRule.id, dir)} onDup={() => dupRule(selRule.id)} onRemove={() => removeRule(selRule.id)} />
+                <TcpRuleDetail key={selRule.id} rule={selRule} index={tcpRules.findIndex((r) => r.id === selRule.id)} total={tcpRules.length}
+                  spec={protoSpec} secrets={secretNames} readOnly={!canEdit}
+                  onChange={(patch) => setRule(selRule.id, patch)} onMove={(dir) => moveRule(selRule.id, dir)} onDup={() => dupRule(selRule.id)} onDelete={() => removeRule(selRule.id)} />
               )}
               {nav.kind === 'codec' && (
                 <section style={panel}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <h2 style={h2}>{isTcp ? '전문 코덱' : '본문·헤더 코덱'} <span style={{ fontWeight: 400, fontSize: 12, color: 'var(--fl-text-muted)' }}>(플러그인 — 요청 전 · 응답 후)</span></h2>
+                    <h2 style={h2}>본문·헤더 코덱 <span style={{ fontWeight: 400, fontSize: 12, color: 'var(--fl-text-muted)' }}>(플러그인 — 요청 전 · 응답 후)</span></h2>
                     {codecActive && <span style={{ ...badge, background: 'var(--fl-primary)' }}>사용 중</span>}
                   </div>
                   <p style={hint}>
-                    {isTcp ? '들어온 전문' : '요청 본문'}이 <b>매칭·템플릿에 들어가기 전</b>에 풀고(예: Base64 디코딩·AES 복호화), 응답을 <b>다 만든 뒤 나가기 전</b>에 감쌉니다(예: 인코딩·HMAC 서명).
+                    요청 본문이 <b>매칭·템플릿에 들어가기 전</b>에 풀고(예: Base64 디코딩·AES 복호화), 응답을 <b>다 만든 뒤 나가기 전</b>에 감쌉니다(예: 인코딩·HMAC 서명).
                     단계마다 무엇을(전체/특정 필드/헤더)·어떤 플러그인·값(키·IV 는 <code style={code}>{'{{ 이름@secret }}'}</code>)을 정합니다.
-                    {isTcp ? ' 필드 하나만 걸 때는 요청 레이아웃·규칙 응답 필드 옆 ◈ 가 더 빠릅니다.' : ' 필드 하나만 걸 때는 라우트의 예상 요청·응답 필드 옆 ◈ 가 더 빠릅니다. 라우트별로 다른 코덱은 라우트 상세의 [이 라우트만 코덱].'}
+                    필드 하나만 걸 때는 라우트의 예상 요청·응답 필드 옆 ◈ 가 더 빠릅니다. 라우트별로 다른 코덱은 라우트 상세의 [이 라우트만 코덱].
                   </p>
                   <div style={{ marginTop: 12 }}>
-                    <MockCodecEditor codec={spec.codec} readOnly={!canEdit} kind={isTcp ? 'tcp' : 'http'} mockId={id} environment={spec.environment}
-                      sources={sourcesFor(null)} fieldHints={isTcp ? tcpFieldHints : httpFieldHints}
+                    <MockCodecEditor codec={spec.codec} readOnly={!canEdit} mockId={id} environment={spec.environment}
+                      sources={sourcesFor(null)} fieldHints={httpFieldHints}
                       onChange={(codec) => mutate((s) => ({ ...s, codec }))} />
                   </div>
                 </section>
@@ -501,9 +497,8 @@ export function MockServerEditor() {
           <TrafficPanel id={id} canEdit={canEdit} base={base} spec={spec} onSpec={mutate} journal={journal} open={trafficOpen}
             onToggle={() => setTrafficOpen((v) => { try { localStorage.setItem('fl:mock:traffic', v ? '0' : '1') } catch { /* */ } return !v })}
             tab={trafficTab} onTab={setTrafficTab}
-            routeFilter={selRoute} ensureSaved={ensureSaved} isTcp={isTcp} tcp={tcp} tcpRules={tcpRules}
-            onSelectRoute={(rid) => setNav({ kind: 'route', id: rid })} onSelectRule={(rid) => setNav({ kind: 'rule', id: rid })} unmatched={unmatched}
-            previewSample={previewSample} onPreviewSample={setPreviewSample} />
+            routeFilter={selRoute} ensureSaved={ensureSaved} isTcp={isTcp} protocolId={tcp.protocolId} protoSpec={protoSpec} secretNames={secretNames}
+            onSelectRoute={(rid) => setNav({ kind: 'route', id: rid })} onMakeRule={makeRuleFromLog} unmatched={unmatched} />
 
           {aiOpen && (isGuest || aiPending
             ? <AssistantLoginGate reason={isGuest ? 'guest' : 'pending'} variant="overlay" onClose={() => setAiOpen(false)} />
@@ -525,7 +520,7 @@ export function MockServerEditor() {
                 <strong>단축키</strong>
                 <div><kbd style={kbd}>Ctrl+S</kbd> 저장</div>
                 <div><kbd style={kbd}>Esc</kbd> 메뉴/모달 닫기</div>
-                <div><kbd style={kbd}>Enter</kbd> 이름 확정 · 보내보기 전송 · 미리보기</div>
+                <div><kbd style={kbd}>Enter</kbd> 이름 확정 · 보내보기 전송</div>
                 <div style={{ fontSize: 12, color: 'var(--fl-text-muted)' }}>좌측 {isTcp ? '규칙' : '라우트'}은 드래그로 순서를 바꿀 수 있습니다(위→아래 첫 매칭).</div>
                 <button style={{ ...miniBtn, justifySelf: 'end' }} onClick={() => setShortcutsOpen(false)}>닫기</button>
               </div>
@@ -557,14 +552,14 @@ function OpenApiImportBox({ onRoutes }: { onRoutes: (r: MockRouteSpec[]) => void
   )
 }
 
-// ---------- 트래픽 패널(요청 기록 실시간 + 보내보기 / TCP 미리보기) ----------
+// ---------- 트래픽 패널(HTTP: 요청 기록·보내보기 / TCP: 전문 로그·보내보기) ----------
 
-function TrafficPanel({ id, canEdit, base, spec, onSpec, journal, open, onToggle, tab, onTab, routeFilter, ensureSaved, isTcp, tcp, tcpRules, onSelectRoute, onSelectRule, unmatched, previewSample, onPreviewSample }: {
+function TrafficPanel({ id, canEdit, base, spec, onSpec, journal, open, onToggle, tab, onTab, routeFilter, ensureSaved, isTcp, protocolId, protoSpec, secretNames, onSelectRoute, onMakeRule, unmatched }: {
   id: string; canEdit: boolean; base: string; spec: MockServerSpec; onSpec: (fn: (s: MockServerSpec) => MockServerSpec) => void
-  journal: MockRequestLog[]; open: boolean; onToggle: () => void; tab: 'log' | 'send' | 'preview'; onTab: (t: 'log' | 'send' | 'preview') => void
-  routeFilter: MockRouteSpec | null; ensureSaved: () => Promise<boolean>; isTcp: boolean; tcp: MockTcpSpec; tcpRules: MockTcpRuleSpec[]
-  onSelectRoute: (routeId: string) => void; onSelectRule: (ruleId: string) => void; unmatched: number
-  previewSample: string; onPreviewSample: (s: string) => void
+  journal: MockRequestLog[]; open: boolean; onToggle: () => void; tab: 'log' | 'send'; onTab: (t: 'log' | 'send') => void
+  routeFilter: MockRouteSpec | null; ensureSaved: () => Promise<boolean>; isTcp: boolean
+  protocolId: string | null | undefined; protoSpec: ProtocolSpec | undefined; secretNames: string[]
+  onSelectRoute: (routeId: string) => void; onMakeRule: (e: TcpLogEntry) => void; unmatched: number
 }) {
   const qc = useQueryClient()
   const [onlyRoute, setOnlyRoute] = useState(false)
@@ -609,12 +604,12 @@ function TrafficPanel({ id, canEdit, base, spec, onSpec, journal, open, onToggle
     } catch (e) { toast(`재전송 실패: ${(e as Error).message}`, 'error') }
   }
   const stateKeys = Object.keys(st.data?.state ?? {})
-  const tabs: Array<['log' | 'send' | 'preview', string]> = isTcp ? [['log', '전문 기록'], ['preview', '🔍 전문 미리보기']] : [['log', '요청 기록'], ['send', '보내보기']]
+  const tabs: Array<['log' | 'send', string]> = isTcp ? [['log', '전문 로그'], ['send', '보내보기']] : [['log', '요청 기록'], ['send', '보내보기']]
   return (
     <section style={{ ...trafficWrap, height: open ? 300 : 36 }} aria-label="트래픽 패널">
       <div style={trafficBar}>
         <button style={{ ...miniBtn, fontWeight: 700, border: 'none', background: 'transparent' }} onClick={onToggle} aria-expanded={open}>{open ? '▾' : '▸'} 트래픽</button>
-        <span style={metaMono}>{isTcp ? '전문' : '요청'} 기록 {journal.length}{unmatched ? ` · 무매칭 ${unmatched}` : ''}{stateKeys.length ? ` · 상태 ${stateKeys.length}` : ''}{st.data ? ` · seq ${st.data.seq}` : ''}</span>
+        <span style={metaMono}>{isTcp ? '전문 로그' : `요청 기록 ${journal.length}${unmatched ? ` · 무매칭 ${unmatched}` : ''}${stateKeys.length ? ` · 상태 ${stateKeys.length}` : ''}${st.data ? ` · seq ${st.data.seq}` : ''}`}</span>
         {open && (
           <div style={{ display: 'inline-flex', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', overflow: 'hidden', marginLeft: 8 }}>
             {tabs.map(([t, label]) => (
@@ -625,40 +620,35 @@ function TrafficPanel({ id, canEdit, base, spec, onSpec, journal, open, onToggle
         {open && tab === 'log' && !isTcp && routeFilter && <label style={{ fontSize: 11.5, display: 'inline-flex', alignItems: 'center', gap: 4, marginLeft: 8 }}><input type="checkbox" checked={onlyRoute} onChange={(e) => setOnlyRoute(e.target.checked)} />선택한 라우트만</label>}
         <span style={{ marginLeft: 'auto' }} />
         {open && stateKeys.length > 0 && <span style={{ ...metaMono, maxWidth: 360, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={stateKeys.map((k) => `${k}=${st.data!.state[k]}`).join(' · ')}>{stateKeys.map((k) => `${k}=${st.data!.state[k]}`).join(' · ')}</span>}
-        {open && canEdit && journal.length > 0 && <button style={{ ...miniBtn, padding: '3px 8px' }} onClick={() => clear.mutate()}>기록 비우기</button>}
+        {open && canEdit && !isTcp && journal.length > 0 && <button style={{ ...miniBtn, padding: '3px 8px' }} onClick={() => clear.mutate()}>기록 비우기</button>}
       </div>
-      {open && tab === 'log' && (
+      {open && isTcp && tab === 'log' && <TcpLogPanel mockId={id} protocolId={protocolId} onMakeRule={canEdit ? onMakeRule : undefined} />}
+      {open && isTcp && tab === 'send' && <TcpSendPanel mockId={id} spec={protoSpec} secrets={secretNames} />}
+      {open && !isTcp && tab === 'log' && (
         <div style={{ flex: 1, overflowY: 'auto', padding: '6px 12px 10px' }}>
-          {shown.length === 0 ? <div style={{ fontSize: 12, color: 'var(--fl-text-muted)', padding: '8px 0' }}>{journal.length ? '선택한 라우트로 온 요청이 없습니다.' : `아직 ${isTcp ? '전문' : '요청'}이 없습니다 — ${isTcp ? '워크플로 TCP 노드가 이 포트로 전문을 보내면 여기에 기록됩니다. 소켓 없이 확인하려면 [🔍 전문 미리보기].' : 'base URL 을 워크플로 HTTP 노드에 넣고 실행하거나 [보내보기]로 호출해 보세요.'}`}</div>
+          {shown.length === 0 ? <div style={{ fontSize: 12, color: 'var(--fl-text-muted)', padding: '8px 0' }}>{journal.length ? '선택한 라우트로 온 요청이 없습니다.' : 'base URL 을 워크플로 HTTP 노드에 넣고 실행하거나 [보내보기]로 호출해 보세요.'}</div>
             : <div style={{ display: 'grid', gap: 3 }}>{shown.map((r, i) => {
-                const isTcpRow = r.method === 'TCP'
-                const ri = isTcpRow ? -1 : findRouteIndex(routes, r.method, r.path)
-                const ruleIdx = isTcpRow && r.matchedRuleId ? tcpRules.findIndex((x) => x.id === r.matchedRuleId) : -1
+                const ri = findRouteIndex(routes, r.method, r.path)
                 return (
                   <div key={`${r.at}-${i}`} style={{ border: '1px solid var(--fl-border)', borderRadius: 6, overflow: 'hidden', borderLeft: `3px solid ${r.matchedRuleId == null ? 'var(--fl-fail)' : 'var(--fl-border)'}` }}>
                     <button style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '5px 10px', background: 'transparent', border: 'none', cursor: 'pointer', textAlign: 'left', color: 'var(--fl-text)' }} onClick={() => setOpenReq(openReq === i ? null : i)}>
-                      <span style={{ fontSize: 10.5, fontWeight: 700, color: isTcpRow ? 'var(--fl-cat-tcp, #7c5cff)' : methodColor(r.method), minWidth: 44 }}>{r.method}</span>
-                      {isTcpRow
-                        ? <code style={{ fontFamily: 'var(--fl-font-mono)', fontSize: 12, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.bodyText}>{r.bodyText || '(빈 전문)'}</code>
-                        : <code style={{ fontFamily: 'var(--fl-font-mono)', fontSize: 12, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.path}{Object.keys(r.query).length ? '?' + Object.entries(r.query).map(([k, v]) => `${k}=${v}`).join('&') : ''}</code>}
-                      {isTcpRow && <span style={metaMono}>{r.headers.bytes ?? '?'}B → {r.headers['response-bytes'] ?? '?'}B</span>}
+                      <span style={{ fontSize: 10.5, fontWeight: 700, color: methodColor(r.method), minWidth: 44 }}>{r.method}</span>
+                      <code style={{ fontFamily: 'var(--fl-font-mono)', fontSize: 12, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.path}{Object.keys(r.query).length ? '?' + Object.entries(r.query).map(([k, v]) => `${k}=${v}`).join('&') : ''}</code>
                       {ri >= 0 && <span style={{ ...metaMono, cursor: 'pointer' }} onClick={(e) => { e.stopPropagation(); onSelectRoute(routes[ri].id) }} title="이 라우트 열기">{routes[ri].path}</span>}
-                      {ruleIdx >= 0 && <span style={{ ...metaMono, cursor: 'pointer' }} onClick={(e) => { e.stopPropagation(); onSelectRule(tcpRules[ruleIdx].id) }} title="이 규칙 열기">규칙 {ruleIdx + 1}</span>}
-                      {!isTcpRow && <span style={{ fontSize: 11, color: r.status >= 400 ? 'var(--fl-fail)' : 'var(--fl-ok)', fontFamily: 'var(--fl-font-mono)' }}>{r.status}</span>}
+                      <span style={{ fontSize: 11, color: r.status >= 400 ? 'var(--fl-fail)' : 'var(--fl-ok)', fontFamily: 'var(--fl-font-mono)' }}>{r.status}</span>
                       {r.matchedRuleId == null && <span style={{ fontSize: 10, color: 'var(--fl-fail)', fontWeight: 700 }}>무매칭</span>}
                       <span style={metaMono}>{relTime(r.at)}</span>
                     </button>
                     {openReq === i && (
                       <div style={{ padding: '0 10px 8px', display: 'grid', gap: 5 }}>
-                        {!isTcpRow && Object.keys(r.headers).length > 0 && <pre style={reqPre}>{Object.entries(interestingHeaders(r.headers)).map(([k, v]) => `${k}: ${v}`).join('\n') || '(표준 헤더만)'}</pre>}
-                        {r.bodyText && <pre style={reqPre}>{isTcpRow ? '전문: ' : 'body: '}{r.bodyText}</pre>}
+                        {Object.keys(r.headers).length > 0 && <pre style={reqPre}>{Object.entries(interestingHeaders(r.headers)).map(([k, v]) => `${k}: ${v}`).join('\n') || '(표준 헤더만)'}</pre>}
+                        {r.bodyText && <pre style={reqPre}>body: {r.bodyText}</pre>}
                         {r.decodedBody != null && <pre style={{ ...reqPre, borderLeft: '3px solid var(--fl-primary)' }}>코덱 적용 후: {r.decodedBody}</pre>}
                         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-                          <span style={{ fontSize: 10.5, color: 'var(--fl-text-muted)' }}>{r.matchedRuleId ? (isTcpRow ? `규칙 ${ruleIdx + 1}` : `규칙 ${r.matchedRuleId}`) : `매칭 규칙 없음${isTcpRow ? '(빈 응답)' : '(404)'}`}{r.callbackFired ? ' · 콜백 발사' : ''}{r.delayMs ? ` · 지연 ${r.delayMs}ms` : ''}</span>
-                          {!isTcpRow && canEdit && <button style={{ ...miniBtn, padding: '3px 8px' }} onClick={() => expectFrom(r)} title="이 요청의 본문/쿼리/헤더 키를 라우트의 예상 요청 필드로">예상 필드로</button>}
-                          {!isTcpRow && canEdit && <button style={{ ...miniBtn, padding: '3px 8px' }} onClick={() => draftRule(r)} title="이 요청에 맞는 라우트/규칙 초안(요청 값 eq 조건)">규칙 초안</button>}
-                          {!isTcpRow && <button style={{ ...miniBtn, padding: '3px 8px' }} onClick={() => { void replay(r) }} title="같은 요청을 다시 보냅니다">재전송</button>}
-                          {isTcpRow && <button style={{ ...miniBtn, padding: '3px 8px' }} onClick={() => { onPreviewSample(r.bodyText); onTab('preview') }} title="이 전문을 샘플로 미리보기(미저장 편집 반영)">🔍 이 전문으로 미리보기</button>}
+                          <span style={{ fontSize: 10.5, color: 'var(--fl-text-muted)' }}>{r.matchedRuleId ? `규칙 ${r.matchedRuleId}` : '매칭 규칙 없음(404)'}{r.callbackFired ? ' · 콜백 발사' : ''}{r.delayMs ? ` · 지연 ${r.delayMs}ms` : ''}</span>
+                          {canEdit && <button style={{ ...miniBtn, padding: '3px 8px' }} onClick={() => expectFrom(r)} title="이 요청의 본문/쿼리/헤더 키를 라우트의 예상 요청 필드로">예상 필드로</button>}
+                          {canEdit && <button style={{ ...miniBtn, padding: '3px 8px' }} onClick={() => draftRule(r)} title="이 요청에 맞는 라우트/규칙 초안(요청 값 eq 조건)">규칙 초안</button>}
+                          <button style={{ ...miniBtn, padding: '3px 8px' }} onClick={() => { void replay(r) }} title="같은 요청을 다시 보냅니다">재전송</button>
                         </div>
                       </div>
                     )}
@@ -667,8 +657,7 @@ function TrafficPanel({ id, canEdit, base, spec, onSpec, journal, open, onToggle
               })}</div>}
         </div>
       )}
-      {open && tab === 'send' && <SendBox base={base} ensureSaved={ensureSaved} routeFilter={routeFilter} onSent={() => qc.invalidateQueries({ queryKey: ['mock-requests', id] })} />}
-      {open && tab === 'preview' && <TcpPreviewPanel tcp={tcp} codec={spec.codec} environment={spec.environment} onSelectRule={onSelectRule} sample={previewSample} onSample={onPreviewSample} />}
+      {open && !isTcp && tab === 'send' && <SendBox base={base} ensureSaved={ensureSaved} routeFilter={routeFilter} onSent={() => qc.invalidateQueries({ queryKey: ['mock-requests', id] })} />}
     </section>
   )
 }

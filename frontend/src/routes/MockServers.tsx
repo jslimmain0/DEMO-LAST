@@ -71,8 +71,9 @@ export function MockServers() {
       let n = 2; let candidate = `${s.slug}-${n}`.slice(0, 40)
       for (; n < 30; n++) { candidate = `${s.slug.slice(0, 40 - String(n).length - 1)}-${n}`; if ((await mocksApi.slugCheck(candidate)).available) break }
       const created = await mocksApi.create({ name: `${s.name} (복제)`, slug: candidate, type: s.kind === 'TCP' ? 'TCP' : 'HTTP', workspaceId: s.workspaceId === 'public' ? null : s.workspaceId })
-      const spec = d.spec?.tcp ? { ...d.spec, tcp: { ...d.spec.tcp, enabled: false } } : d.spec // TCP 포트 충돌 방지 — 리스너 꺼서 복제
+      const spec = d.spec?.tcp ? { ...d.spec, tcp: { ...d.spec.tcp, port: (d.spec.tcp.port ?? 9091) + 1 } } : d.spec // TCP 포트 충돌 방지 — 포트 +1 · 꺼서 복제
       await mocksApi.updateSpec(created.id, spec ?? { routes: [] }, { note: `${s.slug} 복제` })
+      if (d.spec?.tcp) await mocksApi.update(created.id, { enabled: false })
       return created
     },
     onSuccess: (d) => { invalidate(); toast(`'${d.name}' 으로 복제했습니다(slug ${d.slug}).`, 'ok') },
@@ -102,7 +103,7 @@ export function MockServers() {
     if (filter === 'unmatched' && !(s.unmatchedRequests > 0)) return false
     if (filter === 'fav' && !favs.has(s.id)) return false
     if (!qq) return true
-    const hay = `${s.name} ${s.slug} ${s.routeLabels.join(' ')} ${s.tcpPort ?? ''} ${wsName(s.workspaceId)}`.toLowerCase()
+    const hay = `${s.name} ${s.slug} ${s.routeLabels.join(' ')} ${s.tcpPort ?? ''} ${s.protocolName ?? ''} ${wsName(s.workspaceId)}`.toLowerCase()
     return hay.includes(qq)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [qq, filter, favs, f])

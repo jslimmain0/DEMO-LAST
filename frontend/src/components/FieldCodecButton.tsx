@@ -13,14 +13,13 @@ import { TransformPicker, sortTransforms } from './TransformPicker'
  * [요청 전 풀기 / 응답 후 감싸기] → 플러그인(검색) → 값(키·IV 는 시크릿 칩) 으로 단계를 만든다(코덱 화면까지 안 가도 됨).
  * 대상 코덱(서버 spec.codec 또는 라우트 route.codec)은 호출자가 넘긴다.
  */
-export function FieldCodecButton({ field, codec, onChange, sources = [], defaultSide, sides = ['request', 'response'], kind = 'http', readOnly, compact }: {
+export function FieldCodecButton({ field, codec, onChange, sources = [], defaultSide, sides = ['request', 'response'], readOnly, compact }: {
   field: string
   codec: MockCodecSpec | null | undefined
   onChange: (c: MockCodecSpec | null) => void
   sources?: BindableSource[]
   defaultSide: CodecSide
   sides?: CodecSide[]
-  kind?: 'http' | 'tcp'
   readOnly?: boolean
   compact?: boolean
 }) {
@@ -51,7 +50,7 @@ export function FieldCodecButton({ field, codec, onChange, sources = [], default
           style={{ ...iconBtn, ...(compact ? { width: 24, height: 24 } : null), color: refs.length ? 'var(--fl-primary)' : 'var(--fl-text-muted)' }}>◈</button>
       )}
       {open && (
-        <StepPopover field={field} kind={kind} list={list} sources={sources} sides={sides} defaultSide={editing?.side ?? defaultSide} editing={editing}
+        <StepPopover field={field} list={list} sources={sources} sides={sides} defaultSide={editing?.side ?? defaultSide} editing={editing}
           onClose={() => { setOpen(false); setEditing(null) }}
           onSave={(side, step) => {
             if (editing) {
@@ -67,8 +66,8 @@ export function FieldCodecButton({ field, codec, onChange, sources = [], default
   )
 }
 
-function StepPopover({ field, kind, list, sources, sides, defaultSide, editing, onClose, onSave, onRemove }: {
-  field: string; kind: 'http' | 'tcp'; list: TransformInfo[]; sources: BindableSource[]; sides: CodecSide[]; defaultSide: CodecSide; editing: StepRef | null
+function StepPopover({ field, list, sources, sides, defaultSide, editing, onClose, onSave, onRemove }: {
+  field: string; list: TransformInfo[]; sources: BindableSource[]; sides: CodecSide[]; defaultSide: CodecSide; editing: StepRef | null
   onClose: () => void; onSave: (side: CodecSide, step: MockCodecStep) => void; onRemove?: () => void
 }) {
   const [side, setSide] = useState<CodecSide>(defaultSide)
@@ -105,7 +104,7 @@ function StepPopover({ field, kind, list, sources, sides, defaultSide, editing, 
         ))}
       </div>
       <div style={{ fontSize: 11, color: 'var(--fl-text-muted)', marginTop: 4 }}>
-        {side === 'request' ? `들어온 ${kind === 'tcp' ? '전문' : '요청'}의 이 필드 값을 매칭·템플릿 전에 변환합니다(복호화·디코딩).` : `응답의 이 필드 값을 나가기 전에 변환합니다(암호화·인코딩). 필드는 ${kind === 'tcp' ? '패딩 전' : 'JSON/urlencoded 재직렬화'}.`}
+        {side === 'request' ? '들어온 요청의 이 필드 값을 매칭·템플릿 전에 변환합니다(복호화·디코딩).' : '응답의 이 필드 값을 나가기 전에 변환합니다(암호화·인코딩). 필드는 JSON/urlencoded 재직렬화.'}
       </div>
       <div style={{ marginTop: 8 }}>
         <div style={lbl}>플러그인</div>
@@ -161,8 +160,8 @@ function StepPopover({ field, kind, list, sources, sides, defaultSide, editing, 
 }
 
 /** 코덱 화면 위저드 — 언제 → 무엇을(전체/필드 체크/헤더) → 플러그인 → 값. 필드 후보는 호출자가 수집해 넘긴다. */
-export function CodecStepWizard({ kind, list, sources, fieldHints, defaultSide, onCancel, onAdd }: {
-  kind: 'http' | 'tcp'; list: TransformInfo[]; sources: BindableSource[]; fieldHints: { request: string[]; response: string[] }
+export function CodecStepWizard({ list, sources, fieldHints, defaultSide, onCancel, onAdd }: {
+  list: TransformInfo[]; sources: BindableSource[]; fieldHints: { request: string[]; response: string[] }
   defaultSide: CodecSide; onCancel: () => void; onAdd: (side: CodecSide, step: MockCodecStep) => void
 }) {
   const [side, setSide] = useState<CodecSide>(defaultSide)
@@ -191,15 +190,15 @@ export function CodecStepWizard({ kind, list, sources, fieldHints, defaultSide, 
         <span style={stepNo}>① 언제</span>
         <div style={{ display: 'inline-flex', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', overflow: 'hidden', width: 'fit-content' }}>
           {(['request', 'response'] as const).map((s) => (
-            <button key={s} onClick={() => setSide(s)} style={{ padding: '5px 12px', border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 600, background: side === s ? 'var(--fl-primary)' : 'transparent', color: side === s ? '#fff' : 'var(--fl-text-muted)' }}>{s === 'request' ? `⬇ 요청 전 (${kind === 'tcp' ? '전문' : '요청'}이 들어올 때)` : '⬆ 응답 후 (나가기 전)'}</button>
+            <button key={s} onClick={() => setSide(s)} style={{ padding: '5px 12px', border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 600, background: side === s ? 'var(--fl-primary)' : 'transparent', color: side === s ? '#fff' : 'var(--fl-text-muted)' }}>{s === 'request' ? '⬇ 요청 전 (요청이 들어올 때)' : '⬆ 응답 후 (나가기 전)'}</button>
           ))}
         </div>
         <span style={stepNo}>② 무엇을</span>
         <div>
           <div style={{ display: 'inline-flex', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', overflow: 'hidden' }}>
-            {(['body', 'fields', ...(kind === 'http' ? ['header'] : [])] as Array<'body' | 'fields' | 'header'>).map((tg) => (
+            {(['body', 'fields', 'header'] as Array<'body' | 'fields' | 'header'>).map((tg) => (
               <button key={tg} onClick={() => setTarget(tg)} style={{ padding: '5px 12px', border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 600, background: target === tg ? 'var(--fl-primary)' : 'transparent', color: target === tg ? '#fff' : 'var(--fl-text-muted)' }}>
-                {tg === 'body' ? (kind === 'tcp' ? '전문 전체' : '본문 전체') : tg === 'fields' ? '특정 필드만' : '헤더'}
+                {tg === 'body' ? '본문 전체' : tg === 'fields' ? '특정 필드만' : '헤더'}
               </button>
             ))}
           </div>
@@ -235,7 +234,7 @@ export function CodecStepWizard({ kind, list, sources, fieldHints, defaultSide, 
               return (
                 <div key={p.key} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                   <span style={{ fontSize: 11.5, minWidth: 90, fontFamily: 'var(--fl-font-mono)' }}>{p.label}</span>
-                  <label style={{ fontSize: 11.5, display: 'inline-flex', gap: 3, alignItems: 'center' }}><input type="radio" name="wiz-port" checked={isMsg} onChange={() => setMessagePort(p.key)} />{target === 'fields' ? '필드 값' : target === 'header' && side === 'request' ? '헤더 값' : kind === 'tcp' ? '전문' : '본문'}</label>
+                  <label style={{ fontSize: 11.5, display: 'inline-flex', gap: 3, alignItems: 'center' }}><input type="radio" name="wiz-port" checked={isMsg} onChange={() => setMessagePort(p.key)} />{target === 'fields' ? '필드 값' : target === 'header' && side === 'request' ? '헤더 값' : '본문'}</label>
                   {!isMsg && <div style={{ flex: 1, minWidth: 180 }}><TokenInput ariaLabel={`입력 ${p.key}`} value={inp.value ?? ''} sources={sources} placeholder={`{{ ${p.key === 'key' ? 'aesKey' : p.key === 'iv' ? 'aesIv' : p.key}@secret }}`} onChange={(v) => setPortValue(p.key, v)} /></div>}
                 </div>
               )

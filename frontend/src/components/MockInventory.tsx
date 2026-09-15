@@ -180,7 +180,7 @@ function InventoryRow({ s, host, tenant, httpPort, contextPath, selected, select
       </span>
       <span style={{ display: 'flex', alignItems: 'center', gap: 4, minWidth: 0, overflow: 'hidden' }} aria-label={!isTcp && s.readable ? '라우트' : undefined}>
         {!s.readable ? <span style={meta}>{isTcp ? `규칙 ${s.tcpRuleCount}` : `라우트 ${s.routeCount}`} · 정의 비공개</span>
-          : isTcp ? <span style={{ ...meta, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={`요청 필드 ${s.tcpFieldCount} · 규칙 ${s.tcpRuleCount}${s.hasCodec ? ' · 코덱' : ''}${s.environment ? ` · 시크릿 환경 ${s.environment}` : ''}`}>필드 {s.tcpFieldCount} · 규칙 {s.tcpRuleCount}{s.hasCodec ? ' · ◈' : ''}{s.environment ? ` · 🔑${s.environment}` : ''}</span>
+          : isTcp ? <span style={{ ...meta, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={`프로토콜 ${s.protocolName ?? '없음'} · 규칙 ${s.tcpRuleCount}${s.upstream ? ` · proxy→${s.upstream}` : ''}${s.environment ? ` · 시크릿 환경 ${s.environment}` : ''}`}>{s.protocolName ?? '프로토콜 없음'} · 규칙 {s.tcpRuleCount}{s.upstream ? ` · proxy→${s.upstream}` : ''}{s.environment ? ` · 🔑${s.environment}` : ''}</span>
           : labels.length > 0 ? <>
               {labels.slice(0, 3).map((l, i) => { const sp = l.indexOf(' '); const m = sp > 0 ? l.slice(0, sp) : 'ANY'; const p = sp > 0 ? l.slice(sp + 1) : l; return <span key={i} style={routePill} title={l}><b style={{ color: METHOD_COLOR[m as HttpMethod] ?? 'var(--fl-text-muted)', fontSize: 9.5 }}>{m}</b><span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 110 }}>{p}</span></span> })}
               {s.routeCount > 3 && <span style={{ ...routePill, color: 'var(--fl-text-muted)' }}>+{s.routeCount - 3}</span>}

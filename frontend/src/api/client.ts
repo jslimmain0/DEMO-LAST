@@ -184,10 +184,12 @@ export const mocksApi = {
   clearRequests: (id: string) => http.delete(`/mock-servers/${id}/requests`).then(() => undefined),
   reset: (id: string) => http.post(`/mock-servers/${id}/reset`).then(() => undefined),
   state: (id: string) => http.get<import('./types').MockStateView>(`/mock-servers/${id}/state`).then((r) => r.data),
-  // TCP 전문 미리보기 — 편집 중 tcp 섹션(미저장) + 샘플 요청 → 요청 필드 분해·매칭 규칙·응답 바이트(저장/소켓 없음)
-  // ponytail: 응답 타입은 Mock TCP 재작업(프로토콜 참조)과 함께 정해진다 — 그때까지 unknown
-  tcpPreview: (tcp: import('./types').MockTcpSpec, sample: string, codec?: import('./types').MockCodecSpec | null, environment?: string | null) =>
-    http.post<unknown>('/mock-servers/tcp-preview', { tcp, sample, codec: codec ?? null, environment: environment ?? null }).then((r) => r.data),
+  // TCP 전문 로그 — 리스너가 주고받은 전문(수신/송신, mock·proxy·none)
+  tcpLog: (id: string) => http.get<import('./types').TcpLogEntry[]>(`/mock-servers/${id}/tcp-log`).then((r) => r.data),
+  clearTcpLog: (id: string) => http.delete(`/mock-servers/${id}/tcp-log`).then(() => undefined),
+  // 보내보기 — 저장된 mock 의 리스너로 전문을 조립해 보내고 응답을 프로토콜로 디코딩
+  tcpSend: (id: string, body: { key: string; values: Record<string, string> }) =>
+    http.post<import('./types').TcpSendResult>(`/mock-servers/${id}/tcp-send`, body).then((r) => r.data),
   // 코덱 시험(HTTP) — 미저장 코덱 + 샘플 전문 → 단계별 입력/출력(서버가 실제 시크릿으로 계산, 결과는 마스킹)
   codecTry: (id: string, body: { codec: import('./types').MockCodecSpec; environment?: string | null; side: 'request' | 'response'; message: string; headers?: Record<string, string>; contentType?: string }) =>
     http.post<import('./types').MockCodecTryResult>(`/mock-servers/${id}/codec-try`, body).then((r) => r.data),

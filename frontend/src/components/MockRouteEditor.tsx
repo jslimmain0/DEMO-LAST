@@ -132,7 +132,7 @@ export function RouteCard({ base, ensureSaved, mockId, spec, secrets, route, rea
       {routeOwn && codecOpen && (
         <div style={{ marginTop: 6, padding: 10, border: '1px dashed var(--fl-primary)', borderRadius: 'var(--fl-radius-sm)' }}>
           <div style={{ fontSize: 11.5, color: 'var(--fl-text-muted)', marginBottom: 6 }}>이 라우트에는 서버 코덱 대신 아래 단계만 적용됩니다(통째로 대체 — 비우면 코덱 없음).</div>
-          <MockCodecEditor compact kind="http" codec={route.codec} readOnly={readOnly} sources={sources} fieldHints={fieldHints} mockId={mockId} environment={spec.environment}
+          <MockCodecEditor compact codec={route.codec} readOnly={readOnly} sources={sources} fieldHints={fieldHints} mockId={mockId} environment={spec.environment}
             onChange={(codec) => onChange({ ...route, codec: codec ?? {} })} />
         </div>
       )}
@@ -200,7 +200,7 @@ function ExpectEditor({ route, readOnly, onChange, codec, onCodec, sources }: {
           <div key={i} style={{ display: 'flex', gap: 6, marginBottom: 4, alignItems: 'center' }}>
             <input style={{ ...input, flex: 1, fontFamily: 'var(--fl-font-mono)' }} value={f.key} placeholder={placeholder} disabled={readOnly} onChange={(e) => set(rows.map((x, xi) => (xi === i ? { ...x, key: e.target.value } : x)))} />
             <input style={{ ...input, flex: 1.2, fontFamily: 'var(--fl-font-mono)' }} value={f.example ?? ''} placeholder="예시값(테스트 요청에 사용)" disabled={readOnly} onChange={(e) => set(rows.map((x, xi) => (xi === i ? { ...x, example: e.target.value } : x)))} />
-            {withCodec && f.key.trim() && <FieldCodecButton field={f.key.trim()} codec={codec} onChange={(c) => onCodec?.(c)} sources={sources} defaultSide="request" kind="http" readOnly={readOnly || !onCodec} />}
+            {withCodec && f.key.trim() && <FieldCodecButton field={f.key.trim()} codec={codec} onChange={(c) => onCodec?.(c)} sources={sources} defaultSide="request" readOnly={readOnly || !onCodec} />}
             {!readOnly && <button style={{ ...miniBtn, color: 'var(--fl-fail)' }} onClick={() => set(rows.filter((_, xi) => xi !== i))} aria-label="예상 필드 삭제">×</button>}
           </div>
         ))}
@@ -332,7 +332,7 @@ function RuleCard({ rule, index, total, route, sources, readOnly, codec, onCodec
           <span style={{ fontSize: 11, color: 'var(--fl-text-muted)' }}>응답 필드</span>
           {respKeys.map((k) => (
             <span key={k} style={{ display: 'inline-flex', alignItems: 'center', gap: 2, fontSize: 11.5, fontFamily: 'var(--fl-font-mono)', padding: '1px 2px 1px 7px', border: '1px solid var(--fl-border)', borderRadius: 999, background: 'var(--fl-surface-2)' }}>
-              {k}<FieldCodecButton compact field={k} codec={codec} onChange={(c) => onCodec?.(c)} sources={sources} defaultSide="response" kind="http" readOnly={readOnly || !onCodec} />
+              {k}<FieldCodecButton compact field={k} codec={codec} onChange={(c) => onCodec?.(c)} sources={sources} defaultSide="response" readOnly={readOnly || !onCodec} />
             </span>
           ))}
         </div>

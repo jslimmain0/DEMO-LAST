@@ -60,15 +60,14 @@ export function nextSlugCandidate(slug: string, n: number): string {
 }
 
 /**
- * 붙여넣은 spec 을 현재 mock 에 덮어쓸 때 — TCP 는 꺼서 가져온다(포트 전역 자원, 워크스페이스 가져오기와 같은 규약).
+ * 붙여넣은 spec 을 현재 mock 에 덮어쓸 때 — 포트는 전역 자원이라 TCP 는 경고만 남긴다(리스너 on/off 는 Mock 의 켜짐 상태).
  * @returns 적용할 spec + 경고
  */
 export function prepareImportedSpec(spec: MockServerSpec, opts: { disableTcp: boolean }): { spec: MockServerSpec; warnings: string[] } {
   const warnings: string[] = []
-  let out: MockServerSpec = { ...spec }
-  if (opts.disableTcp && out.tcp && out.tcp.enabled !== false) {
-    out = { ...out, tcp: { ...out.tcp, enabled: false } }
-    warnings.push(`TCP 리스너(포트 ${out.tcp?.port ?? '?'})는 꺼진 상태로 가져왔습니다 — 포트 충돌 확인 후 켜세요.`)
+  const out: MockServerSpec = { ...spec }
+  if (opts.disableTcp && out.tcp) {
+    warnings.push(`TCP 포트 ${out.tcp.port ?? '?'} 로 가져왔습니다 — 다른 Mock 과 충돌하면 저장이 거절됩니다(연결에서 포트를 바꾸세요).`)
   }
   return { spec: out, warnings }
 }

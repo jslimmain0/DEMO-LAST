@@ -1,12 +1,12 @@
 import type { MockServerSpec } from '../api/types'
 
-/** Mock 정의 두 스냅샷의 요약 diff — 라우트/TCP 규칙은 id 로 대조(추가/삭제/변경), 코덱·레이아웃·환경은 변경 여부. */
+/** Mock 정의 두 스냅샷의 요약 diff — 라우트/TCP 규칙은 id 로 대조(추가/삭제/변경), 코덱·TCP 연결·환경은 변경 여부. */
 export interface MockSpecDiff {
   same: boolean
   routes: { added: string[]; removed: string[]; changed: string[] }
   tcpRules: { added: number; removed: number; changed: number }
   codecChanged: boolean
-  tcpConnChanged: boolean   // 포트/문자셋/프리픽스/레이아웃
+  tcpConnChanged: boolean   // 포트/프로토콜/upstream/타임아웃
   environmentChanged: boolean
 }
 
@@ -24,7 +24,7 @@ export function diffMockSpecs(a: MockServerSpec, b: MockServerSpec): MockSpecDif
   const tcpRules = { added: 0, removed: 0, changed: 0 }
   for (const [id, r] of tb) { if (!ta.has(id)) tcpRules.added++; else if (j(ta.get(id)) !== j(r)) tcpRules.changed++ }
   for (const id of ta.keys()) if (!tb.has(id)) tcpRules.removed++
-  const conn = (s: MockServerSpec) => j({ port: s.tcp?.port, charset: s.tcp?.charset, prefixLength: s.tcp?.prefixLength, prefixIncludesSelf: s.tcp?.prefixIncludesSelf, requestFields: s.tcp?.requestFields, enabled: s.tcp?.enabled })
+  const conn = (s: MockServerSpec) => j({ port: s.tcp?.port, protocolId: s.tcp?.protocolId, upstream: s.tcp?.upstream, timeoutMs: s.tcp?.timeoutMs })
   const codecChanged = j(a.codec) !== j(b.codec)
   const tcpConnChanged = conn(a) !== conn(b)
   const environmentChanged = (a.environment ?? null) !== (b.environment ?? null)
@@ -39,7 +39,7 @@ export function mockDiffSummary(d: MockSpecDiff): string {
   if (d.routes.removed.length) parts.push(`삭제 ${d.routes.removed.length}`)
   if (d.routes.changed.length) parts.push(`변경 ${d.routes.changed.length}`)
   if (d.tcpRules.added || d.tcpRules.removed || d.tcpRules.changed) parts.push(`TCP 규칙 +${d.tcpRules.added} −${d.tcpRules.removed} ~${d.tcpRules.changed}`)
-  if (d.tcpConnChanged) parts.push('TCP 연결/레이아웃 변경')
+  if (d.tcpConnChanged) parts.push('TCP 연결 변경')
   if (d.codecChanged) parts.push('코덱 변경')
   if (d.environmentChanged) parts.push('시크릿 환경 변경')
   return parts.join(' · ')

@@ -47,15 +47,15 @@ export function stepCount(codec: MockCodecSpec | null | undefined): { request: n
 }
 
 export const sideLabel = (side: CodecSide): string => (side === 'request' ? '요청 전' : '응답 후')
-export const targetLabel = (t: MockCodecTarget | undefined, kind: 'http' | 'tcp'): string =>
-  t === 'fields' ? '필드' : t === 'header' ? '헤더' : kind === 'tcp' ? '전문 전체' : '본문 전체'
+export const targetLabel = (t: MockCodecTarget | undefined): string =>
+  t === 'fields' ? '필드' : t === 'header' ? '헤더' : '본문 전체'
 
 /** 단계 한 줄 요약 — "응답 후 · user.name, pin 필드 → Base64 인코딩 (key: 시크릿)". */
-export function summarizeStep(step: MockCodecStep, side: CodecSide, kind: 'http' | 'tcp', plugins: TransformInfo[]): string {
+export function summarizeStep(step: MockCodecStep, side: CodecSide, plugins: TransformInfo[]): string {
   const t = plugins.find((p) => p.id === step.id)
   const name = t?.label ?? step.id ?? '(플러그인 미선택)'
   const target = step.target ?? 'body'
-  const what = target === 'fields' ? `${(step.fields ?? []).join(', ') || '(필드 없음)'} 필드` : target === 'header' ? `헤더 ${step.header || '(이름 없음)'}` : targetLabel('body', kind)
+  const what = target === 'fields' ? `${(step.fields ?? []).join(', ') || '(필드 없음)'} 필드` : target === 'header' ? `헤더 ${step.header || '(이름 없음)'}` : targetLabel('body')
   const vals = (step.inputs ?? []).filter((i) => i.mode === 'value' && i.value).map((i) => `${i.key}: ${short(i.value!)}`)
   const cfg = (step.config ?? []).filter((c) => c.value).map((c) => `${c.key}: ${short(c.value)}`)
   const extra = [...vals, ...cfg]

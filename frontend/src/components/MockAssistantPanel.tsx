@@ -123,7 +123,7 @@ export function MockAssistantPanel({ spec, mockId, onApply, onClose }: {
       <div ref={listRef} style={{ flex: 1, overflow: 'auto', padding: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
         {turns.length === 0 && (
           <div style={{ color: 'var(--fl-text-muted)', fontSize: 12.5, lineHeight: 1.6 }}>
-            <p style={{ margin: 0 }}>만들고 싶은 가짜 API를 한국어로 말해 보세요. 예: "결제창 띄우고 콜백하는 mock", "GET /users/&#123;id&#125; 가 유저 JSON 주게", "0000 전문 받으면 승인 응답하는 TCP".</p>
+            <p style={{ margin: 0 }}>만들고 싶은 가짜 API를 한국어로 말해 보세요. 예: "결제창 띄우고 콜백하는 mock", "GET /users/&#123;id&#125; 가 유저 JSON 주게", "0210 전문 오면 0211 승인 응답하는 TCP 규칙"(전문 규격은 프로토콜에서 정의).</p>
           </div>
         )}
         {turns.map((t, i) => (

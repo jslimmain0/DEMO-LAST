@@ -523,7 +523,8 @@ export interface MockServerSummary {
   tcpEnabled?: boolean | null
   routeLabels?: string[]    // "GET /pay" — 카드 라우트 미니 스트립(앞 8개)
   tcpRuleCount?: number     // TCP 규칙 수
-  tcpFieldCount?: number    // TCP 요청 레이아웃 필드 수
+  protocolName?: string | null // TCP 리스너가 참조하는 프로토콜 이름
+  upstream?: string | null     // TCP proxy 규칙이 넘길 실서버 host:port
   hasCodec?: boolean
   environment?: string | null
   lastRequestAt?: string | null
@@ -545,7 +546,8 @@ export interface MockFleetServer {
   tcpPort?: number | null; tcpEnabled?: boolean | null
   listening: boolean             // TCP: 실제 소켓 열림
   listenError?: string | null    // 켜져 있어야 하는데 안 열림
-  routeCount: number; routeLabels: string[]; tcpRuleCount: number; tcpFieldCount: number
+  routeCount: number; routeLabels: string[]; tcpRuleCount: number
+  protocolName?: string | null; upstream?: string | null
   hasCodec: boolean; environment?: string | null
   lastRequestAt?: string | null; recentRequests: number; requestCount: number; unmatchedRequests: number
   currentVersion: number; updatedAt?: string | null
@@ -597,4 +599,27 @@ export interface MockTcpFault { delayMs?: number; splitAt?: number | null; drop?
 export interface MockTcpThen { mode: 'mock' | 'proxy'; fields?: Record<string, string> }
 export interface MockTcpRuleSpec { id: string; when?: MockTcpCond[]; then: MockTcpThen; fault?: MockTcpFault | null }
 export interface MockTcpSpec { port?: number; protocolId?: string | null; upstream?: string | null; timeoutMs?: number; rules?: MockTcpRuleSpec[] }
+
+// TCP 트래픽 로그 — 리스너가 주고받은 전문 1건(dir=in 수신 / out 송신). source=mock(규칙 응답)·proxy(실서버 통과)·none(응답 없음).
+export interface TcpLogEntry {
+  at: string
+  dir: 'in' | 'out'
+  source: 'mock' | 'proxy' | 'none'
+  key: string | null                 // 분기 필드 값(전문 코드) — 프로토콜/본문 스키마가 없으면 null
+  fields: Record<string, string>     // 디코딩된 헤더+본문 필드
+  text: string                       // ASCII 뷰(깨진 바이트는 \xNN)
+  hex: string
+  bytes: number
+  chunks: number[] | null            // 2개 이상이면 부분 수신(장애 주입 splitAt 등)
+  ruleId: string | null
+  note: string | null
+  level: 'info' | 'warn' | 'error'
+}
+/** 보내보기 응답의 디코딩 뷰 — 프로토콜로 푼 헤더/본문(본문 스키마가 없으면 body=null). */
+export interface TcpDecodedView {
+  key: string | null; disc: string | null
+  header: Record<string, string>; body: Record<string, string> | null
+  text: string; hex: string; bytes: number; chunks: number[]; warnings: string[]
+}
+export interface TcpSendResult { request: ProtocolPreview; response: TcpDecodedView; elapsedMs: number }
 

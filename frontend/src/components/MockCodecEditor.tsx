@@ -16,12 +16,11 @@ import { TransformPicker } from './TransformPicker'
  * 새 단계는 **위저드**(① 언제 ② 무엇을: 전체/필드 체크/헤더 ③ 플러그인 ④ 값)로 만든다. 필드 하나만 걸 때는 각 필드 옆 ◈ 가 더 빠르다.
  * 서버 전체(spec.codec)·라우트(route.codec)·TCP 모두 같은 컴포넌트. HTTP 는 [시험해보기]로 미저장 코덱을 서버에서 바로 돌려본다.
  */
-export function MockCodecEditor({ codec, onChange, readOnly, compact, kind = 'http', sources = [], fieldHints, mockId, environment }: {
+export function MockCodecEditor({ codec, onChange, readOnly, compact, sources = [], fieldHints, mockId, environment }: {
   codec: MockCodecSpec | null | undefined
   onChange: (c: MockCodecSpec | null) => void
   readOnly?: boolean
   compact?: boolean // 라우트 카드 안(제목 축약)
-  kind?: 'http' | 'tcp'
   sources?: BindableSource[]       // 값 템플릿 데이터 삽입 소스(시크릿·요청 필드…)
   fieldHints?: { request: string[]; response: string[] } // target=fields 후보(예상 본문 키 / TCP 필드명)
   mockId?: string                  // 있으면 [시험해보기](codec-try) 노출 — HTTP 만
@@ -38,25 +37,25 @@ export function MockCodecEditor({ codec, onChange, readOnly, compact, kind = 'ht
   const hints = fieldHints ?? { request: [], response: [] }
   return (
     <div style={{ display: 'grid', gap: 12 }}>
-      <CodecSideList title={compact ? '요청 전' : `요청 전 — ${kind === 'tcp' ? '전문' : '요청'}이 들어오면 매칭·템플릿 전에 적용`} side="request" kind={kind}
+      <CodecSideList title={compact ? '요청 전' : '요청 전 — 요청이 들어오면 매칭·템플릿 전에 적용'} side="request"
         steps={c.request ?? []} list={list} readOnly={readOnly} sources={sources} hints={hints.request} onChange={(s) => setSide('request', s)}
-        empty={`${kind === 'tcp' ? '전문' : '요청 본문'}을 그대로 사용`} onAdd={() => setWizard('request')} adding={wizard === 'request'} />
-      <CodecSideList title={compact ? '응답 후' : '응답 후 — 응답을 다 만든 뒤 나가기 전에 적용'} side="response" kind={kind}
+        empty={'요청 본문을 그대로 사용'} onAdd={() => setWizard('request')} adding={wizard === 'request'} />
+      <CodecSideList title={compact ? '응답 후' : '응답 후 — 응답을 다 만든 뒤 나가기 전에 적용'} side="response"
         steps={c.response ?? []} list={list} readOnly={readOnly} sources={sources} hints={hints.response} onChange={(s) => setSide('response', s)}
-        empty={`렌더된 ${kind === 'tcp' ? '전문' : '본문'}을 그대로 전송`} onAdd={() => setWizard('response')} adding={wizard === 'response'} />
+        empty={'렌더된 본문을 그대로 전송'} onAdd={() => setWizard('response')} adding={wizard === 'response'} />
       {wizard && (
-        <CodecStepWizard kind={kind} list={list} sources={sources} fieldHints={hints} defaultSide={wizard} onCancel={() => setWizard(null)}
+        <CodecStepWizard list={list} sources={sources} fieldHints={hints} defaultSide={wizard} onCancel={() => setWizard(null)}
           onAdd={(side, step) => { setSide(side, [...(c[side] ?? []), step]); setWizard(null) }} />
       )}
-      {kind === 'http' && mockId && (c.request?.length || c.response?.length) ? (
+      {mockId && (c.request?.length || c.response?.length) ? (
         <CodecTryPanel mockId={mockId} codec={c} environment={environment} />
       ) : null}
     </div>
   )
 }
 
-function CodecSideList({ title, side, kind, steps, list, readOnly, sources, hints, onChange, empty, onAdd, adding }: {
-  title: string; side: Side; kind: 'http' | 'tcp'; steps: MockCodecStep[]; list: TransformInfo[]; readOnly?: boolean
+function CodecSideList({ title, side, steps, list, readOnly, sources, hints, onChange, empty, onAdd, adding }: {
+  title: string; side: Side; steps: MockCodecStep[]; list: TransformInfo[]; readOnly?: boolean
   sources: BindableSource[]; hints: string[]; onChange: (s: MockCodecStep[]) => void; empty: string; onAdd: () => void; adding: boolean
 }) {
   const setStep = (i: number, patch: Partial<MockCodecStep>) => onChange(steps.map((s, si) => (si === i ? { ...s, ...patch } : s)))
@@ -77,7 +76,7 @@ function CodecSideList({ title, side, kind, steps, list, readOnly, sources, hint
       {steps.length > 0 && (
         <div style={{ display: 'grid', gap: 6, marginTop: 6 }}>
           {steps.map((s, i) => (
-            <StepCard key={i} step={s} index={i} side={side} kind={kind} list={list} readOnly={readOnly} sources={sources} hints={hints}
+            <StepCard key={i} step={s} index={i} side={side} list={list} readOnly={readOnly} sources={sources} hints={hints}
               onChange={(patch) => setStep(i, patch)} onMove={(d) => move(i, d)} onRemove={() => onChange(steps.filter((_, si) => si !== i))} />
           ))}
         </div>
@@ -87,8 +86,8 @@ function CodecSideList({ title, side, kind, steps, list, readOnly, sources, hint
 }
 
 /** 단계 카드 — 접힘: 한 줄 요약 / 펼침: 상세 편집. */
-function StepCard({ step: s, index: i, side, kind, list, readOnly, sources, hints, onChange, onMove, onRemove }: {
-  step: MockCodecStep; index: number; side: Side; kind: 'http' | 'tcp'; list: TransformInfo[]; readOnly?: boolean
+function StepCard({ step: s, index: i, side, list, readOnly, sources, hints, onChange, onMove, onRemove }: {
+  step: MockCodecStep; index: number; side: Side; list: TransformInfo[]; readOnly?: boolean
   sources: BindableSource[]; hints: string[]
   onChange: (patch: Partial<MockCodecStep>) => void; onMove: (d: -1 | 1) => void; onRemove: () => void
 }) {
@@ -108,7 +107,7 @@ function StepCard({ step: s, index: i, side, kind, list, readOnly, sources, hint
   const fields = s.fields ?? []
   const toggleField = (f: string) => onChange({ fields: fields.includes(f) ? fields.filter((x) => x !== f) : [...fields, f] })
   const customFields = fields.filter((f) => !hints.includes(f))
-  const summary = summarizeStep(s, side, kind, list)
+  const summary = summarizeStep(s, side, list)
   const missing = !s.id || (target === 'fields' && fields.length === 0) || (target === 'header' && !s.header?.trim())
   return (
     <div style={{ border: `1px solid ${missing ? 'var(--fl-fail)' : 'var(--fl-border)'}`, borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', overflow: 'hidden' }}>
@@ -143,10 +142,10 @@ function StepCard({ step: s, index: i, side, kind, list, readOnly, sources, hint
             <span style={stepLbl}>무엇을</span>
             <div>
               <div style={{ display: 'inline-flex', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', overflow: 'hidden' }} title="적용 범위 — 전체 / 특정 필드만 / 헤더">
-                {(['body', 'fields', ...(kind === 'http' ? ['header'] : [])] as MockCodecTarget[]).map((tg) => (
+                {(['body', 'fields', 'header'] as MockCodecTarget[]).map((tg) => (
                   <button key={tg} disabled={readOnly} onClick={() => onChange({ target: tg })}
                     style={{ padding: '3px 10px', border: 'none', cursor: 'pointer', fontSize: 11.5, fontWeight: 600, background: target === tg ? 'var(--fl-primary)' : 'transparent', color: target === tg ? '#fff' : 'var(--fl-text-muted)' }}>
-                    {tg === 'body' ? (kind === 'tcp' ? '전문 전체' : '본문 전체') : tg === 'fields' ? '특정 필드만' : '헤더'}
+                    {tg === 'body' ? '본문 전체' : tg === 'fields' ? '특정 필드만' : '헤더'}
                   </button>
                 ))}
               </div>
@@ -162,7 +161,7 @@ function StepCard({ step: s, index: i, side, kind, list, readOnly, sources, hint
                       ))}
                     </div>
                   )}
-                  <FieldsInput value={fields} onChange={(f) => onChange({ fields: f })} disabled={readOnly} kind={kind} hasHints={hints.length > 0} />
+                  <FieldsInput value={fields} onChange={(f) => onChange({ fields: f })} disabled={readOnly} hasHints={hints.length > 0} />
                 </div>
               )}
               {target === 'header' && (
@@ -176,14 +175,14 @@ function StepCard({ step: s, index: i, side, kind, list, readOnly, sources, hint
             {(ports.length > 1 || (t?.params.length ?? 0) > 0) && <span style={{ ...stepLbl, alignSelf: 'start', paddingTop: 4 }}>값</span>}
             {(ports.length > 1 || (t?.params.length ?? 0) > 0) && (
               <div style={{ display: 'grid', gap: 4 }}>
-                {ports.length > 1 && <div style={{ fontSize: 10.5, color: 'var(--fl-text-muted)' }}>입력 포트 — 하나는 {target === 'fields' ? '필드 값' : target === 'header' && side === 'request' ? '헤더 값' : kind === 'tcp' ? '전문' : '본문'}, 나머지는 값(키·IV 는 {'{ }'} 시크릿)</div>}
+                {ports.length > 1 && <div style={{ fontSize: 10.5, color: 'var(--fl-text-muted)' }}>입력 포트 — 하나는 {target === 'fields' ? '필드 값' : target === 'header' && side === 'request' ? '헤더 값' : '본문'}, 나머지는 값(키·IV 는 {'{ }'} 시크릿)</div>}
                 {ports.length > 1 && ports.map((p) => {
                   const inp = inputOf(p.key)
                   const isMsg = inp.mode === 'message'
                   return (
                     <div key={p.key} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                       <span style={{ ...lbl, minWidth: 90, fontFamily: 'var(--fl-font-mono)' }} title={p.example ? `예: ${p.example}` : undefined}>{p.label} <span style={{ opacity: 0.6 }}>{p.key}</span></span>
-                      <label style={{ ...lbl, gap: 3 }}><input type="radio" name={`port-${side}-${i}-${kind}`} checked={isMsg} disabled={readOnly} onChange={() => setMessagePort(p.key)} />{target === 'header' && side === 'request' ? '헤더 값' : target === 'fields' ? '필드 값' : kind === 'tcp' ? '전문' : '본문'}</label>
+                      <label style={{ ...lbl, gap: 3 }}><input type="radio" name={`port-${side}-${i}`} checked={isMsg} disabled={readOnly} onChange={() => setMessagePort(p.key)} />{target === 'header' && side === 'request' ? '헤더 값' : target === 'fields' ? '필드 값' : '본문'}</label>
                       {!isMsg && (
                         <div style={{ flex: 1, minWidth: 180 }}>
                           <TokenInput ariaLabel={`입력 ${p.key}`} value={inp.value ?? ''} sources={sources} placeholder={`값 — 예: {{ ${p.key === 'key' ? 'aesKey' : p.key === 'iv' ? 'aesIv' : p.key}@secret }}`} onChange={(v) => setPortValue(p.key, v)} />
@@ -213,7 +212,7 @@ function StepCard({ step: s, index: i, side, kind, list, readOnly, sources, hint
                 })}
               </div>
             )}
-            {ports.length === 1 && (t?.params.length ?? 0) === 0 && <><span /><div style={{ fontSize: 10.5, color: 'var(--fl-text-muted)' }}>입력 <code style={{ fontFamily: 'var(--fl-font-mono)' }}>{ports[0].key}</code> = {target === 'fields' ? '필드 값' : target === 'header' && side === 'request' ? '헤더 값' : kind === 'tcp' ? '전문' : '본문'} · 추가 값 없음</div></>}
+            {ports.length === 1 && (t?.params.length ?? 0) === 0 && <><span /><div style={{ fontSize: 10.5, color: 'var(--fl-text-muted)' }}>입력 <code style={{ fontFamily: 'var(--fl-font-mono)' }}>{ports[0].key}</code> = {target === 'fields' ? '필드 값' : target === 'header' && side === 'request' ? '헤더 값' : '본문'} · 추가 값 없음</div></>}
           </div>
         </div>
       )}
@@ -222,14 +221,14 @@ function StepCard({ step: s, index: i, side, kind, list, readOnly, sources, hint
 }
 
 /** 필드 직접 입력(쉼표 구분) — 로컬 텍스트 상태로 타이핑 중 쉼표/공백을 보존하고 blur/Enter 에 반영. */
-function FieldsInput({ value, onChange, disabled, kind, hasHints }: { value: string[]; onChange: (f: string[]) => void; disabled?: boolean; kind: 'http' | 'tcp'; hasHints: boolean }) {
+function FieldsInput({ value, onChange, disabled, hasHints }: { value: string[]; onChange: (f: string[]) => void; disabled?: boolean; hasHints: boolean }) {
   const [text, setText] = useState('')
   const [editing, setEditing] = useState(false)
   const commit = () => { const add = text.split(',').map((x) => x.trim()).filter((x) => x && !value.includes(x)); if (add.length) onChange([...value, ...add]); setText(''); setEditing(false) }
   return (
     <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
       <input style={{ ...input, flex: 1, fontFamily: 'var(--fl-font-mono)' }} value={text} disabled={disabled}
-        placeholder={hasHints ? '목록에 없는 필드 직접 입력 — 쉼표 구분 후 Enter' : kind === 'tcp' ? '필드명 (쉼표 구분) — 예: 계좌번호, 고객명' : '쉼표 구분 — 예: card.no, pin (JSON 점 경로 / urlencoded 키)'}
+        placeholder={hasHints ? '목록에 없는 필드 직접 입력 — 쉼표 구분 후 Enter' : '쉼표 구분 — 예: card.no, pin (JSON 점 경로 / urlencoded 키)'}
         onFocus={() => setEditing(true)} onChange={(e) => setText(e.target.value)} onBlur={commit} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); commit() } }} />
       {editing && text.trim() && <button style={miniBtn} onMouseDown={(e) => e.preventDefault()} onClick={commit}>추가</button>}
       {!hasHints && value.length > 0 && <span style={{ fontSize: 11, color: 'var(--fl-text-muted)' }}>현재: {value.join(', ')}</span>}

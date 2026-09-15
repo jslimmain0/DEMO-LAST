@@ -1,5 +1,5 @@
 import type { SecretView } from '../api/client'
-import type { MockRouteSpec, MockServerSpec } from '../api/types'
+import type { MockRouteSpec, MockServerSpec, ProtocolSpec } from '../api/types'
 import type { BindableItem, BindableSource } from '../binding/upstream'
 
 /**
@@ -13,8 +13,6 @@ export interface MockSourceOpts {
   secrets?: SecretView[]
   /** 이 Mock 의 시크릿 환경(spec.environment). 공통 + 이 환경의 시크릿이 적용 대상. */
   environment?: string | null
-  /** TCP 편집기에서 true — 요청 레이아웃 필드를 소스로. */
-  tcp?: boolean
 }
 
 const item = (key: string, tag: string, type?: string): BindableItem => ({ key, type, scope: null, group: 'request', tag })
@@ -46,7 +44,7 @@ export function applicableSecretNames(secrets: SecretView[] | undefined, environ
 export function mockSources(o: MockSourceOpts): BindableSource[] {
   const out: BindableSource[] = []
   const r = o.route
-  if (!o.tcp) {
+  {
     const pathParams = pathParamNames(r?.path)
     if (pathParams.length) out.push({ id: 'path', name: '경로 파라미터', type: 'mock', cat: 'http', items: pathParams.map((k) => item(k, '경로')) })
     const q = (r?.expect?.query ?? []).filter((f) => f.key?.trim())
@@ -55,14 +53,25 @@ export function mockSources(o: MockSourceOpts): BindableSource[] {
     if (h.length) out.push({ id: 'header', name: '요청 헤더', type: 'mock', cat: 'http', items: h.map((f) => item(f.key.trim(), '헤더', f.type)) })
     const b = (r?.expect?.body ?? []).filter((f) => f.key?.trim())
     if (b.length) out.push({ id: 'body', name: '요청 본문', type: 'mock', cat: 'http', items: b.map((f) => item(f.key.trim(), '본문', f.type)) })
-  } else {
-    const fields = (o.spec.tcp?.requestFields ?? []).map((f) => f.name?.trim() ?? '').filter(Boolean)
-    if (fields.length) out.push({ id: 'req', name: 'TCP 요청 필드', type: 'mock', cat: 'tcp', items: fields.map((k) => item(k, '요청')) })
   }
   const st = stateKeys(o.spec)
   if (st.length) out.push({ id: 'state', name: '서버 상태', type: 'mock', cat: 'set', items: st.map((k) => item(k, '상태')) })
   const sec = applicableSecretNames(o.secrets, o.environment)
   if (sec.length) out.push({ id: 'secret', name: '시크릿 볼트', type: 'mock', cat: 'secret', items: sec.map((k) => item(k, '시크릿')) })
+  return out
+}
+
+/**
+ * TCP Mock 편집기의 피커 소스 — 프로토콜의 요청 필드(헤더 + 모든 전문 본문 필드)와 시크릿.
+ * `{{ 계좌번호@req }}` 로 직렬화되고 백엔드가 수신 전문의 그 필드 값으로 치환한다(`seq`/`now`/`today` 는 TokenInput 자동완성 내장).
+ */
+export function tcpMockSources(spec: ProtocolSpec | undefined, secretNames: string[]): BindableSource[] {
+  const out: BindableSource[] = []
+  if (spec) {
+    const names = [...new Set([...spec.header, ...spec.messages.flatMap((m) => m.fields)].map((f) => f.name?.trim() ?? '').filter(Boolean))]
+    if (names.length) out.push({ id: 'req', name: '요청 전문 필드', type: 'mock', cat: 'tcp', items: names.map((k) => item(k, '요청')) })
+  }
+  if (secretNames.length) out.push({ id: 'secret', name: '시크릿 볼트', type: 'mock', cat: 'secret', items: secretNames.map((k) => item(k, '시크릿')) })
   return out
 }
 

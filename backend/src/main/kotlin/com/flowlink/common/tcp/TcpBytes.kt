@@ -1,6 +1,9 @@
 package com.flowlink.common.tcp
 
+import java.nio.ByteBuffer
+import java.nio.charset.CharacterCodingException
 import java.nio.charset.Charset
+import java.nio.charset.CodingErrorAction
 import java.nio.charset.StandardCharsets
 import java.util.Arrays
 
@@ -111,5 +114,33 @@ object TcpBytes {
         val from = minOf(maxOf(offset, 0), bytes.size)
         val to = minOf(from + maxOf(length, 0), bytes.size)
         return bytes.copyOfRange(from, to)
+    }
+
+    /** 문자셋 디코딩 — 깨진/매핑 불가 바이트는 `\xB1` 형태로 원본 노출(물음표로 뭉개지 않음). */
+    @JvmStatic
+    fun decodeEscaped(bytes: ByteArray, cs: Charset): String {
+        val dec = cs.newDecoder().onMalformedInput(CodingErrorAction.REPORT).onUnmappableCharacter(CodingErrorAction.REPORT)
+        try { return dec.decode(ByteBuffer.wrap(bytes)).toString() } catch (e: CharacterCodingException) { /* 느린 경로 */ }
+        val maxB = Math.ceil(cs.newEncoder().maxBytesPerChar().toDouble()).toInt().coerceAtLeast(1)
+        val sb = StringBuilder(bytes.size)
+        var i = 0
+        while (i < bytes.size) {
+            var ok = false
+            for (k in 1..maxB) {
+                if (i + k > bytes.size) break
+                try { sb.append(dec.reset().decode(ByteBuffer.wrap(bytes, i, k))); i += k; ok = true; break } catch (e: CharacterCodingException) { }
+            }
+            if (!ok) { sb.append(String.format("\\x%02X", bytes[i].toInt() and 0xFF)); i++ }
+        }
+        return sb.toString()
+    }
+
+    /** "0A FF" / "0aff" → 바이트. 형식 오류면 null. */
+    @JvmStatic
+    fun hexToBytes(hex: String): ByteArray? {
+        val clean = hex.replace(Regex("[\\s:]"), "")
+        if (clean.isEmpty()) return ByteArray(0)
+        if (clean.length % 2 != 0 || !clean.all { it in "0123456789abcdefABCDEF" }) return null
+        return ByteArray(clean.length / 2) { clean.substring(it * 2, it * 2 + 2).toInt(16).toByte() }
     }
 }

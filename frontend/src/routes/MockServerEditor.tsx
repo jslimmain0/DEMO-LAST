@@ -497,7 +497,7 @@ export function MockServerEditor() {
           <TrafficPanel id={id} canEdit={canEdit} base={base} spec={spec} onSpec={mutate} journal={journal} open={trafficOpen}
             onToggle={() => setTrafficOpen((v) => { try { localStorage.setItem('fl:mock:traffic', v ? '0' : '1') } catch { /* */ } return !v })}
             tab={trafficTab} onTab={setTrafficTab}
-            routeFilter={selRoute} ensureSaved={ensureSaved} isTcp={isTcp} protocolId={tcp.protocolId} protoSpec={protoSpec} secretNames={secretNames}
+            routeFilter={selRoute} ensureSaved={ensureSaved} isTcp={isTcp} protocolId={tcp.protocolId} protoSpec={protoSpec}
             onSelectRoute={(rid) => setNav({ kind: 'route', id: rid })} onMakeRule={makeRuleFromLog} unmatched={unmatched} />
 
           {aiOpen && (isGuest || aiPending
@@ -554,11 +554,11 @@ function OpenApiImportBox({ onRoutes }: { onRoutes: (r: MockRouteSpec[]) => void
 
 // ---------- 트래픽 패널(HTTP: 요청 기록·보내보기 / TCP: 전문 로그·보내보기) ----------
 
-function TrafficPanel({ id, canEdit, base, spec, onSpec, journal, open, onToggle, tab, onTab, routeFilter, ensureSaved, isTcp, protocolId, protoSpec, secretNames, onSelectRoute, onMakeRule, unmatched }: {
+function TrafficPanel({ id, canEdit, base, spec, onSpec, journal, open, onToggle, tab, onTab, routeFilter, ensureSaved, isTcp, protocolId, protoSpec, onSelectRoute, onMakeRule, unmatched }: {
   id: string; canEdit: boolean; base: string; spec: MockServerSpec; onSpec: (fn: (s: MockServerSpec) => MockServerSpec) => void
   journal: MockRequestLog[]; open: boolean; onToggle: () => void; tab: 'log' | 'send'; onTab: (t: 'log' | 'send') => void
   routeFilter: MockRouteSpec | null; ensureSaved: () => Promise<boolean>; isTcp: boolean
-  protocolId: string | null | undefined; protoSpec: ProtocolSpec | undefined; secretNames: string[]
+  protocolId: string | null | undefined; protoSpec: ProtocolSpec | undefined
   onSelectRoute: (routeId: string) => void; onMakeRule: (e: TcpLogEntry) => void; unmatched: number
 }) {
   const qc = useQueryClient()
@@ -623,7 +623,7 @@ function TrafficPanel({ id, canEdit, base, spec, onSpec, journal, open, onToggle
         {open && canEdit && !isTcp && journal.length > 0 && <button style={{ ...miniBtn, padding: '3px 8px' }} onClick={() => clear.mutate()}>기록 비우기</button>}
       </div>
       {open && isTcp && tab === 'log' && <TcpLogPanel mockId={id} protocolId={protocolId} canEdit={canEdit} onMakeRule={canEdit ? onMakeRule : undefined} />}
-      {open && isTcp && tab === 'send' && <TcpSendPanel key={protocolId ?? 'none'} mockId={id} spec={protoSpec} secrets={secretNames} />}
+      {open && isTcp && tab === 'send' && <TcpSendPanel key={protocolId ?? 'none'} mockId={id} spec={protoSpec} ensureSaved={ensureSaved} />}
       {open && !isTcp && tab === 'log' && (
         <div style={{ flex: 1, overflowY: 'auto', padding: '6px 12px 10px' }}>
           {shown.length === 0 ? <div style={{ fontSize: 12, color: 'var(--fl-text-muted)', padding: '8px 0' }}>{journal.length ? '선택한 라우트로 온 요청이 없습니다.' : 'base URL 을 워크플로 HTTP 노드에 넣고 실행하거나 [보내보기]로 호출해 보세요.'}</div>

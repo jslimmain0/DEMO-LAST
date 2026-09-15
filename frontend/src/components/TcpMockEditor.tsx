@@ -125,8 +125,8 @@ export function TcpRuleDetail({ rule, index, total, spec, secrets, readOnly, onC
     onChange({ then: { ...(rule.then ?? { mode: 'mock' }), mode: 'mock', fields: { ...fields, [spec.discriminator]: key } } })
   }
   const setFault = (patch: Partial<MockTcpFault>) => onChange({ fault: { ...(rule.fault ?? {}), ...patch } })
-  // lintTcpRules 는 필드를 `'이름'` 또는 `이름 값 (` 로 적는다 — 부분 문자열 매칭이면 '금액' 이 '총금액' 경고를 가져온다
-  const warnFor = (name: string) => lints.find((l) => l.includes(`'${name}'`) || l.includes(`${name} 값 (`))
+  // lintTcpRules 는 필드를 항상 `'이름'` 으로 인용한다 — 인용 없이 매칭하면 '금액' 이 '총금액' 경고를 가져온다
+  const warnFor = (name: string) => lints.find((l) => l.includes(`'${name}'`))
   // 표에 그릴 행 — 헤더(length 제외) + 응답 본문 필드 + 정의에 없는데 값이 남아 있는 필드
   const headerRows = (spec?.header ?? []).filter((f) => f.type !== 'length')
   const known = new Set([...headerRows.map((f) => f.name), ...(msg?.fields ?? []).map((f) => f.name)])
@@ -269,8 +269,13 @@ function FieldValueRow({ f, kind, spec, value, disc, readOnly, sources, warn, on
 
 // ---------- 전문 로그 ----------
 
-/** 폴링으로 목록이 갈리므로 펼침 상태는 인덱스가 아니라 행 자체로 식별한다(같은 키가 행 key 이기도 하다). */
-const rowKey = (e: TcpLogEntry): string => `${e.at}|${e.dir}|${e.bytes}`
+/** 폴링으로 목록이 갈리므로 펼침 상태는 인덱스가 아니라 행 내용으로 식별한다(같은 키가 행 key 이기도 하다). */
+const rowKey = (e: TcpLogEntry): string => `${e.at}|${e.dir}|${e.bytes}|${e.hex || e.text}`
+/** 완전히 같은 전문이 같은 ms 에 두 번 찍혔을 때만 인덱스를 덧붙인다(최후 수단). */
+const rowKeys = (rows: TcpLogEntry[]): string[] => {
+  const seen = new Set<string>()
+  return rows.map((e, i) => { const k = rowKey(e); if (seen.has(k)) return `${k}#${i}`; seen.add(k); return k })
+}
 
 export function TcpLogPanel({ mockId, protocolId, canEdit, onMakeRule }: { mockId: string; protocolId: string | null | undefined; canEdit?: boolean; onMakeRule?: (e: TcpLogEntry) => void }) {
   const qc = useQueryClient()
@@ -283,6 +288,7 @@ export function TcpLogPanel({ mockId, protocolId, canEdit, onMakeRule }: { mockI
   const [filter, setFilter] = useState<'all' | 'mock' | 'proxy' | 'warn'>('all')
   const [open, setOpen] = useState<string | null>(null)
   const rows = (log.data ?? []).filter((e) => (filter === 'all' ? true : filter === 'warn' ? e.level !== 'info' : e.source === filter))
+  const keys = rowKeys(rows)
   return (
     <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
       <div style={{ display: 'flex', gap: 6, alignItems: 'center', padding: '4px 12px' }}>
@@ -299,7 +305,7 @@ export function TcpLogPanel({ mockId, protocolId, canEdit, onMakeRule }: { mockI
         {rows.length === 0 ? (
           <div style={{ ...meta, padding: '8px 0' }}>{log.data?.length ? '필터에 맞는 전문이 없습니다.' : '아직 전문이 없습니다 — 워크플로 TCP 노드나 아래 [보내보기]로 이 포트에 전문을 보내면 여기에 쌓입니다.'}</div>
         ) : (
-          <div style={{ display: 'grid', gap: 3 }}>{rows.map((e) => { const k = rowKey(e); return <LogRow key={k} e={e} open={open === k} protocolId={protocolId} onToggle={() => setOpen(open === k ? null : k)} onMakeRule={onMakeRule} /> })}</div>
+          <div style={{ display: 'grid', gap: 3 }}>{rows.map((e, i) => { const k = keys[i]; return <LogRow key={k} e={e} open={open === k} protocolId={protocolId} onToggle={() => setOpen(open === k ? null : k)} onMakeRule={onMakeRule} /> })}</div>
         )}
       </div>
     </div>
@@ -321,7 +327,7 @@ function LogRow({ e, open, protocolId, onToggle, onMakeRule }: { e: TcpLogEntry;
         <span style={{ ...tag, color: srcColor, borderColor: srcColor }}>[{e.source}]</span>
         <b style={{ fontFamily: 'var(--fl-font-mono)', fontSize: 12, minWidth: 44 }}>{e.key ?? '—'}</b>
         <span style={{ ...meta, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={summary}>{summary}</span>
-        {parts.length > 1 && <span style={{ ...tag, color: 'var(--fl-put, #f5a623)', borderColor: 'var(--fl-put, #f5a623)' }} title="한 전문이 여러 번에 나눠 도착">부분 수신 {parts.join('+')}</span>}
+        {e.partial && <span style={{ ...tag, color: 'var(--fl-put, #f5a623)', borderColor: 'var(--fl-put, #f5a623)' }} title="한 전문이 여러 번에 나눠 도착">부분 수신{parts.length ? ` ${parts.join('+')}` : ''}</span>}
         <span style={meta}>{e.bytes} B</span>
         <span style={meta}>{relTime(e.at)}</span>
       </button>
@@ -347,9 +353,8 @@ const hhmmss = (iso: string): string => {
 
 // ---------- 보내보기 ----------
 
-export function TcpSendPanel({ mockId, spec, secrets }: { mockId: string; spec: ProtocolSpec | undefined; secrets: string[] }) {
+export function TcpSendPanel({ mockId, spec, ensureSaved }: { mockId: string; spec: ProtocolSpec | undefined; ensureSaved: () => Promise<boolean> }) {
   const qc = useQueryClient()
-  const sources = useMemo(() => tcpMockSources(spec, secrets), [spec, secrets])
   const keys = spec ? requestKeys(spec) : []
   const [key, setKey] = useState('')
   const [values, setValues] = useState<Record<string, string>>({})
@@ -360,7 +365,10 @@ export function TcpSendPanel({ mockId, spec, secrets }: { mockId: string; spec: 
   const offsets = spec && msg ? withOffsets(spec.header, msg.fields) : []
   const headerRows = spec ? withOffsets([], spec.header).map((off, i) => ({ f: spec.header[i], off })).filter(({ f }) => f.type !== 'length' && f.name !== spec.discriminator) : []
   const send = useMutation({
-    mutationFn: () => mocksApi.tcpSend(mockId, { key: sel, values }),
+    mutationFn: async () => {
+      if (!(await ensureSaved())) throw new Error('미저장 편집이 있습니다 — 먼저 저장하세요.')
+      return mocksApi.tcpSend(mockId, { key: sel, values })
+    },
     onSuccess: (r) => { setResult(r); setErr(null); void qc.invalidateQueries({ queryKey: ['mock-tcp-log', mockId] }) },
     onError: (e) => { setResult(null); setErr(apiErrorMessage(e, '전송 실패')) },
   })
@@ -375,17 +383,18 @@ export function TcpSendPanel({ mockId, spec, secrets }: { mockId: string; spec: 
           <button style={primaryBtn} disabled={!sel || send.isPending} onClick={() => send.mutate()}>▶ 보내기</button>
         </div>
         {err && <div style={{ fontSize: 12, color: 'var(--fl-fail)' }}>{err}</div>}
+        <div style={meta}>값은 템플릿 없이 그대로 전송됩니다.</div>
         {headerRows.map(({ f, off }) => (
-          <FieldRow key={`h-${f.name}`} f={f} offset={off} value={values[f.name] ?? ''} encoding={spec.encoding} sources={sources} canEdit hint="헤더" onChange={(v) => setValues({ ...values, [f.name]: v })} />
+          <FieldRow key={`h-${f.name}`} f={f} offset={off} value={values[f.name] ?? ''} encoding={spec.encoding} sources={[]} canEdit hint="헤더" onChange={(v) => setValues({ ...values, [f.name]: v })} />
         ))}
         {(msg?.fields ?? []).map((f, i) => (
-          <FieldRow key={f.name} f={f} offset={offsets[i]} value={values[f.name] ?? ''} encoding={spec.encoding} sources={sources} canEdit onChange={(v) => setValues({ ...values, [f.name]: v })} />
+          <FieldRow key={f.name} f={f} offset={offsets[i]} value={values[f.name] ?? ''} encoding={spec.encoding} sources={[]} canEdit onChange={(v) => setValues({ ...values, [f.name]: v })} />
         ))}
       </div>
       <div style={{ display: 'grid', gap: 6 }}>
         <div style={{ ...boxTitle, display: 'flex', gap: 8, alignItems: 'center' }}>
           응답
-          {result && <><code style={code}>{result.response.key ?? '(디코딩 실패)'}</code><span style={meta}>{result.elapsedMs}ms · {result.response.bytes}B{result.response.chunks.length > 1 ? ` · 부분 수신 ${result.response.chunks.join('+')}` : ''}</span></>}
+          {result && <><code style={code}>{result.response.key ?? '(디코딩 실패)'}</code><span style={meta}>{result.elapsedMs}ms · {result.response.bytes}B{result.response.partial ? ` · 부분 수신 ${result.response.chunks.join('+')}` : ''}</span></>}
         </div>
         {!result ? <div style={{ ...meta, border: '1px dashed var(--fl-border)', borderRadius: 6, padding: 12 }}>전문을 보내면 요청 조립 결과와 응답이 여기에 표시됩니다.</div> : (
           <>

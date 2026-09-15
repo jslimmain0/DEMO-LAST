@@ -1,6 +1,6 @@
 // frontend/src/panels/TcpNodePanel.tsx — TCP 노드 속성: 프로토콜·전문 선택 → 필드 값 입력(바이트 카운터·ascii 경고) → 미리보기 / 응답 전문 → 출력 키
 import { useQuery } from '@tanstack/react-query'
-import type { CSSProperties } from 'react'
+import { useEffect, useState, type CSSProperties } from 'react'
 import { Link } from 'react-router-dom'
 import type { GraphNode, NodeOutput, ProtocolField, ProtocolPreview, ProtocolSpec } from '../api/types'
 import { protocolsApi } from '../api/client'
@@ -36,8 +36,7 @@ export function TcpRequestPanel({ node, update, sources, canEdit, preview, previ
   return (
     <>
       <label style={label}>대상 (host:port)</label>
-      <input style={mono} aria-label="대상 host:port" value={`${node.tcpHost ?? ''}${node.tcpPort ? ':' + node.tcpPort : ''}`} placeholder="10.20.3.14:9600" readOnly={!canEdit}
-        onChange={(e) => { const v = e.target.value.trim(); const ci = v.lastIndexOf(':'); if (ci > 0) update({ tcpHost: v.slice(0, ci), tcpPort: Number(v.slice(ci + 1).replace(/[^0-9]/g, '')) || 0 }); else update({ tcpHost: v }) }} />
+      <HostPortInput node={node} update={update} canEdit={canEdit} />
       <div style={{ display: 'flex', gap: 6 }}>
         <div style={{ flex: 2, minWidth: 0 }}>
           <label style={label}>프로토콜</label>
@@ -85,6 +84,24 @@ export function TcpRequestPanel({ node, update, sources, canEdit, preview, previ
 }
 
 /** 필드 한 줄 — 오프셋·타입/패딩·바이트 카운터 + 값(토큰 허용). 토큰이 섞이면 실제 길이는 실행 시에 정해지므로 카운터는 `?`. */
+/** host:port 한 칸 — 저장 모델은 host/port 로 갈라져 있어 "host:" 중간 상태가 사라진다. 원문을 로컬로 들고 파싱해서 저장. */
+function HostPortInput({ node, update, canEdit }: { node: GraphNode; update: Update; canEdit: boolean }) {
+  const [text, setText] = useState(`${node.tcpHost ?? ''}${node.tcpPort ? ':' + node.tcpPort : ''}`)
+  useEffect(() => { setText(`${node.tcpHost ?? ''}${node.tcpPort ? ':' + node.tcpPort : ''}`) }, [node.id]) // eslint-disable-line react-hooks/exhaustive-deps
+  return (
+    <input style={mono} aria-label="대상 host:port" value={text} placeholder="10.20.3.14:9600" readOnly={!canEdit}
+      onChange={(e) => {
+        const v = e.target.value
+        setText(v)
+        const t = v.trim(); const ci = t.lastIndexOf(':')
+        if (ci > 0) {
+          const digits = t.slice(ci + 1).replace(/[^0-9]/g, '')
+          update({ tcpHost: t.slice(0, ci), tcpPort: digits ? Number(digits) : node.tcpPort }) // 포트 입력 중(빈 값)엔 기존 포트 유지
+        } else update({ tcpHost: t })
+      }} />
+  )
+}
+
 export function FieldRow({ f, offset, value, encoding, sources, canEdit, err, onChange, hint }: { f: ProtocolField; offset: number; value: string; encoding: string; sources: BindableSource[]; canEdit: boolean; err?: string; onChange: (v: string) => void; hint?: string }) {
   const hasToken = value.includes('{{')
   const bytes = hasToken ? null : byteLen(value, encoding)

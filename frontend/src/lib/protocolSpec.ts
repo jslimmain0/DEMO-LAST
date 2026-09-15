@@ -118,7 +118,7 @@ export function lintTcpRules(tcp: MockTcpSpec, spec: ProtocolSpec): string[] {
       const f = table.get(k)
       if (!f) { out.push(`${label}: '${k}' 는 응답 전문에 없는 필드입니다.`); continue }
       for (const m of v.matchAll(/\{\{\s*(?:req\.([^\s{}]+)|([^\s@{}]+)@req)\s*\}\}/g)) { const ref = m[1] ?? m[2]; if (!reqNames.has(ref)) out.push(`${label}: {{req.${ref}}} — 요청에 '${ref}' 필드가 없습니다.`) }
-      if (!v.includes('{{')) { const b = byteLen(v, spec.encoding); if (b > f.len) out.push(`${label}: ⚠ ${k} 값 (${b}B) → ${f.len}B — 초과분 잘림`) }
+      if (!v.includes('{{')) { const b = byteLen(v, spec.encoding); if (b > f.len) out.push(`${label}: ⚠ '${k}' 값 (${b}B) → ${f.len}B — 초과분 잘림`) }
     }
   }
   return out

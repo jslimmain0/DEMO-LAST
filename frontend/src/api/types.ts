@@ -471,7 +471,7 @@ export interface MockRouteSpec {
   expect?: MockExpect | null   // 예상 요청 필드
 }
 
-// TCP mock — 프로토콜 참조 기반 신형 MockTcpSpec 은 파일 끝에서 정의(구 필드-레이아웃 정의 대체, Task 13 완료 전까지 사용처 컴파일 에러 예상).
+// TCP mock — 프로토콜 참조 기반 신형 MockTcpSpec 은 파일 끝에서 정의(구 필드-레이아웃 정의 대체).
 
 // 전문 코덱 — 요청 전문이 매칭·템플릿에 들어가기 전(request) / 응답 전문을 다 만든 뒤 나가기 전(response)
 // 변환 플러그인(FlowTransform)을 순서대로 적용. HTTP 본문·TCP 전문 모두 대상. 라우트 codec 이 있으면 서버 codec 대신(통째로).
@@ -593,7 +593,7 @@ export interface ProtocolPreviewField { name: string; offset: number; len: numbe
 export interface ProtocolPreview { total: number; hex: string; text: string; fields: ProtocolPreviewField[]; errors: { field?: string | null; message: string }[]; warnings?: string[] }
 export interface CodecInfo { id: string; label: string; layer: 'field' | 'message'; params: TransformParam[] }
 
-// Mock TCP — 새 프로토콜 참조 기반(구 MockTcpSpec/MockTcpRuleSpec/… 대체, 사용처는 Task 13 에서 마이그레이션)
+// Mock TCP — 새 프로토콜 참조 기반(구 MockTcpSpec/MockTcpRuleSpec/… 대체)
 export interface MockTcpCond { field?: string; op?: 'eq' | 'ne' | 'contains' | 'startswith' | 'endswith' | 'regex' | 'exists'; value?: string }
 export interface MockTcpFault { delayMs?: number; splitAt?: number | null; drop?: boolean; reset?: boolean; corruptLength?: boolean }
 export interface MockTcpThen { mode: 'mock' | 'proxy'; fields?: Record<string, string> }
@@ -610,7 +610,8 @@ export interface TcpLogEntry {
   text: string                       // ASCII 뷰(깨진 바이트는 \xNN)
   hex: string
   bytes: number
-  chunks: number[] | null            // 2개 이상이면 부분 수신(장애 주입 splitAt 등)
+  chunks: number[] | null            // read 단위 크기(헤더/본문마다 최소 1개 — 2개라고 부분 수신은 아니다)
+  partial: boolean                   // 한 전문이 여러 번에 나뉘어 도착/전송됨(장애 주입 splitAt 등)
   ruleId: string | null
   note: string | null
   level: 'info' | 'warn' | 'error'
@@ -619,7 +620,7 @@ export interface TcpLogEntry {
 export interface TcpDecodedView {
   key: string | null; disc: string | null
   header: Record<string, string>; body: Record<string, string> | null
-  text: string; hex: string; bytes: number; chunks: number[]; warnings: string[]
+  text: string; hex: string; bytes: number; chunks: number[]; partial: boolean; warnings: string[]
 }
 export interface TcpSendResult { request: ProtocolPreview; response: TcpDecodedView; elapsedMs: number }
 

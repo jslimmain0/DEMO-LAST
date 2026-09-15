@@ -5,7 +5,7 @@ import { pluginsApi, runsApi, secretsApi, settingsApi, transformsApi } from '../
 import { usePermissions } from '../auth/AuthContext'
 import { toast } from '../components/toast'
 import { TransformPicker } from '../components/TransformPicker'
-import type { Binding, BodyType, GraphNode, HttpMethod, NodeField, NodeOutput, NodeVar, ReqMode, RespType, SingleNodeRunResult, TcpField, TcpPreview, TcpRespField, WaitField as WaitFieldT } from '../api/types'
+import type { Binding, BodyType, GraphNode, HttpMethod, NodeField, NodeOutput, NodeVar, ReqMode, ProtocolPreview, RespType, SingleNodeRunResult, WaitField as WaitFieldT } from '../api/types'
 import { BigTextEditor, ExpandCorner } from '../components/BigTextEditor'
 import { JsonTree } from '../components/JsonTree'
 // 워크벤치(전체화면 모달)의 인라인 코드 편집기 — 열 때만 로드(BigTextEditor 와 같은 청크)
@@ -28,6 +28,7 @@ import { bindingToToken, isTokenizable, tokenRegex } from '../lib/tokenGrammar'
 import { newId } from '../lib/ids'
 import { useEditorStore } from '../store/editorStore'
 import { KeyValueEditor } from './KeyValueEditor'
+import { TcpRequestPanel, TcpResponsePanel } from './TcpNodePanel'
 import { TransformPreview } from './TransformPreview'
 
 const label: CSSProperties = { display: 'block', fontSize: 11.5, fontWeight: 600, color: 'var(--fl-text-muted)', margin: '12px 0 5px' }
@@ -121,7 +122,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
   const [bodyConvNote, setBodyConvNote] = useState<string | null>(null) // 필드↔Raw 변환 안내
   const [single, setSingle] = useState<SingleNodeRunResult | null>(null) // 이 노드만 실행 결과
   const [singleRunning, setSingleRunning] = useState(false)
-  const [tcpPrev, setTcpPrev] = useState<TcpPreview | null>(null) // TCP 전문 미리보기 결과
+  const [tcpPrev, setTcpPrev] = useState<ProtocolPreview | null>(null) // TCP 전문 미리보기 결과
   const [tcpPrevErr, setTcpPrevErr] = useState<string | null>(null)
   const [advOpen, setAdvOpen] = useState(false) // HTTP 고급(문자셋) 접기
   const [curlText, setCurlText] = useState<string | null>(null) // cURL 붙여넣기 입력창(열림=문자열)
@@ -1361,40 +1362,8 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
 
         {node.type === 'tcp' && (() => {
           const reqCol = (
-          <>
-            <label style={label}>대상 (host:port)</label>
-            <input
-              style={mono}
-              aria-label="대상 host:port"
-              value={`${node.tcpHost ?? ''}${node.tcpPort ? ':' + node.tcpPort : ''}`}
-              placeholder="10.0.0.5:9999"
-              onChange={(e) => {
-                const v = e.target.value.trim()
-                const ci = v.lastIndexOf(':')
-                if (ci > 0) update(id, { tcpHost: v.slice(0, ci), tcpPort: Number(v.slice(ci + 1).replace(/[^0-9]/g, '')) || 0 })
-                else update(id, { tcpHost: v, tcpPort: node.tcpPort ?? 0 })
-              }}
-            />
-            <div style={{ display: 'flex', gap: 6 }}>
-              <div style={{ flex: 1 }}>
-                <label style={label}>인코딩</label>
-                <select style={field} value={node.tcpEncoding ?? 'EUC-KR'} onChange={(e) => update(id, { tcpEncoding: e.target.value })}>
-                  {['EUC-KR', 'MS949', 'UTF-8', 'US-ASCII'].map((c) => <option key={c} value={c}>{c}</option>)}
-                </select>
-              </div>
-              <div style={{ flex: 1 }}><label style={label}>타임아웃(ms)</label><input style={field} type="number" value={node.tcpTimeoutMs ?? 5000} onChange={(e) => update(id, { tcpTimeoutMs: Number(e.target.value) })} /></div>
-            </div>
-            <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end' }}>
-              <div><label style={label}>길이 프리픽스(바이트)</label><input style={{ ...field, width: 100 }} type="number" value={node.tcpPrefixLength ?? 0} onChange={(e) => update(id, { tcpPrefixLength: Number(e.target.value) })} /></div>
-              <label style={{ fontSize: 12, color: 'var(--fl-text-muted)', display: 'flex', alignItems: 'center', gap: 5, paddingBottom: 9 }}>
-                <input type="checkbox" checked={!!node.tcpPrefixIncludesSelf} onChange={(e) => update(id, { tcpPrefixIncludesSelf: e.target.checked })} /> 프리픽스 포함 길이
-              </label>
-            </div>
-
-            <label style={label}>요청 필드 (고정길이 · 위→아래 순서로 연결)</label>
-            <TcpReqEditor fields={node.tcpRequest ?? []} sources={sources} sourceType={sourceType} onChange={(r) => update(id, { tcpRequest: r })} />
-
-          </>
+            <TcpRequestPanel node={node} update={(p) => update(id, p)} sources={sources} canEdit={canEdit}
+              preview={tcpPrev} previewErr={tcpPrevErr} onPreview={runTcpPreview} />
           )
           const respCol = (
           <>
@@ -1403,32 +1372,12 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
                 {singleRunBlock}
                 {!single && (lastRunBox ?? (
                   <div style={{ ...respEmpty, marginTop: 8 }}>
-                    ▶ 실행하면 실제 전문 응답(응답 필드로 슬라이싱된 값)이 여기에 표시됩니다.
+                    ▶ 실행하면 실제 전문 응답(응답 전문 표로 슬라이싱된 값)이 여기에 표시됩니다.
                   </div>
                 ))}
               </>
             )}
-            <label style={label}>응답 필드 (고정길이 → 출력)</label>
-            <TcpRespEditor
-              fields={node.tcpResponse ?? []}
-              onChange={(r) => update(id, {
-                tcpResponse: r,
-                // 응답 필드 이름 = 출력 키 — 바인딩 피커 칩과 자동 동기화
-                outputs: r.filter((f) => f.name && f.name.trim()).map((f) => ({ key: f.name!, type: 'string' })),
-              })}
-            />
-            <p style={{ fontSize: 11.5, color: 'var(--fl-text-muted)', marginTop: 8 }}>응답 필드 이름이 그대로 출력 키가 되어 하위 노드에서 바인딩됩니다. 내장 Mock 서버의 TCP 탭으로 가짜 대상 시스템을 세울 수 있습니다.</p>
-
-            {canEdit && (
-              <div style={{ marginTop: 10, borderTop: '1px dashed var(--fl-border)', paddingTop: 10 }}>
-                <button onClick={runTcpPreview} style={singleBtn}
-                  title="전송 없이 요청 전문을 바이트 단위로 조립해 보여줍니다(EUC-KR 등 멀티바이트 길이 정확). 상류 바인딩은 빈 값.">
-                  🔍 전문 미리보기
-                </button>
-                {tcpPrevErr && <p style={{ fontSize: 11.5, color: 'var(--fl-fail)', marginTop: 6 }}>미리보기 실패: {tcpPrevErr}</p>}
-                {tcpPrev && <TcpPreviewBox p={tcpPrev} />}
-              </div>
-            )}
+            <TcpResponsePanel node={node} update={(p) => update(id, p)} canEdit={canEdit} />
           </>
           )
           return twoCol ? (
@@ -1944,110 +1893,6 @@ function RowMove({ i, len, onMove }: { i: number; len: number; onMove: (dir: -1 
   )
 }
 
-/** TCP 요청 필드 편집기 — 값은 텍스트+토큰 칩 혼합(TokenInput), 토큰화 불가 bound 는 구조적 칩 유지. */
-function TcpReqEditor({ fields, sources, sourceType, onChange }: { fields: TcpField[]; sources: BindableSource[]; sourceType: (b: Binding) => string | undefined; onChange: (f: TcpField[]) => void }) {
-  const upd = (fid: string, patch: Partial<TcpField>) => onChange(fields.map((f) => (f.id === fid ? { ...f, ...patch } : f)))
-  let off = 0
-  const total = fields.reduce((a, f) => a + (f.length ?? 0), 0)
-  return (
-    <>
-      {fields.map((f, i) => {
-        const start = off; off += f.length ?? 0
-        return (
-        <div key={f.id} style={{ border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', padding: 8, marginBottom: 6 }}>
-          <div style={{ display: 'flex', gap: 6, marginBottom: 6, alignItems: 'center' }}>
-            <span title={`시작 바이트 오프셋 ${start} (길이 ${f.length ?? 0})`} style={offBadge}>@{start}</span>
-            <input style={{ ...mono, flex: 2 }} value={f.name ?? ''} placeholder="이름" onChange={(e) => upd(f.id, { name: e.target.value })} />
-            <input style={{ ...mono, width: 54 }} type="number" value={f.length ?? 0} title="바이트 길이" onChange={(e) => upd(f.id, { length: Number(e.target.value) })} />
-            <select style={{ ...field, width: 50 }} value={f.pad ?? 'right'} title="패딩 방향" onChange={(e) => upd(f.id, { pad: e.target.value as 'left' | 'right' })}>
-              <option value="right">→</option>
-              <option value="left">←</option>
-            </select>
-            <input style={{ ...mono, width: 34 }} maxLength={1} value={f.padChar ?? ' '} title="패딩 문자" onChange={(e) => upd(f.id, { padChar: e.target.value })} />
-            <RowMove i={i} len={fields.length} onMove={(d) => onChange(moveInList(fields, i, d))} />
-            <button onClick={() => onChange(fields.filter((x) => x.id !== f.id))} aria-label="삭제" style={{ width: 26, flexShrink: 0, border: '1px solid var(--fl-border)', borderRadius: 6, background: 'var(--fl-surface)', cursor: 'pointer' }}>×</button>
-          </div>
-          {f.bound && !isTokenizable(f.bound) ? (
-            <BindingChip binding={f.bound} sourceType={sourceType(f.bound)} onRemove={() => upd(f.id, { bound: null })} />
-          ) : (
-            <TokenInput
-              ariaLabel={`TCP 필드 ${f.name || ''}`}
-              value={f.bound ? bindingToToken(f.bound) : (f.value ?? '')}
-              onChange={(v) => upd(f.id, { value: v, bound: null })}
-              sources={sources}
-              placeholder="값 또는 { } 로 데이터 삽입"
-            />
-          )}
-        </div>
-      ) })}
-      <div style={{ fontSize: 11, color: 'var(--fl-text-muted)', margin: '2px 0 6px', fontFamily: 'var(--fl-font-mono)' }}>총 {total} 바이트</div>
-      <div style={{ display: 'flex', gap: 6 }}>
-        {/* 문자=우측 공백패딩, 숫자=좌측 0패딩(금융 전문 관례) — 새 필드에 관례 기본값을 미리 채운다 */}
-        <button onClick={() => onChange([...fields, { id: newId(), name: '', length: 10, value: '', pad: 'right', padChar: ' ' }])} style={{ ...addDashed, flex: 1 }} title="우측 공백 패딩(문자 필드 관례)">+ 문자 필드</button>
-        <button onClick={() => onChange([...fields, { id: newId(), name: '', length: 8, value: '', pad: 'left', padChar: '0' }])} style={{ ...addDashed, flex: 1 }} title="좌측 0 패딩(숫자/금액 필드 관례)">+ 숫자 필드</button>
-      </div>
-    </>
-  )
-}
-
-function TcpRespEditor({ fields, onChange }: { fields: TcpRespField[]; onChange: (f: TcpRespField[]) => void }) {
-  const upd = (fid: string, patch: Partial<TcpRespField>) => onChange(fields.map((f) => (f.id === fid ? { ...f, ...patch } : f)))
-  let off = 0
-  const total = fields.reduce((a, f) => a + (f.length ?? 0), 0)
-  return (
-    <>
-      {fields.map((f, i) => {
-        const start = off; off += f.length ?? 0
-        return (
-        <div key={f.id} style={{ display: 'flex', gap: 6, marginBottom: 6, alignItems: 'center' }}>
-          <span title={`시작 바이트 오프셋 ${start} (길이 ${f.length ?? 0})`} style={offBadge}>@{start}</span>
-          <input style={{ ...mono, flex: 2 }} value={f.name ?? ''} placeholder="이름(=출력 키)" onChange={(e) => upd(f.id, { name: e.target.value })} />
-          <input style={{ ...mono, width: 64 }} type="number" value={f.length ?? 0} title="바이트 길이" onChange={(e) => upd(f.id, { length: Number(e.target.value) })} />
-          <RowMove i={i} len={fields.length} onMove={(d) => onChange(moveInList(fields, i, d))} />
-          <button onClick={() => onChange(fields.filter((x) => x.id !== f.id))} aria-label="삭제" style={{ width: 26, flexShrink: 0, border: '1px solid var(--fl-border)', borderRadius: 6, background: 'var(--fl-surface)', cursor: 'pointer' }}>×</button>
-        </div>
-      ) })}
-      <div style={{ fontSize: 11, color: 'var(--fl-text-muted)', margin: '2px 0 6px', fontFamily: 'var(--fl-font-mono)' }}>총 {total} 바이트</div>
-      <button onClick={() => onChange([...fields, { id: newId(), name: '', length: 10 }])} style={addDashed}>+ 응답 필드</button>
-    </>
-  )
-}
-
-/** TCP 요청 전문 미리보기 렌더 — 조립 바이트(hex)·필드 오프셋·오버플로(절단)·패딩 경고. */
-function TcpPreviewBox({ p }: { p: TcpPreview }) {
-  const copyHex = () => { void navigator.clipboard?.writeText(p.hex).catch(() => {}) }
-  return (
-    <div style={{ marginTop: 8, border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', padding: 8 }}>
-      <div style={{ fontSize: 11.5, color: 'var(--fl-text-muted)', marginBottom: 6, fontFamily: 'var(--fl-font-mono)' }}>
-        {p.host || '(host)'}:{p.port} · {p.encoding} · <b style={{ color: 'var(--fl-text)' }}>총 {p.totalBytes}B</b>
-        {p.prefixLen > 0 && <> (프리픽스 {p.prefixLen}B{p.declaredPrefix != null ? `="${String(p.declaredPrefix).padStart(p.prefixLen, '0')}"` : ''} + 본문 {p.bodyBytes}B)</>}
-      </div>
-      {p.fields.length > 0 && (
-        <div style={{ display: 'grid', gap: 2, marginBottom: 6 }}>
-          {p.fields.map((f, i) => (
-            <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 11, fontFamily: 'var(--fl-font-mono)' }}>
-              <span style={offBadge}>@{f.offset}</span>
-              <span style={{ flex: 1, color: 'var(--fl-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.name || '(이름없음)'}</span>
-              <span style={{ color: 'var(--fl-text-muted)' }}>{f.actualBytes}/{f.declaredLen}B</span>
-              {f.truncated && <span title="값이 길이를 초과해 잘림" style={warnTag}>✂ 절단</span>}
-              {f.padded && <span title={`${f.pad === 'left' ? '좌측' : '우측'} 패딩으로 채움`} style={padTag}>{f.pad === 'left' ? '←' : '→'} 패딩</span>}
-            </div>
-          ))}
-        </div>
-      )}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
-        <span style={{ fontSize: 10.5, color: 'var(--fl-text-muted)', fontWeight: 600 }}>HEX</span>
-        <button onClick={copyHex} style={{ ...ghostMini, padding: '1px 6px' }} title="hex 복사">복사</button>
-      </div>
-      <pre style={{ ...singlePre, maxHeight: 120, margin: 0 }}>{p.hex || '(빈 전문)'}</pre>
-      <div style={{ fontSize: 10.5, color: 'var(--fl-text-muted)', fontWeight: 600, margin: '6px 0 2px' }}>텍스트</div>
-      <pre style={{ ...singlePre, maxHeight: 80, margin: 0 }}>{p.printable}</pre>
-    </div>
-  )
-}
-const warnTag: CSSProperties = { fontSize: 9.5, fontWeight: 700, color: 'var(--fl-fail)', border: '1px solid var(--fl-fail)', borderRadius: 4, padding: '0 4px' }
-const padTag: CSSProperties = { fontSize: 9.5, fontWeight: 700, color: 'var(--fl-text-muted)', border: '1px solid var(--fl-border)', borderRadius: 4, padding: '0 4px' }
-
 const shell: CSSProperties = { flexShrink: 0, background: 'var(--fl-surface)', display: 'flex', flexDirection: 'column', height: '100%' }
 // 전체화면 모달 2단 레이아웃 — 요청(좌) | 응답(우) 워크벤치
 const twoColGrid: CSSProperties = { display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', columnGap: 44, alignItems: 'start', marginTop: 8 }
@@ -2074,7 +1919,6 @@ function methodSel(m?: string): CSSProperties {
 const ghostMini: CSSProperties = { padding: '5px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 12, fontWeight: 500 }
 const smartLink: CSSProperties = { marginTop: 6, padding: '4px 8px', border: 'none', background: 'transparent', color: 'var(--fl-primary)', cursor: 'pointer', fontSize: 12, fontWeight: 600, textAlign: 'left' }
 const snippetChip: CSSProperties = { padding: '2px 8px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-pill)', background: 'var(--fl-surface-2)', color: 'var(--fl-text)', cursor: 'pointer', fontSize: 11.5, fontFamily: 'var(--fl-font-mono)' }
-const offBadge: CSSProperties = { flexShrink: 0, fontSize: 10, fontFamily: 'var(--fl-font-mono)', color: 'var(--fl-text-muted)', background: 'var(--fl-surface-2)', borderRadius: 4, padding: '2px 4px', minWidth: 26, textAlign: 'center' }
 function rowMoveBtn(disabled: boolean): CSSProperties {
   return { width: 18, height: 11, border: 'none', background: 'transparent', color: disabled ? 'var(--fl-border)' : 'var(--fl-text-muted)', cursor: disabled ? 'default' : 'pointer', fontSize: 8, lineHeight: '11px', padding: 0 }
 }

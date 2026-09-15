@@ -95,15 +95,14 @@ export interface GraphNode {
   // transform
   transformId?: string
   config?: Record<string, string>
-  // tcp (고정길이 금융 전문)
+  // tcp (고정길이 전문 — 프로토콜 참조)
   tcpHost?: string
   tcpPort?: number
-  tcpEncoding?: string
   tcpTimeoutMs?: number
-  tcpPrefixLength?: number
-  tcpPrefixIncludesSelf?: boolean
-  tcpRequest?: TcpField[]
-  tcpResponse?: TcpRespField[]
+  protocolId?: string
+  tcpMessage?: string                 // 송신 전문 키
+  tcpValues?: Record<string, string>  // 필드 값(토큰 허용)
+  tcpResponseMessage?: string         // 피커용 응답 전문 키
   // note · group (캔버스 주석 — 실행 제외. 백엔드는 raw 저장이라 스키마 변경 없음)
   noteText?: string   // 메모 본문
   noteColor?: string  // 주석 색(yellow/blue/pink/green/gray — nodeMeta.ANNO_COLORS)
@@ -118,24 +117,6 @@ export interface GraphNode {
 export interface SwitchPort {
   id: string
   label?: string
-}
-
-export interface TcpField {
-  id: string
-  name?: string
-  length?: number
-  value?: string | null
-  bound?: Binding | null
-  pad?: 'left' | 'right'
-  padChar?: string
-  encoding?: string
-}
-
-export interface TcpRespField {
-  id: string
-  name?: string
-  length?: number
-  encoding?: string
 }
 
 export interface TransformParam {
@@ -423,31 +404,6 @@ export interface SingleNodeRunResult {
   requestText: string | null
   responseText: string | null
   durationMs?: number | null
-}
-
-// TCP 요청 전문 미리보기(전송 없음) — 백엔드가 바이트 단위로 조립한 결과
-export interface TcpPreviewField {
-  name?: string | null
-  offset: number       // 전문 시작 기준 절대 오프셋(프리픽스 포함)
-  declaredLen: number
-  actualBytes: number  // 값의 원시 바이트 수(패딩/절단 전)
-  truncated: boolean   // 초과 절단됨
-  padded: boolean      // 패딩으로 채움
-  pad: 'left' | 'right'
-  text: string
-  encoding: string
-}
-export interface TcpPreview {
-  host: string
-  port: number
-  encoding: string
-  totalBytes: number
-  prefixLen: number
-  declaredPrefix: number | null
-  bodyBytes: number
-  hex: string          // 공백 구분 2자리 hex
-  printable: string
-  fields: TcpPreviewField[]
 }
 
 export interface ExecutionDetail {

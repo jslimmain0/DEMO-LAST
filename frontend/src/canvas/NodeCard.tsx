@@ -1,5 +1,7 @@
+import { useQuery } from '@tanstack/react-query'
 import { Handle, Position } from '@xyflow/react'
 import type { NodeProps } from '@xyflow/react'
+import { protocolsApi } from '../api/client'
 import type { HttpMethod } from '../api/types'
 import { MethodTag } from '../components/MethodTag'
 import { getReachInfoCached } from '../lib/reachable'
@@ -26,7 +28,9 @@ export function NodeCard({ data, selected }: NodeProps) {
   const isEnd = n.type === 'end'
   const isHttp = n.type === 'http'
   const isTcp = n.type === 'tcp'
-  const tcpReqLen = (n.tcpRequest ?? []).reduce((a, f) => a + (f.length ?? 0), 0)
+  // 프로토콜 이름을 보여주려면 목록이 필요 — TCP 노드일 때만 조회(Editor 가 QueryClientProvider 로 감싸고 있다)
+  const protos = useQuery({ queryKey: ['protocols'], queryFn: protocolsApi.list, staleTime: 30_000, enabled: isTcp })
+  const pname = protos.data?.find((p) => p.id === n.protocolId)?.name
 
   const showUnreachable = unreachable && !selected && !runState && !waiting && !running
   const borderColor = waiting
@@ -119,10 +123,12 @@ export function NodeCard({ data, selected }: NodeProps) {
       {!collapsed && isTcp && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 12px', borderTop: '1px solid var(--fl-border)', background: 'var(--fl-surface-2)' }}>
           <span style={{ flexShrink: 0, fontSize: 9.5, fontWeight: 700, fontFamily: 'var(--fl-font-mono)', padding: '2px 5px', borderRadius: 'var(--fl-radius-pill)', color: 'var(--fl-primary)', background: 'rgba(97,85,245,.12)' }}>TCP</span>
-          <span title={`${n.tcpHost ?? ''}:${n.tcpPort ?? ''} · 요청 ${(n.tcpRequest ?? []).length}필드 ${tcpReqLen}B`} style={{ flex: 1, minWidth: 0, fontFamily: 'var(--fl-font-mono)', fontSize: 11.5, color: 'var(--fl-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <span title={`${pname ?? '(프로토콜 없음)'} · 전문 ${n.tcpMessage || '(미선택)'}`} style={{ flex: 1, minWidth: 0, fontSize: 11.5, color: 'var(--fl-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {pname ?? '(프로토콜 없음)'} · <span style={{ fontFamily: 'var(--fl-font-mono)' }}>{n.tcpMessage || '?'}</span>
+          </span>
+          <span title={`${n.tcpHost ?? ''}:${n.tcpPort ?? ''}`} style={{ flexShrink: 0, maxWidth: 92, fontSize: 10, fontFamily: 'var(--fl-font-mono)', color: 'var(--fl-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {(n.tcpHost || '(host)') + (n.tcpPort ? ':' + n.tcpPort : '')}
           </span>
-          <span title={`요청 전문 ${tcpReqLen}바이트`} style={{ flexShrink: 0, fontSize: 10, fontFamily: 'var(--fl-font-mono)', color: 'var(--fl-text-muted)' }}>{tcpReqLen}B</span>
         </div>
       )}
 

@@ -20,6 +20,8 @@ type NData = {
   transformId?: string
   waitFields?: { key?: string }[]
   tcpHost?: string
+  protocolId?: string
+  tcpMessage?: string
 }
 
 function d(n: Node): NData {
@@ -47,7 +49,11 @@ export function collectIssues(nodes: Node[], edges: Edge[]): FlowIssue[] {
     else if (t === 'form' && blank(nd.formAction)) out.push({ nodeId: n.id, label, detail: '열기 URL 이 비어 있음', severity: 'error' })
     else if (t === 'transform' && blank(nd.transformId)) out.push({ nodeId: n.id, label, detail: '변환 미선택', severity: 'error' })
     else if (t === 'input' && (nd.waitFields ?? []).filter((f) => f.key?.trim()).length === 0) out.push({ nodeId: n.id, label, detail: '입력 필드 없음', severity: 'error' })
-    else if (t === 'tcp' && blank(nd.tcpHost)) out.push({ nodeId: n.id, label, detail: 'TCP 대상(host) 비어 있음', severity: 'error' })
+    else if (t === 'tcp') {
+      if (blank(nd.tcpHost)) out.push({ nodeId: n.id, label, detail: 'TCP 대상(host) 비어 있음', severity: 'error' })
+      if (blank(nd.protocolId)) out.push({ nodeId: n.id, label, detail: '프로토콜 미선택', severity: 'error' })
+      else if (blank(nd.tcpMessage)) out.push({ nodeId: n.id, label, detail: '전문(거래코드) 미선택', severity: 'error' })
+    }
   }
   // 시작 노드 부재(실행 자체 불가)
   if (!info.hasStart && nodes.some((n) => { const t = d(n).type; return t && t !== 'note' && t !== 'group' })) {

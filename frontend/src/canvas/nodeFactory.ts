@@ -48,11 +48,9 @@ export function makeNode(type: NodeType, x: number, y: number): GraphNode {
     case 'tcp':
       return {
         id, name: 'TCP 전문', type: 'tcp', cat: 'tcp', x, y,
-        tcpHost: '127.0.0.1', tcpPort: 9000, tcpEncoding: 'EUC-KR', tcpTimeoutMs: 5000,
-        tcpPrefixLength: 4, tcpPrefixIncludesSelf: false,
-        tcpRequest: [{ id: newId(), name: 'msgType', length: 4, value: '', pad: 'right', padChar: ' ' }],
-        tcpResponse: [{ id: newId(), name: 'result', length: 10 }],
-        outputs: [{ key: 'result', type: 'string' }],
+        tcpHost: '127.0.0.1', tcpPort: 9600, tcpTimeoutMs: 5000,
+        protocolId: '', tcpMessage: '', tcpValues: {}, tcpResponseMessage: '',
+        outputs: [],
       }
     case 'note':
       return { id, name: '메모', type: 'note', cat: 'note', x, y, noteText: '', noteColor: 'yellow' }

@@ -27,7 +27,6 @@ import type {
   SingleNodeRunResult,
   SkillsUpdateRequest,
   SkillsView,
-  TcpPreview,
 } from './types'
 
 // 동일 오리진 호출 — dev 는 Vite 프록시(/api → 18080), 운영은 context path(appBase, `<base href>`) 를 앞에 붙인다
@@ -186,8 +185,9 @@ export const mocksApi = {
   reset: (id: string) => http.post(`/mock-servers/${id}/reset`).then(() => undefined),
   state: (id: string) => http.get<import('./types').MockStateView>(`/mock-servers/${id}/state`).then((r) => r.data),
   // TCP 전문 미리보기 — 편집 중 tcp 섹션(미저장) + 샘플 요청 → 요청 필드 분해·매칭 규칙·응답 바이트(저장/소켓 없음)
+  // ponytail: 응답 타입은 Mock TCP 재작업(프로토콜 참조)과 함께 정해진다 — 그때까지 unknown
   tcpPreview: (tcp: import('./types').MockTcpSpec, sample: string, codec?: import('./types').MockCodecSpec | null, environment?: string | null) =>
-    http.post<import('./types').MockTcpPreview>('/mock-servers/tcp-preview', { tcp, sample, codec: codec ?? null, environment: environment ?? null }).then((r) => r.data),
+    http.post<unknown>('/mock-servers/tcp-preview', { tcp, sample, codec: codec ?? null, environment: environment ?? null }).then((r) => r.data),
   // 코덱 시험(HTTP) — 미저장 코덱 + 샘플 전문 → 단계별 입력/출력(서버가 실제 시크릿으로 계산, 결과는 마스킹)
   codecTry: (id: string, body: { codec: import('./types').MockCodecSpec; environment?: string | null; side: 'request' | 'response'; message: string; headers?: Record<string, string>; contentType?: string }) =>
     http.post<import('./types').MockCodecTryResult>(`/mock-servers/${id}/codec-try`, body).then((r) => r.data),
@@ -265,7 +265,7 @@ export const runsApi = {
     http.post<SingleNodeRunResult>(`/flows/${flowId}/nodes/${nodeId}/run`, body ?? {}).then((r) => r.data),
   // TCP 요청 전문 미리보기(전송 없음) — 편집 중 노드를 실어 미저장 편집을 실시간 반영
   tcpPreview: (flowId: string, nodeId: string, node: GraphNode) =>
-    http.post<TcpPreview>(`/flows/${flowId}/nodes/${nodeId}/tcp-preview`, node).then((r) => r.data),
+    http.post<import('./types').ProtocolPreview>(`/flows/${flowId}/nodes/${nodeId}/tcp-preview`, node).then((r) => r.data),
   recent: (limit = 50, workspaceId?: string) =>
     http.get<ExecutionSummary[]>('/executions', { params: { limit, ...(workspaceId && workspaceId !== 'public' ? { workspaceId } : {}) } }).then((r) => r.data),
   // 서버측 필터/페이지네이션 — status/flowId/기간(epoch ms)/offset

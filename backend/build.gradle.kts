@@ -21,6 +21,9 @@ kotlin {
     jvmToolchain(21)
     compilerOptions {
         freeCompilerArgs.add("-Xjsr305=strict")   // Spring 널 안전 애노테이션 엄격 적용
+        // 인터페이스 default 메서드를 진짜 JVM default 로 방출(+DefaultImpls 유지) — 변환 SPI(FlowTransform)에
+        // default 메서드를 추가해도 구 버전으로 컴파일된 플러그인 JAR 가 AbstractMethodError 없이 동작하게.
+        freeCompilerArgs.add("-Xjvm-default=all-compatibility")
     }
 }
 
@@ -29,9 +32,6 @@ repositories {
 }
 
 dependencies {
-    // --- 변환 SPI (물리 모듈 — 플러그인과 공유하는 계약) ---
-    implementation(project(":transform-spi"))
-
     // --- Web / API ---
     implementation("org.springframework.boot:spring-boot-starter-web")
     implementation("org.springframework.boot:spring-boot-starter-validation")

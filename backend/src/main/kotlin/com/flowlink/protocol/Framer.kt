@@ -35,6 +35,7 @@ object Framer {
                 if (got == 0 && allowEmptyEof) return null
                 throw FrameException("수신 중 연결 종료 ($got/$n 바이트)", buf.copyOf(got))
             }
+            if (r == 0) throw FrameException("스트림이 진행하지 않습니다(0바이트 읽기, $got/$n 바이트)", buf.copyOf(got))
             chunks.add(r)
             got += r
         }

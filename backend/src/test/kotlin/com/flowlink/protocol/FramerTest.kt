@@ -66,4 +66,13 @@ class FramerTest {
         val small = ProtocolCodec.withLength(spec, msg, 2)
         assertThatThrownBy { Framer.readFrame(ByteArrayInputStream(small), spec) }.hasMessageContaining("잘못된 전문 길이")
     }
+
+    @Test
+    fun `read 가 0바이트를 반환하면 무한루프 대신 예외`() {
+        val stuck = object : InputStream() {
+            override fun read(): Int = throw UnsupportedOperationException()
+            override fun read(b: ByteArray, off: Int, len: Int): Int = 0
+        }
+        assertThatThrownBy { Framer.readFrame(stuck, spec) }.isInstanceOf(Framer.FrameException::class.java).hasMessageContaining("0바이트")
+    }
 }

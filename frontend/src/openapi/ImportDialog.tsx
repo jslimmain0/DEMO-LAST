@@ -5,10 +5,11 @@ import { Modal } from '../components/Modal'
 import { makeNode } from '../canvas/nodeFactory'
 import { parseCurl } from '../lib/curl'
 import { newId } from '../lib/ids'
+import { MockImportBody } from './MockImportBody'
 import { OpenApiImportBody } from './OpenApiImportDialog'
 import { WorkflowImportBody } from './WorkflowIODialog'
 
-type Tab = 'workflow' | 'openapi' | 'curl'
+type Tab = 'workflow' | 'openapi' | 'curl' | 'mock'
 
 /**
  * 통합 가져오기 다이얼로그 — 흩어져 있던 세 진입점(워크플로 JSON·OpenAPI/Swagger·cURL)을 탭 하나로 통합.
@@ -39,6 +40,7 @@ export function ImportDialog({
             <button onClick={() => setTab('workflow')} style={tabBtn(tab === 'workflow')}>워크플로 JSON</button>
             <button onClick={() => setTab('openapi')} style={tabBtn(tab === 'openapi')}>OpenAPI / Swagger</button>
             <button onClick={() => setTab('curl')} style={tabBtn(tab === 'curl')}>cURL</button>
+            <button onClick={() => setTab('mock')} style={tabBtn(tab === 'mock')}>Mock 서버</button>
           </div>
           <button onClick={onClose} aria-label="닫기" style={{ marginLeft: 'auto', border: 'none', background: 'transparent', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 18 }}>×</button>
         </header>
@@ -46,6 +48,7 @@ export function ImportDialog({
         {tab === 'workflow' && <WorkflowImportBody onImport={onImportGraph} onClose={onClose} />}
         {tab === 'openapi' && <OpenApiImportBody onImport={onImportPalette} onClose={onClose} />}
         {tab === 'curl' && <CurlImportBody onImport={onImportNode} onClose={onClose} />}
+        {tab === 'mock' && <MockImportBody onImport={onImportPalette} onClose={onClose} />}
       </Modal>
   )
 }

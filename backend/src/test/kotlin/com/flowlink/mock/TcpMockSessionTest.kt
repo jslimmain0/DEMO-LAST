@@ -88,6 +88,20 @@ class TcpMockSessionTest {
     }
 
     @Test
+    fun `then 없는 규칙도 drop, reset 은 동작`() {
+        val (rst, reset) = run(session(listOf(MockTcpRule("r", null, null, MockTcpFault(reset = true)))))
+        assertThat(rst).isEmpty(); assertThat(reset).isTrue()
+        assertThat(logs.none { it.level == "error" }).isTrue() // "응답 전문 정의 없음" 오해 로그가 없어야 한다
+        logs.clear()
+        val (drop, _) = run(session(listOf(MockTcpRule("r", null, null, MockTcpFault(drop = true)))))
+        assertThat(drop).isEmpty()
+        assertThat(logs.last().level).isEqualTo("warn"); assertThat(logs.last().note).contains("drop")
+        logs.clear()
+        val (none, _) = run(session(listOf(MockTcpRule("r", null, null, null))))
+        assertThat(none).isEmpty(); assertThat(logs.last().note).contains("then 없음")
+    }
+
+    @Test
     fun `proxy - upstream 으로 통과, 양방향 로그, upstream 없음은 에러 로그`() {
         // 가짜 upstream: 요청을 읽고 0211 로 응답
         val toUp = PipedOutputStream(); val upIn = PipedInputStream(toUp, 1 shl 16)
@@ -129,5 +143,7 @@ class TcpMockSessionTest {
             ProtocolCodec.NO_PLUGINS, mapOf("apiKey" to "SECRET1"), { 1L }, { logs.add(it) }, { null }, mask = { it.replace("SECR", "••••") })
         run(s)
         assertThat(logs.last().text).doesNotContain("SECR")
+        assertThat(logs.last().hex).isEmpty() // 마스킹된 행은 hex 로도 원문이 새면 안 된다
+        assertThat(logs.last().note).contains("hex 생략")
     }
 }

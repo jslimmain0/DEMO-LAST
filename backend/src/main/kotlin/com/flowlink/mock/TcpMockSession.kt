@@ -65,6 +65,15 @@ class TcpMockSession(
         if (rule == null) notes += "매칭 규칙 없음 — 응답 없음"
         log(entry("in", source, decoded.disc ?: decoded.messageKey, values, frame.bytes, frame.chunks, rule?.id, notes.joinToString(" · ").ifEmpty { null }, if (rule == null || decoded.warnings.isNotEmpty()) "warn" else "info"))
         if (rule == null) return true
+        // 응답을 만들기 전에 끊는 장애부터 — then 이 없거나 upstream 이 죽어도 drop/reset 은 그대로 동작해야 한다
+        val f = rule.fault
+        if (f?.drop == true || f?.reset == true) {
+            val delay = f.delayMs ?: 0
+            if (delay > 0) sleeper(delay.toLong())
+            if (f.drop == true) { log(entry("out", source, null, emptyMap(), ByteArray(0), null, rule.id, "drop — 무응답(연결 유지)", "warn")); return true }
+            onReset(); log(entry("out", source, null, emptyMap(), ByteArray(0), null, rule.id, "reset — 연결 강제 종료(RST)", "warn")); return false
+        }
+        if (rule.then == null) { log(entry("out", source, null, emptyMap(), ByteArray(0), null, rule.id, "then 없음 — 응답 없음", "warn")); return true }
         val resp = if (rule.isProxy()) proxy(frame, rule) else mockResponse(rule, decoded)
         resp ?: return true
         return writeWithFault(resp, rule, output, onReset, source)
@@ -135,8 +144,6 @@ class TcpMockSession(
         val f: MockTcpFault? = rule.fault
         val delay = f?.delayMs ?: 0
         if (delay > 0) sleeper(delay.toLong())
-        if (f?.drop == true) { log(entry("out", source, null, emptyMap(), ByteArray(0), null, rule.id, "drop — 무응답(연결 유지)", "warn")); return true }
-        if (f?.reset == true) { onReset(); log(entry("out", source, null, emptyMap(), ByteArray(0), null, rule.id, "reset — 연결 강제 종료(RST)", "warn")); return false }
         var b = bytes
         if (f?.corruptLength == true) {
             // binary 길이 필드는 +7 이 표현 범위를 넘을 수 있다 — 그땐 원본 그대로 보내고 경고만 남긴다.
@@ -152,17 +159,25 @@ class TcpMockSession(
         if (split != null && split in 1 until b.size) {
             output.write(b, 0, split); output.flush(); sleeper(300L); output.write(b, split, b.size - split)
             log(entry("out", source, null, emptyMap(), ByteArray(0), listOf(split, b.size - split), rule.id, "split — ${split}B 보내고 300ms 뒤 나머지", "warn"))
-        } else output.write(b)
+        } else {
+            if (split != null) log(entry("out", source, null, emptyMap(), ByteArray(0), null, rule.id, "split 무시 — splitAt=$split, 전문 ${b.size}B", "warn"))
+            output.write(b)
+        }
         output.flush()
         return true
     }
 
     // ---------- 로그 ----------
 
-    private fun entry(dir: String, source: String, key: String?, fields: Map<String, String>, bytes: ByteArray, chunks: List<Int>?, ruleId: String?, note: String?, level: String) =
-        MockRuntimeStore.TcpLogEntry(
+    private fun entry(dir: String, source: String, key: String?, fields: Map<String, String>, bytes: ByteArray, chunks: List<Int>?, ruleId: String?, note: String?, level: String): MockRuntimeStore.TcpLogEntry {
+        val raw = TcpBytes.decodeEscaped(bytes, cs).map { if (it.code < 0x20) '.' else it }.joinToString("")
+        val text = mask(raw)
+        val hidden = text != raw // 시크릿이 전문에 실려 있었다 — hex 로 원문이 새지 않게 통째로 뺀다
+        val n = note?.let { mask(it) }
+        return MockRuntimeStore.TcpLogEntry(
             Instant.now(), dir, source, key, fields.mapValues { mask(it.value) },
-            mask(TcpBytes.decodeEscaped(bytes, cs).map { if (it.code < 0x20) '.' else it }.joinToString("")),
-            TcpBytes.hexDump(bytes), bytes.size, chunks, ruleId, note?.let { mask(it) }, level,
+            text, if (hidden) "" else TcpBytes.hexDump(bytes), bytes.size, chunks, ruleId,
+            if (hidden) (n?.plus(" · ") ?: "") + "hex 생략(시크릿 마스킹)" else n, level,
         )
+    }
 }

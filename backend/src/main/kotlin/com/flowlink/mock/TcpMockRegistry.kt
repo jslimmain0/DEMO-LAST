@@ -192,12 +192,13 @@ class TcpMockRegistry(
         sock.use {
             try {
                 sock.soTimeout = 30_000
+                val tcp = l.tcp // 연결 시작 시점 스냅샷 — 핫스왑이 규칙과 upstream 을 섞지 않게
                 val secrets = secretProvider.secrets(l.tenantId, l.environment)
                 val masks = SecretMasker.variants(secrets.values)
                 val session = TcpMockSession(
-                    l.protocol, l.tcp, ProtocolCodec.PluginLookup { transforms.codec(it) }, secrets,
+                    l.protocol, tcp, ProtocolCodec.PluginLookup { transforms.codec(it) }, secrets,
                     { store.seqNext(l.mockId) }, { store.recordTcp(l.mockId, it) },
-                    upstreamFactory = { openUpstream(l.tcp) },
+                    upstreamFactory = { openUpstream(tcp) },
                     mask = { s -> SecretMasker.mask(s, masks) ?: s },
                 )
                 session.serve(sock.getInputStream(), sock.getOutputStream()) {

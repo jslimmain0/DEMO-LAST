@@ -26,9 +26,6 @@ class MockContext(
 ) {
     fun withReq(r: MockRequest): MockContext =
         MockContext(r, pathParams, seq, state, secrets, tcpFields, json)
-
-    fun withTcp(fields: Map<String, String>): MockContext =
-        MockContext(req, pathParams, seq, state, secrets, fields, json)
 }
 
 /**

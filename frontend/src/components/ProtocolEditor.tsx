@@ -5,8 +5,11 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import type { CSSProperties } from 'react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { codecsApi, protocolsApi } from '../api/client'
+import { adminApi, codecsApi, protocolsApi } from '../api/client'
 import type { CodecInfo, PluginRef, ProtocolDetail, ProtocolField, ProtocolSpec } from '../api/types'
+import { useAuth } from '../auth/AuthContext'
+import { AssistantLoginGate } from './AssistantLoginGate'
+import { ProtocolAssistantPanel } from './ProtocolAssistantPanel'
 import { fieldsOf, lengthNumbers, parsePastedTable, splitPasted, tableLen } from '../lib/protocolSpec'
 import { apiErrorMessage } from '../lib/apiError'
 import { AskDialog } from './AskDialog'
@@ -27,6 +30,10 @@ export function ProtocolEditor({ detail, canEdit, onSaved }: { detail: ProtocolD
   const [errors, setErrors] = useState<string[]>([])
   const [ask, setAsk] = useState<AskSpec | null>(null)
   const [pasting, setPasting] = useState(false)
+  const [aiOpen, setAiOpen] = useState(false)
+  const { isGuest } = useAuth()
+  const aiMe = useQuery({ queryKey: ['admin', 'me'], queryFn: adminApi.me, staleTime: 30_000 })
+  const aiPending = aiMe.data?.myStatus === 'PENDING'
   const ro = !canEdit
 
   const setSpec = (s: ProtocolSpec) => { setSpecRaw(s); setDirty(true) }
@@ -92,6 +99,10 @@ export function ProtocolEditor({ detail, canEdit, onSaved }: { detail: ProtocolD
 
   return (
     <div style={{ height: '100%', overflowY: 'auto' }}>
+      {aiOpen && (isGuest || aiPending
+        ? <AssistantLoginGate reason={isGuest ? 'guest' : 'pending'} variant="overlay" onClose={() => setAiOpen(false)} />
+        : <ProtocolAssistantPanel spec={spec} onClose={() => setAiOpen(false)}
+            onApply={(s) => { setSpec(s); if (!s.messages.some((m) => m.key === tab)) setTab(s.messages[0]?.key ?? '') }} />)}
       <div style={topBar}>
         <input aria-label="프로토콜 이름" value={name} disabled={ro}
           onChange={(e) => { setName(e.target.value); setDirty(true) }}
@@ -100,6 +111,7 @@ export function ProtocolEditor({ detail, canEdit, onSaved }: { detail: ProtocolD
         <span style={{ flex: 1 }} />
         {canEdit && <button onClick={() => save.mutate()} disabled={!dirty || save.isPending} style={{ ...primaryBtn, ...(dirty ? null : { opacity: 0.5 }) }} title="Ctrl+S">{save.isPending ? '저장 중…' : '저장'}</button>}
         {canEdit && <button onClick={() => duplicate.mutate()} disabled={duplicate.isPending} style={ghostBtn}>복제</button>}
+        {canEdit && <button onClick={() => setAiOpen((v) => !v)} style={{ ...ghostBtn, border: '1px solid var(--fl-primary)', color: 'var(--fl-primary)' }} title="명세서 표를 붙여넣거나 말로 설명하면 프로토콜을 만들어 줍니다">✨ AI</button>}
         {canEdit && (
           <button style={{ ...ghostBtn, color: 'var(--fl-fail)' }}
             onClick={() => setAsk({ title: '프로토콜 삭제', message: `"${name}" 을 삭제합니다. 이 프로토콜을 쓰는 TCP 노드·Mock 은 참조가 끊깁니다. 계속할까요?`, confirmLabel: '삭제', danger: true, onConfirm: () => remove.mutate() })}>삭제</button>

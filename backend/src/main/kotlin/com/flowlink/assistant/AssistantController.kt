@@ -23,6 +23,7 @@ class AssistantController(
     private val skills: SkillService,
     private val sessions: AssistantSessionService,
     private val mockAssistant: MockAssistantService,
+    private val protocolAssistant: ProtocolAssistantService,
     private val workspace: com.flowlink.workspace.WorkspaceService,
 ) {
 
@@ -45,6 +46,10 @@ class AssistantController(
     /** Mock 어시스턴트 — 이력 + 현재 mock spec 을 받아 답변 + (선택)제안 spec 을 반환. */
     @PostMapping("/mock")
     fun mockChat(@RequestBody req: MockAssistantChatRequest): MockAssistantChatResponse { requireApproved(); return mockAssistant.chat(req) }
+
+    /** 프로토콜 어시스턴트 — 명세서 표/설명 + 현재 spec 을 받아 답변 + (선택)제안 ProtocolSpec 을 반환. */
+    @PostMapping("/protocol")
+    fun protocolChat(@RequestBody req: ProtocolAssistantChatRequest): ProtocolAssistantChatResponse { requireApproved(); return protocolAssistant.chat(req) }
 
     /** 지침 + 스킬(내장/사용자 플로우 조각) 조회. */
     @GetMapping("/skills")

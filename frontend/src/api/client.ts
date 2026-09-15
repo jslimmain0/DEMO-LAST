@@ -297,6 +297,9 @@ export const assistantApi = {
   // Mock 어시스턴트 — 자연어로 mock spec 생성/수정
   mockChat: (body: import('./types').MockAssistantChatRequest) =>
     http.post<import('./types').MockAssistantChatResponse>('/assistant/mock', body).then((r) => r.data),
+  // 프로토콜 어시스턴트 — 명세서 표/설명 + 현재 spec → 제안 ProtocolSpec
+  protocolChat: (body: import('./types').ProtocolAssistantChatRequest) =>
+    http.post<import('./types').ProtocolAssistantChatResponse>('/assistant/protocol', body).then((r) => r.data),
   // 대화 세션 — 사용자별 저장·목록·이어하기
   sessions: () => http.get<SessionSummary[]>('/assistant/sessions').then((r) => r.data),
   getSession: (id: string) => http.get<SessionDetail>(`/assistant/sessions/${id}`).then((r) => r.data),

@@ -11,6 +11,7 @@ import { Editor } from './routes/Editor'
 import { Executions } from './routes/Executions'
 import { MockServers } from './routes/MockServers'
 import { MockServerEditor } from './routes/MockServerEditor'
+import { Protocols } from './routes/Protocols'
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { refetchOnWindowFocus: false, retry: 1 } },
@@ -32,6 +33,8 @@ export default function App() {
             <Route path="/executions" element={<Executions />} />
             <Route path="/mocks" element={<MockServers />} />
             <Route path="/mocks/:id" element={<MockServerEditor />} />
+            <Route path="/protocols" element={<Protocols />} />
+            <Route path="/protocols/:id" element={<Protocols />} />
             <Route path="/admin" element={<Admin />} />
             <Route path="*" element={<Navigate to="/flows" replace />} />
           </Routes>

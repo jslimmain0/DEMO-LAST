@@ -9,7 +9,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties
 @JsonIgnoreProperties(ignoreUnknown = true)
 data class MockSpec(
     val routes: List<MockRoute>?,
-    /** TCP mock(고정길이 전문) — 있으면 백엔드가 지정 포트에 TCP 리스너를 연다. */
+    /** TCP mock(고정길이 전문) — 있으면 백엔드가 지정 포트에 TCP 리스너를 연다(프로토콜 참조). */
     val tcp: MockTcp? = null,
     /**
      * 전문 코덱(서버 전체) — 요청 전문이 매칭·템플릿에 들어가기 **전**(request) / 응답 전문을 다 만든 뒤 나가기 **전**(response)
@@ -24,73 +24,34 @@ data class MockSpec(
 ) {
     fun routesOrEmpty(): List<MockRoute> = routes ?: emptyList()
 
-    /**
-     * TCP mock 정의 — 길이 프리픽스(기본 4바이트 ASCII, 자기 미포함) 전문을 받아
-     * 규칙(contains 매칭) 첫 일치의 응답 템플릿을 같은 규약으로 돌려준다.
-     * 템플릿: {{req}} = 요청 전문 전체, {{req:오프셋:길이}} = 바이트 슬라이스(디코딩 후 삽입).
-     */
+    /** TCP mock — 프로토콜(필드 스키마)을 참조하는 리스너. 규칙은 위에서부터 첫 매칭(when 비면 전부). */
     @JsonIgnoreProperties(ignoreUnknown = true)
     data class MockTcp(
-        val enabled: Boolean?,           // 기본 true(서버 enabled 와 AND)
-        val port: Int?,                  // 1024~65535
-        val charset: String?,            // 기본 EUC-KR(금융 전문 관례)
-        val prefixLength: Int?,          // 기본 4. 0 = 프리픽스 없음(연결당 1전문, EOF 까지 읽음)
-        val prefixIncludesSelf: Boolean?,
-        val rules: List<MockTcpRule>?,
-        /** 요청 전문 레이아웃 — 앞에서부터 바이트 길이대로 잘라 필드명을 붙인다({{req.이름}}·필드 조건). 없으면 슬라이스 토큰만. */
-        val requestFields: List<MockTcpReqField>? = null
-    ) {
-        fun rulesOrEmpty(): List<MockTcpRule> = rules ?: emptyList()
-        fun requestFieldsOrEmpty(): List<MockTcpReqField> = requestFields ?: emptyList()
-    }
+        val port: Int?,                 // 1024~65535
+        val protocolId: String?,        // flowlink_protocol id — 없으면 리스너를 열지 않는다
+        val upstream: String? = null,   // "host:port" — proxy 규칙의 실서버
+        val timeoutMs: Int? = null,     // upstream 연결/응답 타임아웃(기본 5000)
+        val rules: List<MockTcpRule>? = null,
+    ) { fun rulesOrEmpty(): List<MockTcpRule> = rules ?: emptyList() }
 
-    /** 요청 전문 필드(레이아웃) — 이름 + 바이트 길이(+필드별 인코딩). 오프셋은 선언 순서로 누적. */
     @JsonIgnoreProperties(ignoreUnknown = true)
-    data class MockTcpReqField(
-        val id: String?,
-        val name: String?,
-        val length: Int?,
-        val encoding: String? = null
-    )
-
-    /**
-     * TCP 규칙 — [contains](디코딩 전문 포함 문자열) AND [when](요청 필드 조건) 모두 만족하면 매칭(둘 다 비면 기본 규칙).
-     * 응답: [responseFields] 가 있으면 필드별 바이트 조립(길이·패딩·인코딩), 없으면 [response] 텍스트 템플릿.
-     */
-    @JsonIgnoreProperties(ignoreUnknown = true)
-    data class MockTcpRule(
-        val id: String?,
-        val contains: String?,
-        val response: String?,
-        val `when`: List<MockTcpCond>? = null,
-        val responseFields: List<MockTcpRespField>? = null
-    ) {
+    data class MockTcpRule(val id: String?, val `when`: List<MockTcpCond>? = null, val then: MockTcpThen? = null, val fault: MockTcpFault? = null) {
         fun whenOrEmpty(): List<MockTcpCond> = `when` ?: emptyList()
-        fun responseFieldsOrEmpty(): List<MockTcpRespField> = responseFields ?: emptyList()
+        fun isProxy(): Boolean = then?.mode.equals("proxy", ignoreCase = true)
+        fun thenFields(): Map<String, String> = then?.fields ?: emptyMap()
     }
 
-    /** 요청 필드 조건 — field(requestFields 이름) op(eq|ne|contains|startswith|endswith|regex|exists) value. 비교 전 값은 trim. */
+    /** then — mode=mock 이면 fields(응답 필드 템플릿, discriminator 값이 응답 표를 고름) / mode=proxy 면 upstream 통과. */
     @JsonIgnoreProperties(ignoreUnknown = true)
-    data class MockTcpCond(
-        val field: String?,
-        val op: String?,
-        val value: String?
-    )
+    data class MockTcpThen(val mode: String? = null, val fields: Map<String, String>? = null)
 
-    /**
-     * 응답 필드 — 값 템플릿({{req.이름}}·{{req}}·{{req:o:l}}·{{seq}}·{{now}}·{{uuid}})을 [length] 바이트 고정길이로.
-     * pad=left|right(기본 right), padChar 기본 공백, encoding 은 필드별(없으면 tcp.charset).
-     */
+    /** 요청 필드 조건 — field(헤더/본문 필드명) op(eq|ne|contains|startswith|endswith|regex|exists) value. 비교 전 trim. */
     @JsonIgnoreProperties(ignoreUnknown = true)
-    data class MockTcpRespField(
-        val id: String?,
-        val name: String?,
-        val length: Int?,
-        val value: String?,
-        val pad: String? = null,
-        val padChar: String? = null,
-        val encoding: String? = null
-    )
+    data class MockTcpCond(val field: String?, val op: String?, val value: String?)
+
+    /** 장애 주입 — mock·proxy 응답 공통. */
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    data class MockTcpFault(val delayMs: Int? = null, val splitAt: Int? = null, val drop: Boolean? = null, val reset: Boolean? = null, val corruptLength: Boolean? = null)
 
     /**
      * 전문 코덱 — request/response 각각 플러그인 단계 목록(순서대로 체인). null/빈 목록 = 미적용.

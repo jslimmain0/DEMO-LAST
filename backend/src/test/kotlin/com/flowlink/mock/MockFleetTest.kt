@@ -37,6 +37,8 @@ class MockFleetTest {
     @Autowired lateinit var mockService: MockServerService
     @Autowired lateinit var userRepo: com.flowlink.core.repository.AppUserRepository
     @Autowired lateinit var tcpRegistry: TcpMockRegistry
+    @Autowired lateinit var protocols: com.flowlink.protocol.ProtocolService
+    @Autowired lateinit var json: com.flowlink.common.json.JsonService
 
     @AfterEach
     fun clear() = SecurityContextHolder.clearContext()
@@ -62,8 +64,15 @@ class MockFleetTest {
         val teamId = UUID.fromString(team.id)
         ws.putMember(teamId, "bob", WorkspaceMember.ROLE_VIEWER)
         val teamMock = mockService.create(MockDtos.CreateMockServerRequest("팀 결제", "fleet-team-pay", "HTTP", team.id))
+        // TCP Mock 은 프로토콜(필드 스키마)을 참조해야 리스너가 열린다
+        val proto = protocols.create("플릿 전문", json.readTree("""
+            {"encoding":"EUC-KR","lengthField":"전문길이","discriminator":"거래코드",
+             "header":[{"name":"전문길이","len":4,"type":"length"},{"name":"거래코드","len":4,"type":"ascii"}],
+             "messages":[{"key":"0200","fields":[{"name":"계좌번호","len":10,"type":"ascii"}]}]}
+        """.trimIndent()))
         val publicTcp = mockService.create(MockDtos.CreateMockServerRequest("공용 전문", "fleet-public-tcp", "TCP", null))
-        val tcpPort = mockService.parseSpec(mockService.get(publicTcp.id).spec.toString()).tcp!!.port!!
+        val tcpPort = tcpRegistry.pickFreePort(9310)
+        mockService.updateSpec(publicTcp.id, json.readTree("""{"tcp":{"port":$tcpPort,"protocolId":"${proto.id}","rules":[]}}"""))
         try {
             // --- 비멤버 mallory: 팀 워크스페이스는 목록에 있으나 myRole=null, 팀 Mock 은 readable=false + 라우트 비움
             asUser("mallory")

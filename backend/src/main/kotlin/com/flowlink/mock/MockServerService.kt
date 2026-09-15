@@ -275,19 +275,6 @@ class MockServerService(
 
     /** 요청 기록(journal, 최신순) — 테넌트 소유 확인 후. */
     @Transactional(readOnly = true)
-    /** TCP 전문 미리보기(저장·소켓 없음) — 코덱/시크릿 환경까지 실제 리스너와 같은 경로. 잘못된 길이·코덱 실패는 400. */
-    fun previewTcp(req: MockDtos.TcpPreviewRequest): TcpMockEngine.Preview {
-        val tcp = req.tcp ?: throw BadRequestException("tcp 섹션이 없습니다.")
-        val secrets = if (req.codec == null) emptyMap() else secretProvider.secrets(tenant(), req.environment)
-        return try {
-            TcpMockEngine.preview(tcp, req.sample ?: "", codec = req.codec, secrets = secrets, lookup = { transforms.get(it).orElse(null) })
-        } catch (e: IllegalArgumentException) {
-            throw BadRequestException(e.message ?: "TCP 미리보기 실패")
-        } catch (e: MockCodec.CodecException) {
-            throw BadRequestException(e.message ?: "코덱 실패")
-        }
-    }
-
     /**
      * 코덱 시험(HTTP) — 샘플 전문(+헤더)에 미저장 코덱을 적용해 단계별 입력/출력을 돌려준다.
      * 시크릿 값이 실제로 쓰이므로 승인 사용자만(시크릿 쓰기와 같은 게이트) + 대상 Mock 읽기 권한. 결과의 시크릿 값은 마스킹.
@@ -401,8 +388,8 @@ class MockServerService(
         val paths = routes.mapNotNull { it.path }.take(6)
         val hasCodec = spec.codec?.let { !(it.request.isNullOrEmpty() && it.response.isNullOrEmpty()) } == true || routes.any { it.codec != null }
         val labels = routes.take(8).map { "${it.method?.uppercase(Locale.ROOT) ?: "ANY"} ${it.path ?: "/"}" }
-        return SpecDigest(routes.size, methods, paths, spec.tcp?.port, spec.tcp?.let { it.enabled != false }, hasCodec, spec.environment?.takeIf { it.isNotBlank() },
-            spec.tcp?.rulesOrEmpty()?.size ?: 0, spec.tcp?.requestFieldsOrEmpty()?.size ?: 0, labels)
+        return SpecDigest(routes.size, methods, paths, spec.tcp?.port, spec.tcp != null, hasCodec, spec.environment?.takeIf { it.isNotBlank() },
+            spec.tcp?.rulesOrEmpty()?.size ?: 0, 0, labels)
     }
 
     private fun toSummary(m: MockServer): MockServerSummary {

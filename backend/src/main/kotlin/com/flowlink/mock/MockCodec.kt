@@ -192,34 +192,4 @@ object MockCodec {
         }
         throw CodecException("코덱 ${i + 1}단계: 필드 대상 코덱은 JSON/urlencoded 본문에만 적용됩니다(contentType=$contentType).")
     }
-
-    // ---------- TCP ----------
-
-    /** TCP 응답 필드 값 하나 — target=fields 단계 중 이 필드를 포함한 단계만 순서대로. */
-    @JvmStatic
-    fun applyTcpField(steps: List<MockCodecStep>?, field: String, value: String, ctx: MockContext, lookup: (String) -> FlowTransform?, trace: MutableList<StepTrace>? = null): String {
-        if (steps.isNullOrEmpty()) return value
-        var cur = value
-        for ((i, step) in steps.withIndex()) {
-            if (step.targetOrBody() != "fields" || field !in step.fieldsOrEmpty()) continue
-            val out = applyStep(step, i, cur, ctx, lookup)
-            trace?.add(StepTrace(i, step.id ?: "", "fields", field, cur, out))
-            cur = out
-        }
-        return cur
-    }
-
-    /** TCP 전문 전체 — target=body 단계만 순서대로. */
-    @JvmStatic
-    fun applyTcpBody(steps: List<MockCodecStep>?, text: String, ctx: MockContext, lookup: (String) -> FlowTransform?, trace: MutableList<StepTrace>? = null): String {
-        if (steps.isNullOrEmpty()) return text
-        var cur = text
-        for ((i, step) in steps.withIndex()) {
-            if (step.targetOrBody() != "body") continue
-            val out = applyStep(step, i, cur, ctx, lookup)
-            trace?.add(StepTrace(i, step.id ?: "", "body", null, cur, out))
-            cur = out
-        }
-        return cur
-    }
 }

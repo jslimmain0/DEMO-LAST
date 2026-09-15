@@ -53,10 +53,10 @@ class MockTemplateTest {
 
     @Test
     fun `TCP_문맥_req_토큰`() {
-        val bytes = "02001234567890홍길동".toByteArray(charset("EUC-KR"))
-        val c = MockContext(seq = 3L, tcpReq = bytes, tcpCharset = charset("EUC-KR"), tcpFields = mapOf("계좌" to "1234567890"))
-        assertThat(MockTemplate.render("{{ 계좌@req }}|{{req.계좌}}|{{req:0:4}}|{{seq}}", c)).isEqualTo("1234567890|1234567890|0200|3")
-        assertThat(MockTemplate.render("{{req}}", c)).isEqualTo("02001234567890홍길동")
+        // 프로토콜로 해석된 요청 필드(헤더+본문)만 노출 — 바이트 슬라이스/전문 통째 토큰은 없다
+        val c = MockContext(seq = 3L, tcpFields = mapOf("계좌" to "1234567890", "전문코드" to "0200"))
+        assertThat(MockTemplate.render("{{ 계좌@req }}|{{req.계좌}}|{{req.전문코드}}|{{seq}}", c)).isEqualTo("1234567890|1234567890|0200|3")
+        assertThat(MockTemplate.render("{{req.없음}}|", c)).isEqualTo("|")
     }
 
     @Test

@@ -18,6 +18,7 @@ class MockRuntimeStore {
     private val states: MutableMap<UUID, MutableMap<String, String>> = ConcurrentHashMap()
     private val hits: MutableMap<UUID, MutableMap<String, Int>> = ConcurrentHashMap()
     private val journals: MutableMap<UUID, ArrayDeque<JournalEntry>> = ConcurrentHashMap()
+    private val tcpLogs: MutableMap<UUID, ArrayDeque<TcpLogEntry>> = ConcurrentHashMap()
 
     /** 서버별 상태 맵(setState 로 쓰고 {{state.x}}/source=state 로 읽음). */
     fun state(id: UUID): MutableMap<String, String> = states.computeIfAbsent(id) { ConcurrentHashMap() }
@@ -50,13 +51,27 @@ class MockRuntimeStore {
 
     fun clearJournal(id: UUID) { journals[id]?.let { synchronized(it) { it.clear() } } }
 
+    /** TCP 트래픽 1행 기록(최신 우선, 상한 초과 시 오래된 것 제거). */
+    fun recordTcp(id: UUID, e: TcpLogEntry) {
+        val dq = tcpLogs.computeIfAbsent(id) { ArrayDeque() }
+        synchronized(dq) { dq.addFirst(e); while (dq.size > TCP_LOG_MAX) dq.removeLast() }
+    }
+
+    /** TCP 트래픽 로그(최신순). */
+    fun tcpLog(id: UUID): List<TcpLogEntry> {
+        val dq = tcpLogs[id] ?: return emptyList()
+        synchronized(dq) { return ArrayList(dq) }
+    }
+
+    fun clearTcpLog(id: UUID) { tcpLogs[id]?.let { synchronized(it) { it.clear() } } }
+
     /** 상태 스냅샷(state·seq·hits·요청수) — 관리 조회용. */
     fun snapshot(id: UUID): Snapshot =
         Snapshot(HashMap(states[id] ?: emptyMap()), seqs[id]?.get() ?: 1000L, HashMap(hits[id] ?: emptyMap()), journals[id]?.size ?: 0)
 
     /** 전체 초기화(재시작 없이 깨끗한 상태로). */
     fun reset(id: UUID) {
-        states.remove(id); seqs.remove(id); hits.remove(id); journals.remove(id)
+        states.remove(id); seqs.remove(id); hits.remove(id); journals.remove(id); tcpLogs.remove(id)
     }
 
     /** 서버 삭제 시 상태 정리(누수 방지). */
@@ -77,10 +92,27 @@ class MockRuntimeStore {
         val decodedBody: String? = null,
     )
 
+    /** TCP 트래픽 로그 1행 — dir=in|out, source=mock|proxy|none, level=info|warn|error. text 는 ASCII 뷰(깨진 바이트 \xNN). */
+    data class TcpLogEntry(
+        val at: Instant,
+        val dir: String,
+        val source: String,
+        val key: String?,
+        val fields: Map<String, String>,
+        val text: String,
+        val hex: String,
+        val bytes: Int,
+        val chunks: List<Int>?,
+        val ruleId: String?,
+        val note: String?,
+        val level: String,
+    )
+
     data class Snapshot(val state: Map<String, String>, val seq: Long, val hits: Map<String, Int>, val requestCount: Int)
 
     companion object {
         const val JOURNAL_MAX = 100
+        const val TCP_LOG_MAX = 200
         const val BODY_CAP = 4096
     }
 }

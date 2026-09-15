@@ -2,7 +2,7 @@
 #
 #   ⚠ 메인 앱(flowlink.jar)은 도커에 올리지 않는다 — EC2 등 실제 서버에서 scripts/start.sh 로 실행(단일 jar).
 #      여기 도커엔 Vault(Transit KEK, 선택)만 뜨고, Oracle 은 나중에 별도/사내 서버로 붙일 예정이라
-#      기본 미기동(로컬 테스트용으로만 --profile oracle 로 켤 수 있게 남겨둠 — DDL 은 Flyway db/migration/oracle 이 소유).
+#      기본 미기동(로컬 테스트용으로만 --profile oracle 로 켤 수 있게 남겨둠 — DDL 은 backend/src/main/resources/db/init.sql 을 한 번 실행).
 #
 #   Vault 기동:          docker compose -f infra/docker-compose.yml up -d
 #   (선택) 로컬 Oracle:   docker compose -f infra/docker-compose.yml --profile oracle up -d
@@ -35,7 +35,7 @@ services:
 
   # (선택, --profile oracle) 로컬 테스트용 Oracle Free 23ai.
   #   운영은 사내/별도 서버 Oracle 에 붙인다 — 앱 env 의 FLOWLINK_DB_URL 만 그쪽으로 바꾸면 되고
-  #   스키마는 Flyway(backend/src/main/resources/db/migration/oracle)가 자동 생성한다.
+  #   스키마는 backend/src/main/resources/db/init.sql 을 그 DB 에 한 번 실행해 만든다(앱은 생성/검증 안 함).
   oracle:
     image: gvenzl/oracle-free:23-slim
     container_name: flowlink-oracle

@@ -4,7 +4,7 @@
 #
 # ★ 파일 기반(영속): 데이터가 JVM 종료 후에도 보존된다(기본 위치: 사용자 홈/flowlink-h2db/flowlink.mv.db).
 #   위치 변경: 환경변수 FLOWLINK_H2_FILE (예: FLOWLINK_H2_FILE=./data/flowlink)
-#   초기화하려면 그 .mv.db 파일을 지우면 됨. Flyway(dev/Oracle 전용)는 끄고 Hibernate 가 스키마를 생성/갱신(update).
+#   초기화하려면 그 .mv.db 파일을 지우면 됨. Hibernate 가 스키마를 생성/갱신(update).
 spring:
   datasource:
     # AUTO_SERVER: 앱 + H2 콘솔 동시 접속 허용. ~ 는 사용자 홈.
@@ -16,8 +16,6 @@ spring:
     hibernate:
       ddl-auto: update   # 테이블 생성/컬럼 추가만, 데이터는 보존(create-drop 아님)
     database-platform: org.hibernate.dialect.H2Dialect
-  flyway:
-    enabled: false
   h2:
     console:
       enabled: true

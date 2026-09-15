@@ -22,7 +22,6 @@ import org.springframework.test.context.TestPropertySource
     "spring.datasource.driver-class-name=org.h2.Driver",
     "spring.datasource.username=sa",
     "spring.datasource.password=",
-    "spring.flyway.enabled=false",
     "spring.jpa.hibernate.ddl-auto=create-drop",
 ])
 class SecretReencryptMigrationTest {

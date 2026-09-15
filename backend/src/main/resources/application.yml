@@ -5,7 +5,7 @@ spring:
     default: local
   jpa:
     hibernate:
-      # dev(Oracle): 엔티티 columnDefinition="text"(PG 문법) 12곳이 validate 와 충돌 → Flyway 가 스키마 단독 소유.
+      # dev(Oracle): 엔티티 columnDefinition="text" 가 validate 와 충돌 → 스키마는 db/init.sql 을 DBA 가 한 번 실행(앱은 생성/검증 안 함).
       ddl-auto: none
     open-in-view: false
     properties:

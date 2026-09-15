@@ -15,7 +15,7 @@ import java.net.ServerSocket
 @TestPropertySource(properties = [
     "spring.datasource.url=jdbc:h2:mem:tcpnode;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE",
     "spring.datasource.driver-class-name=org.h2.Driver", "spring.datasource.username=sa", "spring.datasource.password=",
-    "spring.flyway.enabled=false", "spring.jpa.hibernate.ddl-auto=create-drop",
+    "spring.jpa.hibernate.ddl-auto=create-drop",
 ])
 class TcpNodeExecutorTest {
     @Autowired lateinit var executor: TcpNodeExecutor

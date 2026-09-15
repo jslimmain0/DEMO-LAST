@@ -22,7 +22,7 @@ import java.net.SocketTimeoutException
 @TestPropertySource(properties = [
     "spring.datasource.url=jdbc:h2:mem:tcpmocke2e;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE",
     "spring.datasource.driver-class-name=org.h2.Driver", "spring.datasource.username=sa", "spring.datasource.password=",
-    "spring.flyway.enabled=false", "spring.jpa.hibernate.ddl-auto=create-drop",
+    "spring.jpa.hibernate.ddl-auto=create-drop",
 ])
 class TcpMockE2eTest {
     @Autowired lateinit var mocks: MockServerService

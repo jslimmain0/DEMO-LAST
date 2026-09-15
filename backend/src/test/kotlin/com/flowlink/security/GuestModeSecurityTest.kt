@@ -23,7 +23,6 @@ import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
     "spring.datasource.driver-class-name=org.h2.Driver",
     "spring.datasource.username=sa",
     "spring.datasource.password=",
-    "spring.flyway.enabled=false",
     "spring.jpa.hibernate.ddl-auto=create-drop",
     "flowlink.auth.github-enabled=true",
 ])

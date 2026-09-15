@@ -59,15 +59,14 @@ data class GraphNode(
     val transformId: String?,
     val config: Map<String, String>?,
 
-    // --- tcp (고정길이 금융 전문) ---
+    // --- tcp (고정길이 전문 — 프로토콜 참조) ---
     val tcpHost: String?,
     val tcpPort: Int?,
-    val tcpEncoding: String?,
     val tcpTimeoutMs: Int?,
-    val tcpPrefixLength: Int?,
-    val tcpPrefixIncludesSelf: Boolean?,
-    val tcpRequest: List<TcpField>?,
-    val tcpResponse: List<TcpRespField>?,
+    val protocolId: String?,            // 프로토콜(flowlink_protocol) id
+    val tcpMessage: String?,            // 송신 전문 키("0210")
+    val tcpValues: Map<String, String>?, // 필드 값(토큰 허용). length/거래코드는 자동
+    val tcpResponseMessage: String?,    // 피커용 응답 전문 키 — 실행은 수신 discriminator 가 결정
 
     // --- canvas 위치(실행과 무관) ---
     val x: Double?,

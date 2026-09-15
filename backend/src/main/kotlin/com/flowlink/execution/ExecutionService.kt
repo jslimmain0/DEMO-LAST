@@ -172,7 +172,7 @@ class ExecutionService(
      * [override] 가 있으면(편집 중 노드) 그걸 조립(순수 계산이라 안전), 없으면 저장된 그래프의 노드를 조립.
      */
     @Transactional(readOnly = true)
-    fun previewTcp(flowId: UUID, nodeId: String, override: com.flowlink.core.graph.GraphNode? = null): com.flowlink.execution.engine.TcpPreview {
+    fun previewTcp(flowId: UUID, nodeId: String, override: com.flowlink.core.graph.GraphNode? = null): com.flowlink.protocol.ProtocolDtos.PreviewResult {
         val node = if (override != null) override else {
             // flow 는 전역 공유 — 공유 테넌트로 조회. 저장 그래프를 읽으므로 워크스페이스 읽기 권한 필요.
             val flow = flowRepo.findByIdAndTenantId(flowId, TenantContext.SHARED_FLOW_TENANT)
@@ -184,11 +184,7 @@ class ExecutionService(
             graph.nodesOrEmpty().find { it.id == nodeId } ?: throw NotFoundException.of("Node", nodeId)
         }
         if (node.nodeType() != NodeType.TCP) throw BadRequestException("TCP 노드가 아닙니다.")
-        return try {
-            flowExecutor.previewTcp(node)
-        } catch (e: IllegalArgumentException) {
-            throw BadRequestException(e.message ?: "TCP 전문 조립 실패")
-        }
+        return flowExecutor.previewTcp(node)
     }
 
     // trigger 는 실행을 시작시킨 종류(MANUAL/SCHEDULE/WEBHOOK). 스케줄러·웹훅은 호출 전 TenantContext 를 세팅한다.

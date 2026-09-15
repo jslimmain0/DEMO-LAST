@@ -57,7 +57,7 @@ class ExecutionController(private val service: ExecutionService) {
         @PathVariable flowId: UUID,
         @PathVariable nodeId: String,
         @RequestBody(required = false) node: com.flowlink.core.graph.GraphNode?
-    ): com.flowlink.execution.engine.TcpPreview = service.previewTcp(flowId, nodeId, node)
+    ): com.flowlink.protocol.ProtocolDtos.PreviewResult = service.previewTcp(flowId, nodeId, node)
 
     /** 브라우저 협업 노드(client HTTP / form / wait)에서 중단된 실행을 재개한다. */
     @PostMapping("/executions/{id}/resume")

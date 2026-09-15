@@ -5,11 +5,13 @@ import com.flowlink.common.json.JsonService
 import com.flowlink.core.domain.ExecutionStatus
 import com.flowlink.core.graph.FlowGraph
 import com.flowlink.execution.config.ExecutionProperties
+import com.flowlink.protocol.ProtocolService
 import com.flowlink.transform.TransformRegistry
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.mockito.Mockito
 import org.springframework.web.client.RestClient
 
 /**
@@ -25,7 +27,7 @@ class RunStateSnapshotTest {
     private val executor = FlowExecutor(
         tokens, ExpressionEvaluator(tokens),
         HttpNodeExecutor(RestClient.create(), tokens, json, props),
-        json, TransformRegistry("build/tmp/no-plugins"), TcpNodeExecutor(tokens, json)
+        json, TransformRegistry("build/tmp/no-plugins"), TcpNodeExecutor(tokens, Mockito.mock(ProtocolService::class.java))
     )
     private val mapper = jacksonObjectMapper()
 

@@ -316,8 +316,8 @@ class AssistantService(
         private val STUB_TCP = """
         {"name":"TCP 전문 샘플","nodes":[
           {"id":"start1","name":"시작","type":"start","cat":"start","x":40,"y":180},
-          {"id":"tcp1","name":"전문 전송","type":"tcp","cat":"tcp","x":260,"y":180,"tcpHost":"127.0.0.1","tcpPort":9000,"tcpEncoding":"EUC-KR","tcpTimeoutMs":5000,"tcpPrefixLength":4,"tcpPrefixIncludesSelf":false,"tcpRequest":[{"id":"r1","name":"msgType","length":4,"value":"0012","pad":"right","padChar":" "},{"id":"r2","name":"custName","length":10,"value":"홍길동","pad":"right","padChar":" "}],"tcpResponse":[{"id":"o1","name":"result","length":4},{"id":"o2","name":"balance","length":12}],"outputs":[{"key":"result","type":"string"},{"key":"balance","type":"string"}]},
-          {"id":"assert1","name":"결과 검증","type":"assert","cat":"assert","x":480,"y":180,"condition":"{{ result@tcp1 }} == '0000'"},
+          {"id":"tcp1","name":"전문 전송","type":"tcp","cat":"tcp","x":260,"y":180,"tcpHost":"127.0.0.1","tcpPort":9000,"tcpTimeoutMs":5000,"protocolId":"","tcpMessage":"0210","tcpValues":{"계좌번호":"1122334567890"},"tcpResponseMessage":"0211","outputs":[{"key":"응답코드","type":"string"},{"key":"잔액","type":"string"}]},
+          {"id":"assert1","name":"결과 검증","type":"assert","cat":"assert","x":480,"y":180,"condition":"{{ 응답코드@tcp1 }} == '0000'"},
           {"id":"end1","name":"끝","type":"end","cat":"end","x":700,"y":180}
         ],"edges":[
           {"id":"e1","from":"start1","to":"tcp1"},

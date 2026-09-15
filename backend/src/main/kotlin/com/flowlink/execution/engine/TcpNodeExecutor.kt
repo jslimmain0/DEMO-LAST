@@ -1,254 +1,74 @@
 package com.flowlink.execution.engine
 
-import com.flowlink.common.json.JsonService
+import com.flowlink.common.error.NotFoundException
 import com.flowlink.common.tcp.TcpBytes
 import com.flowlink.core.graph.GraphNode
-import com.flowlink.core.graph.TcpField
+import com.flowlink.protocol.Direction
+import com.flowlink.protocol.Framer
+import com.flowlink.protocol.ProtocolCodec
+import com.flowlink.protocol.ProtocolDtos
+import com.flowlink.protocol.ProtocolService
+import com.flowlink.protocol.ProtocolSpec
+import com.flowlink.protocol.TcpClient
 import org.springframework.stereotype.Component
-import java.io.ByteArrayOutputStream
-import java.io.IOException
-import java.io.InputStream
-import java.io.OutputStream
-import java.net.InetSocketAddress
-import java.net.Socket
-import java.nio.charset.Charset
-import java.nio.charset.StandardCharsets
-import java.util.Arrays
+import java.util.UUID
 
 /**
- * 고정길이 금융 전문 TCP 노드 실행기.
- * 요청 필드를 바이트 단위 고정길이로 조립해 길이-프리픽스 전문으로 전송하고,
- * 응답 전문을 응답 필드 길이대로 잘라 출력으로 만든다. (인코딩 노드/필드별 선택)
+ * TCP 요청 노드 — "프로토콜에 값을 채운 것". 조립/해석은 ProtocolCodec, 왕복은 TcpClient.
+ * 출력 = 응답 헤더 + 본문 필드(정의되지 않은 응답 전문이면 헤더 + `body` raw 텍스트, 노드는 성공).
  */
 @Component
-class TcpNodeExecutor(
-    private val tokens: TokenResolver,
-    private val json: JsonService
-) {
+class TcpNodeExecutor(private val tokens: TokenResolver, private val protocols: ProtocolService) {
 
-    /**
-     * 조립된 요청 전문 + 필드별 분해 정보(미리보기/전송 공용).
-     * [slices] 는 프리픽스 이후 본문 기준 오프셋(프리픽스는 [prefixLen] 바이트로 앞에 붙음).
-     */
-    data class FieldSlice(
-        val name: String?,
-        val offset: Int,        // 본문 내 시작 오프셋(프리픽스 제외)
-        val declaredLen: Int,   // 선언 길이
-        val actualBytes: Int,   // 값의 원시 바이트 수(패딩/절단 전)
-        val truncated: Boolean, // actualBytes > declaredLen (초과 절단)
-        val padded: Boolean,    // actualBytes < declaredLen (패딩 채움)
-        val pad: String,        // left|right
-        val text: String,       // 해석된 값(표시용)
-        val encoding: String,
-    )
+    class Built(val spec: ProtocolSpec, val key: String, val encoded: ProtocolCodec.Encoded, val values: LinkedHashMap<String, String>, val host: String, val port: Int, val timeoutMs: Int, val reqText: String)
 
-    class Built(
-        val message: ByteArray,
-        val bodySize: Int,
-        val prefixLen: Int,
-        val declaredPrefix: Int?, // 프리픽스에 쓴 숫자(없으면 null)
-        val slices: List<FieldSlice>,
-        val reqValues: LinkedHashMap<String, Any?>,
-        val host: String,
-        val port: Int,
-        val encoding: Charset,
-        val reqText: String,
-    )
-
-    /** 요청 전문 조립(전송 없음) — execute/preview 공용. */
     fun build(node: GraphNode, ctx: ExecutionContext): Built {
-        val host = tokens.resolveTokens(node.tcpHost ?: "", ctx)
+        val pid = node.protocolId?.trim()?.takeIf { it.isNotEmpty() } ?: throw IllegalArgumentException("프로토콜을 선택하세요.")
+        val spec = try { protocols.specOf(UUID.fromString(pid)) } catch (e: Exception) {
+            if (e is NotFoundException || e is IllegalArgumentException) throw IllegalArgumentException("프로토콜을 찾을 수 없습니다: $pid") else throw e
+        }
+        val key = node.tcpMessage?.trim()?.takeIf { it.isNotEmpty() } ?: throw IllegalArgumentException("전문(거래코드)을 선택하세요.")
+        val host = tokens.resolveTokens(node.tcpHost ?: "", ctx).trim()
         val port = node.tcpPort ?: 0
-        val nodeCs = charset(node.tcpEncoding, Charset.forName("EUC-KR"))
-        val prefixLen = node.tcpPrefixLength ?: 0
-        val includesSelf = node.tcpPrefixIncludesSelf == true
-
-        // 고정길이 필드가 ByteArray(length) 를 직접 할당하므로, 과대 길이(오타/악의)로 OOM 되지 않게 상한.
-        // (금융 전문은 KB 단위 — preview 엔드포인트가 임의 노드를 받으니 반드시 가드) 프리픽스 폭도 상한.
-        if (prefixLen < 0 || prefixLen > MAX_PREFIX_WIDTH) throw IllegalArgumentException("길이 프리픽스 폭이 범위를 벗어났습니다: $prefixLen")
-        var declaredTotal = 0L
-        for (f in node.tcpRequest ?: emptyList()) {
-            val len = f.lengthOrZero()
-            if (len < 0) throw IllegalArgumentException("필드 길이는 음수일 수 없습니다: ${f.name}=$len")
-            declaredTotal += len
-            if (declaredTotal > MAX_TCP_MESSAGE) throw IllegalArgumentException("요청 전문 총 길이가 상한(${MAX_TCP_MESSAGE}B)을 초과했습니다.")
-        }
-
-        val reqValues = LinkedHashMap<String, Any?>()
-        val bodyBuf = ByteArrayOutputStream()
-        val slices = ArrayList<FieldSlice>()
-        var offset = 0
-        for (f in node.tcpRequest ?: emptyList()) {
-            val v = resolveField(f, ctx)
-            if (f.name != null && !f.name.isBlank()) reqValues[f.name] = v
-            val cs = charset(f.encoding, nodeCs)
-            val declared = f.lengthOrZero()
-            val actual = (v ?: "").toByteArray(cs).size
-            val field = fixedField(v, declared, f.pad, f.padChar, cs)
-            bodyBuf.writeBytes(field)
-            slices.add(FieldSlice(
-                name = f.name, offset = offset, declaredLen = declared, actualBytes = actual,
-                truncated = actual > declared, padded = actual < declared,
-                pad = if ("left".equals(f.pad, ignoreCase = true)) "left" else "right",
-                text = v ?: "", encoding = cs.name(),
-            ))
-            offset += declared
-        }
-        val body = bodyBuf.toByteArray()
-
-        val message: ByteArray
-        var declaredPrefix: Int? = null
-        if (prefixLen > 0) {
-            val declared = if (includesSelf) body.size + prefixLen else body.size
-            declaredPrefix = declared
-            val prefix = prefix(declared, prefixLen)
-            val m = ByteArray(prefix.size + body.size)
-            System.arraycopy(prefix, 0, m, 0, prefix.size)
-            System.arraycopy(body, 0, m, prefix.size, body.size)
-            message = m
-        } else {
-            message = body
-        }
-        val reqText = "TCP " + host + ":" + port + " (" + nodeCs.name() + ", " + message.size + "B)\n" + printable(message, nodeCs)
-        return Built(message, body.size, prefixLen, declaredPrefix, slices, reqValues, host, port, nodeCs, reqText)
+        val values = LinkedHashMap<String, String>()
+        for ((k, v) in node.tcpValues ?: emptyMap()) values[k] = if (v.contains("{{")) tokens.stringify(tokens.resolveLiteral(v, ctx)) else v
+        val enc = try { ProtocolCodec.encode(spec, key, values, Direction.SEND, protocols.plugins()) } catch (e: ProtocolCodec.ProtocolException) { throw IllegalArgumentException(e.message, e) }
+        val reqText = "TCP $host:$port · $key · ${spec.charset().name()} · ${enc.bytes.size}B\n" + table(enc.fields) + "\n" + TcpBytes.printable(enc.bytes, spec.charset())
+        return Built(spec, key, enc, values, host, port, if ((node.tcpTimeoutMs ?: 0) <= 0) 5000 else node.tcpTimeoutMs!!, reqText)
     }
 
-    /** 미리보기 — 전송 없이 조립 결과(hex/printable/필드 오프셋/오버플로)를 돌려준다. */
-    fun preview(node: GraphNode, ctx: ExecutionContext): TcpPreview {
+    /** 전송 없이 조립 — 검증/조립 실패는 errors 로(속성 패널이 필드 옆에 표시). */
+    fun preview(node: GraphNode, ctx: ExecutionContext): ProtocolDtos.PreviewResult = try {
         val b = build(node, ctx)
-        return TcpPreview(
-            host = b.host, port = b.port, encoding = b.encoding.name(),
-            totalBytes = b.message.size, prefixLen = b.prefixLen, declaredPrefix = b.declaredPrefix,
-            bodyBytes = b.bodySize, hex = hexDump(b.message), printable = printable(b.message, b.encoding),
-            fields = b.slices.map {
-                TcpPreview.Field(it.name, it.offset + b.prefixLen, it.declaredLen, it.actualBytes, it.truncated, it.padded, it.pad, it.text, it.encoding)
-            },
-        )
+        ProtocolDtos.PreviewResult(b.encoded.bytes.size, TcpBytes.hexDump(b.encoded.bytes), TcpBytes.printable(b.encoded.bytes, b.spec.charset()), b.encoded.fields, emptyList(), b.encoded.warnings)
+    } catch (e: IllegalArgumentException) {
+        val pe = e.cause as? ProtocolCodec.ProtocolException
+        ProtocolDtos.PreviewResult(0, "", "", emptyList(), listOf(ProtocolDtos.PreviewError(pe?.field, e.message ?: "조립 실패")))
     }
 
     fun execute(node: GraphNode, ctx: ExecutionContext): NodeResult {
-        val built = try {
-            build(node, ctx)
-        } catch (e: IllegalArgumentException) {
-            return NodeResult.fail(0, "", "⚠ TCP 전문 조립 실패: " + (e.message ?: e.toString()))
-        }
-        val host = built.host
-        val port = built.port
-        val nodeCs = built.encoding
-        val timeout = if (node.tcpTimeoutMs == null || node.tcpTimeoutMs <= 0) 5000 else node.tcpTimeoutMs
-        val prefixLen = built.prefixLen
-        val includesSelf = node.tcpPrefixIncludesSelf == true
-        val reqValues = built.reqValues
-        val message = built.message
-        val reqText = built.reqText
-
-        // 3) 송수신
-        if (host.isBlank()) throw IllegalArgumentException("호스트가 없습니다.")
+        val b = try { build(node, ctx) } catch (e: IllegalArgumentException) { return NodeResult.fail(0, "", "⚠ TCP 전문 조립 실패: " + (e.message ?: e.toString())) }
+        if (b.host.isBlank()) return NodeResult.fail(0, b.reqText, "⚠ 호스트가 없습니다.")
         return try {
-            Socket().use { socket ->
-                socket.connect(InetSocketAddress(host, port), timeout)
-                socket.soTimeout = timeout
-                val out: OutputStream = socket.getOutputStream()
-                out.write(message)
-                out.flush()
-
-                val input: InputStream = socket.getInputStream()
-                val respBody: ByteArray
-                if (prefixLen > 0) {
-                    val pre = readN(input, prefixLen)
-                    val declared: Int = try {
-                        String(pre, StandardCharsets.US_ASCII).trim().toInt()
-                    } catch (e: NumberFormatException) {
-                        return NodeResult.fail(0, reqText, "⚠ 응답 길이 프리픽스 파싱 실패: '" + String(pre, StandardCharsets.US_ASCII) + "'")
-                    }
-                    val bodyLen = if (includesSelf) declared - prefixLen else declared
-                    if (bodyLen < 0) {
-                        return NodeResult.fail(0, reqText, "⚠ 잘못된 응답 길이: $declared")
-                    }
-                    respBody = readN(input, bodyLen)
-                } else {
-                    respBody = input.readAllBytes()
-                }
-
-                // 5) 응답 슬라이싱 → 출력
-                val value = LinkedHashMap<String, Any?>()
-                var offset = 0
-                for (rf in node.tcpResponse ?: emptyList()) {
-                    val len = rf.lengthOrZero()
-                    val end = Math.min(offset + len, respBody.size)
-                    val slice = Arrays.copyOfRange(respBody, Math.min(offset, respBody.size), end)
-                    val decoded = String(slice, charset(rf.encoding, nodeCs))
-                    if (rf.name != null && !rf.name.isBlank()) {
-                        value[rf.name] = decoded
-                    }
-                    offset += len
-                }
-                val resText = "응답 " + respBody.size + "B\n" + printable(respBody, nodeCs)
-                NodeResult(true, null, reqText, resText, value, value, reqValues, null)
-            }
+            val x = TcpClient.exchange(b.host, b.port, b.timeoutMs, b.encoded.bytes, b.spec)
+            val d = ProtocolCodec.decode(b.spec, x.response.bytes, Direction.RECV, protocols.plugins())
+            val out = LinkedHashMap<String, Any?>()
+            out.putAll(d.header)
+            if (d.body != null) out.putAll(d.body) else out["body"] = TcpBytes.decodeEscaped(d.rawBody, b.spec.charset())
+            val sb = StringBuilder("응답 ${x.response.bytes.size}B · ${x.elapsedMs}ms")
+            if (d.messageKey == null) sb.append(" · 정의되지 않은 전문 '${d.disc ?: ""}' — 본문 raw(body)")
+            if (x.response.chunks.size > 1) sb.append(" · 부분 수신 ${x.response.chunks.joinToString("+")}B")
+            for (w in d.warnings) sb.append("\n⚠ ").append(w)
+            sb.append('\n').append(table(d.fields)).append('\n').append(TcpBytes.printable(x.response.bytes, b.spec.charset()))
+            sb.append("\nHEX ").append(TcpBytes.hexDump(x.response.bytes))
+            NodeResult(true, null, b.reqText, sb.toString(), out, out, LinkedHashMap<String, Any?>(b.values), null)
+        } catch (e: Framer.FrameException) {
+            NodeResult.fail(0, b.reqText, "⚠ 응답 프레이밍 실패: ${e.message}" + (e.raw?.let { "\nHEX " + TcpBytes.hexDump(it) } ?: ""))
         } catch (e: Exception) {
-            NodeResult.fail(0, reqText, "⚠ TCP 요청 실패: " + (e.message ?: e.toString()))
+            NodeResult.fail(0, b.reqText, "⚠ TCP 요청 실패: " + (e.message ?: e.toString()))
         }
     }
 
-    private fun resolveField(f: TcpField, ctx: ExecutionContext): String {
-        if (f.bound != null) {
-            return tokens.stringify(tokens.resolveBinding(f.bound, ctx))
-        }
-        val v = f.value
-        // 인라인 토큰 규칙 공용(resolveLiteral) — 어차피 고정길이 문자열로 직렬화되므로 stringify
-        return if (v != null && v.contains("{{")) tokens.stringify(tokens.resolveLiteral(v, ctx)) else (v ?: "")
-    }
-
-    companion object {
-        /** 요청 전문 총 길이 상한(선언 길이 합) — OOM 방지. 금융 전문은 KB 단위라 1MB 로도 넉넉. */
-        const val MAX_TCP_MESSAGE = 1 shl 20 // 1MB
-        /** 길이 프리픽스 폭 상한(자리수) — `%0Nd` 포맷·ByteArray(N) 방어. */
-        const val MAX_PREFIX_WIDTH = 20
-
-        private fun readN(input: InputStream, n: Int): ByteArray {
-            val buf = input.readNBytes(n)
-            if (buf.size < n) {
-                throw IOException("응답이 조기 종료됨 (" + buf.size + "/" + n + " 바이트)")
-            }
-            return buf
-        }
-
-        private fun prefix(declared: Int, width: Int): ByteArray = TcpBytes.prefix(declared, width)
-
-        private fun fixedField(value: String?, length: Int, pad: String?, padChar: String?, cs: Charset): ByteArray =
-            TcpBytes.fixedField(value, length, pad, padChar, cs)
-
-        private fun charset(name: String?, def: Charset): Charset = TcpBytes.charset(name, def)
-
-        private fun printable(bytes: ByteArray, cs: Charset): String = TcpBytes.printable(bytes, cs)
-
-        private fun hexDump(bytes: ByteArray): String = TcpBytes.hexDump(bytes)
-    }
-}
-
-/** TCP 요청 전문 미리보기 결과(전송 없음) — 프론트가 조립 바이트/필드 오프셋/오버플로를 표시. */
-data class TcpPreview(
-    val host: String,
-    val port: Int,
-    val encoding: String,
-    val totalBytes: Int,
-    val prefixLen: Int,
-    val declaredPrefix: Int?,
-    val bodyBytes: Int,
-    val hex: String,
-    val printable: String,
-    val fields: List<Field>,
-) {
-    data class Field(
-        val name: String?,
-        val offset: Int,       // 전문 시작 기준 절대 오프셋(프리픽스 포함)
-        val declaredLen: Int,
-        val actualBytes: Int,
-        val truncated: Boolean,
-        val padded: Boolean,
-        val pad: String,
-        val text: String,
-        val encoding: String,
-    )
+    private fun table(fields: List<ProtocolCodec.FieldSlice>): String =
+        fields.joinToString("\n") { "@${it.offset.toString().padStart(4)} ${it.name} = ${it.value}" + (it.warn?.let { w -> "  $w" } ?: "") }
 }

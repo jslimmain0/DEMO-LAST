@@ -97,6 +97,12 @@ data class ProtocolSpec(
             if (!keys.add(k)) errs += "전문 키 중복: $k"
             if (!hasDiscriminator() && discValueOf(k) !in setOf("request", "response")) errs += "분기 필드 없이 전문 키는 request/response 만 가능합니다: $k"
             errs += checkTable("전문 $k", m.fieldsOrEmpty())
+            // 헤더+본문을 한 맵으로 합쳐 쓰므로(템플릿·조건·출력) 같은 이름이면 어느 값인지 모호해진다
+            val headerNames = headerOrEmpty().mapTo(HashSet()) { it.nameOrEmpty() }
+            for (f in m.fieldsOrEmpty()) {
+                val n = f.nameOrEmpty()
+                if (n.isNotEmpty() && n in headerNames) errs += "전문 $k: '$n' 은 헤더 필드와 이름이 겹칩니다."
+            }
             if (headerLen() + m.bodyLen() > MAX_MESSAGE) errs += "전문 $k 총 길이가 상한(${MAX_MESSAGE}B)을 넘습니다."
         }
         return errs

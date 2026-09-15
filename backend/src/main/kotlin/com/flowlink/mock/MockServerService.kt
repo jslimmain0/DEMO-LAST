@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode
 import com.flowlink.common.error.BadRequestException
 import com.flowlink.common.error.NotFoundException
 import com.flowlink.common.json.JsonService
+import com.flowlink.common.tcp.TcpBytes
 import com.flowlink.common.tenant.TenantContext
 import com.flowlink.core.domain.MockServer
 import com.flowlink.core.repository.MockServerRepository
@@ -11,6 +12,10 @@ import com.flowlink.mock.MockDtos.CreateMockServerRequest
 import com.flowlink.mock.MockDtos.MockServerDetail
 import com.flowlink.mock.MockDtos.MockServerSummary
 import com.flowlink.mock.MockDtos.UpdateMockServerRequest
+import com.flowlink.protocol.Direction
+import com.flowlink.protocol.ProtocolCodec
+import com.flowlink.protocol.ProtocolDtos
+import com.flowlink.protocol.TcpClient
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Instant
@@ -32,6 +37,8 @@ class MockServerService(
     private val versionRepo: com.flowlink.core.repository.MockServerVersionRepository,
     private val flowRepo: com.flowlink.core.repository.FlowRepository,
     private val flowVersionRepo: com.flowlink.core.repository.FlowVersionRepository,
+    private val protocolService: com.flowlink.protocol.ProtocolService,
+    private val protocolRepo: com.flowlink.core.repository.ProtocolRepository,
     private val env: org.springframework.core.env.Environment,
 ) {
 
@@ -39,9 +46,10 @@ class MockServerService(
     fun list(workspaceIdRaw: String? = null): List<MockServerSummary> {
         val wsId = workspace.resolveId(workspaceIdRaw)
         workspace.requireRead(workspace.currentUsername(), wsId)
+        val names = protocolNames()
         return repository.findByTenantIdOrderByUpdatedAtDesc(tenant())
             .filter { it.workspaceId == wsId }
-            .map { toSummary(it) }
+            .map { toSummary(it, names) }
     }
 
     /**
@@ -62,18 +70,20 @@ class MockServerService(
             wsViews.add(MockDtos.FleetWorkspace(ws.id.toString(), ws.name, ws.kind, role(ws.id), mine, ws.ownerUsername))
         }
         val index = usageIndex()
+        val names = protocolNames()
         val canRead: (UUID?) -> Boolean = { ws -> role(ws) != null }
         val servers = repository.findByTenantIdOrderByUpdatedAtDesc(tenant()).map { m ->
             val r = role(m.workspaceId)
             val readable = r != null
-            val s = toSummary(m)
+            val s = toSummary(m, names)
             val listeningPort = tcpRegistry.listeningPort(m.id)
             val shouldListen = m.isEnabled && s.tcpPort != null && s.tcpEnabled != false
             MockDtos.FleetServer(
                 m.id, m.name, m.slug, m.kind.name, m.isEnabled, m.workspaceId?.toString() ?: com.flowlink.workspace.WorkspaceService.PUBLIC_ID, readable, r,
                 s.tcpPort, s.tcpEnabled, listeningPort != null,
                 if (shouldListen && listeningPort == null) (tcpRegistry.bindFailure(m.id) ?: "리스너가 열려 있지 않습니다") else null,
-                s.routeCount, if (readable) s.routeLabels else emptyList(), s.tcpRuleCount, s.tcpFieldCount, s.hasCodec, if (readable) s.environment else null,
+                s.routeCount, if (readable) s.routeLabels else emptyList(), s.tcpRuleCount,
+                if (readable) s.protocolName else null, if (readable) s.upstream else null, s.hasCodec, if (readable) s.environment else null,
                 s.lastRequestAt, s.recentRequests, s.requestCount, s.unmatchedRequests, s.currentVersion, m.updatedAt,
                 if (readable) usedBy(m.slug, index, canRead) else emptyList(),
             )
@@ -195,8 +205,8 @@ class MockServerService(
             throw BadRequestException("spec 이 없습니다.")
         }
         val raw = spec.toString()
-        // 저장 전 파싱 검증 — 깨진 spec 이 게이트웨이에서 500 을 만들지 않게 한다
-        parseSpec(raw)
+        // 저장 전 파싱 + TCP 규칙 검증 — 깨진 spec 이 게이트웨이에서 500 을 만들거나, 절대 응답 못 하는 규칙이 저장되지 않게 한다
+        validateTcp(parseSpec(raw))
         // 구조 비교 — 저장된 spec 이 pretty-print(생성 기본값/복원)라도 내용이 같으면 스냅샷을 만들지 않는다
         val changed = try { json.readTree(raw) != json.readTree(m.specJson ?: "{}") } catch (e: Exception) { true }
         m.specJson = raw
@@ -376,7 +386,7 @@ class MockServerService(
     }
 
     /** spec 요약(라우트 수/메서드/경로/TCP/코덱) — updatedAt 키 캐시(spec 은 저장 때만 바뀜). */
-    private data class SpecDigest(val routeCount: Int, val methods: List<String>, val paths: List<String>, val tcpPort: Int?, val tcpEnabled: Boolean?, val hasCodec: Boolean, val environment: String?, val tcpRuleCount: Int = 0, val tcpFieldCount: Int = 0, val routeLabels: List<String> = emptyList())
+    private data class SpecDigest(val routeCount: Int, val methods: List<String>, val paths: List<String>, val tcpPort: Int?, val tcpEnabled: Boolean?, val hasCodec: Boolean, val environment: String?, val tcpRuleCount: Int = 0, val protocolId: String? = null, val upstream: String? = null, val routeLabels: List<String> = emptyList())
     private val digestCache = java.util.concurrent.ConcurrentHashMap<UUID, Pair<Instant, SpecDigest>>()
     /** 사용처 인덱스(플로우 현재 그래프) — 테넌트별 30초 캐시. */
     private val usageCache = java.util.concurrent.ConcurrentHashMap<String, Pair<Long, List<Pair<com.flowlink.core.domain.Flow, String>>>>()
@@ -388,20 +398,34 @@ class MockServerService(
         val paths = routes.mapNotNull { it.path }.take(6)
         val hasCodec = spec.codec?.let { !(it.request.isNullOrEmpty() && it.response.isNullOrEmpty()) } == true || routes.any { it.codec != null }
         val labels = routes.take(8).map { "${it.method?.uppercase(Locale.ROOT) ?: "ANY"} ${it.path ?: "/"}" }
-        return SpecDigest(routes.size, methods, paths, spec.tcp?.port, spec.tcp != null, hasCodec, spec.environment?.takeIf { it.isNotBlank() },
-            spec.tcp?.rulesOrEmpty()?.size ?: 0, 0, labels)
+        return SpecDigest(routes.size, methods, paths, spec.tcp?.port, spec.tcp?.let { true }, hasCodec, spec.environment?.takeIf { it.isNotBlank() },
+            spec.tcp?.rulesOrEmpty()?.size ?: 0, spec.tcp?.protocolId?.trim()?.takeIf { it.isNotEmpty() }, spec.tcp?.upstream?.trim()?.takeIf { it.isNotEmpty() }, labels)
     }
 
-    private fun toSummary(m: MockServer): MockServerSummary {
+    /** 프로토콜 id → 이름(테넌트 1회 조회) — 목록/현황이 TCP Mock 마다 조회하지 않게. */
+    private fun protocolNames(): Map<String, String> =
+        protocolRepo.findByTenantIdOrderByNameAsc(tenant()).associate { it.id.toString() to it.name }
+
+    private fun toSummary(m: MockServer, protocolNames: Map<String, String> = emptyMap()): MockServerSummary {
         val hit = digestCache[m.id]
         val d = if (hit != null && hit.first == m.updatedAt) hit.second else digestOf(m.specJson).also { digestCache[m.id] = m.updatedAt to it }
-        val journal = store.journal(m.id)
         val now = Instant.now()
-        val recent = journal.count { java.time.Duration.between(it.at, now).seconds <= 60 }
+        // 살아있음 지표: TCP 는 전문 로그(수신분), HTTP 는 요청 기록(journal)
+        val last: Instant?; val recent: Int; val count: Int; val unmatched: Int
+        if (d.tcpEnabled == true) {
+            val log = store.tcpLog(m.id).filter { it.dir == "in" }
+            last = log.firstOrNull()?.at; recent = log.count { java.time.Duration.between(it.at, now).seconds <= 60 }
+            count = log.size; unmatched = log.count { it.source == "none" }
+        } else {
+            val journal = store.journal(m.id)
+            last = journal.firstOrNull()?.at; recent = journal.count { java.time.Duration.between(it.at, now).seconds <= 60 }
+            count = journal.size; unmatched = journal.count { it.matchedRuleId == null }
+        }
         return MockServerSummary(
             m.id, m.name, m.slug, m.kind.name, m.isEnabled, m.updatedAt, m.workspaceId,
-            d.routeCount, d.methods, d.paths, d.tcpPort, d.tcpEnabled, d.routeLabels, d.tcpRuleCount, d.tcpFieldCount, d.hasCodec, d.environment,
-            journal.firstOrNull()?.at, recent, journal.size, journal.count { it.matchedRuleId == null }, m.currentVersionOrZero(),
+            d.routeCount, d.methods, d.paths, d.tcpPort, d.tcpEnabled, d.routeLabels, d.tcpRuleCount,
+            d.protocolId?.let { protocolNames[it] }, d.upstream, d.hasCodec, d.environment,
+            last, recent, count, unmatched, m.currentVersionOrZero(),
         )
     }
 
@@ -425,19 +449,74 @@ class MockServerService(
            "body":"{\"message\":\"안녕하세요 {{query.name}}\",\"seq\":\"{{seq}}\"}"}
         ]}]}""".trimIndent()
 
+    /** 새 TCP 서버의 시작 예시 — 빈 포트만 잡아 둔다(프로토콜·규칙은 편집기에서 고른다). */
+    private fun defaultTcpSpec(port: Int): String =
+        """{"tcp":{"port":$port,"protocolId":null,"upstream":null,"timeoutMs":5000,"rules":[]}}"""
+
+    // ---------- TCP 트래픽(전문 로그) / 보내보기 ----------
+
+    /** 이 Mock 이 주고받은 전문 로그(최신순) — 읽기 권한. */
+    @Transactional(readOnly = true)
+    fun tcpLog(id: UUID): List<MockRuntimeStore.TcpLogEntry> = findReadable(id).let { store.tcpLog(id) }
+
+    @Transactional
+    fun clearTcpLog(id: UUID) { find(id); store.clearTcpLog(id) } // 런타임 변형 = 쓰기 게이트
+
     /**
-     * 새 TCP 서버의 시작 예시 — 빈 포트에 4자리 길이 프리픽스 EUC-KR 전문.
-     * 요청 레이아웃(전문코드4·계좌10)과 필드 모드 응답(코드4·계좌 에코10·잔액12 좌측0·고객명10) — 텍스트 대신 필드로 시작하게.
+     * 보내보기 — 프로토콜로 요청 전문을 조립해 **실제 리스너 포트**로 1회 왕복하고 응답을 해석해 돌려준다.
+     * (규칙 매칭·장애 주입·프록시까지 그대로 타므로 편집기에서 "진짜 되는지"를 확인할 수 있다.)
      */
-    private fun defaultTcpSpec(port: Int): String = """
-        {"tcp":{"enabled":true,"port":$port,"charset":"EUC-KR","prefixLength":4,"prefixIncludesSelf":false,
-          "requestFields":[{"id":"q1","name":"전문코드","length":4},{"id":"q2","name":"계좌번호","length":10}],
-          "rules":[{"id":"t1","contains":"","when":[],"response":"",
-            "responseFields":[
-              {"id":"f1","name":"응답코드","length":4,"value":"0000"},
-              {"id":"f2","name":"계좌번호","length":10,"value":"{{req.계좌번호}}"},
-              {"id":"f3","name":"잔액","length":12,"value":"1500000","pad":"left","padChar":"0"},
-              {"id":"f4","name":"고객명","length":10,"value":"홍길동"}]}]}}""".trimIndent()
+    // @Transactional 없음 — 소켓 왕복(최대 timeoutMs) 동안 DB 커넥션을 붙잡지 않는다(조회는 리포지토리 자체 트랜잭션).
+    fun tcpSend(id: UUID, req: MockDtos.TcpSendRequest): MockDtos.TcpSendResult {
+        val m = findReadable(id)
+        val tcp = parseSpec(m.specJson).tcp ?: throw BadRequestException("TCP Mock 이 아닙니다.")
+        val port = tcpRegistry.listeningPort(id) ?: throw BadRequestException("리스너가 열려 있지 않습니다(Mock 켜짐·프로토콜 선택 확인).")
+        val spec = protocolService.specOf(UUID.fromString(tcp.protocolId!!.trim()), m.tenantId)
+        val key = req.key?.trim()?.takeIf { it.isNotEmpty() } ?: throw BadRequestException("전문(key)을 고르세요.")
+        val enc = try {
+            ProtocolCodec.encode(spec, key, req.values ?: emptyMap(), Direction.SEND, protocolService.plugins())
+        } catch (e: ProtocolCodec.ProtocolException) { throw BadRequestException(e.message ?: "조립 실패") }
+        val x = try {
+            TcpClient.exchange("127.0.0.1", port, tcp.timeoutMs?.takeIf { it > 0 } ?: 5000, enc.bytes, spec)
+        } catch (e: Exception) { throw BadRequestException("전송 실패: ${e.message}") }
+        val d = ProtocolCodec.decode(spec, x.response.bytes, Direction.RECV, protocolService.plugins())
+        val cs = spec.charset()
+        return MockDtos.TcpSendResult(
+            ProtocolDtos.PreviewResult(enc.bytes.size, TcpBytes.hexDump(enc.bytes), TcpBytes.printable(enc.bytes, cs), enc.fields, emptyList(), enc.warnings),
+            MockDtos.DecodedView(
+                d.messageKey, d.disc, d.header, d.body, TcpBytes.decodeEscaped(x.response.bytes, cs),
+                TcpBytes.hexDump(x.response.bytes), x.response.bytes.size, x.response.chunks, d.warnings,
+            ),
+            x.elapsedMs,
+        )
+    }
+
+    /**
+     * 저장 전 TCP 규칙 검증 — 리스너가 열린 뒤에야 드러나는 실패(응답 전문 없음/필드 오타/upstream 누락)를 400 으로 앞당긴다.
+     * 프로토콜을 아직 안 고른 spec 은 규칙 검사를 건너뛴다(편집 중 저장 허용 — 리스너도 안 열린다).
+     */
+    private fun validateTcp(spec: MockSpec) {
+        val tcp = spec.tcp ?: return
+        val pid = tcp.protocolId?.trim()
+        val proto = if (pid.isNullOrEmpty()) null else try {
+            protocolService.specOf(UUID.fromString(pid))
+        } catch (e: Exception) { throw BadRequestException("TCP Mock 의 프로토콜을 찾을 수 없습니다: $pid") }
+        for ((i, r) in tcp.rulesOrEmpty().withIndex()) {
+            if (r.isProxy()) {
+                if (tcp.upstream.isNullOrBlank()) throw BadRequestException("규칙 ${i + 1}: proxy 인데 upstream(실서버 host:port)이 없습니다.")
+                continue
+            }
+            if (proto == null) continue
+            val f = r.thenFields()
+            val disc = if (proto.hasDiscriminator()) f[proto.discriminator!!.trim()] else null
+            val msg = proto.lookup(disc, Direction.RECV)
+                ?: throw BadRequestException("규칙 ${i + 1}: 응답 전문 '${disc ?: "response"}' 정의가 프로토콜에 없습니다.")
+            val allowed = (proto.headerOrEmpty() + msg.fieldsOrEmpty()).map { it.nameOrEmpty() }.toSet()
+            f.keys.firstOrNull { it !in allowed }?.let {
+                throw BadRequestException("규칙 ${i + 1}: '$it' 는 응답 전문 ${msg.keyOrEmpty()} 에 없는 필드입니다.")
+            }
+        }
+    }
 
     companion object {
         private val SLUG: Pattern = Pattern.compile("[a-z0-9-]{3,40}")

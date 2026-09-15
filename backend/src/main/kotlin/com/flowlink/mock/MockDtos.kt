@@ -31,7 +31,8 @@ object MockDtos {
         val tcpEnabled: Boolean? = null,
         val routeLabels: List<String> = emptyList(),  // "GET /pay" — 목록 카드 라우트 미니 스트립(앞 8개)
         val tcpRuleCount: Int = 0,
-        val tcpFieldCount: Int = 0,
+        val protocolName: String? = null,   // TCP: 참조 프로토콜 이름(id → 이름 1회 조회)
+        val upstream: String? = null,       // TCP: proxy 규칙의 실서버 host:port
         val hasCodec: Boolean = false,
         val environment: String? = null,
         val lastRequestAt: Instant? = null,
@@ -73,7 +74,8 @@ object MockDtos {
         val routeCount: Int = 0,
         val routeLabels: List<String> = emptyList(),
         val tcpRuleCount: Int = 0,
-        val tcpFieldCount: Int = 0,
+        val protocolName: String? = null,
+        val upstream: String? = null,
         val hasCodec: Boolean = false,
         val environment: String? = null,
         val lastRequestAt: Instant? = null,
@@ -196,6 +198,30 @@ object MockDtos {
         val delayMs: Int,
         val callbackFired: Boolean,
         val decodedBody: String? = null, // 요청 코덱 적용 결과(코덱 없으면 null)
+    )
+
+    // ---------- TCP 트래픽 로그 / 보내보기 ----------
+
+    /** 보내보기 요청 — 이 Mock 의 프로토콜에서 전문(key)을 고르고 필드 값을 채워 실제 리스너 포트로 쏜다. */
+    data class TcpSendRequest(val key: String? = null, val values: Map<String, String>? = null)
+
+    /** 수신 전문 해석 결과 — 헤더/본문 값 + 원문(텍스트·hex·바이트수·부분수신 chunks) + 경고. */
+    data class DecodedView(
+        val key: String?,
+        val disc: String?,
+        val header: Map<String, String>,
+        val body: Map<String, String>?,
+        val text: String,
+        val hex: String,
+        val bytes: Int,
+        val chunks: List<Int>,
+        val warnings: List<String>,
+    )
+
+    data class TcpSendResult(
+        val request: com.flowlink.protocol.ProtocolDtos.PreviewResult,
+        val response: DecodedView,
+        val elapsedMs: Long,
     )
 
     /** 런타임 상태 스냅샷 — 상태 있는 목 디버깅용. */

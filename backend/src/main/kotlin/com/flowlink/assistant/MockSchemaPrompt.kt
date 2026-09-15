@@ -56,32 +56,12 @@ Step: {"id":"<변환 플러그인 id — 업로드된 JAR 플러그인의 id 만
 JSON body 는 문자열이므로 따옴표 이스케이프: "body":"{\"ok\":true,\"id\":\"{{uuid}}\"}".
 결제창 같은 웹페이지는 contentType:"html" + body 에 HTML(폼 자동 submit 으로 returnUrl 콜백) 을 넣는다.
 
-## TCP mock (고정길이 소켓 전문) — 사용자가 "TCP"/"소켓"/"전문"이라 하면 routes 대신 이 섹션을 채운다
-tcp: {"enabled":true,"port":9091,"charset":"EUC-KR","prefixLength":4,"prefixIncludesSelf":false,"rules":[TcpRule...]}
-- port: 1024~65535 의 빈 포트. charset: 기본 EUC-KR(금융 전문 관례 — ⚠ 한글 1글자=2바이트, 오프셋 계산에 반영).
-- prefixLength: 길이 프리픽스 자릿수(기본 4). ⚠ **이 프리픽스는 요청·응답 모두 서버가 자동 처리**한다:
-  · 요청: 앞 N바이트 길이 프리픽스를 서버가 벗겨내고 **그 뒤 본문**만 매칭·`{{req}}`에 넣는다.
-  · 응답: 네 response 본문 길이로 서버가 프리픽스를 **자동으로 앞에 붙인다**.
-  → **response 템플릿엔 길이 프리픽스를 절대 넣지 마라**(넣으면 이중 프리픽스로 깨진다). 본문만 만든다.
-  · prefixLength 0 = 프리픽스 없음(연결당 1전문, EOF 까지 읽음). prefixIncludesSelf: 길이 숫자에 프리픽스 자신을 포함하면 true(기본 false).
-tcp.requestFields(요청 레이아웃 — 권장): [{"id":"q1","name":"전문코드","length":4},{"id":"q2","name":"계좌번호","length":10}] — 앞에서부터 바이트 길이대로 잘라 이름을 붙인다 → {{req.이름}}·필드 조건.
-TcpRule: {"id":"t1","contains":"0200","when":[{"field":"전문코드","op":"eq","value":"0200"}],"response":"<텍스트 템플릿>",
-          "responseFields":[{"id":"f1","name":"응답코드","length":4,"value":"0000"},{"id":"f2","name":"계좌번호","length":10,"value":"{{req.계좌번호}}"},
-                            {"id":"f3","name":"잔액","length":12,"value":"1500000","pad":"left","padChar":"0"},{"id":"f4","name":"고객명","length":10,"value":"홍길동"}]}
-- 매칭: contains(프리픽스 벗긴 본문 포함 문자열) AND when(요청 필드 조건, op eq|ne|contains|startswith|endswith|regex|exists). 둘 다 비면 기본 규칙(맨 아래). 위→아래 첫 매칭.
-- 응답은 **responseFields(필드 모드) 를 우선 써라**: 항목마다 이름·바이트 길이·값·pad(right=우측 공백=문자 기본, left=좌측 0=숫자/금액)·padChar. 서버가 바이트 단위로 조립(초과 절단·부족 패딩, EUC-KR 한글 2바이트 정확) — 사람이 길이를 맞출 필요 없음.
-- response(텍스트 모드, responseFields 가 비었을 때만): `{{req}}` = 요청 본문 전체 · `{{req:오프셋:길이}}` = 바이트 슬라이스 · `{{req.필드명}}` = 레이아웃 필드. 리터럴은 정확한 바이트 길이로 직접 채워야 한다.
-
-### TCP 예시 — 잔액조회 전문 (요청: "0200"+계좌10 / 응답: "0210"+계좌에코+잔액12+응답코드"0000")
-{"routes":[],"tcp":{"enabled":true,"port":9105,"charset":"EUC-KR","prefixLength":4,"prefixIncludesSelf":false,
- "requestFields":[{"id":"q1","name":"전문코드","length":4},{"id":"q2","name":"계좌","length":10}],
- "rules":[
-   {"id":"bal","contains":"","when":[{"field":"전문코드","op":"eq","value":"0200"}],"response":"","responseFields":[
-     {"id":"f1","name":"응답코드","length":4,"value":"0210"},{"id":"f2","name":"계좌","length":10,"value":"{{req.계좌}}"},
-     {"id":"f3","name":"잔액","length":12,"value":"1500000","pad":"left","padChar":"0"},{"id":"f4","name":"처리코드","length":4,"value":"0000"}]},
-   {"id":"def","contains":"","response":"","responseFields":[{"id":"e1","name":"응답코드","length":4,"value":"0299"},{"id":"e2","name":"메시지","length":16,"value":"ERR"}]}
- ]}}
-- 요청 본문(프리픽스 뒤) = 전문코드"0200"(4) + 계좌(10) — requestFields 로 이름 붙임. 응답 = 필드 4개(4+10+12+4=30B), 길이 프리픽스("0030")는 서버가 자동으로 앞에 붙인다.
+## TCP mock — 프로토콜(필드 스키마)은 별도 리소스라 여기서 만들지 않는다. 사용자가 protocolId 를 주지 않으면 "프로토콜 화면에서 먼저 정의" 하라고 답하라.
+tcp: {"port":9600,"protocolId":"<id>","upstream":"10.20.3.14:9600"(proxy 규칙에만 필요),"timeoutMs":5000,"rules":[TcpRule...]}
+TcpRule: {"id":"r1","when":[{"field":"거래코드","op":"eq","value":"0210"}],"then":{"mode":"mock","fields":{"거래코드":"0211","응답코드":"0000","계좌번호":"{{req.계좌번호}}","잔액":"1250000","최종거래일":"{{today}}"}},"fault":null}
+- then.mode: mock(fields 로 응답 조립 — 헤더는 요청 에코, 길이 자동, discriminator 값이 응답 표를 고름) | proxy(upstream 실서버로 통과). when 이 비면 fallback(맨 아래).
+- 템플릿: {{req.필드}} {{seq}} {{today}} {{now:yyyyMMddHHmmss}} {{uuid}} {{ 이름@secret }}. 값 길이는 서버가 바이트로 맞춘다(초과는 잘리고 경고).
+- fault: {"delayMs":500,"splitAt":20,"drop":false,"reset":false,"corruptLength":false} — 장애 재현.
 
 ## STYLE
 - 최소·정확하게. 사용자가 준 현재 spec 을 이어 고칠 땐 기존 route id 를 유지. reply 는 간결한 한국어.

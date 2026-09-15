@@ -92,6 +92,19 @@ class MockServerController(private val service: MockServerService) {
     @GetMapping("/{id}/state")
     fun state(@PathVariable id: UUID): MockDtos.MockStateView = service.runtimeState(id)
 
+    // TCP 전문 로그 / 보내보기 — 편집기 트래픽 패널
+    @GetMapping("/{id}/tcp-log")
+    fun tcpLog(@PathVariable id: UUID): List<MockRuntimeStore.TcpLogEntry> = service.tcpLog(id)
+
+    @DeleteMapping("/{id}/tcp-log")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    fun clearTcpLog(@PathVariable id: UUID) = service.clearTcpLog(id)
+
+    /** 보내보기 — 프로토콜로 전문을 조립해 이 Mock 의 리스너 포트로 실제 왕복(규칙·장애 주입 그대로). */
+    @PostMapping("/{id}/tcp-send")
+    fun tcpSend(@PathVariable id: UUID, @RequestBody req: MockDtos.TcpSendRequest): MockDtos.TcpSendResult =
+        service.tcpSend(id, req)
+
     /** 코덱 시험(HTTP) — 미저장 코덱 + 샘플 전문 → 단계별 입력/출력(저장·소켓 없음). 시크릿 값이 쓰이므로 승인 사용자 + 읽기 권한. */
     @PostMapping("/{id}/codec-try")
     fun codecTry(@PathVariable id: UUID, @RequestBody req: MockDtos.CodecTryRequest): MockDtos.CodecTryResult = service.tryCodec(id, req)

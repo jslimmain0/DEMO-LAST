@@ -33,8 +33,8 @@ class MockAssistantService(
         val hasRoutes = spec != null && !spec.isNull && spec.path("routes").isArray && spec.path("routes").size() > 0
         if (hasTcp && !hasRoutes) {
             append("\n\n## THIS MOCK IS TCP-ONLY\n")
-            append("이 Mock 은 TCP 전문 mock 이다. **routes 는 빈 배열로 두고 tcp 섹션만** 만들거나 고쳐라. tcp.port 는 현재 값을 유지하고(사용자가 바꾸라고 하지 않는 한), ")
-            append("요청 레이아웃(tcp.requestFields)·규칙(tcp.rules: contains/when + responseFields 또는 response)·인코딩·프리픽스를 사용자의 말에 맞게 정의한다. 기존 필드/규칙 id 는 유지.")
+            append("이 Mock 은 TCP 전문 mock 이다. **routes 는 빈 배열로 두고 tcp 섹션만** 만들거나 고쳐라. tcp.port 와 tcp.protocolId 는 현재 값을 유지하고(사용자가 바꾸라고 하지 않는 한), ")
+            append("규칙(tcp.rules: when/then.fields/fault)만 사용자의 말에 맞게 정의한다. 필드 이름은 그 프로토콜의 표에 있는 것만 쓰고, 기존 규칙 id 는 유지.")
         } else if (hasRoutes && !hasTcp) {
             append("\n\n## THIS MOCK IS HTTP-ONLY\n이 Mock 은 HTTP mock 이다. tcp 는 null 로 두고 routes 만 만들거나 고쳐라(라우트/규칙 id 유지).")
         }
@@ -53,7 +53,7 @@ class MockAssistantService(
             has(q, "결제", "payment", "pay", "콜백", "callback", "노티") ->
                 "결제창(HTML)을 띄우고 returnUrl 로 콜백하는 샘플 mock 입니다." to STUB_PAY
             has(q, "tcp", "소켓", "socket", "전문") ->
-                "고정길이 TCP 전문을 받아 앞 4바이트를 응답코드로 에코하는 샘플 mock 입니다." to STUB_TCP
+                "고정길이 TCP 전문 mock 샘플입니다(프로토콜은 프로토콜 화면에서 고르세요)." to STUB_TCP
             has(q, "otp", "상태", "state", "승인", "단계") ->
                 "1차 pending → 2차 approved 로 상태가 바뀌는 샘플 mock 입니다." to STUB_STATE
             else ->
@@ -85,7 +85,7 @@ class MockAssistantService(
         ]}]}""".trimIndent()
 
         private val STUB_TCP = """
-        {"tcp":{"enabled":true,"port":9091,"charset":"EUC-KR","prefixLength":4,"prefixIncludesSelf":false,
-          "rules":[{"id":"t1","contains":"","response":"0000{{req:4:20}}"}]}}""".trimIndent()
+        {"tcp":{"port":9091,"protocolId":null,"upstream":null,"timeoutMs":5000,
+          "rules":[{"id":"fb","when":[],"then":{"mode":"mock","fields":{"응답코드":"0000"}}}]}}""".trimIndent()
     }
 }

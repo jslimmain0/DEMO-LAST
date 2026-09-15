@@ -48,6 +48,8 @@ class ProtocolSpecTest {
         assertThat(spec(messages = listOf(Message("0210", null, listOf(Field("a", 1, "ascii"), Field("a", 2, "ascii"))))).validate()).anyMatch { it.contains("중복") }
         assertThat(spec(messages = listOf(Message("0210", null, listOf(Field("a", 0, "ascii"))))).validate()).anyMatch { it.contains("길이") }
         assertThat(spec().copy(lengthFormat = "binary", header = listOf(Field("전문길이", 3, "length"), Field("거래코드", 4, "ascii"))).validate()).anyMatch { it.contains("1, 2, 4") }
+        // 본문 필드가 헤더 필드와 같은 이름이면 값 맵이 모호해진다
+        assertThat(spec(messages = listOf(Message("0210", null, listOf(Field("거래코드", 4, "ascii"))))).validate()).anyMatch { it.contains("헤더 필드와 이름이 겹칩니다") }
     }
 
     @Test

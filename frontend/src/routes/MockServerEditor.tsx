@@ -196,7 +196,7 @@ export function MockServerEditor() {
   }, [journal, routes])
   const hitsByRule = useMemo(() => {
     const m = new Map<string, number>()
-    for (const e of tcpLogQ.data ?? []) if (e.ruleId) m.set(e.ruleId, (m.get(e.ruleId) ?? 0) + 1)
+    for (const e of tcpLogQ.data ?? []) if (e.dir === 'in' && e.ruleId) m.set(e.ruleId, (m.get(e.ruleId) ?? 0) + 1)
     return m
   }, [tcpLogQ.data])
   const unmatched = journal.filter((r) => r.matchedRuleId == null).length
@@ -622,8 +622,8 @@ function TrafficPanel({ id, canEdit, base, spec, onSpec, journal, open, onToggle
         {open && stateKeys.length > 0 && <span style={{ ...metaMono, maxWidth: 360, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={stateKeys.map((k) => `${k}=${st.data!.state[k]}`).join(' · ')}>{stateKeys.map((k) => `${k}=${st.data!.state[k]}`).join(' · ')}</span>}
         {open && canEdit && !isTcp && journal.length > 0 && <button style={{ ...miniBtn, padding: '3px 8px' }} onClick={() => clear.mutate()}>기록 비우기</button>}
       </div>
-      {open && isTcp && tab === 'log' && <TcpLogPanel mockId={id} protocolId={protocolId} onMakeRule={canEdit ? onMakeRule : undefined} />}
-      {open && isTcp && tab === 'send' && <TcpSendPanel mockId={id} spec={protoSpec} secrets={secretNames} />}
+      {open && isTcp && tab === 'log' && <TcpLogPanel mockId={id} protocolId={protocolId} canEdit={canEdit} onMakeRule={canEdit ? onMakeRule : undefined} />}
+      {open && isTcp && tab === 'send' && <TcpSendPanel key={protocolId ?? 'none'} mockId={id} spec={protoSpec} secrets={secretNames} />}
       {open && !isTcp && tab === 'log' && (
         <div style={{ flex: 1, overflowY: 'auto', padding: '6px 12px 10px' }}>
           {shown.length === 0 ? <div style={{ fontSize: 12, color: 'var(--fl-text-muted)', padding: '8px 0' }}>{journal.length ? '선택한 라우트로 온 요청이 없습니다.' : 'base URL 을 워크플로 HTTP 노드에 넣고 실행하거나 [보내보기]로 호출해 보세요.'}</div>

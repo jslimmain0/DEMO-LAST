@@ -8,8 +8,9 @@ import type { MockTcpCond, MockTcpFault, MockTcpRuleSpec, MockTcpSpec, ProtocolF
 import { mocksApi, protocolsApi } from '../api/client'
 import { TokenInput } from '../binding/TokenInput'
 import { apiErrorMessage } from '../lib/apiError'
+import { toast } from './toast'
 import { relTime } from '../lib/format'
-import { byteLen, lintTcpRules, messageKeys, requestKeys, withOffsets } from '../lib/protocolSpec'
+import { byteLen, lintTcpRules, requestKeys, withOffsets } from '../lib/protocolSpec'
 import { tcpMockSources } from '../lib/mockSources'
 import { FieldRow, PreviewBox } from '../panels/TcpNodePanel'
 
@@ -26,6 +27,19 @@ export function responseMessageOf(rule: MockTcpRuleSpec, spec: ProtocolSpec | un
   const key = responseKeyOf(rule, spec)
   if (!spec || !key) return undefined
   return spec.messages.find((m) => m.key === `${key}:response`) ?? spec.messages.find((m) => m.key === key)
+}
+
+/**
+ * 응답 전문 후보 — 분기 필드에 들어갈 값은 `0210` 이지 `0210:response` 가 아니다.
+ * `{key}:response` 는 같은 코드의 응답 정의(responseMessageOf/lint 가 우선 해석)라 base key 로 합치고 라벨은 응답 쪽을 우선한다.
+ */
+export function responseKeyOptions(spec: ProtocolSpec): { key: string; label: string }[] {
+  const m = new Map<string, string>()
+  for (const msg of spec.messages) {
+    const base = msg.key.split(':')[0]
+    if (!m.has(base) || (msg.key.includes(':response') && msg.label)) m.set(base, msg.label ?? '')
+  }
+  return [...m].map(([key, label]) => ({ key, label: label ? `${key} · ${label}` : key }))
 }
 
 /** 좌 nav 한 줄 요약 — `거래코드=0210 · 응답코드≠0000 → mock 0211 ⚡delay 500`. */
@@ -111,7 +125,8 @@ export function TcpRuleDetail({ rule, index, total, spec, secrets, readOnly, onC
     onChange({ then: { ...(rule.then ?? { mode: 'mock' }), mode: 'mock', fields: { ...fields, [spec.discriminator]: key } } })
   }
   const setFault = (patch: Partial<MockTcpFault>) => onChange({ fault: { ...(rule.fault ?? {}), ...patch } })
-  const warnFor = (name: string) => lints.find((l) => l.includes(name))
+  // lintTcpRules 는 필드를 `'이름'` 또는 `이름 값 (` 로 적는다 — 부분 문자열 매칭이면 '금액' 이 '총금액' 경고를 가져온다
+  const warnFor = (name: string) => lints.find((l) => l.includes(`'${name}'`) || l.includes(`${name} 값 (`))
   // 표에 그릴 행 — 헤더(length 제외) + 응답 본문 필드 + 정의에 없는데 값이 남아 있는 필드
   const headerRows = (spec?.header ?? []).filter((f) => f.type !== 'length')
   const known = new Set([...headerRows.map((f) => f.name), ...(msg?.fields ?? []).map((f) => f.name)])
@@ -172,7 +187,7 @@ export function TcpRuleDetail({ rule, index, total, spec, secrets, readOnly, onC
                 <span style={{ ...lbl, minWidth: 70 }}>응답 전문</span>
                 <select style={{ ...input, minWidth: 220 }} value={respKey} disabled={readOnly || !spec} aria-label="응답 전문" onChange={(e) => setRespKey(e.target.value)}>
                   <option value="">— 고르세요 —</option>
-                  {(spec ? messageKeys(spec) : []).map((m) => <option key={m.key} value={m.key}>{m.label}</option>)}
+                  {(spec ? responseKeyOptions(spec) : []).map((m) => <option key={m.key} value={m.key}>{m.label}</option>)}
                 </select>
                 <span style={meta}>{spec.discriminator} = <code style={code}>{respKey || '(미지정)'}</code></span>
               </div>
@@ -254,12 +269,19 @@ function FieldValueRow({ f, kind, spec, value, disc, readOnly, sources, warn, on
 
 // ---------- 전문 로그 ----------
 
-export function TcpLogPanel({ mockId, protocolId, onMakeRule }: { mockId: string; protocolId: string | null | undefined; onMakeRule?: (e: TcpLogEntry) => void }) {
+/** 폴링으로 목록이 갈리므로 펼침 상태는 인덱스가 아니라 행 자체로 식별한다(같은 키가 행 key 이기도 하다). */
+const rowKey = (e: TcpLogEntry): string => `${e.at}|${e.dir}|${e.bytes}`
+
+export function TcpLogPanel({ mockId, protocolId, canEdit, onMakeRule }: { mockId: string; protocolId: string | null | undefined; canEdit?: boolean; onMakeRule?: (e: TcpLogEntry) => void }) {
   const qc = useQueryClient()
   const log = useQuery({ queryKey: ['mock-tcp-log', mockId], queryFn: () => mocksApi.tcpLog(mockId), enabled: !!mockId, refetchInterval: 3000, retry: false })
-  const clear = useMutation({ mutationFn: () => mocksApi.clearTcpLog(mockId), onSuccess: () => qc.invalidateQueries({ queryKey: ['mock-tcp-log', mockId] }) })
+  const clear = useMutation({
+    mutationFn: () => mocksApi.clearTcpLog(mockId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['mock-tcp-log', mockId] }),
+    onError: (e) => toast(apiErrorMessage(e, '로그 지우기 실패'), 'error'),
+  })
   const [filter, setFilter] = useState<'all' | 'mock' | 'proxy' | 'warn'>('all')
-  const [open, setOpen] = useState<number | null>(null)
+  const [open, setOpen] = useState<string | null>(null)
   const rows = (log.data ?? []).filter((e) => (filter === 'all' ? true : filter === 'warn' ? e.level !== 'info' : e.source === filter))
   return (
     <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
@@ -271,13 +293,13 @@ export function TcpLogPanel({ mockId, protocolId, onMakeRule }: { mockId: string
         </div>
         <span style={meta}>{rows.length}건</span>
         <span style={{ marginLeft: 'auto' }} />
-        {(log.data?.length ?? 0) > 0 && <button style={{ ...miniBtn, padding: '3px 8px' }} onClick={() => clear.mutate()}>지우기</button>}
+        {canEdit && (log.data?.length ?? 0) > 0 && <button style={{ ...miniBtn, padding: '3px 8px' }} disabled={clear.isPending} onClick={() => clear.mutate()}>지우기</button>}
       </div>
       <div style={{ flex: 1, overflowY: 'auto', padding: '0 12px 10px' }}>
         {rows.length === 0 ? (
           <div style={{ ...meta, padding: '8px 0' }}>{log.data?.length ? '필터에 맞는 전문이 없습니다.' : '아직 전문이 없습니다 — 워크플로 TCP 노드나 아래 [보내보기]로 이 포트에 전문을 보내면 여기에 쌓입니다.'}</div>
         ) : (
-          <div style={{ display: 'grid', gap: 3 }}>{rows.map((e, i) => <LogRow key={`${e.at}-${i}`} e={e} open={open === i} protocolId={protocolId} onToggle={() => setOpen(open === i ? null : i)} onMakeRule={onMakeRule} />)}</div>
+          <div style={{ display: 'grid', gap: 3 }}>{rows.map((e) => { const k = rowKey(e); return <LogRow key={k} e={e} open={open === k} protocolId={protocolId} onToggle={() => setOpen(open === k ? null : k)} onMakeRule={onMakeRule} /> })}</div>
         )}
       </div>
     </div>

@@ -44,16 +44,14 @@ export function applicableSecretNames(secrets: SecretView[] | undefined, environ
 export function mockSources(o: MockSourceOpts): BindableSource[] {
   const out: BindableSource[] = []
   const r = o.route
-  {
-    const pathParams = pathParamNames(r?.path)
-    if (pathParams.length) out.push({ id: 'path', name: '경로 파라미터', type: 'mock', cat: 'http', items: pathParams.map((k) => item(k, '경로')) })
-    const q = (r?.expect?.query ?? []).filter((f) => f.key?.trim())
-    if (q.length) out.push({ id: 'query', name: '쿼리', type: 'mock', cat: 'http', items: q.map((f) => item(f.key.trim(), '쿼리', f.type)) })
-    const h = (r?.expect?.header ?? []).filter((f) => f.key?.trim())
-    if (h.length) out.push({ id: 'header', name: '요청 헤더', type: 'mock', cat: 'http', items: h.map((f) => item(f.key.trim(), '헤더', f.type)) })
-    const b = (r?.expect?.body ?? []).filter((f) => f.key?.trim())
-    if (b.length) out.push({ id: 'body', name: '요청 본문', type: 'mock', cat: 'http', items: b.map((f) => item(f.key.trim(), '본문', f.type)) })
-  }
+  const pathParams = pathParamNames(r?.path)
+  if (pathParams.length) out.push({ id: 'path', name: '경로 파라미터', type: 'mock', cat: 'http', items: pathParams.map((k) => item(k, '경로')) })
+  const q = (r?.expect?.query ?? []).filter((f) => f.key?.trim())
+  if (q.length) out.push({ id: 'query', name: '쿼리', type: 'mock', cat: 'http', items: q.map((f) => item(f.key.trim(), '쿼리', f.type)) })
+  const h = (r?.expect?.header ?? []).filter((f) => f.key?.trim())
+  if (h.length) out.push({ id: 'header', name: '요청 헤더', type: 'mock', cat: 'http', items: h.map((f) => item(f.key.trim(), '헤더', f.type)) })
+  const b = (r?.expect?.body ?? []).filter((f) => f.key?.trim())
+  if (b.length) out.push({ id: 'body', name: '요청 본문', type: 'mock', cat: 'http', items: b.map((f) => item(f.key.trim(), '본문', f.type)) })
   const st = stateKeys(o.spec)
   if (st.length) out.push({ id: 'state', name: '서버 상태', type: 'mock', cat: 'set', items: st.map((k) => item(k, '상태')) })
   const sec = applicableSecretNames(o.secrets, o.environment)

@@ -1,13 +1,14 @@
 // 참고용 변환 플러그인 — 새 플러그인을 만들 때 이 디렉터리를 통째로 복사해 시작하면 된다.
 //
 // 핵심 규칙:
-//  1) SPI(:spi)는 compileOnly — 런타임엔 앱(FlowLink)이 같은 FQCN 클래스를 제공하므로 JAR 에 번들하지 않는다.
+//  1) SPI(src/main/kotlin/com/flowlink/transform/FlowTransform.kt)는 앱 소스의 **사본** — 컴파일용일 뿐이라
+//     아래 jar 설정에서 빼고, 런타임엔 앱(FlowLink)이 제공하는 같은 FQCN 클래스를 쓴다.
 //  2) 구현 클래스를 META-INF/services/com.flowlink.transform.FlowTransform 에 등록(ServiceLoader).
 //  3) 외부 라이브러리가 필요하면 implementation(...) 으로 추가 — 아래 jar 설정이 JAR 안에 함께 넣어서
 //     **앱(backend)에 그 의존성이 없어도** 이 JAR 하나로 굴러간다.
 //  4) 빌드: ./gradlew :sample:jar → build/libs/flowlink-plugin-sample.jar
 plugins {
-    kotlin("jvm")
+    kotlin("jvm") version "1.9.25"   // 앱과 같은 버전
 }
 
 group = "com.flowlink.plugin"
@@ -15,6 +16,10 @@ version = "0.1.0"
 
 kotlin {
     jvmToolchain(21)
+    // 앱과 동일 — 인터페이스 default 메서드를 진짜 JVM default 로(SPI 에 메서드가 늘어도 구 JAR 가 동작).
+    compilerOptions {
+        freeCompilerArgs.add("-Xjvm-default=all-compatibility")
+    }
 }
 
 repositories {
@@ -22,13 +27,11 @@ repositories {
 }
 
 dependencies {
-    compileOnly(project(":spi"))
     compileOnly(kotlin("stdlib"))   // 앱이 런타임에 제공 — JAR 에 안 넣는다(gradle.properties 참조)
 
     // 외부 라이브러리는 implementation 으로 — 아래 jar 설정이 JAR 에 함께 넣는다.
     // implementation("org.apache.commons:commons-lang3:3.14.0")
 
-    testImplementation(project(":spi"))
     testImplementation(kotlin("stdlib"))
     testImplementation("org.junit.jupiter:junit-jupiter:5.10.2")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher:1.10.2")
@@ -42,8 +45,11 @@ tasks.withType<Test> {
 tasks.jar {
     archiveFileName.set("flowlink-plugin-sample.jar")
 
+    // SPI 사본은 컴파일용 — JAR 에 넣지 않는다(앱 클래스와 중복).
+    exclude("com/flowlink/transform/**")
+
     // 자족(self-contained) JAR — implementation 으로 건 외부 라이브러리를 JAR 안에 함께 넣는다.
-    // compileOnly(SPI·stdlib)는 runtimeClasspath 에 없으므로 자동으로 빠진다. 의존성이 없으면 이 블록은 아무 일도 안 한다.
+    // compileOnly(stdlib)는 runtimeClasspath 에 없으므로 자동으로 빠진다. 의존성이 없으면 이 블록은 아무 일도 안 한다.
     // ⚠ 앱이 **이미 쓰는** 라이브러리(jackson 등)를 넣어도 앱 것이 이긴다(TransformRegistry 의 URLClassLoader 는 parent-first).
     //    앱과 다른 버전을 꼭 써야 하면 Shadow 플러그인으로 패키지를 relocate 할 것.
     from(configurations.runtimeClasspath.get().map { if (it.isDirectory) it else zipTree(it) })

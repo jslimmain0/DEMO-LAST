@@ -1,6 +1,6 @@
 // ⚠ 이 파일은 두 곳에 **동일 사본**으로 존재한다 — 한쪽을 고치면 반드시 다른 쪽도 같이 고칠 것(diff 로 확인):
 //     backend/src/main/kotlin/com/flowlink/transform/FlowTransform.kt    앱이 런타임에 제공하는 계약(진짜)
-//     plugins/spi/src/main/kotlin/com/flowlink/transform/FlowTransform.kt 플러그인이 compileOnly 로 무는 사본
+//     plugins/sample/src/main/kotlin/com/flowlink/transform/FlowTransform.kt  플러그인이 컴파일할 때만 쓰는 사본
 //   default 메서드를 추가해도 **구 버전으로 컴파일된 플러그인 JAR** 가 AbstractMethodError 없이 동작하도록
 //   양쪽 모두 -Xjvm-default=all-compatibility 로 컴파일한다(진짜 JVM default + DefaultImpls 유지).
 package com.flowlink.transform

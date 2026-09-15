@@ -215,6 +215,7 @@ object MockDtos {
         val hex: String,
         val bytes: Int,
         val chunks: List<Int>,
+        val partial: Boolean,
         val warnings: List<String>,
     )
 

@@ -15,10 +15,14 @@ import org.slf4j.LoggerFactory
 import org.springframework.boot.context.event.ApplicationReadyEvent
 import org.springframework.context.event.EventListener
 import org.springframework.stereotype.Component
+import org.springframework.transaction.event.TransactionPhase
+import org.springframework.transaction.event.TransactionalEventListener
 import java.io.IOException
 import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
+import java.net.SocketTimeoutException
+import java.time.Instant
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
@@ -74,8 +78,8 @@ class TcpMockRegistry(
         }
     }
 
-    /** 프로토콜 저장 → 그 프로토콜을 쓰는 열린 리스너에 즉시 반영(재시작 불필요). */
-    @EventListener
+    /** 프로토콜 저장 → 그 프로토콜을 쓰는 열린 리스너에 반영(재시작 불필요). 커밋 후에만 — 롤백된 저장이 리스너를 바꾸면 안 된다. */
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
     fun onProtocolChanged(e: ProtocolChangedEvent) {
         for (l in listeners.values) if (l.tcp.protocolId?.trim() == e.id.toString()) l.protocol = e.spec
     }
@@ -204,7 +208,11 @@ class TcpMockRegistry(
                 session.serve(sock.getInputStream(), sock.getOutputStream()) {
                     runCatching { sock.setSoLinger(true, 0) }; runCatching { sock.close() }
                 }
-            } catch (e: Exception) { /* 타임아웃/상대 종료 — 연결만 닫는다 */ }
+            } catch (e: SocketTimeoutException) {
+                store.recordTcp(l.mockId, MockRuntimeStore.TcpLogEntry(
+                    Instant.now(), "in", "none", null, emptyMap(), "", "", 0, null, null, "유휴 30초 경과 — 연결 종료", "warn",
+                ))
+            } catch (e: Exception) { /* 상대 종료/소켓 오류 — 연결만 닫는다 */ }
         }
     }
 

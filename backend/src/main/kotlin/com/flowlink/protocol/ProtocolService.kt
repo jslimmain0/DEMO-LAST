@@ -102,6 +102,8 @@ class ProtocolService(
             ProtocolDtos.PreviewResult(e.bytes.size, TcpBytes.hexDump(e.bytes), TcpBytes.printable(e.bytes, spec.charset()), e.fields, emptyList(), e.warnings)
         } catch (e: ProtocolCodec.ProtocolException) {
             ProtocolDtos.PreviewResult(0, "", "", emptyList(), listOf(ProtocolDtos.PreviewError(e.field, e.message ?: "조립 실패")))
+        } catch (e: Exception) { // 코덱 플러그인 등이 던진 예외도 편집기 에러로(500 대신)
+            ProtocolDtos.PreviewResult(0, "", "", emptyList(), listOf(ProtocolDtos.PreviewError(null, "조립 중 오류: ${e.message ?: e}")))
         }
     }
 

@@ -73,7 +73,7 @@ class TcpMockE2eTest {
         assertThat(mocks.tcpLog(a.id).first { it.dir == "in" }.source).isEqualTo("mock")
 
         val split = TcpClient.exchange("127.0.0.1", pb, 3000, ProtocolCodec.encode(spec, "9001", mapOf("거래코드" to "0410", "응답코드" to "x")).bytes, spec)
-        assertThat(split.response.chunks.size).isGreaterThan(1)
+        assertThat(split.response.partial).isTrue()
         val corrupt = ProtocolCodec.encode(spec, "9001", mapOf("거래코드" to "0510", "응답코드" to "x")).bytes
         assertThatThrownBy { TcpClient.exchange("127.0.0.1", pb, 1500, corrupt, spec) }.isInstanceOfAny(SocketTimeoutException::class.java, java.io.IOException::class.java)
         val drop = ProtocolCodec.encode(spec, "9001", mapOf("거래코드" to "0610", "응답코드" to "x")).bytes
@@ -82,6 +82,7 @@ class TcpMockE2eTest {
         // tcp-send(실제 소켓) + 미정의 전문 로그 + 저장 검증
         val sent = mocks.tcpSend(a.id, MockDtos.TcpSendRequest("0210", mapOf("계좌번호" to "999")))
         assertThat(sent.response.body!!["잔액"]).isEqualTo("999")
+        assertThat(sent.response.partial).isFalse() // 한 번에 온 정상 왕복 — 청크가 헤더/본문 2개여도 부분 수신 아님
         val unknown = ProtocolCodec.encode(spec, "9001", mapOf("거래코드" to "0777", "응답코드" to "x")).bytes
         TcpClient.exchange("127.0.0.1", pa, 2000, unknown, spec)
         assertThat(mocks.tcpLog(a.id).first { it.dir == "in" }.note).contains("본문 스키마 없음")

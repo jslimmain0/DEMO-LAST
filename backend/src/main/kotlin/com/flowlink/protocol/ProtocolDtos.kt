@@ -14,5 +14,5 @@ object ProtocolDtos {
     data class PreviewResult(val total: Int, val hex: String, val text: String, val fields: List<ProtocolCodec.FieldSlice>, val errors: List<PreviewError>, val warnings: List<String> = emptyList())
 }
 
-/** 프로토콜 저장 시 발행 — TCP 리스너가 핫스왑한다(Task 12). */
+/** 프로토콜 저장 시 발행 — TCP 리스너가 핫스왑한다. */
 data class ProtocolChangedEvent(val id: UUID, val spec: ProtocolSpec)

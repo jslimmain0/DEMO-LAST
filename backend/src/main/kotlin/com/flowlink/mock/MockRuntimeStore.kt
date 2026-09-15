@@ -106,6 +106,8 @@ class MockRuntimeStore {
         val ruleId: String?,
         val note: String?,
         val level: String,
+        /** 한 전문이 여러 번에 나뉘어 도착/전송됐다(Framer.Frame.partial · split 장애 주입). */
+        val partial: Boolean = false,
     )
 
     data class Snapshot(val state: Map<String, String>, val seq: Long, val hits: Map<String, Int>, val requestCount: Int)

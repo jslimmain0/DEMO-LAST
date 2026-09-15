@@ -20,7 +20,7 @@ import java.util.UUID
 @Component
 class TcpNodeExecutor(private val tokens: TokenResolver, private val protocols: ProtocolService) {
 
-    class Built(val spec: ProtocolSpec, val key: String, val encoded: ProtocolCodec.Encoded, val values: LinkedHashMap<String, String>, val host: String, val port: Int, val timeoutMs: Int, val reqText: String)
+    class Built(val spec: ProtocolSpec, val encoded: ProtocolCodec.Encoded, val values: LinkedHashMap<String, String>, val host: String, val port: Int, val timeoutMs: Int, val reqText: String)
 
     fun build(node: GraphNode, ctx: ExecutionContext): Built {
         val pid = node.protocolId?.trim()?.takeIf { it.isNotEmpty() } ?: throw IllegalArgumentException("프로토콜을 선택하세요.")
@@ -40,7 +40,7 @@ class TcpNodeExecutor(private val tokens: TokenResolver, private val protocols: 
             throw IllegalArgumentException("전문 조립 중 오류: ${e.message ?: e}", e)
         }
         val reqText = "TCP $host:$port · $key · ${spec.charset().name()} · ${enc.bytes.size}B\n" + table(enc.fields) + "\n" + TcpBytes.printable(enc.bytes, spec.charset())
-        return Built(spec, key, enc, values, host, port, if ((node.tcpTimeoutMs ?: 0) <= 0) 5000 else node.tcpTimeoutMs!!, reqText)
+        return Built(spec, enc, values, host, port, if ((node.tcpTimeoutMs ?: 0) <= 0) 5000 else node.tcpTimeoutMs!!, reqText)
     }
 
     /** 전송 없이 조립 — 검증/조립 실패는 errors 로(속성 패널이 필드 옆에 표시). */
@@ -65,7 +65,7 @@ class TcpNodeExecutor(private val tokens: TokenResolver, private val protocols: 
             if (d.body != null) out.putAll(d.body) else out["body"] = TcpBytes.decodeEscaped(d.rawBody, b.spec.charset())
             val sb = StringBuilder("응답 ${x.response.bytes.size}B · ${x.elapsedMs}ms")
             if (d.messageKey == null) sb.append(" · 정의되지 않은 전문 '${d.disc ?: ""}' — 본문 raw(body)")
-            if (x.response.chunks.size > 1) sb.append(" · 부분 수신 ${x.response.chunks.joinToString("+")}B")
+            if (x.response.partial) sb.append(" · 부분 수신 ${x.response.chunks.joinToString("+")}B")
             for (w in d.warnings) sb.append("\n⚠ ").append(w)
             sb.append('\n').append(table(d.fields)).append('\n').append(TcpBytes.printable(x.response.bytes, b.spec.charset()))
             NodeResult(true, null, b.reqText, sb.toString(), out, out, LinkedHashMap<String, Any?>(b.values), null)

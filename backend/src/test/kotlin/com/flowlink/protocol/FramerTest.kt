@@ -29,6 +29,7 @@ class FramerTest {
         val f = Framer.readFrame(ByteArrayInputStream(msg), spec)!!
         assertThat(f.bytes).isEqualTo(msg)
         assertThat(f.chunks).containsExactly(8, 13)
+        assertThat(f.partial).isFalse() // 헤더 1 read + 본문 1 read = 부분 수신 아님
     }
 
     @Test
@@ -36,6 +37,7 @@ class FramerTest {
         val f = Framer.readFrame(chunked(msg, 3, 9, 5), spec)!!
         assertThat(f.bytes).isEqualTo(msg)
         assertThat(f.chunks).containsExactly(3, 5, 4, 5, 4) // 헤더 8: 3+5 / 본문 13: 4+5+4
+        assertThat(f.partial).isTrue()
     }
 
     @Test

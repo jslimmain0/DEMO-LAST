@@ -496,7 +496,7 @@ class MockServerService(
             ProtocolDtos.PreviewResult(enc.bytes.size, TcpBytes.hexDump(enc.bytes), TcpBytes.printable(enc.bytes, cs), enc.fields, emptyList(), enc.warnings),
             MockDtos.DecodedView(
                 d.messageKey, d.disc, d.header, d.body, TcpBytes.decodeEscaped(x.response.bytes, cs),
-                TcpBytes.hexDump(x.response.bytes), x.response.bytes.size, x.response.chunks, d.warnings,
+                TcpBytes.hexDump(x.response.bytes), x.response.bytes.size, x.response.chunks, x.response.partial, d.warnings,
             ),
             x.elapsedMs,
         )

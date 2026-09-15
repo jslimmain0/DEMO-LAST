@@ -55,7 +55,9 @@ class TcpMockSession(
     /** 프레임 하나 처리. false = 연결을 끊어야 함(reset). */
     fun handleFrame(frame: Framer.Frame, output: OutputStream, onReset: () -> Unit): Boolean {
         val decoded = try { ProtocolCodec.decode(spec, frame.bytes, Direction.SEND, plugins) } catch (e: ProtocolCodec.ProtocolException) {
-            log(entry("in", "none", null, emptyMap(), frame.bytes, frame.chunks, null, e.message, "error")); return true
+            log(entry("in", "none", null, emptyMap(), frame.bytes, frame.chunks, null, e.message, "error", frame.partial)); return true
+        } catch (e: Exception) { // 코덱 플러그인 등에서 튀어나온 예외 — 연결을 조용히 죽이지 않고 로그 행으로
+            log(entry("in", "none", null, emptyMap(), frame.bytes, frame.chunks, null, "처리 오류: ${e.message ?: e}", "error", frame.partial)); return true
         }
         val values = decoded.values()
         val rule = match(tcp.rulesOrEmpty(), values)
@@ -63,7 +65,7 @@ class TcpMockSession(
         val notes = ArrayList(decoded.warnings)
         if (decoded.messageKey == null) notes += "본문 스키마 없음 — raw ${decoded.rawBody.size} B"
         if (rule == null) notes += "매칭 규칙 없음 — 응답 없음"
-        log(entry("in", source, decoded.disc ?: decoded.messageKey, values, frame.bytes, frame.chunks, rule?.id, notes.joinToString(" · ").ifEmpty { null }, if (rule == null || decoded.warnings.isNotEmpty()) "warn" else "info"))
+        log(entry("in", source, decoded.disc ?: decoded.messageKey, values, frame.bytes, frame.chunks, rule?.id, notes.joinToString(" · ").ifEmpty { null }, if (rule == null || decoded.warnings.isNotEmpty()) "warn" else "info", frame.partial))
         if (rule == null) return true
         // 응답을 만들기 전에 끊는 장애부터 — then 이 없거나 upstream 이 죽어도 drop/reset 은 그대로 동작해야 한다
         val f = rule.fault
@@ -113,6 +115,8 @@ class TcpMockSession(
         }
         val enc = try { ProtocolCodec.encode(spec, msg.keyOrEmpty(), fields, Direction.SEND, plugins, lenient = true) } catch (e: ProtocolCodec.ProtocolException) {
             log(entry("out", "mock", disc, fields, ByteArray(0), null, rule.id, e.message, "error")); return null
+        } catch (e: Exception) {
+            log(entry("out", "mock", disc, fields, ByteArray(0), null, rule.id, "처리 오류: ${e.message ?: e}", "error")); return null
         }
         log(entry("out", "mock", msg.keyOrEmpty(), fields, enc.bytes, null, rule.id, enc.warnings.joinToString(" · ").ifEmpty { null }, if (enc.warnings.isEmpty()) "info" else "warn"))
         return enc.bytes
@@ -129,7 +133,7 @@ class TcpMockSession(
             up.output.write(frame.bytes); up.output.flush()
             val r = Framer.readFrame(up.input, spec) ?: throw IOException("upstream 이 응답 없이 연결을 닫았습니다.")
             val d = runCatching { ProtocolCodec.decode(spec, r.bytes, Direction.RECV, plugins) }.getOrNull()
-            log(entry("out", "proxy", d?.disc ?: d?.messageKey, d?.values() ?: emptyMap(), r.bytes, r.chunks, rule.id, d?.warnings?.joinToString(" · ")?.ifEmpty { null }, if (d == null || d.warnings.isNotEmpty()) "warn" else "info"))
+            log(entry("out", "proxy", d?.disc ?: d?.messageKey, d?.values() ?: emptyMap(), r.bytes, r.chunks, rule.id, d?.warnings?.joinToString(" · ")?.ifEmpty { null }, if (d == null || d.warnings.isNotEmpty()) "warn" else "info", r.partial))
             r.bytes
         } catch (e: Exception) {
             log(entry("out", "proxy", null, emptyMap(), (e as? Framer.FrameException)?.raw ?: ByteArray(0), null, rule.id, "upstream 오류: ${e.message}", "error"))
@@ -153,12 +157,14 @@ class TcpMockSession(
                 log(entry("out", source, null, emptyMap(), b, null, rule.id, "corrupt-length — 길이 필드에 $declared", "warn"))
             } catch (e: ProtocolCodec.ProtocolException) {
                 log(entry("out", source, null, emptyMap(), b, null, rule.id, "corrupt-length 불가: ${e.message}", "warn"))
+            } catch (e: Exception) {
+                log(entry("out", source, null, emptyMap(), b, null, rule.id, "처리 오류: ${e.message ?: e}", "error"))
             }
         }
         val split = f?.splitAt
         if (split != null && split in 1 until b.size) {
             output.write(b, 0, split); output.flush(); sleeper(300L); output.write(b, split, b.size - split)
-            log(entry("out", source, null, emptyMap(), ByteArray(0), listOf(split, b.size - split), rule.id, "split — ${split}B 보내고 300ms 뒤 나머지", "warn"))
+            log(entry("out", source, null, emptyMap(), ByteArray(0), listOf(split, b.size - split), rule.id, "split — ${split}B 보내고 300ms 뒤 나머지", "warn", true))
         } else {
             if (split != null) log(entry("out", source, null, emptyMap(), ByteArray(0), null, rule.id, "split 무시 — splitAt=$split, 전문 ${b.size}B", "warn"))
             output.write(b)
@@ -169,15 +175,20 @@ class TcpMockSession(
 
     // ---------- 로그 ----------
 
-    private fun entry(dir: String, source: String, key: String?, fields: Map<String, String>, bytes: ByteArray, chunks: List<Int>?, ruleId: String?, note: String?, level: String): MockRuntimeStore.TcpLogEntry {
-        val raw = TcpBytes.decodeEscaped(bytes, cs).map { if (it.code < 0x20) '.' else it }.joinToString("")
+    private fun entry(dir: String, source: String, key: String?, fields: Map<String, String>, bytes: ByteArray, chunks: List<Int>?, ruleId: String?, note: String?, level: String, partial: Boolean = false): MockRuntimeStore.TcpLogEntry {
+        // 큰 전문은 앞부분만 로그에 싣는다(행 200개 × 전문 크기가 힙을 먹지 않게) — bytes 는 실제 크기 그대로.
+        val shown = if (bytes.size > MockRuntimeStore.BODY_CAP) bytes.copyOf(MockRuntimeStore.BODY_CAP) else bytes
+        val raw = TcpBytes.decodeEscaped(shown, cs).map { if (it.code < 0x20) '.' else it }.joinToString("")
         val text = mask(raw)
         val hidden = text != raw // 시크릿이 전문에 실려 있었다 — hex 로 원문이 새지 않게 통째로 뺀다
-        val n = note?.let { mask(it) }
+        val notes = ArrayList<String>()
+        note?.let { notes += mask(it) }
+        if (shown.size < bytes.size) notes += "앞 ${MockRuntimeStore.BODY_CAP}B만 표시(전체 ${bytes.size}B)"
+        if (hidden) notes += "hex 생략(시크릿 마스킹)"
         return MockRuntimeStore.TcpLogEntry(
             Instant.now(), dir, source, key, fields.mapValues { mask(it.value) },
-            text, if (hidden) "" else TcpBytes.hexDump(bytes), bytes.size, chunks, ruleId,
-            if (hidden) (n?.plus(" · ") ?: "") + "hex 생략(시크릿 마스킹)" else n, level,
+            text, if (hidden) "" else TcpBytes.hexDump(shown), bytes.size, chunks, ruleId,
+            notes.joinToString(" · ").ifEmpty { null }, level, partial,
         )
     }
 }

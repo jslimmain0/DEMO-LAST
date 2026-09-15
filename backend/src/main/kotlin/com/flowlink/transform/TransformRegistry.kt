@@ -19,6 +19,7 @@ import java.util.concurrent.ConcurrentHashMap
 class TransformRegistry(@Value("\${flowlink.plugins.dir:plugins}") dir: String) {
 
     private val byId: MutableMap<String, FlowTransform> = ConcurrentHashMap()
+    private val codecById: MutableMap<String, com.flowlink.codec.CodecPlugin> = ConcurrentHashMap()
     private val pluginDir: Path = Path.of(dir)
 
     init {
@@ -29,13 +30,16 @@ class TransformRegistry(@Value("\${flowlink.plugins.dir:plugins}") dir: String) 
     @Synchronized
     final fun reload() {
         val next = LinkedHashMap<String, FlowTransform>()
-        val pluginCount = loadPlugins(next)
+        val nextCodecs = LinkedHashMap<String, com.flowlink.codec.CodecPlugin>()
+        val pluginCount = loadPlugins(next, nextCodecs)
         byId.clear()
         byId.putAll(next)
-        log.info("변환 플러그인 {}개", pluginCount)
+        codecById.clear()
+        codecById.putAll(nextCodecs)
+        log.info("변환 플러그인 {}개, 코덱 {}개", pluginCount, nextCodecs.size)
     }
 
-    private fun loadPlugins(map: MutableMap<String, FlowTransform>): Int {
+    private fun loadPlugins(map: MutableMap<String, FlowTransform>, codecs: MutableMap<String, com.flowlink.codec.CodecPlugin>): Int {
         if (!Files.isDirectory(pluginDir)) {
             return 0
         }
@@ -54,6 +58,9 @@ class TransformRegistry(@Value("\${flowlink.plugins.dir:plugins}") dir: String) 
                     map[t.id()] = t
                     count++
                 }
+                for (c in ServiceLoader.load(com.flowlink.codec.CodecPlugin::class.java, cl)) {
+                    codecs[c.id()] = c
+                }
             }
         } catch (e: Exception) {
             log.warn("플러그인 로드 실패: {}", e.message)
@@ -64,6 +71,10 @@ class TransformRegistry(@Value("\${flowlink.plugins.dir:plugins}") dir: String) 
     fun get(id: String): Optional<FlowTransform> = Optional.ofNullable(byId[id])
 
     fun list(): List<FlowTransform> = ArrayList(byId.values)
+
+    fun codec(id: String): com.flowlink.codec.CodecPlugin? = codecById[id]
+
+    fun codecs(): List<com.flowlink.codec.CodecPlugin> = ArrayList(codecById.values)
 
     companion object {
         private val log = LoggerFactory.getLogger(TransformRegistry::class.java)

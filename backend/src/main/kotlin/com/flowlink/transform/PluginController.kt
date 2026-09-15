@@ -67,3 +67,14 @@ class PluginController(
         private val log = LoggerFactory.getLogger(PluginController::class.java)
     }
 }
+
+data class CodecView(val id: String, val label: String, val layer: String, val params: List<FlowTransform.TransformParam>)
+
+/** 별도 클래스 — PluginController 는 클래스 레벨 @RequestMapping("/api/v1/plugins") 이라 절대경로 매핑 불가. */
+@RestController
+class CodecController(private val registry: TransformRegistry) {
+    @GetMapping("/api/v1/codecs")
+    fun codecs(): List<CodecView> = registry.codecs().map {
+        CodecView(it.id(), it.label(), if (it is com.flowlink.codec.MessageCodec) "message" else "field", it.params())
+    }
+}

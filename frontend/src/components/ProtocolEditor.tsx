@@ -151,6 +151,7 @@ export function ProtocolEditor({ detail, canEdit, onSaved }: { detail: ProtocolD
             <span style={lbl}>분기 필드</span>
             <select value={spec.discriminator} disabled={ro} onChange={(e) => patch({ discriminator: e.target.value })} style={sel}>
               <option value="">(없음 — request/response)</option>
+              {!!spec.discriminator && !spec.header.some((f) => f.name === spec.discriminator) && <option value={spec.discriminator}>{spec.discriminator} (헤더에 없음)</option>}
               {spec.header.map((f) => <option key={f.name} value={f.name}>{f.name}</option>)}
             </select>
             {oddKeys && <span style={{ ...hint, color: 'var(--fl-warn, #b8860b)' }}>⚠ 분기 필드가 없으면 전문 key 는 request/response 여야 합니다.</span>}
@@ -213,7 +214,8 @@ export function ProtocolEditor({ detail, canEdit, onSaved }: { detail: ProtocolD
                   })}>삭제</button>
                 )}
               </div>
-              <FieldTable fields={msg.fields} onChange={(fields) => patchMsg({ fields })} baseOffset={headerLen} codecs={codecList} readOnly={ro} lengthField={spec.lengthField} />
+              <FieldTable key={msg.key} fields={msg.fields} onChange={(fields) => patchMsg({ fields })} baseOffset={headerLen} codecs={codecList} readOnly={ro}
+                lengthField={spec.lengthField} reservedNames={spec.header.map((f) => f.name)} />
               <div style={{ ...mono, fontSize: 12, color: 'var(--fl-text-muted)', marginTop: 8 }}>본문 {bodyLen} / 전체 {headerLen + bodyLen} bytes</div>
             </>
           )}
@@ -281,6 +283,8 @@ function PreviewSection({ spec, tab }: { spec: ProtocolSpec; tab: string }) {
   const [key, setKey] = useState(tab)
   const [values, setValues] = useState<Record<string, string>>({})
   useEffect(() => { setKey(tab) }, [tab])
+  // 전문이 바뀌면 값은 비운다 — 이름이 같아도 다른 전문의 값이 따라오면 안 된다
+  useEffect(() => { setValues({}) }, [key])
   const fields = fieldsOf(spec, key)
   // 현재 전문에 있는(길이 자동 제외) 필드만 보낸다 — 전문을 바꾸면 남아 있던 값이 따라가지 않게
   const preview = useMutation({

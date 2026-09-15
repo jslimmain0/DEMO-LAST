@@ -35,7 +35,7 @@ export function ParamsForm({ params, config, onChange, readOnly }: {
   )
 }
 
-export function FieldTable({ fields, onChange, baseOffset, codecs, readOnly, lengthField }: {
+export function FieldTable({ fields, onChange, baseOffset, codecs, readOnly, lengthField, reservedNames }: {
   fields: ProtocolField[]
   onChange: (fields: ProtocolField[]) => void
   baseOffset: number
@@ -43,6 +43,8 @@ export function FieldTable({ fields, onChange, baseOffset, codecs, readOnly, len
   readOnly: boolean
   /** 프레이밍 길이 필드 이름(해당 행에 표시만) */
   lengthField?: string
+  /** 같은 전문에서 이미 쓰는 이름(본문 표에는 헤더 이름) — 백엔드가 헤더+본문 값을 한 맵으로 합치므로 겹치면 안 된다 */
+  reservedNames?: string[]
 }) {
   // pad 를 손댄 행은 type 을 바꿔도 pad 를 유지한다(그 외에는 defaultPad 로 따라감)
   const [padTouched, setPadTouched] = useState<Set<number>>(() => new Set())
@@ -51,6 +53,7 @@ export function FieldTable({ fields, onChange, baseOffset, codecs, readOnly, len
 
   const seen = new Map<string, number>()
   for (const f of fields) seen.set(f.name, (seen.get(f.name) ?? 0) + 1)
+  const reserved = new Set(reservedNames ?? [])
 
   const patch = (i: number, p: Partial<ProtocolField>) => onChange(fields.map((f, j) => (j === i ? { ...f, ...p } : f)))
   const move = (i: number, d: number) => {
@@ -76,7 +79,8 @@ export function FieldTable({ fields, onChange, baseOffset, codecs, readOnly, len
         ))}
         {fields.map((f, i) => {
           const isLen = f.type === 'length'
-          const dupe = (seen.get(f.name) ?? 0) > 1
+          const clash = reserved.has(f.name)
+          const dupe = (seen.get(f.name) ?? 0) > 1 || clash
           const rowBg = isLen ? { background: 'color-mix(in srgb, var(--fl-primary) 7%, transparent)' } : null
           return (
             <div key={i} style={{ display: 'contents' }}>
@@ -86,7 +90,7 @@ export function FieldTable({ fields, onChange, baseOffset, codecs, readOnly, len
               </div>
               <div style={{ ...td, ...rowBg }}>
                 <input aria-label={`필드 ${i + 1} 이름`} value={f.name} disabled={readOnly} onChange={(e) => patch(i, { name: e.target.value })}
-                  title={dupe ? '이름이 중복됩니다 — 바인딩이 섞입니다' : f.name === lengthField ? '프레이밍 길이 필드' : undefined}
+                  title={clash ? '헤더와 이름이 겹칩니다' : dupe ? '이름이 중복됩니다 — 바인딩이 섞입니다' : f.name === lengthField ? '프레이밍 길이 필드' : undefined}
                   style={{ ...input, width: '100%', ...(dupe ? { borderColor: 'var(--fl-fail)' } : null) }} />
               </div>
               <div style={{ ...td, ...rowBg }}>

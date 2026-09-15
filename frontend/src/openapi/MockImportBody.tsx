@@ -35,8 +35,10 @@ export function MockImportBody({ onImport, onClose }: { onImport: (g: PaletteGro
         const base = mockBaseUrl(d.slug, me?.tenant)
         for (const r of d.spec?.routes ?? []) {
           const method = ((r.method ?? 'GET').toUpperCase() === 'ANY' ? 'GET' : (r.method ?? 'GET').toUpperCase()) as HttpMethod
-          const node: GraphNode = { ...makeNode('http', 0, 0), id: newId(), name: `${method} ${r.path ?? '/'}`, method, baseUrl: base + (r.path ?? ''), path: '' }
-          items.push({ id: newId(), label: node.name!, method, path: r.path ?? '/', node })
+          const rp = r.path ?? '/'
+          const path = rp.startsWith('/') ? rp : '/' + rp
+          const node: GraphNode = { ...makeNode('http', 0, 0), id: newId(), name: `${method} ${path}`, method, baseUrl: base + path, path: '' }
+          items.push({ id: newId(), label: node.name!, method, path, node })
         }
       }
       if (items.length === 0) throw new Error('가져올 라우트/전문이 없습니다.')
@@ -59,7 +61,9 @@ export function MockImportBody({ onImport, onClose }: { onImport: (g: PaletteGro
             {busy === s.id && <span style={{ fontSize: 11 }}>…</span>}
           </button>
         ))}
-        {servers.length === 0 && <div style={{ fontSize: 12, color: 'var(--fl-text-muted)', padding: 12 }}>읽을 수 있는 Mock 이 없습니다.</div>}
+        {fleet.isLoading && <div style={{ fontSize: 12, color: 'var(--fl-text-muted)', padding: 12 }}>불러오는 중…</div>}
+        {fleet.isError && <div style={{ fontSize: 12, color: 'var(--fl-fail)', padding: 12 }}>{apiErrorMessage(fleet.error, 'Mock 목록을 불러오지 못했습니다')}</div>}
+        {!fleet.isLoading && !fleet.isError && servers.length === 0 && <div style={{ fontSize: 12, color: 'var(--fl-text-muted)', padding: 12 }}>읽을 수 있는 Mock 이 없습니다.</div>}
       </div>
     </div>
   )

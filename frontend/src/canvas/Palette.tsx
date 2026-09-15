@@ -1,7 +1,7 @@
 import { useReactFlow } from '@xyflow/react'
 import type { CSSProperties, DragEvent } from 'react'
 import { useMemo, useState } from 'react'
-import type { GraphNode, HttpMethod, NodeType } from '../api/types'
+import type { GraphNode, NodeType } from '../api/types'
 import { MethodTag } from '../components/MethodTag'
 import { useEditorStore } from '../store/editorStore'
 import { PALETTE, PALETTE_GROUPS } from './nodeFactory'
@@ -123,7 +123,7 @@ export function Palette({ width = 200, onCollapse }: { width?: number; onCollaps
               title={`${item.label} 추가 (클릭 또는 드래그)`}
               style={templateRow}
             >
-              <MethodTag method={(item.method ?? 'GET') as HttpMethod} />
+              {item.method && <MethodTag method={item.method} />}
               <span style={{ flex: 1, fontSize: 12.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {item.label}
               </span>

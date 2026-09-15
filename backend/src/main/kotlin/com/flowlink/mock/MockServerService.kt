@@ -77,7 +77,9 @@ class MockServerService(
             val readable = r != null
             val s = toSummary(m, names)
             val listeningPort = tcpRegistry.listeningPort(m.id)
-            val shouldListen = m.isEnabled && s.tcpPort != null && s.tcpEnabled != false
+            // 프로토콜을 안 골랐으면 리스너를 열지 않는 게 정상(TcpMockRegistry.sync) — OFF 로 보여야 한다.
+            // 프로토콜 id 가 있는데 그 프로토콜이 삭제된 경우는 여전히 FAILED(이름이 아니라 id 로 판정).
+            val shouldListen = m.isEnabled && s.tcpPort != null && s.tcpEnabled != false && !digest(m).protocolId.isNullOrBlank()
             MockDtos.FleetServer(
                 m.id, m.name, m.slug, m.kind.name, m.isEnabled, m.workspaceId?.toString() ?: com.flowlink.workspace.WorkspaceService.PUBLIC_ID, readable, r,
                 s.tcpPort, s.tcpEnabled, listeningPort != null,
@@ -406,9 +408,15 @@ class MockServerService(
     private fun protocolNames(): Map<String, String> =
         protocolRepo.findByTenantIdOrderByNameAsc(tenant()).associate { it.id.toString() to it.name }
 
-    private fun toSummary(m: MockServer, protocolNames: Map<String, String> = emptyMap()): MockServerSummary {
+    /** spec 요약 — updatedAt 키 캐시(spec 은 저장 때만 바뀐다). */
+    private fun digest(m: MockServer): SpecDigest {
         val hit = digestCache[m.id]
-        val d = if (hit != null && hit.first == m.updatedAt) hit.second else digestOf(m.specJson).also { digestCache[m.id] = m.updatedAt to it }
+        return if (hit != null && hit.first == m.updatedAt) hit.second
+        else digestOf(m.specJson).also { digestCache[m.id] = m.updatedAt to it }
+    }
+
+    private fun toSummary(m: MockServer, protocolNames: Map<String, String> = emptyMap()): MockServerSummary {
+        val d = digest(m)
         val now = Instant.now()
         // 살아있음 지표: TCP 는 전문 로그(수신분), HTTP 는 요청 기록(journal)
         val last: Instant?; val recent: Int; val count: Int; val unmatched: Int
@@ -471,7 +479,8 @@ class MockServerService(
         val m = findReadable(id)
         val tcp = parseSpec(m.specJson).tcp ?: throw BadRequestException("TCP Mock 이 아닙니다.")
         val port = tcpRegistry.listeningPort(id) ?: throw BadRequestException("리스너가 열려 있지 않습니다(Mock 켜짐·프로토콜 선택 확인).")
-        val spec = protocolService.specOf(UUID.fromString(tcp.protocolId!!.trim()), m.tenantId)
+        val pid = tcp.protocolId?.trim()?.takeIf { it.isNotEmpty() } ?: throw BadRequestException("프로토콜을 먼저 고르세요.")
+        val spec = protocolService.specOf(UUID.fromString(pid), m.tenantId)
         val key = req.key?.trim()?.takeIf { it.isNotEmpty() } ?: throw BadRequestException("전문(key)을 고르세요.")
         val enc = try {
             ProtocolCodec.encode(spec, key, req.values ?: emptyMap(), Direction.SEND, protocolService.plugins())
@@ -479,7 +488,9 @@ class MockServerService(
         val x = try {
             TcpClient.exchange("127.0.0.1", port, tcp.timeoutMs?.takeIf { it > 0 } ?: 5000, enc.bytes, spec)
         } catch (e: Exception) { throw BadRequestException("전송 실패: ${e.message}") }
-        val d = ProtocolCodec.decode(spec, x.response.bytes, Direction.RECV, protocolService.plugins())
+        val d = try {
+            ProtocolCodec.decode(spec, x.response.bytes, Direction.RECV, protocolService.plugins())
+        } catch (e: ProtocolCodec.ProtocolException) { throw BadRequestException(e.message ?: "응답 해석 실패") }
         val cs = spec.charset()
         return MockDtos.TcpSendResult(
             ProtocolDtos.PreviewResult(enc.bytes.size, TcpBytes.hexDump(enc.bytes), TcpBytes.printable(enc.bytes, cs), enc.fields, emptyList(), enc.warnings),
@@ -508,7 +519,15 @@ class MockServerService(
             }
             if (proto == null) continue
             val f = r.thenFields()
-            val disc = if (proto.hasDiscriminator()) f[proto.discriminator!!.trim()] else null
+            val disc = if (proto.hasDiscriminator()) f[proto.discriminator!!.trim()]?.trim()?.takeIf { it.isNotEmpty() } else null
+            if (proto.hasDiscriminator() && disc == null) {
+                // 응답 표는 요청 헤더 에코가 고른다(런타임) — 여기선 어느 전문에도 없는 필드명(오타)만 잡는다
+                val known = (proto.headerOrEmpty() + proto.messagesOrEmpty().flatMap { it.fieldsOrEmpty() }).map { it.nameOrEmpty() }.toSet()
+                f.keys.firstOrNull { it !in known }?.let {
+                    throw BadRequestException("규칙 ${i + 1}: '$it' 는 프로토콜의 어떤 전문에도 없는 필드입니다.")
+                }
+                continue
+            }
             val msg = proto.lookup(disc, Direction.RECV)
                 ?: throw BadRequestException("규칙 ${i + 1}: 응답 전문 '${disc ?: "response"}' 정의가 프로토콜에 없습니다.")
             val allowed = (proto.headerOrEmpty() + msg.fieldsOrEmpty()).map { it.nameOrEmpty() }.toSet()

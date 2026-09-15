@@ -45,6 +45,10 @@ class TcpMockE2eTest {
         val spec = protocols.specOf(p.id)
         val pa = registry.pickFreePort(19600)
         val a = mocks.create(CreateMockServerRequest("A", "e2e-tcp-a", "TCP", null))
+        // 갓 만든 TCP Mock 은 프로토콜이 없어 리스너를 안 연다 = OFF(고장 아님)
+        val port0 = mocks.fleet().ports.first { it.mockId == a.id }
+        assertThat(port0.state).isEqualTo("OFF"); assertThat(port0.error).isNull()
+        assertThat(mocks.fleet().servers.first { it.id == a.id }.listenError).isNull()
         mocks.updateSpec(a.id, tcpSpec(pa, p.id.toString(), null, """
             {"id":"bal","when":[{"field":"거래코드","op":"eq","value":"0210"}],"then":{"mode":"mock","fields":{"거래코드":"0211","응답코드":"0000","잔액":"{{req.계좌번호}}"}}},
             {"id":"fb","when":[],"then":{"mode":"mock","fields":{"거래코드":"9001","응답코드":"9999"}}}"""))
@@ -83,6 +87,13 @@ class TcpMockE2eTest {
         assertThat(mocks.tcpLog(a.id).first { it.dir == "in" }.note).contains("본문 스키마 없음")
         assertThatThrownBy { mocks.updateSpec(a.id, tcpSpec(pa, p.id.toString(), null, """{"id":"x","when":[],"then":{"mode":"proxy"}}""")) }.hasMessageContaining("upstream")
         assertThatThrownBy { mocks.updateSpec(a.id, tcpSpec(pa, p.id.toString(), null, """{"id":"x","when":[],"then":{"mode":"mock","fields":{"거래코드":"0211","없는필드":"1"}}}""")) }.hasMessageContaining("없는필드")
+        // discriminator 를 안 정한 규칙은 저장 가능(응답 표는 요청 헤더 에코가 고른다) — 필드명 오타만 400
+        mocks.updateSpec(a.id, tcpSpec(pa, p.id.toString(), null, """{"id":"echo","when":[],"then":{"mode":"mock","fields":{"응답코드":"0000"}}}"""))
+        assertThat(ProtocolCodec.decode(spec, TcpClient.exchange("127.0.0.1", pa, 2000, req, spec).response.bytes, Direction.RECV).messageKey).isEqualTo("0210")
+        val echo = ProtocolCodec.decode(spec, TcpClient.exchange("127.0.0.1", pa, 2000,
+            ProtocolCodec.encode(spec, "9001", mapOf("응답코드" to "x")).bytes, spec).response.bytes, Direction.RECV)
+        assertThat(echo.messageKey).isEqualTo("9001"); assertThat(echo.body!!["응답코드"]).isEqualTo("0000")
+        assertThatThrownBy { mocks.updateSpec(a.id, tcpSpec(pa, p.id.toString(), null, """{"id":"x","when":[],"then":{"mode":"mock","fields":{"없는필드":"1"}}}""")) }.hasMessageContaining("어떤 전문에도 없는 필드")
         assertThat(mocks.list().first { it.id == a.id }.protocolName).isEqualTo("e2e-원장계")
 
         mocks.delete(b.id); mocks.delete(a.id)

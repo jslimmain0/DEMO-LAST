@@ -8,12 +8,17 @@
 #   SPRING_PROFILES_ACTIVE=dev FLOWLINK_DB_URL=... bash scripts/start.sh
 # 기본은 local(H2 파일). FLOWLINK_PORT(기본 18080)로 포트 변경.
 # 경로 접두사(context path): FLOWLINK_CONTEXT_PATH=/flowlink → http://host:port/flowlink/ (앞 슬래시 필수, 끝 슬래시 없음).
+# MCP HTTP 서버(에이전트용, Node 20+): jar 옆에 node mcp/src/index.js --http 를 함께 띄운다 — http://host:FLOWLINK_MCP_PORT/mcp (기본 18090).
+#   FLOWLINK_MCP_PORT=0 이면 안 띄움. node 가 없으면 경고만 하고 jar 만 뜬다. 설정 화면(⚙)이 접속 주소·토큰 복사를 안내한다.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 RUN_DIR="$ROOT/.run"; mkdir -p "$RUN_DIR"
 PID_FILE="$RUN_DIR/flowlink.pid"
 LOG="$RUN_DIR/flowlink.log"
+MCP_PID_FILE="$RUN_DIR/flowlink-mcp.pid"
+MCP_LOG="$RUN_DIR/flowlink-mcp.log"
+MCP_PORT="${FLOWLINK_MCP_PORT:-18090}"
 JAR="$ROOT/backend/build/libs/flowlink.jar"
 PORT="${FLOWLINK_PORT:-18080}"
 CTX="${FLOWLINK_CONTEXT_PATH:-}"; CTX="${CTX#/}"; CTX="${CTX%/}"; [ -n "$CTX" ] && CTX="/$CTX"   # 정규화: /flowlink (Spring 규약)
@@ -44,6 +49,10 @@ if [ "$BUILD" -eq 1 ] || [ ! -f "$JAR" ]; then
   echo "▶ 백엔드 bootJar…"
   ( cd "$ROOT/backend" && sh gradlew bootJar -q )
 fi
+# MCP HTTP 서버 의존성(순수 JS, 빌드 없음 — node_modules 만)
+if [ "$MCP_PORT" != "0" ] && command -v node >/dev/null 2>&1 && [ ! -d "$ROOT/mcp/node_modules" ]; then
+  echo "▶ MCP 의존성 설치…"; ( cd "$ROOT/mcp" && npm ci --no-audit --no-fund )
+fi
 [ -f "$JAR" ] || { echo "❌ jar 이 없습니다: $JAR — 'scripts/start.sh --build' 로 빌드하세요."; exit 1; }
 
 # 기본 local(H2 파일) — env 로 프로파일을 안 주면 local
@@ -55,8 +64,25 @@ JVM_OPTS="${FLOWLINK_JAVA_OPTS:-}"
 
 echo "▶ FlowLink 기동 (profile=$SPRING_PROFILES_ACTIVE, port=$PORT)…"
 # shellcheck disable=SC2086
-nohup env FLOWLINK_PORT="$PORT" FLOWLINK_CONTEXT_PATH="$CTX" java $JVM_OPTS -jar "$JAR" >> "$LOG" 2>&1 < /dev/null &
+# FLOWLINK_MCP_PORT 는 jar 에도 준다 — /auth/config 가 설정 화면에 MCP 접속 포트를 알려주게(0 이면 미설정으로).
+MCP_PORT_FOR_JAR="$MCP_PORT"; [ "$MCP_PORT" = "0" ] && MCP_PORT_FOR_JAR=""
+nohup env FLOWLINK_PORT="$PORT" FLOWLINK_CONTEXT_PATH="$CTX" FLOWLINK_MCP_PORT="$MCP_PORT_FOR_JAR" java $JVM_OPTS -jar "$JAR" >> "$LOG" 2>&1 < /dev/null &
 echo $! > "$PID_FILE"
+
+# MCP HTTP 서버 — jar 헬스와 무관하게 먼저 띄운다(REST 가 늦게 떠도 툴 호출 시점에만 연결하면 된다).
+if [ "$MCP_PORT" != "0" ]; then
+  if command -v node >/dev/null 2>&1; then
+    if [ -f "$MCP_PID_FILE" ] && kill -0 "$(cat "$MCP_PID_FILE")" 2>/dev/null; then
+      echo "MCP 서버 이미 실행 중 (PID $(cat "$MCP_PID_FILE"))"
+    else
+      nohup env FLOWLINK_URL="http://localhost:$PORT$CTX" FLOWLINK_MCP_PORT="$MCP_PORT" node "$ROOT/mcp/src/index.js" --http >> "$MCP_LOG" 2>&1 < /dev/null &
+      echo $! > "$MCP_PID_FILE"
+      echo "▶ MCP HTTP 서버 — http://localhost:$MCP_PORT/mcp (PID $(cat "$MCP_PID_FILE"), 로그 $MCP_LOG)"
+    fi
+  else
+    echo "⚠ node 가 없어 MCP HTTP 서버를 띄우지 않습니다(Node 20+ 설치 또는 FLOWLINK_MCP_PORT=0). stdio 설치형(tgz)은 그대로 됩니다."
+  fi
+fi
 
 for _ in $(seq 1 60); do
   if curl -fs "http://localhost:$PORT$CTX/api/v1/auth/config" >/dev/null 2>&1; then

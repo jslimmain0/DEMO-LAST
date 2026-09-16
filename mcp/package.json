@@ -1,11 +1,12 @@
 {
   "name": "flowlink-mcp",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
-  "description": "FlowLink MCP server (stdio) — 에이전트가 프로토콜·Mock·워크플로를 만들고 실행·관찰한다. 설치: npm i -g http://<flowlink>/mcp/flowlink-mcp.tgz",
+  "description": "FlowLink MCP server (stdio 또는 Streamable HTTP) — 에이전트가 프로토콜·Mock·워크플로를 만들고 실행·관찰한다. stdio 설치: npm i -g http://<flowlink>/mcp/flowlink-mcp.tgz · HTTP: 서버 옆에 --http 로 띄워 URL 로 접속",
   "scripts": {
     "start": "node src/index.js",
+    "start:http": "node src/index.js --http",
     "test": "node test/smoke.ts"
   },
   "engines": {

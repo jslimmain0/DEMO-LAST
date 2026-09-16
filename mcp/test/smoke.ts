@@ -7,7 +7,7 @@ import assert from 'node:assert/strict'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 
-const SERVER = join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'index.ts')
+const SERVER = join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'index.js')
 let n = 0
 const ok = (name: string) => console.log(`  ✓ ${++n} ${name}`)
 

@@ -1,21 +1,48 @@
 #!/usr/bin/env node
-// FlowLink MCP 서버(stdio) — 에이전트가 프로토콜·Mock·워크플로를 만들고, 실행하고, 로그를 관찰한다.
-//   실행: FLOWLINK_URL=http://localhost:8888 node mcp/src/index.js   (설치형: npm i -g http://<host>:8888/mcp/flowlink-mcp.tgz → flowlink-mcp)
+// FlowLink MCP 서버 — 에이전트가 프로토콜·Mock·워크플로를 만들고, 실행하고, 로그를 관찰한다. 두 가지 전송 모드, 툴 코드는 하나.
+//   stdio(기본):  FLOWLINK_URL=http://localhost:8888 node mcp/src/index.js   (설치형: npm i -g http://<host>:8888/mcp/flowlink-mcp.tgz → flowlink-mcp)
+//                 개발자 PC 에서 돈다. 로그인은 flowlink_login → flowlink_login_wait(토큰은 ~/.flowlink/mcp-token.json) 또는 FLOWLINK_TOKEN.
+//   http(서빙):   FLOWLINK_URL=http://localhost:18080 FLOWLINK_MCP_PORT=18090 node mcp/src/index.js --http
+//                 FlowLink 서버 옆에 떠서 Streamable HTTP(세션 없음)로 http://<host>:18090/mcp 를 연다 — 설치 없이 URL 한 줄, 웹 에이전트도 붙는다.
+//                 요청마다 새 McpServer/transport(SDK 의 stateless 관례). 신원은 클라이언트가 보낸 Authorization: Bearer <앱 JWT> 를 REST 로 그대로 전달
+//                 (설정 화면 → "MCP 토큰 복사"). 로그인 툴 3개(login/login_wait/logout)는 로컬 토큰 파일이 전제라 HTTP 모드엔 없다.
 //   순수 JS(빌드 없음) — 설치된 패키지는 node_modules 아래라 Node 가 .ts 타입 스트리핑을 거부하므로 소스가 JS 다.
-//   인증: dev 모드는 불필요. github 모드는 flowlink_login → flowlink_login_wait (토큰은 ~/.flowlink/mcp-token.json), 또는 FLOWLINK_TOKEN.
 // 툴은 REST 1:1 이 아니라 작업 단위이고, 응답은 에이전트 컨텍스트를 아끼려 짧은 텍스트 요약이다.
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import { createServer as createHttpServer } from 'node:http';
+import { createRequire } from 'node:module';
 import { z } from 'zod';
-import { ApiError, BASE, api, auth, sleep } from "./client.js";
-const server = new McpServer({ name: 'flowlink', version: '0.1.0' });
+import { ApiError, BASE, api, auth, sleep, withToken } from "./client.js";
+const VERSION = createRequire(import.meta.url)('../package.json').version;
+const HTTP = process.argv.includes('--http') || process.env.FLOWLINK_MCP_MODE === 'http';
+/** 툴 레지스트리 — 요청마다 새 McpServer 를 만들어야 해서(HTTP stateless) 등록을 함수로 미룬다. stdioOnly 툴은 HTTP 모드에서 빠진다. */
+const TOOLS = [];
+const tool = (name, cfg, handler) => TOOLS.push({ name, cfg, handler, stdioOnly: false });
+const stdioTool = (name, cfg, handler) => TOOLS.push({ name, cfg, handler, stdioOnly: true });
+function buildServer() {
+    const server = new McpServer({ name: 'flowlink', version: VERSION });
+    for (const t of TOOLS)
+        if (!(HTTP && t.stdioOnly))
+            server.registerTool(t.name, t.cfg, t.handler);
+    return server;
+}
+/** 401/403 뒤에 붙일 로그인 안내 — 모드마다 로그인 방법이 다르다. */
+const LOGIN_HINT = HTTP
+    ? '\n→ 로그인이 필요합니다. FlowLink 화면 설정(⚙) → "MCP 토큰 복사" 로 토큰을 받아 MCP 클라이언트 설정에 Authorization: Bearer <토큰> 헤더로 넣으세요.'
+    : '\n→ 로그인이 필요합니다. flowlink_login 을 호출해 사용자에게 코드를 안내하세요.';
+const EXPIRED_HINT = HTTP
+    ? '\n→ Authorization 헤더의 토큰이 만료됐거나 무효합니다. FlowLink 화면 설정(⚙) → "MCP 토큰 복사" 로 새 토큰을 넣으세요.'
+    : '\n→ 저장된 토큰이 만료됐거나 무효합니다. flowlink_login 으로 다시 로그인하세요.';
 const ok = (text) => ({ content: [{ type: 'text', text }] });
 const fail = (e) => {
     let hint = '';
     if (e instanceof ApiError && (e.status === 401 || e.status === 403)) {
-        hint = auth.hasToken()
-            ? '\n→ 권한이 없습니다(승인 대기 중일 수 있음 — 관리자 승인 필요). flowlink_status 로 상태 확인.'
-            : '\n→ 로그인이 필요합니다. flowlink_login 을 호출해 사용자에게 코드를 안내하세요.';
+        // 토큰 없음 → 로그인 안내 · 토큰 있는데 401 → 토큰 만료/무효 · 토큰 있는데 403 → 승인/권한
+        hint = !auth.hasToken() ? LOGIN_HINT
+            : e.status === 401 ? EXPIRED_HINT
+                : '\n→ 권한이 없습니다(승인 대기 중일 수 있음 — 관리자 승인 필요). flowlink_status 로 상태 확인.';
     }
     return { content: [{ type: 'text', text: `⚠ ${e instanceof ApiError ? `HTTP ${e.status}: ` : ''}${e instanceof Error ? e.message : String(e)}${hint}` }], isError: true };
 };
@@ -35,16 +62,42 @@ const jsonArg = z.union([z.record(z.string(), z.unknown()), z.string().transform
         return z.NEVER;
     } })]);
 // ---------- 상태 · 로그인 ----------
-server.registerTool('flowlink_status', {
+tool('flowlink_status', {
     title: 'FlowLink 상태',
     description: '연결된 FlowLink 주소·인증 모드·로그인 상태·승인 여부. 다른 툴이 403 이면 먼저 이걸로 확인.',
     inputSchema: {},
 }, async () => run(async () => {
-    const cfg = await api('GET', '/auth/config');
+    const lines = [`url: ${BASE}`, `transport: ${HTTP ? 'http(서빙 — 요청은 FlowLink 서버에서 나간다)' : 'stdio(로컬)'}`];
+    let cfg;
+    try {
+        cfg = await api('GET', '/auth/config');
+    }
+    catch (e) {
+        // 공개 경로인데 401 = 실려 간 Bearer 가 무효/만료(리소스 서버는 permitAll 이어도 잘못된 토큰을 거부한다)
+        if (e instanceof ApiError && e.status === 401 && auth.hasToken())
+            return lines.concat('auth mode: github', 'login: 토큰 있음(무효)' + EXPIRED_HINT).join('\n');
+        throw e;
+    }
     const mode = cfg.mode ?? (cfg.enabled ? 'github' : 'none');
-    const lines = [`url: ${BASE}`, `auth mode: ${mode}`];
+    lines.push(`auth mode: ${mode}`);
     if (mode !== 'github') {
         lines.push('login: 불필요(dev 모드 — 전권)');
+        return lines.join('\n');
+    }
+    if (HTTP) {
+        // HTTP 모드 — 신원은 클라이언트가 보낸 Bearer 헤더뿐. 로그인 툴이 없으니 안내만 다르다.
+        if (!auth.hasToken()) {
+            let guest = false;
+            try { await api('GET', '/auth/me'); guest = true; } catch { /* 401 = 로그인 필수 */ }
+            lines.push(guest
+                ? 'login: 없음 · 게스트 모드 ON — 읽기/워크플로/Mock 은 토큰 없이 가능. 프로토콜/환경 저장은 Authorization 헤더(설정 → MCP 토큰 복사) 필요.'
+                : 'login: 없음 · 이 서버는 로그인 필수 — MCP 클라이언트 설정에 Authorization: Bearer <토큰> 헤더를 넣으세요(설정 → MCP 토큰 복사).');
+            return lines.join('\n');
+        }
+        let me = null;
+        try { me = await api('GET', '/admin/me'); } catch { /* 토큰 만료/무효 */ }
+        if (me) lines.push(`login: ${me.username ?? '(토큰 있음)'}`, `status: ${me.myStatus ?? '?'}${me.admin ? ' · ADMIN' : ''}${me.pendingCount ? ` · 승인 대기 ${me.pendingCount}명` : ''}`);
+        else lines.push('login: 토큰 있음(무효)' + EXPIRED_HINT);
         return lines.join('\n');
     }
     if (auth.hasToken()) {
@@ -57,7 +110,7 @@ server.registerTool('flowlink_status', {
         if (me)
             lines.push(`status: ${me.myStatus ?? '?'}${me.admin ? ' · ADMIN' : ''}${me.pendingCount ? ` · 승인 대기 ${me.pendingCount}명` : ''}`);
         else
-            lines.push('→ 토큰이 만료됐거나 무효합니다. flowlink_login 으로 다시 로그인하세요.');
+            lines.push('login: 토큰 있음(무효)' + EXPIRED_HINT);
         return lines.join('\n');
     }
     // 토큰 없음 — 게스트 접근이 열려 있는지 탐지(강제 로그인 서버는 /auth/me 가 401)
@@ -73,7 +126,7 @@ server.registerTool('flowlink_status', {
         lines.push('login: 없음 · 이 서버는 로그인 필수 — flowlink_login 을 호출해 사용자에게 코드를 안내하세요.');
     return lines.join('\n');
 }));
-server.registerTool('flowlink_login', {
+stdioTool('flowlink_login', {
     title: 'GitHub 로그인 시작',
     description: 'github 모드에서 디바이스 코드를 발급한다. 사용자에게 verificationUri 를 열어 userCode 를 입력하라고 안내한 뒤 flowlink_login_wait(sessionId) 를 호출.',
     inputSchema: {},
@@ -94,7 +147,7 @@ server.registerTool('flowlink_login', {
         '토큰은 ~/.flowlink/mcp-token.json 에 저장되어 다음부터는 자동입니다(장기 유효).',
     ].join('\n');
 }));
-server.registerTool('flowlink_login_wait', {
+stdioTool('flowlink_login_wait', {
     title: 'GitHub 로그인 완료 대기',
     description: 'flowlink_login 의 sessionId 로 승인 완료를 기다려 토큰을 저장한다(최대 timeoutSec, 기본 120초). 미완이면 다시 호출.',
     inputSchema: { sessionId: z.string(), timeoutSec: z.number().int().min(5).max(600).optional() },
@@ -118,9 +171,9 @@ server.registerTool('flowlink_login_wait', {
     }
     return '아직 승인되지 않았습니다 — 사용자가 코드를 입력한 뒤 다시 flowlink_login_wait 를 호출하세요.';
 }));
-server.registerTool('flowlink_logout', { title: '토큰 삭제', description: '저장된 로그인 토큰을 지운다.', inputSchema: {} }, async () => run(async () => { auth.clear(); return '토큰을 지웠습니다.'; }));
+stdioTool('flowlink_logout', { title: '토큰 삭제', description: '저장된 로그인 토큰을 지운다.', inputSchema: {} }, async () => run(async () => { auth.clear(); return '토큰을 지웠습니다.'; }));
 // ---------- 가이드(스키마 원문) ----------
-server.registerTool('flowlink_guide', {
+tool('flowlink_guide', {
     title: '규격 가이드',
     description: '워크플로 그래프(flow=노드 타입 전체 레퍼런스, 각 노드 JSON 예시 포함)·프로토콜(protocol)·HTTP Mock(mock) JSON 규격과 에이전트 규약(rules) 원문. nodes=flow 별칭(노드 설명). 무언가 만들기 전에 해당 topic 을 한 번 읽는다. TRANSFORM 노드/코덱을 쓰려면 먼저 plugin_list.',
     inputSchema: { topic: z.enum(['flow', 'nodes', 'protocol', 'mock', 'rules', 'all']) },
@@ -144,10 +197,10 @@ function protocolSummary(d) {
     const msgs = (s.messages ?? []).map((m) => `${m.key}${m.label ? `(${m.label})` : ''} ${hl + tableLen(m.fields)}B`).join(' · ');
     return `${d.name} [${d.id}] ${s.encoding ?? ''} 헤더 ${hl}B · 길이필드 ${s.lengthField ?? '?'}(${s.lengthFormat ?? 'ascii-decimal'}, includesSelf=${!!s.includesSelf}) · 분기 ${s.discriminator || '(없음)'}\n전문: ${msgs || '(없음)'}`;
 }
-server.registerTool('protocol_list', { title: '프로토콜 목록', description: '저장된 고정길이 전문 프로토콜 목록(id·이름·인코딩·전문 수).', inputSchema: {} }, async () => run(async () => { const l = await api('GET', '/protocols'); return l.length ? l.map((p) => `${p.name} [${p.id}] ${p.encoding} · 전문 ${p.messageCount}`).join('\n') : '(프로토콜 없음)'; }));
-server.registerTool('protocol_get', { title: '프로토콜 조회', description: 'id 또는 name 으로 프로토콜 spec JSON 을 가져온다.', inputSchema: { id: z.string().optional(), name: z.string().optional() } }, async (ref) => run(async () => { const p = await findProtocol(ref); if (!p)
+tool('protocol_list', { title: '프로토콜 목록', description: '저장된 고정길이 전문 프로토콜 목록(id·이름·인코딩·전문 수).', inputSchema: {} }, async () => run(async () => { const l = await api('GET', '/protocols'); return l.length ? l.map((p) => `${p.name} [${p.id}] ${p.encoding} · 전문 ${p.messageCount}`).join('\n') : '(프로토콜 없음)'; }));
+tool('protocol_get', { title: '프로토콜 조회', description: 'id 또는 name 으로 프로토콜 spec JSON 을 가져온다.', inputSchema: { id: z.string().optional(), name: z.string().optional() } }, async (ref) => run(async () => { const p = await findProtocol(ref); if (!p)
     throw new Error('프로토콜 없음'); const d = await api('GET', `/protocols/${p.id}`); return protocolSummary(d) + '\n' + json(d.spec); }));
-server.registerTool('protocol_upsert', {
+tool('protocol_upsert', {
     title: '프로토콜 생성/갱신',
     description: '이름이 있으면 갱신, 없으면 생성. spec 은 flowlink_guide(protocol) 규격(JSON 객체 또는 JSON 문자열). 검증 실패는 서버 메시지로 돌려준다.',
     inputSchema: { name: z.string().min(1), spec: jsonArg },
@@ -156,7 +209,7 @@ server.registerTool('protocol_upsert', {
     const d = existing ? await api('PUT', `/protocols/${existing.id}`, { spec }) : await api('POST', '/protocols', { name, spec });
     return `${existing ? '갱신' : '생성'}: ` + protocolSummary(d);
 }));
-server.registerTool('protocol_preview', {
+tool('protocol_preview', {
     title: '전문 조립 미리보기',
     description: '프로토콜(id/name 또는 spec)과 전문 key·값으로 실제 바이트를 조립해 hex/텍스트/필드 오프셋을 보여준다(전송 없음). 값 검증 오류도 여기서 잡힌다.',
     inputSchema: { protocolId: z.string().optional(), name: z.string().optional(), spec: jsonArg.optional(), key: z.string(), values: z.record(z.string(), z.string()).optional() },
@@ -174,7 +227,7 @@ server.registerTool('protocol_preview', {
     const rows = (r.fields ?? []).map((f) => `@${f.offset} ${f.name}=${JSON.stringify(f.value)} ${f.actualBytes}/${f.len}B${f.warn ? ' ' + f.warn : ''}`).join('\n');
     return `총 ${r.total}B\n${rows}\n텍스트: ${r.text}\nhex: ${r.hex}${r.warnings?.length ? '\n⚠ ' + r.warnings.join(' · ') : ''}`;
 }));
-server.registerTool('protocol_delete', { title: '프로토콜 삭제', description: 'id 로 삭제(참조하는 노드/Mock 은 실행 시 실패).', inputSchema: { id: z.string() } }, async ({ id }) => run(async () => { await api('DELETE', `/protocols/${id}`); return '삭제됨'; }));
+tool('protocol_delete', { title: '프로토콜 삭제', description: 'id 로 삭제(참조하는 노드/Mock 은 실행 시 실패).', inputSchema: { id: z.string() } }, async ({ id }) => run(async () => { await api('DELETE', `/protocols/${id}`); return '삭제됨'; }));
 // ---------- Mock ----------
 async function fleet() { return api('GET', '/mock-servers/fleet'); }
 async function findMock(slug) { const f = await fleet(); return f.servers.find((s) => s.slug === slug) ?? null; }
@@ -183,10 +236,10 @@ function mockLine(s, f) {
     const cfg = s.kind === 'TCP' ? `프로토콜 ${s.protocolName ?? '없음'} · 규칙 ${s.tcpRuleCount ?? 0}${s.upstream ? ` · proxy→${s.upstream}` : ''}` : `라우트 ${s.routeCount ?? 0}${(s.routeLabels ?? []).length ? ' (' + s.routeLabels.slice(0, 4).join(', ') + ')' : ''}`;
     return `${s.name} [${s.slug}] ${s.kind} ${s.enabled ? 'on' : 'off'} ${where} · ${cfg}${s.lastRequestAt ? ` · 최근요청 ${s.lastRequestAt}` : ''}${s.unmatchedRequests ? ` · 무매칭 ${s.unmatchedRequests}` : ''}`;
 }
-server.registerTool('mock_list', { title: 'Mock 목록', description: '모든 워크스페이스의 Mock 서버(종류·켜짐·주소/포트·리스너 상태·프로토콜·최근 요청).', inputSchema: {} }, async () => run(async () => { const f = await fleet(); return f.servers.length ? f.servers.map((s) => mockLine(s, f)).join('\n') : '(Mock 없음)'; }));
-server.registerTool('mock_get', { title: 'Mock 조회', description: 'slug 로 Mock spec JSON 을 가져온다.', inputSchema: { slug: z.string() } }, async ({ slug }) => run(async () => { const m = await findMock(slug); if (!m)
+tool('mock_list', { title: 'Mock 목록', description: '모든 워크스페이스의 Mock 서버(종류·켜짐·주소/포트·리스너 상태·프로토콜·최근 요청).', inputSchema: {} }, async () => run(async () => { const f = await fleet(); return f.servers.length ? f.servers.map((s) => mockLine(s, f)).join('\n') : '(Mock 없음)'; }));
+tool('mock_get', { title: 'Mock 조회', description: 'slug 로 Mock spec JSON 을 가져온다.', inputSchema: { slug: z.string() } }, async ({ slug }) => run(async () => { const m = await findMock(slug); if (!m)
     throw new Error('Mock 없음: ' + slug); const d = await api('GET', `/mock-servers/${m.id}`); return `${d.name} [${d.slug}] ${d.kind} v${d.currentVersion ?? 0}\n` + json(d.spec); }));
-server.registerTool('mock_upsert', {
+tool('mock_upsert', {
     title: 'Mock 생성/갱신',
     description: 'slug 가 있으면 spec 갱신, 없으면 생성 후 spec 저장. HTTP spec 은 flowlink_guide(mock) 규격, TCP spec 은 {"tcp":{"port","protocolId","upstream","timeoutMs","rules":[{"id","when":[{"field","op","value"}],"then":{"mode":"mock|proxy","fields":{...}},"fault":{...}}]}}. 저장 즉시 서빙/리스너 반영.',
     inputSchema: { name: z.string().min(1), slug: z.string().regex(/^[a-z0-9-]{3,40}$/, 'slug 는 소문자·숫자·하이픈 3~40자'), type: z.enum(['HTTP', 'TCP']), spec: jsonArg, enabled: z.boolean().optional(), workspaceId: z.string().optional() },
@@ -207,7 +260,7 @@ server.registerTool('mock_upsert', {
     const s = f.servers.find((x) => x.id === m.id);
     return `${created ? '생성' : '갱신'}: ` + (s ? mockLine(s, f) : slug);
 }));
-server.registerTool('mock_send', {
+tool('mock_send', {
     title: 'TCP Mock 에 전문 보내기',
     description: 'TCP Mock 리스너로 전문을 실제 소켓으로 보내고 프로토콜로 디코딩한 응답을 돌려준다(key=요청 전문 키, values=필드 값).',
     inputSchema: { slug: z.string(), key: z.string(), values: z.record(z.string(), z.string()).optional() },
@@ -222,7 +275,7 @@ server.registerTool('mock_send', {
         `헤더: ${kv(resp.header)}`, `본문: ${resp.body ? kv(resp.body) : '(표 없음 — raw) ' + clip(resp.text, 300)}`,
         ...(resp.warnings?.length ? ['⚠ ' + resp.warnings.join(' · ')] : []), `텍스트: ${clip(resp.text, 400)}`].join('\n');
 }));
-server.registerTool('mock_log', {
+tool('mock_log', {
     title: 'Mock 트래픽 로그',
     description: 'TCP Mock 은 전문 로그(→/← · [mock]/[proxy]/[none] · 필드 · 부분 수신 · 경고), HTTP Mock 은 요청 기록. 최신순 limit 개.',
     inputSchema: { slug: z.string(), limit: z.number().int().min(1).max(200).optional(), hex: z.boolean().optional() },
@@ -245,12 +298,12 @@ server.registerTool('mock_log', {
         return '(요청 기록 없음)';
     return rows.slice(0, n).map((e) => `${e.at} ${e.method} ${e.path}${Object.keys(e.query ?? {}).length ? '?' + new URLSearchParams(e.query).toString() : ''} → ${e.status}${e.matchedRuleId ? ` rule=${e.matchedRuleId}` : ' 무매칭'}${e.bodyText ? ` body=${clip(e.bodyText, 160)}` : ''}`).join('\n');
 }));
-server.registerTool('mock_delete', { title: 'Mock 삭제', description: 'slug 로 Mock 삭제(리스너 닫힘).', inputSchema: { slug: z.string() } }, async ({ slug }) => run(async () => { const m = await findMock(slug); if (!m)
+tool('mock_delete', { title: 'Mock 삭제', description: 'slug 로 Mock 삭제(리스너 닫힘).', inputSchema: { slug: z.string() } }, async ({ slug }) => run(async () => { const m = await findMock(slug); if (!m)
     throw new Error('Mock 없음: ' + slug); await api('DELETE', `/mock-servers/${m.id}`); return '삭제됨: ' + slug; }));
 // ---------- 워크플로 · 실행 ----------
-server.registerTool('flow_list', { title: '워크플로 목록', description: '워크플로 목록(id·이름·노드 수·수정 시각). workspaceId 생략=공용.', inputSchema: { workspaceId: z.string().optional() } }, async ({ workspaceId }) => run(async () => { const l = await api('GET', '/flows', undefined, { workspaceId }); return l.length ? l.map((f) => `${f.name} [${f.id}] v${f.currentVersion} 노드 ${f.nodeCount} · ${f.updatedAt}`).join('\n') : '(워크플로 없음)'; }));
-server.registerTool('flow_get', { title: '워크플로 조회', description: 'id 로 현재 그래프 JSON(nodes/edges)을 가져온다.', inputSchema: { id: z.string() } }, async ({ id }) => run(async () => { const d = await api('GET', `/flows/${id}`); return `${d.name} [${d.id}] v${d.currentVersion}\n` + json(d.graph); }));
-server.registerTool('flow_upsert', {
+tool('flow_list', { title: '워크플로 목록', description: '워크플로 목록(id·이름·노드 수·수정 시각). workspaceId 생략=공용.', inputSchema: { workspaceId: z.string().optional() } }, async ({ workspaceId }) => run(async () => { const l = await api('GET', '/flows', undefined, { workspaceId }); return l.length ? l.map((f) => `${f.name} [${f.id}] v${f.currentVersion} 노드 ${f.nodeCount} · ${f.updatedAt}`).join('\n') : '(워크플로 없음)'; }));
+tool('flow_get', { title: '워크플로 조회', description: 'id 로 현재 그래프 JSON(nodes/edges)을 가져온다.', inputSchema: { id: z.string() } }, async ({ id }) => run(async () => { const d = await api('GET', `/flows/${id}`); return `${d.name} [${d.id}] v${d.currentVersion}\n` + json(d.graph); }));
+tool('flow_upsert', {
     title: '워크플로 저장',
     description: 'graph(flowlink_guide(flow) 규격: nodes/edges, START·END 필수)를 새 버전으로 저장. id 없으면 name 으로 새 워크플로 생성. 검증 실패는 서버 메시지.',
     inputSchema: { id: z.string().optional(), name: z.string().optional(), graph: jsonArg, note: z.string().optional(), workspaceId: z.string().optional() },
@@ -287,7 +340,7 @@ function execSummary(ex, opts) {
         lines.push(`⏸ 대기 중: ${pending} — 브라우저(워크플로 페이지)에서 진행하거나 콜백을 보내야 합니다.`);
     return lines.join('\n');
 }
-server.registerTool('flow_run', {
+tool('flow_run', {
     title: '워크플로 실행',
     description: '실행을 시작하고 끝날 때까지(최대 timeoutSec, 기본 120초) 기다린 뒤 노드별 결과·출력·실패 사유를 돌려준다. input={{키@input}} 값, envName=활성 환경 이름.',
     inputSchema: { id: z.string(), input: z.record(z.string(), z.unknown()).optional(), envName: z.string().optional(), timeoutSec: z.number().int().min(5).max(600).optional() },
@@ -309,20 +362,20 @@ server.registerTool('flow_run', {
     }
     return execSummary(ex) + (ex.status === 'RUNNING' ? '\n(아직 실행 중 — execution_get 으로 다시 확인)' : '');
 }));
-server.registerTool('execution_get', { title: '실행 상세', description: '실행 id 의 노드별 요청/응답/출력(full=true 면 전문 전체).', inputSchema: { id: z.string(), full: z.boolean().optional() } }, async ({ id, full }) => run(async () => execSummary(await api('GET', `/executions/${id}`), { full })));
-server.registerTool('execution_list', { title: '실행 이력', description: '최근 실행 목록(flowId 로 좁힐 수 있음).', inputSchema: { flowId: z.string().optional(), limit: z.number().int().min(1).max(100).optional() } }, async ({ flowId, limit }) => run(async () => {
+tool('execution_get', { title: '실행 상세', description: '실행 id 의 노드별 요청/응답/출력(full=true 면 전문 전체).', inputSchema: { id: z.string(), full: z.boolean().optional() } }, async ({ id, full }) => run(async () => execSummary(await api('GET', `/executions/${id}`), { full })));
+tool('execution_list', { title: '실행 이력', description: '최근 실행 목록(flowId 로 좁힐 수 있음).', inputSchema: { flowId: z.string().optional(), limit: z.number().int().min(1).max(100).optional() } }, async ({ flowId, limit }) => run(async () => {
     const l = await api('GET', '/executions', undefined, { flowId, limit: String(limit ?? 20) });
     const items = Array.isArray(l) ? l : (l.items ?? l.content ?? []);
     return items.length ? items.map((e) => `${e.id} ${e.status} flow=${e.flowId} ${e.startedAt}${e.error ? ` · ${clip(e.error, 120)}` : ''}`).join('\n') : '(실행 없음)';
 }));
 // ---------- 환경 변수 ----------
-server.registerTool('env_list', { title: '환경 목록', description: '실행 환경(dev/staging/prod)과 변수({{ 키@env }}).', inputSchema: {} }, async () => run(async () => { const l = await api('GET', '/environments'); return l.length ? l.map((e) => `${e.name}: ${Object.entries(e.vars ?? {}).map(([k, v]) => `${k}=${v}`).join(', ') || '(비어 있음)'}`).join('\n') : '(환경 없음)'; }));
-server.registerTool('env_put', { title: '환경 변수 저장', description: '환경 name 의 변수를 통째로 교체(없으면 생성). 비밀은 여기 말고 시크릿 볼트(화면)에.', inputSchema: { name: z.string().min(1), vars: z.record(z.string(), z.string()) } }, async ({ name, vars }) => run(async () => { const e = await api('PUT', `/environments/${encodeURIComponent(name)}`, { vars }); return `저장: ${e.name} (${Object.keys(e.vars ?? {}).length}개)`; }));
+tool('env_list', { title: '환경 목록', description: '실행 환경(dev/staging/prod)과 변수({{ 키@env }}).', inputSchema: {} }, async () => run(async () => { const l = await api('GET', '/environments'); return l.length ? l.map((e) => `${e.name}: ${Object.entries(e.vars ?? {}).map(([k, v]) => `${k}=${v}`).join(', ') || '(비어 있음)'}`).join('\n') : '(환경 없음)'; }));
+tool('env_put', { title: '환경 변수 저장', description: '환경 name 의 변수를 통째로 교체(없으면 생성). 비밀은 여기 말고 시크릿 볼트(화면)에.', inputSchema: { name: z.string().min(1), vars: z.record(z.string(), z.string()) } }, async ({ name, vars }) => run(async () => { const e = await api('PUT', `/environments/${encodeURIComponent(name)}`, { vars }); return `저장: ${e.name} (${Object.keys(e.vars ?? {}).length}개)`; }));
 // ---------- 기동 ----------
 // ---------- 플러그인(변환·코덱) ----------
 const ioStr = (io) => (io ?? []).map((p) => `${p.key}:${p.type}`).join(',') || '-';
 const paramStr = (ps) => (ps ?? []).map((p) => `${p.key}(${p.type}${p.defaultValue ? '=' + p.defaultValue : ''}${p.options?.length ? ' [' + p.options.join('|') + ']' : ''})`).join(' ');
-server.registerTool('plugin_list', {
+tool('plugin_list', {
     title: '플러그인 목록(변환·코덱)',
     description: 'TRANSFORM 노드에 쓰는 변환 플러그인과 Mock/전문에 쓰는 코덱 플러그인 목록(id·설명·입출력 포트·파라미터). 플러그인은 JAR 로 올린 것만 있고 목록이 비어 있으면 TRANSFORM 노드·코덱을 만들지 마라(업로드는 화면에서 관리자).',
     inputSchema: {},
@@ -346,7 +399,7 @@ server.registerTool('plugin_list', {
         lines.push('  (없음)');
     return lines.join('\n');
 }));
-server.registerTool('transform_preview', {
+tool('transform_preview', {
     title: '변환 미리보기',
     description: '변환 플러그인을 샘플 입력(inputs)·설정(config)으로 실행해 결과를 확인한다(순수 계산, 네트워크 없음). TRANSFORM 노드를 배선하기 전에 config 를 맞추는 용도.',
     inputSchema: { id: z.string(), inputs: z.record(z.string(), z.string()).optional(), config: z.record(z.string(), z.string()).optional() },
@@ -357,11 +410,12 @@ server.registerTool('transform_preview', {
     return Object.entries(r.outputs ?? {}).map(([k, v]) => `${k} = ${clip(v, 400)}`).join('\n') || '(출력 없음)';
 }));
 // ---------- 실제 HTTP 요청(테스트) ----------
-server.registerTool('http_request', {
+tool('http_request', {
     title: 'HTTP 요청 보내기(테스트)',
     description: 'Mock 엔드포인트·wait 콜백·웹훅·외부 URL 에 실제 HTTP 요청을 보내 응답을 확인한다. 에이전트는 이걸 쓰고 curl/파이썬으로 직접 쏘지 마라. '
         + 'HTTP Mock 테스트: mock_list 가 보여주는 base URL(예: {서버}/mock/{slug}) 뒤에 라우트 경로를 붙여 호출 → 템플릿 렌더 결과가 응답으로 온다. '
-        + 'url 이 "/" 로 시작하면 FlowLink 주소에 붙인다(예: /mock/pay/orders). 같은 서버면 로그인 토큰을 자동 첨부(Mock 게이트웨이는 무시).',
+        + 'url 이 "/" 로 시작하면 FlowLink 주소에 붙인다(예: /mock/pay/orders). 같은 서버면 로그인 토큰을 자동 첨부(Mock 게이트웨이는 무시).'
+        + (HTTP ? ' 요청은 FlowLink 서버에서 나간다 — localhost 는 서버 자신이지 사용자 PC 가 아니다.' : ''),
     inputSchema: {
         method: z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD']).optional(),
         url: z.string(),
@@ -402,5 +456,44 @@ server.registerTool('http_request', {
     return `${line}\n${clip(text, 2000) || '(빈 응답)'}`;
 }));
 // ---------- 기동 ----------
-const transport = new StdioServerTransport();
-await server.connect(transport);
+if (!HTTP) {
+    await buildServer().connect(new StdioServerTransport());
+}
+else {
+    // Streamable HTTP, 세션 없음: 요청마다 새 McpServer+transport 를 만들어 처리하고 응답이 끝나면 닫는다(동시 요청 간 request id 충돌 방지).
+    // 인증은 하지 않는다 — Authorization 헤더를 요청 컨텍스트에 실어 REST 로 그대로 넘기면 FlowLink 가 검증한다(사내 도구).
+    const port = Number(process.env.FLOWLINK_MCP_PORT || 18090);
+    const host = process.env.FLOWLINK_MCP_HOST || '0.0.0.0';
+    const readBody = (req) => new Promise((resolve, reject) => {
+        const chunks = [];
+        req.on('data', (c) => chunks.push(c));
+        req.on('end', () => { const t = Buffer.concat(chunks).toString('utf8'); if (!t) return resolve(undefined); try { resolve(JSON.parse(t)); } catch (e) { reject(e); } });
+        req.on('error', reject);
+    });
+    const send = (res, status, body, headers) => { res.writeHead(status, { 'Content-Type': 'application/json', ...(headers ?? {}) }); res.end(JSON.stringify(body)); };
+    const httpServer = createHttpServer(async (req, res) => {
+        const path = (req.url ?? '/').split('?')[0].replace(/\/+$/, '') || '/';
+        if (path === '/health')
+            return send(res, 200, { ok: true, name: 'flowlink-mcp', version: VERSION, flowlink: BASE });
+        if (path !== '/mcp' && path !== '/')
+            return send(res, 404, { error: 'not found — MCP 엔드포인트는 /mcp' });
+        if (req.method !== 'POST')
+            // 세션이 없으니 GET(SSE 알림 스트림)·DELETE(세션 종료)는 의미가 없다 — 스펙이 허용하는 405.
+            return send(res, 405, { error: 'stateless — POST /mcp 만 받는다' }, { Allow: 'POST' });
+        let body;
+        try { body = await readBody(req); } catch { return send(res, 400, { error: 'JSON 본문 파싱 실패' }); }
+        const m = /^Bearer\s+(.+)$/i.exec(req.headers.authorization ?? '');
+        const server = buildServer();
+        const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
+        res.on('close', () => { transport.close().catch(() => {}); server.close().catch(() => {}); });
+        try {
+            await server.connect(transport);
+            await withToken(m ? m[1].trim() : null, () => transport.handleRequest(req, res, body));
+        }
+        catch (e) {
+            if (!res.headersSent) send(res, 500, { error: e instanceof Error ? e.message : String(e) });
+            else res.end();
+        }
+    });
+    httpServer.listen(port, host, () => console.error(`flowlink-mcp v${VERSION} http://${host}:${port}/mcp → ${BASE}`));
+}

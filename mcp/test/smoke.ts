@@ -1,20 +1,24 @@
 // 스모크: 격리 FlowLink(dev 모드) 에 MCP 클라이언트로 붙어 프로토콜 → TCP Mock → 워크플로 → 실행 → 로그 한 바퀴.
+//   같은 시나리오를 두 전송으로 돈다: ① stdio(로컬 프로세스) ② Streamable HTTP(--http 로 띄운 서버, 세션 없음) — 툴 코드가 하나라 동작이 같아야 한다.
 //   FLOWLINK_URL=http://localhost:18081 node test/smoke.ts
-//   FLOWLINK_GH_URL=http://localhost:18082 (선택) — github 모드 인스턴스: 게스트 상태·로그인 코드 발급만 확인.
+//   FLOWLINK_GH_URL=http://localhost:18082 (선택) — github 모드 인스턴스: 게스트 상태·로그인 코드 발급만 확인(stdio).
+//   FLOWLINK_GHGUEST_URL=... (선택) — github+게스트 인스턴스: 게스트 읽기·승인 게이트(stdio) + HTTP 모드 Authorization 헤더 전달.
+//   FLOWLINK_GHGUEST_TOKEN=<앱 JWT> (선택, GHGUEST 와 함께) — HTTP 모드에서 헤더 토큰이 REST 로 전달되는지(protocol_upsert 가 403 이 아닌지).
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import assert from 'node:assert/strict'
+import { spawn, type ChildProcess } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 
 const SERVER = join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'index.js')
 let n = 0
 const ok = (name: string) => console.log(`  ✓ ${++n} ${name}`)
+type Call = (name: string, args?: Record<string, unknown>, expectError?: boolean) => Promise<string>
 
-async function connect(url: string) {
-  const client = new Client({ name: 'smoke', version: '0' })
-  await client.connect(new StdioClientTransport({ command: process.execPath, args: [SERVER], env: { ...process.env, FLOWLINK_URL: url, FLOWLINK_TOKEN: '' } as Record<string, string> }))
-  const call = async (name: string, args: Record<string, unknown> = {}, expectError = false): Promise<string> => {
+function wrap(client: Client) {
+  const call: Call = async (name, args = {}, expectError = false) => {
     const r = await client.callTool({ name, arguments: args }) as { content: { type: string; text?: string }[]; isError?: boolean }
     const text = r.content.map((c) => c.text ?? '').join('\n')
     assert.equal(!!r.isError, expectError, `${name}: ${text}`)
@@ -23,7 +27,30 @@ async function connect(url: string) {
   return { client, call }
 }
 
-const PORT = 19540 + Math.floor(Math.random() * 400)
+async function connect(url: string) {
+  const client = new Client({ name: 'smoke', version: '0' })
+  await client.connect(new StdioClientTransport({ command: process.execPath, args: [SERVER], env: { ...process.env, FLOWLINK_URL: url, FLOWLINK_TOKEN: '' } as Record<string, string> }))
+  return wrap(client)
+}
+
+/** --http 로 서버를 띄우고(임의 포트) /health 가 뜰 때까지 기다린다. */
+async function spawnHttp(url: string): Promise<{ proc: ChildProcess; mcpUrl: string }> {
+  const port = 19100 + Math.floor(Math.random() * 400)
+  const proc = spawn(process.execPath, [SERVER, '--http'], { env: { ...process.env, FLOWLINK_URL: url, FLOWLINK_TOKEN: '', FLOWLINK_MCP_PORT: String(port), FLOWLINK_MCP_HOST: '127.0.0.1' }, stdio: ['ignore', 'ignore', 'inherit'] })
+  const mcpUrl = `http://127.0.0.1:${port}/mcp`
+  for (let i = 0; i < 50; i++) {
+    try { const r = await fetch(`http://127.0.0.1:${port}/health`); if (r.ok) return { proc, mcpUrl } } catch { /* 아직 */ }
+    await new Promise((r) => setTimeout(r, 100))
+  }
+  proc.kill(); throw new Error('HTTP 서버 기동 실패')
+}
+
+async function connectHttp(mcpUrl: string, headers?: Record<string, string>) {
+  const client = new Client({ name: 'smoke-http', version: '0' })
+  await client.connect(new StreamableHTTPClientTransport(new URL(mcpUrl), headers ? { requestInit: { headers } } : undefined))
+  return wrap(client)
+}
+
 const SPEC = {
   encoding: 'EUC-KR', lengthField: '전문길이', discriminator: '거래코드',
   header: [{ name: '전문길이', len: 4, type: 'length' }, { name: '거래코드', len: 4, type: 'ascii' }],
@@ -33,14 +60,16 @@ const SPEC = {
   ],
 }
 
-async function main() {
-  const base = process.env.FLOWLINK_URL || 'http://localhost:18081'
-  const { client, call } = await connect(base)
+/** dev 인스턴스 한 바퀴 — 전송(stdio/http)과 무관하게 같아야 한다. PORT 는 TCP Mock 리스너 포트(전송별로 다르게). */
+async function scenario({ client, call }: { client: Client; call: Call }, base: string, PORT: number, transport: 'stdio' | 'http') {
   const tools = (await client.listTools()).tools.map((t) => t.name)
   assert.ok(tools.includes('flow_run') && tools.includes('protocol_upsert') && tools.includes('mock_send'), tools.join())
-  ok(`tools ${tools.length}`)
+  if (transport === 'http') assert.ok(!tools.includes('flowlink_login') && !tools.includes('flowlink_logout'), '로그인 툴은 HTTP 모드에 없어야 한다: ' + tools.join())
+  else assert.ok(tools.includes('flowlink_login') && tools.includes('flowlink_login_wait'), tools.join())
+  ok(`[${transport}] tools ${tools.length}`)
 
-  assert.match(await call('flowlink_status'), /dev 모드/); ok('status dev')
+  const st = await call('flowlink_status')
+  assert.match(st, /dev 모드/); assert.match(st, transport === 'http' ? /transport: http/ : /transport: stdio/); ok('status dev + transport')
   assert.match(await call('flowlink_guide', { topic: 'rules' }), /지어내지 않는다/); ok('guide rules')
   assert.match(await call('flowlink_guide', { topic: 'protocol' }), /lengthField|header/); ok('guide protocol')
   assert.match(await call('flowlink_guide', { topic: 'nodes' }), /tcp:|transform:|START/); ok('guide nodes (node reference)')
@@ -114,6 +143,23 @@ async function main() {
   assert.match(await call('protocol_delete', { id: pid }), /삭제됨/); ok('protocol delete')
   assert.match(await call('mock_get', { slug }, true), /Mock 없음/); ok('deleted mock → isError')
   await client.close()
+}
+
+async function main() {
+  const base = process.env.FLOWLINK_URL || 'http://localhost:18081'
+  // ① stdio
+  await scenario(await connect(base), base, 19540 + Math.floor(Math.random() * 400), 'stdio')
+  // ② Streamable HTTP(세션 없음) — 같은 시나리오. 요청마다 새 McpServer 라 상태가 새지 않는지도 이 한 바퀴가 확인한다.
+  const http = await spawnHttp(base)
+  try {
+    const r405 = await fetch(http.mcpUrl); assert.equal(r405.status, 405); ok('[http] GET /mcp → 405 (stateless)')
+    await scenario(await connectHttp(http.mcpUrl), base, 19540 + Math.floor(Math.random() * 400), 'http')
+    // 동시 요청 — 요청별 서버/transport 격리(request id 충돌 없음)
+    const c2 = await connectHttp(http.mcpUrl)
+    const texts = await Promise.all([1, 2, 3, 4, 5].map(() => c2.call('flowlink_guide', { topic: 'rules' })))
+    assert.ok(texts.every((t) => /지어내지 않는다/.test(t))); ok('[http] 5 concurrent calls')
+    await c2.client.close()
+  } finally { http.proc.kill() }
 
   const gh = process.env.FLOWLINK_GH_URL
   if (gh) {
@@ -137,6 +183,24 @@ async function main() {
     assert.match(await g.call('flow_list'), /워크플로|없음/); ok('github guest-on: guest can read flows')
     assert.match(await g.call('protocol_upsert', { name: 'x', spec: SPEC }, true), /HTTP 403/); ok('github guest-on: protocol write → 403 (approval gate)')
     await g.client.close()
+    // HTTP 모드: 무토큰 = 게스트, Authorization 헤더 = 그 사용자(REST 로 그대로 전달)
+    const h = await spawnHttp(ghGuest)
+    try {
+      const anon = await connectHttp(h.mcpUrl)
+      const st2 = await anon.call('flowlink_status')
+      assert.match(st2, /transport: http/); assert.match(st2, /게스트 모드 ON/); ok('github guest-on [http]: no header → guest')
+      assert.match(await anon.call('protocol_upsert', { name: 'x', spec: SPEC }, true), /HTTP 403/); ok('github guest-on [http]: no header → write 403')
+      await anon.client.close()
+      const bad = await connectHttp(h.mcpUrl, { Authorization: 'Bearer not-a-jwt' })
+      assert.match(await bad.call('flowlink_status'), /만료됐거나 무효/); ok('github guest-on [http]: bad header token → invalid hint')
+      await bad.client.close()
+      const tok = process.env.FLOWLINK_GHGUEST_TOKEN
+      if (tok) {
+        const me = await connectHttp(h.mcpUrl, { Authorization: `Bearer ${tok}` })
+        assert.match(await me.call('flowlink_status'), /login: /); ok('github guest-on [http]: header token → logged in as user')
+        await me.client.close()
+      }
+    } finally { h.proc.kill() }
   } else console.log('  (FLOWLINK_GHGUEST_URL 없음 — 게스트 모드 검사 건너뜀)')
   console.log(`ALL ${n} PASS`)
 }

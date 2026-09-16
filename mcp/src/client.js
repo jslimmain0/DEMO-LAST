@@ -1,4 +1,7 @@
 // FlowLink REST 클라이언트 — base URL/토큰 하나, JSON 왕복, 에러는 서버 메시지 그대로.
+//   토큰 출처는 두 겹: ① 요청 컨텍스트(HTTP 모드 — 클라이언트가 보낸 Authorization 헤더, withToken()) ② 프로세스 전역(stdio 모드 —
+//   FLOWLINK_TOKEN env 또는 ~/.flowlink/mcp-token.json). ①이 있으면 ①, 없으면 ②. HTTP 모드는 사용자마다 토큰이 달라 전역에 둘 수 없다.
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
@@ -18,10 +21,16 @@ if (!token) {
     }
     catch { /* 캐시 없음 */ }
 }
+/** 요청 단위 토큰 컨텍스트(HTTP 모드). 스토어가 있으면 그 토큰이 전역 토큰보다 우선한다(빈 문자열도 "이 요청은 토큰 없음"으로 존중). */
+const requestCtx = new AsyncLocalStorage();
+/** fn 을 주어진 토큰(null=없음)으로 실행 — HTTP 모드에서 요청마다 호출. 안의 모든 api()·auth.* 가 이 토큰을 본다. */
+export const withToken = (t, fn) => requestCtx.run({ token: t || null }, fn);
+const current = () => { const s = requestCtx.getStore(); return s ? s.token : token; };
 export const auth = {
-    hasToken: () => !!token,
-    token: () => token,
-    login: () => loginName,
+    hasToken: () => !!current(),
+    token: () => current(),
+    /** 로그인명 — stdio 캐시에만 있다(HTTP 모드는 서버 /admin/me 로 확인). */
+    login: () => (requestCtx.getStore() ? null : loginName),
     set(t, l) {
         token = t;
         loginName = l;
@@ -47,9 +56,10 @@ export async function api(method, path, body, query) {
         for (const [k, v] of Object.entries(query))
             if (v != null && v !== '')
                 url.searchParams.set(k, v);
+    const t = current();
     const r = await fetch(url, {
         method,
-        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        headers: { 'Content-Type': 'application/json', ...(t ? { Authorization: `Bearer ${t}` } : {}) },
         body: body === undefined ? undefined : JSON.stringify(body),
     });
     const text = await r.text();

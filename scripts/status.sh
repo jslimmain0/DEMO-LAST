@@ -14,6 +14,15 @@ else
   echo "프로세스: 중지됨"
 fi
 
+# MCP HTTP 서버(선택) — PID + /health
+MCP_PID_FILE="$ROOT/.run/flowlink-mcp.pid"; MCP_PORT="${FLOWLINK_MCP_PORT:-18090}"
+if [ -f "$MCP_PID_FILE" ] && kill -0 "$(cat "$MCP_PID_FILE")" 2>/dev/null; then
+  if curl -fs "http://localhost:$MCP_PORT/health" >/dev/null 2>&1; then echo "MCP    : ✅ UP (http://localhost:$MCP_PORT/mcp, PID $(cat "$MCP_PID_FILE"))"
+  else echo "MCP    : ❌ 프로세스는 살아있으나 응답 없음 (로그: $ROOT/.run/flowlink-mcp.log)"; fi
+else
+  echo "MCP    : 중지됨"
+fi
+
 if curl -fs "http://localhost:$PORT$CTX/api/v1/auth/config" >/dev/null 2>&1; then
   echo "헬스   : ✅ UP (http://localhost:$PORT)"
   exit 0

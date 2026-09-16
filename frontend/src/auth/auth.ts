@@ -1,9 +1,10 @@
 import { http, uploadHttp } from '../api/client'
 
-/** 백엔드 /auth/config — 인증 모드 발견. mode: "github"(GitHub 로그인) | "none"(dev, 로그인 없음). */
+/** 백엔드 /auth/config — 인증 모드 발견. mode: "github"(GitHub 로그인) | "none"(dev, 로그인 없음). mcpPort: 옆에 뜬 MCP HTTP 서버 포트(없으면 null). */
 export interface AuthConfig {
   enabled: boolean
   mode: string
+  mcpPort?: number | null
 }
 
 /** 백엔드 /auth/me — dev 모드는 전권 가짜 사용자(dev/default), github 게스트 모드(무인증)는 "guest" 전권 사용자. */

@@ -356,6 +356,51 @@ server.registerTool('transform_preview', {
         return `⚠ ${r.error ?? '변환 실패'}`;
     return Object.entries(r.outputs ?? {}).map(([k, v]) => `${k} = ${clip(v, 400)}`).join('\n') || '(출력 없음)';
 }));
+// ---------- 실제 HTTP 요청(테스트) ----------
+server.registerTool('http_request', {
+    title: 'HTTP 요청 보내기(테스트)',
+    description: 'Mock 엔드포인트·wait 콜백·웹훅·외부 URL 에 실제 HTTP 요청을 보내 응답을 확인한다. 에이전트는 이걸 쓰고 curl/파이썬으로 직접 쏘지 마라. '
+        + 'HTTP Mock 테스트: mock_list 가 보여주는 base URL(예: {서버}/mock/{slug}) 뒤에 라우트 경로를 붙여 호출 → 템플릿 렌더 결과가 응답으로 온다. '
+        + 'url 이 "/" 로 시작하면 FlowLink 주소에 붙인다(예: /mock/pay/orders). 같은 서버면 로그인 토큰을 자동 첨부(Mock 게이트웨이는 무시).',
+    inputSchema: {
+        method: z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD']).optional(),
+        url: z.string(),
+        headers: z.record(z.string(), z.string()).optional(),
+        body: z.union([z.string(), z.record(z.string(), z.unknown())]).optional(),
+        timeoutSec: z.number().int().min(1).max(120).optional(),
+    },
+}, async ({ method, url, headers, body, timeoutSec }) => run(async () => {
+    const target = /^https?:\/\//.test(url) ? url : BASE + (url.startsWith('/') ? '' : '/') + url;
+    const h = { ...(headers ?? {}) };
+    const lc = Object.keys(h).map((k) => k.toLowerCase());
+    let payload;
+    if (body != null) {
+        if (typeof body === 'string')
+            payload = body;
+        else {
+            payload = JSON.stringify(body);
+            if (!lc.includes('content-type'))
+                h['Content-Type'] = 'application/json';
+        }
+    }
+    // 같은 오리진이면 로그인 토큰 첨부(API 경로는 인증 필요, Mock/relay/hooks 는 무시). 외부 URL 엔 절대 첨부하지 않는다.
+    if (target.startsWith(BASE + '/') && auth.hasToken() && !lc.includes('authorization'))
+        h.Authorization = `Bearer ${auth.token()}`;
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), (timeoutSec ?? 30) * 1000);
+    let r;
+    try {
+        r = await fetch(target, { method: method ?? 'GET', headers: h, body: payload, signal: ctl.signal, redirect: 'manual' });
+    }
+    finally {
+        clearTimeout(timer);
+    }
+    const text = await r.text();
+    const ct = r.headers.get('content-type') ?? '';
+    const loc = r.headers.get('location');
+    const line = `${method ?? 'GET'} ${target} → HTTP ${r.status}${ct ? ` · ${ct}` : ''}${loc ? ` · Location: ${loc}` : ''}`;
+    return `${line}\n${clip(text, 2000) || '(빈 응답)'}`;
+}));
 // ---------- 기동 ----------
 const transport = new StdioServerTransport();
 await server.connect(transport);

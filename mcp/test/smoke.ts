@@ -103,9 +103,11 @@ async function main() {
   assert.match(await call('env_list'), new RegExp(`${env}: host=127.0.0.1`)); ok('env_list')
 
   const hslug = `smkh${String(PORT)}`
-  const h1 = await call('mock_upsert', { name: 'smoke http', slug: hslug, type: 'HTTP', spec: { routes: [{ id: 'r', method: 'GET', path: '/ping', rules: [{ id: 'k', status: 200, contentType: 'json', body: '{"ok":true}' }] }] } })
+  const h1 = await call('mock_upsert', { name: 'smoke http', slug: hslug, type: 'HTTP', spec: { routes: [{ id: 'r', method: 'ANY', path: '/ping', rules: [{ id: 'k', status: 200, contentType: 'json', body: '{"ok":true}' }] }] } })
   assert.match(h1, /HTTP on/); ok('http mock create')
-  const pr = await fetch(`${base}/mock/${hslug}/ping`); assert.equal(pr.status, 200); ok('http mock served')
+  const hr = await call('http_request', { url: `/mock/${hslug}/ping` })
+  assert.match(hr, /HTTP 200/); assert.match(hr, /"ok":true/); ok('http_request → mock served (curl 대신)')
+  assert.match(await call('http_request', { method: 'POST', url: `${base}/mock/${hslug}/ping`, body: { a: 1 } }), /HTTP 200/); ok('http_request absolute url + body')
   assert.match(await call('mock_log', { slug: hslug }), /GET \/ping → 200/); ok('http mock_log')
   assert.match(await call('mock_delete', { slug: hslug }), /삭제됨/); ok('http mock delete')
   assert.match(await call('mock_delete', { slug }), /삭제됨/); ok('tcp mock delete')

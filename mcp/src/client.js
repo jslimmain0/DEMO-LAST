@@ -20,6 +20,7 @@ if (!token) {
 }
 export const auth = {
     hasToken: () => !!token,
+    token: () => token,
     login: () => loginName,
     set(t, l) {
         token = t;

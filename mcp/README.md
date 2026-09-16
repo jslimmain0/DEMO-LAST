@@ -39,7 +39,8 @@ flowlink-mcp --help 대신: FLOWLINK_URL=http://<flowlink-host>:8888 flowlink-mc
 
 `flowlink_status` `flowlink_login` `flowlink_login_wait` `flowlink_logout` `flowlink_guide`(flow=노드 레퍼런스·nodes·protocol·mock·rules 원문) ·
 `plugin_list`(변환·코덱 플러그인) `transform_preview` · `protocol_list/get/upsert/preview/delete` ·
-`mock_list/get/upsert/send/log/delete` · `flow_list/get/upsert/run` `execution_get/list` · `env_list/put`.
+`mock_list/get/upsert/send/log/delete` · `flow_list/get/upsert/run` `execution_get/list` · `env_list/put` ·
+`http_request`(Mock·콜백·웹훅·외부 URL 에 실제 HTTP 요청 — curl/파이썬 대신 이걸로 테스트).
 
 노드 종류·필드는 `flowlink_guide(flow)` 가 각 노드 JSON 예시로 설명한다(start/end/set/if/assert/switch/http/form/wait/input/transform/tcp/note/group).
 TRANSFORM 노드나 Mock 코덱은 `plugin_list` 로 사용 가능한 플러그인 id·파라미터를 먼저 확인한다(목록에 없으면 만들지 않는다).

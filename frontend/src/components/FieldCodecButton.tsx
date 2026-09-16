@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import type { CSSProperties } from 'react'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import type { MockCodecInput, MockCodecSpec, MockCodecStep, TransformInfo } from '../api/types'
 import { transformsApi } from '../api/client'
 import { TokenInput } from '../binding/TokenInput'
@@ -31,7 +32,12 @@ export function FieldCodecButton({ field, codec, onChange, sources = [], default
   const refs = field ? stepsForField(codec, field) : []
   useEffect(() => {
     if (!open) return
-    const onDoc = (e: MouseEvent) => { if (rootRef.current && !rootRef.current.contains(e.target as Node) && !(e.target as HTMLElement).closest?.('[role="listbox"]')) { setOpen(false); setEditing(null) } }
+    const onDoc = (e: MouseEvent) => {
+      const t = e.target as HTMLElement
+      // 팝오버는 body 포털에 있어 rootRef 밖이다 — data 표식과 피커 목록(listbox)은 바깥 클릭이 아니다.
+      if (rootRef.current?.contains(t) || t.closest?.('[data-fl-codec-pop]') || t.closest?.('[role="listbox"]')) return
+      setOpen(false); setEditing(null)
+    }
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); setOpen(false); setEditing(null) } }
     document.addEventListener('mousedown', onDoc); document.addEventListener('keydown', onKey, true)
     return () => { document.removeEventListener('mousedown', onDoc); document.removeEventListener('keydown', onKey, true) }
@@ -50,7 +56,7 @@ export function FieldCodecButton({ field, codec, onChange, sources = [], default
           style={{ ...iconBtn, ...(compact ? { width: 24, height: 24 } : null), color: refs.length ? 'var(--fl-primary)' : 'var(--fl-text-muted)' }}>◈</button>
       )}
       {open && (
-        <StepPopover field={field} list={list} sources={sources} sides={sides} defaultSide={editing?.side ?? defaultSide} editing={editing}
+        <StepPopover anchor={rootRef.current} field={field} list={list} sources={sources} sides={sides} defaultSide={editing?.side ?? defaultSide} editing={editing}
           onClose={() => { setOpen(false); setEditing(null) }}
           onSave={(side, step) => {
             if (editing) {
@@ -66,10 +72,12 @@ export function FieldCodecButton({ field, codec, onChange, sources = [], default
   )
 }
 
-function StepPopover({ field, list, sources, sides, defaultSide, editing, onClose, onSave, onRemove }: {
+function StepPopover({ anchor, field, list, sources, sides, defaultSide, editing, onClose, onSave, onRemove }: {
+  anchor: HTMLElement | null
   field: string; list: TransformInfo[]; sources: BindableSource[]; sides: CodecSide[]; defaultSide: CodecSide; editing: StepRef | null
   onClose: () => void; onSave: (side: CodecSide, step: MockCodecStep) => void; onRemove?: () => void
 }) {
+  const place = useAnchoredPlacement(anchor)
   const [side, setSide] = useState<CodecSide>(defaultSide)
   const [pluginId, setPluginId] = useState<string>(editing?.step.id ?? '')
   const [inputs, setInputs] = useState<MockCodecInput[]>(editing?.step.inputs ?? [])
@@ -89,8 +97,8 @@ function StepPopover({ field, list, sources, sides, defaultSide, editing, onClos
     const fields = existingFields.includes(field) ? existingFields : [...existingFields, field]
     onSave(side, { ...(editing?.step ?? { id: pluginId }), id: pluginId, target: 'fields', fields, inputs: ports.length > 1 ? inputs.length ? inputs : undefined : undefined, config: config.length ? config : undefined, outputKey })
   }
-  return (
-    <div role="dialog" aria-label={`${field} 코덱`} style={pop} onClick={(e) => e.stopPropagation()}>
+  return createPortal(
+    <div role="dialog" data-fl-codec-pop aria-label={`${field} 코덱`} style={{ ...pop, ...place }} onClick={(e) => e.stopPropagation()}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <strong style={{ fontSize: 12.5, flex: 1 }}>◈ <code style={{ fontFamily: 'var(--fl-font-mono)' }}>{field}</code> {editing ? '코덱 수정' : '에 코덱 걸기'}</strong>
         <button onClick={onClose} aria-label="닫기" style={{ ...iconBtn, border: 'none' }}>×</button>
@@ -155,8 +163,38 @@ function StepPopover({ field, list, sources, sides, defaultSide, editing, onClos
       </div>
       {!editing && list.length > 0 && !t && <div style={{ fontSize: 11, color: 'var(--fl-fail)', marginTop: 4 }}>플러그인을 고르세요.</div>}
       <div style={{ fontSize: 10.5, color: 'var(--fl-text-muted)', marginTop: 6 }}>여러 필드에 같은 단계를 걸면 코덱 화면에서 한 단계로 합쳐 보입니다. 전체/헤더 대상은 코덱 화면에서.</div>
-    </div>
+    </div>,
+    document.body,
   )
+}
+
+/**
+ * 팝오버를 **뷰포트 기준(fixed)** 으로 앉힌다 — 앵커(◈ 버튼) 왼쪽에 맞춰 펴되 화면 밖으로 나가면 당기고,
+ * 아래 공간이 모자라면 위로 뒤집는다. 남은 공간을 maxHeight 로 줘서 어떤 높이여도 잘리지 않는다.
+ * (absolute 로 두면 Mock 편집기 상세 패널의 overflow:auto 가 팝오버를 잘라낸다 — 왼쪽·아래가 잘리던 버그)
+ */
+function useAnchoredPlacement(anchor: HTMLElement | null): CSSProperties {
+  const [place, setPlace] = useState<CSSProperties>({ visibility: 'hidden' })
+  useLayoutEffect(() => {
+    if (!anchor) return
+    const put = () => {
+      const a = anchor.getBoundingClientRect()
+      const vw = window.innerWidth, vh = window.innerHeight
+      const w = Math.min(POP_W, vw - 16)
+      // 앵커 왼쪽에 맞춰 오른쪽으로 편다(칩에 붙어 보이게). 오른쪽이 모자라면 그만큼만 당긴다.
+      const left = Math.min(Math.max(8, a.left), Math.max(8, vw - w - 8))
+      const below = vh - a.bottom - 14, above = a.top - 14
+      setPlace(below >= 260 || below >= above
+        ? { top: a.bottom + 6, left, width: w, maxHeight: below }
+        : { bottom: vh - a.top + 6, left, width: w, maxHeight: above })
+    }
+    put()
+    // 패널 스크롤(capture)·창 리사이즈에 따라 다시 앉힌다.
+    window.addEventListener('scroll', put, true)
+    window.addEventListener('resize', put)
+    return () => { window.removeEventListener('scroll', put, true); window.removeEventListener('resize', put) }
+  }, [anchor])
+  return place
 }
 
 /** 코덱 화면 위저드 — 언제 → 무엇을(전체/필드 체크/헤더) → 플러그인 → 값. 필드 후보는 호출자가 수집해 넘긴다. */
@@ -263,7 +301,8 @@ export function CodecStepWizard({ list, sources, fieldHints, defaultSide, onCanc
 
 const badge: CSSProperties = { fontSize: 10.5, fontWeight: 700, padding: '1px 7px', borderRadius: 999, border: '1px solid currentColor', background: 'var(--fl-surface)', cursor: 'pointer', whiteSpace: 'nowrap' }
 const iconBtn: CSSProperties = { width: 26, height: 26, border: '1px solid var(--fl-border)', borderRadius: 6, background: 'var(--fl-surface)', cursor: 'pointer', fontSize: 13, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: 0 }
-const pop: CSSProperties = { position: 'absolute', zIndex: 60, top: 'calc(100% + 6px)', right: 0, width: 440, maxWidth: '90vw', padding: 12, border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', boxShadow: 'var(--fl-shadow-lg, 0 8px 24px rgba(0,0,0,.18))', textAlign: 'left', fontWeight: 400, cursor: 'default' }
+const POP_W = 440
+const pop: CSSProperties = { position: 'fixed', zIndex: 120, overflowY: 'auto', width: POP_W, padding: 12, border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', boxShadow: 'var(--fl-shadow-lg, 0 8px 24px rgba(0,0,0,.18))', textAlign: 'left', fontWeight: 400, cursor: 'default' }
 const lbl: CSSProperties = { fontSize: 11, fontWeight: 700, color: 'var(--fl-text-muted)', marginBottom: 4 }
 const input: CSSProperties = { padding: '5px 8px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 12.5 }
 const miniBtn: CSSProperties = { padding: '5px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 12, cursor: 'pointer' }

@@ -27,7 +27,13 @@ flowlink-mcp --help 대신: FLOWLINK_URL=http://<flowlink-host>:8888 flowlink-mc
 
 ## 로그인
 
-dev 모드는 없음. github 모드는 에이전트가 `flowlink_login` → 사용자가 브라우저에서 코드 입력 → `flowlink_login_wait` 가 토큰을 `~/.flowlink/mcp-token.json` 에 저장. 또는 `FLOWLINK_TOKEN` env. 게스트도 워크플로·Mock 은 되고 프로토콜/환경 저장만 승인 사용자 필요(403 이 그대로 보인다).
+- **dev 모드**: 로그인 없음(전권).
+- **github 모드(기본)**: 모든 API 로그인 필수. 에이전트가 `flowlink_login` 을 부르면 디바이스 코드가 나오고,
+  사용자가 `github.com/login/device` 에서 코드를 입력하면 `flowlink_login_wait` 가 토큰을 `~/.flowlink/mcp-token.json` 에 저장한다.
+  토큰은 장기 유효(기본 30일 — 서버 `FLOWLINK_AUTH_TOKEN_TTL_HOURS`)라 한 번 로그인하면 계속 쓴다. `FLOWLINK_TOKEN` env 로도 대체 가능.
+- **github + 게스트 스위치(`FLOWLINK_AUTH_GUEST_ENABLED=true`)**: 에이전트가 로그인 없이 읽기·워크플로·Mock 을 쓸 수 있다
+  (AI·프로토콜/환경 저장은 여전히 승인 사용자 필요). 브라우저 UI 는 이 스위치와 무관하게 항상 로그인 화면을 띄운다 —
+  게스트 통로는 에이전트용이다. 로그인 필요 여부는 언제든 `flowlink_status` 로 확인한다.
 
 ## 툴
 

@@ -22,12 +22,9 @@ const AuthContext = createContext<AuthState>({
 interface Boot {
   mode: string
   me: Me | null
-  /** github 모드 + 토큰 없음 — 로그인 화면 대신 게스트 진입. */
-  guest?: boolean
+  /** github 모드 + 유효 토큰 없음 — 로그인 화면을 강제로 띄운다(게스트 진입 없음). */
+  needsLogin?: boolean
 }
-
-/** github 게스트 모드에서 /me 실패 시 로컬 폴백 — 백엔드 guest 응답과 동일 구조. */
-const GUEST_ME: Me = { username: 'guest', tenant: 'default', roles: ['admin', 'editor', 'platform-admin'] }
 
 /** StrictMode 이중 이펙트에도 부트스트랩은 1회만. */
 let bootPromise: Promise<Boot> | null = null
@@ -43,7 +40,7 @@ async function boot(): Promise<Boot> {
     const me = await authApi.me().catch(() => null)
     return { mode: 'none', me }
   }
-  // 인증 모드(github)
+  // 인증 모드(github) — 브라우저는 무조건 로그인(게스트 모드는 MCP 에이전트 전용, UI 는 로그인 강제).
   attachAuthInterceptors()
   if (getAccessToken()) {
     try {
@@ -52,16 +49,15 @@ async function boot(): Promise<Boot> {
     } catch (e) {
       const status = errStatus(e)
       if (status === 401 || status === 403) {
-        setToken(null) // 무효/만료 토큰만 폐기 → 아래 게스트/안내 경로로
+        setToken(null) // 무효/만료 토큰만 폐기 → 로그인 화면으로
       } else {
         // 일시 오류(5xx/네트워크)엔 유효 토큰을 버리지 않는다 — me 없이 진행(다음 새로고침에 재조회).
         return { mode: cfg.mode, me: null }
       }
     }
   }
-  // 게스트 진입 — github 모드는 앱 개방(AI 만 로그인 게이트). /me 는 permitAll(guest 응답).
-  const me = await authApi.me().catch(() => GUEST_ME)
-  return { mode: 'github', me, guest: true }
+  // 토큰 없음 → 로그인 화면 강제.
+  return { mode: cfg.mode, me: null, needsLogin: true }
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -82,12 +78,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return <div style={centered}>로그인 확인 중…</div>
   }
   const b = state.boot
+  // github 모드 + 무토큰 → 로그인 화면만(취소 불가). 앱은 로그인 후에만 보인다.
+  if (b.needsLogin) {
+    return <GitHubLogin onSuccess={() => window.location.reload()} />
+  }
   return (
     <AuthContext.Provider
       value={{
         ready: true,
         enabled: b.mode !== 'none',
-        isGuest: b.guest === true,
+        isGuest: false, // 게스트 UI 없음 — github 모드는 항상 로그인 상태
         me: b.me,
         logout,
         requestLogin: () => setLoginOpen(true),

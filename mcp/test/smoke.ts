@@ -110,15 +110,27 @@ async function main() {
 
   const gh = process.env.FLOWLINK_GH_URL
   if (gh) {
+    // github 강제 로그인(기본, guest-enabled=false): 무토큰이면 모든 API 401, flowlink_status 가 "로그인 필수" 안내.
     const g = await connect(gh)
     const st = await g.call('flowlink_status')
-    assert.match(st, /auth mode: github/); assert.match(st, /게스트/); ok('github mode: guest status')
+    assert.match(st, /auth mode: github/); assert.match(st, /로그인 필수/); ok('github force-login: status says login required')
+    assert.match(await g.call('protocol_list', {}, true), /HTTP 401/); assert.match(await g.call('protocol_list', {}, true), /flowlink_login 을 호출/); ok('github force-login: 401 → login hint')
     const lg2 = await g.call('flowlink_login')
-    assert.match(lg2, /github\.com\/login\/device/); assert.match(lg2, /코드 \*\*[A-Z0-9-]+\*\*/); assert.match(lg2, /sessionId="/); ok('github mode: device code issued')
-    assert.match(await g.call('flowlink_login_wait', { sessionId: /sessionId="([^"]+)"/.exec(lg2)![1], timeoutSec: 5 }), /아직 승인되지 않았습니다/); ok('github mode: login_wait pending')
-    assert.match(await g.call('protocol_upsert', { name: 'x', spec: SPEC }, true), /HTTP 403/); ok('github mode: guest write → 403 surfaced')
+    assert.match(lg2, /github\.com\/login\/device/); assert.match(lg2, /코드 입력: +[A-Z0-9-]+/); assert.match(lg2, /sessionId="/); ok('github force-login: device code issued')
+    assert.match(await g.call('flowlink_login_wait', { sessionId: /sessionId="([^"]+)"/.exec(lg2)![1], timeoutSec: 5 }), /아직 승인되지 않았습니다/); ok('github force-login: login_wait pending')
     await g.client.close()
-  } else console.log('  (FLOWLINK_GH_URL 없음 — github 모드 검사 건너뜀)')
+  } else console.log('  (FLOWLINK_GH_URL 없음 — github 강제 로그인 검사 건너뜀)')
+
+  const ghGuest = process.env.FLOWLINK_GHGUEST_URL
+  if (ghGuest) {
+    // github + guest-enabled=true(MCP 에이전트용): 무토큰으로 읽기/워크플로 가능, 프로토콜 저장은 승인 게이트(403).
+    const g = await connect(ghGuest)
+    const st = await g.call('flowlink_status')
+    assert.match(st, /auth mode: github/); assert.match(st, /게스트 모드 ON/); ok('github guest-on: status says guest mode')
+    assert.match(await g.call('flow_list'), /워크플로|없음/); ok('github guest-on: guest can read flows')
+    assert.match(await g.call('protocol_upsert', { name: 'x', spec: SPEC }, true), /HTTP 403/); ok('github guest-on: protocol write → 403 (approval gate)')
+    await g.client.close()
+  } else console.log('  (FLOWLINK_GHGUEST_URL 없음 — 게스트 모드 검사 건너뜀)')
   console.log(`ALL ${n} PASS`)
 }
 main().catch((e) => { console.error('FAIL', e); process.exit(1) })

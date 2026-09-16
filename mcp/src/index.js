@@ -10,7 +10,15 @@ import { z } from 'zod';
 import { ApiError, BASE, api, auth, sleep } from "./client.js";
 const server = new McpServer({ name: 'flowlink', version: '0.1.0' });
 const ok = (text) => ({ content: [{ type: 'text', text }] });
-const fail = (e) => ({ content: [{ type: 'text', text: `⚠ ${e instanceof ApiError ? `HTTP ${e.status}: ` : ''}${e instanceof Error ? e.message : String(e)}` }], isError: true });
+const fail = (e) => {
+    let hint = '';
+    if (e instanceof ApiError && (e.status === 401 || e.status === 403)) {
+        hint = auth.hasToken()
+            ? '\n→ 권한이 없습니다(승인 대기 중일 수 있음 — 관리자 승인 필요). flowlink_status 로 상태 확인.'
+            : '\n→ 로그인이 필요합니다. flowlink_login 을 호출해 사용자에게 코드를 안내하세요.';
+    }
+    return { content: [{ type: 'text', text: `⚠ ${e instanceof ApiError ? `HTTP ${e.status}: ` : ''}${e instanceof Error ? e.message : String(e)}${hint}` }], isError: true };
+};
 const run = async (fn) => { try {
     return ok(await fn());
 }
@@ -33,18 +41,36 @@ server.registerTool('flowlink_status', {
     inputSchema: {},
 }, async () => run(async () => {
     const cfg = await api('GET', '/auth/config');
-    let me = null;
-    try {
-        me = await api('GET', '/admin/me');
-    }
-    catch { /* 게스트 */ }
-    const lines = [`url: ${BASE}`, `auth mode: ${cfg.mode ?? (cfg.enabled ? 'github' : 'none')}`];
-    if (cfg.mode === 'github')
-        lines.push(`login: ${auth.hasToken() ? (auth.login() ?? '(토큰 있음)') : '없음(게스트) — 프로토콜/환경 저장은 flowlink_login 필요'}`);
-    else
+    const mode = cfg.mode ?? (cfg.enabled ? 'github' : 'none');
+    const lines = [`url: ${BASE}`, `auth mode: ${mode}`];
+    if (mode !== 'github') {
         lines.push('login: 불필요(dev 모드 — 전권)');
-    if (me)
-        lines.push(`status: ${me.myStatus ?? '?'}${me.admin ? ' · ADMIN' : ''}${me.pendingCount ? ` · 승인 대기 ${me.pendingCount}명` : ''}`);
+        return lines.join('\n');
+    }
+    if (auth.hasToken()) {
+        let me = null;
+        try {
+            me = await api('GET', '/admin/me');
+        }
+        catch { /* 토큰이 만료됐을 수 */ }
+        lines.push(`login: ${auth.login() ?? '(토큰 있음)'}`);
+        if (me)
+            lines.push(`status: ${me.myStatus ?? '?'}${me.admin ? ' · ADMIN' : ''}${me.pendingCount ? ` · 승인 대기 ${me.pendingCount}명` : ''}`);
+        else
+            lines.push('→ 토큰이 만료됐거나 무효합니다. flowlink_login 으로 다시 로그인하세요.');
+        return lines.join('\n');
+    }
+    // 토큰 없음 — 게스트 접근이 열려 있는지 탐지(강제 로그인 서버는 /auth/me 가 401)
+    let guest = false;
+    try {
+        await api('GET', '/auth/me');
+        guest = true;
+    }
+    catch { /* 401 = 로그인 필수 */ }
+    if (guest)
+        lines.push('login: 없음 · 게스트 모드 ON — 읽기/워크플로/Mock 은 로그인 없이 가능. AI · 프로토콜/환경 저장은 flowlink_login 필요.');
+    else
+        lines.push('login: 없음 · 이 서버는 로그인 필수 — flowlink_login 을 호출해 사용자에게 코드를 안내하세요.');
     return lines.join('\n');
 }));
 server.registerTool('flowlink_login', {
@@ -56,8 +82,17 @@ server.registerTool('flowlink_login', {
     if (cfg.mode !== 'github')
         return 'dev 모드 — 로그인이 필요 없습니다.';
     const d = await api('POST', '/auth/github/device/start', {});
-    return [`사용자에게 안내: 브라우저에서 ${d.verificationUri} 를 열고 코드 **${d.userCode}** 를 입력하세요(${Math.floor((d.expiresIn ?? 900) / 60)}분 유효).`,
-        `입력이 끝나면 flowlink_login_wait 를 sessionId="${d.sessionId}" 로 호출.`].join('\n');
+    const mins = Math.floor((d.expiresIn ?? 900) / 60);
+    return [
+        '🔑 GitHub 로그인 — 아래를 그대로 사용자에게 보여 주세요:',
+        '',
+        `  1. 브라우저에서 열기:  ${d.verificationUri}`,
+        `  2. 코드 입력:        ${d.userCode}   (${mins}분 유효)`,
+        `  3. GitHub 에서 승인(Authorize) 클릭`,
+        '',
+        `입력이 끝나면(또는 바로) flowlink_login_wait 를 sessionId="${d.sessionId}" 로 호출해 완료를 기다리세요.`,
+        '토큰은 ~/.flowlink/mcp-token.json 에 저장되어 다음부터는 자동입니다(장기 유효).',
+    ].join('\n');
 }));
 server.registerTool('flowlink_login_wait', {
     title: 'GitHub 로그인 완료 대기',

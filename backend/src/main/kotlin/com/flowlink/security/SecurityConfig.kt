@@ -19,11 +19,12 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource
 /**
  * 보안 구성.
  *
- * **동작 모드**는 `flowlink.auth.github-enabled` 설정 유무로 결정된다:
- * - **GitHub 게스트 모드(flowlink.auth.github-enabled=true)**: 앱은 로그인 없이 개방(게스트 전권),
- *   assistant API(AI, 로그인 사용자 전용)만 로그인 필수. 로그인=AI 사용+신원 표시 게이트.
- *   Bearer 를 실은 로그인 사용자는 자체 JWT 리소스 서버가 신원 인식, [TenantClaimFilter] 가
- *   테넌트 클레임을 [com.flowlink.common.tenant.TenantContext] 에 주입.
+ * **동작 모드**는 `flowlink.auth.github-enabled` 로 결정된다:
+ * - **GitHub 로그인 모드(github-enabled=true, 기본 게스트 off)**: 모든 API 로그인 필수(부트스트랩·SPA 셸 제외).
+ *   브라우저는 무조건 GitHub 로그인해야 앱을 쓴다. [TenantClaimFilter] 가 JWT 테넌트 클레임을
+ *   [com.flowlink.common.tenant.TenantContext] 에 주입.
+ * - **+게스트 스위치(github-enabled=true & guest-enabled=true)**: 무인증 API 를 다시 연다 — MCP 에이전트가
+ *   로그인 없이 쓰라고 남겨 둔 통로(AI 만 로그인 필수). 브라우저 UI 는 그래도 로그인 화면을 띄운다.
  * - **개발(github-enabled 미설정)**: 모든 요청 허용(permitAll) + 기본 테넌트. 로컬 개발 편의.
  *
  * 외부 시스템이 직접 때리는 경로(mock 게이트웨이·wait 콜백·웹훅)는 [externalFilterChain] 이 먼저 가져간다.
@@ -69,22 +70,32 @@ class SecurityConfig {
             .headers { h -> h.frameOptions { frame -> frame.disable() } }
 
         if (jwtDecoder.getIfAvailable() != null && authProps.githubEnabled) {
-            // github 게스트 모드(2026-07-28): 앱은 로그인 없이 개방(게스트 전권 — 사용자 결정, 사내망 전제),
-            // AI(/api/v1/assistant/**)만 로그인 필수 — Copilot 이 사용자 GitHub 토큰을 쓰는 본질적 게이트.
-            // Bearer 를 실은 로그인 사용자는 리소스 서버가 계속 신원 인식(triggeredBy·Copilot 연결·presence 이름).
-            // 무효/만료 Bearer 는 permitAll 경로에서도 401(리소스 서버 규약) → 프론트가 토큰 폐기 후 게스트 재부트.
+            // GitHub 로그인 모드 — 리소스 서버가 자체 JWT 검증, TenantClaimFilter 가 테넌트 클레임을 컨텍스트에 주입.
             http
                 .authorizeHttpRequests { auth ->
-                    auth
-                        .requestMatchers("/api/v1/assistant/**").authenticated()
-                        .anyRequest().permitAll()
+                    if (authProps.guestEnabled) {
+                        // 게스트 모드(스위치 on) — MCP 에이전트가 로그인 없이 쓰라고 남겨 둔 통로.
+                        // 무인증 API 허용(게스트 전권), AI 만 로그인 필수. 브라우저 UI 는 그래도 로그인 화면을 띄운다(프론트 강제).
+                        auth
+                            .requestMatchers("/api/v1/assistant/**").authenticated()
+                            .anyRequest().permitAll()
+                    } else {
+                        // 강제 로그인(기본) — 모든 API 가 로그인 필수. 부트스트랩(/auth/config·device)·SPA 셸·/ws 만 개방.
+                        // SPA 셸(index.html·assets)을 authenticated 로 막으면 로그인 화면조차 못 뜨므로(과거 OIDC 401 버그) /api 만 게이트.
+                        // /ws 는 브라우저가 Authorization 헤더를 못 실어 permitAll — PresenceHandshakeInterceptor 가 ?token= 을 자체 검증.
+                        auth
+                            .requestMatchers("/api/v1/auth/config", "/api/v1/auth/github/**").permitAll()
+                            .requestMatchers("/api/**").authenticated()
+                            .anyRequest().permitAll()
+                    }
                 }
                 .oauth2ResourceServer { oauth ->
                     oauth.jwt { jwt -> jwt.jwtAuthenticationConverter(JwtRoleConverter()) }
                 }
                 .addFilterAfter(TenantClaimFilter(),
                     BearerTokenAuthenticationFilter::class.java)
-            log.info("보안: GitHub 게스트 모드 — 앱 개방(로그인 선택), /api/v1/assistant/** 만 로그인 필수")
+            if (authProps.guestEnabled) log.warn("보안: GitHub 게스트 모드(FLOWLINK_AUTH_GUEST_ENABLED=true) — 무인증 API 개방(MCP 에이전트용), /api/v1/assistant/** 만 로그인 필수")
+            else log.info("보안: GitHub 로그인 모드 — 모든 API 로그인 필수(부트스트랩·SPA 셸 제외)")
         } else {
             // 개발: 인증 없음 (github-enabled 미설정)
             http.authorizeHttpRequests { auth -> auth.anyRequest().permitAll() }

@@ -10,6 +10,7 @@ import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
+import java.util.UUID
 
 /**
  * github 게스트 모드 보안 경계 — 앱은 로그인 없이 개방되고 assistant API(/api/v1/assistant 이하)만 로그인 필수.
@@ -91,5 +92,22 @@ class GuestModeSecurityTest {
         mvc.perform(get("/api/v1/auth/me").header("Authorization", "Bearer $token"))
             .andExpect(status().isOk)
             .andExpect(jsonPath("$.username").value("alice"))
+    }
+
+    @Test
+    fun `외부 시스템 경로 - 남의 Authorization 을 실어도 인증 게이트에 안 걸림`() {
+        // mock 게이트웨이(대상 시스템 흉내)·wait 콜백·웹훅은 외부 시스템이 자기 인증 헤더를 달고 온다.
+        // 앱 JWT 가 아니므로 리소스 서버가 검증하려 들면 안 된다(401 이면 목/콜백이 아예 안 뜬다).
+        val calls = mapOf(
+            "mock" to get("/mock/nope/ping").header("Authorization", "Bearer someone-elses-token"),
+            "relay" to post("/relay/${UUID.randomUUID()}/cb/n1").header("Authorization", "Basic dXNlcjpwYXNz")
+                .contentType("application/json").content("{}"),
+            "webhook" to post("/hooks/nope").header("Authorization", "Bearer someone-elses-token")
+                .contentType("application/json").content("{}"),
+        )
+        calls.forEach { (name, req) ->
+            val status = mvc.perform(req).andReturn().response.status
+            assert(status != 401) { "$name 이 인증 게이트에 걸렸다 (status=$status)" }
+        }
     }
 }

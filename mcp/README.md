@@ -37,8 +37,12 @@ flowlink-mcp --help 대신: FLOWLINK_URL=http://<flowlink-host>:8888 flowlink-mc
 
 ## 툴
 
-`flowlink_status` `flowlink_login` `flowlink_login_wait` `flowlink_logout` `flowlink_guide`(flow·protocol·mock·rules 규격 원문) ·
-`protocol_list/get/upsert/preview/delete` · `mock_list/get/upsert/send/log/delete` · `flow_list/get/upsert/run` `execution_get/list` · `env_list/put`.
+`flowlink_status` `flowlink_login` `flowlink_login_wait` `flowlink_logout` `flowlink_guide`(flow=노드 레퍼런스·nodes·protocol·mock·rules 원문) ·
+`plugin_list`(변환·코덱 플러그인) `transform_preview` · `protocol_list/get/upsert/preview/delete` ·
+`mock_list/get/upsert/send/log/delete` · `flow_list/get/upsert/run` `execution_get/list` · `env_list/put`.
+
+노드 종류·필드는 `flowlink_guide(flow)` 가 각 노드 JSON 예시로 설명한다(start/end/set/if/assert/switch/http/form/wait/input/transform/tcp/note/group).
+TRANSFORM 노드나 Mock 코덱은 `plugin_list` 로 사용 가능한 플러그인 id·파라미터를 먼저 확인한다(목록에 없으면 만들지 않는다).
 
 쓰는 법은 그냥 말로: "이 소스의 잔액조회 전문으로 프로토콜 만들고 TCP Mock 세운 뒤 조회→검증 워크플로 만들어 실행해줘. 코드에 없는 값은 메모로 남겨."
 → 에이전트가 guide → protocol_upsert/preview → mock_upsert/send → flow_upsert/run → execution_get/mock_log 순으로 돌고 편집기 링크와 "확인 필요" 메모 목록을 준다.

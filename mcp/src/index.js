@@ -122,12 +122,14 @@ server.registerTool('flowlink_logout', { title: '토큰 삭제', description: '�
 // ---------- 가이드(스키마 원문) ----------
 server.registerTool('flowlink_guide', {
     title: '규격 가이드',
-    description: '워크플로 그래프(flow)·프로토콜(protocol)·HTTP Mock(mock) JSON 규격과 에이전트 규약(rules) 원문. 무언가 만들기 전에 해당 topic 을 한 번 읽는다.',
-    inputSchema: { topic: z.enum(['flow', 'protocol', 'mock', 'rules', 'all']) },
+    description: '워크플로 그래프(flow=노드 타입 전체 레퍼런스, 각 노드 JSON 예시 포함)·프로토콜(protocol)·HTTP Mock(mock) JSON 규격과 에이전트 규약(rules) 원문. nodes=flow 별칭(노드 설명). 무언가 만들기 전에 해당 topic 을 한 번 읽는다. TRANSFORM 노드/코덱을 쓰려면 먼저 plugin_list.',
+    inputSchema: { topic: z.enum(['flow', 'nodes', 'protocol', 'mock', 'rules', 'all']) },
 }, async ({ topic }) => run(async () => {
     const s = await api('GET', '/schemas');
     if (topic === 'all')
         return Object.entries(s).map(([k, v]) => `# ${k}\n${v}`).join('\n\n');
+    if (topic === 'nodes')
+        return s.flow ?? '(flow 없음)';
     return s[topic] ?? `(${topic} 없음)`;
 }));
 // ---------- 프로토콜 ----------
@@ -316,6 +318,44 @@ server.registerTool('execution_list', { title: '실행 이력', description: '�
 // ---------- 환경 변수 ----------
 server.registerTool('env_list', { title: '환경 목록', description: '실행 환경(dev/staging/prod)과 변수({{ 키@env }}).', inputSchema: {} }, async () => run(async () => { const l = await api('GET', '/environments'); return l.length ? l.map((e) => `${e.name}: ${Object.entries(e.vars ?? {}).map(([k, v]) => `${k}=${v}`).join(', ') || '(비어 있음)'}`).join('\n') : '(환경 없음)'; }));
 server.registerTool('env_put', { title: '환경 변수 저장', description: '환경 name 의 변수를 통째로 교체(없으면 생성). 비밀은 여기 말고 시크릿 볼트(화면)에.', inputSchema: { name: z.string().min(1), vars: z.record(z.string(), z.string()) } }, async ({ name, vars }) => run(async () => { const e = await api('PUT', `/environments/${encodeURIComponent(name)}`, { vars }); return `저장: ${e.name} (${Object.keys(e.vars ?? {}).length}개)`; }));
+// ---------- 기동 ----------
+// ---------- 플러그인(변환·코덱) ----------
+const ioStr = (io) => (io ?? []).map((p) => `${p.key}:${p.type}`).join(',') || '-';
+const paramStr = (ps) => (ps ?? []).map((p) => `${p.key}(${p.type}${p.defaultValue ? '=' + p.defaultValue : ''}${p.options?.length ? ' [' + p.options.join('|') + ']' : ''})`).join(' ');
+server.registerTool('plugin_list', {
+    title: '플러그인 목록(변환·코덱)',
+    description: 'TRANSFORM 노드에 쓰는 변환 플러그인과 Mock/전문에 쓰는 코덱 플러그인 목록(id·설명·입출력 포트·파라미터). 플러그인은 JAR 로 올린 것만 있고 목록이 비어 있으면 TRANSFORM 노드·코덱을 만들지 마라(업로드는 화면에서 관리자).',
+    inputSchema: {},
+}, async () => run(async () => {
+    const [transforms, codecs] = await Promise.all([
+        api('GET', '/transforms').catch(() => []),
+        api('GET', '/codecs').catch(() => []),
+    ]);
+    const lines = [];
+    lines.push(`# 변환(transform) — TRANSFORM 노드 transformId (${transforms.length})`);
+    if (transforms.length)
+        for (const t of transforms)
+            lines.push(`- ${t.id} [${t.label}] — ${clip(t.description, 120)}\n   입력 ${ioStr(t.inputs)} → 출력 ${ioStr(t.outputs)}${(t.params ?? []).length ? '\n   파라미터 ' + paramStr(t.params) : ''}`);
+    else
+        lines.push('  (없음 — TRANSFORM 노드를 만들지 마라)');
+    lines.push(`# 코덱(codec) — Mock 코덱·전문 변환 (${codecs.length})`);
+    if (codecs.length)
+        for (const c of codecs)
+            lines.push(`- ${c.id} [${c.label}] (${c.layer})${(c.params ?? []).length ? ' · ' + paramStr(c.params) : ''}`);
+    else
+        lines.push('  (없음)');
+    return lines.join('\n');
+}));
+server.registerTool('transform_preview', {
+    title: '변환 미리보기',
+    description: '변환 플러그인을 샘플 입력(inputs)·설정(config)으로 실행해 결과를 확인한다(순수 계산, 네트워크 없음). TRANSFORM 노드를 배선하기 전에 config 를 맞추는 용도.',
+    inputSchema: { id: z.string(), inputs: z.record(z.string(), z.string()).optional(), config: z.record(z.string(), z.string()).optional() },
+}, async ({ id, inputs, config }) => run(async () => {
+    const r = await api('POST', `/transforms/${encodeURIComponent(id)}/preview`, { inputs: inputs ?? {}, config: config ?? {} });
+    if (!r.ok)
+        return `⚠ ${r.error ?? '변환 실패'}`;
+    return Object.entries(r.outputs ?? {}).map(([k, v]) => `${k} = ${clip(v, 400)}`).join('\n') || '(출력 없음)';
+}));
 // ---------- 기동 ----------
 const transport = new StdioServerTransport();
 await server.connect(transport);

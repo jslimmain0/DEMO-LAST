@@ -43,6 +43,11 @@ async function main() {
   assert.match(await call('flowlink_status'), /dev 모드/); ok('status dev')
   assert.match(await call('flowlink_guide', { topic: 'rules' }), /지어내지 않는다/); ok('guide rules')
   assert.match(await call('flowlink_guide', { topic: 'protocol' }), /lengthField|header/); ok('guide protocol')
+  assert.match(await call('flowlink_guide', { topic: 'nodes' }), /tcp:|transform:|START/); ok('guide nodes (node reference)')
+
+  const pl = await call('plugin_list')
+  assert.match(pl, /변환\(transform\)/); assert.match(pl, /코덱\(codec\)/); ok('plugin_list transforms+codecs')
+  assert.match(await call('transform_preview', { id: 'no-such-plugin', inputs: { a: '1' } }), /알 수 없는 변환/); ok('transform_preview unknown id')
 
   const pname = `smoke-${Date.now()}`
   const p1 = await call('protocol_upsert', { name: pname, spec: SPEC })

@@ -30,6 +30,8 @@ class SchemaController {
    HTTP 는 mock_upsert(type=HTTP) → HTTP 노드 baseUrl 을 mock base URL 로.
 4. 만든 뒤 반드시 flow_run 으로 실행하고, 실패하면 execution_get / mock_log 로 원인을 보고 고친다. 결과는 "돌아가는 초안 + 확인 목록(메모)" 이다.
 5. 워크플로에는 START 와 END 가 있어야 하고, 검증은 assert 노드(예: {{ 응답코드@노드 }} == '0000')로 남긴다.
+6. TRANSFORM 노드(transformId)나 Mock 코덱(codec step id)을 쓰려면 plugin_list 로 사용 가능한 플러그인 id·파라미터를 먼저 확인한다.
+   목록에 없는 id 는 지어내지 말고, 없으면 TRANSFORM 노드·코덱을 만들지 않는다(플러그인 JAR 업로드는 화면에서 관리자만).
 """
     }
 }

@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "flowlink": {
+      "command": "node",
+      "args": ["mcp/src/index.ts"],
+      "env": { "FLOWLINK_URL": "http://localhost:8888" }
+    }
+  }
+}

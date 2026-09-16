@@ -85,7 +85,9 @@ function StepPopover({ anchor, field, list, sources, sides, defaultSide, editing
   const [outputKey, setOutputKey] = useState<string | undefined>(editing?.step.outputKey)
   const t = list.find((x) => x.id === pluginId)
   const ports = t?.inputs ?? []
-  const messagePort = inputs.find((i) => i.mode === 'message')?.key ?? ports[0]?.key ?? ''
+  // 저장된 message 포트가 지금 플러그인에 없으면 첫 포트로(플러그인 교체 잔재 방어).
+  const rawMsg = inputs.find((i) => i.mode === 'message')?.key
+  const messagePort = (rawMsg && ports.some((p) => p.key === rawMsg) ? rawMsg : ports[0]?.key) ?? ''
   const inputOf = (k: string): MockCodecInput => inputs.find((i) => i.key === k) ?? { key: k, mode: k === messagePort ? 'message' : 'value', value: '' }
   const setPortValue = (k: string, v: string) => setInputs(ports.map((p) => (p.key === k ? { key: k, mode: 'value' as const, value: v } : inputOf(p.key))))
   const setMessagePort = (k: string) => setInputs(ports.map((p) => (p.key === k ? { key: p.key, mode: 'message' as const } : { key: p.key, mode: 'value' as const, value: inputOf(p.key).mode === 'value' ? inputOf(p.key).value ?? '' : '' })))
@@ -121,18 +123,20 @@ function StepPopover({ anchor, field, list, sources, sides, defaultSide, editing
       </div>
       {ports.length > 1 && (
         <div style={{ marginTop: 8, display: 'grid', gap: 4 }}>
-          <div style={lbl}>입력 포트 — 하나는 필드 값, 나머지는 값(키·IV 는 <code style={{ fontFamily: 'var(--fl-font-mono)' }}>{'{ }'}</code> 시크릿)</div>
-          {ports.map((p) => {
-            const inp = inputOf(p.key)
-            const isMsg = inp.mode === 'message'
-            return (
-              <div key={p.key} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                <span style={{ fontSize: 11.5, minWidth: 80, fontFamily: 'var(--fl-font-mono)' }}>{p.label}</span>
-                <label style={{ fontSize: 11.5, display: 'inline-flex', gap: 3, alignItems: 'center' }}><input type="radio" name={`fc-${field}-port`} checked={isMsg} onChange={() => setMessagePort(p.key)} />필드 값</label>
-                {!isMsg && <div style={{ flex: 1, minWidth: 160 }}><TokenInput ariaLabel={`${field} ${p.key} 값`} value={inp.value ?? ''} sources={sources} placeholder={`{{ ${p.key === 'key' ? 'aesKey' : p.key === 'iv' ? 'aesIv' : p.key}@secret }}`} onChange={(v) => setPortValue(p.key, v)} /></div>}
-              </div>
-            )
-          })}
+          <div style={lbl}>입력 — 이 플러그인은 입력이 {ports.length}개입니다</div>
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            <span style={{ fontSize: 11.5, minWidth: 80 }}>필드 값 →</span>
+            <select style={input} value={messagePort} aria-label={`${field} 필드 값을 받을 입력`} onChange={(e) => setMessagePort(e.target.value)}>
+              {ports.map((p) => <option key={p.key} value={p.key}>{p.label}</option>)}
+            </select>
+          </div>
+          {ports.filter((p) => p.key !== messagePort).map((p) => (
+            <div key={p.key} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+              <span style={{ fontSize: 11.5, minWidth: 80, fontFamily: 'var(--fl-font-mono)' }}>{p.label}</span>
+              <div style={{ flex: 1, minWidth: 160 }}><TokenInput ariaLabel={`${field} ${p.key} 값`} value={inputOf(p.key).value ?? ''} sources={sources} placeholder={`{{ ${p.key === 'key' ? 'aesKey' : p.key === 'iv' ? 'aesIv' : p.key}@secret }}`} onChange={(v) => setPortValue(p.key, v)} /></div>
+            </div>
+          ))}
+          <div style={{ fontSize: 10.5, color: 'var(--fl-text-muted)' }}>변환할 필드 값은 위에서 고른 입력으로 들어가고, 나머지 입력(키·IV 등)은 값을 적습니다(<code style={{ fontFamily: 'var(--fl-font-mono)' }}>{'{ }'}</code> 로 시크릿 삽입).</div>
         </div>
       )}
       {t && t.params.length > 0 && (
@@ -213,7 +217,11 @@ export function CodecStepWizard({ list, sources, fieldHints, defaultSide, onCanc
   const t = list.find((x) => x.id === pluginId)
   const ports = t?.inputs ?? []
   const hints = side === 'request' ? fieldHints.request : fieldHints.response
-  const messagePort = inputs.find((i) => i.mode === 'message')?.key ?? ports[0]?.key ?? ''
+  const rawMsg = inputs.find((i) => i.mode === 'message')?.key
+  // 플러그인을 바꿨을 때 이전 포트가 남아 있으면 첫 포트로(선택이 빈 채로 저장되는 것 방지).
+  const messagePort = (rawMsg && ports.some((p) => p.key === rawMsg) ? rawMsg : ports[0]?.key) ?? ''
+  /** 변환 대상(= 플러그인에 넣을 값)의 이름 — 대상에 따라 본문/필드 값/헤더 값. */
+  const msgLabel = target === 'fields' ? '필드 값' : target === 'header' && side === 'request' ? '헤더 값' : '본문'
   const inputOf = (k: string): MockCodecInput => inputs.find((i) => i.key === k) ?? { key: k, mode: k === messagePort ? 'message' : 'value', value: '' }
   const setPortValue = (k: string, v: string) => setInputs(ports.map((p) => (p.key === k ? { key: k, mode: 'value' as const, value: v } : inputOf(p.key))))
   const setMessagePort = (k: string) => setInputs(ports.map((p) => (p.key === k ? { key: p.key, mode: 'message' as const } : { key: p.key, mode: 'value' as const, value: inputOf(p.key).mode === 'value' ? inputOf(p.key).value ?? '' : '' })))
@@ -267,16 +275,23 @@ export function CodecStepWizard({ list, sources, fieldHints, defaultSide, onCanc
         {(ports.length > 1 || (t?.params.length ?? 0) > 0) && <>
           <span style={stepNo}>④ 값</span>
           <div style={{ display: 'grid', gap: 4 }}>
-            {ports.length > 1 && ports.map((p) => {
-              const inp = inputOf(p.key); const isMsg = inp.mode === 'message'
-              return (
-                <div key={p.key} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                  <span style={{ fontSize: 11.5, minWidth: 90, fontFamily: 'var(--fl-font-mono)' }}>{p.label}</span>
-                  <label style={{ fontSize: 11.5, display: 'inline-flex', gap: 3, alignItems: 'center' }}><input type="radio" name="wiz-port" checked={isMsg} onChange={() => setMessagePort(p.key)} />{target === 'fields' ? '필드 값' : target === 'header' && side === 'request' ? '헤더 값' : '본문'}</label>
-                  {!isMsg && <div style={{ flex: 1, minWidth: 180 }}><TokenInput ariaLabel={`입력 ${p.key}`} value={inp.value ?? ''} sources={sources} placeholder={`{{ ${p.key === 'key' ? 'aesKey' : p.key === 'iv' ? 'aesIv' : p.key}@secret }}`} onChange={(v) => setPortValue(p.key, v)} /></div>}
+            {ports.length > 1 && (
+              <>
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                  <span style={{ fontSize: 11.5, minWidth: 90 }}>{msgLabel} →</span>
+                  <select style={input} value={messagePort} aria-label={`${msgLabel}을 받을 입력`} onChange={(e) => setMessagePort(e.target.value)}>
+                    {ports.map((p) => <option key={p.key} value={p.key}>{p.label}</option>)}
+                  </select>
                 </div>
-              )
-            })}
+                {ports.filter((p) => p.key !== messagePort).map((p) => (
+                  <div key={p.key} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                    <span style={{ fontSize: 11.5, minWidth: 90, fontFamily: 'var(--fl-font-mono)' }}>{p.label}</span>
+                    <div style={{ flex: 1, minWidth: 180 }}><TokenInput ariaLabel={`입력 ${p.key}`} value={inputOf(p.key).value ?? ''} sources={sources} placeholder={`{{ ${p.key === 'key' ? 'aesKey' : p.key === 'iv' ? 'aesIv' : p.key}@secret }}`} onChange={(v) => setPortValue(p.key, v)} /></div>
+                  </div>
+                ))}
+                <div style={{ fontSize: 10.5, color: 'var(--fl-text-muted)' }}>변환할 {msgLabel}은 위에서 고른 입력으로 들어가고, 나머지 입력(키·IV 등)은 값을 적습니다.</div>
+              </>
+            )}
             {t?.params.map((p) => {
               const val = cfgVal(p.key) ?? p.defaultValue
               return (

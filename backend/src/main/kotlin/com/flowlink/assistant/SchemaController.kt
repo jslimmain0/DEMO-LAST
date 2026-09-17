@@ -35,7 +35,7 @@ class SchemaController {
 변환(transform):  ({ id, label, description?, inputs?: [{key,label,type?}], outputs?: [{key,label,type?}], params?: [{key,label,type?,defaultValue?,options?,placeholder?}], apply(inputs, config) { return { 출력키: 값 } } })
 필드 코덱:        ({ id, label, kind: 'fieldCodec', params?, encode(value, ctx) { return 문자열 }, decode(value, ctx) { return 문자열 } })
 전문 코덱:        ({ id, label, kind: 'messageCodec', params?, encode(bytes, ctx) { return 바이트배열 }, decode(bytes, ctx) { return 바이트배열 } })
-ctx = { config, direction: 'send'|'recv', field: {name,len,type,pad}|null, message: {필드명: 값} }. id 는 [a-z0-9-] 2~64자.
+ctx = { config, direction: 'send'|'recv', field: {name,len,type,pad}|null, message: {필드명: 값} }. id 는 [a-z0-9-] 1~64자(소문자·숫자·하이픈, 첫 글자는 하이픈 불가).
 """
 
         /** 에이전트가 소스 코드에서 워크플로/프로토콜/Mock 을 만들 때 지킬 규약 — 코드에 없는 값은 지어내지 않는다. */

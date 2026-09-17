@@ -169,6 +169,7 @@ async function scenario({ client, call }: { client: Client; call: Call }, base: 
   assert.match(await call('flowlink_guide', { topic: 'rules' }), /지어내지 않는다/); ok('guide rules')
   assert.match(await call('flowlink_guide', { topic: 'protocol' }), /lengthField|header/); ok('guide protocol')
   assert.match(await call('flowlink_guide', { topic: 'nodes' }), /tcp:|transform:|START/); ok('guide nodes (node reference)')
+  assert.match(await call('flowlink_guide', { topic: 'plugin' }), /fl\.aes\.encrypt/); ok('guide plugin (fl manifest)')
 
   const pl = await call('plugin_list')
   assert.match(pl, /변환\(transform\)/); assert.match(pl, /코덱\(codec\)/); ok('plugin_list transforms+codecs')

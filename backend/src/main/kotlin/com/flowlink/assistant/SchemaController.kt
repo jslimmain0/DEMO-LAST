@@ -15,9 +15,29 @@ class SchemaController {
         "mock" to MockSchemaPrompt.SYSTEM,
         "protocol" to ProtocolSchemaPrompt.SYSTEM,
         "rules" to AGENT_RULES,
+        "plugin" to pluginGuide(),
     )
 
+    /** 스크립트 플러그인 작성 규격 — 화면 편집기와 MCP 가 같은 원문. fl 매니페스트는 코드에서 생성(추가 시 자동 반영). */
+    private fun pluginGuide(): String = buildString {
+        append(PLUGIN_GUIDE)
+        append("\n## fl.* 헬퍼\n")
+        for (e in com.flowlink.plugin.script.FlApi.MANIFEST) append("- `${e.signature}` — ${e.doc}. 예: `${e.example}`\n")
+    }
+
     companion object {
+        /** 스크립트 플러그인 작성 규격 — 화면 편집기와 MCP 가 같은 원문. fl 매니페스트는 코드에서 생성(추가 시 자동 반영). */
+        const val PLUGIN_GUIDE: String = """
+# 스크립트 플러그인(JS) 작성 규격
+스크립트의 **마지막 표현식이 플러그인 객체**다. 샌드박스: 표준 JS + `fl.*` 만(Java/파일/네트워크 없음), 호출당 2초.
+저장은 화면(/plugins) 에서 초안 → 승인 요청 → 관리자 승인 후에만 레지스트리에 올라간다(MCP 로는 만들 수 없음 — 사용자에게 안내).
+
+변환(transform):  ({ id, label, description?, inputs?: [{key,label,type?}], outputs?: [{key,label,type?}], params?: [{key,label,type?,defaultValue?,options?,placeholder?}], apply(inputs, config) { return { 출력키: 값 } } })
+필드 코덱:        ({ id, label, kind: 'fieldCodec', params?, encode(value, ctx) { return 문자열 }, decode(value, ctx) { return 문자열 } })
+전문 코덱:        ({ id, label, kind: 'messageCodec', params?, encode(bytes, ctx) { return 바이트배열 }, decode(bytes, ctx) { return 바이트배열 } })
+ctx = { config, direction: 'send'|'recv', field: {name,len,type,pad}|null, message: {필드명: 값} }. id 는 [a-z0-9-] 2~64자.
+"""
+
         /** 에이전트가 소스 코드에서 워크플로/프로토콜/Mock 을 만들 때 지킬 규약 — 코드에 없는 값은 지어내지 않는다. */
         const val AGENT_RULES: String = """
 # FlowLink 에이전트 규약
@@ -33,7 +53,7 @@ class SchemaController {
    **curl·파이썬·셸로 직접 쏘지 말고 http_request/mock_send 를 써라**(그게 이 서버에 붙어 있는 경로다). 결과는 "돌아가는 초안 + 확인 목록(메모)".
 5. 워크플로에는 START 와 END 가 있어야 하고, 검증은 assert 노드(예: {{ 응답코드@노드 }} == '0000')로 남긴다.
 6. TRANSFORM 노드(transformId)나 Mock 코덱(codec step id)을 쓰려면 plugin_list 로 사용 가능한 플러그인 id·파라미터를 먼저 확인한다.
-   목록에 없는 id 는 지어내지 말고, 없으면 TRANSFORM 노드·코덱을 만들지 않는다(플러그인 JAR 업로드는 화면에서 관리자만).
+   목록에 없는 id 는 지어내지 말고, 없으면 TRANSFORM 노드·코덱을 만들지 않는다(플러그인은 화면 /plugins 에서 JS 로 작성해 관리자 승인 — 규격은 flowlink_guide(plugin), 사용자에게 안내한다).
 """
     }
 }

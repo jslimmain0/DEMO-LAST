@@ -247,7 +247,7 @@ function PendingPluginRow({ p, first, onDone }: { p: PluginScriptSummary; first:
         </span>
         <button onClick={() => setOpen((v) => !v)} style={chipBtn}>{open ? '접기' : '코드·샘플 보기'}</button>
         <Link to={`/plugins/${p.id}`} style={{ ...chipBtn, textDecoration: 'none', color: 'var(--fl-text)' }}>편집기에서 열기</Link>
-        <button onClick={() => void act('approve')} disabled={busy} style={approveBtn}>{busy ? '처리 중…' : '✓ 승인'}</button>
+        <ConfirmChip tone="ok" label="✓ 승인" confirmLabel="승인 확정" pending={busy} title="승인하면 즉시 서빙됩니다" onConfirm={() => void act('approve')} />
         <ConfirmChip label="반려" confirmLabel="반려 확정" pending={busy} onConfirm={() => void act('reject')} />
       </div>
       {open && (

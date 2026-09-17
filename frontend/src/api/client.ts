@@ -35,10 +35,6 @@ export const http = axios.create({
   headers: { 'Content-Type': 'application/json' },
 })
 
-// 멀티파트(파일 업로드)용 — 기본 JSON 헤더 없이 axios가 boundary 를 설정하게 둔다.
-// (auth 모듈이 두 인스턴스 모두에 Bearer 인터셉터를 부착한다)
-export const uploadHttp = axios.create({ baseURL: `${appBase()}/api/v1` })
-
 export const flowsApi = {
   list: (workspaceId?: string) =>
     http.get<FlowSummary[]>('/flows', { params: workspaceId && workspaceId !== 'public' ? { workspaceId } : undefined }).then((r) => r.data),
@@ -99,12 +95,6 @@ export const transformsApi = {
 }
 
 export const pluginsApi = {
-  // JAR 업로드(레거시) — PropertyPanel.tsx 가 아직 참조(task 14 에서 UI 통째 제거 예정). 그때 같이 지운다.
-  upload: (file: File) => {
-    const fd = new FormData()
-    fd.append('file', file)
-    return uploadHttp.post<string[]>('/plugins', fd).then((r) => r.data)
-  },
   api: () => http.get<import('./types').FlApiEntry[]>('/plugins/api').then((r) => r.data),
   list: (status?: import('./types').PluginScriptStatus) => http.get<import('./types').PluginScriptSummary[]>('/plugins/scripts', { params: status ? { status } : {} }).then((r) => r.data),
   get: (id: string) => http.get<import('./types').PluginScriptDetail>(`/plugins/scripts/${id}`).then((r) => r.data),

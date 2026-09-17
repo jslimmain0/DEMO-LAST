@@ -57,7 +57,7 @@ export function PluginRunPanel({ source, scriptId, canRun, onDiagnostics }: { so
     try {
       const r = await pluginsApi.tryRun(request)
       setResult(r); onDiagnostics([])
-      if (scriptId) void pluginsApi.saveSample(scriptId, JSON.stringify({ request: { ...request, source: undefined }, result: r })).catch(() => {})
+      if (scriptId) void pluginsApi.saveSample(scriptId, JSON.stringify({ request: { ...request, source: undefined, config: undefined }, result: r })).catch(() => {})
     } catch (e) {
       const se = scriptError(e)
       setRunErr(se ? `${se.line ? `${se.line}행: ` : ''}${se.message}` : (e as Error).message)
@@ -115,7 +115,7 @@ export function PluginRunPanel({ source, scriptId, canRun, onDiagnostics }: { so
                 : <input style={input} value={sample.config[p.key] ?? p.defaultValue} placeholder={p.placeholder || p.key} onChange={(e) => setCfg(p.key, e.target.value)} />}
             </label>
           ))}
-          <div style={hint}>시크릿 토큰(<code>{'{{ x@secret }}'}</code>)은 여기선 풀리지 않습니다 — 실제 값을 넣어 시험하세요.</div>
+          <div style={hint}>시크릿 토큰(<code>{'{{ x@secret }}'}</code>)은 여기선 풀리지 않습니다 — 실제 값을 넣어 시험하세요. 입력과 결과는 승인 화면에 샘플로 보이며, 파라미터(키·IV 등) 값은 저장하지 않습니다.</div>
         </div>
       )}
       {runErr && <div style={{ ...hint, color: 'var(--fl-fail)' }}>✕ {runErr}</div>}

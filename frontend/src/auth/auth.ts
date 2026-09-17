@@ -1,4 +1,4 @@
-import { http, uploadHttp } from '../api/client'
+import { http } from '../api/client'
 
 /** 백엔드 /auth/config — 인증 모드 발견. mode: "github"(GitHub 로그인) | "none"(dev, 로그인 없음). mcpPort: 옆에 뜬 MCP HTTP 서버 포트(없으면 null). */
 export interface AuthConfig {
@@ -43,7 +43,7 @@ let interceptorsAttached = false
 export function attachAuthInterceptors() {
   if (interceptorsAttached) return
   interceptorsAttached = true
-  for (const inst of [http, uploadHttp]) {
+  for (const inst of [http]) {
     inst.interceptors.request.use((config) => {
       const t = getAccessToken()
       if (t) config.headers.Authorization = `Bearer ${t}`

@@ -76,6 +76,8 @@ class ScriptRuntime(private val props: PluginsProperties) {
             .allowExperimentalOptions(true) // js.java-package-globals 가 실험적 옵션이라 필요
             .option("js.ecmascript-version", "2022")
             .option("js.java-package-globals", "false") // 기본 true — java/javax/com/org 전역이 클래스 필터 없이도 JavaPackage 스텁으로 노출됨
+            .option("js.load", "false") // load()/loadWithNewGlobal() 빌트인 제거 — IO 는 막혀 있어도 전역 자체를 없앤다
+            // ponytail: 힙 상한 없음(Graal CE) — 한 문장으로도 OOM 가능. 승인 게이트가 방어선; 필요해지면 동시 실행 세마포어 또는 Graal EE 샌드박스.
             .resourceLimits(ResourceLimits.newBuilder().statementLimit(props.script.statementLimit, null).build())
             .out(out) // console.log/print 를 실행 패널 logs 로 — 호스트 프로세스 stdout 으로 새지 않게
             .err(err)

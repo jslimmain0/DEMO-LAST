@@ -68,6 +68,10 @@ class ScriptRuntimeTest {
         // typeof 로 확인 — 호스트 브릿지 전역이 존재하지 않는다
         val cs = rt.compile("({ id: 'x', label: 'x', apply(i, c) { return { result: typeof Java + ',' + typeof Polyglot + ',' + typeof fl } } })")
         assertThat(rt.runTransform(cs, emptyMap(), emptyMap()).value["result"]).isEqualTo("undefined,undefined,object")
+        // js.load=false — load()/loadWithNewGlobal() 빌트인 자체가 없다
+        assertThatThrownBy { rt.runTransform(rt.compile("({ id: 'x', label: 'x', apply(i, c) { load('x'); return {} } })"), emptyMap(), emptyMap()) }.isInstanceOf(ScriptError::class.java)
+        val ld = rt.compile("({ id: 'x', label: 'x', apply(i, c) { return { result: typeof load + ',' + typeof loadWithNewGlobal } } })")
+        assertThat(rt.runTransform(ld, emptyMap(), emptyMap()).value["result"]).isEqualTo("undefined,undefined")
     }
 
     @Test

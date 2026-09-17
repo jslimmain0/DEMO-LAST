@@ -4,7 +4,6 @@ import com.flowlink.codec.CodecCtx
 import com.flowlink.common.error.BadRequestException
 import com.flowlink.common.error.ForbiddenException
 import com.flowlink.common.error.NotFoundException
-import com.flowlink.common.json.JsonService
 import com.flowlink.common.tenant.TenantContext
 import com.flowlink.core.domain.PluginScript
 import com.flowlink.core.repository.PluginScriptRepository
@@ -33,7 +32,6 @@ class PluginScriptService(
     private val repo: PluginScriptRepository,
     private val rt: ScriptRuntime,
     private val workspace: WorkspaceService,
-    private val json: JsonService,
     @Lazy private val registry: TransformRegistry,
     @Lazy private val usages: PluginUsageIndex,
 ) : ScriptPluginLoader {
@@ -42,6 +40,7 @@ class PluginScriptService(
     private fun me() = workspace.currentUsername()
     private fun requireApproved() { if (!workspace.isApproved(me())) throw ForbiddenException("플러그인 작성·시험은 가입 승인 후 가능합니다.") }
     private fun requireAdmin() { if (!workspace.isAdmin(me())) throw ForbiddenException("플러그인 승인/반려는 관리자만 가능합니다.") }
+    private fun requireAuthorOrAdmin(row: PluginScript, what: String) { if (row.createdBy != me() && !workspace.isAdmin(me())) throw ForbiddenException("작성자 또는 관리자만 ${what}할 수 있습니다.") }
     private fun find(id: UUID): PluginScript = repo.findByIdAndTenantId(id, tenant()).orElseThrow { NotFoundException("플러그인 스크립트가 없습니다: $id") }
 
     // ---- 레지스트리 로더 ----
@@ -117,6 +116,7 @@ class PluginScriptService(
     fun withdraw(id: UUID): PluginScriptDtos.Detail {
         requireApproved()
         val row = find(id)
+        requireAuthorOrAdmin(row, "철회")
         if (row.status != PluginScript.STATUS_PENDING) throw BadRequestException("승인 대기 중이 아닙니다.")
         row.status = PluginScript.STATUS_DRAFT
         return detail(repo.save(row))
@@ -139,14 +139,15 @@ class PluginScriptService(
         requireAdmin()
         val row = find(id)
         if (row.status != PluginScript.STATUS_PENDING) throw BadRequestException("승인 대기 중이 아닙니다.")
-        row.status = PluginScript.STATUS_REJECTED; row.reviewedBy = me(); row.reviewedAt = Instant.now(); row.reviewNote = note?.take(1000)
+        row.status = PluginScript.STATUS_REJECTED; row.reviewedBy = me(); row.reviewedAt = Instant.now(); row.reviewNote = note?.takeIf { it.isNotBlank() }?.take(1000)
         return detail(repo.save(row))
     }
 
     @Transactional
     fun delete(id: UUID) {
         val row = find(id)
-        if (row.createdBy != me() && !workspace.isAdmin(me())) throw ForbiddenException("작성자 또는 관리자만 삭제할 수 있습니다.")
+        requireAuthorOrAdmin(row, "삭제")
+        usages.invalidate() // 30초 캐시 — 방금 붙인 사용처를 놓치고 지우지 않게
         val n = usages.count(row.pluginId)
         if (n > 0) throw BadRequestException("사용 중인 플러그인은 삭제할 수 없습니다(사용처 ${n}곳) — 먼저 워크플로/Mock/프로토콜에서 제거하세요.")
         repo.delete(row)
@@ -163,7 +164,7 @@ class PluginScriptService(
 
     /** 제출자가 돌린 샘플을 승인 화면용으로 저장(프론트가 try 결과를 submit 전에 PUT). */
     @Transactional
-    fun saveSample(id: UUID, sampleJson: String?) { requireApproved(); val row = find(id); row.sampleJson = sampleJson?.take(20_000); repo.save(row) }
+    fun saveSample(id: UUID, sampleJson: String?) { requireApproved(); val row = find(id); requireAuthorOrAdmin(row, "샘플 저장"); row.sampleJson = sampleJson?.take(20_000); repo.save(row) }
 
     // ---- 뷰 ----
     private fun normName(name: String?, fallback: String): String {

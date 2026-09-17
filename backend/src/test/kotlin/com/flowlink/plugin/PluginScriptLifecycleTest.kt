@@ -63,6 +63,8 @@ class PluginScriptLifecycleTest {
         assertThatThrownBy { svc.approve(d.id) }.isInstanceOf(ForbiddenException::class.java) // 관리자 아님
         val p = svc.submit(d.id); assertThat(p.status).isEqualTo(PluginScript.STATUS_PENDING); assertThat(p.submittedBy).isEqualTo("alice")
         assertThat(svc.pendingCount()).isEqualTo(1)
+        user("bob", AppUser.STATUS_APPROVED); asUser("bob")
+        assertThatThrownBy { svc.withdraw(d.id) }.isInstanceOf(ForbiddenException::class.java) // 승인 사용자여도 작성자 아님
 
         asUser("admin")
         val a = svc.approve(d.id)

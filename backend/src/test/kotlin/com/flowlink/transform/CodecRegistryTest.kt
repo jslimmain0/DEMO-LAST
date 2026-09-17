@@ -2,21 +2,13 @@ package com.flowlink.transform
 
 import com.flowlink.plugin.PluginsProperties
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatCode
 import org.junit.jupiter.api.Test
 import java.nio.file.Files
 import java.util.jar.JarOutputStream
 import java.util.zip.ZipEntry
 
 class CodecRegistryTest {
-    @Test
-    fun `JarProbe를 classloader로 직접 로드할 수 있다`() {
-        // 진단: JarProbe가 정말 classpath에 있는지 확인
-        val probe = TransformRegistry::class.java.classLoader.loadClass("com.flowlink.transform.JarProbe")
-        assertThat(probe).isNotNull()
-        val instance = probe.getConstructor().newInstance() as FlowTransform
-        assertThat(instance.id()).isEqualTo("jar-probe")
-    }
-
     @Test
     fun `플러그인 디렉토리 없으면 코덱 0개 - 조회는 null`() {
         val dir = Files.createTempDirectory("no-plugins").resolve("none")
@@ -91,6 +83,20 @@ class CodecRegistryTest {
             override fun apply(inputs: Map<String, String>, config: Map<String, String>) = mapOf("result" to "x")
         }
         val r = TransformRegistry(PluginsProperties("build/tmp/none", false), ScriptPluginLoader { listOf(t) })
+        assertThat(r.get("s1")).isPresent
+    }
+
+    @Test
+    fun `스크립트 로더가 던지면 reload 는 삼키고 이전 등록을 유지한다`() {
+        val t = object : FlowTransform {
+            override fun id() = "s1"; override fun label() = "s1"
+            override fun apply(inputs: Map<String, String>, config: Map<String, String>) = mapOf("result" to "x")
+        }
+        var down = false
+        val r = TransformRegistry(PluginsProperties("build/tmp/none", false), ScriptPluginLoader { if (down) throw RuntimeException("db down") else listOf(t) })
+        assertThat(r.get("s1")).isPresent
+        down = true
+        assertThatCode { r.reload() }.doesNotThrowAnyException()
         assertThat(r.get("s1")).isPresent
     }
 }

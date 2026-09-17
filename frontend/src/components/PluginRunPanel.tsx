@@ -26,15 +26,17 @@ export function PluginRunPanel({ source, scriptId, canRun, onDiagnostics }: { so
   const [runErr, setRunErr] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const sourceRef = useRef(source); sourceRef.current = source
-  useEffect(() => { setSample(loadSample(key)); setResult(null); setRunErr(null) }, [key])
+  const compileSeq = useRef(0)
+  useEffect(() => { setSample(loadSample(key)); setResult(null); setRunErr(null); setMeta(null); setCompileErr(null); compileSeq.current++ }, [key])
   useEffect(() => { try { localStorage.setItem(key, JSON.stringify(sample)) } catch { /* */ } }, [key, sample])
 
   // 타이핑 멈춤 600ms → 컴파일만(입력 없이) → 메타로 폼
   useEffect(() => {
     if (!canRun) return
     const t = setTimeout(() => {
-      pluginsApi.tryRun({ source: sourceRef.current }).then((r) => { setMeta(r.meta); setCompileErr(null); onDiagnostics([]) })
-        .catch((e) => { const se = scriptError(e); setCompileErr(se?.message ?? '컴파일 실패'); if (se?.line) onDiagnostics([{ line: se.line, col: se.col ?? undefined, message: se.message }]) })
+      const seq = ++compileSeq.current
+      pluginsApi.tryRun({ source: sourceRef.current }).then((r) => { if (seq !== compileSeq.current) return; setMeta(r.meta); setCompileErr(null); onDiagnostics([]) })
+        .catch((e) => { if (seq !== compileSeq.current) return; const se = scriptError(e); setCompileErr(se?.message ?? '컴파일 실패'); if (se?.line) onDiagnostics([{ line: se.line, col: se.col ?? undefined, message: se.message }]) })
     }, 600)
     return () => clearTimeout(t)
   }, [source, canRun, onDiagnostics])
@@ -50,7 +52,7 @@ export function PluginRunPanel({ source, scriptId, canRun, onDiagnostics }: { so
   }, [meta, sample, source])
 
   const run = async () => {
-    if (!request || busy) return
+    if (!canRun || !request || busy || compileErr) return
     setBusy(true); setRunErr(null)
     try {
       const r = await pluginsApi.tryRun(request)

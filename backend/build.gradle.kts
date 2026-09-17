@@ -50,6 +50,11 @@ dependencies {
     // --- 표현식 샌드박스(IF 노드) ---
     implementation("org.springframework:spring-expression")
 
+    // --- 스크립트 플러그인 샌드박스(GraalJS, 인터프리터 모드 — JDK 21) + fl.* 국내 암호(SEED/ARIA) ---
+    implementation("org.graalvm.polyglot:polyglot:24.1.2")
+    implementation("org.graalvm.polyglot:js-community:24.1.2")
+    implementation("org.bouncycastle:bcprov-jdk18on:1.80")
+
     // --- Kotlin ---
     implementation("com.fasterxml.jackson.module:jackson-module-kotlin")
     implementation("org.jetbrains.kotlin:kotlin-reflect")

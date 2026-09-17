@@ -223,9 +223,80 @@ async function scenario({ client, call }: { client: Client; call: Call }, base: 
   assert.match(await call('execution_get', { id: eid, full: true }), /SUCCEEDED/); ok('execution_get')
   assert.match(await call('execution_list', { flowId: fid }), new RegExp(eid)); ok('execution_list')
 
+  // ---- 실행 제어: 노드 단독 실행 · 재실행 · 필터 · input 노드 재개 · 스위트
+  assert.match(await call('node_run', { flowId: fid, nodeId: 'tcp1', input: { acct: '1122334567890' } }), /tcp1 ✓[\s\S]*응답코드/); ok('node_run tcp node')
+  assert.match(await call('execution_rerun', { id: eid }), /SUCCEEDED/); ok('execution_rerun')
+  const el = await call('execution_list', { status: 'FAILED', flowId: fid })
+  assert.match(el, /FAILED/); assert.doesNotMatch(el, /SUCCEEDED/); ok('execution_list status filter')
+  const g2 = { nodes: [
+    { id: 'start', type: 'start', name: '시작', x: 0, y: 0 },
+    { id: 'ask', type: 'input', name: '계좌 입력', x: 130, y: 0, waitMsg: '계좌번호?', waitFields: [{ id: 'w', key: 'acct', label: '계좌번호', type: 'string' }] },
+    { ...graph.nodes[1], tcpValues: { '계좌번호': '{{ acct@ask }}', '고객명': '김철수' } },
+    graph.nodes[2], graph.nodes[4],
+  ], edges: [{ from: 'start', to: 'ask' }, { from: 'ask', to: 'tcp1' }, { from: 'tcp1', to: 'chk' }, { from: 'chk', to: 'end' }] }
+  const f3 = await call('flow_upsert', { name: `smoke input ${Date.now()}`, graph: g2 })
+  const fid3 = /flow ([0-9a-f-]{36})/.exec(f3)![1]
+  const r3 = await call('flow_run', { id: fid3, timeoutSec: 20 })
+  assert.match(r3, /⏸ 대기 중: 입력\(input\) 노드/); ok('flow_run pauses at input node')
+  const eid3 = /실행 ([0-9a-f-]{36})/.exec(r3)![1]
+  assert.match(await call('execution_resume', { id: eid3, values: { acct: '1122334567890' } }), /SUCCEEDED[\s\S]*chk.*✓/); ok('execution_resume(values) → SUCCEEDED')
+  assert.match(await call('execution_resume', { id: eid3 }), /대기 중인 노드가 없습니다/); ok('execution_resume nothing pending')
+
+  // ---- 버전
+  // 생성 시 v1(빈 그래프) + 첫 저장 v2 → 이 저장은 v3
+  const up = await call('flow_upsert', { id: fid, graph, note: 'again' })
+  const vNow = Number(/ v(\d+) /.exec(up)![1]); assert.ok(vNow >= 2, up); ok(`flow_upsert existing → v${vNow}`)
+  const vs = await call('flow_versions', { id: fid })
+  assert.match(vs, new RegExp(`^v${vNow} .*· again`, 'm')); assert.match(vs, /^v1 /m); ok('flow_versions')
+  assert.match(await call('flow_version', { id: fid, versionNo: vNow }), /"tcp1"/); ok('flow_version get graph')
+  const rs = await call('flow_version', { id: fid, versionNo: vNow, restore: true })
+  const vRestored = Number(new RegExp(`복원: v${vNow} → 새 버전 v(\\d+)`).exec(rs)![1]); ok('flow_version restore')
+  assert.match(await call('flow_version', { id: fid, versionNo: vRestored, pinned: true }), new RegExp(`v${vRestored} 고정`)); assert.match(await call('flow_versions', { id: fid }), new RegExp(`^v${vRestored} 📌`, 'm')); ok('flow_version pin')
+  const mvs = await call('mock_versions', { slug })
+  const mv = Number(/^v(\d+)/.exec(mvs)![1]); ok('mock_versions')
+  assert.match(await call('mock_version', { slug, versionNo: mv }), /"protocolId"/); ok('mock_version get spec')
+  assert.match(await call('mock_version', { slug, versionNo: mv, restore: true }), new RegExp(`복원: v${mv} → 새 버전 v\\d+`)); ok('mock_version restore')
+
+  // ---- Mock 부가
+  assert.match(await call('mock_state', { slug }), /요청 \d+ · seq \d+\n상태: /); ok('mock_state')
+  assert.match(await call('mock_reset', { slug }), /초기화됨/); ok('mock_reset')
+  assert.match(await call('mock_clear_log', { slug }), /로그 비움/); assert.match(await call('mock_log', { slug }), /로그 없음/); ok('mock_clear_log')
+  assert.match(await call('mock_usages', {}), /←|참조하는 워크플로 없음/); ok('mock_usages')
+  assert.match(await call('codec_try', { slug, codec: { request: [] }, message: 'hello' }), /결과: hello/); ok('codec_try passthrough')
+  assert.match(await call('codec_try', { slug, codec: { request: [{ id: 'nope', target: 'body' }] }, message: 'x' }, true), /알 수 없는 변환 플러그인/); ok('codec_try unknown plugin → isError')
+  assert.match(await call('mock_list', { workspace: '공용' }), new RegExp(slug)); ok('mock_list workspace filter')
+
+  // ---- 워크스페이스 · 폴더 — 이름/경로로 지목
+  const wl = await call('workspace_list')
+  assert.match(wl, /공용 \[public\] PUBLIC/); assert.match(wl, /PERSONAL/); ok('workspace_list')
+  const personal = /^(.+) \[[0-9a-f-]{36}\] PERSONAL/m.exec(wl)![1]
+  const fname = `smoke-folder-${Date.now()}`
+  assert.match(await call('folder_create', { name: fname }), /^생성: /); ok('folder_create')
+  assert.match(await call('folder_create', { name: 'sub', parent: fname }), new RegExp(`생성: ${fname}/sub`)); ok('folder_create nested (parent by name)')
+  assert.match(await call('folder_list'), new RegExp(`${fname}/sub \\[[0-9a-f-]{36}\\] 워크플로 0`)); ok('folder_list paths')
+  const f2 = await call('flow_upsert', { name: 'smoke in folder', graph, folder: `${fname}/sub` })
+  const fid2 = /flow ([0-9a-f-]{36})/.exec(f2)![1]
+  assert.match(await call('flow_list', { folder: `${fname}/sub` }), new RegExp(`^${fname}/sub/smoke in folder \\[${fid2}\\]`, 'm')); ok('flow_upsert into folder by path + flow_list(folder)')
+  assert.match(await call('flow_list', { folder: 'no-such-folder' }, true), /폴더 없음.*있는 폴더/); ok('unknown folder → error lists folders')
+  assert.match(await call('flow_list', { workspace: 'no-such-ws' }, true), /워크스페이스 없음.*공용/); ok('unknown workspace → error lists workspaces')
+  assert.match(await call('workspace_get', {}), new RegExp(`📁 ${fname}/sub \\[[0-9a-f-]{36}\\]\\n  - smoke in folder \\[${fid2}\\]`)); ok('workspace_get tree')
+  assert.match(await call('flow_update', { id: fid2, name: 'smoke renamed', folder: '/' }), /변경: smoke renamed \[.*폴더 \(루트\)/); ok('flow_update rename + move to root')
+  assert.match(await call('flow_update', { id: fid2, folder: fname }), new RegExp(`폴더 [0-9a-f-]{36}`)); ok('flow_update move into folder by name')
+  assert.match(await call('folder_update', { folder: `${fname}/sub`, name: 'sub2' }), new RegExp(`변경: ${fname}/sub2`)); ok('folder_update rename')
+  assert.match(await call('suite_run', { folder: fname, timeoutSec: 60 }), /^\d\/1 성공\n[✓✕] smoke renamed \[[0-9a-f-]{36}\] (SUCCEEDED|FAILED)/); ok('suite_run folder')
+  assert.match(await call('flow_upsert', { name: 'smoke personal', graph, workspace: personal }), /^저장: /); ok('flow_upsert into personal workspace by name')
+  const pfl = await call('flow_list', { workspace: personal })
+  assert.match(pfl, /smoke personal/); assert.doesNotMatch(pfl, /smoke renamed/); ok('flow_list(workspace) scoped')
+  await call('flow_delete', { id: /\[([0-9a-f-]{36})\]/.exec(pfl)![1] })
+  assert.match(await call('workspace_export', {}), /"flows"/); ok('workspace_export')
+
   const env = `smoke-${Date.now()}`
   assert.match(await call('env_put', { name: env, vars: { host: '127.0.0.1' } }), /1개/); ok('env_put')
   assert.match(await call('env_list'), new RegExp(`${env}: host=127.0.0.1`)); ok('env_list')
+  assert.match(await call('env_rename', { name: env, to: env + '-r' }), /이름 변경/); assert.match(await call('env_list'), new RegExp(`${env}-r:`)); ok('env_rename')
+  assert.match(await call('env_delete', { name: env + '-r' }), /삭제됨/); ok('env_delete')
+  assert.match(await call('flow_run_input', { id: fid, vars: { acct: '1' } }), /저장 · 기본 입력: acct=1/); assert.match(await call('flow_run_input', { id: fid }), /acct=1/); ok('flow_run_input put/get')
+  assert.match(await call('secret_list'), /시크릿 없음|\(공통\)|\(/); ok('secret_list')
 
   const hslug = `smkh${String(PORT)}`
   const h1 = await call('mock_upsert', { name: 'smoke http', slug: hslug, type: 'HTTP', spec: { routes: [{ id: 'r', method: 'ANY', path: '/ping', rules: [{ id: 'k', status: 200, contentType: 'json', body: '{"ok":true}' }] }] } })
@@ -238,6 +309,9 @@ async function scenario({ client, call }: { client: Client; call: Call }, base: 
   assert.match(await call('mock_delete', { slug }), /삭제됨/); ok('tcp mock delete')
   assert.match(await call('protocol_delete', { id: pid }), /삭제됨/); ok('protocol delete')
   assert.match(await call('mock_get', { slug }, true), /Mock 없음/); ok('deleted mock → isError')
+  for (const id of [fid, fid2, fid3]) assert.match(await call('flow_delete', { id }), /삭제됨/)
+  ok('flow_delete ×3')
+  assert.match(await call('folder_delete', { folder: `${fname}/sub2` }), /삭제됨/); assert.match(await call('folder_delete', { folder: fname }), /삭제됨/); ok('folder_delete')
   await client.close()
 }
 

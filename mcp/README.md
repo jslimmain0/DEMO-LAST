@@ -36,10 +36,19 @@ issuer 는 요청 Host 로 계산한다(설정값 없음). 등록된 클라이�
 
 ## 툴
 
-`flowlink_status` · `flowlink_guide`(flow=노드 레퍼런스·nodes·protocol·mock·rules 원문) ·
-`plugin_list`(변환·코덱 플러그인) `transform_preview` · `protocol_list/get/upsert/preview/delete` ·
-`mock_list/get/upsert/send/log/delete` · `flow_list/get/upsert/run` `execution_get/list` · `env_list/put` ·
-`http_request`(Mock·콜백·웹훅·외부 URL 에 실제 HTTP 요청 — curl/파이썬 대신 이걸로 테스트).
+워크스페이스·폴더는 **이름(또는 "상위/하위" 경로)** 으로 지목한다 — "개인 워크스페이스의 결제/카드 폴더에 워크플로 만들어줘"가 그대로 된다. 목록은 로그인한 사용자 기준(서버가 JWT 로 스코프: 공용 + 내 개인 + 내가 멤버인 팀; 게스트는 공용만).
+
+- 상태·가이드: `flowlink_status` · `flowlink_guide`(flow=노드 레퍼런스·nodes·protocol·mock·rules 원문)
+- 워크스페이스·폴더: `workspace_list` `workspace_get`(폴더 트리+워크플로+Mock 한눈에) `workspace_export/import` · `folder_list/create/update/delete`
+- 프로토콜: `protocol_list/get/upsert/preview/delete`
+- Mock: `mock_list(workspace)/get/upsert(workspace)/send/log/delete` · `mock_versions/version`(조회·복원·고정) `mock_state/reset/clear_log` `mock_usages`(어느 워크플로가 쓰는지) `codec_try`
+- 워크플로: `flow_list(workspace, folder)/get/upsert(workspace, folder)/update`(이름·설명·폴더 이동)`/delete` · `flow_versions/version`(조회·복원·고정) `flow_run_input`
+- 실행: `flow_run` `execution_get/list`(status·workspace 필터) `execution_resume`(input 노드 값 입력·client 노드 대신 호출·form 명세 반환) `execution_rerun` `node_run`(노드 하나만) `suite_run`(폴더/여러 워크플로 일괄)
+- 환경·시크릿: `env_list/put/rename/delete` · `secret_list`(이름만)
+- 플러그인: `plugin_list`(변환·코덱) `transform_preview`
+- `http_request`(Mock·콜백·웹훅·외부 URL 에 실제 HTTP 요청 — curl/파이썬 대신 이걸로 테스트)
+
+화면 몫으로 남긴 것: 트리거(스케줄·웹훅), 관리자(사용자 승인·purge), 앱 내 AI, 설정(relay·notify), 플러그인 JAR 업로드, 시크릿 값 저장.
 
 노드 종류·필드는 `flowlink_guide(flow)` 가 각 노드 JSON 예시로 설명한다(start/end/set/if/assert/switch/http/form/wait/input/transform/tcp/note/group).
 TRANSFORM 노드나 Mock 코덱은 `plugin_list` 로 사용 가능한 플러그인 id·파라미터를 먼저 확인한다(목록에 없으면 만들지 않는다).

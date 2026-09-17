@@ -9,6 +9,15 @@ import java.util.zip.ZipEntry
 
 class CodecRegistryTest {
     @Test
+    fun `JarProbe를 classloader로 직접 로드할 수 있다`() {
+        // 진단: JarProbe가 정말 classpath에 있는지 확인
+        val probe = TransformRegistry::class.java.classLoader.loadClass("com.flowlink.transform.JarProbe")
+        assertThat(probe).isNotNull()
+        val instance = probe.getConstructor().newInstance() as FlowTransform
+        assertThat(instance.id()).isEqualTo("jar-probe")
+    }
+
+    @Test
     fun `플러그인 디렉토리 없으면 코덱 0개 - 조회는 null`() {
         val dir = Files.createTempDirectory("no-plugins").resolve("none")
         val r = TransformRegistry(PluginsProperties(dir.toString(), true))
@@ -25,11 +34,29 @@ class CodecRegistryTest {
     }
 
     @Test
+    fun `좋은 JAR 만으로도 로드된다`() {
+        val dir = Files.createTempDirectory("jars-good")
+
+        // good.jar: test classpath에 존재하는 provider 지정 (JarProbe)
+        JarOutputStream(Files.newOutputStream(dir.resolve("good.jar"))).use { jar ->
+            jar.putNextEntry(ZipEntry("META-INF/"))
+            jar.closeEntry()
+            jar.putNextEntry(ZipEntry("META-INF/services/"))
+            jar.closeEntry()
+            jar.putNextEntry(ZipEntry("META-INF/services/com.flowlink.transform.FlowTransform"))
+            jar.write("com.flowlink.transform.JarProbe\n".toByteArray())
+            jar.closeEntry()
+        }
+
+        val r = TransformRegistry(PluginsProperties(dir.toString(), true))
+        assertThat(r.get("jar-probe")).isPresent
+    }
+
+    @Test
     fun `깨진 JAR 하나가 전체 로드를 막지 않는다`() {
         val dir = Files.createTempDirectory("jars-mixed")
 
-        // broken.jar: 존재하지 않는 provider 지정 → ServiceConfigurationError 발생해도
-        // 전체 로드가 실패하지 않아야 함
+        // broken.jar: 존재하지 않는 provider 지정 → ServiceConfigurationError 발생
         JarOutputStream(Files.newOutputStream(dir.resolve("broken.jar"))).use { jar ->
             jar.putNextEntry(ZipEntry("META-INF/"))
             jar.closeEntry()
@@ -40,11 +67,21 @@ class CodecRegistryTest {
             jar.closeEntry()
         }
 
-        // 핵심: broken JAR이 있어도 TransformRegistry가 초기화되고
-        // list() 호출이 예외를 던지지 않아야 함
+        // good.jar: test classpath에 존재하는 provider 지정 (JarProbe)
+        JarOutputStream(Files.newOutputStream(dir.resolve("good.jar"))).use { jar ->
+            jar.putNextEntry(ZipEntry("META-INF/"))
+            jar.closeEntry()
+            jar.putNextEntry(ZipEntry("META-INF/services/"))
+            jar.closeEntry()
+            jar.putNextEntry(ZipEntry("META-INF/services/com.flowlink.transform.FlowTransform"))
+            jar.write("com.flowlink.transform.JarProbe\n".toByteArray())
+            jar.closeEntry()
+        }
+
+        // 핵심: broken JAR은 건너뛰고 good JAR에서 jar-probe를 로드해야 함
         val r = TransformRegistry(PluginsProperties(dir.toString(), true))
-        // 예외 없이 이 부분에 도달해야 함 - broken JAR은 건너뛰어짐
-        assertThat(r.list()).isEmpty()
+        // 예외 없이 로드 완료 - good JAR에서 jar-probe를 로드했어야 함
+        assertThat(r.get("jar-probe")).isPresent
     }
 
     @Test

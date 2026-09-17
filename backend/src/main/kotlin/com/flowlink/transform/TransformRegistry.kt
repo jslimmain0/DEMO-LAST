@@ -72,11 +72,11 @@ class TransformRegistry(
         val jars = jarFiles()
         if (jars.isEmpty()) return 0
         var ok = 0
-        val cl = URLClassLoader(jars.map { it.toUri().toURL() }.toTypedArray(), Thread.currentThread().contextClassLoader ?: javaClass.classLoader)
-        val loadersToKeep = mutableListOf(cl)
+        val loadersToKeep = mutableListOf<URLClassLoader>()
+        // 각 JAR은 독립적인 로더로 로드 - 깨진 JAR이 다른 JAR을 방해하지 않도록
         for (jar in jars) {
             try {
-                val one = URLClassLoader(arrayOf(jar.toUri().toURL()), cl)
+                val one = URLClassLoader(arrayOf(jar.toUri().toURL()), javaClass.classLoader)
                 loadersToKeep.add(one)
                 for (t in ServiceLoader.load(FlowTransform::class.java, one)) map[t.id()] = t
                 for (c in ServiceLoader.load(CodecPlugin::class.java, one)) codecs[c.id()] = c

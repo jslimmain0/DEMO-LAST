@@ -62,8 +62,8 @@ export function AppShellTier1({ children, sidebarExtra }: { children: ReactNode;
             <Link key={n.to} to={n.to} style={navItem(n.to)}>
               <span aria-hidden style={{ width: 16, textAlign: 'center', fontSize: 14 }}>{n.icon}</span>
               <span>{n.label}</span>
-              {n.to === '/admin' && (adminMe.data?.pendingCount ?? 0) > 0 && (
-                <span title={`가입 신청 ${adminMe.data!.pendingCount}건 대기`} style={pendingNavBadge}>{adminMe.data!.pendingCount}</span>
+              {n.to === '/admin' && ((adminMe.data?.pendingCount ?? 0) + (adminMe.data?.pendingPlugins ?? 0)) > 0 && (
+                <span title={`가입 신청 ${adminMe.data!.pendingCount}건 · 플러그인 승인 요청 ${adminMe.data!.pendingPlugins ?? 0}건`} style={pendingNavBadge}>{(adminMe.data!.pendingCount) + (adminMe.data!.pendingPlugins ?? 0)}</span>
               )}
             </Link>
           ))}

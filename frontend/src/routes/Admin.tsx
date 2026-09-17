@@ -1,13 +1,18 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { CSSProperties, ReactNode } from 'react'
-import { useEffect, useRef, useState } from 'react'
-import { adminApi, workspacesApi } from '../api/client'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
+import { adminApi, pluginsApi, workspacesApi } from '../api/client'
 import type { AdminUserView, AdminWorkspaceView } from '../api/client'
+import type { PluginScriptSummary } from '../api/types'
 import { AppShellTier1 } from '../app/AppShell'
 import { AskDialog } from '../components/AskDialog'
 import type { AskSpec } from '../components/AskDialog'
+import { PluginDiffView } from '../components/PluginDiffView'
 import { toast } from '../components/toast'
+import { apiErrorMessage } from '../lib/apiError'
 import { relTime } from '../lib/format'
+import { kindLabel } from '../lib/pluginTemplates'
 
 /**
  * 관리 콘솔(/admin) — **관리자 전용** 회원·팀·권한 관리.
@@ -19,6 +24,7 @@ export function Admin() {
   const me = useQuery({ queryKey: ['admin', 'me'], queryFn: adminApi.me, staleTime: 30_000, refetchOnMount: 'always' })
   const users = useQuery({ queryKey: ['admin', 'users'], queryFn: adminApi.users, enabled: me.data?.admin === true })
   const wss = useQuery({ queryKey: ['admin', 'workspaces'], queryFn: adminApi.workspaces, enabled: me.data?.admin === true })
+  const pendingPlugins = useQuery({ queryKey: ['plugins', 'scripts', 'PENDING'], queryFn: () => pluginsApi.list('PENDING'), enabled: me.data?.admin === true, refetchInterval: 30_000 })
   const [tab, setTab] = useState<'users' | 'teams'>('users')
   const [ask, setAsk] = useState<AskSpec | null>(null)
 
@@ -89,6 +95,8 @@ export function Admin() {
           <StatCard icon="👤" label="멤버" value={allUsers.filter((u) => u.status !== 'PENDING').length} sub="승인·차단 포함" onClick={() => setTab('users')} />
           <StatCard icon="🔔" label="가입 신청" value={pending.length} accent={pending.length > 0 ? 'var(--fl-waiting)' : undefined}
             sub={pending.length > 0 ? '승인 대기 중 — 확인 필요' : '대기 없음'} onClick={() => setTab('users')} />
+          <StatCard icon="◇" label="플러그인 승인 요청" value={pendingPlugins.data?.length ?? 0} accent={(pendingPlugins.data?.length ?? 0) > 0 ? 'var(--fl-waiting)' : undefined}
+            sub={(pendingPlugins.data?.length ?? 0) > 0 ? '코드·샘플 확인 후 승인' : '대기 없음'} onClick={() => setTab('users')} />
           <StatCard icon="👥" label="팀 워크스페이스" value={teams.length} sub={`개인 ${personals.length}개`} onClick={() => setTab('teams')} />
           <StatCard icon="▤" label="워크플로" value={totalFlows} sub={`공용 ${wss.data?.publicFlowCount ?? 0} · Mock ${wss.data?.publicMockCount ?? 0}`} onClick={() => setTab('teams')} />
         </div>
@@ -103,7 +111,9 @@ export function Admin() {
             </div>
           )}
           {tab === 'users'
-            ? <UsersTab myName={me.data?.username ?? ''} users={allUsers} loading={users.isPending} teams={teams} onRefresh={refreshAll} />
+            ? <UsersTab myName={me.data?.username ?? ''} users={allUsers} loading={users.isPending} teams={teams} onRefresh={refreshAll}
+                pendingPlugins={pendingPlugins.data ?? []}
+                onPluginDone={() => { void pendingPlugins.refetch(); void qc.invalidateQueries({ queryKey: ['plugins'] }); void qc.invalidateQueries({ queryKey: ['admin', 'me'] }) }} />
             : <TeamsTab myName={me.data?.username ?? ''} users={allUsers} teams={teams} personals={personals}
                 publicFlowCount={wss.data?.publicFlowCount ?? 0} publicMockCount={wss.data?.publicMockCount ?? 0}
                 loading={wss.isPending} onAsk={setAsk} onRefresh={refreshAll} />}
@@ -213,14 +223,58 @@ function StatCard({ icon, label, value, sub, accent, onClick }: {
   )
 }
 
+/** 승인 요청 한 건 — 펼치면 승인본 대비 diff + 제출 샘플. 승인/반려는 ConfirmChip. */
+function PendingPluginRow({ p, first, onDone }: { p: PluginScriptSummary; first: boolean; onDone: () => void }) {
+  const [open, setOpen] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [note, setNote] = useState('')
+  const detail = useQuery({ queryKey: ['plugins', 'scripts', p.id], queryFn: () => pluginsApi.get(p.id), enabled: open })
+  const sample = useMemo(() => { try { return detail.data?.sampleJson ? JSON.parse(detail.data.sampleJson) as { request?: unknown; result?: { outputs?: unknown; result?: unknown; logs?: string[] } } : null } catch { return null } }, [detail.data])
+  const act = async (op: 'approve' | 'reject') => {
+    setBusy(true)
+    try { if (op === 'approve') await pluginsApi.approve(p.id); else await pluginsApi.reject(p.id, note); toast(op === 'approve' ? `${p.name} 승인됨 — 즉시 서빙` : `${p.name} 반려함`, 'ok'); onDone() }
+    catch (e) { toast(apiErrorMessage(e), 'error') } finally { setBusy(false) }
+  }
+  return (
+    <div style={{ borderTop: first ? 'none' : '1px solid var(--fl-border)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 18px' }}>
+        <Avatar name={p.submittedBy ?? p.createdBy} />
+        <span style={{ minWidth: 0, flex: 1 }}>
+          <span style={{ display: 'block', fontWeight: 700, fontSize: 13.5 }}>{p.name} <span style={{ fontFamily: 'var(--fl-font-mono)', fontWeight: 400, fontSize: 11.5, color: 'var(--fl-text-muted)' }}>#{p.pluginId} · {kindLabel(p.kind)}</span></span>
+          <span style={{ display: 'block', fontSize: 11.5, color: 'var(--fl-text-muted)', marginTop: 1 }}>
+            {p.submittedBy} · 요청 {relTime(p.updatedAt)}{p.live ? ' · 승인본 교체' : ' · 신규'}{p.usages > 0 ? ` · ⚠ 사용처 ${p.usages}곳에 즉시 반영` : ''}
+          </span>
+        </span>
+        <button onClick={() => setOpen((v) => !v)} style={chipBtn}>{open ? '접기' : '코드·샘플 보기'}</button>
+        <Link to={`/plugins/${p.id}`} style={{ ...chipBtn, textDecoration: 'none', color: 'var(--fl-text)' }}>편집기에서 열기</Link>
+        <button onClick={() => void act('approve')} disabled={busy} style={approveBtn}>{busy ? '처리 중…' : '✓ 승인'}</button>
+        <ConfirmChip label="반려" confirmLabel="반려 확정" pending={busy} onConfirm={() => void act('reject')} />
+      </div>
+      {open && (
+        <div style={{ padding: '0 18px 14px', display: 'grid', gap: 10 }}>
+          <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="반려 사유(반려 시 제출자에게 보임)" style={{ padding: '6px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', color: 'var(--fl-text)', fontSize: 12.5 }} />
+          <div style={{ border: '1px solid var(--fl-border)', borderRadius: 8, maxHeight: 420, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            {detail.data ? <PluginDiffView before={detail.data.liveSource ?? ''} after={detail.data.source} /> : <div style={{ padding: 12, fontSize: 12.5, color: 'var(--fl-text-muted)' }}>불러오는 중…</div>}
+          </div>
+          <div style={{ fontSize: 12, color: 'var(--fl-text-muted)' }}>
+            {sample ? <>제출자 샘플 — 입력 <code style={{ fontFamily: 'var(--fl-font-mono)' }}>{JSON.stringify(sample.request)}</code> → 결과 <code style={{ fontFamily: 'var(--fl-font-mono)' }}>{JSON.stringify(sample.result?.outputs ?? sample.result?.result ?? sample.result)}</code></> : '제출자가 돌린 샘플이 없습니다 — 편집기에서 열어 직접 실행해 보세요.'}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ═══════════════════════════ 사용자 탭 ═══════════════════════════
 
-function UsersTab({ myName, users, teams, loading, onRefresh }: {
+function UsersTab({ myName, users, teams, loading, onRefresh, pendingPlugins, onPluginDone }: {
   myName: string
   users: AdminUserView[]
   teams: AdminWorkspaceView[]
   loading: boolean
   onRefresh: () => void
+  pendingPlugins: PluginScriptSummary[]
+  onPluginDone: () => void
 }) {
   const [q, setQ] = useState('')
   const [statusFilter, setStatusFilter] = useState<'all' | 'APPROVED' | 'BLOCKED'>('all')
@@ -300,6 +354,18 @@ function UsersTab({ myName, users, teams, loading, onRefresh }: {
               </span>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* ── 플러그인 승인 요청 ── */}
+      {pendingPlugins.length > 0 && (
+        <div style={{ ...panel, borderColor: 'color-mix(in srgb, var(--fl-waiting) 55%, transparent)', overflow: 'hidden' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '13px 18px', background: 'color-mix(in srgb, var(--fl-waiting) 8%, transparent)', borderBottom: '1px solid var(--fl-border)', flexWrap: 'wrap' }}>
+            <strong style={{ fontSize: 14 }}>◇ 플러그인 승인 요청</strong>
+            <span style={countBadge}>{pendingPlugins.length}</span>
+            <span style={{ fontSize: 12, color: 'var(--fl-text-muted)' }}>승인하면 즉시 서빙됩니다 — 코드와 제출자가 돌린 샘플 결과를 확인하세요</span>
+          </div>
+          {pendingPlugins.map((p, i) => <PendingPluginRow key={p.id} p={p} first={i === 0} onDone={onPluginDone} />)}
         </div>
       )}
 

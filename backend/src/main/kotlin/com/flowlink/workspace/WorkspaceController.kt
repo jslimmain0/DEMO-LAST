@@ -82,6 +82,7 @@ class AdminController(
     private val flowRepo: com.flowlink.core.repository.FlowRepository,
     private val mockRepo: com.flowlink.core.repository.MockServerRepository,
     private val executionService: com.flowlink.execution.ExecutionService,
+    private val pluginScripts: com.flowlink.plugin.PluginScriptService,
 ) {
     data class UserView(
         val username: String, val globalRole: String, val status: String,
@@ -91,6 +92,7 @@ class AdminController(
     data class MeView(
         val username: String, val admin: Boolean, val authenticated: Boolean,
         val pendingCount: Long = 0, val myStatus: String = "APPROVED",
+        val pendingPlugins: Long = 0,
     )
     data class AdminWorkspaceView(
         val id: String, val name: String, val kind: String, val ownerUsername: String?,
@@ -122,7 +124,7 @@ class AdminController(
             else -> userRepo.findByTenantIdAndUsername(TenantContext.SHARED_FLOW_TENANT, u)
                 .map { it.effectiveStatus() }.orElse(AppUser.STATUS_PENDING)
         }
-        return MeView(u, admin, service.isAuthenticated(u), pending, myStatus)
+        return MeView(u, admin, service.isAuthenticated(u), pending, myStatus, if (admin) pluginScripts.pendingCount() else 0L)
     }
 
     @GetMapping("/users")

@@ -11,13 +11,14 @@ import java.util.UUID
 /** 스크립트 플러그인 API — 게이트는 서비스 레이어(승인 사용자 쓰기 · 관리자 승인). ScriptError 는 400 + {message, line, col}. */
 @RestController
 @RequestMapping("/api/v1/plugins")
-class PluginScriptController(private val service: PluginScriptService) {
+class PluginScriptController(private val service: PluginScriptService, private val usageIndex: PluginUsageIndex) {
     /** fl.* 매니페스트 — 편집기 자동완성·MCP 가이드(비밀 없음, 공개). */
     @GetMapping("/api") fun api(): List<FlApiEntry> = FlApi.MANIFEST
 
     @GetMapping("/scripts") fun list(@RequestParam(required = false) status: String?): List<PluginScriptDtos.Summary> =
         service.list().let { l -> if (status.isNullOrBlank()) l else l.filter { it.status == status } }
     @GetMapping("/scripts/{id}") fun get(@PathVariable id: UUID) = service.get(id)
+    @GetMapping("/scripts/{id}/usages") fun usages(@PathVariable id: UUID): List<PluginUsageIndex.Ref> = usageIndex.refs(service.get(id).pluginId)
     @PostMapping("/scripts") @ResponseStatus(HttpStatus.CREATED) fun create(@RequestBody req: PluginScriptDtos.SaveRequest) = service.create(req)
     @PutMapping("/scripts/{id}") fun update(@PathVariable id: UUID, @RequestBody req: PluginScriptDtos.SaveRequest) = service.update(id, req)
     @PostMapping("/scripts/try") fun tryRun(@RequestBody req: PluginScriptDtos.TryRequest) = service.tryRun(req)

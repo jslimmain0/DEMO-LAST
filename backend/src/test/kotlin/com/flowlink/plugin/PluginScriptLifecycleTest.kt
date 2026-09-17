@@ -5,9 +5,11 @@ import com.flowlink.common.error.ForbiddenException
 import com.flowlink.core.domain.AppUser
 import com.flowlink.core.domain.PluginScript
 import com.flowlink.core.repository.AppUserRepository
+import com.flowlink.core.repository.PluginScriptRepository
 import com.flowlink.plugin.script.ScriptError
 import com.flowlink.transform.TransformRegistry
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatCode
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Test
@@ -32,11 +34,12 @@ class PluginScriptLifecycleTest {
     @Autowired lateinit var svc: PluginScriptService
     @Autowired lateinit var registry: TransformRegistry
     @Autowired lateinit var userRepo: AppUserRepository
+    @Autowired lateinit var repo: PluginScriptRepository
 
     private val T = com.flowlink.common.tenant.TenantContext.SHARED_FLOW_TENANT
     private val SRC = "({ id: 'up1', label: '대문자', inputs: [{ key: 'input', label: '원문' }], apply(i, c) { fl.log('run'); return { result: i.input.toUpperCase() } } })"
 
-    @AfterEach fun clear() = SecurityContextHolder.clearContext()
+    @AfterEach fun clear() { repo.deleteAll(); registry.reload(); SecurityContextHolder.clearContext() }
     private fun asUser(name: String) {
         val jwt = Jwt.withTokenValue("t").header("alg", "none").claim("preferred_username", name).subject(name).build()
         SecurityContextHolder.getContext().authentication = JwtAuthenticationToken(jwt)
@@ -108,5 +111,36 @@ class PluginScriptLifecycleTest {
         assertThat(svc.tryRun(PluginScriptDtos.TryRequest(source = mc, fn = "encode", bytesB64 = "AQI=")).bytesB64).isEqualTo("AAM=")
         val metaOnly = svc.tryRun(PluginScriptDtos.TryRequest(source = SRC))
         assertThat(metaOnly.meta.id).isEqualTo("up1"); assertThat(metaOnly.outputs).isNull()
+    }
+
+    @Test
+    fun `깨진 승인본 행은 건너뛰고 나머지 승인본은 로드된다`() {
+        user("alice", AppUser.STATUS_APPROVED); user("admin", AppUser.STATUS_APPROVED, AppUser.ROLE_ADMIN)
+        asUser("alice")
+        val d = svc.create(PluginScriptDtos.SaveRequest("대문자", SRC))
+        svc.submit(d.id)
+        asUser("admin")
+        svc.approve(d.id)
+
+        repo.saveAndFlush(PluginScript.create(T, "broken-one", "깨진", "transform", "({ id: 'broken-one', label: 'x', apply() {} })", "admin")
+            .also { it.liveSource = "this is not js {"; it.status = PluginScript.STATUS_APPROVED })
+
+        assertThatCode { registry.reload() }.doesNotThrowAnyException()
+        assertThat(registry.get("up1")).isPresent
+        assertThat(registry.get("broken-one")).isEmpty
+    }
+
+    @Test
+    fun `승인된 플러그인의 id 는 바꿀 수 없다`() {
+        user("alice", AppUser.STATUS_APPROVED); user("admin", AppUser.STATUS_APPROVED, AppUser.ROLE_ADMIN)
+        asUser("alice")
+        val d = svc.create(PluginScriptDtos.SaveRequest("대문자", SRC))
+        svc.submit(d.id)
+        asUser("admin")
+        svc.approve(d.id)
+
+        asUser("alice")
+        assertThatThrownBy { svc.update(d.id, PluginScriptDtos.SaveRequest(null, SRC.replace("up1", "up9"))) }
+            .isInstanceOf(BadRequestException::class.java).hasMessageContaining("바꿀 수 없습니다")
     }
 }

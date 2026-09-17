@@ -130,7 +130,7 @@ class PluginScriptService(
         rt.compile(row.source)
         row.liveSource = row.source; row.status = PluginScript.STATUS_APPROVED; row.reviewedBy = me(); row.reviewedAt = Instant.now(); row.reviewNote = null
         val saved = repo.save(row)
-        registry.reload()
+        reloadAfterCommit()
         return detail(saved)
     }
 
@@ -150,7 +150,15 @@ class PluginScriptService(
         val n = usages.count(row.pluginId)
         if (n > 0) throw BadRequestException("사용 중인 플러그인은 삭제할 수 없습니다(사용처 ${n}곳) — 먼저 워크플로/Mock/프로토콜에서 제거하세요.")
         repo.delete(row)
-        if (row.liveSource != null) registry.reload()
+        if (row.liveSource != null) reloadAfterCommit()
+    }
+
+    /** registry.reload() 를 커밋 이후로 미룬다 — 트랜잭션 중 mutate 하면 롤백 시 커밋 안 된 상태를 서빙하게 된다. */
+    private fun reloadAfterCommit() {
+        org.springframework.transaction.support.TransactionSynchronizationManager.registerSynchronization(
+            object : org.springframework.transaction.support.TransactionSynchronization {
+                override fun afterCommit() { registry.reload() }
+            })
     }
 
     /** 제출자가 돌린 샘플을 승인 화면용으로 저장(프론트가 try 결과를 submit 전에 PUT). */

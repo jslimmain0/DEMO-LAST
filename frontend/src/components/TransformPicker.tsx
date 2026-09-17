@@ -21,13 +21,14 @@ export function filterTransforms(list: TransformInfo[], q: string): TransformInf
  * 변환 플러그인 선택기 — 검색 + 이름순 정렬 드롭다운(네이티브 select 대체).
  * TRANSFORM 노드·Mock 코덱 단계 공용. 현재 값이 목록에 없으면(플러그인 제거 등) "(없음)" 으로 표시.
  */
-export function TransformPicker({ list, value, onChange, disabled, placeholder = '플러그인 선택…', style }: {
+export function TransformPicker({ list, value, onChange, disabled, placeholder = '플러그인 선택…', style, onCreateNew }: {
   list: TransformInfo[]
   value: string
   onChange: (id: string) => void
   disabled?: boolean
   placeholder?: string
   style?: CSSProperties
+  onCreateNew?: () => void
 }) {
   const [open, setOpen] = useState(false)
   const [q, setQ] = useState('')
@@ -107,6 +108,12 @@ export function TransformPicker({ list, value, onChange, disabled, placeholder =
               </div>
             ))}
           </div>
+          {onCreateNew && (
+            <button type="button" onMouseDown={(e) => { e.preventDefault(); setOpen(false); onCreateNew() }}
+              style={{ width: '100%', padding: '8px 12px', border: 'none', borderTop: '1px solid var(--fl-border)', background: 'transparent', color: 'var(--fl-primary)', fontSize: 12, cursor: 'pointer', textAlign: 'left' }}>
+              ＋ 새 플러그인 만들기 → (JS 로 작성, 승인 후 여기 나타남)
+            </button>
+          )}
         </div>
       )}
     </div>

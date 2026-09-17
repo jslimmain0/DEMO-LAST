@@ -6,6 +6,7 @@ import type { MockCodecInput, MockCodecSpec, MockCodecStep, TransformInfo } from
 import { transformsApi } from '../api/client'
 import { TokenInput } from '../binding/TokenInput'
 import type { BindableSource } from '../binding/upstream'
+import { appUrl } from '../lib/appBase'
 import { addStep, detachField, replaceStep, stepsForField, type CodecSide, type StepRef } from '../lib/mockCodecOps'
 import { TransformPicker, sortTransforms } from './TransformPicker'
 
@@ -118,7 +119,8 @@ function StepPopover({ anchor, field, list, sources, sides, defaultSide, editing
       </div>
       <div style={{ marginTop: 8 }}>
         <div style={lbl}>플러그인</div>
-        <TransformPicker list={list} value={pluginId} onChange={(id) => { setPluginId(id); setInputs([]); setConfig([]); setOutputKey(undefined) }} placeholder="변환 플러그인 선택…" />
+        <TransformPicker list={list} value={pluginId} onChange={(id) => { setPluginId(id); setInputs([]); setConfig([]); setOutputKey(undefined) }} placeholder="변환 플러그인 선택…"
+          onCreateNew={() => window.open(appUrl('/plugins?new=transform'), '_blank')} />
         {t?.description && <div style={{ fontSize: 11, color: 'var(--fl-text-muted)', marginTop: 3 }}>{t.description}</div>}
       </div>
       {ports.length > 1 && (
@@ -269,7 +271,8 @@ export function CodecStepWizard({ list, sources, fieldHints, defaultSide, onCanc
         </div>
         <span style={stepNo}>③ 플러그인</span>
         <div>
-          <TransformPicker list={list} value={pluginId} onChange={(id) => { setPluginId(id); setInputs([]); setConfig([]) }} style={{ maxWidth: 420 }} />
+          <TransformPicker list={list} value={pluginId} onChange={(id) => { setPluginId(id); setInputs([]); setConfig([]) }} style={{ maxWidth: 420 }}
+            onCreateNew={() => window.open(appUrl('/plugins?new=transform'), '_blank')} />
           {t?.description && <div style={{ fontSize: 11, color: 'var(--fl-text-muted)', marginTop: 3 }}>{t.description}</div>}
         </div>
         {(ports.length > 1 || (t?.params.length ?? 0) > 0) && <>

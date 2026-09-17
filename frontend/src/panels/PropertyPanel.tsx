@@ -1,7 +1,7 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import type { CSSProperties, ReactNode } from 'react'
 import { Suspense, lazy, useEffect, useMemo, useState } from 'react'
-import { pluginsApi, runsApi, secretsApi, settingsApi, transformsApi } from '../api/client'
+import { runsApi, secretsApi, settingsApi, transformsApi } from '../api/client'
 import { usePermissions } from '../auth/AuthContext'
 import { toast } from '../components/toast'
 import { TransformPicker } from '../components/TransformPicker'
@@ -18,6 +18,7 @@ import { bindableSources } from '../binding/upstream'
 import type { BindableSource } from '../binding/upstream'
 import { asGraphNode } from '../canvas/graphAdapter'
 import { ANNO_COLORS, catColor, METHOD_COLOR, typeIcon, typeLabel } from '../canvas/nodeMeta'
+import { appUrl } from '../lib/appBase'
 import { fieldsToRaw, rawToFields, headersToRaw, rawToHeaders } from '../lib/bodyConvert'
 import { duplicateKeys, parseOutputKeys } from '../lib/bulkPaste'
 import { parseCurl, toCurl } from '../lib/curl'
@@ -130,8 +131,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
   const [previewOpen, setPreviewOpen] = useState(false) // 요청 미리보기 접기
   const focusNode = useEditorStore((s) => s.focusNode)
   const transforms = useQuery({ queryKey: ['transforms'], queryFn: transformsApi.list })
-  const qc = useQueryClient()
-  const { canPlatformAdmin, canEdit: canEditGlobal } = usePermissions()
+  const { canEdit: canEditGlobal } = usePermissions()
   // 워크스페이스 롤 합성 — Editor 가 flow 의 myRole 로 계산해 스토어에 주입(VIEWER 는 단일 실행 등 쓰기 액션 차단)
   const wsReadOnly = useEditorStore((s) => s.readOnly)
   const canEdit = canEditGlobal && !wsReadOnly
@@ -1257,6 +1257,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
               value={node.transformId ?? ''}
               disabled={wsReadOnly}
               placeholder="선택… (검색 가능)"
+              onCreateNew={() => window.open(appUrl('/plugins?new=transform'), '_blank')}
               onChange={(picked) => {
                 if (picked === node.transformId) return // 같은 변환 재선택은 no-op(리셋 방지)
                 const tr = (transforms.data ?? []).find((t) => t.id === picked)
@@ -1282,29 +1283,6 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
                 {selectedTransform.description}
                 {selectedTransform.inputs.length > 0 && <><br /><span style={{ opacity: 0.85 }}>입력값은 아래 <b>입력</b> 칸(이 노드의 body 필드)에 넣거나 상위 노드에서 바인딩합니다.</span></>}
               </p>
-            )}
-            {canPlatformAdmin && (
-              <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 8, fontSize: 12, color: 'var(--fl-primary)', cursor: 'pointer' }}>
-                ⬆ JAR 플러그인 업로드
-                <input
-                  type="file"
-                  accept=".jar"
-                  style={{ display: 'none' }}
-                  onChange={async (e) => {
-                    const file = e.target.files?.[0]
-                    if (file) {
-                      try {
-                        await pluginsApi.upload(file)
-                        qc.invalidateQueries({ queryKey: ['transforms'] })
-                        toast('플러그인이 업로드되어 즉시 반영되었습니다.', 'ok')
-                      } catch (err) {
-                        toast(`플러그인 업로드 실패: ${err instanceof Error ? err.message : err}`, 'error')
-                      }
-                    }
-                    e.target.value = ''
-                  }}
-                />
-              </label>
             )}
 
             {selectedTransform?.inputs.map((io) => {

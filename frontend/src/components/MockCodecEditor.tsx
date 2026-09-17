@@ -6,6 +6,7 @@ import { mocksApi, transformsApi } from '../api/client'
 import { TokenInput } from '../binding/TokenInput'
 import type { BindableSource } from '../binding/upstream'
 import { apiErrorMessage } from '../lib/apiError'
+import { appUrl } from '../lib/appBase'
 import { summarizeStep, type CodecSide as Side } from '../lib/mockCodecOps'
 import { CodecStepWizard } from './FieldCodecButton'
 import { TransformPicker } from './TransformPicker'
@@ -128,7 +129,8 @@ function StepCard({ step: s, index: i, side, list, readOnly, sources, hints, onC
             <span style={stepLbl}>플러그인</span>
             <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
               <TransformPicker style={{ flex: 1, minWidth: 220, maxWidth: 420 }} list={list} value={s.id} disabled={readOnly}
-                onChange={(id) => { if (id !== s.id) onChange({ id, config: undefined, inputs: undefined, inputKey: undefined, outputKey: undefined }) }} />
+                onChange={(id) => { if (id !== s.id) onChange({ id, config: undefined, inputs: undefined, inputKey: undefined, outputKey: undefined }) }}
+                onCreateNew={() => window.open(appUrl('/plugins?new=transform'), '_blank')} />
               {t && t.outputs.length > 1 && (
                 <label style={lbl}>출력
                   <select style={{ ...input, minWidth: 90 }} value={s.outputKey ?? t.outputs[0].key} disabled={readOnly} onChange={(e) => onChange({ outputKey: e.target.value })}>

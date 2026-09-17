@@ -1,0 +1,48 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>FlowLink 로그인</title>
+<style>
+  body{margin:0;min-height:100vh;display:grid;place-items:center;background:#0f1115;color:#e6e8ef;font:14px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif}
+  .card{width:360px;max-width:90vw;padding:32px;border-radius:14px;background:#1a1d27;border:1px solid #2a2e3a;box-shadow:0 20px 60px rgba(0,0,0,.4);text-align:center}
+  h1{font-size:26px;font-weight:800;letter-spacing:-.02em;margin:0 0 4px}
+  .sub{color:#9aa0b4;font-size:13.5px;margin-bottom:22px}
+  button{display:inline-flex;align-items:center;gap:8px;padding:10px 18px;border:none;border-radius:10px;background:#6155f5;color:#fff;font-size:14px;font-weight:700;cursor:pointer}
+  button:disabled{opacity:.6;cursor:default}
+  code{display:inline-block;font-size:24px;font-weight:700;letter-spacing:3px;font-family:ui-monospace,Menlo,Consolas,monospace;background:#22262f;padding:8px 16px;border-radius:8px}
+  .muted{color:#9aa0b4}.err{color:#ff6b6b;font-size:12.5px;margin-top:12px}a{color:#6155f5}p{margin:0 0 10px}
+</style>
+<div class="card">
+  <h1>FlowLink</h1>
+  <div class="sub"><b>__CLIENT__</b> 가 FlowLink 에 연결하려 합니다 — GitHub 계정으로 로그인</div>
+  <div id="v"></div>
+</div>
+<script>
+  // 앱 로그인 화면과 같은 디바이스 플로우: 클릭 → 코드 표시(복사) + GitHub 새 탭 → 폴링 → 완료되면 MCP 클라이언트로 돌아간다(code 가 붙은 redirect_uri).
+  const tx = "__TX__";
+  const v = document.getElementById('v');
+  const j = async (method, url) => { const r = await fetch(url, { method }); const d = await r.json(); if (!r.ok || d.error) throw new Error(d.error || ('HTTP ' + r.status)); return d; };
+  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  function idle(err) {
+    v.innerHTML = '<button id="go">🐙 GitHub 로 로그인</button>' + (err ? '<p class="err">' + esc(err) + '</p>' : '');
+    document.getElementById('go').onclick = start;
+  }
+  async function start() {
+    const go = document.getElementById('go'); go.disabled = true; go.textContent = '준비 중…';
+    let d;
+    try { d = await j('POST', '/login/start?tx=' + tx); } catch (e) { return idle(e.message); }
+    try { await navigator.clipboard.writeText(d.userCode); } catch {}
+    window.open(d.verificationUri, '_blank', 'noopener');
+    v.innerHTML = '<p>열린 GitHub 페이지에 아래 코드를 입력하세요(복사됨):</p><code>' + esc(d.userCode) + '</code>'
+      + '<p class="muted" style="margin-top:12px">승인하면 자동으로 돌아갑니다… <a href="' + esc(d.verificationUri) + '" target="_blank" rel="noreferrer">페이지 다시 열기 ↗</a></p>';
+    let fails = 0;
+    const t = setInterval(async () => {
+      let p;
+      try { p = await j('GET', '/login/poll?tx=' + tx); fails = 0; }
+      catch (e) { if (++fails >= 3) { clearInterval(t); idle('서버와 연결이 끊겼거나 세션이 만료됐습니다 — 다시 시작하세요. (' + e.message + ')'); } return; }
+      if (p.status === 'ready') { clearInterval(t); v.innerHTML = '<p>로그인 완료(' + esc(p.login || '') + ') — 돌아가는 중… 이 창은 닫아도 됩니다.</p>'; location.replace(p.redirect); }
+      else if (p.status === 'error') { clearInterval(t); idle(p.error || '로그인 실패'); }
+    }, Math.max(2, d.intervalSec || 5) * 1000);
+  }
+  idle();
+</script>

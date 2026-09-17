@@ -4,7 +4,7 @@
 # Inject DB/auth via env: $env:SPRING_PROFILES_ACTIVE (dev = Oracle), $env:FLOWLINK_DB_URL, ... Port: $env:FLOWLINK_PORT (default 18080).
 # Path prefix (context path): $env:FLOWLINK_CONTEXT_PATH='/flowlink' -> app served at http://host:port/flowlink/ (leading slash, no trailing slash).
 # MCP HTTP server (for agents, needs Node 20+): started next to the jar as `node mcp\src\index.js --http` at http://host:FLOWLINK_MCP_PORT/mcp (default 18090).
-#   $env:FLOWLINK_MCP_PORT='0' disables it; without node it is skipped with a warning. The Settings dialog shows the URL and a token to copy.
+#   $env:FLOWLINK_MCP_PORT='0' disables it; without node it is skipped with a warning. The Settings dialog shows the URL; login happens in the browser (GitHub OAuth) on first connect - no token config.
 # (ASCII-only on purpose: Windows PowerShell 5.1 mis-parses UTF-8 non-ASCII in .ps1 files.)
 param([switch]$Build)
 $ErrorActionPreference = 'Stop'
@@ -91,7 +91,7 @@ if ($McpPort -ne '0') {
       Write-Host "> MCP HTTP server at http://localhost:$McpPort/mcp (PID $($m.Id), log $McpLog)"
     }
   } else {
-    Write-Host "WARN: node not found - MCP HTTP server not started (install Node 20+ or set FLOWLINK_MCP_PORT=0). The stdio tgz install still works."
+    Write-Host "WARN: node not found - MCP HTTP server not started (install Node 20+ or set FLOWLINK_MCP_PORT=0)."
   }
 }
 

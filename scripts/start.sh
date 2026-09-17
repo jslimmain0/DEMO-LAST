@@ -9,7 +9,7 @@
 # 기본은 local(H2 파일). FLOWLINK_PORT(기본 18080)로 포트 변경.
 # 경로 접두사(context path): FLOWLINK_CONTEXT_PATH=/flowlink → http://host:port/flowlink/ (앞 슬래시 필수, 끝 슬래시 없음).
 # MCP HTTP 서버(에이전트용, Node 20+): jar 옆에 node mcp/src/index.js --http 를 함께 띄운다 — http://host:FLOWLINK_MCP_PORT/mcp (기본 18090).
-#   FLOWLINK_MCP_PORT=0 이면 안 띄움. node 가 없으면 경고만 하고 jar 만 뜬다. 설정 화면(⚙)이 접속 주소·토큰 복사를 안내한다.
+#   FLOWLINK_MCP_PORT=0 이면 안 띄움. node 가 없으면 경고만 하고 jar 만 뜬다. 설정 화면(⚙)이 접속 주소를 안내한다. 로그인은 클라이언트가 처음 연결할 때 브라우저(GitHub)로 — 토큰 설정 없음.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -80,7 +80,7 @@ if [ "$MCP_PORT" != "0" ]; then
       echo "▶ MCP HTTP 서버 — http://localhost:$MCP_PORT/mcp (PID $(cat "$MCP_PID_FILE"), 로그 $MCP_LOG)"
     fi
   else
-    echo "⚠ node 가 없어 MCP HTTP 서버를 띄우지 않습니다(Node 20+ 설치 또는 FLOWLINK_MCP_PORT=0). stdio 설치형(tgz)은 그대로 됩니다."
+    echo "⚠ node 가 없어 MCP HTTP 서버를 띄우지 않습니다(Node 20+ 설치 또는 FLOWLINK_MCP_PORT=0)."
   fi
 fi
 

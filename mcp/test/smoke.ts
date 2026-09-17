@@ -1,20 +1,24 @@
-// 스모크: 격리 FlowLink(dev 모드) 에 MCP 클라이언트로 붙어 프로토콜 → TCP Mock → 워크플로 → 실행 → 로그 한 바퀴.
-//   같은 시나리오를 두 전송으로 돈다: ① stdio(로컬 프로세스) ② Streamable HTTP(--http 로 띄운 서버, 세션 없음) — 툴 코드가 하나라 동작이 같아야 한다.
-//   FLOWLINK_URL=http://localhost:18081 node test/smoke.ts
-//   FLOWLINK_GH_URL=http://localhost:18082 (선택) — github 모드 인스턴스: 게스트 상태·로그인 코드 발급만 확인(stdio).
-//   FLOWLINK_GHGUEST_URL=... (선택) — github+게스트 인스턴스: 게스트 읽기·승인 게이트(stdio) + HTTP 모드 Authorization 헤더 전달.
-//   FLOWLINK_GHGUEST_TOKEN=<앱 JWT> (선택, GHGUEST 와 함께) — HTTP 모드에서 헤더 토큰이 REST 로 전달되는지(protocol_upsert 가 403 이 아닌지).
+// 스모크 — 두 부분:
+//   ① OAuth 한 바퀴(외부 의존 없음): 가짜 FlowLink(github 모드, node:http)를 세우고 SDK 클라이언트로 401 → 동적 등록 → /authorize 페이지 → 디바이스 로그인 완료
+//      → code → /token(PKCE) → Bearer 로 툴 호출까지. 사람 없이 인가 서버 전체를 검증한다.
+//   ② 툴 시나리오(격리 dev 인스턴스 필요): 프로토콜 → TCP Mock → 워크플로 → 실행 → 로그 한 바퀴.
+//   FLOWLINK_URL=http://localhost:18081 node test/smoke.ts     (FLOWLINK_URL 이 안 뜨면 ② 는 건너뛴다)
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
+import { UnauthorizedError, type OAuthClientProvider } from '@modelcontextprotocol/sdk/client/auth.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
+import type { OAuthClientInformationMixed, OAuthTokens } from '@modelcontextprotocol/sdk/shared/auth.js'
 import assert from 'node:assert/strict'
 import { spawn, type ChildProcess } from 'node:child_process'
-import { fileURLToPath } from 'node:url'
+import { createServer } from 'node:http'
+import type { AddressInfo } from 'node:net'
+import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 const SERVER = join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'index.js')
 let n = 0
 const ok = (name: string) => console.log(`  ✓ ${++n} ${name}`)
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 type Call = (name: string, args?: Record<string, unknown>, expectError?: boolean) => Promise<string>
 
 function wrap(client: Client) {
@@ -27,30 +31,106 @@ function wrap(client: Client) {
   return { client, call }
 }
 
-async function connect(url: string) {
-  const client = new Client({ name: 'smoke', version: '0' })
-  await client.connect(new StdioClientTransport({ command: process.execPath, args: [SERVER], env: { ...process.env, FLOWLINK_URL: url, FLOWLINK_TOKEN: '' } as Record<string, string> }))
-  return wrap(client)
-}
-
-/** --http 로 서버를 띄우고(임의 포트) /health 가 뜰 때까지 기다린다. */
-async function spawnHttp(url: string): Promise<{ proc: ChildProcess; mcpUrl: string }> {
+/** MCP 서버를 띄우고(임의 포트) /health 가 뜰 때까지 기다린다. */
+async function spawnMcp(flowlinkUrl: string): Promise<{ proc: ChildProcess; base: string; mcpUrl: string }> {
   const port = 19100 + Math.floor(Math.random() * 400)
-  const proc = spawn(process.execPath, [SERVER, '--http'], { env: { ...process.env, FLOWLINK_URL: url, FLOWLINK_TOKEN: '', FLOWLINK_MCP_PORT: String(port), FLOWLINK_MCP_HOST: '127.0.0.1' }, stdio: ['ignore', 'ignore', 'inherit'] })
-  const mcpUrl = `http://127.0.0.1:${port}/mcp`
+  // HOME 을 임시 폴더로 — 등록 클라이언트 파일(~/.flowlink/mcp-clients.json)을 개발 PC 것과 섞지 않는다
+  const proc = spawn(process.execPath, [SERVER], { env: { ...process.env, FLOWLINK_URL: flowlinkUrl, FLOWLINK_MCP_PORT: String(port), FLOWLINK_MCP_HOST: '127.0.0.1', HOME: tmpdir(), USERPROFILE: tmpdir() }, stdio: ['ignore', 'ignore', 'inherit'] })
+  const base = `http://127.0.0.1:${port}`
   for (let i = 0; i < 50; i++) {
-    try { const r = await fetch(`http://127.0.0.1:${port}/health`); if (r.ok) return { proc, mcpUrl } } catch { /* 아직 */ }
-    await new Promise((r) => setTimeout(r, 100))
+    try { const r = await fetch(`${base}/health`); if (r.ok) return { proc, base, mcpUrl: `${base}/mcp` } } catch { /* 아직 */ }
+    await sleep(100)
   }
-  proc.kill(); throw new Error('HTTP 서버 기동 실패')
+  proc.kill(); throw new Error('MCP 서버 기동 실패')
 }
 
-async function connectHttp(mcpUrl: string, headers?: Record<string, string>) {
-  const client = new Client({ name: 'smoke-http', version: '0' })
-  await client.connect(new StreamableHTTPClientTransport(new URL(mcpUrl), headers ? { requestInit: { headers } } : undefined))
+async function connect(mcpUrl: string, authProvider?: OAuthClientProvider) {
+  const client = new Client({ name: 'smoke', version: '0' })
+  await client.connect(new StreamableHTTPClientTransport(new URL(mcpUrl), authProvider ? { authProvider } : undefined))
   return wrap(client)
 }
 
+// ---------- ① OAuth ----------
+/** 가짜 FlowLink(github 모드): 유효 토큰은 'T' 하나. 디바이스 poll 은 두 번째부터 ready. 리소스 서버처럼 무효 Bearer 는 공개 경로도 401. */
+async function fakeFlowlink() {
+  let polls = 0
+  const srv = createServer((req, res) => {
+    const p = new URL(req.url!, 'http://x').pathname.replace('/api/v1', '')
+    const json = (s: number, b: unknown) => { res.writeHead(s, { 'content-type': 'application/json' }); res.end(JSON.stringify(b)) }
+    const authed = req.headers.authorization === 'Bearer T'
+    if (req.headers.authorization && !authed) return json(401, { error: 'invalid token' })
+    if (p === '/auth/config') return json(200, { enabled: true, mode: 'github' })
+    if (p === '/auth/github/device/start') return json(200, { sessionId: 's1', userCode: 'ABCD-1234', verificationUri: 'https://github.com/login/device', intervalSec: 1, expiresIn: 900 })
+    if (p === '/auth/github/device/poll') return json(200, ++polls < 2 ? { status: 'pending' } : { status: 'ready', token: 'T', login: 'tester' })
+    if (!authed) return json(401, { error: 'login required' })
+    if (p === '/auth/me') return json(200, { username: 'tester', tenant: 'default', roles: ['admin'] })
+    if (p === '/admin/me') return json(200, { username: 'tester', myStatus: 'APPROVED', admin: true })
+    json(404, { error: p })
+  })
+  await new Promise<void>((r) => srv.listen(0, '127.0.0.1', r))
+  return { url: `http://127.0.0.1:${(srv.address() as AddressInfo).port}`, close: () => srv.close() }
+}
+
+async function oauthScenario() {
+  const fake = await fakeFlowlink()
+  const h = await spawnMcp(fake.url)
+  try {
+    const init = { jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'raw', version: '0' } } }
+    const post = (headers: Record<string, string>) => fetch(h.mcpUrl, { method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', ...headers }, body: JSON.stringify(init) })
+    const r401 = await post({})
+    assert.equal(r401.status, 401)
+    assert.match(r401.headers.get('www-authenticate') ?? '', new RegExp(`resource_metadata="${h.base}/\\.well-known/oauth-protected-resource/mcp"`)); ok('[oauth] no token → 401 + WWW-Authenticate')
+    assert.equal((await post({ authorization: 'Bearer nope' })).status, 401); ok('[oauth] bad token → 401')
+    const prm = await (await fetch(`${h.base}/.well-known/oauth-protected-resource/mcp`)).json()
+    assert.equal(prm.resource, h.mcpUrl); assert.deepEqual(prm.authorization_servers, [h.base]); ok('[oauth] protected resource metadata')
+    const asm = await (await fetch(`${h.base}/.well-known/oauth-authorization-server`)).json()
+    assert.equal(asm.issuer, h.base); assert.equal(asm.token_endpoint, `${h.base}/token`); assert.equal(asm.registration_endpoint, `${h.base}/register`); ok('[oauth] authorization server metadata')
+
+    // SDK 클라이언트(Claude Code·VS Code 가 쓰는 것과 같은 흐름): 401 → 등록 → redirectToAuthorization
+    const store: { client?: OAuthClientInformationMixed; tokens?: OAuthTokens; verifier?: string } = {}
+    let authzUrl: URL | undefined
+    const redirect = 'http://127.0.0.1:19999/callback'
+    const provider: OAuthClientProvider = {
+      redirectUrl: redirect,
+      clientMetadata: { client_name: 'Smoke Agent', redirect_uris: [redirect], token_endpoint_auth_method: 'none', grant_types: ['authorization_code'], response_types: ['code'] },
+      clientInformation: () => store.client, saveClientInformation: (c) => { store.client = c },
+      tokens: () => store.tokens, saveTokens: (t) => { store.tokens = t },
+      redirectToAuthorization: (u) => { authzUrl = u }, saveCodeVerifier: (v) => { store.verifier = v }, codeVerifier: () => store.verifier!,
+      state: () => 'st-1',
+    }
+    const t1 = new StreamableHTTPClientTransport(new URL(h.mcpUrl), { authProvider: provider })
+    await assert.rejects(new Client({ name: 'smoke', version: '0' }).connect(t1), UnauthorizedError); ok('[oauth] client connect → UnauthorizedError (browser redirect requested)')
+    assert.ok(store.client?.client_id, '동적 등록된 client_id'); ok('[oauth] dynamic client registration')
+    assert.ok(authzUrl && authzUrl.pathname === '/authorize' && authzUrl.searchParams.get('code_challenge_method') === 'S256'); ok('[oauth] authorize url with PKCE')
+
+    // 브라우저 역할: 로그인 페이지 → 시작 → 폴링 → redirect
+    const page = await fetch(authzUrl!)
+    const html = await page.text()
+    assert.equal(page.status, 200); assert.match(html, /GitHub 로 로그인/); assert.match(html, /<b>Smoke Agent<\/b>/); ok('[oauth] /authorize renders login page (client name shown)')
+    const tx = /const tx = "([0-9a-f-]{36})"/.exec(html)![1]
+    const st = await (await fetch(`${h.base}/login/start?tx=${tx}`, { method: 'POST' })).json()
+    assert.equal(st.userCode, 'ABCD-1234'); ok('[oauth] /login/start → device code')
+    let poll: { status: string; redirect?: string } = { status: '' }
+    for (let i = 0; i < 10 && poll.status !== 'ready'; i++) { poll = await (await fetch(`${h.base}/login/poll?tx=${tx}`)).json(); if (poll.status !== 'ready') await sleep(100) }
+    assert.equal(poll.status, 'ready')
+    const ru = new URL(poll.redirect!)
+    assert.equal(ru.origin + ru.pathname, redirect); assert.equal(ru.searchParams.get('state'), 'st-1'); assert.ok(ru.searchParams.get('code')); ok('[oauth] device ready → redirect_uri?code&state')
+    assert.equal((await (await fetch(`${h.base}/login/poll?tx=${tx}`)).json()).status, 'error'); ok('[oauth] tx is consumed')
+
+    // 클라이언트 역할: code → token(PKCE) → 재접속 → 툴 호출
+    const code = ru.searchParams.get('code')!
+    await t1.finishAuth(code)
+    assert.equal(store.tokens?.access_token, 'T'); assert.equal(store.tokens?.token_type, 'bearer'); ok('[oauth] token exchange (PKCE) → app JWT')
+    await assert.rejects(t1.finishAuth(code)); ok('[oauth] code is single-use')
+    const c2 = await connect(h.mcpUrl, provider)
+    const stt = await c2.call('flowlink_status')
+    assert.match(stt, /auth mode: github/); assert.match(stt, /login: tester/); assert.match(stt, /APPROVED/); ok('[oauth] authenticated tool call as tester')
+    assert.ok(!(await c2.client.listTools()).tools.some((t) => t.name.startsWith('flowlink_login'))); ok('[oauth] no login tools (browser does it)')
+    await c2.client.close()
+  } finally { h.proc.kill(); fake.close() }
+}
+
+// ---------- ② 툴 시나리오(dev 인스턴스) ----------
 const SPEC = {
   encoding: 'EUC-KR', lengthField: '전문길이', discriminator: '거래코드',
   header: [{ name: '전문길이', len: 4, type: 'length' }, { name: '거래코드', len: 4, type: 'ascii' }],
@@ -60,16 +140,13 @@ const SPEC = {
   ],
 }
 
-/** dev 인스턴스 한 바퀴 — 전송(stdio/http)과 무관하게 같아야 한다. PORT 는 TCP Mock 리스너 포트(전송별로 다르게). */
-async function scenario({ client, call }: { client: Client; call: Call }, base: string, PORT: number, transport: 'stdio' | 'http') {
+async function scenario({ client, call }: { client: Client; call: Call }, base: string, PORT: number) {
   const tools = (await client.listTools()).tools.map((t) => t.name)
   assert.ok(tools.includes('flow_run') && tools.includes('protocol_upsert') && tools.includes('mock_send'), tools.join())
-  if (transport === 'http') assert.ok(!tools.includes('flowlink_login') && !tools.includes('flowlink_logout'), '로그인 툴은 HTTP 모드에 없어야 한다: ' + tools.join())
-  else assert.ok(tools.includes('flowlink_login') && tools.includes('flowlink_login_wait'), tools.join())
-  ok(`[${transport}] tools ${tools.length}`)
+  ok(`tools ${tools.length}`)
 
   const st = await call('flowlink_status')
-  assert.match(st, /dev 모드/); assert.match(st, transport === 'http' ? /transport: http/ : /transport: stdio/); ok('status dev + transport')
+  assert.match(st, /dev 모드/); assert.match(st, /transport: http/); ok('status dev')
   assert.match(await call('flowlink_guide', { topic: 'rules' }), /지어내지 않는다/); ok('guide rules')
   assert.match(await call('flowlink_guide', { topic: 'protocol' }), /lengthField|header/); ok('guide protocol')
   assert.match(await call('flowlink_guide', { topic: 'nodes' }), /tcp:|transform:|START/); ok('guide nodes (node reference)')
@@ -146,62 +223,22 @@ async function scenario({ client, call }: { client: Client; call: Call }, base: 
 }
 
 async function main() {
+  await oauthScenario()
+
   const base = process.env.FLOWLINK_URL || 'http://localhost:18081'
-  // ① stdio
-  await scenario(await connect(base), base, 19540 + Math.floor(Math.random() * 400), 'stdio')
-  // ② Streamable HTTP(세션 없음) — 같은 시나리오. 요청마다 새 McpServer 라 상태가 새지 않는지도 이 한 바퀴가 확인한다.
-  const http = await spawnHttp(base)
+  let up = false
+  try { up = (await fetch(`${base}/api/v1/auth/config`)).ok } catch { /* 안 떠 있음 */ }
+  if (!up) { console.log(`  (${base} 에 FlowLink 가 없음 — dev 툴 시나리오 건너뜀)`); console.log(`ALL ${n} PASS`); return }
+  const http = await spawnMcp(base)
   try {
-    const r405 = await fetch(http.mcpUrl); assert.equal(r405.status, 405); ok('[http] GET /mcp → 405 (stateless)')
-    await scenario(await connectHttp(http.mcpUrl), base, 19540 + Math.floor(Math.random() * 400), 'http')
+    const r405 = await fetch(http.mcpUrl); assert.equal(r405.status, 405); ok('GET /mcp → 405 (stateless)')
+    await scenario(await connect(http.mcpUrl), base, 19540 + Math.floor(Math.random() * 400))
     // 동시 요청 — 요청별 서버/transport 격리(request id 충돌 없음)
-    const c2 = await connectHttp(http.mcpUrl)
+    const c2 = await connect(http.mcpUrl)
     const texts = await Promise.all([1, 2, 3, 4, 5].map(() => c2.call('flowlink_guide', { topic: 'rules' })))
-    assert.ok(texts.every((t) => /지어내지 않는다/.test(t))); ok('[http] 5 concurrent calls')
+    assert.ok(texts.every((t) => /지어내지 않는다/.test(t))); ok('5 concurrent calls')
     await c2.client.close()
   } finally { http.proc.kill() }
-
-  const gh = process.env.FLOWLINK_GH_URL
-  if (gh) {
-    // github 강제 로그인(기본, guest-enabled=false): 무토큰이면 모든 API 401, flowlink_status 가 "로그인 필수" 안내.
-    const g = await connect(gh)
-    const st = await g.call('flowlink_status')
-    assert.match(st, /auth mode: github/); assert.match(st, /로그인 필수/); ok('github force-login: status says login required')
-    assert.match(await g.call('protocol_list', {}, true), /HTTP 401/); assert.match(await g.call('protocol_list', {}, true), /flowlink_login 을 호출/); ok('github force-login: 401 → login hint')
-    const lg2 = await g.call('flowlink_login')
-    assert.match(lg2, /github\.com\/login\/device/); assert.match(lg2, /코드 입력: +[A-Z0-9-]+/); assert.match(lg2, /sessionId="/); ok('github force-login: device code issued')
-    assert.match(await g.call('flowlink_login_wait', { sessionId: /sessionId="([^"]+)"/.exec(lg2)![1], timeoutSec: 5 }), /아직 승인되지 않았습니다/); ok('github force-login: login_wait pending')
-    await g.client.close()
-  } else console.log('  (FLOWLINK_GH_URL 없음 — github 강제 로그인 검사 건너뜀)')
-
-  const ghGuest = process.env.FLOWLINK_GHGUEST_URL
-  if (ghGuest) {
-    // github + guest-enabled=true(MCP 에이전트용): 무토큰으로 읽기/워크플로 가능, 프로토콜 저장은 승인 게이트(403).
-    const g = await connect(ghGuest)
-    const st = await g.call('flowlink_status')
-    assert.match(st, /auth mode: github/); assert.match(st, /게스트 모드 ON/); ok('github guest-on: status says guest mode')
-    assert.match(await g.call('flow_list'), /워크플로|없음/); ok('github guest-on: guest can read flows')
-    assert.match(await g.call('protocol_upsert', { name: 'x', spec: SPEC }, true), /HTTP 403/); ok('github guest-on: protocol write → 403 (approval gate)')
-    await g.client.close()
-    // HTTP 모드: 무토큰 = 게스트, Authorization 헤더 = 그 사용자(REST 로 그대로 전달)
-    const h = await spawnHttp(ghGuest)
-    try {
-      const anon = await connectHttp(h.mcpUrl)
-      const st2 = await anon.call('flowlink_status')
-      assert.match(st2, /transport: http/); assert.match(st2, /게스트 모드 ON/); ok('github guest-on [http]: no header → guest')
-      assert.match(await anon.call('protocol_upsert', { name: 'x', spec: SPEC }, true), /HTTP 403/); ok('github guest-on [http]: no header → write 403')
-      await anon.client.close()
-      const bad = await connectHttp(h.mcpUrl, { Authorization: 'Bearer not-a-jwt' })
-      assert.match(await bad.call('flowlink_status'), /만료됐거나 무효/); ok('github guest-on [http]: bad header token → invalid hint')
-      await bad.client.close()
-      const tok = process.env.FLOWLINK_GHGUEST_TOKEN
-      if (tok) {
-        const me = await connectHttp(h.mcpUrl, { Authorization: `Bearer ${tok}` })
-        assert.match(await me.call('flowlink_status'), /login: /); ok('github guest-on [http]: header token → logged in as user')
-        await me.client.close()
-      }
-    } finally { h.proc.kill() }
-  } else console.log('  (FLOWLINK_GHGUEST_URL 없음 — 게스트 모드 검사 건너뜀)')
   console.log(`ALL ${n} PASS`)
 }
 main().catch((e) => { console.error('FAIL', e); process.exit(1) })

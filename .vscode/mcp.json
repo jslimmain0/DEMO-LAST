@@ -1,10 +1,5 @@
 {
   "servers": {
-    "flowlink": {
-      "type": "stdio",
-      "command": "node",
-      "args": ["${workspaceFolder}/mcp/src/index.js"],
-      "env": { "FLOWLINK_URL": "http://localhost:8888" }
-    }
+    "flowlink": { "type": "http", "url": "http://localhost:18090/mcp" }
   }
 }

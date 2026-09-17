@@ -73,21 +73,11 @@ tasks.withType<JavaCompile> {
     options.encoding = "UTF-8"
 }
 
-// mcp/ 를 npm 설치 가능한 tgz 로(npm 규약: package/ 루트). npm 불필요 — 순수 gradle Tar.
-val mcpTarball by tasks.registering(Tar::class) {
-    archiveFileName.set("flowlink-mcp.tgz")
-    destinationDirectory.set(layout.buildDirectory.dir("mcp"))
-    compression = Compression.GZIP
-    from("../mcp") { include("package.json", "README.md", "src/**"); into("package") }
-}
-
 tasks.named<org.springframework.boot.gradle.tasks.bundling.BootJar>("bootJar") {
     archiveFileName.set("flowlink.jar")
     // 프론트엔드(dist) 동봉 — 단일 jar 배포(SpaStaticConfig 가 classpath:/static/ 서빙 + SPA fallback).
     // 빌드 순서: ① frontend 에서 npm run build ② gradle bootJar → flowlink.jar 하나에 프론트+백엔드.
     // dist 가 없으면 그냥 빠짐(백엔드 단독 dev 빌드·bootRun/Vite 개발 구성 무회귀).
     from("../frontend/dist") { into("BOOT-INF/classes/static") }
-    // MCP 서버 패키지(tgz) 동봉 — 서버가 자기 MCP 를 나눠준다: npm i -g http://<host>:<port>/mcp/flowlink-mcp.tgz
-    from(mcpTarball) { into("BOOT-INF/classes/static/mcp") }
 }
 

@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { CSSProperties } from 'react'
 import { useEffect, useState } from 'react'
 import { settingsApi } from '../api/client'
-import { authApi, getAccessToken } from '../auth/auth'
+import { authApi } from '../auth/auth'
 import { useAuth } from '../auth/AuthContext'
 import { Modal } from './Modal'
 import { toast } from './toast'
@@ -14,13 +14,11 @@ import { toast } from './toast'
  */
 export function SettingsDialog({ onClose }: { onClose: () => void }) {
   const qc = useQueryClient()
-  const { enabled: authEnabled, isGuest } = useAuth()
+  const { enabled: authEnabled } = useAuth()
   // MCP HTTP 서버(옆에 뜬 Node)가 있으면 그 포트 — 접속 주소는 브라우저 호스트 + 그 포트(서버는 자기 외부 주소를 모른다).
   const cfgQ = useQuery({ queryKey: ['auth', 'config'], queryFn: authApi.config, staleTime: 60_000 })
   const mcpPort = cfgQ.data?.mcpPort ?? null
   const mcpUrl = mcpPort && typeof window !== 'undefined' ? `${window.location.protocol}//${window.location.hostname}:${mcpPort}/mcp` : null
-  // 헤더 토큰 = 지금 로그인한 사용자의 앱 JWT(localStorage). github 모드에서 로그인했을 때만 복사할 게 있다.
-  const mcpToken = authEnabled && !isGuest ? getAccessToken() : null
   const copy = async (label: string, text: string) => {
     try { await navigator.clipboard.writeText(text); toast(`${label} 복사됨`, 'ok') } catch { toast('클립보드 복사 실패 — 직접 선택해 복사하세요', 'error') }
   }
@@ -95,24 +93,14 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
               <button style={ghostBtn} onClick={() => copy('MCP 주소', mcpUrl)}>주소 복사</button>
             </div>
             <p style={hint}>
-              설치 없이 URL 로 붙습니다 — Claude Code: <code style={code}>{`claude mcp add -s user -t http flowlink ${mcpUrl}`}</code>
+              설치·토큰 없이 URL 만 등록합니다 — Claude Code: <code style={code}>{`claude mcp add -s user -t http flowlink ${mcpUrl}`}</code>
               {' '}· VS Code <code style={code}>mcp.json</code>: <code style={code}>{`{ "servers": { "flowlink": { "type": "http", "url": "${mcpUrl}" } } }`}</code>
+              {authEnabled && <> · 처음 연결할 때 브라우저가 열려 지금처럼 GitHub 로 로그인하면 그 이름으로 저장됩니다.</>}
             </p>
-            {authEnabled && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
-                <p style={{ ...hint, margin: 0, flex: 1 }}>
-                  {mcpToken
-                    ? <>내 이름으로 저장(프로토콜·환경)하려면 토큰을 <code style={code}>Authorization: Bearer …</code> 헤더로 넣습니다(Claude Code: <code style={code}>-H "Authorization: Bearer &lt;토큰&gt;"</code>, VS Code: <code style={code}>"headers"</code>). 토큰은 로그인과 같은 기간 유효합니다.</>
-                    : <>로그인하면 여기서 MCP 토큰을 복사할 수 있습니다(게스트는 읽기·워크플로·Mock 만 가능).</>}
-                </p>
-                {mcpToken && <button style={primaryBtn} onClick={() => copy('MCP 토큰', mcpToken)}>MCP 토큰 복사</button>}
-              </div>
-            )}
           </>
         ) : (
           <p style={hint}>
-            이 서버는 MCP HTTP 를 띄우지 않았습니다(<code style={code}>FLOWLINK_MCP_PORT</code> 미설정).
-            로컬 stdio 방식은 <code style={code}>{`npm i -g ${typeof window !== 'undefined' ? window.location.origin : ''}/mcp/flowlink-mcp.tgz`}</code> 로 설치합니다.
+            이 서버는 MCP HTTP 를 띄우지 않았습니다(<code style={code}>FLOWLINK_MCP_PORT</code> 미설정 — <code style={code}>scripts/start.sh</code> 가 jar 옆에 띄웁니다, Node 20+ 필요).
           </p>
         )}
 

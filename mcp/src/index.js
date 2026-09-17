@@ -1,49 +1,37 @@
 #!/usr/bin/env node
-// FlowLink MCP 서버 — 에이전트가 프로토콜·Mock·워크플로를 만들고, 실행하고, 로그를 관찰한다. 두 가지 전송 모드, 툴 코드는 하나.
-//   stdio(기본):  FLOWLINK_URL=http://localhost:8888 node mcp/src/index.js   (설치형: npm i -g http://<host>:8888/mcp/flowlink-mcp.tgz → flowlink-mcp)
-//                 개발자 PC 에서 돈다. 로그인은 flowlink_login → flowlink_login_wait(토큰은 ~/.flowlink/mcp-token.json) 또는 FLOWLINK_TOKEN.
-//   http(서빙):   FLOWLINK_URL=http://localhost:18080 FLOWLINK_MCP_PORT=18090 node mcp/src/index.js --http
-//                 FlowLink 서버 옆에 떠서 Streamable HTTP(세션 없음)로 http://<host>:18090/mcp 를 연다 — 설치 없이 URL 한 줄, 웹 에이전트도 붙는다.
-//                 요청마다 새 McpServer/transport(SDK 의 stateless 관례). 신원은 클라이언트가 보낸 Authorization: Bearer <앱 JWT> 를 REST 로 그대로 전달
-//                 (설정 화면 → "MCP 토큰 복사"). 로그인 툴 3개(login/login_wait/logout)는 로컬 토큰 파일이 전제라 HTTP 모드엔 없다.
+// FlowLink MCP 서버 — 에이전트가 프로토콜·Mock·워크플로를 만들고, 실행하고, 로그를 관찰한다.
+//   FLOWLINK_URL=http://localhost:18080 FLOWLINK_MCP_PORT=18090 node mcp/src/index.js
+//   FlowLink 서버 옆에 떠서 Streamable HTTP(세션 없음)로 http://<host>:18090/mcp 를 연다 — 클라이언트 설정은 URL 한 줄, 웹 에이전트도 붙는다.
+//   요청마다 새 McpServer/transport(SDK 의 stateless 관례). 로그인은 OAuth(oauth.js): github 모드면 무토큰 요청에 401 을 줘 클라이언트가
+//   브라우저를 열고, 받은 앱 JWT 를 Authorization: Bearer 로 보내면 요청 컨텍스트에 실어 REST 로 그대로 전달한다. dev 모드는 로그인 없음.
 //   순수 JS(빌드 없음) — 설치된 패키지는 node_modules 아래라 Node 가 .ts 타입 스트리핑을 거부하므로 소스가 JS 다.
 // 툴은 REST 1:1 이 아니라 작업 단위이고, 응답은 에이전트 컨텍스트를 아끼려 짧은 텍스트 요약이다.
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import { createServer as createHttpServer } from 'node:http';
+import cors from 'cors';
+import express from 'express';
 import { createRequire } from 'node:module';
 import { z } from 'zod';
-import { ApiError, BASE, api, auth, sleep, withToken } from "./client.js";
+import { ApiError, BASE, api, auth, sleep, withToken } from './client.js';
+import { gate, oauthRouter } from './oauth.js';
 const VERSION = createRequire(import.meta.url)('../package.json').version;
-const HTTP = process.argv.includes('--http') || process.env.FLOWLINK_MCP_MODE === 'http';
-/** 툴 레지스트리 — 요청마다 새 McpServer 를 만들어야 해서(HTTP stateless) 등록을 함수로 미룬다. stdioOnly 툴은 HTTP 모드에서 빠진다. */
+/** 툴 레지스트리 — 요청마다 새 McpServer 를 만들어야 해서(stateless) 등록을 함수로 미룬다. */
 const TOOLS = [];
-const tool = (name, cfg, handler) => TOOLS.push({ name, cfg, handler, stdioOnly: false });
-const stdioTool = (name, cfg, handler) => TOOLS.push({ name, cfg, handler, stdioOnly: true });
+const tool = (name, cfg, handler) => TOOLS.push({ name, cfg, handler });
 function buildServer() {
     const server = new McpServer({ name: 'flowlink', version: VERSION });
     for (const t of TOOLS)
-        if (!(HTTP && t.stdioOnly))
-            server.registerTool(t.name, t.cfg, t.handler);
+        server.registerTool(t.name, t.cfg, t.handler);
     return server;
 }
-/** 401/403 뒤에 붙일 로그인 안내 — 모드마다 로그인 방법이 다르다. */
-const LOGIN_HINT = HTTP
-    ? '\n→ 로그인이 필요합니다. FlowLink 화면 설정(⚙) → "MCP 토큰 복사" 로 토큰을 받아 MCP 클라이언트 설정에 Authorization: Bearer <토큰> 헤더로 넣으세요.'
-    : '\n→ 로그인이 필요합니다. flowlink_login 을 호출해 사용자에게 코드를 안내하세요.';
-const EXPIRED_HINT = HTTP
-    ? '\n→ Authorization 헤더의 토큰이 만료됐거나 무효합니다. FlowLink 화면 설정(⚙) → "MCP 토큰 복사" 로 새 토큰을 넣으세요.'
-    : '\n→ 저장된 토큰이 만료됐거나 무효합니다. flowlink_login 으로 다시 로그인하세요.';
 const ok = (text) => ({ content: [{ type: 'text', text }] });
 const fail = (e) => {
     let hint = '';
-    if (e instanceof ApiError && (e.status === 401 || e.status === 403)) {
-        // 토큰 없음 → 로그인 안내 · 토큰 있는데 401 → 토큰 만료/무효 · 토큰 있는데 403 → 승인/권한
-        hint = !auth.hasToken() ? LOGIN_HINT
-            : e.status === 401 ? EXPIRED_HINT
-                : '\n→ 권한이 없습니다(승인 대기 중일 수 있음 — 관리자 승인 필요). flowlink_status 로 상태 확인.';
-    }
+    // 문지기(gate)가 무토큰/무효 토큰을 401 로 미리 걸러내므로 여기 401 은 호출 도중 만료, 403 은 승인/권한.
+    if (e instanceof ApiError && e.status === 401)
+        hint = '\n→ 로그인 토큰이 만료됐거나 무효합니다. MCP 클라이언트에서 flowlink 서버를 다시 인증(로그인)하세요.';
+    else if (e instanceof ApiError && e.status === 403)
+        hint = '\n→ 권한이 없습니다(승인 대기 중일 수 있음 — 관리자 승인 필요). flowlink_status 로 상태 확인.';
     return { content: [{ type: 'text', text: `⚠ ${e instanceof ApiError ? `HTTP ${e.status}: ` : ''}${e instanceof Error ? e.message : String(e)}${hint}` }], isError: true };
 };
 const run = async (fn) => { try {
@@ -67,111 +55,19 @@ tool('flowlink_status', {
     description: '연결된 FlowLink 주소·인증 모드·로그인 상태·승인 여부. 다른 툴이 403 이면 먼저 이걸로 확인.',
     inputSchema: {},
 }, async () => run(async () => {
-    const lines = [`url: ${BASE}`, `transport: ${HTTP ? 'http(서빙 — 요청은 FlowLink 서버에서 나간다)' : 'stdio(로컬)'}`];
-    let cfg;
-    try {
-        cfg = await api('GET', '/auth/config');
-    }
-    catch (e) {
-        // 공개 경로인데 401 = 실려 간 Bearer 가 무효/만료(리소스 서버는 permitAll 이어도 잘못된 토큰을 거부한다)
-        if (e instanceof ApiError && e.status === 401 && auth.hasToken())
-            return lines.concat('auth mode: github', 'login: 토큰 있음(무효)' + EXPIRED_HINT).join('\n');
-        throw e;
-    }
+    const lines = [`url: ${BASE}`, 'transport: http(서빙 — 요청은 FlowLink 서버에서 나간다)'];
+    const cfg = await api('GET', '/auth/config');
     const mode = cfg.mode ?? (cfg.enabled ? 'github' : 'none');
     lines.push(`auth mode: ${mode}`);
     if (mode !== 'github') {
         lines.push('login: 불필요(dev 모드 — 전권)');
         return lines.join('\n');
     }
-    if (HTTP) {
-        // HTTP 모드 — 신원은 클라이언트가 보낸 Bearer 헤더뿐. 로그인 툴이 없으니 안내만 다르다.
-        if (!auth.hasToken()) {
-            let guest = false;
-            try { await api('GET', '/auth/me'); guest = true; } catch { /* 401 = 로그인 필수 */ }
-            lines.push(guest
-                ? 'login: 없음 · 게스트 모드 ON — 읽기/워크플로/Mock 은 토큰 없이 가능. 프로토콜/환경 저장은 Authorization 헤더(설정 → MCP 토큰 복사) 필요.'
-                : 'login: 없음 · 이 서버는 로그인 필수 — MCP 클라이언트 설정에 Authorization: Bearer <토큰> 헤더를 넣으세요(설정 → MCP 토큰 복사).');
-            return lines.join('\n');
-        }
-        let me = null;
-        try { me = await api('GET', '/admin/me'); } catch { /* 토큰 만료/무효 */ }
-        if (me) lines.push(`login: ${me.username ?? '(토큰 있음)'}`, `status: ${me.myStatus ?? '?'}${me.admin ? ' · ADMIN' : ''}${me.pendingCount ? ` · 승인 대기 ${me.pendingCount}명` : ''}`);
-        else lines.push('login: 토큰 있음(무효)' + EXPIRED_HINT);
-        return lines.join('\n');
-    }
-    if (auth.hasToken()) {
-        let me = null;
-        try {
-            me = await api('GET', '/admin/me');
-        }
-        catch { /* 토큰이 만료됐을 수 */ }
-        lines.push(`login: ${auth.login() ?? '(토큰 있음)'}`);
-        if (me)
-            lines.push(`status: ${me.myStatus ?? '?'}${me.admin ? ' · ADMIN' : ''}${me.pendingCount ? ` · 승인 대기 ${me.pendingCount}명` : ''}`);
-        else
-            lines.push('login: 토큰 있음(무효)' + EXPIRED_HINT);
-        return lines.join('\n');
-    }
-    // 토큰 없음 — 게스트 접근이 열려 있는지 탐지(강제 로그인 서버는 /auth/me 가 401)
-    let guest = false;
-    try {
-        await api('GET', '/auth/me');
-        guest = true;
-    }
-    catch { /* 401 = 로그인 필수 */ }
-    if (guest)
-        lines.push('login: 없음 · 게스트 모드 ON — 읽기/워크플로/Mock 은 로그인 없이 가능. AI · 프로토콜/환경 저장은 flowlink_login 필요.');
-    else
-        lines.push('login: 없음 · 이 서버는 로그인 필수 — flowlink_login 을 호출해 사용자에게 코드를 안내하세요.');
+    // github 모드 — 여기까지 왔으면 문지기가 토큰을 검증했다(무토큰/무효는 401 로 클라이언트가 로그인 창을 띄움).
+    const me = await api('GET', '/admin/me');
+    lines.push(`login: ${me.username ?? '?'}`, `status: ${me.myStatus ?? '?'}${me.admin ? ' · ADMIN' : ''}${me.pendingCount ? ` · 승인 대기 ${me.pendingCount}명` : ''}`);
     return lines.join('\n');
 }));
-stdioTool('flowlink_login', {
-    title: 'GitHub 로그인 시작',
-    description: 'github 모드에서 디바이스 코드를 발급한다. 사용자에게 verificationUri 를 열어 userCode 를 입력하라고 안내한 뒤 flowlink_login_wait(sessionId) 를 호출.',
-    inputSchema: {},
-}, async () => run(async () => {
-    const cfg = await api('GET', '/auth/config');
-    if (cfg.mode !== 'github')
-        return 'dev 모드 — 로그인이 필요 없습니다.';
-    const d = await api('POST', '/auth/github/device/start', {});
-    const mins = Math.floor((d.expiresIn ?? 900) / 60);
-    return [
-        '🔑 GitHub 로그인 — 아래를 그대로 사용자에게 보여 주세요:',
-        '',
-        `  1. 브라우저에서 열기:  ${d.verificationUri}`,
-        `  2. 코드 입력:        ${d.userCode}   (${mins}분 유효)`,
-        `  3. GitHub 에서 승인(Authorize) 클릭`,
-        '',
-        `입력이 끝나면(또는 바로) flowlink_login_wait 를 sessionId="${d.sessionId}" 로 호출해 완료를 기다리세요.`,
-        '토큰은 ~/.flowlink/mcp-token.json 에 저장되어 다음부터는 자동입니다(장기 유효).',
-    ].join('\n');
-}));
-stdioTool('flowlink_login_wait', {
-    title: 'GitHub 로그인 완료 대기',
-    description: 'flowlink_login 의 sessionId 로 승인 완료를 기다려 토큰을 저장한다(최대 timeoutSec, 기본 120초). 미완이면 다시 호출.',
-    inputSchema: { sessionId: z.string(), timeoutSec: z.number().int().min(5).max(600).optional() },
-}, async ({ sessionId, timeoutSec }) => run(async () => {
-    const deadline = Date.now() + (timeoutSec ?? 120) * 1000;
-    while (Date.now() < deadline) {
-        const p = await api('GET', '/auth/github/device/poll', undefined, { session: sessionId });
-        if (p.status === 'ready') {
-            auth.set(p.token, p.login ?? null);
-            let st = '';
-            try {
-                const me = await api('GET', '/admin/me');
-                st = me.myStatus ?? '';
-            }
-            catch { /* */ }
-            return `로그인 완료: ${p.login}${st ? ` (상태 ${st}${st === 'PENDING' ? ' — 관리자 승인 전까지 프로토콜/환경 저장은 403' : ''})` : ''}. 토큰을 저장했습니다.`;
-        }
-        if (p.status === 'error')
-            throw new Error(p.error || '로그인 실패');
-        await sleep(5000);
-    }
-    return '아직 승인되지 않았습니다 — 사용자가 코드를 입력한 뒤 다시 flowlink_login_wait 를 호출하세요.';
-}));
-stdioTool('flowlink_logout', { title: '토큰 삭제', description: '저장된 로그인 토큰을 지운다.', inputSchema: {} }, async () => run(async () => { auth.clear(); return '토큰을 지웠습니다.'; }));
 // ---------- 가이드(스키마 원문) ----------
 tool('flowlink_guide', {
     title: '규격 가이드',
@@ -414,8 +310,8 @@ tool('http_request', {
     title: 'HTTP 요청 보내기(테스트)',
     description: 'Mock 엔드포인트·wait 콜백·웹훅·외부 URL 에 실제 HTTP 요청을 보내 응답을 확인한다. 에이전트는 이걸 쓰고 curl/파이썬으로 직접 쏘지 마라. '
         + 'HTTP Mock 테스트: mock_list 가 보여주는 base URL(예: {서버}/mock/{slug}) 뒤에 라우트 경로를 붙여 호출 → 템플릿 렌더 결과가 응답으로 온다. '
-        + 'url 이 "/" 로 시작하면 FlowLink 주소에 붙인다(예: /mock/pay/orders). 같은 서버면 로그인 토큰을 자동 첨부(Mock 게이트웨이는 무시).'
-        + (HTTP ? ' 요청은 FlowLink 서버에서 나간다 — localhost 는 서버 자신이지 사용자 PC 가 아니다.' : ''),
+        + 'url 이 "/" 로 시작하면 FlowLink 주소에 붙인다(예: /mock/pay/orders). 같은 서버면 로그인 토큰을 자동 첨부(Mock 게이트웨이는 무시). '
+        + '요청은 FlowLink 서버에서 나간다 — localhost 는 서버 자신이지 사용자 PC 가 아니다.',
     inputSchema: {
         method: z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD']).optional(),
         url: z.string(),
@@ -438,7 +334,7 @@ tool('http_request', {
         }
     }
     // 같은 오리진이면 로그인 토큰 첨부(API 경로는 인증 필요, Mock/relay/hooks 는 무시). 외부 URL 엔 절대 첨부하지 않는다.
-    if (target.startsWith(BASE + '/') && auth.hasToken() && !lc.includes('authorization'))
+    if (target.startsWith(BASE + '/') && auth.token() && !lc.includes('authorization'))
         h.Authorization = `Bearer ${auth.token()}`;
     const ctl = new AbortController();
     const timer = setTimeout(() => ctl.abort(), (timeoutSec ?? 30) * 1000);
@@ -456,44 +352,32 @@ tool('http_request', {
     return `${line}\n${clip(text, 2000) || '(빈 응답)'}`;
 }));
 // ---------- 기동 ----------
-if (!HTTP) {
-    await buildServer().connect(new StdioServerTransport());
-}
-else {
-    // Streamable HTTP, 세션 없음: 요청마다 새 McpServer+transport 를 만들어 처리하고 응답이 끝나면 닫는다(동시 요청 간 request id 충돌 방지).
-    // 인증은 하지 않는다 — Authorization 헤더를 요청 컨텍스트에 실어 REST 로 그대로 넘기면 FlowLink 가 검증한다(사내 도구).
-    const port = Number(process.env.FLOWLINK_MCP_PORT || 18090);
-    const host = process.env.FLOWLINK_MCP_HOST || '0.0.0.0';
-    const readBody = (req) => new Promise((resolve, reject) => {
-        const chunks = [];
-        req.on('data', (c) => chunks.push(c));
-        req.on('end', () => { const t = Buffer.concat(chunks).toString('utf8'); if (!t) return resolve(undefined); try { resolve(JSON.parse(t)); } catch (e) { reject(e); } });
-        req.on('error', reject);
-    });
-    const send = (res, status, body, headers) => { res.writeHead(status, { 'Content-Type': 'application/json', ...(headers ?? {}) }); res.end(JSON.stringify(body)); };
-    const httpServer = createHttpServer(async (req, res) => {
-        const path = (req.url ?? '/').split('?')[0].replace(/\/+$/, '') || '/';
-        if (path === '/health')
-            return send(res, 200, { ok: true, name: 'flowlink-mcp', version: VERSION, flowlink: BASE });
-        if (path !== '/mcp' && path !== '/')
-            return send(res, 404, { error: 'not found — MCP 엔드포인트는 /mcp' });
-        if (req.method !== 'POST')
-            // 세션이 없으니 GET(SSE 알림 스트림)·DELETE(세션 종료)는 의미가 없다 — 스펙이 허용하는 405.
-            return send(res, 405, { error: 'stateless — POST /mcp 만 받는다' }, { Allow: 'POST' });
-        let body;
-        try { body = await readBody(req); } catch { return send(res, 400, { error: 'JSON 본문 파싱 실패' }); }
-        const m = /^Bearer\s+(.+)$/i.exec(req.headers.authorization ?? '');
-        const server = buildServer();
-        const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
-        res.on('close', () => { transport.close().catch(() => {}); server.close().catch(() => {}); });
-        try {
-            await server.connect(transport);
-            await withToken(m ? m[1].trim() : null, () => transport.handleRequest(req, res, body));
-        }
-        catch (e) {
-            if (!res.headersSent) send(res, 500, { error: e instanceof Error ? e.message : String(e) });
-            else res.end();
-        }
-    });
-    httpServer.listen(port, host, () => console.error(`flowlink-mcp v${VERSION} http://${host}:${port}/mcp → ${BASE}`));
-}
+// Streamable HTTP, 세션 없음: 요청마다 새 McpServer+transport 를 만들어 처리하고 응답이 끝나면 닫는다(동시 요청 간 request id 충돌 방지).
+// 인증은 gate(oauth.js): github 모드면 유효 Bearer 없인 401 → 클라이언트가 OAuth 로그인. 통과한 토큰은 요청 컨텍스트에 실어 REST 로 그대로 넘긴다.
+const port = Number(process.env.FLOWLINK_MCP_PORT || 18090);
+const host = process.env.FLOWLINK_MCP_HOST || '0.0.0.0';
+const app = express();
+app.use(cors());
+app.use(oauthRouter);
+app.get('/health', (req, res) => res.json({ ok: true, name: 'flowlink-mcp', version: VERSION, flowlink: BASE }));
+app.post('/mcp', express.json({ limit: '8mb' }), async (req, res) => {
+    const g = await gate(req, res);
+    if (!g.ok) return;
+    const server = buildServer();
+    const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
+    res.on('close', () => { transport.close().catch(() => {}); server.close().catch(() => {}); });
+    try {
+        await server.connect(transport);
+        await withToken(g.token, () => transport.handleRequest(req, res, req.body));
+    }
+    catch (e) {
+        if (!res.headersSent) res.status(500).json({ error: e instanceof Error ? e.message : String(e) });
+        else res.end();
+    }
+});
+// 세션이 없으니 GET(SSE 알림 스트림)·DELETE(세션 종료)는 의미가 없다 — 스펙이 허용하는 405.
+app.all('/mcp', (req, res) => res.status(405).set('Allow', 'POST').json({ error: 'stateless — POST /mcp 만 받는다' }));
+app.use((req, res) => res.status(404).json({ error: 'not found — MCP 엔드포인트는 /mcp' }));
+// eslint-disable-next-line no-unused-vars
+app.use((err, req, res, _next) => res.status(err.status ?? 500).json({ error: err instanceof Error ? err.message : String(err) }));
+app.listen(port, host, () => console.error(`flowlink-mcp v${VERSION} http://${host}:${port}/mcp → ${BASE}`));

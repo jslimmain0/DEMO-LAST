@@ -48,6 +48,8 @@ export function Plugins() {
   const [ask, setAsk] = useState<AskSpec | null>(null)
   const [showDiff, setShowDiff] = useState(false)
   const draftRef = useRef(draft); draftRef.current = draft
+  const dirtyRef = useRef(dirty); dirtyRef.current = dirty
+  const searchRef = useRef<HTMLInputElement>(null)
 
   // URL → 편집 상태: ?new=<kind> 는 템플릿 초안, /plugins/:id 는 서버 상세
   const newKind = sp.get('new') as PluginKind | null
@@ -55,7 +57,12 @@ export function Plugins() {
     if (newKind && PLUGIN_TEMPLATES[newKind]) { setDraft({ id: null, name: '', source: PLUGIN_TEMPLATES[newKind].source }); setDirty(true); setDiag([]) }
   }, [newKind])
   useEffect(() => {
-    if (detail.data) { setDraft({ id: detail.data.id, name: detail.data.name, source: detail.data.source }); setDirty(false); setDiag([]); setShowDiff(false) }
+    const d = detail.data
+    if (!d) return
+    const cur = draftRef.current
+    // 같은 플러그인을 편집 중(dirty)이면 서버 재조회로 초안을 덮지 않는다 — 다른 플러그인으로 바뀌었거나 깨끗할 때만 재수화
+    if (cur && cur.id === d.id && dirtyRef.current) return
+    setDraft({ id: d.id, name: d.name, source: d.source }); setDirty(false); setDiag([]); setShowDiff(false)
   }, [detail.data])
 
   const invalidate = () => { void qc.invalidateQueries({ queryKey: ['plugins', 'scripts'] }); void qc.invalidateQueries({ queryKey: ['admin', 'me'] }); void qc.invalidateQueries({ queryKey: ['transforms'] }); void qc.invalidateQueries({ queryKey: ['codecs'] }) }
@@ -99,6 +106,16 @@ export function Plugins() {
     const h = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = '' }
     window.addEventListener('beforeunload', h); return () => window.removeEventListener('beforeunload', h)
   }, [dirty])
+  // '/' 로 검색 포커스(입력 중이 아닐 때만)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null
+      const typing = el?.tagName === 'INPUT' || el?.tagName === 'TEXTAREA' || el?.tagName === 'SELECT' || el?.isContentEditable
+      if (!typing && e.key === '/') { e.preventDefault(); searchRef.current?.focus() }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
   const completions = useMemo(() => [flCompletionSource(manifest.data ?? []), declaredKeysSource(() => draftRef.current?.source ?? '')], [manifest.data])
   const items = useMemo(() => {
@@ -119,7 +136,7 @@ export function Plugins() {
             <strong style={{ fontFamily: 'var(--fl-font-head)', fontSize: 16 }}>◇ 플러그인</strong>
             <span style={muted}>{list.data?.length ?? 0}</span>
           </div>
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="검색 — 이름·id ( / )" aria-label="플러그인 검색" style={search}
+          <input ref={searchRef} value={q} onChange={(e) => setQ(e.target.value)} placeholder="검색 — 이름·id ( / )" aria-label="플러그인 검색" style={search}
             onKeyDown={(e) => { if (e.key === 'Escape' && q) { e.stopPropagation(); setQ('') } }} />
           <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
             {(['all', 'DRAFT', 'PENDING', 'APPROVED', 'REJECTED'] as const).map((s) => (

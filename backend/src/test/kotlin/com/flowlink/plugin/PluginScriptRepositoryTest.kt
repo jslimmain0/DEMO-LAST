@@ -23,8 +23,8 @@ class PluginScriptRepositoryTest {
 
     @Test
     fun `저장 - 초안만 있으면 live 없음, 승인본 조회는 liveSource 있는 행만`() {
-        val a = repo.save(PluginScript.create("default", "aes-card", "카드 AES", "transform", "({})", "alice"))
-        val b = repo.save(PluginScript.create("default", "mask", "마스킹", "transform", "({})", "alice").also { it.liveSource = "({ live })"; it.status = PluginScript.STATUS_APPROVED })
+        val a = repo.saveAndFlush(PluginScript.create("default", "aes-card", "카드 AES", "transform", "({})", "alice"))
+        val b = repo.saveAndFlush(PluginScript.create("default", "mask", "마스킹", "transform", "({})", "alice").also { it.liveSource = "({ live })"; it.status = PluginScript.STATUS_APPROVED })
         assertThat(a.status).isEqualTo(PluginScript.STATUS_DRAFT); assertThat(a.liveSource).isNull(); assertThat(a.createdAt).isNotNull()
         assertThat(repo.findByLiveSourceIsNotNull().map { it.pluginId }).containsExactly("mask")
         assertThat(repo.existsByTenantIdAndPluginId("default", "aes-card")).isTrue()

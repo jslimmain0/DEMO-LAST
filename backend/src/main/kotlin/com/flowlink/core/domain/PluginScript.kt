@@ -35,12 +35,12 @@ class PluginScript {
     @Column(name = "reviewed_at") var reviewedAt: Instant? = null
     @Column(name = "review_note", length = 1000) var reviewNote: String? = null
     @Column(name = "created_by", nullable = false, updatable = false, length = 180) lateinit var createdBy: String; private set
-    @CreationTimestamp @Column(name = "created_at", nullable = false, updatable = false) var createdAt: Instant? = null
+    @CreationTimestamp @Column(name = "created_at", nullable = false, updatable = false) lateinit var createdAt: Instant; private set
     @UpdateTimestamp @Column(name = "updated_at") var updatedAt: Instant? = null; private set
 
     companion object {
         const val STATUS_DRAFT = "DRAFT"; const val STATUS_PENDING = "PENDING"; const val STATUS_APPROVED = "APPROVED"; const val STATUS_REJECTED = "REJECTED"
         @JvmStatic fun create(tenantId: String, pluginId: String, name: String, kind: String, source: String, createdBy: String): PluginScript =
-            PluginScript().also { it.id = UUID.randomUUID(); it.tenantId = tenantId; it.pluginId = pluginId; it.name = name; it.kind = kind; it.source = source; it.createdBy = createdBy; it.createdAt = Instant.now() }
+            PluginScript().also { it.id = UUID.randomUUID(); it.tenantId = tenantId; it.pluginId = pluginId; it.name = name; it.kind = kind; it.source = source; it.createdBy = createdBy }
     }
 }

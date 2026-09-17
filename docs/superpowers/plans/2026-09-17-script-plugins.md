@@ -714,12 +714,8 @@ class FlHelpersTest {
     @Test fun `rsa 서명 검증`() {
         val kp = java.security.KeyPairGenerator.getInstance("RSA").apply { initialize(2048) }.generateKeyPair()
         val enc = java.util.Base64.getMimeEncoder(64, "\n".toByteArray())
-        val priv = "-----BEGIN " + "PRIVATE KEY-----
-" + enc.encodeToString(kp.private.encoded) + "
------END " + "PRIVATE KEY-----" // 리터럴을 쪼갠 이유: 커밋 훅(gitleaks) private-key 규칙
-        val pub = "-----BEGIN " + "PUBLIC KEY-----
-" + enc.encodeToString(kp.public.encoded) + "
------END " + "PUBLIC KEY-----"
+        val priv = "-----BEGIN " + "PRIVATE KEY-----\n" + enc.encodeToString(kp.private.encoded) + "\n-----END " + "PRIVATE KEY-----" // 리터럴을 쪼갠 이유: 커밋 훅(gitleaks) private-key 규칙
+        val pub = "-----BEGIN " + "PUBLIC KEY-----\n" + enc.encodeToString(kp.public.encoded) + "\n-----END " + "PUBLIC KEY-----"
         val r = run("(() => { const s = fl.rsa.sign(c.priv, 'data'); return { ok: fl.rsa.verify(c.pub, 'data', s), bad: fl.rsa.verify(c.pub, 'other', s) } })()", mapOf("priv" to priv, "pub" to pub))
         assertThat(r["ok"]).isEqualTo("true"); assertThat(r["bad"]).isEqualTo("false")
     }

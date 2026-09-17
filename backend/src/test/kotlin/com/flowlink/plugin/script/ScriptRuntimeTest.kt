@@ -35,9 +35,14 @@ class ScriptRuntimeTest {
     @Test
     fun `fieldCodec 과 messageCodec 실행`() {
         val fc = rt.compile("({ id: 'fc', kind: 'fieldCodec', encode(v, ctx) { return v + '|' + ctx.direction + '|' + ctx.field.len + '|' + ctx.message.acct }, decode(v, ctx) { return v.split('|')[0] } })")
-        val ctx = CodecCtx(com.flowlink.codec.FieldInfo("acct", 13, "ascii", "right/space"), mapOf("acct" to "1"), mapOf("k" to "v"), "send")
+        val msg = mapOf("acct" to "1")
+        val ctx = CodecCtx(com.flowlink.codec.FieldInfo("acct", 13, "ascii", "right/space"), msg, mapOf("k" to "v"), "send")
         assertThat(rt.runFieldCodec(fc, "x", "encode", ctx).value).isEqualTo("x|send|13|1")
         assertThat(rt.runFieldCodec(fc, "x|send", "decode", ctx).value).isEqualTo("x")
+        // 방어 복사 — 스크립트가 ctx.message 에 대입해도 호출자의 원본 맵은 그대로.
+        val mutFc = rt.compile("({ id: 'mut', kind: 'fieldCodec', encode(v, ctx) { ctx.message.acct = 'changed'; return v }, decode(v, ctx) { return v } })")
+        rt.runFieldCodec(mutFc, "x", "encode", ctx)
+        assertThat(msg).containsEntry("acct", "1")
         val mc = rt.compile("({ id: 'mc', kind: 'messageCodec', encode(b, ctx) { return b.map((x) => x + 1) }, decode(b, ctx) { return b.map((x) => x - 1) } })")
         val mctx = CodecCtx(null, emptyMap(), emptyMap(), "send")
         assertThat(rt.runMessageCodec(mc, "encode", byteArrayOf(1, 2, 255.toByte()), mctx).value).isEqualTo(byteArrayOf(2, 3, 0))
@@ -85,5 +90,26 @@ class ScriptRuntimeTest {
         val cs = rt.compile("({ id: 'x', label: 'x', apply(i, c) { return { e: fl.b64.enc('한글'), d: fl.b64.dec(fl.b64.enc('한글')) } } })")
         val r = rt.runTransform(cs, emptyMap(), emptyMap()).value
         assertThat(r["e"]).isEqualTo("7ZWc6riA"); assertThat(r["d"]).isEqualTo("한글")
+    }
+
+    @Test
+    fun `console_log 와 print 는 로그로 수집되고 호스트 stdout 에는 안 나간다`() {
+        val cs = rt.compile("({ id: 'x', label: 'x', apply(i, c) { console.log('c', 1); print('p'); return { result: 'ok' } } })")
+        val originalOut = System.out
+        val buf = java.io.ByteArrayOutputStream()
+        val r = try {
+            System.setOut(java.io.PrintStream(buf, true, "UTF-8"))
+            rt.runTransform(cs, emptyMap(), emptyMap())
+        } finally {
+            System.setOut(originalOut)
+        }
+        assertThat(r.logs).contains("c 1", "p")
+        assertThat(buf.toString("UTF-8")).isEmpty()
+    }
+
+    @Test
+    fun `함수를 반환하면 호스트 예외도 ScriptError 로`() {
+        val cs = rt.compile("({ id: 'x', label: 'x', apply(i, c) { return { f: () => 1 } } })")
+        assertThatThrownBy { rt.runTransform(cs, emptyMap(), emptyMap()) }.isInstanceOf(ScriptError::class.java)
     }
 }

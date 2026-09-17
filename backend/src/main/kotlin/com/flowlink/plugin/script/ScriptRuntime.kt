@@ -15,7 +15,8 @@ import org.graalvm.polyglot.io.IOAccess
 import org.graalvm.polyglot.proxy.ProxyArray
 import org.graalvm.polyglot.proxy.ProxyObject
 import org.springframework.stereotype.Component
-import java.util.concurrent.Executors
+import java.io.ByteArrayOutputStream
+import java.util.concurrent.ScheduledThreadPoolExecutor
 import java.util.concurrent.TimeUnit
 
 /**
@@ -28,7 +29,10 @@ class ScriptRuntime(private val props: PluginsProperties) {
     data class RunResult<T>(val value: T, val logs: List<String>, val durationMs: Long)
 
     private val engine: Engine = Engine.newBuilder("js").option("engine.WarnInterpreterOnly", "false").build()
-    private val watchdog = Executors.newSingleThreadScheduledExecutor { r -> Thread(r, "flowlink-script-watchdog").apply { isDaemon = true } }
+
+    // ponytail: 워치독 4스레드 — 호스트 코드(정규식 백트래킹 등)에 갇힌 게스트는 close(true) 가 블로킹될 수 있어 동시 타임아웃 4개 초과 시 직렬화. 풀 크기는 실측 후.
+    private val watchdog = ScheduledThreadPoolExecutor(4) { r -> Thread(r, "flowlink-script-watchdog").apply { isDaemon = true } }
+        .apply { removeOnCancelPolicy = true }
 
     fun compile(code: String, name: String = "plugin"): CompiledScript {
         val source = try { Source.newBuilder("js", code, "$name.js").build() } catch (e: Exception) { throw ScriptError(null, null, e.message ?: e.toString(), e) }
@@ -39,7 +43,7 @@ class ScriptRuntime(private val props: PluginsProperties) {
     fun runTransform(cs: CompiledScript, inputs: Map<String, String>, config: Map<String, String>): RunResult<Map<String, String>> =
         withContext(mutableListOf()) { ctx ->
             val plugin = evalPlugin(ctx, cs.source)
-            val out = plugin.getMember("apply").execute(ProxyObject.fromMap(inputs), ProxyObject.fromMap(config))
+            val out = plugin.getMember("apply").execute(ProxyObject.fromMap(inputs.toMap()), ProxyObject.fromMap(config.toMap()))
             toStringMap(ctx, out)
         }
 
@@ -59,7 +63,7 @@ class ScriptRuntime(private val props: PluginsProperties) {
 
     // ---- 내부 ----
 
-    private fun newContext(logs: MutableList<String>): Context {
+    private fun newContext(logs: MutableList<String>, out: ByteArrayOutputStream, err: ByteArrayOutputStream): Context {
         val ctx = Context.newBuilder("js")
             .engine(engine)
             .allowHostAccess(HostAccess.NONE)
@@ -73,19 +77,34 @@ class ScriptRuntime(private val props: PluginsProperties) {
             .option("js.ecmascript-version", "2022")
             .option("js.java-package-globals", "false") // 기본 true — java/javax/com/org 전역이 클래스 필터 없이도 JavaPackage 스텁으로 노출됨
             .resourceLimits(ResourceLimits.newBuilder().statementLimit(props.script.statementLimit, null).build())
+            .out(out) // console.log/print 를 실행 패널 logs 로 — 호스트 프로세스 stdout 으로 새지 않게
+            .err(err)
             .build()
         ctx.getBindings("js").putMember("fl", FlHelpers.build(logs))
         return ctx
     }
 
-    /** Context 생성 → 실행 → 항상 close. 타임아웃은 watchdog 이 close(true) 로 취소. 모든 Graal 예외를 ScriptError 로. */
+    /** out/err 버퍼의 각 비어있지 않은 줄을 logs 에 붙인다(console.log/print 출력). */
+    private fun drainConsole(out: ByteArrayOutputStream, err: ByteArrayOutputStream, logs: MutableList<String>) {
+        for (buf in listOf(out, err)) {
+            val text = buf.toString(Charsets.UTF_8)
+            for (line in text.lines()) if (line.isNotBlank()) logs.add(line)
+            buf.reset()
+        }
+    }
+
+    /** Context 생성 → 실행 → 항상 close. 타임아웃은 watchdog 이 close(true) 로 취소. 모든 Graal(및 예상 밖) 예외를 ScriptError 로. */
     private fun <T> withContext(logs: MutableList<String>, block: (Context) -> T): RunResult<T> {
-        val ctx = newContext(logs)
+        val out = ByteArrayOutputStream(); val err = ByteArrayOutputStream()
+        val ctx = newContext(logs, out, err)
         val guard = watchdog.schedule({ runCatching { ctx.close(true) } }, props.script.timeoutMs, TimeUnit.MILLISECONDS)
         val t0 = System.nanoTime()
         try {
-            val v = block(ctx)
+            // block(ctx) 성공/실패 어느 쪽이든 console.log/print 출력을 logs 로 옮긴 뒤 바깥 catch 로 전파.
+            val v = try { block(ctx) } finally { drainConsole(out, err, logs) }
             return RunResult(v, logs.toList(), (System.nanoTime() - t0) / 1_000_000)
+        } catch (e: ScriptError) {
+            throw e
         } catch (e: PolyglotException) {
             if (e.isCancelled || e.isInterrupted || e.isResourceExhausted) throw ScriptError(null, null, "실행 시간·자원 상한 초과(${props.script.timeoutMs}ms)", e)
             // sourceLocation 은 구문 오류가 아니면 비어있는 경우가 많다 — 첫 게스트(JS) 스택 프레임의 위치로 보완.
@@ -95,6 +114,8 @@ class ScriptRuntime(private val props: PluginsProperties) {
             throw ScriptError(line, col, cleanMessage(e), e)
         } catch (e: IllegalStateException) { // close(true) 직후 접근
             throw ScriptError(null, null, "실행 시간·자원 상한 초과(${props.script.timeoutMs}ms)", e)
+        } catch (e: RuntimeException) { // 가드 뒤 남은 호스트 예외(ClassCastException 등) — 계약대로 전부 ScriptError 로
+            throw ScriptError(null, null, e.message ?: e.toString(), e)
         } finally {
             guard.cancel(false)
             runCatching { ctx.close(true) }
@@ -119,7 +140,7 @@ class ScriptRuntime(private val props: PluginsProperties) {
     }
 
     private fun readMeta(p: Value): ScriptMeta {
-        val id = p.str("id"); if (!ScriptMeta.ID.matches(id)) throw ScriptError(null, null, "id 는 소문자·숫자·하이픈 2~64자여야 합니다: '$id'")
+        val id = p.str("id"); if (!ScriptMeta.ID.matches(id)) throw ScriptError(null, null, "id 는 소문자·숫자·하이픈 1~64자여야 합니다: '$id'")
         val kind = p.str("kind").ifBlank { ScriptMeta.TRANSFORM }
         if (kind !in ScriptMeta.KINDS) throw ScriptError(null, null, "kind 는 transform | fieldCodec | messageCodec 중 하나: '$kind'")
         val need = if (kind == ScriptMeta.TRANSFORM) listOf("apply") else listOf("encode", "decode")
@@ -141,10 +162,12 @@ class ScriptRuntime(private val props: PluginsProperties) {
     private fun arr(v: Value?): List<Value> = if (v == null || v.isNull || !v.hasArrayElements()) emptyList() else (0 until v.arraySize).map { v.getArrayElement(it) }
     private fun Value.str(k: String): String = getMember(k)?.takeIf { !it.isNull }?.let { FlHelpers.show(it) } ?: ""
 
+    // config/message 는 방어 복사(.toMap()) — ProxyObject.fromMap 은 넘긴 맵을 그대로 물고 있어(live view),
+    // 스크립트가 ctx.message.x = 1 같은 대입을 하면 원본(호출자) 맵을 그대로 오염시킨다.
     private fun codecCtx(c: CodecCtx): ProxyObject = ProxyObject.fromMap(mapOf(
-        "config" to ProxyObject.fromMap(c.config),
+        "config" to ProxyObject.fromMap(c.config.toMap()),
         "direction" to c.direction,
-        "message" to ProxyObject.fromMap(c.message),
+        "message" to ProxyObject.fromMap(c.message.toMap()),
         "field" to (c.field?.let { ProxyObject.fromMap(mapOf("name" to it.name, "len" to it.len, "type" to it.type, "pad" to it.pad)) }),
     ))
 

@@ -99,11 +99,25 @@ export const transformsApi = {
 }
 
 export const pluginsApi = {
+  // JAR 업로드(레거시) — PropertyPanel.tsx 가 아직 참조(task 14 에서 UI 통째 제거 예정). 그때 같이 지운다.
   upload: (file: File) => {
     const fd = new FormData()
     fd.append('file', file)
     return uploadHttp.post<string[]>('/plugins', fd).then((r) => r.data)
   },
+  api: () => http.get<import('./types').FlApiEntry[]>('/plugins/api').then((r) => r.data),
+  list: (status?: import('./types').PluginScriptStatus) => http.get<import('./types').PluginScriptSummary[]>('/plugins/scripts', { params: status ? { status } : {} }).then((r) => r.data),
+  get: (id: string) => http.get<import('./types').PluginScriptDetail>(`/plugins/scripts/${id}`).then((r) => r.data),
+  create: (body: { name?: string; source: string }) => http.post<import('./types').PluginScriptDetail>('/plugins/scripts', body).then((r) => r.data),
+  update: (id: string, body: { name?: string; source?: string }) => http.put<import('./types').PluginScriptDetail>(`/plugins/scripts/${id}`, body).then((r) => r.data),
+  tryRun: (body: import('./types').PluginTryRequest) => http.post<import('./types').PluginTryResult>('/plugins/scripts/try', body).then((r) => r.data),
+  saveSample: (id: string, sampleJson: string) => http.put(`/plugins/scripts/${id}/sample`, { sampleJson }).then(() => undefined),
+  submit: (id: string) => http.post<import('./types').PluginScriptDetail>(`/plugins/scripts/${id}/submit`).then((r) => r.data),
+  withdraw: (id: string) => http.post<import('./types').PluginScriptDetail>(`/plugins/scripts/${id}/withdraw`).then((r) => r.data),
+  approve: (id: string) => http.post<import('./types').PluginScriptDetail>(`/plugins/scripts/${id}/approve`).then((r) => r.data),
+  reject: (id: string, note: string) => http.post<import('./types').PluginScriptDetail>(`/plugins/scripts/${id}/reject`, { note }).then((r) => r.data),
+  remove: (id: string) => http.delete(`/plugins/scripts/${id}`).then(() => undefined),
+  usages: (id: string) => http.get<import('./types').PluginUsageRef[]>(`/plugins/scripts/${id}/usages`).then((r) => r.data),
 }
 
 export const foldersApi = {
@@ -137,7 +151,7 @@ export const workspacesApi = {
 }
 export interface WorkspaceImportResult { folders: number; flows: number; mocks: number; warnings: string[] }
 
-export interface AdminMeView { username: string; admin: boolean; authenticated: boolean; pendingCount: number; myStatus: 'GUEST' | 'PENDING' | 'APPROVED' | 'BLOCKED' }
+export interface AdminMeView { username: string; admin: boolean; authenticated: boolean; pendingCount: number; pendingPlugins: number; myStatus: 'GUEST' | 'PENDING' | 'APPROVED' | 'BLOCKED' }
 export type UserStatus = 'PENDING' | 'APPROVED' | 'BLOCKED'
 export interface AdminUserView { username: string; globalRole: 'ADMIN' | 'MEMBER'; status: UserStatus; lastSeenAt: string | null; createdAt: string | null }
 export interface AdminWorkspaceView {

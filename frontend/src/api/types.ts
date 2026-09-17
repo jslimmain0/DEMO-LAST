@@ -626,3 +626,25 @@ export interface TcpDecodedView {
 }
 export interface TcpSendResult { request: ProtocolPreview; response: TcpDecodedView; elapsedMs: number }
 
+// ---- 스크립트 플러그인 (/api/v1/plugins/scripts) ----
+export type PluginScriptStatus = 'DRAFT' | 'PENDING' | 'APPROVED' | 'REJECTED'
+export type PluginKind = 'transform' | 'fieldCodec' | 'messageCodec'
+export interface PluginScriptMeta { id: string; label: string; description: string; kind: PluginKind; inputs: TransformIo[]; outputs: TransformIo[]; params: TransformParam[] }
+export interface PluginScriptSummary {
+  id: string; pluginId: string; name: string; kind: PluginKind; status: PluginScriptStatus
+  live: boolean; dirty: boolean; usages: number; updatedAt: string | null; submittedBy: string | null; createdBy: string
+}
+export interface PluginScriptDetail extends PluginScriptSummary {
+  submittedAt: string | null; source: string; liveSource: string | null; sampleJson: string | null
+  reviewNote: string | null; reviewedBy: string | null; reviewedAt: string | null; meta: PluginScriptMeta | null
+}
+export interface PluginTryRequest {
+  source: string; inputs?: Record<string, string>; config?: Record<string, string>
+  value?: string; fn?: 'encode' | 'decode'; direction?: 'send' | 'recv'; message?: Record<string, string>; bytesB64?: string
+}
+export interface PluginTryResult { meta: PluginScriptMeta; outputs?: Record<string, string> | null; result?: string | null; bytesB64?: string | null; logs: string[]; durationMs: number }
+export interface PluginUsageRef { kind: 'flow' | 'mock' | 'protocol'; id: string; name: string }
+export interface FlApiEntry { path: string; signature: string; doc: string; example: string }
+/** 서버 ScriptError 400 바디 */
+export interface ScriptErrorBody { message: string; line: number | null; col: number | null }
+

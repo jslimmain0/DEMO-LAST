@@ -3,21 +3,23 @@ import { EditorView, basicSetup } from 'codemirror'
 import { Compartment, EditorState } from '@codemirror/state'
 import { keymap, placeholder as cmPlaceholder } from '@codemirror/view'
 import { indentWithTab } from '@codemirror/commands'
-import type { Completion, CompletionContext, CompletionResult } from '@codemirror/autocomplete'
+import type { Completion, CompletionContext, CompletionResult, CompletionSource } from '@codemirror/autocomplete'
 import { html } from '@codemirror/lang-html'
 import { json, jsonParseLinter } from '@codemirror/lang-json'
+import { javascript } from '@codemirror/lang-javascript'
 import { xml } from '@codemirror/lang-xml'
 import { syntaxTree } from '@codemirror/language'
-import { linter, lintGutter } from '@codemirror/lint'
+import { linter, lintGutter, setDiagnostics } from '@codemirror/lint'
 import type { Diagnostic } from '@codemirror/lint'
 import { oneDark } from '@codemirror/theme-one-dark'
-import { html as beautifyHtml } from 'js-beautify'
+import { html as beautifyHtml, js as beautifyJs } from 'js-beautify'
 import type { BindableSource } from '../binding/upstream'
-import { formatCode } from '../lib/codeFormat'
+import { formatCode, formatWithTokens } from '../lib/codeFormat'
 
 export type CodeLang = 'html' | 'json' | 'xml'
-export type EditorLang = CodeLang | 'text' // text = 하이라이트/체크 없이 편집기 기능(Tab 들여쓰기·undo·찾기·자동완성)만
+export type EditorLang = CodeLang | 'javascript' | 'text' // text = 하이라이트/체크 없이 편집기 기능(Tab 들여쓰기·undo·찾기·자동완성)만
 export interface CodeStatus { line: number; col: number; selected: number; lines: number }
+export interface EditorDiagnostic { line: number; col?: number; message: string; severity?: 'error' | 'warning' }
 export interface CodeEditorHandle {
   /** 자동 정렬 — ok(바뀜) / noop(이미 정렬) / fail(파싱 불가 — 원문 유지) */
   format: () => 'ok' | 'noop' | 'fail'
@@ -46,18 +48,21 @@ const CodeEditor = forwardRef<CodeEditorHandle, {
   wrap?: boolean
   placeholder?: string
   onStatus?: (s: CodeStatus) => void
-}>(function CodeEditor({ value, onChange, language, sources = [], wrap = true, placeholder, onStatus }, ref) {
+  completions?: CompletionSource[]
+  diagnostics?: EditorDiagnostic[]
+}>(function CodeEditor({ value, onChange, language, sources = [], wrap = true, placeholder, onStatus, completions, diagnostics }, ref) {
   const hostRef = useRef<HTMLDivElement>(null)
   const viewRef = useRef<EditorView | null>(null)
   const onChangeRef = useRef(onChange); onChangeRef.current = onChange
   const onStatusRef = useRef(onStatus); onStatusRef.current = onStatus
   const sourcesRef = useRef(sources); sourcesRef.current = sources
+  const completionsRef = useRef(completions ?? []); completionsRef.current = completions ?? []
   const wrapComp = useRef(new Compartment()).current
 
   const doFormat = (view: EditorView): 'ok' | 'noop' | 'fail' => {
     if (language === 'text') return 'fail'
     const cur = view.state.doc.toString()
-    const out = formatCode(cur, language, (s) => beautifyHtml(s, BEAUTIFY))
+    const out = language === 'javascript' ? formatWithTokens(cur, (s) => beautifyJs(s, { indent_size: 2, preserve_newlines: true, max_preserve_newlines: 1 })) : formatCode(cur, language, (s) => beautifyHtml(s, BEAUTIFY))
     if (out == null) return 'fail'
     if (out === cur) return 'noop'
     const head = view.state.selection.main.head
@@ -85,6 +90,7 @@ const CodeEditor = forwardRef<CodeEditorHandle, {
     const langExts =
       language === 'json' ? [json(), linter(jsonParseLinter())]
       : language === 'xml' ? [xml(), treeLinter]
+      : language === 'javascript' ? [javascript(), treeLinter]
       : language === 'text' ? []
       : [html(), treeLinter] // html — 내장 css/js 하이라이트 + 태그 자동 닫기
     // `{{` 자동완성 — 언어(HTML 안의 JS/CSS 포함)와 무관하게 전역 languageData 로 제공
@@ -111,7 +117,7 @@ const CodeEditor = forwardRef<CodeEditorHandle, {
         wrapComp.of(wrap ? EditorView.lineWrapping : []),
         lintGutter(),
         ...langExts,
-        EditorState.languageData.of(() => [{ autocomplete: tokenCompletion }]),
+        EditorState.languageData.of(() => [{ autocomplete: tokenCompletion }, ...completionsRef.current.map((c) => ({ autocomplete: c }))]),
         // Tab = 들여쓰기(Shift+Tab 내어쓰기) — 편집기 밖으로 포커스가 나가지 않는다(나가려면 Esc 후 Tab)
         keymap.of([indentWithTab, { key: 'Shift-Alt-f', run: (v) => { doFormat(v); return true } }]),
         ...(placeholder ? [cmPlaceholder(placeholder)] : []),
@@ -148,6 +154,19 @@ const CodeEditor = forwardRef<CodeEditorHandle, {
   }, [value])
   // 줄바꿈 토글
   useEffect(() => { viewRef.current?.dispatch({ effects: wrapComp.reconfigure(wrap ? EditorView.lineWrapping : []) }) }, [wrap, wrapComp])
+
+  // 서버 컴파일/실행 오류(줄 번호) → 거터. 문서를 고치면 클라이언트 linter 가 다시 돌며 자연히 지워진다.
+  useEffect(() => {
+    const v = viewRef.current
+    if (!v) return
+    const diags: Diagnostic[] = (diagnostics ?? []).flatMap((d) => {
+      if (d.line < 1 || d.line > v.state.doc.lines) return []
+      const ln = v.state.doc.line(d.line)
+      const from = Math.min(ln.from + Math.max((d.col ?? 1) - 1, 0), ln.to)
+      return [{ from, to: Math.max(from + 1, ln.to), severity: d.severity ?? 'error', message: d.message }]
+    })
+    v.dispatch(setDiagnostics(v.state, diags))
+  }, [diagnostics])
 
   return <div ref={hostRef} style={{ flex: 1, minHeight: 0, overflow: 'hidden' }} />
 })

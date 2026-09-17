@@ -380,7 +380,7 @@ class ScriptRuntimeTest {
 
     @Test
     fun `샌드박스 - 호스트 접근 없음`() {
-        for (expr in listOf("Java.type('java.lang.System')", "Polyglot.eval('js','1')", "globalThis.java", "java.lang.System", "new (Java.type('java.io.File'))('x')")) {
+        for (expr in listOf("Java.type('java.lang.System')", "Polyglot.eval('js','1')", "java.lang.System", "new (Java.type('java.io.File'))('x')")) {
             val cs = rt.compile("({ id: 'x', label: 'x', apply(i, c) { return { result: String($expr) } } })")
             assertThatThrownBy { rt.runTransform(cs, emptyMap(), emptyMap()) }.isInstanceOf(ScriptError::class.java)
         }

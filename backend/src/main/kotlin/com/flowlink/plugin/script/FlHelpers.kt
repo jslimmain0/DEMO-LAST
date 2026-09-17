@@ -83,10 +83,11 @@ object FlHelpers {
     }
     /** AES/SEED/ARIA 공용 — encrypt/decrypt(text) · encryptBytes/decryptBytes(bytes). CBC(기본)는 iv 16B 필수, ECB 는 iv 무시. */
     private fun cipherNs(alg: String): ProxyObject {
+        val keySizes = if (alg == "SEED") listOf(16) else listOf(16, 24, 32)
         fun cipher(a: Array<Value>, mode: Int): Cipher {
             val o = opt(a, 3); val m = optStr(o, "mode", "CBC").uppercase()
             val key = str(a, 1).toByteArray(Charsets.UTF_8)
-            if (key.size !in listOf(16, 24, 32)) throw ScriptError(null, null, "fl.${alg.lowercase()}: 키는 16/24/32바이트여야 합니다(현재 ${key.size})")
+            if (key.size !in keySizes) throw ScriptError(null, null, "fl.${alg.lowercase()}: 키는 ${keySizes.joinToString("/")}바이트여야 합니다(현재 ${key.size})")
             val c = if (alg == "AES") Cipher.getInstance("AES/$m/PKCS5Padding") else Cipher.getInstance("$alg/$m/PKCS5Padding", "BC")
             if (m == "ECB") c.init(mode, SecretKeySpec(key, alg)) else {
                 val iv = str(a, 2).toByteArray(Charsets.UTF_8)

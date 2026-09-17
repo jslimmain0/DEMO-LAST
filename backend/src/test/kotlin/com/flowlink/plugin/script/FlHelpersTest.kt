@@ -61,6 +61,7 @@ class FlHelpersTest {
     @Test fun `잘못된 인자는 ScriptError 메시지로`() {
         assertThatThrownBy { run("{ x: fl.aes.encrypt('a', 'tooshort', '0000000000000000') }") }.isInstanceOf(ScriptError::class.java).hasMessageContaining("키")
         assertThatThrownBy { run("{ x: fl.bytes('a', 'NO-SUCH-CS') }") }.hasMessageContaining("charset")
+        assertThatThrownBy { run("{ x: fl.seed.encrypt('a', '012345678901234567890123', '0000000000000000') }") }.isInstanceOf(ScriptError::class.java).hasMessageContaining("키").hasMessageContaining("16")
     }
 
     @Test fun `매니페스트 - 모든 fl 함수가 문서화돼 있다`() {

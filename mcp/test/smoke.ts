@@ -51,8 +51,11 @@ async function connect(mcpUrl: string, authProvider?: OAuthClientProvider) {
 }
 
 // ---------- ① OAuth ----------
-/** 가짜 FlowLink(github 모드): 유효 토큰은 'T' 하나. 디바이스 poll 은 두 번째부터 ready. 리소스 서버처럼 무효 Bearer 는 공개 경로도 401. */
-async function fakeFlowlink() {
+/**
+ * 가짜 FlowLink(github 모드): 유효 토큰은 'T' 하나. 디바이스 poll 은 두 번째부터 ready. 리소스 서버처럼 무효 Bearer 는 공개 경로도 401.
+ * guest=true 면 게스트 스위치가 켜진 서버 — 무토큰 요청을 게스트로 받는다(에이전트가 로그인 없이 쓰라고 켜 두는 스위치).
+ */
+async function fakeFlowlink(guest = false) {
   let polls = 0
   const srv = createServer((req, res) => {
     const p = new URL(req.url!, 'http://x').pathname.replace('/api/v1', '')
@@ -62,7 +65,10 @@ async function fakeFlowlink() {
     if (p === '/auth/config') return json(200, { enabled: true, mode: 'github' })
     if (p === '/auth/github/device/start') return json(200, { sessionId: 's1', userCode: 'ABCD-1234', verificationUri: 'https://github.com/login/device', intervalSec: 1, expiresIn: 900 })
     if (p === '/auth/github/device/poll') return json(200, ++polls < 2 ? { status: 'pending' } : { status: 'ready', token: 'T', login: 'tester' })
-    if (!authed) return json(401, { error: 'login required' })
+    if (!authed && !guest) return json(401, { error: 'login required' })
+    if (!authed && p === '/auth/me') return json(200, { username: 'guest', tenant: 'default', roles: ['admin'] })
+    if (!authed && p === '/admin/me') return json(200, { username: 'guest', myStatus: 'GUEST', admin: false, authenticated: false })
+    if (!authed) return json(403, { error: 'approved user required' })
     if (p === '/auth/me') return json(200, { username: 'tester', tenant: 'default', roles: ['admin'] })
     if (p === '/admin/me') return json(200, { username: 'tester', myStatus: 'APPROVED', admin: true })
     json(404, { error: p })
@@ -128,6 +134,19 @@ async function oauthScenario() {
     assert.ok(!(await c2.client.listTools()).tools.some((t) => t.name.startsWith('flowlink_login'))); ok('[oauth] no login tools (browser does it)')
     await c2.client.close()
   } finally { h.proc.kill(); fake.close() }
+
+  // 게스트 스위치 ON — 무토큰은 게스트로 통과(로그인 강요 없음), 무효 토큰은 여전히 401(재로그인), 게스트 403 은 로그인 안내.
+  const gf = await fakeFlowlink(true)
+  const g = await spawnMcp(gf.url)
+  try {
+    const anon = await connect(g.mcpUrl)
+    const st = await anon.call('flowlink_status')
+    assert.match(st, /auth mode: github/); assert.match(st, /게스트\(게스트 스위치 ON\)/); ok('[guest] no token → guest, no 401')
+    assert.match(await anon.call('protocol_list', {}, true), /HTTP 403.*게스트는 여기까지.*인증\(로그인\)/s); ok('[guest] guest 403 → login hint')
+    await anon.client.close()
+    const r = await fetch(g.mcpUrl, { method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', authorization: 'Bearer nope' }, body: '{}' })
+    assert.equal(r.status, 401); ok('[guest] bad token → 401 (re-login)')
+  } finally { g.proc.kill(); gf.close() }
 }
 
 // ---------- ② 툴 시나리오(dev 인스턴스) ----------
@@ -227,8 +246,8 @@ async function main() {
 
   const base = process.env.FLOWLINK_URL || 'http://localhost:18081'
   let up = false
-  try { up = (await fetch(`${base}/api/v1/auth/config`)).ok } catch { /* 안 떠 있음 */ }
-  if (!up) { console.log(`  (${base} 에 FlowLink 가 없음 — dev 툴 시나리오 건너뜀)`); console.log(`ALL ${n} PASS`); return }
+  try { up = (await fetch(`${base}/api/v1/auth/me`)).ok } catch { /* 안 떠 있음 */ }
+  if (!up) { console.log(`  (${base} 에 익명 허용 FlowLink(dev/게스트)가 없음 — 툴 시나리오 건너뜀)`); console.log(`ALL ${n} PASS`); return }
   const http = await spawnMcp(base)
   try {
     const r405 = await fetch(http.mcpUrl); assert.equal(r405.status, 405); ok('GET /mcp → 405 (stateless)')

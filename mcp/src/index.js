@@ -27,11 +27,13 @@ function buildServer() {
 const ok = (text) => ({ content: [{ type: 'text', text }] });
 const fail = (e) => {
     let hint = '';
-    // 문지기(gate)가 무토큰/무효 토큰을 401 로 미리 걸러내므로 여기 401 은 호출 도중 만료, 403 은 승인/권한.
+    // 문지기(gate)가 무효 토큰·(로그인 필수 서버의) 무토큰을 401 로 미리 걸러낸다. 여기 401 은 게스트가 로그인 필수 경로(AI 등)를 친 것 아니면 호출 도중 만료.
+    const LOGIN = ' MCP 클라이언트에서 flowlink 서버를 인증(로그인)하세요 — 브라우저가 열려 GitHub 로 로그인합니다.';
     if (e instanceof ApiError && e.status === 401)
-        hint = '\n→ 로그인 토큰이 만료됐거나 무효합니다. MCP 클라이언트에서 flowlink 서버를 다시 인증(로그인)하세요.';
+        hint = auth.token() ? '\n→ 로그인 토큰이 만료됐거나 무효합니다.' + LOGIN : '\n→ 로그인이 필요합니다.' + LOGIN;
     else if (e instanceof ApiError && e.status === 403)
-        hint = '\n→ 권한이 없습니다(승인 대기 중일 수 있음 — 관리자 승인 필요). flowlink_status 로 상태 확인.';
+        hint = auth.token() ? '\n→ 권한이 없습니다(승인 대기 중일 수 있음 — 관리자 승인 필요). flowlink_status 로 상태 확인.'
+            : '\n→ 게스트는 여기까지(프로토콜/환경 저장 등은 승인 사용자 필요).' + LOGIN;
     return { content: [{ type: 'text', text: `⚠ ${e instanceof ApiError ? `HTTP ${e.status}: ` : ''}${e instanceof Error ? e.message : String(e)}${hint}` }], isError: true };
 };
 const run = async (fn) => { try {
@@ -63,7 +65,11 @@ tool('flowlink_status', {
         lines.push('login: 불필요(dev 모드 — 전권)');
         return lines.join('\n');
     }
-    // github 모드 — 여기까지 왔으면 문지기가 토큰을 검증했다(무토큰/무효는 401 로 클라이언트가 로그인 창을 띄움).
+    // github 모드 — 무토큰으로 여기 왔다면 게스트 스위치가 켜진 서버(익명 허용). 토큰이 있으면 문지기가 이미 검증했다.
+    if (!auth.token()) {
+        lines.push('login: 없음 · 게스트(게스트 스위치 ON) — 읽기·워크플로·Mock 은 그대로, 프로토콜/환경 저장·AI 는 승인 사용자 필요. 내 이름으로 하려면 MCP 클라이언트에서 flowlink 서버를 인증(로그인).');
+        return lines.join('\n');
+    }
     const me = await api('GET', '/admin/me');
     lines.push(`login: ${me.username ?? '?'}`, `status: ${me.myStatus ?? '?'}${me.admin ? ' · ADMIN' : ''}${me.pendingCount ? ` · 승인 대기 ${me.pendingCount}명` : ''}`);
     return lines.join('\n');

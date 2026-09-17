@@ -20,8 +20,10 @@ FlowLink 서버 옆에 떠서(`scripts/start.sh` / `start.ps1` 이 jar 와 함�
 
 - **dev 모드**(FlowLink 인증 없음): 로그인 없음, 바로 쓴다.
 - **github 모드**: 처음 연결할 때 클라이언트가 브라우저를 연다 → FlowLink 로그인 화면과 같은 GitHub 디바이스 로그인(코드 입력) → 끝나면 자동으로 돌아온다.
-  이후엔 클라이언트가 토큰을 기억한다(앱 JWT, 기본 30일). 만료되면 다시 브라우저가 열린다. 게스트 스위치와 무관하게 MCP 는 항상 로그인이다.
+  이후엔 클라이언트가 토큰을 기억한다(앱 JWT, 기본 30일). 만료되면 다시 브라우저가 열린다.
   승인 전(PENDING) 사용자는 프로토콜/환경 저장이 403 — `flowlink_status` 로 상태 확인.
+- **github + 게스트 스위치(`FLOWLINK_AUTH_GUEST_ENABLED=true`)**: 에이전트가 로그인 없이 수정하라고 켜 두는 스위치 — MCP 도 로그인을 강요하지 않고 게스트로 통과시킨다
+  (읽기·워크플로·Mock 가능, 프로토콜/환경 저장·AI 는 403). 내 이름으로 하려면 클라이언트에서 flowlink 서버를 인증(로그인)하면 된다(Claude Code: `/mcp` → flowlink → Authenticate).
 
 표준 MCP Authorization(OAuth 2.1) 그대로다: 무토큰 `POST /mcp` → 401 + `WWW-Authenticate` → `/.well-known/oauth-protected-resource/mcp` → `/.well-known/oauth-authorization-server`
 → `POST /register`(동적 클라이언트 등록) → `GET /authorize`(로그인 페이지) → `POST /token`(PKCE) → `Authorization: Bearer <앱 JWT>`. 인가 서버는 MCP 서버 자신이고,

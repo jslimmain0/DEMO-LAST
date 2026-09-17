@@ -104,20 +104,23 @@ oauthRouter.get('/login/poll', async (req, res) => {
 // eslint-disable-next-line no-unused-vars
 oauthRouter.use((err, req, res, _next) => res.status(err instanceof ApiError ? 502 : 500).json({ error: err?.message || String(err) }));
 
-/** FlowLink 인증 모드 — github 면 MCP 는 로그인 필수(게스트 스위치와 무관). 한 번 읽고 기억(실패면 다음 요청에 다시). */
-let modeP = null;
-const loginRequired = () => (modeP ??= api('GET', '/auth/config').then((c) => c.mode === 'github').catch((e) => { modeP = null; throw e; }));
-/** 토큰이 FlowLink 에서 통하는지 — /auth/me 가 401/403 이면 무효(만료·위조). 그 외 오류는 던진다(FlowLink 다운을 401 로 위장하지 않는다). */
-const valid = (token) => withToken(token, () => api('GET', '/auth/me')).then(() => true, (e) => { if (e instanceof ApiError && (e.status === 401 || e.status === 403)) return false; throw e; });
+/** 주어진 토큰(null=익명)으로 /auth/me 가 통하는지 — 401/403 이면 거부, 그 외 오류는 던진다(FlowLink 다운을 401 로 위장하지 않는다). */
+const accepted = (token) => withToken(token, () => api('GET', '/auth/me')).then(() => true, (e) => { if (e instanceof ApiError && (e.status === 401 || e.status === 403)) return false; throw e; });
+/**
+ * FlowLink 가 익명을 받는지 — dev 모드, 또는 github+게스트 스위치(FLOWLINK_AUTH_GUEST_ENABLED: 에이전트가 로그인 없이 수정하라고 켜 두는 것)면 true.
+ * 한 번 읽고 기억(FlowLink 오류면 다음 요청에 다시).
+ */
+let anonP = null;
+const anonymousOk = () => (anonP ??= accepted(null).catch((e) => { anonP = null; throw e; }));
 
 /**
- * /mcp 문지기 — Bearer 를 꺼내고, github 모드인데 유효 토큰이 없으면 401 + WWW-Authenticate 로 응답해 클라이언트가 OAuth 로그인을 시작하게 한다.
- * 반환 { ok, token } — ok=false 면 이미 응답했다. dev 모드는 토큰 유무와 무관하게 통과.
+ * /mcp 문지기 — Bearer 가 있으면 유효해야 하고(무효/만료는 REST 가 어차피 401 → 재로그인), 없으면 FlowLink 가 익명을 받을 때만 통과.
+ * 막히면 401 + WWW-Authenticate 로 응답해 클라이언트가 OAuth 로그인을 시작하게 한다. 반환 { ok, token } — ok=false 면 이미 응답했다.
  */
 export async function gate(req, res) {
     const m = /^Bearer\s+(.+)$/i.exec(req.headers.authorization ?? '');
     const token = m ? m[1].trim() : null;
-    if (!(await loginRequired()) || (token && await valid(token))) return { ok: true, token };
+    if (token ? await accepted(token) : await anonymousOk()) return { ok: true, token };
     res.status(401)
         .set('WWW-Authenticate', `Bearer realm="flowlink", error="invalid_token", resource_metadata="${issuer(req)}/.well-known/oauth-protected-resource/mcp"`)
         .json({ error: 'unauthorized', message: '로그인이 필요합니다 — MCP 클라이언트가 브라우저를 열어 GitHub 로 로그인합니다.' });

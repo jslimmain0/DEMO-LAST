@@ -26,10 +26,25 @@ export function flCompletionSource(manifest: FlApiEntry[]): CompletionSource {
   }
 }
 
+/** `section: [ … ]` 의 본문 — 첫 `]` 가 아니라 깊이가 0 으로 돌아오는 짝 `]` 까지(options:[…] 같은 중첩 배열을 넘는다).
+ *  문자열 리터럴 안의 `]`(예: `key:'a]b'`)까지는 못 넘는다 — 정규식 스캔의 알려진 한계로 수용. */
+export function arrayBlock(doc: string, section: 'inputs' | 'params'): string {
+  const m = new RegExp(`\\b${section}\\s*:\\s*\\[`).exec(doc)
+  if (!m) return ''
+  let depth = 1
+  const start = m.index + m[0].length
+  for (let i = start; i < doc.length; i++) {
+    const ch = doc[i]
+    if (ch === '[') depth++
+    else if (ch === ']' && --depth === 0) return doc.slice(start, i)
+  }
+  return doc.slice(start) // 닫히지 않은 문서(편집 중) — 있는 데까지
+}
+
 /** `inputs.` / `config.` / `ctx.` 뒤 — 문서에 선언된 key 를 제안(정규식 스캔, 파싱 없음). */
 export function declaredKeysSource(getDoc: () => string): CompletionSource {
   const keysIn = (doc: string, section: 'inputs' | 'params'): string[] => {
-    const block = new RegExp(`${section}\\s*:\\s*\\[([\\s\\S]*?)\\]`).exec(doc)?.[1] ?? ''
+    const block = arrayBlock(doc, section)
     return [...block.matchAll(/key\s*:\s*['"]([^'"]+)['"]/g)].map((x) => x[1])
   }
   return (ctx) => {

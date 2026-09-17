@@ -11,6 +11,7 @@ const NAV = [
   { to: '/flows', label: '대시보드', icon: '▤' },
   { to: '/mocks', label: 'Mock 서버', icon: '◈' },
   { to: '/protocols', label: '프로토콜', icon: '⫶' },
+  { to: '/plugins', label: '플러그인', icon: '◇' },
   { to: '/executions', label: '실행 이력', icon: '◴' },
 ]
 // 관리 콘솔 — 관리자에게만 노출(백엔드 /admin/* 도 403 으로 이중 방어)

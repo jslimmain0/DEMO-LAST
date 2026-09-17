@@ -239,3 +239,25 @@ CREATE TABLE flowlink_assistant_session (
     updated_at  timestamp with time zone DEFAULT systimestamp NOT NULL
 );
 CREATE INDEX idx_assistant_session_owner ON flowlink_assistant_session (tenant_id, username, updated_at DESC);
+
+-- 스크립트 플러그인 — source=초안, live_source=승인본(서빙 중). status 는 초안 상태(DRAFT/PENDING/APPROVED/REJECTED).
+CREATE TABLE flowlink_plugin_script (
+    id            varchar2(36 char)  PRIMARY KEY,
+    tenant_id     varchar2(64 char)  NOT NULL,
+    plugin_id     varchar2(64 char)  NOT NULL,
+    name          varchar2(120 char) NOT NULL,
+    kind          varchar2(20 char)  NOT NULL,
+    source        clob NOT NULL,
+    live_source   clob,
+    status        varchar2(16 char)  NOT NULL,
+    sample_json   clob,
+    submitted_by  varchar2(180 char),
+    submitted_at  timestamp with time zone,
+    reviewed_by   varchar2(180 char),
+    reviewed_at   timestamp with time zone,
+    review_note   varchar2(1000 char),
+    created_by    varchar2(180 char) NOT NULL,
+    created_at    timestamp with time zone DEFAULT systimestamp NOT NULL,
+    updated_at    timestamp with time zone
+);
+CREATE UNIQUE INDEX idx_plugin_script_tenant_pid ON flowlink_plugin_script (tenant_id, plugin_id);

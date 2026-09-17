@@ -29,13 +29,14 @@ class TransformRegistry(
     private val byId: MutableMap<String, FlowTransform> = ConcurrentHashMap()
     private val codecById: MutableMap<String, CodecPlugin> = ConcurrentHashMap()
     private val pluginDir: Path = Path.of(props.dir)
-    @Volatile private var loader: URLClassLoader? = null
+    @Volatile private var loaders: List<URLClassLoader> = emptyList()
 
     init { reload() }
 
     /** 다시 스캔해 등록(스크립트 승인/삭제·JAR 배치 후). 이전 URLClassLoader 는 닫는다(Windows JAR 잠김 방지). */
     @Synchronized
     fun reload() {
+        closeLoaders()
         val next = LinkedHashMap<String, FlowTransform>()
         val nextCodecs = LinkedHashMap<String, CodecPlugin>()
         val jars = if (props.jarEnabled) loadJars(next, nextCodecs) else warnSkippedJars()
@@ -55,6 +56,11 @@ class TransformRegistry(
         if (!Files.isDirectory(pluginDir)) emptyList()
         else Files.list(pluginDir).use { s -> s.filter { it.toString().lowercase().endsWith(".jar") }.sorted().toList() }
 
+    private fun closeLoaders() {
+        for (loader in loaders) runCatching { loader.close() }
+        loaders = emptyList()
+    }
+
     private fun warnSkippedJars(): Int {
         val jars = jarFiles()
         if (jars.isNotEmpty()) log.warn("플러그인 JAR {}개가 있으나 flowlink.plugins.jar-enabled=false — 로드하지 않음: {}", jars.size, jars.map { it.fileName.toString() })
@@ -63,15 +69,15 @@ class TransformRegistry(
 
     /** JAR 하나씩 별도 로더로 — 깨진 JAR 이 나머지를 못 죽인다. 반환: 성공한 JAR 수. */
     private fun loadJars(map: MutableMap<String, FlowTransform>, codecs: MutableMap<String, CodecPlugin>): Int {
-        loader?.let { runCatching { it.close() } }
         val jars = jarFiles()
         if (jars.isEmpty()) return 0
         var ok = 0
-        val cl = URLClassLoader(jars.map { it.toUri().toURL() }.toTypedArray(), javaClass.classLoader)
-        loader = cl
+        val cl = URLClassLoader(jars.map { it.toUri().toURL() }.toTypedArray(), Thread.currentThread().contextClassLoader ?: javaClass.classLoader)
+        val loadersToKeep = mutableListOf(cl)
         for (jar in jars) {
             try {
                 val one = URLClassLoader(arrayOf(jar.toUri().toURL()), cl)
+                loadersToKeep.add(one)
                 for (t in ServiceLoader.load(FlowTransform::class.java, one)) map[t.id()] = t
                 for (c in ServiceLoader.load(CodecPlugin::class.java, one)) codecs[c.id()] = c
                 ok++
@@ -79,6 +85,7 @@ class TransformRegistry(
                 log.warn("플러그인 JAR 로드 실패(건너뜀): {} — {}", jar.fileName, e.message ?: e.toString())
             }
         }
+        loaders = loadersToKeep
         return ok
     }
 

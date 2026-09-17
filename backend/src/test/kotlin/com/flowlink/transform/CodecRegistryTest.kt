@@ -4,6 +4,8 @@ import com.flowlink.plugin.PluginsProperties
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import java.nio.file.Files
+import java.util.jar.JarOutputStream
+import java.util.zip.ZipEntry
 
 class CodecRegistryTest {
     @Test
@@ -25,9 +27,24 @@ class CodecRegistryTest {
     @Test
     fun `깨진 JAR 하나가 전체 로드를 막지 않는다`() {
         val dir = Files.createTempDirectory("jars-mixed")
-        Files.write(dir.resolve("broken.jar"), byteArrayOf(1, 2, 3)) // zip 아님 → 이 JAR 만 실패
+
+        // broken.jar: 존재하지 않는 provider 지정 → ServiceConfigurationError 발생해도
+        // 전체 로드가 실패하지 않아야 함
+        JarOutputStream(Files.newOutputStream(dir.resolve("broken.jar"))).use { jar ->
+            jar.putNextEntry(ZipEntry("META-INF/"))
+            jar.closeEntry()
+            jar.putNextEntry(ZipEntry("META-INF/services/"))
+            jar.closeEntry()
+            jar.putNextEntry(ZipEntry("META-INF/services/com.flowlink.transform.FlowTransform"))
+            jar.write("com.flowlink.transform.NoSuchProvider\n".toByteArray())
+            jar.closeEntry()
+        }
+
+        // 핵심: broken JAR이 있어도 TransformRegistry가 초기화되고
+        // list() 호출이 예외를 던지지 않아야 함
         val r = TransformRegistry(PluginsProperties(dir.toString(), true))
-        assertThat(r.list()).isEmpty() // 예외 없이 끝나야 한다(깨진 것만 건너뜀)
+        // 예외 없이 이 부분에 도달해야 함 - broken JAR은 건너뛰어짐
+        assertThat(r.list()).isEmpty()
     }
 
     @Test
@@ -39,4 +56,11 @@ class CodecRegistryTest {
         val r = TransformRegistry(PluginsProperties("build/tmp/none", false), ScriptPluginLoader { listOf(t) })
         assertThat(r.get("s1")).isPresent
     }
+}
+
+/** test classpath에 존재하는 provider — 다른 테스트들에서 사용할 수 있다. */
+class JarProbe : FlowTransform {
+    override fun id() = "jar-probe"
+    override fun label() = "jar-probe"
+    override fun apply(inputs: Map<String, String>, config: Map<String, String>) = mapOf("result" to "ok")
 }

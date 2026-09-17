@@ -27,7 +27,7 @@ class RunStateSnapshotTest {
     private val executor = FlowExecutor(
         tokens, ExpressionEvaluator(tokens),
         HttpNodeExecutor(RestClient.create(), tokens, json, props),
-        json, TransformRegistry("build/tmp/no-plugins"), TcpNodeExecutor(tokens, Mockito.mock(ProtocolService::class.java))
+        json, TransformRegistry(com.flowlink.plugin.PluginsProperties("build/tmp/no-plugins", false)), TcpNodeExecutor(tokens, Mockito.mock(ProtocolService::class.java))
     )
     private val mapper = jacksonObjectMapper()
 

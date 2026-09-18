@@ -9,7 +9,8 @@ import { AppShellTier1 } from '../app/AppShell'
 import { usePermissions } from '../auth/AuthContext'
 import { AskDialog } from '../components/AskDialog'
 import type { AskSpec } from '../components/AskDialog'
-import type { EditorDiagnostic } from '../components/CodeEditor'
+import type { CodeEditorHandle, EditorDiagnostic } from '../components/CodeEditor'
+import { PluginReference } from '../components/PluginReference'
 import { PluginRunPanel } from '../components/PluginRunPanel'
 import { PluginDiffView } from '../components/PluginDiffView'
 import { toast } from '../components/toast'
@@ -50,6 +51,10 @@ export function Plugins() {
   const draftRef = useRef(draft); draftRef.current = draft
   const dirtyRef = useRef(dirty); dirtyRef.current = dirty
   const searchRef = useRef<HTMLInputElement>(null)
+  const editorRef = useRef<CodeEditorHandle>(null)
+  // 오른쪽 탭: 실행 | 레퍼런스 — 마지막 선택 기억(브라우저별)
+  const [panel, setPanel] = useState<'run' | 'ref'>(() => { try { return localStorage.getItem('fl.plugins.panel') === 'ref' ? 'ref' : 'run' } catch { return 'run' } })
+  useEffect(() => { try { localStorage.setItem('fl.plugins.panel', panel) } catch { /* 저장 불가 환경 */ } }, [panel])
 
   // URL → 편집 상태: ?new=<kind|예제 key> 는 템플릿/예제 초안, /plugins/:id 는 서버 상세
   const newKind = sp.get('new')
@@ -204,16 +209,28 @@ export function Plugins() {
                     <PluginDiffView before={d.liveSource} after={draft.source} />
                   ) : (
                     <Suspense fallback={<textarea value={draft.source} readOnly style={{ flex: 1, fontFamily: 'var(--fl-font-mono)', fontSize: 13, padding: 14, border: 'none' }} />}>
-                      <CodeEditorLazy value={draft.source} language="javascript" completions={completions} diagnostics={diag} wrap={false}
+                      <CodeEditorLazy ref={editorRef} value={draft.source} language="javascript" completions={completions} diagnostics={diag} wrap={false}
                         onChange={(v) => { if (!canEdit) return; setDraft((x) => (x ? { ...x, source: v } : x)); setDirty(true) }} />
                     </Suspense>
                   )}
                   <div style={statusBar}>
-                    <span>Ctrl+S 저장 · Ctrl+Enter 실행 · Shift+Alt+F 정렬 · <code>fl.</code> 자동완성</span>
+                    <span>Ctrl+S 저장 · Ctrl+Enter 실행 · Shift+Alt+F 정렬 · <code>fl.</code> 자동완성 · 오른쪽 📖 레퍼런스</span>
                     {d?.updatedAt && <span style={{ marginLeft: 'auto' }}>수정 {relTime(d.updatedAt)} · {d.createdBy}</span>}
                   </div>
                 </div>
-                <PluginRunPanel source={draft.source} scriptId={d?.id ?? null} canRun={canEdit} onDiagnostics={setDiag} />
+                <div style={{ display: 'grid', gridTemplateRows: 'auto minmax(0, 1fr)', minHeight: 0, minWidth: 0 }}>
+                  <div role="tablist" style={tabs}>
+                    <button role="tab" aria-selected={panel === 'run'} style={{ ...tab, ...(panel === 'run' ? tabOn : null) }} onClick={() => setPanel('run')}>▶ 실행</button>
+                    <button role="tab" aria-selected={panel === 'ref'} style={{ ...tab, ...(panel === 'ref' ? tabOn : null) }} onClick={() => setPanel('ref')}>📖 레퍼런스</button>
+                  </div>
+                  {/* 둘 다 마운트 유지(실행 패널의 입력값·결과가 탭 전환에 안 날아가게) — 보이는 쪽만 grid */}
+                  <div style={{ display: panel === 'run' ? 'grid' : 'none', gridTemplateRows: 'minmax(0, 1fr)', minHeight: 0 }}>
+                    <PluginRunPanel source={draft.source} scriptId={d?.id ?? null} canRun={canEdit} onDiagnostics={setDiag} />
+                  </div>
+                  <div style={{ display: panel === 'ref' ? 'grid' : 'none', gridTemplateRows: 'minmax(0, 1fr)', minHeight: 0 }}>
+                    <PluginReference manifest={manifest.data ?? []} source={draft.source} onInsert={(text) => { if (!canEdit) return; editorRef.current?.insert(text) }} />
+                  </div>
+                </div>
               </div>
             </>
           )}
@@ -282,6 +299,9 @@ const empty: CSSProperties = { height: '100%', display: 'grid', alignContent: 'c
 const hdr: CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', borderBottom: '1px solid var(--fl-border)', background: 'var(--fl-surface)', flexWrap: 'wrap', flexShrink: 0 }
 const nameInput: CSSProperties = { fontFamily: 'var(--fl-font-head)', fontWeight: 700, fontSize: 16, border: '1px solid transparent', background: 'transparent', color: 'var(--fl-text)', padding: '4px 6px', borderRadius: 6, minWidth: 180 }
 const metaMono: CSSProperties = { fontSize: 11, color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)' }
+const tabs: CSSProperties = { display: 'flex', borderBottom: '1px solid var(--fl-border)', background: 'var(--fl-surface)' }
+const tab: CSSProperties = { flex: 1, padding: '8px 10px', border: 'none', borderBottom: '2px solid transparent', background: 'transparent', color: 'var(--fl-text-muted)', fontSize: 12.5, cursor: 'pointer' }
+const tabOn: CSSProperties = { color: 'var(--fl-text)', fontWeight: 700, borderBottomColor: 'var(--fl-primary)' }
 const statusBar: CSSProperties = { display: 'flex', gap: 8, padding: '4px 12px', borderTop: '1px solid var(--fl-border)', fontSize: 11, color: 'var(--fl-text-muted)', background: 'var(--fl-surface)' }
 const primaryBtn: CSSProperties = { padding: '7px 14px', border: 'none', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-primary)', color: '#fff', fontWeight: 700, fontSize: 12.5, cursor: 'pointer', whiteSpace: 'nowrap' }
 const okBtn: CSSProperties = { ...primaryBtn, background: 'var(--fl-ok)' }

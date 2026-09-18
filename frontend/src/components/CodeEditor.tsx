@@ -24,6 +24,8 @@ export interface CodeEditorHandle {
   /** 자동 정렬 — ok(바뀜) / noop(이미 정렬) / fail(파싱 불가 — 원문 유지) */
   format: () => 'ok' | 'noop' | 'fail'
   focus: () => void
+  /** 커서(선택) 자리에 텍스트 삽입 — 레퍼런스 패널의 예제 삽입 */
+  insert: (text: string) => void
 }
 
 const BEAUTIFY = { indent_size: 2, indent_char: ' ', wrap_line_length: 0, preserve_newlines: true, max_preserve_newlines: 1, indent_inner_html: true, end_with_newline: false, unformatted: [] as string[], content_unformatted: ['pre', 'textarea'], extra_liners: [] as string[] }
@@ -72,6 +74,7 @@ const CodeEditor = forwardRef<CodeEditorHandle, {
   useImperativeHandle(ref, () => ({
     format: () => (viewRef.current ? doFormat(viewRef.current) : 'fail'),
     focus: () => viewRef.current?.focus(),
+    insert: (text) => { const v = viewRef.current; if (!v) return; v.dispatch(v.state.replaceSelection(text)); v.focus() },
   }))
 
   useEffect(() => {

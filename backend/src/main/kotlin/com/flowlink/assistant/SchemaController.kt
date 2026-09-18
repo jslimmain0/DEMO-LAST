@@ -30,7 +30,9 @@ class SchemaController {
         const val PLUGIN_GUIDE: String = """
 # 스크립트 플러그인(JS) 작성 규격
 스크립트의 **마지막 표현식이 플러그인 객체**다. 샌드박스: 표준 JS + `fl.*` 만(Java/파일/네트워크 없음), 호출당 2초.
-저장은 화면(/plugins) 에서 초안 → 승인 요청 → 관리자 승인 후에만 레지스트리에 올라간다(MCP 로는 만들 수 없음 — 사용자에게 안내).
+저장: 화면(/plugins) 또는 MCP plugin_script_upsert(초안) → plugin_script_try(시험) → plugin_script_submit(승인 요청) → **관리자 승인(화면)** 후에만 레지스트리에 올라간다.
+승인 전 그 id 를 쓰는 TRANSFORM 노드·코덱은 실행 시 실패하므로 옆에 메모 노드로 '플러그인 승인 필요' 를 남긴다.
+예제: 화면 '예제에서 시작…' 에 레거시 des-cipher 포팅(des-encrypt/des-decrypt — DES/ECB, zero 패딩, hex)이 있다. 키를 hex/base64 로 받으면 `fl.hex.dec(k, { as: 'bytes' })` 로 바이트 키를 넘긴다.
 
 변환(transform):  ({ id, label, description?, inputs?: [{key,label,type?}], outputs?: [{key,label,type?}], params?: [{key,label,type?,defaultValue?,options?,placeholder?}], apply(inputs, config) { return { 출력키: 값 } } })
 필드 코덱:        ({ id, label, kind: 'fieldCodec', params?, encode(value, ctx) { return 문자열 }, decode(value, ctx) { return 문자열 } })
@@ -53,7 +55,8 @@ ctx = { config, direction: 'send'|'recv', field: {name,len,type,pad}|null, messa
    **curl·파이썬·셸로 직접 쏘지 말고 http_request/mock_send 를 써라**(그게 이 서버에 붙어 있는 경로다). 결과는 "돌아가는 초안 + 확인 목록(메모)".
 5. 워크플로에는 START 와 END 가 있어야 하고, 검증은 assert 노드(예: {{ 응답코드@노드 }} == '0000')로 남긴다.
 6. TRANSFORM 노드(transformId)나 Mock 코덱(codec step id)을 쓰려면 plugin_list 로 사용 가능한 플러그인 id·파라미터를 먼저 확인한다.
-   목록에 없는 id 는 지어내지 말고, 없으면 TRANSFORM 노드·코덱을 만들지 않는다(플러그인은 화면 /plugins 에서 JS 로 작성해 관리자 승인 — 규격은 flowlink_guide(plugin), 사용자에게 안내한다).
+   목록에 없는 id 는 지어내지 않는다. 필요한 변환이 없으면 plugin_script_upsert 로 초안을 만들고 plugin_script_try 로 검증한 뒤 plugin_script_submit 으로 승인 요청한다(규격은 flowlink_guide(plugin)).
+   승인은 관리자(사람)가 화면에서 하므로, 승인 전에는 그 id 를 쓰는 노드 옆에 메모 노드로 '플러그인 승인 필요' 를 남긴다.
 """
     }
 }

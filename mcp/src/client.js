@@ -10,7 +10,7 @@ export const withToken = (t, fn) => requestCtx.run({ token: t || null }, fn);
 export const auth = { token: () => requestCtx.getStore()?.token ?? null };
 export class ApiError extends Error {
     status;
-    constructor(status, message) { super(message); this.status = status; }
+    constructor(status, message, body) { super(message); this.status = status; this.body = body; }
 }
 export async function api(method, path, body, query) {
     const url = new URL(API + path);
@@ -31,7 +31,7 @@ export async function api(method, path, body, query) {
     }
     catch { /* 비JSON 응답 */ }
     if (!r.ok)
-        throw new ApiError(r.status, j?.message || j?.error || text || `HTTP ${r.status}`);
+        throw new ApiError(r.status, j?.message || j?.error || text || `HTTP ${r.status}`, j);
     return j;
 }
 export const sleep = (ms) => new Promise((res) => setTimeout(res, ms));

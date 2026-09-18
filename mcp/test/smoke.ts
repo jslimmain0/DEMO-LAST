@@ -169,11 +169,29 @@ async function scenario({ client, call }: { client: Client; call: Call }, base: 
   assert.match(await call('flowlink_guide', { topic: 'rules' }), /지어내지 않는다/); ok('guide rules')
   assert.match(await call('flowlink_guide', { topic: 'protocol' }), /lengthField|header/); ok('guide protocol')
   assert.match(await call('flowlink_guide', { topic: 'nodes' }), /tcp:|transform:|START/); ok('guide nodes (node reference)')
-  assert.match(await call('flowlink_guide', { topic: 'plugin' }), /fl\.aes\.encrypt/); ok('guide plugin (fl manifest)')
+  const gp = await call('flowlink_guide', { topic: 'plugin' }); assert.match(gp, /fl\.aes\.encrypt/); assert.match(gp, /fl\.des\.encrypt/); assert.match(gp, /plugin_script_upsert/); ok('guide plugin (fl manifest + des + MCP 흐름)')
 
   const pl = await call('plugin_list')
   assert.match(pl, /변환\(transform\)/); assert.match(pl, /코덱\(codec\)/); ok('plugin_list transforms+codecs')
   assert.match(await call('transform_preview', { id: 'no-such-plugin', inputs: { a: '1' } }), /알 수 없는 변환/); ok('transform_preview unknown id')
+
+  // 스크립트 플러그인 — 시험 → 초안 → 갱신 → 조회 → 목록 → 승인 요청 → 철회 (승인은 관리자/화면). fl.des 는 레거시 des-cipher 포팅 검증 겸.
+  const DES = `({ id: 'smoke-des', label: 'DES', inputs: [{ key: 'input' }, { key: 'key' }], apply(i, c) { const o = { mode: 'ECB', padding: 'zero', out: 'hex' }; fl.log('len', i.input.length); return { result: fl.des.decrypt(fl.des.encrypt(i.input, i.key, null, o), i.key, null, o) } } })`
+  const tr = await call('plugin_script_try', { source: DES, inputs: { input: 'Hello, FlowLink!', key: '12345678' } })
+  assert.match(tr, /result = Hello, FlowLink!/); assert.match(tr, /log: len 16/); ok('plugin_script_try (fl.des 왕복 + 로그)')
+  assert.match(await call('plugin_script_try', { source: "({ id: 'x',\n label: 'x' apply() {} })" }, true), /2행/); ok('plugin_script_try 컴파일 오류 → 행 번호')
+  // 이전 실행 잔재(같은 DB 재사용) 정리 — 삭제는 MCP 에 없다(화면 전용)
+  for (const s of await (await fetch(`${base}/api/v1/plugins/scripts`)).json() as { id: string; pluginId: string }[]) if (s.pluginId === 'smoke-des') await fetch(`${base}/api/v1/plugins/scripts/${s.id}`, { method: 'DELETE' })
+  const sup = await call('plugin_script_upsert', { name: 'smoke des', source: DES })
+  assert.match(sup, /^생성\(초안\): smoke des #smoke-des · transform · DRAFT/); assert.match(sup, /입력 input:string,key:string/); ok('plugin_script_upsert 생성')
+  const sid = /id=([0-9a-f-]{36})/.exec(sup)![1]
+  assert.match(await call('plugin_script_upsert', { id: 'smoke-des', source: DES.replace("label: 'DES'", "label: 'DES2'") }), /^갱신\(초안\)/); ok('plugin_script_upsert 갱신(플러그인 id 로 지목)')
+  assert.match(await call('plugin_script_get', { id: sid }), /```js[\s\S]*label: 'DES2'/); ok('plugin_script_get 소스')
+  assert.match(await call('plugin_script_list', { status: 'DRAFT' }), /#smoke-des/); ok('plugin_script_list')
+  assert.match(await call('plugin_script_submit', { id: 'smoke des' }), /PENDING/); ok('plugin_script_submit → PENDING (이름으로 지목)')
+  assert.match(await call('plugin_script_submit', { id: sid, action: 'withdraw' }), /DRAFT/); ok('withdraw → DRAFT')
+  assert.match(await call('plugin_script_get', { id: 'no-such' }, true), /없음/); ok('plugin_script_get 없는 id')
+  assert.equal((await fetch(`${base}/api/v1/plugins/scripts/${sid}`, { method: 'DELETE' })).status, 204); ok('cleanup (REST delete)')
 
   const pname = `smoke-${Date.now()}`
   const p1 = await call('protocol_upsert', { name: pname, spec: SPEC })

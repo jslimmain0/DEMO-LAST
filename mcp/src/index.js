@@ -543,7 +543,7 @@ const ioStr = (io) => (io ?? []).map((p) => `${p.key}:${p.type}`).join(',') || '
 const paramStr = (ps) => (ps ?? []).map((p) => `${p.key}(${p.type}${p.defaultValue ? '=' + p.defaultValue : ''}${p.options?.length ? ' [' + p.options.join('|') + ']' : ''})`).join(' ');
 tool('plugin_list', {
     title: '플러그인 목록(변환·코덱)',
-    description: 'TRANSFORM 노드에 쓰는 변환 플러그인과 Mock/전문에 쓰는 코덱 플러그인 목록(id·설명·입출력 포트·파라미터). 플러그인은 화면 /plugins 에서 JS 로 작성 → 관리자 승인 — 규격은 flowlink_guide(plugin). 목록이 비어 있으면 TRANSFORM 노드·코덱을 만들지 마라.',
+    description: 'TRANSFORM 노드에 쓰는 변환 플러그인과 Mock/전문에 쓰는 코덱 플러그인 목록(id·설명·입출력 포트·파라미터). 플러그인은 화면 /plugins 또는 plugin_script_upsert 로 JS 작성 → 관리자 승인 — 규격은 flowlink_guide(plugin). 목록에 없는 id 는 지어내지 말고, 필요한 변환이 없으면 plugin_script_upsert 로 초안을 만들어 승인을 요청한다.',
     inputSchema: {},
 }, async () => run(async () => {
     const [transforms, codecs] = await Promise.all([
@@ -574,6 +574,99 @@ tool('transform_preview', {
     if (!r.ok)
         return `⚠ ${r.error ?? '변환 실패'}`;
     return Object.entries(r.outputs ?? {}).map(([k, v]) => `${k} = ${clip(v, 400)}`).join('\n') || '(출력 없음)';
+}));
+// ---------- 스크립트 플러그인(JS 작성 · 시험 · 승인 요청) — 승인·반려는 관리자가 화면에서 ----------
+const isUuid = (s) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
+/** 스크립트 참조(uuid · 플러그인 id · 이름) → 상세. 없으면 있는 목록을 보여주며 실패. */
+async function scriptOf(ref) {
+    const r = (ref ?? '').trim();
+    if (isUuid(r))
+        return api('GET', `/plugins/scripts/${r}`);
+    const list = await api('GET', '/plugins/scripts');
+    const hit = list.find((s) => s.pluginId === r) ?? list.find((s) => s.name === r);
+    if (!hit)
+        throw new Error(`스크립트 플러그인 '${r}' 없음. 있는 것: ${list.map((s) => `${s.pluginId}(${s.status})`).join(', ') || '(없음)'}`);
+    return api('GET', `/plugins/scripts/${hit.id}`);
+}
+const scriptLine = (s) => `${s.name} #${s.pluginId} · ${s.kind} · ${s.status}${s.live ? ' · 서빙 중' : ''}${s.dirty ? ' · 승인본과 다른 초안' : ''} · 사용처 ${s.usages} · id=${s.id}`;
+const metaStr = (m) => (m ? `입력 ${ioStr(m.inputs)} → 출력 ${ioStr(m.outputs)}${(m.params ?? []).length ? ' · 파라미터 ' + paramStr(m.params) : ''}` : '(메타 없음 — 컴파일 실패)');
+/** 컴파일/실행 오류(400 {message,line,col}) 를 "N행 M열: …" 로 바꿔 던진다. */
+const scriptErr = async (fn) => {
+    try {
+        return await fn();
+    }
+    catch (e) {
+        const b = e instanceof ApiError ? e.body : null;
+        if (b && typeof b.message === 'string' && (b.line != null || b.col != null))
+            throw new ApiError(e.status, `${b.line != null ? `${b.line}행` : ''}${b.col != null ? ` ${b.col}열` : ''}: ${b.message}`.trim(), b);
+        throw e;
+    }
+};
+tool('plugin_script_list', {
+    title: '스크립트 플러그인 목록(초안·승인 대기·승인·반려)',
+    description: '화면 /plugins 의 JS 스크립트 플러그인 전부 — 상태·서빙 여부·사용처 수·id. 레지스트리(TRANSFORM 노드·코덱에서 쓸 수 있는 것)에는 승인본만 오른다 → 그건 plugin_list.',
+    inputSchema: { status: z.enum(['DRAFT', 'PENDING', 'APPROVED', 'REJECTED']).optional() },
+}, async ({ status }) => run(async () => {
+    const list = await api('GET', '/plugins/scripts', undefined, status ? { status } : undefined);
+    return list.length ? list.map((s) => '- ' + scriptLine(s)).join('\n') : '(스크립트 플러그인 없음 — plugin_script_upsert 로 초안을 만든다)';
+}));
+tool('plugin_script_get', {
+    title: '스크립트 플러그인 조회(소스 포함)',
+    description: 'uuid·플러그인 id·이름으로 초안 소스·상태·컴파일 메타(입출력·파라미터)·반려 사유를 본다.',
+    inputSchema: { id: z.string() },
+}, async ({ id }) => run(async () => {
+    const s = await scriptOf(id);
+    const lines = [scriptLine(s), metaStr(s.meta)];
+    if (s.reviewNote)
+        lines.push(`반려 사유: ${s.reviewNote}`);
+    if (s.live && s.dirty)
+        lines.push('(승인본은 계속 서빙 중 — 아래는 초안)');
+    lines.push('```js', s.source, '```');
+    return lines.join('\n');
+}));
+tool('plugin_script_try', {
+    title: '스크립트 플러그인 시험 실행(저장 없음)',
+    description: '소스를 샌드박스에서 1회 실행한다 — 저장하지 않으며 컴파일 검사를 겸한다(오류는 "N행 M열: …"). 입력을 안 주면 컴파일만(메타). '
+        + 'transform: inputs·config · fieldCodec: value + fn(encode|decode) + direction(send|recv) (+message) · messageCodec: bytesB64 + fn. 작성 규격과 fl.* 함수는 flowlink_guide(plugin).',
+    inputSchema: {
+        source: z.string(), inputs: z.record(z.string(), z.string()).optional(), config: z.record(z.string(), z.string()).optional(),
+        value: z.string().optional(), fn: z.enum(['encode', 'decode']).optional(), direction: z.enum(['send', 'recv']).optional(),
+        message: z.record(z.string(), z.string()).optional(), bytesB64: z.string().optional(),
+    },
+}, async (a) => run(async () => {
+    const r = await scriptErr(() => api('POST', '/plugins/scripts/try', a));
+    const lines = [`meta: ${r.meta.id} [${r.meta.label}] ${r.meta.kind} — ${metaStr(r.meta)}`];
+    if (r.outputs)
+        for (const [k, v] of Object.entries(r.outputs))
+            lines.push(`${k} = ${clip(v, 400)}`);
+    if (r.result != null)
+        lines.push(`result = ${clip(r.result, 400)}`);
+    if (r.bytesB64 != null)
+        lines.push(`bytesB64 = ${clip(r.bytesB64, 400)}`);
+    if (r.logs?.length)
+        lines.push('log: ' + r.logs.map((l) => clip(l, 200)).join(' | '));
+    lines.push(`${r.durationMs}ms`);
+    return lines.join('\n');
+}));
+tool('plugin_script_upsert', {
+    title: '스크립트 플러그인 초안 저장(생성/갱신)',
+    description: '서버가 컴파일해 통과하면 초안으로 저장한다(오류면 "N행 M열: …"). id(uuid·플러그인 id·이름)를 주면 갱신, 없으면 생성. '
+        + '초안은 레지스트리에 오르지 않는다 → plugin_script_try 로 검증 → plugin_script_submit 으로 승인 요청 → 관리자가 화면(/admin)에서 승인해야 TRANSFORM 노드·코덱에서 쓸 수 있다. '
+        + '승인본이 있는 플러그인은 새 초안이 승인될 때까지 승인본이 계속 서빙된다.',
+    inputSchema: { id: z.string().optional(), name: z.string().optional(), source: z.string() },
+}, async ({ id, name, source }) => run(async () => {
+    const cur = id ? await scriptOf(id) : null;
+    const s = await scriptErr(() => (cur ? api('PUT', `/plugins/scripts/${cur.id}`, { name, source }) : api('POST', '/plugins/scripts', { name, source })));
+    return `${cur ? '갱신' : '생성'}(초안): ${scriptLine(s)}\n${metaStr(s.meta)}\n다음: plugin_script_try 로 검증 → plugin_script_submit 으로 승인 요청(승인은 관리자가 화면 /admin 에서).`;
+}));
+tool('plugin_script_submit', {
+    title: '스크립트 플러그인 승인 요청 / 철회',
+    description: '초안(DRAFT·REJECTED, 또는 승인본과 다른 초안)을 승인 요청(→PENDING)하거나 요청을 철회(→DRAFT). 승인·반려는 관리자만, 화면에서.',
+    inputSchema: { id: z.string(), action: z.enum(['submit', 'withdraw']).optional() },
+}, async ({ id, action }) => run(async () => {
+    const cur = await scriptOf(id);
+    const s = await api('POST', `/plugins/scripts/${cur.id}/${action === 'withdraw' ? 'withdraw' : 'submit'}`);
+    return `${action === 'withdraw' ? '철회' : '승인 요청'}: ${scriptLine(s)}${s.status === 'PENDING' ? '\n관리자가 /admin 에서 코드·샘플 결과를 보고 승인하면 즉시 서빙된다.' : ''}`;
 }));
 // ---------- 실제 HTTP 요청(테스트) ----------
 tool('http_request', {

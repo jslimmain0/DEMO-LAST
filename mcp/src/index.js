@@ -72,6 +72,8 @@ tool('flowlink_status', {
     }
     const me = await api('GET', '/admin/me');
     lines.push(`login: ${me.username ?? '?'}`, `status: ${me.myStatus ?? '?'}${me.admin ? ' · ADMIN' : ''}${me.pendingCount ? ` · 승인 대기 ${me.pendingCount}명` : ''}`);
+    if (me.admin && me.pendingPlugins)
+        lines.push(`plugins: 승인 대기 ${me.pendingPlugins}건 — 화면 /admin 에서 승인 (plugin_script_list status=PENDING 으로 확인)`);
     return lines.join('\n');
 }));
 // ---------- 가이드(스키마 원문) ----------
@@ -666,7 +668,29 @@ tool('plugin_script_submit', {
 }, async ({ id, action }) => run(async () => {
     const cur = await scriptOf(id);
     const s = await api('POST', `/plugins/scripts/${cur.id}/${action === 'withdraw' ? 'withdraw' : 'submit'}`);
-    return `${action === 'withdraw' ? '철회' : '승인 요청'}: ${scriptLine(s)}${s.status === 'PENDING' ? '\n관리자가 /admin 에서 코드·샘플 결과를 보고 승인하면 즉시 서빙된다.' : ''}`;
+    return `${action === 'withdraw' ? '철회' : '승인 요청'}: ${scriptLine(s)}${s.status === 'PENDING' ? '\n⏳ 승인 대기 — 관리자가 /admin 에서 코드·샘플 결과를 보고 승인해야 서빙된다. 사용자에게 "승인 대기 중(관리자 승인 필요)" 이라고 알리고, plugin_script_wait 로 결과를 기다려 승인/반려를 다시 알려라.' : ''}`;
+}));
+tool('plugin_script_wait', {
+    title: '스크립트 플러그인 승인 결과 기다리기',
+    description: '승인 요청한 플러그인의 상태가 바뀔 때까지 기다린다(3초 간격 폴링, 기본 45초·최대 120초 — 클라이언트 툴 타임아웃 안). '
+        + '흐름: plugin_script_submit → 사용자에게 "승인 대기 중(관리자 승인 필요)" 알림 → plugin_script_wait → 승인되면 사용자에게 알리고 이어서 배선, 반려면 사유를 전하고 초안을 고친다. '
+        + '시간 안에 안 바뀌면 "아직 대기" 로 돌아오니 다시 부르면 이어서 기다린다.',
+    inputSchema: { id: z.string(), timeoutSec: z.number().int().min(1).max(120).optional() },
+}, async ({ id, timeoutSec }) => run(async () => {
+    const first = await scriptOf(id);
+    const until = Date.now() + (timeoutSec ?? 45) * 1000;
+    let s = first;
+    while (s.status === 'PENDING' && Date.now() < until) {
+        await sleep(Math.min(3000, Math.max(200, until - Date.now())));
+        s = await api('GET', `/plugins/scripts/${first.id}`);
+    }
+    if (s.status === 'PENDING')
+        return `⏳ 아직 승인 대기 — ${scriptLine(s)}\n요청 ${s.submittedAt ?? '?'} · 관리자가 화면 /admin 에서 승인해야 한다. 사용자에게 승인 대기 중임을 알리고, 다시 plugin_script_wait 를 부르면 이어서 기다린다.`;
+    if (s.status === 'APPROVED')
+        return `✅ 승인됨 — ${scriptLine(s)}\n승인자 ${s.reviewedBy ?? '?'} · 즉시 서빙 중. 이제 ${s.kind === 'transform' ? `TRANSFORM 노드 transformId '${s.pluginId}'` : `코덱 id '${s.pluginId}'`} 로 쓸 수 있다(plugin_list 에 보인다). 사용자에게 승인됐다고 알려라.`;
+    if (s.status === 'REJECTED')
+        return `⛔ 반려됨 — ${scriptLine(s)}\n${s.reviewedBy ?? '?'}: ${s.reviewNote ?? '(사유 없음)'}\n사용자에게 반려 사유를 전하고, 초안을 고쳐 plugin_script_upsert → plugin_script_submit 으로 다시 요청한다.`;
+    return `승인 요청이 철회돼 초안 상태다 — ${scriptLine(s)}`;
 }));
 // ---------- 실제 HTTP 요청(테스트) ----------
 tool('http_request', {

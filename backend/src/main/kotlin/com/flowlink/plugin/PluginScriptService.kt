@@ -34,6 +34,7 @@ class PluginScriptService(
     private val workspace: WorkspaceService,
     @Lazy private val registry: TransformRegistry,
     @Lazy private val usages: PluginUsageIndex,
+    private val notifier: com.flowlink.notify.NotificationService,
 ) : ScriptPluginLoader {
     private val log = LoggerFactory.getLogger(PluginScriptService::class.java)
     private fun tenant() = TenantContext.getTenantId()
@@ -109,6 +110,7 @@ class PluginScriptService(
         val row = find(id)
         rt.compile(row.source) // 제출 시점에도 컴파일되는지
         row.status = PluginScript.STATUS_PENDING; row.submittedBy = me(); row.submittedAt = Instant.now(); row.reviewNote = null
+        notifier.notifyPlugin(tenant(), "PLUGIN_SUBMITTED", "🔌 플러그인 승인 요청 — '${row.name}' (#${row.pluginId}) by ${me()} → 관리 콘솔 /admin 에서 승인/반려", row.pluginId, row.id)
         return detail(repo.save(row))
     }
 
@@ -131,6 +133,7 @@ class PluginScriptService(
         row.liveSource = row.source; row.status = PluginScript.STATUS_APPROVED; row.reviewedBy = me(); row.reviewedAt = Instant.now(); row.reviewNote = null
         val saved = repo.save(row)
         reloadAfterCommit()
+        notifier.notifyPlugin(tenant(), "PLUGIN_APPROVED", "✅ 플러그인 승인 — '${row.name}' (#${row.pluginId}) by ${me()} · 즉시 서빙 (요청자 ${row.submittedBy})", row.pluginId, row.id)
         return detail(saved)
     }
 
@@ -140,6 +143,7 @@ class PluginScriptService(
         val row = find(id)
         if (row.status != PluginScript.STATUS_PENDING) throw BadRequestException("승인 대기 중이 아닙니다.")
         row.status = PluginScript.STATUS_REJECTED; row.reviewedBy = me(); row.reviewedAt = Instant.now(); row.reviewNote = note?.takeIf { it.isNotBlank() }?.take(1000)
+        notifier.notifyPlugin(tenant(), "PLUGIN_REJECTED", "⛔ 플러그인 반려 — '${row.name}' (#${row.pluginId}) by ${me()}${row.reviewNote?.let { ": $it" } ?: ""} (요청자 ${row.submittedBy})", row.pluginId, row.id)
         return detail(repo.save(row))
     }
 

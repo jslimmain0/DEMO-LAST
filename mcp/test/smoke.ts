@@ -190,6 +190,12 @@ async function scenario({ client, call }: { client: Client; call: Call }, base: 
   assert.match(await call('plugin_script_list', { status: 'DRAFT' }), /#smoke-des/); ok('plugin_script_list')
   assert.match(await call('plugin_script_submit', { id: 'smoke des' }), /PENDING/); ok('plugin_script_submit → PENDING (이름으로 지목)')
   assert.match(await call('plugin_script_submit', { id: sid, action: 'withdraw' }), /DRAFT/); ok('withdraw → DRAFT')
+  assert.match(await call('plugin_script_wait', { id: sid, timeoutSec: 1 }), /철회돼 초안/); ok('plugin_script_wait 초안 → 즉시 반환')
+  assert.match(await call('plugin_script_submit', { id: sid }), /승인 대기[\s\S]*plugin_script_wait/); ok('submit 안내문에 wait 흐름')
+  assert.match(await call('plugin_script_wait', { id: sid, timeoutSec: 2 }), /아직 승인 대기/); ok('plugin_script_wait 대기 → 타임아웃 안내')
+  const [wr] = await Promise.all([call('plugin_script_wait', { id: sid, timeoutSec: 30 }), sleep(1500).then(() => fetch(`${base}/api/v1/plugins/scripts/${sid}/approve`, { method: 'POST' }))])
+  assert.match(wr, /승인됨[\s\S]*transformId 'smoke-des'/); ok('plugin_script_wait → 승인됨(관리자 승인은 REST 로 흉내)')
+  assert.match(await call('plugin_list'), /smoke-des/); ok('승인 후 plugin_list(레지스트리)에 등장')
   assert.match(await call('plugin_script_get', { id: 'no-such' }, true), /없음/); ok('plugin_script_get 없는 id')
   assert.equal((await fetch(`${base}/api/v1/plugins/scripts/${sid}`, { method: 'DELETE' })).status, 204); ok('cleanup (REST delete)')
 

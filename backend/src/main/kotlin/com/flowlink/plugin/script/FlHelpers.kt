@@ -25,7 +25,7 @@ data class FlApiEntry(val path: String, val signature: String, val doc: String, 
 
 /**
  * 스크립트에 주입되는 `fl` 객체 — 전부 Graal 프록시(ProxyObject/ProxyExecutable)라 호스트 리플렉션 경로가 없다.
- * 기본값 = 회사 관례(UTF-8 · AES/SEED/ARIA 는 CBC/PKCS5Padding · 출력 base64). 다른 조합은 옵션 객체 `{ out, charset, mode, as }` 로만.
+ * 기본값 = 회사 관례(UTF-8 · AES/SEED/ARIA/DES 는 CBC/PKCS5Padding · 출력 base64). 다른 조합은 옵션 객체 `{ out, charset, mode, padding, as }` 로만.
  * 바이트는 JS 쪽 배열(Uint8Array 또는 fl 이 돌려준 배열) ↔ 여기 ByteArray. 잘못된 인자는 ScriptError(스크립트 오류로 표면화).
  */
 object FlHelpers {
@@ -39,7 +39,7 @@ object FlHelpers {
             val mac = Mac.getInstance("HmacSHA256").apply { init(SecretKeySpec(str(a, 0).toByteArray(Charsets.UTF_8), "HmacSHA256")) }
             encoded(mac.doFinal(bytesArg(a, 1, cs(opt(a, 2)))), opt(a, 2), "hex")
         }),
-        "aes" to cipherNs("AES"), "seed" to cipherNs("SEED"), "aria" to cipherNs("ARIA"),
+        "aes" to cipherNs("AES"), "seed" to cipherNs("SEED"), "aria" to cipherNs("ARIA"), "des" to cipherNs("DES"),
         "rsa" to obj(
             "sign" to fn { a ->
                 val key = KeyFactory.getInstance("RSA").generatePrivate(PKCS8EncodedKeySpec(pem(str(a, 0), "PRIVATE KEY")))
@@ -81,26 +81,41 @@ object FlHelpers {
         val fill = ch.toByteArray(cs); val raw = s.toByteArray(cs)
         if (raw.size >= len) s else { val padBytes = ByteArray(len - raw.size) { fill[it % fill.size] }; String(if (left) padBytes + raw else raw + padBytes, cs) }
     }
-    /** AES/SEED/ARIA 공용 — encrypt/decrypt(text) · encryptBytes/decryptBytes(bytes). CBC(기본)는 iv 16B 필수, ECB 는 iv 무시. */
+    /**
+     * AES/SEED/ARIA/DES 공용 — encrypt/decrypt(text) · encryptBytes/decryptBytes(bytes). CBC(기본)는 iv 가 블록 크기(AES/SEED/ARIA 16B, DES 8B) 필수, ECB 는 iv 무시.
+     * 키·IV 는 문자열(UTF-8 바이트) 또는 바이트 배열(`fl.hex.dec(k, { as: 'bytes' })` 로 hex/base64 키). `padding: 'zero'` 는 레거시 호환 —
+     * NoPadding 에 0x00 으로 블록을 채우고 복호화 때 꼬리 0x00 을 지운다(기본 PKCS5).
+     */
     private fun cipherNs(alg: String): ProxyObject {
-        val keySizes = if (alg == "SEED") listOf(16) else listOf(16, 24, 32)
+        val keySizes = when (alg) { "SEED" -> listOf(16); "DES" -> listOf(8); else -> listOf(16, 24, 32) }
+        val block = if (alg == "DES") 8 else 16
+        fun zero(a: Array<Value>) = optStr(opt(a, 3), "padding", "pkcs5").lowercase() == "zero"
         fun cipher(a: Array<Value>, mode: Int): Cipher {
             val o = opt(a, 3); val m = optStr(o, "mode", "CBC").uppercase()
-            val key = str(a, 1).toByteArray(Charsets.UTF_8)
+            val key = bytesArg(a, 1, Charsets.UTF_8)
             if (key.size !in keySizes) throw ScriptError(null, null, "fl.${alg.lowercase()}: 키는 ${keySizes.joinToString("/")}바이트여야 합니다(현재 ${key.size})")
-            val c = if (alg == "AES") Cipher.getInstance("AES/$m/PKCS5Padding") else Cipher.getInstance("$alg/$m/PKCS5Padding", "BC")
+            val t = "$alg/$m/" + if (zero(a)) "NoPadding" else "PKCS5Padding"
+            val c = if (alg == "AES" || alg == "DES") Cipher.getInstance(t) else Cipher.getInstance(t, "BC")
             if (m == "ECB") c.init(mode, SecretKeySpec(key, alg)) else {
-                val iv = str(a, 2).toByteArray(Charsets.UTF_8)
-                if (iv.size != 16) throw ScriptError(null, null, "fl.${alg.lowercase()}: IV 는 16바이트여야 합니다(현재 ${iv.size})")
+                val iv = bytesArg(a, 2, Charsets.UTF_8)
+                if (iv.size != block) throw ScriptError(null, null, "fl.${alg.lowercase()}: IV 는 ${block}바이트여야 합니다(현재 ${iv.size})")
                 c.init(mode, SecretKeySpec(key, alg), IvParameterSpec(iv))
             }
             return c
         }
+        fun enc(a: Array<Value>, plain: ByteArray): ByteArray {
+            val data = if (zero(a) && plain.size % block != 0) plain.copyOf(plain.size + block - plain.size % block) else plain
+            return cipher(a, Cipher.ENCRYPT_MODE).doFinal(data)
+        }
+        fun dec(a: Array<Value>, raw: ByteArray): ByteArray {
+            val out = cipher(a, Cipher.DECRYPT_MODE).doFinal(raw)
+            return if (zero(a)) out.copyOf(out.indexOfLast { it != 0.toByte() } + 1) else out
+        }
         return obj(
-            "encrypt" to fn { a -> encoded(cipher(a, Cipher.ENCRYPT_MODE).doFinal(str(a, 0).toByteArray(cs(opt(a, 3)))), opt(a, 3), "b64") },
-            "decrypt" to fn { a -> String(cipher(a, Cipher.DECRYPT_MODE).doFinal(decodeEncoded(str(a, 0), opt(a, 3), "b64")), cs(opt(a, 3))) },
-            "encryptBytes" to fn { a -> u8(cipher(a, Cipher.ENCRYPT_MODE).doFinal(bytesArg(a, 0, Charsets.UTF_8))) },
-            "decryptBytes" to fn { a -> u8(cipher(a, Cipher.DECRYPT_MODE).doFinal(bytesArg(a, 0, Charsets.UTF_8))) },
+            "encrypt" to fn { a -> encoded(enc(a, str(a, 0).toByteArray(cs(opt(a, 3)))), opt(a, 3), "b64") },
+            "decrypt" to fn { a -> String(dec(a, decodeEncoded(str(a, 0), opt(a, 3), "b64")), cs(opt(a, 3))) },
+            "encryptBytes" to fn { a -> u8(enc(a, bytesArg(a, 0, Charsets.UTF_8))) },
+            "decryptBytes" to fn { a -> u8(dec(a, bytesArg(a, 0, Charsets.UTF_8))) },
         )
     }
 
@@ -135,11 +150,11 @@ object FlHelpers {
 /** 편집기 자동완성·MCP 가이드용 매니페스트 — fl 에 함수를 추가하면 여기도 한 줄. */
 object FlApi {
     private fun e(path: String, sig: String, doc: String, ex: String) = FlApiEntry(path, sig, doc, ex)
-    private fun cipher(ns: String, name: String, keyDoc: String): List<FlApiEntry> = listOf(
-        e("fl.$ns.encrypt", "fl.$ns.encrypt(text, key, iv, { mode?: 'CBC'|'ECB', out?: 'b64'|'hex', charset? })", "$name 암호화(CBC/PKCS5, $keyDoc, IV 16B, 기본 base64)", "fl.$ns.encrypt(inputs.input, config.key, config.iv)"),
-        e("fl.$ns.decrypt", "fl.$ns.decrypt(cipher, key, iv, { mode?, out?, charset? })", "$name 복호화", "fl.$ns.decrypt(inputs.input, config.key, config.iv)"),
-        e("fl.$ns.encryptBytes", "fl.$ns.encryptBytes(bytes, key, iv, { mode? })", "$name 암호화(바이트 → 바이트, 전문 코덱용)", "fl.$ns.encryptBytes(body, ctx.config.key, ctx.config.iv)"),
-        e("fl.$ns.decryptBytes", "fl.$ns.decryptBytes(bytes, key, iv, { mode? })", "$name 복호화(바이트)", "fl.$ns.decryptBytes(body, ctx.config.key, ctx.config.iv)"),
+    private fun cipher(ns: String, name: String, keyDoc: String, iv: Int = 16): List<FlApiEntry> = listOf(
+        e("fl.$ns.encrypt", "fl.$ns.encrypt(text, key, iv, { mode?: 'CBC'|'ECB', padding?: 'pkcs5'|'zero', out?: 'b64'|'hex', charset? })", "$name 암호화(CBC/PKCS5, $keyDoc, IV ${iv}B, 기본 base64 — 키·IV 는 문자열 또는 바이트 배열, padding 'zero' 는 레거시 0x00 채움)", "fl.$ns.encrypt(inputs.input, config.key, config.iv)"),
+        e("fl.$ns.decrypt", "fl.$ns.decrypt(cipher, key, iv, { mode?, padding?, out?, charset? })", "$name 복호화", "fl.$ns.decrypt(inputs.input, config.key, config.iv)"),
+        e("fl.$ns.encryptBytes", "fl.$ns.encryptBytes(bytes, key, iv, { mode?, padding? })", "$name 암호화(바이트 → 바이트, 전문 코덱용)", "fl.$ns.encryptBytes(body, ctx.config.key, ctx.config.iv)"),
+        e("fl.$ns.decryptBytes", "fl.$ns.decryptBytes(bytes, key, iv, { mode?, padding? })", "$name 복호화(바이트)", "fl.$ns.decryptBytes(body, ctx.config.key, ctx.config.iv)"),
     )
     val MANIFEST: List<FlApiEntry> = listOf(
         e("fl.b64.enc", "fl.b64.enc(text|bytes, { charset? })", "base64 인코딩", "fl.b64.enc('hi')"),
@@ -150,7 +165,7 @@ object FlApi {
         e("fl.hash.sha1", "fl.hash.sha1(text|bytes, { out?, charset? })", "SHA-1 해시", "fl.hash.sha1('x')"),
         e("fl.hash.md5", "fl.hash.md5(text|bytes, { out?, charset? })", "MD5 해시", "fl.hash.md5('x')"),
         e("fl.hmac.sha256", "fl.hmac.sha256(key, data, { out?: 'hex'|'b64', charset? })", "HMAC-SHA256 서명(기본 hex)", "fl.hmac.sha256(config.secret, inputs.input)"),
-    ) + cipher("aes", "AES", "키 16/24/32B") + cipher("seed", "SEED", "국내 표준, 키 16B") + cipher("aria", "ARIA", "국내 표준, 키 16/24/32B") + listOf(
+    ) + cipher("aes", "AES", "키 16/24/32B") + cipher("seed", "SEED", "국내 표준, 키 16B") + cipher("aria", "ARIA", "국내 표준, 키 16/24/32B") + cipher("des", "DES", "레거시 전용, 키 8B", iv = 8) + listOf(
         e("fl.rsa.sign", "fl.rsa.sign(pemPrivateKey, data, { alg?: 'SHA256withRSA', out?: 'b64'|'hex' })", "RSA 서명(PKCS#8 PEM, 기본 base64)", "fl.rsa.sign(config.privateKey, inputs.input)"),
         e("fl.rsa.verify", "fl.rsa.verify(pemPublicKey, data, signature, { alg?, out? })", "RSA 서명 검증 → true/false", "fl.rsa.verify(config.publicKey, inputs.input, inputs.sig)"),
         e("fl.bytes", "fl.bytes(text, charset?)", "문자열 → 바이트 배열(EUC-KR/MS949 등)", "fl.bytes('홍길동', 'EUC-KR')"),

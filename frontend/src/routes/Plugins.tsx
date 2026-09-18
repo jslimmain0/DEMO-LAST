@@ -16,7 +16,7 @@ import { toast } from '../components/toast'
 import { apiErrorMessage } from '../lib/apiError'
 import { relTime } from '../lib/format'
 import { declaredKeysSource, flCompletionSource } from '../lib/pluginCompletions'
-import { PLUGIN_TEMPLATES, kindLabel } from '../lib/pluginTemplates'
+import { PLUGIN_EXAMPLES, PLUGIN_TEMPLATES, kindLabel } from '../lib/pluginTemplates'
 
 const CodeEditorLazy = lazy(() => import('../components/CodeEditor'))
 
@@ -51,10 +51,11 @@ export function Plugins() {
   const dirtyRef = useRef(dirty); dirtyRef.current = dirty
   const searchRef = useRef<HTMLInputElement>(null)
 
-  // URL → 편집 상태: ?new=<kind> 는 템플릿 초안, /plugins/:id 는 서버 상세
-  const newKind = sp.get('new') as PluginKind | null
+  // URL → 편집 상태: ?new=<kind|예제 key> 는 템플릿/예제 초안, /plugins/:id 는 서버 상세
+  const newKind = sp.get('new')
   useEffect(() => {
-    if (newKind && PLUGIN_TEMPLATES[newKind]) { setDraft({ id: null, name: '', source: PLUGIN_TEMPLATES[newKind].source }); setDirty(true); setDiag([]) }
+    const src = (newKind && PLUGIN_TEMPLATES[newKind as PluginKind]?.source) || PLUGIN_EXAMPLES.find((x) => x.key === newKind)?.source
+    if (src) { setDraft({ id: null, name: '', source: src }); setDirty(true); setDiag([]) }
   }, [newKind])
   useEffect(() => {
     const d = detail.data
@@ -124,7 +125,7 @@ export function Plugins() {
   }, [list.data, q, statusFilter])
   const d = detail.data
   const status: PluginScriptStatus | null = d?.status ?? null
-  const openNew = (kind: PluginKind) => { if (dirty && !confirm('저장하지 않은 변경이 있습니다. 새로 만들까요?')) return; navigate(`/plugins?new=${kind}`) }
+  const openNew = (kind: string) => { if (dirty && !confirm('저장하지 않은 변경이 있습니다. 새로 만들까요?')) return; navigate(`/plugins?new=${kind}`) }
   const select = (pid: string) => { if (dirty && !confirm('저장하지 않은 변경이 있습니다. 이동할까요?')) return; setSp({}); navigate(`/plugins/${pid}`) }
 
   return (
@@ -148,6 +149,10 @@ export function Plugins() {
               {(Object.keys(PLUGIN_TEMPLATES) as PluginKind[]).map((k) => (
                 <button key={k} onClick={() => openNew(k)} style={newBtn} title={PLUGIN_TEMPLATES[k].label}>+ 새 {kindLabel(k)}</button>
               ))}
+              <select value="" aria-label="예제에서 시작" onChange={(e) => { if (e.target.value) openNew(e.target.value) }} style={{ ...newBtn, padding: '6px 8px' }}>
+                <option value="">예제에서 시작…</option>
+                {PLUGIN_EXAMPLES.map((x) => <option key={x.key} value={x.key}>{x.label}</option>)}
+              </select>
             </div>
           )}
           <div style={{ overflowY: 'auto', display: 'grid', gap: 3, alignContent: 'start' }}>

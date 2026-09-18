@@ -58,16 +58,33 @@ class FlHelpersTest {
         assertThat(r["n"]).isEqualTo("8"); assertThat(r["z"]).isEqualTo("2"); assertThat(r["j"]).isEqualTo("[1,2]"); assertThat(r["j2"]).isEqualTo("2")
     }
 
+    @Test fun `des 왕복 - 레거시 zero 패딩 ECB hex · 바이트 배열 키 · 기존 Kotlin 플러그인과 같은 출력`() {
+        val legacy = "{ mode: 'ECB', padding: 'zero', out: 'hex' }"
+        val r = run("""{
+            z: fl.des.decrypt(fl.des.encrypt('Hello, FlowLink!', '12345678', null, $legacy), '12345678', null, $legacy),
+            zk: fl.des.decrypt(fl.des.encrypt('짧다', '12345678', null, $legacy), '12345678', null, $legacy),
+            hex: fl.des.encrypt('Hello, FlowLink!', '12345678', null, $legacy),
+            p: fl.des.decrypt(fl.des.encrypt('Secret message with PKCS5', '87654321', '00000000'), '87654321', '00000000'),
+            hk: fl.des.decrypt(fl.des.encrypt('k', fl.hex.dec('3132333435363738', { as: 'bytes' }), null, { mode: 'ECB' }), '12345678', null, { mode: 'ECB' }),
+        }""")
+        assertThat(r["z"]).isEqualTo("Hello, FlowLink!"); assertThat(r["zk"]).isEqualTo("짧다"); assertThat(r["p"]).isEqualTo("Secret message with PKCS5"); assertThat(r["hk"]).isEqualTo("k")
+        // 레거시 DesEncrypt(DES/ECB/NoPadding + 0x00 채움, hex)와 같은 값 — 같은 JCE 호출을 직접 돌려 비교
+        val jce = javax.crypto.Cipher.getInstance("DES/ECB/NoPadding").apply { init(javax.crypto.Cipher.ENCRYPT_MODE, javax.crypto.spec.SecretKeySpec("12345678".toByteArray(), "DES")) }
+        assertThat(r["hex"]).isEqualTo(java.util.HexFormat.of().formatHex(jce.doFinal("Hello, FlowLink!".toByteArray())))
+    }
+
     @Test fun `잘못된 인자는 ScriptError 메시지로`() {
         assertThatThrownBy { run("{ x: fl.aes.encrypt('a', 'tooshort', '0000000000000000') }") }.isInstanceOf(ScriptError::class.java).hasMessageContaining("키")
         assertThatThrownBy { run("{ x: fl.bytes('a', 'NO-SUCH-CS') }") }.hasMessageContaining("charset")
         assertThatThrownBy { run("{ x: fl.seed.encrypt('a', '012345678901234567890123', '0000000000000000') }") }.isInstanceOf(ScriptError::class.java).hasMessageContaining("키").hasMessageContaining("16")
+        assertThatThrownBy { run("{ x: fl.des.encrypt('a', '1234567', null, { mode: 'ECB' }) }") }.isInstanceOf(ScriptError::class.java).hasMessageContaining("키").hasMessageContaining("8")
+        assertThatThrownBy { run("{ x: fl.des.encrypt('a', '12345678', '0000000000000000') }") }.isInstanceOf(ScriptError::class.java).hasMessageContaining("IV").hasMessageContaining("8")
     }
 
     @Test fun `매니페스트 - 모든 fl 함수가 문서화돼 있다`() {
         val paths = FlApi.MANIFEST.map { it.path }
         assertThat(paths).contains("fl.b64.enc", "fl.hex.dec", "fl.hash.sha256", "fl.hmac.sha256", "fl.aes.encrypt", "fl.aes.decryptBytes",
-            "fl.seed.encrypt", "fl.aria.decrypt", "fl.rsa.sign", "fl.rsa.verify", "fl.bytes", "fl.text", "fl.pad.left", "fl.pad.right", "fl.mask", "fl.now", "fl.json.parse", "fl.json.stringify", "fl.log")
+            "fl.seed.encrypt", "fl.aria.decrypt", "fl.des.encrypt", "fl.des.decryptBytes", "fl.rsa.sign", "fl.rsa.verify", "fl.bytes", "fl.text", "fl.pad.left", "fl.pad.right", "fl.mask", "fl.now", "fl.json.parse", "fl.json.stringify", "fl.log")
         assertThat(FlApi.MANIFEST).allMatch { it.signature.isNotBlank() && it.doc.isNotBlank() && it.example.isNotBlank() }
     }
 }

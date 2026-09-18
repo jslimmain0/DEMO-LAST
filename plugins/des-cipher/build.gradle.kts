@@ -1,0 +1,65 @@
+// 레거시 DES 변환 플러그인(JAR) — 스크립트 플러그인으로 포팅된 버전은 화면 /plugins 의 "예제 → DES 암호화/복호화". JAR 로드는 flowlink.plugins.jar-enabled=true 일 때만.
+plugins {
+    kotlin("jvm") version "1.9.25"   // 앱과 같은 버전
+}
+
+group = "com.flowlink.plugin"
+version = "0.1.0"
+
+kotlin {
+    jvmToolchain(21)
+    // 앱과 동일 — 인터페이스 default 메서드를 진짜 JVM default 로(SPI 에 메서드가 늘어도 구 JAR 가 동작).
+    compilerOptions {
+        freeCompilerArgs.add("-Xjvm-default=all-compatibility")
+    }
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    compileOnly(kotlin("stdlib"))   // 앱이 런타임에 제공 — JAR 에 안 넣는다(gradle.properties 참조)
+
+    // 외부 라이브러리는 implementation 으로 — 아래 jar 설정이 JAR 에 함께 넣는다.
+    // implementation("org.apache.commons:commons-lang3:3.14.0")
+
+    testImplementation(kotlin("stdlib"))
+    testImplementation("org.junit.jupiter:junit-jupiter:5.10.2")
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher:1.10.2")
+}
+
+tasks.withType<Test> {
+    useJUnitPlatform()
+    jvmArgs("-Dfile.encoding=UTF-8", "-Dsun.jnu.encoding=UTF-8")
+}
+
+tasks.jar {
+    archiveFileName.set("flowlink-plugin-des-cipher.jar")
+
+    // SPI 사본은 컴파일용 — JAR 에 넣지 않는다(앱 클래스와 중복).
+    exclude("com/flowlink/transform/**")
+
+    // 자족(self-contained) JAR — implementation 으로 건 외부 라이브러리를 JAR 안에 함께 넣는다.
+    // compileOnly(stdlib)는 runtimeClasspath 에 없으므로 자동으로 빠진다. 의존성이 없으면 이 블록은 아무 일도 안 한다.
+    // ⚠ 앱이 **이미 쓰는** 라이브러리(jackson 등)를 넣어도 앱 것이 이긴다(TransformRegistry 의 URLClassLoader 는 parent-first).
+    //    앱과 다른 버전을 꼭 써야 하면 Shadow 플러그인으로 패키지를 relocate 할 것.
+    from(configurations.runtimeClasspath.get().map { if (it.isDirectory) it else zipTree(it) })
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    exclude("META-INF/*.SF", "META-INF/*.DSA", "META-INF/*.RSA", "module-info.class")
+}
+
+// 로컬 개발 편의 — 런타임 플러그인 디렉터리(= 이 워크스페이스 루트 plugins/, 앱의 기본값 "plugins")에 바로 배치.
+// 앱 재시작(또는 아무 JAR 업로드)이면 로드된다. Copy 태스크가 아니라 단순 복사인 이유: 목적지가 이 빌드의
+// 루트라 Gradle 이 "다른 태스크 출력과 겹친다"고 검증 실패한다(출력 선언 없는 태스크면 그 대상이 아니다).
+tasks.register("deploy") {
+    dependsOn(tasks.jar)
+    doLast {
+        val jar = tasks.jar.get().archiveFile.get().asFile
+        val dest = rootProject.projectDir.resolve(jar.name)
+        // 앱이 떠 있으면 URLClassLoader 가 JAR 를 물고 있어 Windows 에서 덮어쓰기가 막힌다 → 앱을 먼저 내릴 것.
+        check(!dest.exists() || dest.delete()) { "JAR 가 잠겨 있다(앱 실행 중?) — scripts/stop.ps1 후 다시: $dest" }
+        jar.copyTo(dest, overwrite = true)
+        logger.lifecycle("배치: $dest")
+    }
+}

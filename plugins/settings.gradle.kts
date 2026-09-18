@@ -9,4 +9,4 @@
 rootProject.name = "flowlink-plugins"
 
 // 새 플러그인: sample/ 을 통째로 복사 → 아래 include 에 추가.
-include("sample")
+include("sample", "des-cipher")

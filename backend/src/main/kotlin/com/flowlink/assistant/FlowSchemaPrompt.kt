@@ -60,6 +60,10 @@ form: {"id":"f1","type":"form","cat":"form","x":480,"y":180,"formAction":"http:/
    form opens a popup and does NOT wait — pair with a wait node for the callback.
 wait: {"id":"w1","type":"wait","cat":"wait","x":700,"y":180,"waitTimeoutSec":120,"callbackRespType":"text","callbackRespBody":"OK","outputs":[{"key":"resultCode","type":"string"}]}
 input: {"id":"i1","type":"input","cat":"input","x":480,"y":180,"waitMsg":"OTP 입력","waitFields":[{"id":"w","key":"otp","label":"OTP","type":"string"}]}
+   실행 중 **사람이 그때 넣어야 하는 값**(OTP·인증번호·승인번호·사용자가 고르는 항목)은 반드시 이 노드로 받는다 — 상수로 박거나 지어내지 마라.
+   실행이 이 노드에서 멈추고(WAITING) 화면에 폼이 뜬다. MCP 는 execution_resume 으로 값을 넣어 이어 돌린다. 뒤 노드에서 {{ 키@i1 }}.
+   값 출처 고르기: 환경마다 다른 설정 = {{ 키@env }} · 비밀(키·토큰) = {{ 이름@secret }} · 실행을 시작할 때 한 번 주는 값 = {{ 키@input }}(flow_run 의 input) ·
+   **실행 도중 사람에게 물어야 하는 값 = input 노드**. 넷을 헷갈리지 마라.
 transform: {"id":"t1","type":"transform","cat":"transform","x":700,"y":180,"transformId":"<플러그인 id>","config":{},"fields":{"params":[],"headers":[],"body":[{"id":"b1","key":"a","value":"완료: "},{"id":"b2","key":"b","value":"{{ name@h1 }}"}]},"outputs":[{"key":"result","type":"string"}]}
    transformId 는 승인된 변환 플러그인 id 만(plugin_list). 암복호화·해시·서명·마스킹은 손으로 계산하지 말고 이 노드로 한다.
    필요한 플러그인이 없으면 만들어 승인 요청하고(plugin_script_upsert→try→submit), 알고리즘·키 출처를 모르면 사용자에게 물어라.

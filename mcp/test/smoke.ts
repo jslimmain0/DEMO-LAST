@@ -168,11 +168,11 @@ async function scenario({ client, call }: { client: Client; call: Call }, base: 
   assert.match(st, /dev 모드/); assert.match(st, /transport: http/); ok('status dev')
   assert.match(await call('flowlink_guide', { topic: 'rules' }), /지어내지 않는다/); ok('guide rules')
   assert.match(await call('flowlink_guide', { topic: 'protocol' }), /lengthField|header/); ok('guide protocol')
-  assert.match(await call('flowlink_guide', { topic: 'nodes' }), /tcp:|transform:|START/); ok('guide nodes (node reference)')
+  const gn = await call('flowlink_guide', { topic: 'nodes' }); assert.match(gn, /tcp:|transform:|START/); assert.match(gn, /실행 도중 사람에게 물어야 하는 값 = input 노드/); ok('guide nodes (노드 레퍼런스 + 값 출처 구분)')
   const gp = await call('flowlink_guide', { topic: 'plugin' })
   for (const re of [/fl\.aes\.encrypt/, /fl\.des3\.encrypt/, /fl\.jwt\.sign/, /fl\.crc16/, /plugin_script_upsert/, /messagePlugins/, /Field\.plugin/, /모르면 묻는다/]) assert.match(gp, re)
   ok('guide plugin (fl 매니페스트 + 부착 위치 + 물어볼 것)')
-  const gr = await call('flowlink_guide', { topic: 'rules' }); assert.match(gr, /모르면 그때그때 묻는다/); assert.match(gr, /messagePlugins/); ok('guide rules (플러그인 부착·질문 규약)')
+  const gr = await call('flowlink_guide', { topic: 'rules' }); assert.match(gr, /모르면 그때그때 묻는다/); assert.match(gr, /messagePlugins/); assert.match(gr, /사용자 소스 코드는 고치지 않는다/); assert.match(gr, /막히면 억지로 뚫지 않는다/); assert.match(gr, /채워 달라고 요청하고 기다린다/); ok('guide rules (플러그인 부착·질문·중단 규약)')
 
   const pl = await call('plugin_list')
   assert.match(pl, /변환\(transform\)/); assert.match(pl, /코덱\(codec\)/); ok('plugin_list transforms+codecs')

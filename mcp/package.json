@@ -1,6 +1,6 @@
 {
   "name": "flowlink-mcp",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "type": "module",
   "description": "FlowLink MCP 서버(Streamable HTTP) — FlowLink 옆에 떠서 URL 한 줄로 붙고, 로그인은 브라우저 GitHub(OAuth). 에이전트가 프로토콜·Mock·워크플로를 만들고 실행·관찰한다.",

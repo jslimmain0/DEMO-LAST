@@ -38,20 +38,36 @@ issuer 는 요청 Host 로 계산한다(설정값 없음). 등록된 클라이�
 
 워크스페이스·폴더는 **이름(또는 "상위/하위" 경로)** 으로 지목한다 — "개인 워크스페이스의 결제/카드 폴더에 워크플로 만들어줘"가 그대로 된다. 목록은 로그인한 사용자 기준(서버가 JWT 로 스코프: 공용 + 내 개인 + 내가 멤버인 팀; 게스트는 공용만).
 
-- 상태·가이드: `flowlink_status` · `flowlink_guide`(flow=노드 레퍼런스·nodes·protocol·mock·rules 원문)
+- 상태·가이드: `flowlink_status`(승인 대기 플러그인 수도 함께) · `flowlink_guide`(flow=노드 레퍼런스·nodes·protocol·mock·**plugin**·rules 원문)
 - 워크스페이스·폴더: `workspace_list` `workspace_get`(폴더 트리+워크플로+Mock 한눈에) `workspace_export/import` · `folder_list/create/update/delete`
 - 프로토콜: `protocol_list/get/upsert/preview/delete`
 - Mock: `mock_list(workspace)/get/upsert(workspace)/send/log/delete` · `mock_versions/version`(조회·복원·고정) `mock_state/reset/clear_log` `mock_usages`(어느 워크플로가 쓰는지) `codec_try`
 - 워크플로: `flow_list(workspace, folder)/get/upsert(workspace, folder)/update`(이름·설명·폴더 이동)`/delete` · `flow_versions/version`(조회·복원·고정) `flow_run_input`
 - 실행: `flow_run` `execution_get/list`(status·workspace 필터) `execution_resume`(input 노드 값 입력·client 노드 대신 호출·form 명세 반환) `execution_rerun` `node_run`(노드 하나만) `suite_run`(폴더/여러 워크플로 일괄)
 - 환경·시크릿: `env_list/put/rename/delete` · `secret_list`(이름만)
-- 플러그인: `plugin_list`(변환·코덱) `transform_preview`
+- 플러그인(쓰기): `plugin_list`(쓸 수 있는 승인본 — 변환·코덱) `transform_preview`
+- 플러그인(만들기, JS 스크립트): `plugin_script_list/get` · `plugin_script_try`(저장 없이 샌드박스 1회 실행, 컴파일 오류는 "N행 M열") ·
+  `plugin_script_upsert`(초안 저장) · `plugin_script_submit`(승인 요청/철회) · `plugin_script_wait`(승인/반려를 기다렸다가 사용자에게 알림)
 - `http_request`(Mock·콜백·웹훅·외부 URL 에 실제 HTTP 요청 — curl/파이썬 대신 이걸로 테스트)
 
-화면 몫으로 남긴 것: 트리거(스케줄·웹훅), 관리자(사용자 승인·purge), 앱 내 AI, 설정(relay·notify), 플러그인 JAR 업로드, 시크릿 값 저장.
+화면 몫으로 남긴 것: 트리거(스케줄·웹훅), 관리자(사용자 승인·purge, **플러그인 승인/반려**), 앱 내 AI, 설정(relay·notify), 시크릿 값 저장.
+(플러그인 JAR 업로드는 없어졌다 — 플러그인은 화면 `/plugins` 또는 위 `plugin_script_*` 로 JS 를 적고 관리자가 승인한다.)
 
 노드 종류·필드는 `flowlink_guide(flow)` 가 각 노드 JSON 예시로 설명한다(start/end/set/if/assert/switch/http/form/wait/input/transform/tcp/note/group).
-TRANSFORM 노드나 Mock 코덱은 `plugin_list` 로 사용 가능한 플러그인 id·파라미터를 먼저 확인한다(목록에 없으면 만들지 않는다).
+### 암복호화·해시·서명은 플러그인으로 — 붙이는 자리 넷
+
+| 어디에 | kind | 붙이는 곳 |
+|---|---|---|
+| 전문의 필드 하나(카드번호·계좌번호) | `fieldCodec` | 프로토콜 spec 의 `Field.plugin = { id, config }` |
+| 전문 본문 전체(헤더는 평문) | `messageCodec` | 프로토콜 spec 의 `messagePlugins` |
+| Mock 요청/응답 | `transform` | Mock spec 의 `codec.request[] / codec.response[]` |
+| 워크플로 값 하나 | `transform` | TRANSFORM 노드의 `transformId` |
+
+쓸 수 있는 id 는 `plugin_list`(승인본만). 없으면 만든다: `plugin_script_upsert` → `plugin_script_try` → `plugin_script_submit` → `plugin_script_wait`.
+스크립트 안에서는 `fl.*` 만 쓴다(Java·파일·네트워크 없음) — AES/SEED/ARIA/DES/3DES(CBC·ECB·CTR·CFB·OFB·GCM), RSA(암복호화·서명), ECDSA, JWT, HMAC·해시·PBKDF2,
+CRC/BCC/LRC, 난수·gzip·인코딩. 전체 목록과 시그니처는 `flowlink_guide(plugin)`(편집기 📖 레퍼런스와 같은 원천).
+키·IV 는 스크립트에 박지 말고 파라미터로 받아 `{{ 이름@secret }}`(시크릿 볼트)·`{{ 키@env }}`(환경 변수)로 채운다 — 서버가 실행 환경으로 푼다.
+알고리즘·모드·패딩·키 출처처럼 코드로 알 수 없는 건 추측하지 말고 그때그때 사용자에게 1~2개씩 물어라(`flowlink_guide(rules)` 7번).
 
 쓰는 법은 그냥 말로: "이 소스의 잔액조회 전문으로 프로토콜 만들고 TCP Mock 세운 뒤 조회→검증 워크플로 만들어 실행해줘. 코드에 없는 값은 메모로 남겨."
 → 에이전트가 guide → protocol_upsert/preview → mock_upsert/send → flow_upsert/run → execution_get/mock_log 순으로 돌고 편집기 링크와 "확인 필요" 메모 목록을 준다.

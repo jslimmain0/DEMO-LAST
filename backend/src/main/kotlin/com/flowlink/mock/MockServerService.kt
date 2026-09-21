@@ -509,13 +509,71 @@ class MockServerService(
      * 저장 전 TCP 규칙 검증 — 리스너가 열린 뒤에야 드러나는 실패(응답 전문 없음/필드 오타/upstream 누락)를 400 으로 앞당긴다.
      * 프로토콜을 아직 안 고른 spec 은 규칙 검사를 건너뛴다(편집 중 저장 허용 — 리스너도 안 열린다).
      */
+    /**
+     * session 시퀀스 스키마 — action·필수 message·단계 id 유일·필드/템플릿 참조. 업무 순서는 검사하지 않는다(엔진이 모르는 영역).
+     */
+    private fun validateSequence(i: Int, r: MockSpec.MockTcpRule, tcp: MockSpec.MockTcp, proto: com.flowlink.protocol.ProtocolSpec?, session: Boolean) {
+        val steps = r.then?.sequenceOrEmpty().orEmpty()
+        if (steps.isEmpty()) {
+            if (session && r.then != null && !r.isProxy())
+                throw BadRequestException("규칙 ${i + 1}: connectionMode=session 이면 then.sequence 에 단계가 있어야 합니다.")
+            return
+        }
+        if (!session) throw BadRequestException("규칙 ${i + 1}: sequence 는 connectionMode=session 에서만 쓸 수 있습니다.")
+        val known = proto?.let { p -> (p.headerOrEmpty() + p.messagesOrEmpty().flatMap { it.fieldsOrEmpty() }).map { it.nameOrEmpty() }.toSet() } ?: emptySet()
+        val ids = LinkedHashSet<String>()
+        for ((j, st) in steps.withIndex()) {
+            val where = "규칙 ${i + 1} 단계 ${j + 1}"
+            val act = st.actionOr()
+            if (act != "send" && act != "receive") throw BadRequestException("$where: action 은 send | receive 만 가능합니다: ${st.action}")
+            st.id?.trim()?.takeIf { it.isNotEmpty() }?.let { if (!ids.add(it)) throw BadRequestException("$where: 단계 id 가 중복입니다 — '$it'") }
+            val key = st.message?.trim()?.takeIf { it.isNotEmpty() }
+            if (act == "send" && key == null) throw BadRequestException("$where: send 에는 message(전문 키)가 필요합니다.")
+            if (act == "receive" && key == null && proto?.hasDiscriminator() != true)
+                throw BadRequestException("$where: receive 에는 message 가 필요합니다(분기 필드가 없는 프로토콜이라 자동 판별이 안 됩니다).")
+            if (proto == null) continue
+            if (key != null && proto.message(key) == null) throw BadRequestException("$where: 전문 '$key' 정의가 프로토콜에 없습니다.")
+            val allowed = (proto.headerOrEmpty() + (key?.let { proto.message(it)?.fieldsOrEmpty() } ?: emptyList())).map { it.nameOrEmpty() }.toSet()
+            st.fieldsOrEmpty().keys.firstOrNull { it !in allowed }?.let { throw BadRequestException("$where: '$it' 는 전문 ${key ?: "?"} 에 없는 필드입니다.") }
+            st.expectOrEmpty().mapNotNull { it.field?.trim() }.firstOrNull { it.isNotEmpty() && it !in known }
+                ?.let { throw BadRequestException("$where: 조건 필드 '$it' 는 프로토콜의 어떤 전문에도 없습니다.") }
+            for (v in st.fieldsOrEmpty().values + st.expectOrEmpty().mapNotNull { it.value }) checkRefs(v, known, ids, where)
+        }
+    }
+
+    /** `{{initial.필드}}`·`{{steps.단계id.필드}}` 참조가 실제로 존재하는지 — 나머지 토큰(secret·env·seq·now)은 건드리지 않는다. */
+    private fun checkRefs(text: String, known: Set<String>, stepIds: Set<String>, where: String) {
+        for (m in TOKEN.findAll(text)) {
+            val t = m.groupValues[1].trim()
+            when {
+                t.startsWith("initial.") -> {
+                    val f = t.removePrefix("initial.")
+                    if (known.isNotEmpty() && f !in known) throw BadRequestException("$where: {{initial.$f}} — '$f' 는 프로토콜에 없는 필드입니다.")
+                }
+                t.startsWith("steps.") -> {
+                    val rest = t.removePrefix("steps.")
+                    val sid = rest.substringBefore('.', "")
+                    val f = rest.substringAfter('.', "")
+                    if (sid.isEmpty() || f.isEmpty()) throw BadRequestException("$where: {{steps.$rest}} — steps.단계id.필드 형식이어야 합니다.")
+                    if (sid !in stepIds) throw BadRequestException("$where: {{steps.$rest}} — 앞선 단계에 id '$sid' 가 없습니다.")
+                    if (known.isNotEmpty() && f !in known) throw BadRequestException("$where: {{steps.$rest}} — '$f' 는 프로토콜에 없는 필드입니다.")
+                }
+            }
+        }
+    }
+
     private fun validateTcp(spec: MockSpec) {
         val tcp = spec.tcp ?: return
         val pid = tcp.protocolId?.trim()
         val proto = if (pid.isNullOrEmpty()) null else try {
             protocolService.specOf(UUID.fromString(pid))
         } catch (e: Exception) { throw BadRequestException("TCP Mock 의 프로토콜을 찾을 수 없습니다: $pid") }
+        val session = tcp.isSession()
+        val mode = (tcp.connectionMode ?: "").trim()
+        if (mode.isNotEmpty() && !mode.equals("single", ignoreCase = true) && !mode.equals("session", ignoreCase = true))
+            throw BadRequestException("connectionMode 는 single | session 만 가능합니다: $mode")
         for ((i, r) in tcp.rulesOrEmpty().withIndex()) {
+            validateSequence(i, r, tcp, proto, session)
             if (r.isProxy()) {
                 if (tcp.upstream.isNullOrBlank()) throw BadRequestException("규칙 ${i + 1}: proxy 인데 upstream(실서버 host:port)이 없습니다.")
                 continue
@@ -542,6 +600,7 @@ class MockServerService(
 
     companion object {
         private val SLUG: Pattern = Pattern.compile("[a-z0-9-]{3,40}")
+        private val TOKEN = Regex("\\{\\{\\s*([^{}]+?)\\s*}}")
         /** mock 당 유지할 정의 스냅샷 수(📌 보존 제외). */
         const val VERSIONS_KEEP = 50
         const val USAGE_TTL_MS = 30_000L

@@ -195,7 +195,7 @@ class TcpMockRegistry(
     private fun serve(l: Listener, sock: Socket) {
         sock.use {
             try {
-                sock.soTimeout = 30_000
+                sock.soTimeout = TcpMockSession.IDLE_TIMEOUT_MS
                 val tcp = l.tcp // 연결 시작 시점 스냅샷 — 핫스왑이 규칙과 upstream 을 섞지 않게
                 val scope = secretProvider.scope(l.tenantId, l.environment)
                 val secrets = scope.secrets
@@ -206,6 +206,7 @@ class TcpMockRegistry(
                     upstreamFactory = { openUpstream(tcp, scope.resolver()) },
                     mask = { s -> SecretMasker.mask(s, masks) ?: s },
                     env = scope.env,
+                    setTimeout = { ms -> runCatching { sock.soTimeout = ms } },
                 )
                 session.serve(sock.getInputStream(), sock.getOutputStream()) {
                     runCatching { sock.setSoLinger(true, 0) }; runCatching { sock.close() }

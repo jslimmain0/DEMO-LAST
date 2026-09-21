@@ -144,7 +144,7 @@ class ScriptRuntime(private val props: PluginsProperties) {
     private fun readMeta(p: Value): ScriptMeta {
         val id = p.str("id"); if (!ScriptMeta.ID.matches(id)) throw ScriptError(null, null, "id 는 소문자·숫자·하이픈 1~64자여야 합니다: '$id'")
         val kind = p.str("kind").ifBlank { ScriptMeta.TRANSFORM }
-        if (kind !in ScriptMeta.KINDS) throw ScriptError(null, null, "kind 는 transform | fieldCodec | messageCodec 중 하나: '$kind'")
+        if (kind !in ScriptMeta.KINDS) throw ScriptError(null, null, "kind 는 transform | fieldCodec | messageCodec | wireCodec 중 하나: '$kind'")
         val need = if (kind == ScriptMeta.TRANSFORM) listOf("apply") else listOf("encode", "decode")
         for (f in need) if (!p.getMember(f).let { it != null && it.canExecute() }) throw ScriptError(null, null, "$kind 플러그인에는 $f(…) 함수가 필요합니다")
         val inputs = ioList(p.getMember("inputs")).ifEmpty { listOf(FlowTransform.IoSpec.of("input", "입력")) }
@@ -171,6 +171,8 @@ class ScriptRuntime(private val props: PluginsProperties) {
         "direction" to c.direction,
         "message" to ProxyObject.fromMap(c.message.toMap()),
         "field" to (c.field?.let { ProxyObject.fromMap(mapOf("name" to it.name, "len" to it.len, "type" to it.type, "pad" to it.pad)) }),
+        "messageKey" to c.messageKey,
+        "headerLength" to c.headerLength,
     ))
 
     /** JS 객체 → Map<String,String>: 문자열은 그대로, 그 외는 JSON.stringify(엔진이 코어션은 SPI 쪽에서). */

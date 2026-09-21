@@ -100,4 +100,78 @@ class TcpMockE2eTest {
         mocks.delete(b.id); mocks.delete(a.id)
         assertThat(registry.listeningPort(a.id)).isNull()
     }
+
+    // ---------- connectionMode=session: 실제 소켓으로 다단 왕복 ----------
+
+    private fun sessionSpec(port: Int, pid: String, rules: String) =
+        json.readTree("""{"tcp":{"port":$port,"protocolId":"$pid","timeoutMs":2000,"connectionMode":"session","sessionTimeoutMs":2000,"rules":[$rules]}}""")
+
+    @Test
+    fun `session - 같은 소켓에서 send·send·receive 를 순서대로 처리한다`() {
+        val p = protocols.create("e2e-세션", json.readTree(specJson))
+        val spec = protocols.specOf(p.id)
+        val port = registry.pickFreePort(19700)
+        val m = mocks.create(CreateMockServerRequest("S", "e2e-tcp-seq", "TCP", null))
+        mocks.updateSpec(m.id, sessionSpec(port, p.id.toString(), """
+            {"id":"flow","when":[{"field":"거래코드","op":"eq","value":"0210"}],"then":{"mode":"mock","sequence":[
+              {"id":"ack","action":"send","message":"9001","fields":{"응답코드":"0000"}},
+              {"id":"res","action":"send","message":"0211","fields":{"응답코드":"0000","잔액":"{{initial.계좌번호}}"}},
+              {"id":"fin","action":"receive","message":"0210","expect":[{"field":"계좌번호","op":"eq","value":"{{initial.계좌번호}}"}]}
+            ]}}"""))
+        assertThat(registry.listeningPort(m.id)).isEqualTo(port)
+
+        val req = ProtocolCodec.encode(spec, "0210", mapOf("계좌번호" to "1122334567890")).bytes
+        java.net.Socket("127.0.0.1", port).use { sock ->
+            sock.soTimeout = 3000
+            sock.getOutputStream().apply { write(req); flush() }
+            val ack = com.flowlink.protocol.Framer.readFrame(sock.getInputStream(), spec)!!
+            val res = com.flowlink.protocol.Framer.readFrame(sock.getInputStream(), spec)!!
+            assertThat(ProtocolCodec.decode(spec, ack.bytes, Direction.RECV).messageKey).isEqualTo("9001")
+            val d = ProtocolCodec.decode(spec, res.bytes, Direction.RECV)
+            assertThat(d.messageKey).isEqualTo("0211"); assertThat(d.body!!["잔액"]).isEqualTo("1122334567890")
+            sock.getOutputStream().apply { write(req); flush() } // 마지막 ACK(같은 0210)
+            Thread.sleep(300)
+        }
+        val log = mocks.tcpLog(m.id)
+        assertThat(log.map { it.stepId }).contains("ack", "res", "fin")
+        assertThat(log.mapNotNull { it.connId }.distinct()).hasSize(1)
+        assertThat(log.none { it.level == "error" }).isTrue()
+        mocks.delete(m.id)
+    }
+
+    @Test
+    fun `session 스키마 검증 - 빈 시퀀스·잘못된 action·중복 id·없는 템플릿 참조는 저장에서 걸린다`() {
+        val p = protocols.create("e2e-검증", json.readTree(specJson))
+        val port = registry.pickFreePort(19800)
+        val m = mocks.create(CreateMockServerRequest("V", "e2e-tcp-val", "TCP", null))
+        val pid = p.id.toString()
+        fun save(rules: String, session: Boolean = true) =
+            mocks.updateSpec(m.id, if (session) sessionSpec(port, pid, rules) else tcpSpec(port, pid, null, rules))
+
+        assertThatThrownBy { save("""{"id":"a","when":[],"then":{"mode":"mock","fields":{"거래코드":"9001"}}}""") }
+            .hasMessageContaining("sequence")
+        assertThatThrownBy { save("""{"id":"a","when":[],"then":{"mode":"mock","sequence":[{"id":"s","action":"send","message":"9001"}]}}""", session = false) }
+            .hasMessageContaining("connectionMode=session")
+        assertThatThrownBy { save("""{"id":"a","when":[],"then":{"mode":"mock","sequence":[{"id":"s","action":"sendx","message":"9001"}]}}""") }
+            .hasMessageContaining("action")
+        assertThatThrownBy { save("""{"id":"a","when":[],"then":{"mode":"mock","sequence":[{"id":"s","action":"send"}]}}""") }
+            .hasMessageContaining("message")
+        assertThatThrownBy { save("""{"id":"a","when":[],"then":{"mode":"mock","sequence":[
+              {"id":"s","action":"send","message":"9001"},{"id":"s","action":"send","message":"9001"}]}}""") }
+            .hasMessageContaining("중복")
+        assertThatThrownBy { save("""{"id":"a","when":[],"then":{"mode":"mock","sequence":[
+              {"id":"s","action":"send","message":"9001","fields":{"응답코드":"{{initial.없는필드}}"}}]}}""") }
+            .hasMessageContaining("없는 필드")
+        assertThatThrownBy { save("""{"id":"a","when":[],"then":{"mode":"mock","sequence":[
+              {"id":"s","action":"send","message":"9001","fields":{"응답코드":"{{steps.없는단계.계좌번호}}"}}]}}""") }
+            .hasMessageContaining("앞선 단계에 id") // '없는단계' 가 없습니다
+        assertThatThrownBy { save("""{"id":"a","when":[],"then":{"mode":"mock","sequence":[
+              {"id":"s","action":"send","message":"없는전문"}]}}""") }
+            .hasMessageContaining("정의가 프로토콜에 없습니다")
+        // 올바른 시퀀스는 저장된다
+        save("""{"id":"ok","when":[],"then":{"mode":"mock","sequence":[
+              {"id":"s1","action":"send","message":"9001","fields":{"응답코드":"0000"}},
+              {"id":"s2","action":"receive","message":"0210","expect":[{"field":"계좌번호","op":"eq","value":"{{steps.s1.계좌번호}}"}]}]}}""")
+        mocks.delete(m.id)
+    }
 }

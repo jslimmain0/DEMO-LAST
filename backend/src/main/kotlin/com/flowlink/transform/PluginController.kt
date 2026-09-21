@@ -28,6 +28,6 @@ data class CodecView(val id: String, val label: String, val layer: String, val p
 class CodecController(private val registry: TransformRegistry) {
     @GetMapping("/api/v1/codecs")
     fun codecs(): List<CodecView> = registry.codecs().map {
-        CodecView(it.id(), it.label(), if (it is com.flowlink.codec.MessageCodec) "message" else "field", it.params())
+        CodecView(it.id(), it.label(), when (it) { is com.flowlink.codec.WireCodec -> "wire"; is com.flowlink.codec.MessageCodec -> "message"; else -> "field" }, it.params())
     }
 }

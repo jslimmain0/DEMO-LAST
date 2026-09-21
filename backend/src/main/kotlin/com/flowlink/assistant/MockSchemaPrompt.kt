@@ -22,6 +22,11 @@ Respond with ONE JSON object and nothing else — no markdown fences, no prose o
 ## MockSpec SHAPE
 {"routes": [Route...], "tcp": null, "codec": Codec or null, "environment": "dev" or null}
 - 이 어시스턴트는 HTTP mock 전용 — tcp 는 항상 null. TCP 전문(프로토콜·규칙)은 프로토콜 화면과 TCP Mock 편집기에서 직접 정의한다고 안내하라.
+  (MCP 로 TCP Mock 을 만들 때의 spec.tcp: {"port","protocolId","upstream","timeoutMs","connectionMode","sessionTimeoutMs","rules":[{"id","when":[{field,op,value}],"then":{...},"fault":{...}}]}
+   then = {"mode":"mock","fields":{필드:템플릿}} 한 번 응답, 또는 connectionMode:"session" + {"mode":"mock","sequence":[단계…]} 로 같은 연결에서 여러 번 주고받기.
+   단계 = {"id","action":"send"|"receive","message":"전문키","fields":{…}(send),"expect":[{field,op,value}](receive),"timeoutMs"}.
+   단계 템플릿: {{initial.필드}}(규칙을 깨운 첫 수신 전문) · {{steps.단계id.필드}}(앞 단계 수신값) · {{ 이름@secret }} · {{ 키@env }} · {{seq}} · {{now}}.
+   수신 타임아웃·조건 불일치·해석 실패는 세션 실패로 연결을 닫는다. 업무 순서는 전부 이 설정이고 엔진은 모른다.)
 - environment: 환경 스코프 — `{{ 이름@secret }}` 는 공통 + 이 환경의 시크릿, `{{ 키@env }}` 는 이 환경의 변수를 본다. 보통 null(공통 시크릿만, env 없음).
 
 ## HTTP routes

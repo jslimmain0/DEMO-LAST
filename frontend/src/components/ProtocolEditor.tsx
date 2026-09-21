@@ -2,7 +2,7 @@
 // 기본(인코딩) · 프레이밍(길이 필드/형식/포함 여부/분기 필드) · 헤더 표 · 전문 표(탭·표 붙여넣기) ·
 // 메시지 플러그인 체인 · 미리보기(백엔드 조립). 저장 전까지는 전부 로컬 spec 편집.
 import { useMutation, useQuery } from '@tanstack/react-query'
-import type { CSSProperties } from 'react'
+import type { CSSProperties, ReactNode } from 'react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { adminApi, codecsApi, protocolsApi } from '../api/client'
@@ -171,6 +171,16 @@ export function ProtocolEditor({ detail, canEdit, onSaved }: { detail: ProtocolD
                 <input type="radio" name="includesSelf" checked={spec.includesSelf} disabled={ro} onChange={() => patch({ includesSelf: true })} />
                 <b style={mono}>{nums.withSelf}</b> <span style={hint}>(전문길이 필드 포함)</span>
               </label>
+              <label style={{ ...radioRow, marginTop: 2 }}>
+                <span style={{ fontSize: 11.5 }}>보정</span>
+                <input type="number" value={spec.lengthAdjustment ?? 0} disabled={ro} aria-label="길이 보정"
+                  onChange={(e) => patch({ lengthAdjustment: Number(e.target.value) || 0 })}
+                  style={{ ...input, width: 84, fontFamily: 'var(--fl-font-mono)' }} />
+                <span style={hint}>
+                  → 싣는 값 <b style={mono}>{(spec.includesSelf ? nums.withSelf : nums.bodyOnly) + (spec.lengthAdjustment ?? 0)}</b>
+                  {' '}(본문 길이만 실으려면 보정 {-(tableLen(spec.header) - (Number(spec.header.find((f) => f.name === spec.lengthField)?.len) || 0))})
+                </span>
+              </label>
             </div>
           </div>
           <label style={row}>
@@ -250,6 +260,9 @@ export function ProtocolEditor({ detail, canEdit, onSaved }: { detail: ProtocolD
         {/* ⑤ 메시지 플러그인 */}
         <MessagePlugins spec={spec} patch={patch} codecs={codecList} readOnly={ro} />
 
+        {/* ⑤-2 전체 프레임 플러그인 */}
+        <WirePlugins spec={spec} patch={patch} codecs={codecList} readOnly={ro} />
+
         {/* ⑥ 미리보기 */}
         <PreviewSection spec={spec} tab={tab} />
       </div>
@@ -263,11 +276,11 @@ export function ProtocolEditor({ detail, canEdit, onSaved }: { detail: ProtocolD
   )
 }
 
-/** ⑤ 본문 전체에 순서대로 적용되는 메시지 코덱 체인. */
-function MessagePlugins({ spec, patch, codecs, readOnly }: { spec: ProtocolSpec; patch: (p: Partial<ProtocolSpec>) => void; codecs: CodecInfo[]; readOnly: boolean }) {
-  const list = spec.messagePlugins ?? []
-  const avail = codecs.filter((c) => c.layer === 'message')
-  const set = (next: PluginRef[]) => patch({ messagePlugins: next })
+/** 코덱 체인 목록 — 메시지(본문)·wire(전체 프레임) 공용. */
+function PluginChain({ title, note, list, avail, readOnly, empty, set, extra }: {
+  title: string; note: string; list: PluginRef[]; avail: CodecInfo[]; readOnly: boolean; empty: string
+  set: (next: PluginRef[]) => void; extra?: ReactNode
+}) {
   const move = (i: number, d: number) => {
     const j = i + d
     if (j < 0 || j >= list.length) return
@@ -277,8 +290,8 @@ function MessagePlugins({ spec, patch, codecs, readOnly }: { spec: ProtocolSpec;
   }
   return (
     <section style={section}>
-      <div style={secTitle}>메시지 플러그인</div>
-      <div style={{ ...hint, marginBottom: 8 }}>본문 전체에 순서대로 적용(수신은 역순). 헤더는 평문.</div>
+      <div style={secTitle}>{title}</div>
+      <div style={{ ...hint, marginBottom: 8 }}>{note}</div>
       <div style={{ display: 'grid', gap: 6 }}>
         {list.map((p, i) => (
           <div key={i} style={pluginRow}>
@@ -291,16 +304,47 @@ function MessagePlugins({ spec, patch, codecs, readOnly }: { spec: ProtocolSpec;
             {!readOnly && <button style={miniBtn} onClick={() => set(list.filter((_, j) => j !== i))}>제거</button>}
           </div>
         ))}
-        {!list.length && <div style={hint}>없음 — 본문을 그대로 보냅니다.</div>}
+        {!list.length && <div style={hint}>{empty}</div>}
       </div>
+      {extra}
       {!readOnly && (
-        <select aria-label="플러그인 추가" value="" style={{ ...sel, marginTop: 8 }}
+        <select aria-label={`${title} 추가`} value="" style={{ ...sel, marginTop: 8 }}
           onChange={(e) => { if (e.target.value) set([...list, { id: e.target.value, config: {} }]) }}>
           <option value="">+ 플러그인 추가…</option>
           {avail.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
         </select>
       )}
     </section>
+  )
+}
+
+/** ⑤ 본문 전체에 순서대로 적용되는 메시지 코덱 체인. */
+function MessagePlugins({ spec, patch, codecs, readOnly }: { spec: ProtocolSpec; patch: (p: Partial<ProtocolSpec>) => void; codecs: CodecInfo[]; readOnly: boolean }) {
+  return (
+    <PluginChain title="메시지 플러그인" note="본문 전체에 순서대로 적용(수신은 역순). 헤더는 평문."
+      list={spec.messagePlugins ?? []} avail={codecs.filter((c) => c.layer === 'message')} readOnly={readOnly}
+      empty="없음 — 본문을 그대로 보냅니다." set={(next) => patch({ messagePlugins: next })} />
+  )
+}
+
+/** ⑤-2 직렬화가 끝난 전체 프레임(헤더+본문)에 적용 — 전문 전체 서명·체크섬·암호화. */
+function WirePlugins({ spec, patch, codecs, readOnly }: { spec: ProtocolSpec; patch: (p: Partial<ProtocolSpec>) => void; codecs: CodecInfo[]; readOnly: boolean }) {
+  const list = spec.wirePlugins ?? []
+  return (
+    <PluginChain title="전체 프레임 플러그인" note="헤더+본문을 합친 뒤 적용(수신은 헤더 분리 전, 역순). 길이가 바뀌면 기본은 오류입니다."
+      list={list} avail={codecs.filter((c) => c.layer === 'wire')} readOnly={readOnly}
+      empty="없음 — 조립한 프레임을 그대로 보냅니다." set={(next) => patch({ wirePlugins: next })}
+      extra={list.length ? (
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6 }}>
+          <span style={{ fontSize: 11.5, color: 'var(--fl-text-muted)' }}>길이가 바뀌면</span>
+          <select value={spec.wireLengthPolicy ?? 'strict'} disabled={readOnly} aria-label="wire 길이 정책"
+            onChange={(e) => patch({ wireLengthPolicy: e.target.value as 'strict' | 'recalc' })} style={{ ...sel, width: 220 }}>
+            <option value="strict">오류로 막는다(기본)</option>
+            <option value="recalc">길이 필드를 다시 계산한다</option>
+          </select>
+        </label>
+      ) : null}
+    />
   )
 }
 

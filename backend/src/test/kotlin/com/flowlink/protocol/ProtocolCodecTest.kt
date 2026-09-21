@@ -237,4 +237,106 @@ class ProtocolCodecTest {
         val raw = ProtocolCodec.encode(s, "0210", mapOf("계좌번호" to "123"), plugins = lk)
         assertThat(raw.fields.first { it.name == "계좌번호" }.value).startsWith("{{ pre@env }}123")
     }
+
+    // ---------- 길이 보정(lengthAdjustment) ----------
+
+    @Test
+    fun `lengthAdjustment - 인코딩·디코딩 대칭(0·양수·음수), 본문 길이만 싣는 전문`() {
+        val base = spec()
+        val plain = ProtocolCodec.encode(base, "0210", req)
+        val total = plain.bytes.size
+        for (adj in listOf(0, 7, -7)) {
+            val s = base.copy(lengthAdjustment = adj)
+            val e = ProtocolCodec.encode(s, "0210", req)
+            assertThat(e.bytes.size).isEqualTo(total) // 보정은 길이 '값'만 바꾼다 — 실제 크기는 그대로
+            assertThat(ProtocolCodec.parseLength(s, e.bytes)).isEqualTo(total - 4 + adj) // includesSelf=false → 전체-길이필드(4)
+            assertThat(ProtocolCodec.totalFromDeclared(s, ProtocolCodec.parseLength(s, e.bytes))).isEqualTo(total)
+            assertThat(ProtocolCodec.decode(s, e.bytes, Direction.SEND).body!!["계좌번호"]).isEqualTo("1122334567890")
+        }
+        // 본문 길이만 싣는 전문 = -(헤더길이 - 길이필드len). 엔진에 '본문 모드'를 두지 않고 보정으로 표현한다.
+        val bodyOnly = base.copy(lengthAdjustment = -(base.headerLen() - 4))
+        val e = ProtocolCodec.encode(bodyOnly, "0210", req)
+        assertThat(ProtocolCodec.parseLength(bodyOnly, e.bytes)).isEqualTo(total - bodyOnly.headerLen())
+        assertThat(Framer.readFrame(e.bytes.inputStream(), bodyOnly)!!.bytes).isEqualTo(e.bytes) // 수신 프레이밍도 대칭
+    }
+
+    @Test
+    fun `lengthAdjustment - 음수 길이·상한 밖 보정은 거부`() {
+        val tooSmall = spec().copy(lengthAdjustment = -100_000)
+        assertThatThrownBy { ProtocolCodec.encode(tooSmall, "0210", req) }
+            .isInstanceOf(ProtocolCodec.ProtocolException::class.java).hasMessageContaining("음수")
+        assertThat(spec().copy(lengthAdjustment = (1 shl 20) + 1).validate()).anyMatch { it.contains("길이 보정값") }
+        // 수신: 보정을 되돌리면 헤더보다 짧아지는 프레임 → 프레이밍 거부
+        val s = spec().copy(lengthAdjustment = 1000)
+        val frame = ProtocolCodec.encode(spec(), "0210", req).bytes
+        assertThatThrownBy { Framer.readFrame(frame.inputStream(), s) }.isInstanceOf(Framer.FrameException::class.java)
+    }
+
+    // ---------- 전체 프레임 코덱(wireCodec) ----------
+
+    /** 전 바이트 XOR 를 헤더 뒤 2바이트에 쓰는 대신, 여기선 검증만 쉽게 — 프레임 끝에 1바이트 BCC 를 '덮어쓴다'(길이 불변). */
+    private class Bcc(val mark: Byte = 0x7F) : com.flowlink.codec.WireCodec {
+        var lastCtx: CodecCtx? = null
+        var calls = 0
+        override fun id() = "bcc"
+        override fun encode(frame: ByteArray, ctx: CodecCtx): ByteArray {
+            lastCtx = ctx; calls++
+            val out = frame.copyOf(); out[out.size - 1] = frame.dropLast(1).fold(0) { a, b -> a xor (b.toInt() and 0xff) }.toByte(); return out
+        }
+        override fun decode(frame: ByteArray, ctx: CodecCtx): ByteArray {
+            lastCtx = ctx; calls++
+            val out = frame.copyOf(); out[out.size - 1] = mark; return out
+        }
+    }
+    private class Grow : com.flowlink.codec.WireCodec {
+        override fun id() = "grow"
+        override fun encode(frame: ByteArray, ctx: CodecCtx) = frame + byteArrayOf(0x21)
+        override fun decode(frame: ByteArray, ctx: CodecCtx) = frame.copyOf(frame.size - 1)
+    }
+    private class Boom : com.flowlink.codec.WireCodec {
+        override fun id() = "boom"
+        override fun encode(frame: ByteArray, ctx: CodecCtx): ByteArray = throw IllegalStateException("서명 실패")
+        override fun decode(frame: ByteArray, ctx: CodecCtx): ByteArray = throw IllegalStateException("검증 실패")
+    }
+
+    @Test
+    fun `wireCodec - 전체 프레임을 보고, 헤더 길이·전문 키가 ctx 에 온다`() {
+        val bcc = Bcc()
+        val lk = ProtocolCodec.PluginLookup { if (it == "bcc") bcc else null }
+        val s = spec().copy(wirePlugins = listOf(PluginRef("bcc")))
+        val e = ProtocolCodec.encode(s, "0210", req, plugins = lk)
+        assertThat(bcc.calls).isEqualTo(1)
+        assertThat(bcc.lastCtx!!.headerLength).isEqualTo(s.headerLen())
+        assertThat(bcc.lastCtx!!.messageKey).isEqualTo("0210")
+        assertThat(bcc.lastCtx!!.direction).isEqualTo("send")
+        // 마지막 바이트가 앞 전체의 XOR 로 바뀌었다 = 헤더까지 포함해 봤다는 뜻
+        val expected = e.bytes.dropLast(1).fold(0) { a, b -> a xor (b.toInt() and 0xff) }.toByte()
+        assertThat(e.bytes.last()).isEqualTo(expected)
+        // 수신: 헤더 분리 전에 decode 가 돈다(끝 1바이트를 마크로 되돌린 뒤 파싱)
+        val d = ProtocolCodec.decode(s, e.bytes, Direction.SEND, lk)
+        assertThat(bcc.calls).isEqualTo(2)
+        assertThat(d.header["거래코드"]).isEqualTo("0210")
+    }
+
+    @Test
+    fun `wireCodec - 기본은 같은 길이 강제, recalc 면 길이 필드를 다시 쓴다`() {
+        val lk = ProtocolCodec.PluginLookup { if (it == "grow") Grow() else null }
+        val strict = spec().copy(wirePlugins = listOf(PluginRef("grow")))
+        assertThatThrownBy { ProtocolCodec.encode(strict, "0210", req, plugins = lk) }
+            .isInstanceOf(ProtocolCodec.ProtocolException::class.java).hasMessageContaining("길이를 바꿨습니다")
+        val recalc = strict.copy(wireLengthPolicy = "recalc")
+        val e = ProtocolCodec.encode(recalc, "0210", req, plugins = lk)
+        assertThat(ProtocolCodec.parseLength(recalc, e.bytes)).isEqualTo(e.bytes.size - 4) // 커진 크기로 다시 계산
+        assertThat(spec().copy(wireLengthPolicy = "nope").validate()).anyMatch { it.contains("wireLengthPolicy") }
+    }
+
+    @Test
+    fun `wireCodec - 플러그인 오류·미등록은 전문 오류로 올라온다`() {
+        val lk = ProtocolCodec.PluginLookup { if (it == "boom") Boom() else null }
+        val s = spec().copy(wirePlugins = listOf(PluginRef("boom")))
+        assertThatThrownBy { ProtocolCodec.encode(s, "0210", req, plugins = lk) }.hasMessageContaining("서명 실패")
+        val missing = spec().copy(wirePlugins = listOf(PluginRef("nope")))
+        assertThatThrownBy { ProtocolCodec.encode(missing, "0210", req) }
+            .isInstanceOf(ProtocolCodec.ProtocolException::class.java).hasMessageContaining("WireCodec")
+    }
 }

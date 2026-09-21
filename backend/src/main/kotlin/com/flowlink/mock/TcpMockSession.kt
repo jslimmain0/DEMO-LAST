@@ -20,6 +20,7 @@ import java.util.regex.Pattern
  * TCP Mock 연결 1개의 처리 — 스트림만 의존하는 순수 세션(리스너·테스트 공용).
  * 프레임 → 해석(헤더는 항상, 본문은 표가 있을 때) → 규칙 첫 매칭 → mock 응답(헤더 에코 + then.fields 템플릿, lenient 조립) 또는 proxy(upstream 왕복)
  * → 장애 주입 → 전송. 모든 단계를 [log] 로 남긴다([mock]/[proxy] 구분, 부분 수신 chunks, ⚠ 절단/길이 불일치, 에러 원본 hex).
+ * connectionMode=session 이면 매칭 규칙의 `then.sequence`(send/receive) 를 같은 소켓에서 순서대로 실행한다 — 순서·필드는 설정이고 엔진은 업무를 모른다.
  */
 class TcpMockSession(
     private val spec: ProtocolSpec,
@@ -32,7 +33,11 @@ class TcpMockSession(
     private val mask: (String) -> String = { it },
     private val sleeper: (Long) -> Unit = { Thread.sleep(it) },
     private val env: Map<String, String> = emptyMap(),
+    /** 소켓 읽기 타임아웃 교체 — session 단계별 timeout 용(리스너가 소켓에 연결, 테스트는 무시). */
+    private val setTimeout: (Int) -> Unit = {},
 ) {
+    /** 이 연결의 식별자 — 로그 행을 연결 단위로 묶는다. */
+    private val connId: String = java.util.UUID.randomUUID().toString().take(8)
     /** 코덱 파라미터 안의 `{{ 이름@secret }}`·`{{ 키@env }}` — 이 Mock 의 환경 스코프로 푼다. */
     private val resolve: (String) -> String = MockSecretProvider.Scope(secrets, env).resolver()
     class Upstream(val input: InputStream, val output: OutputStream, val close: () -> Unit)
@@ -48,7 +53,7 @@ class TcpMockSession(
                     val raw = e.raw ?: ByteArray(0)
                     log(entry("in", "none", null, emptyMap(), raw, null, null, e.message, "error")); return
                 }
-                if (!handleFrame(frame, output, onReset)) return
+                if (!handleFrame(frame, output, onReset, input)) return
             }
         } finally {
             upstream?.let { runCatching { it.close() } }; upstream = null
@@ -56,7 +61,8 @@ class TcpMockSession(
     }
 
     /** 프레임 하나 처리. false = 연결을 끊어야 함(reset). */
-    fun handleFrame(frame: Framer.Frame, output: OutputStream, onReset: () -> Unit): Boolean {
+    @JvmOverloads
+    fun handleFrame(frame: Framer.Frame, output: OutputStream, onReset: () -> Unit, input: InputStream = InputStream.nullInputStream()): Boolean {
         val decoded = try { ProtocolCodec.decode(spec, frame.bytes, Direction.SEND, plugins, resolve = resolve) } catch (e: ProtocolCodec.ProtocolException) {
             log(entry("in", "none", null, emptyMap(), frame.bytes, frame.chunks, null, e.message, "error", frame.partial)); return true
         } catch (e: Exception) { // 코덱 플러그인 등에서 튀어나온 예외 — 연결을 조용히 죽이지 않고 로그 행으로
@@ -79,6 +85,8 @@ class TcpMockSession(
             onReset(); log(entry("out", source, null, emptyMap(), ByteArray(0), null, rule.id, "reset — 연결 강제 종료(RST)", "warn")); return false
         }
         if (rule.then == null) { log(entry("out", source, null, emptyMap(), ByteArray(0), null, rule.id, "then 없음 — 응답 없음", "warn")); return true }
+        val steps = rule.then.sequenceOrEmpty()
+        if (steps.isNotEmpty()) return runSequence(rule, steps, decoded, input, output)
         val resp = if (rule.isProxy()) proxy(frame, rule) else mockResponse(rule, decoded)
         resp ?: return true
         return writeWithFault(resp, rule, output, onReset, source)
@@ -89,11 +97,11 @@ class TcpMockSession(
     private fun match(rules: List<MockTcpRule>, values: Map<String, String>): MockTcpRule? =
         rules.firstOrNull { r -> r.whenOrEmpty().all { pass(it, values) } }
 
-    private fun pass(c: MockTcpCond, values: Map<String, String>): Boolean {
+    private fun pass(c: MockTcpCond, values: Map<String, String>, render: (String) -> String = resolve): Boolean {
         val field = c.field?.trim().orEmpty()
         if (field.isEmpty()) return true // 편집 중 미완성 조건
         val actual = values[field]?.trim() ?: return false
-        val v = resolve(c.value ?: "") // 비교값의 `{{ 이름@secret }}`·`{{ 키@env }}`
+        val v = render(c.value ?: "") // 비교값의 `{{ 이름@secret }}`·`{{ 키@env }}`(시퀀스면 `{{initial.x}}` 도)
         return when (c.op?.lowercase(Locale.ROOT) ?: "eq") {
             "eq" -> actual == v.trim()
             "ne" -> actual != v.trim()
@@ -104,6 +112,57 @@ class TcpMockSession(
             "exists" -> actual.isNotEmpty()
             else -> actual == v.trim()
         }
+    }
+
+    // ---------- session 시퀀스 ----------
+
+    /**
+     * 매칭 규칙의 단계를 같은 소켓에서 순서대로 실행한다. false = 세션 실패(연결을 닫는다).
+     * 상태는 이 객체 안에만 있다 — 다른 연결이나 전역 Mock state 와 섞이지 않는다.
+     */
+    private fun runSequence(rule: MockTcpRule, steps: List<MockSpec.MockTcpStep>, first: ProtocolCodec.Decoded, input: InputStream, output: OutputStream): Boolean {
+        val initial = first.values()
+        val done = LinkedHashMap<String, Map<String, String>>()
+        fun ctx() = MockContext(seq = seq(), secrets = secrets, tcpFields = initial, env = env, initial = initial, steps = done)
+        fun fail(stepId: String, note: String, bytes: ByteArray = ByteArray(0)): Boolean {
+            log(entry("out", "mock", null, emptyMap(), bytes, null, rule.id, note, "error", stepId = stepId)); return false
+        }
+        for ((i, st) in steps.withIndex()) {
+            val sid = st.id?.trim()?.takeIf { it.isNotEmpty() } ?: "#${i + 1}"
+            if (st.actionOr() == "receive") {
+                setTimeout(st.timeoutMs?.takeIf { it > 0 } ?: tcp.sessionTimeout())
+                val f = try { Framer.readFrame(input, spec) } catch (e: java.net.SocketTimeoutException) {
+                    return fail(sid, "수신 타임아웃 ${st.timeoutMs ?: tcp.sessionTimeout()}ms")
+                } catch (e: Framer.FrameException) {
+                    return fail(sid, "수신 프레이밍 실패: ${e.message}", e.raw ?: ByteArray(0))
+                } catch (e: IOException) { return fail(sid, "수신 오류: ${e.message}") }
+                if (f == null) return fail(sid, "상대가 연결을 닫았습니다")
+                val d = try { ProtocolCodec.decode(spec, f.bytes, Direction.SEND, plugins, resolve = resolve) } catch (e: Exception) {
+                    return fail(sid, "해석 실패: ${e.message}", f.bytes)
+                }
+                val vals = d.values()
+                val want = st.message?.trim()?.takeIf { it.isNotEmpty() }
+                log(entry("in", "mock", d.disc ?: d.messageKey, vals, f.bytes, f.chunks, rule.id, "단계 $sid 수신", "info", f.partial, sid))
+                if (want != null && d.messageKey != want && d.disc != want) return fail(sid, "전문 '$want' 를 기다렸는데 '${d.messageKey ?: d.disc ?: "?"}' 가 왔습니다")
+                val c = ctx()
+                st.expectOrEmpty().firstOrNull { !pass(it, vals) { v -> MockTemplate.render(v, c) } }
+                    ?.let { return fail(sid, "조건 불일치 — ${it.field} ${it.op ?: "eq"} ${it.value}") }
+                done[sid] = vals
+            } else {
+                val key = st.message?.trim()?.takeIf { it.isNotEmpty() } ?: return fail(sid, "send 단계에 message(전문 키)가 없습니다")
+                val c = ctx()
+                val fields = LinkedHashMap<String, String>(first.header) // 헤더 에코(길이는 자동)
+                if (spec.hasDiscriminator()) fields[spec.discriminator!!.trim()] = spec.discValueOf(key)
+                for ((k, tpl) in st.fieldsOrEmpty()) fields[k] = MockTemplate.render(tpl, c)
+                val enc = try { ProtocolCodec.encode(spec, key, fields, Direction.SEND, plugins, lenient = true, resolve = resolve) } catch (e: Exception) {
+                    return fail(sid, "조립 실패: ${e.message}")
+                }
+                log(entry("out", "mock", key, fields, enc.bytes, null, rule.id, (enc.warnings + "단계 $sid 송신").joinToString(" · "), if (enc.warnings.isEmpty()) "info" else "warn", false, sid))
+                try { output.write(enc.bytes); output.flush() } catch (e: IOException) { return fail(sid, "송신 실패: ${e.message}") }
+            }
+        }
+        setTimeout(IDLE_TIMEOUT_MS) // 시퀀스가 끝나면 원래 유휴 타임아웃으로
+        return true
     }
 
     // ---------- mock 응답 ----------
@@ -178,7 +237,7 @@ class TcpMockSession(
 
     // ---------- 로그 ----------
 
-    private fun entry(dir: String, source: String, key: String?, fields: Map<String, String>, bytes: ByteArray, chunks: List<Int>?, ruleId: String?, note: String?, level: String, partial: Boolean = false): MockRuntimeStore.TcpLogEntry {
+    private fun entry(dir: String, source: String, key: String?, fields: Map<String, String>, bytes: ByteArray, chunks: List<Int>?, ruleId: String?, note: String?, level: String, partial: Boolean = false, stepId: String? = null): MockRuntimeStore.TcpLogEntry {
         // 큰 전문은 앞부분만 로그에 싣는다(행 200개 × 전문 크기가 힙을 먹지 않게) — bytes 는 실제 크기 그대로.
         val shown = if (bytes.size > MockRuntimeStore.BODY_CAP) bytes.copyOf(MockRuntimeStore.BODY_CAP) else bytes
         val raw = TcpBytes.decodeEscaped(shown, cs).map { if (it.code < 0x20) '.' else it }.joinToString("")
@@ -191,7 +250,12 @@ class TcpMockSession(
         return MockRuntimeStore.TcpLogEntry(
             Instant.now(), dir, source, key, fields.mapValues { mask(it.value) },
             text, if (hidden) "" else TcpBytes.hexDump(shown), bytes.size, chunks, ruleId,
-            notes.joinToString(" · ").ifEmpty { null }, level, partial,
+            notes.joinToString(" · ").ifEmpty { null }, level, partial, connId, stepId,
         )
+    }
+
+    companion object {
+        /** 리스너가 소켓에 거는 기본 유휴 타임아웃 — 시퀀스 단계 타임아웃을 쓰고 나면 여기로 되돌린다. */
+        const val IDLE_TIMEOUT_MS = 30_000
     }
 }

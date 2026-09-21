@@ -19,10 +19,16 @@ data class ProtocolSpec(
     val lengthFormat: String? = null,      // ascii-decimal(기본) | binary
     val endian: String? = null,            // big(기본) | little — binary 일 때만
     val includesSelf: Boolean? = null,     // 길이값에 길이 필드 자신 포함(true=전체, false=전체-길이필드len)
+    /** 길이값 보정(기본 0) — 저장 길이 = 기본 계산 + 이 값. 본문 길이만 싣는 전문은 -(헤더길이-길이필드len). 수신은 대칭으로 되돌린다. */
+    val lengthAdjustment: Int? = null,
     val discriminator: String? = null,     // 본문 표를 고르는 헤더 필드. 비면 request/response
     val header: List<Field>? = null,
     val messages: List<Message>? = null,   // 순서 있음(UI 탭)
     val messagePlugins: List<PluginRef>? = null,
+    /** 전체 프레임 코덱(WireCodec) — 송신은 길이 계산·헤더 결합 후, 수신은 헤더 분리 전. 순서대로(수신 역순). */
+    val wirePlugins: List<PluginRef>? = null,
+    /** wire 결과 길이가 바뀌었을 때 — strict(기본, 오류) | recalc(길이 필드 다시 계산). */
+    val wireLengthPolicy: String? = null,
 ) {
     @JsonIgnoreProperties(ignoreUnknown = true)
     data class Field(
@@ -55,6 +61,9 @@ data class ProtocolSpec(
     fun headerOrEmpty(): List<Field> = header ?: emptyList()
     fun messagesOrEmpty(): List<Message> = messages ?: emptyList()
     fun headerLen(): Int = headerOrEmpty().sumOf { it.lenOrZero() }
+    fun lengthAdj(): Int = lengthAdjustment ?: 0
+    fun wirePluginsOrEmpty(): List<PluginRef> = wirePlugins ?: emptyList()
+    fun wireRecalcLength(): Boolean = (wireLengthPolicy ?: "").trim().lowercase(Locale.ROOT) == "recalc"
     fun isBinaryLength(): Boolean = (lengthFormat ?: "").trim().lowercase(Locale.ROOT) == "binary"
     fun isLittleEndian(): Boolean = (endian ?: "").trim().lowercase(Locale.ROOT) == "little"
     fun hasDiscriminator(): Boolean = !discriminator.isNullOrBlank()
@@ -89,6 +98,9 @@ data class ProtocolSpec(
             }
         }
         if (hasDiscriminator() && headerOrEmpty().none { it.nameOrEmpty() == discriminator!!.trim() }) errs += "헤더에 분기 필드 '${discriminator!!.trim()}' 가 없습니다."
+        if (lengthAdj() !in -MAX_MESSAGE..MAX_MESSAGE) errs += "길이 보정값(lengthAdjustment)은 ±${MAX_MESSAGE} 안이어야 합니다: ${lengthAdj()}"
+        val wp = (wireLengthPolicy ?: "").trim().lowercase(Locale.ROOT)
+        if (wp.isNotEmpty() && wp !in setOf("strict", "recalc")) errs += "wireLengthPolicy 는 strict | recalc 만 가능합니다: $wireLengthPolicy"
         errs += checkTable("헤더", headerOrEmpty())
         val keys = HashSet<String>()
         for (m in messagesOrEmpty()) {

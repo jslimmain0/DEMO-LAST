@@ -38,6 +38,16 @@ const SHAPE: Record<PluginKind, { title: string; code: string; note: string }> =
 })`,
     note: '길이 계산 전에 적용 — 암호화로 길이가 바뀌어도 헤더 길이는 맞는다',
   },
+  wireCodec: {
+    title: '전체 프레임 코덱 — 헤더+본문 전체(직렬화 후)',
+    code: `({
+  id: 'my-id', label: '이름', kind: 'wireCodec',
+  params: [{ key: 'key', label: '키' }],
+  encode(frame, ctx) { return /* Uint8Array */ },
+  decode(frame, ctx) { return /* Uint8Array */ },
+})`,
+    note: '송신은 길이 계산·헤더 결합 후, 수신은 헤더 분리 전. ctx.headerLength·ctx.messageKey 로 경계를 안다. 길이를 바꾸면 기본은 오류(프로토콜의 wireLengthPolicy=recalc 로 허용)',
+  },
 }
 
 const COMMON = [
@@ -48,7 +58,9 @@ const COMMON = [
 
 export function PluginReference({ manifest, source, onInsert }: { manifest: FlApiEntry[]; source: string; onInsert: (text: string) => void }) {
   const [q, setQ] = useState('')
-  const kind: PluginKind = /kind\s*:\s*['"]messageCodec['"]/.test(source) ? 'messageCodec' : /kind\s*:\s*['"]fieldCodec['"]/.test(source) ? 'fieldCodec' : 'transform'
+  const kind: PluginKind = /kind\s*:\s*['"]wireCodec['"]/.test(source) ? 'wireCodec'
+    : /kind\s*:\s*['"]messageCodec['"]/.test(source) ? 'messageCodec'
+    : /kind\s*:\s*['"]fieldCodec['"]/.test(source) ? 'fieldCodec' : 'transform'
   const shape = SHAPE[kind]
   const groups = useMemo(() => {
     const t = q.trim().toLowerCase()

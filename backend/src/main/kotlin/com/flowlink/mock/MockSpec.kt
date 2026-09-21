@@ -1,6 +1,7 @@
 package com.flowlink.mock
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties
+import java.util.Locale
 
 /**
  * mock 서버의 정의(spec_json) — 사용자 정의 라우트 목록. 프론트 편집기와 1:1 대응.
@@ -32,7 +33,15 @@ data class MockSpec(
         val upstream: String? = null,   // "host:port" — proxy 규칙의 실서버
         val timeoutMs: Int? = null,     // upstream 연결/응답 타임아웃(기본 5000)
         val rules: List<MockTcpRule>? = null,
-    ) { fun rulesOrEmpty(): List<MockTcpRule> = rules ?: emptyList() }
+        /** single(기본, 프레임마다 응답) | session(같은 연결에서 then.sequence 의 단계를 순서대로 주고받는다). */
+        val connectionMode: String? = null,
+        /** session 단계 기본 타임아웃(ms, 기본 5000). 단계에서 timeoutMs 로 덮는다. */
+        val sessionTimeoutMs: Int? = null,
+    ) {
+        fun rulesOrEmpty(): List<MockTcpRule> = rules ?: emptyList()
+        fun isSession(): Boolean = (connectionMode ?: "").trim().equals("session", ignoreCase = true)
+        fun sessionTimeout(): Int = sessionTimeoutMs?.takeIf { it > 0 } ?: 5000
+    }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     data class MockTcpRule(val id: String?, val `when`: List<MockTcpCond>? = null, val then: MockTcpThen? = null, val fault: MockTcpFault? = null) {
@@ -41,9 +50,32 @@ data class MockSpec(
         fun thenFields(): Map<String, String> = then?.fields ?: emptyMap()
     }
 
-    /** then — mode=mock 이면 fields(응답 필드 템플릿, discriminator 값이 응답 표를 고름) / mode=proxy 면 upstream 통과. */
+    /**
+     * then — mode=mock 이면 fields(응답 필드 템플릿, discriminator 값이 응답 표를 고름) / mode=proxy 면 upstream 통과.
+     * [sequence] 가 있으면(connectionMode=session) fields 대신 그 단계들을 같은 연결에서 순서대로 실행한다.
+     */
     @JsonIgnoreProperties(ignoreUnknown = true)
-    data class MockTcpThen(val mode: String? = null, val fields: Map<String, String>? = null)
+    data class MockTcpThen(val mode: String? = null, val fields: Map<String, String>? = null, val sequence: List<MockTcpStep>? = null) {
+        fun sequenceOrEmpty(): List<MockTcpStep> = sequence ?: emptyList()
+    }
+
+    /**
+     * session 단계 — send(전문 하나 보냄) 또는 receive(전문 하나 받아 검사). 엔진은 순서만 실행하고 업무 의미는 모른다.
+     * 템플릿: `{{initial.필드}}`(규칙을 깨운 첫 수신 전문) · `{{steps.단계id.필드}}`(앞 단계 수신값) · 기존 `{{ 이름@secret }}`·`{{ 키@env }}`·`{{seq}}`·`{{now}}`.
+     */
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    data class MockTcpStep(
+        val id: String? = null,
+        val action: String? = null,                    // send | receive
+        val message: String? = null,                   // 전문 키(receive 는 분기 필드가 있으면 생략 가능)
+        val fields: Map<String, String>? = null,       // send: 필드 템플릿
+        val expect: List<MockTcpCond>? = null,         // receive: 조건(기존 연산자)
+        val timeoutMs: Int? = null,                    // receive: 이 단계만 타임아웃 덮기
+    ) {
+        fun actionOr(): String = (action ?: "send").trim().lowercase(Locale.ROOT)
+        fun fieldsOrEmpty(): Map<String, String> = fields ?: emptyMap()
+        fun expectOrEmpty(): List<MockTcpCond> = expect ?: emptyList()
+    }
 
     /** 요청 필드 조건 — field(헤더/본문 필드명) op(eq|ne|contains|startswith|endswith|regex|exists) value. 비교 전 trim. */
     @JsonIgnoreProperties(ignoreUnknown = true)

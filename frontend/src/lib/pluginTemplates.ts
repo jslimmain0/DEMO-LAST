@@ -1,6 +1,7 @@
 import type { PluginKind } from '../api/types'
 
-export const kindLabel = (k: PluginKind): string => (k === 'fieldCodec' ? '필드 코덱' : k === 'messageCodec' ? '전문 코덱' : '변환')
+export const kindLabel = (k: PluginKind): string =>
+  k === 'fieldCodec' ? '필드 코덱' : k === 'messageCodec' ? '전문 코덱' : k === 'wireCodec' ? '전체 프레임 코덱' : '변환'
 
 /** 새 플러그인 골격 — 스크립트의 마지막 표현식이 플러그인 객체. */
 export const PLUGIN_TEMPLATES: Record<PluginKind, { label: string; source: string }> = {
@@ -44,6 +45,27 @@ export const PLUGIN_TEMPLATES: Record<PluginKind, { label: string; source: strin
   params: [{ key: 'key', label: '키', placeholder: '{{ aesKey@secret }}' }, { key: 'iv', label: 'IV' }],
   encode(body, ctx) { return fl.aes.encryptBytes(body, ctx.config.key, ctx.config.iv) },
   decode(body, ctx) { return fl.aes.decryptBytes(body, ctx.config.key, ctx.config.iv) },
+})
+`,
+  },
+  wireCodec: {
+    label: '전체 프레임 코덱 — 헤더까지 포함한 전문 전체를 감싸고 푼다(서명·체크섬·암호화)',
+    source: `// 전체 프레임 코덱 — 직렬화가 끝난 헤더+본문 전체를 본다. 어디를 덮을지(서명·체크섬 범위)는 플러그인이 정한다.
+({
+  id: 'my-wire-codec',
+  label: '내 전체 프레임 코덱',
+  kind: 'wireCodec',
+  params: [{ key: 'key', label: '키', placeholder: '{{ hmacKey@secret }}' }],
+  // ctx = { config, direction, messageKey, headerLength, message }
+  encode(frame, ctx) {
+    // 예) 헤더+본문 전체의 HMAC 앞 8바이트를 프레임 끝에 덮어쓴다(길이 불변 = 기본 정책)
+    const head = Array.from(frame).slice(0, frame.length - 8)
+    const mac = fl.hex.dec(fl.hmac.sha256(ctx.config.key, Uint8Array.from(head)), { as: 'bytes' })
+    return Uint8Array.from(head.concat(Array.from(mac).slice(0, 8)))
+  },
+  decode(frame, ctx) {
+    return frame // 검증만 한다면 여기서 다시 계산해 비교하고, 틀리면 throw
+  },
 })
 `,
   },

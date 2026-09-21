@@ -40,6 +40,7 @@ class SchemaController {
 |---|---|---|---|
 | 전문의 **필드 하나**(카드번호·계좌번호…) | 그 필드 값만 암복호/마스킹 | `fieldCodec` | 프로토콜 spec 의 `Field.plugin = { id, config }` (protocol_upsert) |
 | 전문 **본문 전체** | 본문 bytes 통째 암복호(헤더는 평문, 길이 계산 전) | `messageCodec` | 프로토콜 spec 의 `messagePlugins: [{ id, config }]` |
+| **프레임 전체**(헤더+본문) | 조립이 끝난 전문 전체에 서명·체크섬·암호화 | `wireCodec` | 프로토콜 spec 의 `wirePlugins: [{ id, config }]` |
 | **Mock 코덱 단계** | 요청이 매칭에 들어가기 전 / 응답이 나가기 전 | `transform` | Mock spec 의 `codec.request[]` · `codec.response[]` (target: body/fields/header) |
 | **워크플로 값 변환** | 노드 사이에서 값 하나를 바꿈 | `transform` | TRANSFORM 노드의 `transformId` + 입력 포트 |
 쓸 수 있는 id 는 plugin_list(승인본만). 필요한 게 없으면 **만들어라**: plugin_script_upsert(초안) → plugin_script_try(시험) → plugin_script_submit(승인 요청) → plugin_script_wait(결과).
@@ -54,6 +55,9 @@ class SchemaController {
 변환(transform):  ({ id, label, description?, inputs?: [{key,label,type?}], outputs?: [{key,label,type?}], params?: [{key,label,type?,defaultValue?,options?,placeholder?}], apply(inputs, config) { return { 출력키: 값 } } })
 필드 코덱:        ({ id, label, kind: 'fieldCodec', params?, encode(value, ctx) { return 문자열 }, decode(value, ctx) { return 문자열 } })
 전문 코덱:        ({ id, label, kind: 'messageCodec', params?, encode(bytes, ctx) { return 바이트배열 }, decode(bytes, ctx) { return 바이트배열 } })
+전체 프레임 코덱: ({ id, label, kind: 'wireCodec', params?, encode(frame, ctx) { return 바이트배열 }, decode(frame, ctx) { return 바이트배열 } })
+  - wire 는 헤더+본문 전체를 본다(송신: 길이 계산·헤더 결합 후 / 수신: 헤더 분리 전). ctx 에 `messageKey`·`headerLength` 가 와서 경계를 알 수 있다.
+  - 길이를 바꾸면 기본은 오류다 — 바꿔야 하면 프로토콜의 `wireLengthPolicy: "recalc"`(길이 필드 재계산).
 ctx = { config, direction: 'send'|'recv', field: {name,len,type,pad}|null, message: {필드명: 값} }. id 는 [a-z0-9-] 1~64자(소문자·숫자·하이픈, 첫 글자는 하이픈 불가).
 입력·파라미터 값에는 `{{ 이름@secret }}`(시크릿 볼트)·`{{ 키@env }}`(환경 변수)를 쓸 수 있다 — 워크플로는 실행 환경, Mock 은 spec.environment, 프로토콜 미리보기·시험 실행(plugin_script_try)은 environment 인자의 환경으로 서버가 푼다. 비밀·환경별 값은 직접 적지 말고 토큰으로.
 """

@@ -3,7 +3,7 @@ package com.flowlink.plugin.script
 import com.flowlink.transform.FlowTransform
 import org.graalvm.polyglot.Source
 
-/** 스크립트 객체에서 뽑은 메타 — kind = transform | fieldCodec | messageCodec. */
+/** 스크립트 객체에서 뽑은 메타 — kind = transform | fieldCodec | messageCodec | wireCodec. */
 data class ScriptMeta(
     val id: String,
     val label: String,
@@ -14,8 +14,8 @@ data class ScriptMeta(
     val params: List<FlowTransform.TransformParam>,
 ) {
     companion object {
-        const val TRANSFORM = "transform"; const val FIELD_CODEC = "fieldCodec"; const val MESSAGE_CODEC = "messageCodec"
-        val KINDS = setOf(TRANSFORM, FIELD_CODEC, MESSAGE_CODEC)
+        const val TRANSFORM = "transform"; const val FIELD_CODEC = "fieldCodec"; const val MESSAGE_CODEC = "messageCodec"; const val WIRE_CODEC = "wireCodec"
+        val KINDS = setOf(TRANSFORM, FIELD_CODEC, MESSAGE_CODEC, WIRE_CODEC)
         val ID = Regex("^[a-z0-9][a-z0-9-]{0,63}$")
     }
 }
@@ -27,6 +27,7 @@ class CompiledScript(val meta: ScriptMeta, internal val source: Source)
 fun CompiledScript.toPlugin(rt: ScriptRuntime): Any = when (meta.kind) {
     ScriptMeta.FIELD_CODEC -> ScriptFieldCodec(this, rt)
     ScriptMeta.MESSAGE_CODEC -> ScriptMessageCodec(this, rt)
+    ScriptMeta.WIRE_CODEC -> ScriptWireCodec(this, rt)
     else -> ScriptTransform(this, rt)
 }
 
@@ -54,4 +55,13 @@ class ScriptMessageCodec(private val cs: CompiledScript, private val rt: ScriptR
     override fun params() = cs.meta.params
     override fun encode(body: ByteArray, ctx: com.flowlink.codec.CodecCtx) = rt.runMessageCodec(cs, "encode", body, ctx).value
     override fun decode(body: ByteArray, ctx: com.flowlink.codec.CodecCtx) = rt.runMessageCodec(cs, "decode", body, ctx).value
+}
+
+/** 전체 프레임(헤더+본문) 코덱 — 바이트 처리 방식은 messageCodec 과 같고 적용 층만 다르다. */
+class ScriptWireCodec(private val cs: CompiledScript, private val rt: ScriptRuntime) : com.flowlink.codec.WireCodec {
+    override fun id() = cs.meta.id
+    override fun label() = cs.meta.label
+    override fun params() = cs.meta.params
+    override fun encode(frame: ByteArray, ctx: com.flowlink.codec.CodecCtx) = rt.runMessageCodec(cs, "encode", frame, ctx).value
+    override fun decode(frame: ByteArray, ctx: com.flowlink.codec.CodecCtx) = rt.runMessageCodec(cs, "decode", frame, ctx).value
 }

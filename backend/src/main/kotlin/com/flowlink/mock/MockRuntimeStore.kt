@@ -108,6 +108,10 @@ class MockRuntimeStore {
         val level: String,
         /** 한 전문이 여러 번에 나뉘어 도착/전송됐다(Framer.Frame.partial · split 장애 주입). */
         val partial: Boolean = false,
+        /** 연결 식별자 — 같은 소켓에서 오간 행을 묶어 본다(session 모드에서 특히). */
+        val connId: String? = null,
+        /** session 시퀀스 단계 id. */
+        val stepId: String? = null,
     )
 
     data class Snapshot(val state: Map<String, String>, val seq: Long, val hits: Map<String, Int>, val requestCount: Int)

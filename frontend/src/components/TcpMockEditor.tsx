@@ -331,6 +331,8 @@ function LogRow({ e, open, protocolId, onToggle, onMakeRule }: { e: TcpLogEntry;
         <span style={{ ...meta, minWidth: 74 }}>{hhmmss(e.at)}</span>
         <span style={{ fontSize: 13, fontWeight: 800, color: e.dir === 'in' ? 'var(--fl-text)' : 'var(--fl-text-muted)' }} title={e.dir === 'in' ? '수신' : '송신'}>{e.dir === 'in' ? '→' : '←'}</span>
         <span style={{ ...tag, color: srcColor, borderColor: srcColor }}>[{e.source}]</span>
+        {e.stepId && <span style={tag} title="session 단계">단계 {e.stepId}</span>}
+        {e.connId && <span style={{ ...tag, opacity: 0.65 }} title="연결 식별자 — 같은 소켓에서 오간 행">#{e.connId}</span>}
         <b style={{ fontFamily: 'var(--fl-font-mono)', fontSize: 12, minWidth: 44 }}>{e.key ?? '—'}</b>
         <span style={{ ...meta, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={summary}>{summary}</span>
         {e.partial && <span style={{ ...tag, color: 'var(--fl-put, #f5a623)', borderColor: 'var(--fl-put, #f5a623)' }} title="한 전문이 여러 번에 나눠 도착">부분 수신{parts.length ? ` ${parts.join('+')}` : ''}</span>}

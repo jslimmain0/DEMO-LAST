@@ -5,6 +5,7 @@ import com.flowlink.codec.CodecPlugin
 import com.flowlink.codec.FieldCodec
 import com.flowlink.codec.FieldInfo
 import com.flowlink.codec.MessageCodec
+import com.flowlink.codec.WireCodec
 import com.flowlink.common.tcp.TcpBytes
 import com.flowlink.protocol.ProtocolSpec.Field
 import java.io.ByteArrayOutputStream
@@ -40,11 +41,13 @@ object ProtocolCodec {
 
     // ---------- 길이 ----------
 
+    /** 전문 전체 길이 → 길이 필드에 실을 값(includesSelf 규칙 + lengthAdjustment). */
     fun declaredLength(spec: ProtocolSpec, total: Int): Int =
-        if (spec.includesSelf == true) total else total - (spec.lengthFieldDef()?.lenOrZero() ?: 0)
+        (if (spec.includesSelf == true) total else total - (spec.lengthFieldDef()?.lenOrZero() ?: 0)) + spec.lengthAdj()
 
+    /** 길이 필드 값 → 전문 전체 길이(declaredLength 의 역). 보정은 대칭으로 되돌린다. */
     fun totalFromDeclared(spec: ProtocolSpec, declared: Int): Int =
-        if (spec.includesSelf == true) declared else declared + (spec.lengthFieldDef()?.lenOrZero() ?: 0)
+        (declared - spec.lengthAdj()).let { if (spec.includesSelf == true) it else it + (spec.lengthFieldDef()?.lenOrZero() ?: 0) }
 
     /** 헤더 바이트에서 길이값. ascii 는 패딩 제거 후 정수, binary 는 endian. 실패 시 원본 바이트를 담은 예외. */
     fun parseLength(spec: ProtocolSpec, headerBytes: ByteArray): Int {
@@ -70,6 +73,7 @@ object ProtocolCodec {
     }
 
     private fun lengthBytes(spec: ProtocolSpec, lf: Field, declared: Int): ByteArray {
+        if (declared < 0) throw ProtocolException(lf.nameOrEmpty(), "길이값이 음수입니다($declared) — lengthAdjustment(${spec.lengthAdj()})를 확인하세요.")
         if (spec.isBinaryLength()) {
             val max = (1L shl (8 * lf.lenOrZero())) - 1
             if (declared < 0 || declared > max) throw ProtocolException(lf.nameOrEmpty(), "전문 길이 $declared 가 binary 길이 필드 ${lf.lenOrZero()}바이트 범위를 넘습니다.")
@@ -168,7 +172,8 @@ object ProtocolCodec {
         val out = ByteArray(total)
         System.arraycopy(head.toByteArray(), 0, out, 0, spec.headerLen())
         System.arraycopy(bodyBytes, 0, out, spec.headerLen(), bodyBytes.size)
-        return Encoded(out, headSlices + slices, warnings)
+        val wired = applyWire(spec, out, key, all, plugins, dir, resolve, encode = true, warnings = warnings)
+        return Encoded(wired, headSlices + slices, warnings)
     }
 
     private fun encodeField(
@@ -202,13 +207,40 @@ object ProtocolCodec {
         return pad(raw, len, f.padOr(), binary) to FieldSlice(name, offset, len, actual, v, warn)
     }
 
+    /**
+     * 전체 프레임 코덱(WireCodec) 적용 — 송신은 순서대로, 수신은 역순. 길이가 바뀌면 [ProtocolSpec.wireLengthPolicy]:
+     * strict(기본) = 오류 · recalc = 길이 필드를 새 크기로 다시 쓴다(송신만; 수신은 이미 프레이밍이 끝나 경고만).
+     */
+    private fun applyWire(
+        spec: ProtocolSpec, frame: ByteArray, key: String?, message: Map<String, String>,
+        plugins: PluginLookup, dir: Direction, resolve: (String) -> String, encode: Boolean, warnings: MutableList<String>,
+    ): ByteArray {
+        val refs = spec.wirePluginsOrEmpty().filter { !it.id?.trim().isNullOrEmpty() }
+        if (refs.isEmpty()) return frame
+        var out = frame
+        for (p in if (encode) refs else refs.asReversed()) {
+            val id = p.id!!.trim()
+            val wc = plugins.find(id) as? WireCodec ?: throw ProtocolException(null, "전체 프레임 플러그인 '$id' 을 찾을 수 없습니다(WireCodec).")
+            val ctx = CodecCtx(null, message, p.configOrEmpty().resolved(resolve), dir.name.lowercase(), key, spec.headerLen())
+            val before = out.size
+            out = if (encode) wc.encode(out, ctx) else wc.decode(out, ctx)
+            if (out.size == before) continue
+            if (!spec.wireRecalcLength()) throw ProtocolException(null, "전체 프레임 플러그인 '$id' 이 길이를 바꿨습니다(${before}B → ${out.size}B). wireLengthPolicy=recalc 로 허용하거나 같은 길이로 맞추세요.")
+            if (encode) out = withLength(spec, out, declaredLength(spec, out.size))
+            else warnings += "wire 플러그인 '$id' 이 길이를 바꿨습니다(${before}B → ${out.size}B)"
+        }
+        return out
+    }
+
     // ---------- decode ----------
 
-    fun decode(spec: ProtocolSpec, frame: ByteArray, dir: Direction = Direction.RECV, plugins: PluginLookup = NO_PLUGINS, resolve: (String) -> String = { it }): Decoded {
+    fun decode(spec: ProtocolSpec, rawFrame: ByteArray, dir: Direction = Direction.RECV, plugins: PluginLookup = NO_PLUGINS, resolve: (String) -> String = { it }): Decoded {
         val cs = spec.charset()
         val hl = spec.headerLen()
+        val preWarn = ArrayList<String>()
+        val frame = applyWire(spec, rawFrame, null, emptyMap(), plugins, dir, resolve, encode = false, warnings = preWarn)
         if (frame.size < hl) throw ProtocolException(null, "전문(${frame.size}B)이 헤더 길이(${hl}B)보다 짧습니다.")
-        val warnings = ArrayList<String>()
+        val warnings = ArrayList<String>(preWarn)
         val header = LinkedHashMap<String, String>()
         val slices = ArrayList<FieldSlice>()
         var offset = 0

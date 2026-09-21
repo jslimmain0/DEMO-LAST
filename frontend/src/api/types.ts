@@ -588,19 +588,31 @@ export interface ProtocolSpec {
   header: ProtocolField[]
   messages: ProtocolMessage[]
   messagePlugins?: PluginRef[]
+  /** 전체 프레임 코덱(wireCodec) — 송신은 조립 후, 수신은 헤더 분리 전 */
+  wirePlugins?: PluginRef[]
+  /** wire 결과 길이가 바뀌면: strict(기본, 오류) | recalc(길이 필드 재계산) */
+  wireLengthPolicy?: 'strict' | 'recalc'
+  /** 길이값 보정 — 저장 길이 = 기본 계산 + 이 값(기본 0) */
+  lengthAdjustment?: number
 }
 export interface ProtocolSummary { id: string; name: string; encoding: string; messageCount: number; updatedAt: string | null }
 export interface ProtocolDetail { id: string; name: string; spec: ProtocolSpec; createdAt: string; updatedAt: string | null }
 export interface ProtocolPreviewField { name: string; offset: number; len: number; actualBytes: number; value: string; warn?: string | null }
 export interface ProtocolPreview { total: number; hex: string; text: string; fields: ProtocolPreviewField[]; errors: { field?: string | null; message: string }[]; warnings?: string[] }
-export interface CodecInfo { id: string; label: string; layer: 'field' | 'message'; params: TransformParam[] }
+export interface CodecInfo { id: string; label: string; layer: 'field' | 'message' | 'wire'; params: TransformParam[] }
 
 // Mock TCP — 새 프로토콜 참조 기반(구 MockTcpSpec/MockTcpRuleSpec/… 대체)
 export interface MockTcpCond { field?: string; op?: 'eq' | 'ne' | 'contains' | 'startswith' | 'endswith' | 'regex' | 'exists'; value?: string }
 export interface MockTcpFault { delayMs?: number; splitAt?: number | null; drop?: boolean; reset?: boolean; corruptLength?: boolean }
-export interface MockTcpThen { mode: 'mock' | 'proxy'; fields?: Record<string, string> }
+export interface MockTcpThen { mode: 'mock' | 'proxy'; fields?: Record<string, string>; sequence?: MockTcpStep[] }
+/** connectionMode=session 의 단계 — send(전문 송신) | receive(수신·검증). 템플릿: {{initial.필드}} · {{steps.단계id.필드}} */
+export interface MockTcpStep { id?: string; action?: 'send' | 'receive'; message?: string; fields?: Record<string, string>; expect?: MockTcpCond[]; timeoutMs?: number }
 export interface MockTcpRuleSpec { id: string; when?: MockTcpCond[]; then: MockTcpThen; fault?: MockTcpFault | null }
-export interface MockTcpSpec { port?: number; protocolId?: string | null; upstream?: string | null; timeoutMs?: number; rules?: MockTcpRuleSpec[] }
+export interface MockTcpSpec { port?: number; protocolId?: string | null; upstream?: string | null; timeoutMs?: number; rules?: MockTcpRuleSpec[]
+  /** single(기본) | session — session 이면 규칙의 then.sequence 를 같은 연결에서 실행 */
+  connectionMode?: 'single' | 'session'
+  sessionTimeoutMs?: number
+}
 
 // TCP 트래픽 로그 — 리스너가 주고받은 전문 1건(dir=in 수신 / out 송신). source=mock(규칙 응답)·proxy(실서버 통과)·none(응답 없음).
 export interface TcpLogEntry {
@@ -617,6 +629,8 @@ export interface TcpLogEntry {
   ruleId: string | null
   note: string | null
   level: 'info' | 'warn' | 'error'
+  connId?: string | null
+  stepId?: string | null
 }
 /** 보내보기 응답의 디코딩 뷰 — 프로토콜로 푼 헤더/본문(본문 스키마가 없으면 body=null). */
 export interface TcpDecodedView {
@@ -628,7 +642,7 @@ export interface TcpSendResult { request: ProtocolPreview; response: TcpDecodedV
 
 // ---- 스크립트 플러그인 (/api/v1/plugins/scripts) ----
 export type PluginScriptStatus = 'DRAFT' | 'PENDING' | 'APPROVED' | 'REJECTED'
-export type PluginKind = 'transform' | 'fieldCodec' | 'messageCodec'
+export type PluginKind = 'transform' | 'fieldCodec' | 'messageCodec' | 'wireCodec'
 export interface PluginScriptMeta { id: string; label: string; description: string; kind: PluginKind; inputs: TransformIo[]; outputs: TransformIo[]; params: TransformParam[] }
 export interface PluginScriptSummary {
   id: string; pluginId: string; name: string; kind: PluginKind; status: PluginScriptStatus

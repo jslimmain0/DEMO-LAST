@@ -91,4 +91,34 @@ export const PLUGIN_EXAMPLES: { key: string; label: string; source: string }[] =
   },
 })
 ` },
+  { key: 'aes-gcm-body', label: '본문 AES-GCM (전문 코덱)', source: `// 본문 전체를 AES-GCM 으로 — IV(12B 난수)를 암호문 앞에 붙이는 관례. 인증 태그가 붙어 변조되면 복호화가 실패한다.
+({
+  id: 'aes-gcm-body',
+  label: '본문 AES-GCM',
+  kind: 'messageCodec',
+  params: [{ key: 'key', label: '키(16/24/32B)', placeholder: '{{ aesKey@secret }}' }],
+  encode(body, ctx) {
+    const iv = Array.from(fl.random.bytes(12))
+    const ct = Array.from(fl.aes.encryptBytes(body, ctx.config.key, iv, { mode: 'GCM' }))
+    return Uint8Array.from(iv.concat(ct))
+  },
+  decode(body, ctx) {
+    return fl.aes.decryptBytes(body.slice(12), ctx.config.key, body.slice(0, 12), { mode: 'GCM' })
+  },
+})
+` },
+  { key: 'jwt-issue', label: 'JWT 발급 (변환)', source: `// JWT 발급 — 서명키는 파라미터로 받아 시크릿 볼트에서 채운다({{ jwtKey@secret }}). 검증은 fl.jwt.verify.
+({
+  id: 'jwt-issue',
+  label: 'JWT 발급',
+  description: '주체(sub)로 HS256 토큰을 만든다',
+  inputs:  [{ key: 'sub', label: '주체' }],
+  outputs: [{ key: 'token', label: '토큰' }],
+  params:  [{ key: 'secret', label: '서명키', placeholder: '{{ jwtKey@secret }}' }, { key: 'ttlSec', label: '유효(초)', type: 'number', defaultValue: '300' }],
+  apply(inputs, config) {
+    const now = Math.floor(Date.now() / 1000)
+    return { token: fl.jwt.sign({ sub: inputs.sub, iat: now, exp: now + Number(config.ttlSec || 300) }, config.secret) }
+  },
+})
+` },
 ]

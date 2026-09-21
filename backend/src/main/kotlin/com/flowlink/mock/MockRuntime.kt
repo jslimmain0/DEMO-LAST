@@ -38,6 +38,7 @@ class MockRuntime {
      */
     fun match(
         routes: List<MockRoute>, req: MockRequest, state: Map<String, String> = emptyMap(), hits: Map<String, Int> = emptyMap(),
+        secrets: Map<String, String> = emptyMap(), env: Map<String, String> = emptyMap(),
         prepare: ((MockRoute, MockRequest) -> MockRequest)? = null
     ): Optional<Match> {
         for (route in routes) {
@@ -52,7 +53,7 @@ class MockRuntime {
                 if (rule.repeat != null && rule.id != null && (hits[rule.id] ?: 0) >= rule.repeat) {
                     continue
                 }
-                if (conditionsPass(rule.whenOrEmpty(), r, params, state)) {
+                if (conditionsPass(rule.whenOrEmpty(), r, params, state, secrets, env)) {
                     return Optional.of(Match(rule, params, r))
                 }
             }
@@ -65,13 +66,13 @@ class MockRuntime {
     /**
      * 규칙 → 실제 응답(바이트) + 지연 + 콜백 명세. seq 는 서버별 증가 카운터 공급자에서 받은 값.
      * [responseCodec] 은 템플릿 렌더가 끝난 본문 전체에 적용(응답 코덱 — 문자셋 인코딩 직전, 헤더 기록 가능). 콜백 본문에는 미적용.
-     * [secrets] 는 `{{ 이름@secret }}` 해석용(게이트웨이가 Mock 시크릿 환경으로 조회), [json] 은 본문 점 경로 토큰용.
+     * [secrets]·[env] 는 `{{ 이름@secret }}`·`{{ 키@env }}` 해석용(게이트웨이가 Mock 환경으로 조회), [json] 은 본문 점 경로 토큰용.
      */
     fun render(
         rule: MockRule, req: MockRequest, pathParams: Map<String, String>, seq: Long, state: Map<String, String> = emptyMap(),
-        responseCodec: ResponseCodec? = null, secrets: Map<String, String> = emptyMap(), json: ObjectMapper? = null
+        responseCodec: ResponseCodec? = null, secrets: Map<String, String> = emptyMap(), json: ObjectMapper? = null, env: Map<String, String> = emptyMap(),
     ): MockResponse {
-        val ctx = MockContext(req = req, pathParams = pathParams, seq = seq, state = state, secrets = secrets, json = json)
+        val ctx = MockContext(req = req, pathParams = pathParams, seq = seq, state = state, secrets = secrets, json = json, env = env)
         val cs = MockHttp.charsetOf(rule.charset)
         val rendered = MockTemplate.render(rule.body ?: "", ctx)
         val headers = LinkedHashMap<String, String>()
@@ -170,12 +171,16 @@ class MockRuntime {
         // ---------- 조건 ----------
 
         @JvmStatic
-        fun conditionsPass(conds: List<MockCond>, req: MockRequest, pathParams: Map<String, String>, state: Map<String, String> = emptyMap()): Boolean {
-            val ctx = MockContext(req = req, pathParams = pathParams, state = state)
+        fun conditionsPass(
+            conds: List<MockCond>, req: MockRequest, pathParams: Map<String, String>, state: Map<String, String> = emptyMap(),
+            secrets: Map<String, String> = emptyMap(), env: Map<String, String> = emptyMap(),
+        ): Boolean {
+            val ctx = MockContext(req = req, pathParams = pathParams, state = state, secrets = secrets, env = env)
             for (c in conds) {
                 val actual = MockTemplate.valueOf(c.source, c.key, ctx)
                 val op = if (c.op == null) "eq" else c.op.lowercase(Locale.ROOT)
-                val cv = c.value ?: ""
+                // 비교값도 템플릿 — `{{ 이름@secret }}`(서명키 대조)·`{{ 키@env }}`·요청 값끼리 비교. 토큰이 없으면 그대로.
+                val cv = MockTemplate.render(c.value ?: "", ctx)
                 val pass = when (op) {
                     "eq" -> actual != null && actual == cv
                     "ne" -> actual == null || actual != cv

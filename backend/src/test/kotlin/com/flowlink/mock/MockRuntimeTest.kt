@@ -187,4 +187,15 @@ class MockRuntimeTest {
         assertThat(String(res.body, Charsets.UTF_8)).isEqualTo("HELLO KIM")
         assertThat(res.headers["X-Sig"]).isEqualTo("kim")
     }
+
+    @Test
+    fun `조건 비교값의 시크릿·환경 토큰이 풀린다`() {
+        val r = req("POST", "/x", emptyMap(), mapOf("x-key" to "s3cr3t"), "", emptyMap())
+        val cond = listOf(MockCond("header", "X-Key", "eq", "{{ apiKey@secret }}"))
+        assertThat(MockRuntime.conditionsPass(cond, r, emptyMap(), emptyMap(), mapOf("apiKey" to "s3cr3t"))).isTrue()
+        assertThat(MockRuntime.conditionsPass(cond, r, emptyMap(), emptyMap(), mapOf("apiKey" to "다른값"))).isFalse()
+        assertThat(MockRuntime.conditionsPass(cond, r, emptyMap())).isFalse() // 스코프 없으면 빈 문자열
+        val envCond = listOf(MockCond("header", "X-Key", "eq", "{{ k@env }}"))
+        assertThat(MockRuntime.conditionsPass(envCond, r, emptyMap(), emptyMap(), emptyMap(), mapOf("k" to "s3cr3t"))).isTrue()
+    }
 }

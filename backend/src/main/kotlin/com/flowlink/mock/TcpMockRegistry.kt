@@ -52,7 +52,7 @@ class TcpMockRegistry(
         val socket: ServerSocket,
         @Volatile var tcp: MockSpec.MockTcp,
         @Volatile var protocol: ProtocolSpec,
-        @Volatile var environment: String?        // 시크릿 스코프({{ 이름@secret }})
+        @Volatile var environment: String?        // 환경 스코프({{ 이름@secret }}·{{ 키@env }})
     )
 
     private val listeners = ConcurrentHashMap<UUID, Listener>() // mock 서버 id → 리스너
@@ -197,13 +197,15 @@ class TcpMockRegistry(
             try {
                 sock.soTimeout = 30_000
                 val tcp = l.tcp // 연결 시작 시점 스냅샷 — 핫스왑이 규칙과 upstream 을 섞지 않게
-                val secrets = secretProvider.secrets(l.tenantId, l.environment)
+                val scope = secretProvider.scope(l.tenantId, l.environment)
+                val secrets = scope.secrets
                 val masks = SecretMasker.variants(secrets.values)
                 val session = TcpMockSession(
                     l.protocol, tcp, ProtocolCodec.PluginLookup { transforms.codec(it) }, secrets,
                     { store.seqNext(l.mockId) }, { store.recordTcp(l.mockId, it) },
-                    upstreamFactory = { openUpstream(tcp) },
+                    upstreamFactory = { openUpstream(tcp, scope.resolver()) },
                     mask = { s -> SecretMasker.mask(s, masks) ?: s },
+                    env = scope.env,
                 )
                 session.serve(sock.getInputStream(), sock.getOutputStream()) {
                     runCatching { sock.setSoLinger(true, 0) }; runCatching { sock.close() }
@@ -216,8 +218,9 @@ class TcpMockRegistry(
         }
     }
 
-    private fun openUpstream(tcp: MockSpec.MockTcp): TcpMockSession.Upstream? {
-        val target = tcp.upstream?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+    /** [resolve] — upstream 주소의 `{{ 키@env }}`·`{{ 이름@secret }}`(환경마다 다른 실서버)를 이 Mock 의 환경으로 푼다. */
+    private fun openUpstream(tcp: MockSpec.MockTcp, resolve: (String) -> String = { it }): TcpMockSession.Upstream? {
+        val target = resolve(tcp.upstream.orEmpty()).trim().takeIf { it.isNotEmpty() } ?: return null
         val ci = target.lastIndexOf(':'); if (ci <= 0) return null
         val host = target.substring(0, ci); val port = target.substring(ci + 1).toIntOrNull() ?: return null
         val t = tcp.timeoutMs?.takeIf { it > 0 } ?: 5000

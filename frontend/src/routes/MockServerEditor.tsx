@@ -3,7 +3,7 @@ import type { CSSProperties } from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import type { HttpMethod, MockRequestLog, MockRouteSpec, MockServerSpec, MockTcpRuleSpec, MockTcpSpec, ProtocolSpec, TcpLogEntry } from '../api/types'
-import { adminApi, mockBaseUrl, mocksApi, secretsApi, workspacesApi } from '../api/client'
+import { adminApi, mockBaseUrl, mocksApi, secretsApi, workspacesApi, environmentsApi } from '../api/client'
 import type { SecretView } from '../api/client'
 import { AppShellTier1 } from '../app/AppShell'
 import { useAuth, usePermissions } from '../auth/AuthContext'
@@ -25,7 +25,7 @@ import { newId } from '../lib/ids'
 import { stepCount } from '../lib/mockCodecOps'
 import { openApiToMockRoutes } from '../lib/mockOpenApi'
 import { bodyKeys, findRouteIndex, interestingHeaders, mergeExpect } from '../lib/mockRequestLog'
-import { applicableSecretNames, mockSources } from '../lib/mockSources'
+import { applicableSecretNames, mockSources, envKeys } from '../lib/mockSources'
 import { lintTcpRules } from '../lib/protocolSpec'
 import { useProtocol } from '../panels/TcpNodePanel'
 import { relTime } from '../lib/format'
@@ -78,6 +78,7 @@ export function MockServerEditor() {
   const [trafficOpen, setTrafficOpen] = useState(() => { try { return localStorage.getItem('fl:mock:traffic') !== '0' } catch { return true } })
   const [trafficTab, setTrafficTab] = useState<'log' | 'send'>('log')
   const secretsQ = useQuery({ queryKey: ['secrets'], queryFn: secretsApi.list, retry: false })
+  const envsQ = useQuery({ queryKey: ['environments'], queryFn: environmentsApi.list, retry: false })
   const secrets: SecretView[] = secretsQ.data ?? []
   const secretEnvs = [...new Set(secrets.map((x) => x.environment).filter((x): x is string => !!x))].sort()
 
@@ -145,6 +146,7 @@ export function MockServerEditor() {
   const proto = useProtocol(tcp.protocolId || undefined)
   const protoSpec: ProtocolSpec | undefined = proto.data?.spec
   const secretNames = useMemo(() => applicableSecretNames(secretsQ.data, spec.environment), [secretsQ.data, spec.environment])
+  const envKeyList = useMemo(() => envKeys(envsQ.data, spec.environment), [envsQ.data, spec.environment])
   const tcpLints = useMemo(() => (isTcp && protoSpec ? lintTcpRules(tcp, protoSpec) : []), [isTcp, protoSpec, tcp])
 
   // 테스트/트래픽 액션은 저장된 mock 을 호출하므로 미저장 편집이 있으면 먼저 저장(권한 없으면 거절)
@@ -247,7 +249,7 @@ export function MockServerEditor() {
   const navRoutes = routes.filter((r) => !nq || `${r.method} ${r.path}`.toLowerCase().includes(nq))
   const codecCnt = stepCount(spec.codec)
   const codecActive = codecCnt.request + codecCnt.response > 0
-  const sourcesFor = (route?: MockRouteSpec | null) => mockSources({ spec, route, secrets, environment: spec.environment })
+  const sourcesFor = (route?: MockRouteSpec | null) => mockSources({ spec, route, secrets, envs: envsQ.data, environment: spec.environment })
   const httpFieldHints = { request: [...new Set(routes.flatMap((r) => (r.expect?.body ?? []).map((f) => f.key)).filter(Boolean))], response: [] as string[] }
 
   return (
@@ -374,7 +376,7 @@ export function MockServerEditor() {
                 </div>
               )}
               {nav.kind === 'route' && selRoute && (
-                <RouteCard key={selRoute.id} base={base} ensureSaved={ensureSaved} mockId={id} spec={spec} secrets={secrets} route={selRoute} readOnly={!canEdit}
+                <RouteCard key={selRoute.id} base={base} ensureSaved={ensureSaved} mockId={id} spec={spec} secrets={secrets} envs={envsQ.data} route={selRoute} readOnly={!canEdit}
                   onChange={(nr) => setRoute(selRoute.id, nr)} onRemove={() => removeRoute(selRoute.id)} onDup={() => dupRoute(selRoute.id)} onUp={() => moveRoute(selRoute.id, -1)} onDown={() => moveRoute(selRoute.id, 1)}
                   onServerCodec={(codec) => mutate((s) => ({ ...s, codec }))} onGoCodec={() => setNav({ kind: 'codec' })} />
               )}
@@ -394,12 +396,12 @@ export function MockServerEditor() {
                       {canEdit && <button style={{ ...primaryBtn, padding: '6px 12px', fontSize: 12 }} onClick={() => toggle.mutate()}>리스너 켜기</button>}
                     </div>
                   )}
-                  <TcpConnPanel tcp={tcp} readOnly={!canEdit} onChange={setTcp} />
+                  <TcpConnPanel tcp={tcp} environment={spec.environment} readOnly={!canEdit} onChange={setTcp} />
                 </>
               )}
               {nav.kind === 'rule' && selRule && (
                 <TcpRuleDetail key={selRule.id} rule={selRule} index={tcpRules.findIndex((r) => r.id === selRule.id)} total={tcpRules.length}
-                  spec={protoSpec} secrets={secretNames} readOnly={!canEdit}
+                  spec={protoSpec} secrets={secretNames} envKeys={envKeyList} readOnly={!canEdit}
                   onChange={(patch) => setRule(selRule.id, patch)} onMove={(dir) => moveRule(selRule.id, dir)} onDup={() => dupRule(selRule.id)} onDelete={() => removeRule(selRule.id)} />
               )}
               {nav.kind === 'codec' && (

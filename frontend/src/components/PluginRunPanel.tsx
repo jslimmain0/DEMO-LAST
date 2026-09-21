@@ -5,6 +5,9 @@ import { pluginsApi } from '../api/client'
 import type { PluginScriptMeta, PluginTryRequest, PluginTryResult, ScriptErrorBody } from '../api/types'
 import type { EditorDiagnostic } from './CodeEditor'
 import { JsonTree } from './JsonTree'
+import { TokenInput } from '../binding/TokenInput'
+import { useEnvStore } from '../lib/environments'
+import { useVaultSources } from '../lib/vaultSources'
 
 type Sample = { inputs: Record<string, string>; config: Record<string, string>; value: string; fn: 'encode' | 'decode'; direction: 'send' | 'recv'; message: string; bytesText: string; bytesMode: 'text' | 'hex' }
 const EMPTY: Sample = { inputs: {}, config: {}, value: '', fn: 'encode', direction: 'send', message: '{}', bytesText: '', bytesMode: 'text' }
@@ -19,6 +22,10 @@ const hex = { enc: (bytes: Uint8Array) => [...bytes].map((b) => b.toString(16).p
 
 export function PluginRunPanel({ source, scriptId, canRun, onDiagnostics }: { source: string; scriptId: string | null; canRun: boolean; onDiagnostics: (d: EditorDiagnostic[]) => void }) {
   const key = `fl:plugrun:${scriptId ?? 'new'}`
+  // {{ 이름@secret }}·{{ 키@env }} 칩 — 활성 환경 기준(서버가 시험 실행 때 그 환경으로 푼다)
+  const envStore = useEnvStore()
+  const envName = envStore.active && envStore.envs[envStore.active] ? envStore.active : null
+  const sources = useVaultSources(envName)
   const [meta, setMeta] = useState<PluginScriptMeta | null>(null)
   const [compileErr, setCompileErr] = useState<string | null>(null)
   const [sample, setSample] = useState<Sample>(() => loadSample(key))
@@ -39,17 +46,19 @@ export function PluginRunPanel({ source, scriptId, canRun, onDiagnostics }: { so
         .catch((e) => { if (seq !== compileSeq.current) return; const se = scriptError(e); setCompileErr(se?.message ?? '컴파일 실패'); if (se?.line) onDiagnostics([{ line: se.line, col: se.col ?? undefined, message: se.message }]) })
     }, 600)
     return () => clearTimeout(t)
-  }, [source, canRun, onDiagnostics])
+    // key: 저장으로 scriptId 가 생기면(초안→상세) 위 효과가 meta 를 비우므로 여기서 다시 컴파일해야 폼이 돌아온다
+  }, [source, canRun, onDiagnostics, key])
 
   const request = useMemo((): PluginTryRequest | null => {
     if (!meta) return null
-    if (meta.kind === 'transform') return { source, inputs: sample.inputs, config: sample.config }
+    const environment = envName ?? undefined
+    if (meta.kind === 'transform') return { source, inputs: sample.inputs, config: sample.config, environment }
     let message: Record<string, string> = {}
     try { message = JSON.parse(sample.message || '{}') } catch { /* 잘못된 JSON 은 빈 맵 */ }
-    if (meta.kind === 'fieldCodec') return { source, value: sample.value, fn: sample.fn, direction: sample.direction, config: sample.config, message }
+    if (meta.kind === 'fieldCodec') return { source, value: sample.value, fn: sample.fn, direction: sample.direction, config: sample.config, message, environment }
     const bytes = sample.bytesMode === 'hex' ? hex.dec(sample.bytesText) : new TextEncoder().encode(sample.bytesText)
-    return { source, fn: sample.fn, direction: sample.direction, config: sample.config, bytesB64: b64.enc(bytes) }
-  }, [meta, sample, source])
+    return { source, fn: sample.fn, direction: sample.direction, config: sample.config, bytesB64: b64.enc(bytes), environment }
+  }, [meta, sample, source, envName])
 
   const run = async () => {
     if (!canRun || !request || busy || compileErr) return
@@ -86,7 +95,7 @@ export function PluginRunPanel({ source, scriptId, canRun, onDiagnostics }: { so
       {meta && (
         <div style={{ display: 'grid', gap: 6 }}>
           {meta.kind === 'transform' && meta.inputs.map((io) => (
-            <label key={io.key} style={row}><span style={lbl} title={io.key}>{io.label}</span><input style={input} value={sample.inputs[io.key] ?? ''} placeholder={io.example || io.key} onChange={(e) => setIn(io.key, e.target.value)} /></label>
+            <label key={io.key} style={row}><span style={lbl} title={io.key}>{io.label}</span><TokenInput value={sample.inputs[io.key] ?? ''} onChange={(v) => setIn(io.key, v)} sources={sources} placeholder={io.example || io.key} ariaLabel={`입력 ${io.key}`} /></label>
           ))}
           {meta.kind !== 'transform' && (
             <>
@@ -96,7 +105,7 @@ export function PluginRunPanel({ source, scriptId, canRun, onDiagnostics }: { so
                   <select style={input} value={sample.direction} onChange={(e) => setSample((s) => ({ ...s, direction: e.target.value as 'send' | 'recv' }))}><option value="send">send</option><option value="recv">recv</option></select>
                 </span>
               </label>
-              {meta.kind === 'fieldCodec' && <label style={row}><span style={lbl}>값</span><input style={input} value={sample.value} onChange={(e) => setSample((s) => ({ ...s, value: e.target.value }))} /></label>}
+              {meta.kind === 'fieldCodec' && <label style={row}><span style={lbl}>값</span><TokenInput value={sample.value} onChange={(v) => setSample((s) => ({ ...s, value: v }))} sources={sources} ariaLabel="값" /></label>}
               {meta.kind === 'fieldCodec' && <label style={row}><span style={lbl}>다른 필드(JSON)</span><input style={{ ...input, fontFamily: 'var(--fl-font-mono)' }} value={sample.message} onChange={(e) => setSample((s) => ({ ...s, message: e.target.value }))} placeholder='{"거래코드":"0210"}' /></label>}
               {meta.kind === 'messageCodec' && (
                 <label style={row}><span style={lbl}>본문</span>
@@ -112,10 +121,10 @@ export function PluginRunPanel({ source, scriptId, canRun, onDiagnostics }: { so
             <label key={p.key} style={row}><span style={lbl} title={p.key}>{p.label}</span>
               {p.type === 'select' && p.options?.length
                 ? <select style={input} value={sample.config[p.key] ?? p.defaultValue} onChange={(e) => setCfg(p.key, e.target.value)}>{p.options.map((o) => <option key={o} value={o}>{o}</option>)}</select>
-                : <input style={input} value={sample.config[p.key] ?? p.defaultValue} placeholder={p.placeholder || p.key} onChange={(e) => setCfg(p.key, e.target.value)} />}
+                : <TokenInput value={sample.config[p.key] ?? p.defaultValue ?? ''} onChange={(v) => setCfg(p.key, v)} sources={sources} placeholder={p.placeholder || p.key} ariaLabel={`파라미터 ${p.key}`} />}
             </label>
           ))}
-          <div style={hint}>시크릿 토큰(<code>{'{{ x@secret }}'}</code>)은 여기선 풀리지 않습니다 — 실제 값을 넣어 시험하세요. 입력과 결과는 승인 화면에 샘플로 보이며, 파라미터(키·IV 등) 값은 저장하지 않습니다.</div>
+          <div style={hint}><code>{'{{'}</code> 로 시크릿 볼트·환경 변수 토큰을 넣을 수 있습니다 — {envName ? `활성 환경 '${envName}'` : '공통 시크릿(활성 환경 없음)'} 기준으로 서버에서 풀리고 값은 저장되지 않습니다. 입력과 결과는 승인 화면에 샘플로 보이며, 파라미터(키·IV 등) 값은 저장하지 않습니다.</div>
         </div>
       )}
       {runErr && <div style={{ ...hint, color: 'var(--fl-fail)' }}>✕ {runErr}</div>}

@@ -27,6 +27,7 @@ object PluginScriptDtos {
     data class TryRequest(
         val source: String? = null, val inputs: Map<String, String>? = null, val config: Map<String, String>? = null,
         val value: String? = null, val fn: String? = null, val direction: String? = null, val message: Map<String, String>? = null, val bytesB64: String? = null,
+        /** 입력·파라미터의 `{{ 이름@secret }}`·`{{ 키@env }}` 를 풀 환경(없으면 공통 시크릿만) */ val environment: String? = null,
     )
     data class TryResult(val meta: MetaView, val outputs: Map<String, String>? = null, val result: String? = null, val bytesB64: String? = null,
                          val logs: List<String> = emptyList(), val durationMs: Long = 0)

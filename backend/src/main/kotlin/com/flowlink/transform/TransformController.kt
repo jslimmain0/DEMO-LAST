@@ -13,7 +13,7 @@ import org.springframework.web.bind.annotation.RestController
 /** 사용 가능한 변환 목록(플러그인) + 미리보기 — 프론트 transform 노드 UI가 소비. */
 @RestController
 @RequestMapping("/api/v1/transforms")
-class TransformController(private val registry: TransformRegistry) {
+class TransformController(private val registry: TransformRegistry, private val scopes: com.flowlink.mock.MockSecretProvider) {
 
     private val mapper = ObjectMapper()
 
@@ -35,7 +35,8 @@ class TransformController(private val registry: TransformRegistry) {
     @GetMapping
     fun list(): List<TransformInfo> = registry.list().map { TransformInfo.from(it) }
 
-    data class PreviewRequest(val inputs: Map<String, String> = emptyMap(), val config: Map<String, String> = emptyMap())
+    data class PreviewRequest(val inputs: Map<String, String> = emptyMap(), val config: Map<String, String> = emptyMap(),
+                              /** 입력·설정의 `{{ 이름@secret }}`·`{{ 키@env }}` 를 풀 환경(활성 환경) */ val environment: String? = null)
     data class PreviewResponse(val ok: Boolean, val outputs: Map<String, Any?>, val error: String? = null)
 
     /**
@@ -47,7 +48,8 @@ class TransformController(private val registry: TransformRegistry) {
         val t = registry.get(id).orElse(null)
             ?: return PreviewResponse(false, emptyMap(), "알 수 없는 변환: $id")
         return try {
-            val out = t.apply(req.inputs, req.config)
+            val r = scopes.scope(com.flowlink.common.tenant.TenantContext.getTenantId(), req.environment, cached = false).resolver()
+            val out = t.apply(req.inputs.mapValues { r(it.value) }, req.config.mapValues { r(it.value) })
             val types = t.outputs().associate { it.key to it.type }
             val coerced = LinkedHashMap<String, Any?>()
             for ((k, v) in out) coerced[k] = coerce(v, types[k] ?: "string")

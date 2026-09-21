@@ -35,6 +35,7 @@ class PluginScriptLifecycleTest {
     @Autowired lateinit var registry: TransformRegistry
     @Autowired lateinit var userRepo: AppUserRepository
     @Autowired lateinit var repo: PluginScriptRepository
+    @Autowired lateinit var environments: com.flowlink.environment.EnvironmentService
 
     private val T = com.flowlink.common.tenant.TenantContext.SHARED_FLOW_TENANT
     private val SRC = "({ id: 'up1', label: '대문자', inputs: [{ key: 'input', label: '원문' }], apply(i, c) { fl.log('run'); return { result: i.input.toUpperCase() } } })"
@@ -144,5 +145,16 @@ class PluginScriptLifecycleTest {
         asUser("alice")
         assertThatThrownBy { svc.update(d.id, PluginScriptDtos.SaveRequest(null, SRC.replace("up1", "up9"))) }
             .isInstanceOf(BadRequestException::class.java).hasMessageContaining("바꿀 수 없습니다")
+    }
+
+    @Test
+    fun `시험 실행 - 입력·파라미터의 {{ 키@env }} 는 요청한 환경으로 풀린다(환경 없으면 빈 문자열)`() {
+        user("alice", AppUser.STATUS_APPROVED); asUser("alice")
+        environments.put("dev", mapOf("who" to "dev-user"))
+        val src = "({ id: 'echo', label: 'x', inputs: [{ key: 'input' }], params: [{ key: 'p' }], apply(i, c) { return { result: i.input + '/' + c.p } } })"
+        val tr = svc.tryRun(PluginScriptDtos.TryRequest(source = src, inputs = mapOf("input" to "{{ who@env }}"), config = mapOf("p" to "{{ nope@env }}"), environment = "dev"))
+        assertThat(tr.outputs).containsEntry("result", "dev-user/")
+        val plain = svc.tryRun(PluginScriptDtos.TryRequest(source = src, inputs = mapOf("input" to "{{ who@env }}"), config = mapOf("p" to "x")))
+        assertThat(plain.outputs).containsEntry("result", "/x")
     }
 }

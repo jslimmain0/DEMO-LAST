@@ -641,6 +641,7 @@ export interface PluginScriptDetail extends PluginScriptSummary {
 export interface PluginTryRequest {
   source: string; inputs?: Record<string, string>; config?: Record<string, string>
   value?: string; fn?: 'encode' | 'decode'; direction?: 'send' | 'recv'; message?: Record<string, string>; bytesB64?: string
+  /** {{ 이름@secret }}·{{ 키@env }} 를 풀 환경(활성 환경) */ environment?: string | null
 }
 export interface PluginTryResult { meta: PluginScriptMeta; outputs?: Record<string, string> | null; result?: string | null; bytesB64?: string | null; logs: string[]; durationMs: number }
 export interface PluginUsageRef { kind: 'flow' | 'mock' | 'protocol'; id: string; name: string }

@@ -12,7 +12,7 @@ import java.util.regex.Pattern
 
 /**
  * Mock 템플릿 문맥 — HTTP 요청·경로 파라미터·seq·상태·**시크릿**·TCP 요청 필드(프로토콜로 해석된 헤더+본문 값).
- * (환경 변수는 Mock 에 없음 — 시크릿만, Mock 별 시크릿 환경 스코프)
+ * 시크릿·환경 변수는 Mock 의 환경(spec.environment) 스코프 — `{{ 이름@secret }}`(공통 + 그 환경의 시크릿) · `{{ 키@env }}`(그 환경의 변수).
  * MockRuntime(응답/헤더/콜백/setState)·TcpMockSession(응답 필드)·MockCodec(입력값/파라미터)이 같은 문맥으로 렌더한다.
  */
 class MockContext(
@@ -23,14 +23,15 @@ class MockContext(
     val secrets: Map<String, String> = emptyMap(),
     val tcpFields: Map<String, String> = emptyMap(),
     val json: ObjectMapper? = null,
+    val env: Map<String, String> = emptyMap(),
 ) {
     fun withReq(r: MockRequest): MockContext =
-        MockContext(r, pathParams, seq, state, secrets, tcpFields, json)
+        MockContext(r, pathParams, seq, state, secrets, tcpFields, json, env)
 }
 
 /**
  * Mock 통합 템플릿 — 두 문법을 모두 받는다.
- *  - 워크플로 문법(칩 호환): `{{ x@body }}` `{{ x@query }}` `{{ x@path }}` `{{ x@header }}` `{{ x@state }}` `{{ 이름@secret }}` `{{ x@req }}`(TCP)
+ *  - 워크플로 문법(칩 호환): `{{ x@body }}` `{{ x@query }}` `{{ x@path }}` `{{ x@header }}` `{{ x@state }}` `{{ 이름@secret }}` `{{ 키@env }}` `{{ x@req }}`(TCP)
  *  - dot 문법(기존): `{{body.x}}` `{{query.x}}` `{{path.x}}` `{{header.x}}` `{{state.x}}` `{{req.x}}` · `{{body}}` `{{method}}` `{{uuid}}` `{{seq}}` `{{now}}`
  *  - 현재 일시([NowTokens]): `{{ now }}`(ISO UTC) `{{ now:yyyyMMddHHmmss }}`(패턴, 기본 KST) `{{ today }}`(yyyyMMdd) `{{ time }}`(HHmmss) `{{ now:yyyyMMdd@UTC }}`(타임존)
  * body 키는 **점 경로**(`user.addr.city`, `items[0].id`)로 본문 JSON 을 파고들 수 있다(최상위 실키 우선).
@@ -40,7 +41,7 @@ object MockTemplate {
 
     private val TOKEN: Pattern = Pattern.compile("\\{\\{\\s*([^{}]+?)\\s*}}")
     private val AT: Pattern = Pattern.compile("^([\\w.\\[\\]가-힣-]+)@(?:req:)?([\\w-]+)$")
-    private val SOURCES = setOf("body", "query", "path", "header", "state", "secret", "req")
+    private val SOURCES = setOf("body", "query", "path", "header", "state", "secret", "env", "req")
 
     @JvmStatic
     fun hasTokens(text: String?): Boolean = text != null && text.contains("{{")
@@ -97,6 +98,7 @@ object MockTemplate {
             "path" -> ctx.pathParams[key]
             "state" -> ctx.state[key]
             "secret" -> ctx.secrets[key]
+            "env" -> ctx.env[key]
             "req" -> ctx.tcpFields[key]
             else -> null
         }

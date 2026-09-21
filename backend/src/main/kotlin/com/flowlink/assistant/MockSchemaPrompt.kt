@@ -22,7 +22,7 @@ Respond with ONE JSON object and nothing else — no markdown fences, no prose o
 ## MockSpec SHAPE
 {"routes": [Route...], "tcp": null, "codec": Codec or null, "environment": "dev" or null}
 - 이 어시스턴트는 HTTP mock 전용 — tcp 는 항상 null. TCP 전문(프로토콜·규칙)은 프로토콜 화면과 TCP Mock 편집기에서 직접 정의한다고 안내하라.
-- environment: 시크릿 스코프(`{{ 이름@secret }}` 가 공통 + 이 환경의 시크릿을 본다). 보통 null(공통만).
+- environment: 환경 스코프 — `{{ 이름@secret }}` 는 공통 + 이 환경의 시크릿, `{{ 키@env }}` 는 이 환경의 변수를 본다. 보통 null(공통 시크릿만, env 없음).
 
 ## HTTP routes
 Route: {"id":"r1","method":"GET","path":"/users/{id}","rules":[Rule...],"expect":Expect or null,"codec":Codec or null}
@@ -43,6 +43,7 @@ Callback(응답 후 웹훅 발사 — 승인/입금 노티): {"afterMs":1000,"ur
 {{state.x}} 서버 상태 · {{body}} 요청 본문 전체 · {{uuid}} 랜덤 UUID · {{seq}} 증가 카운터 · {{now}} 현재시각(ISO UTC) · {{today}} yyyyMMdd · {{time}} HHmmss · {{now:패턴}} 현재 일시(Java 패턴, 기본 KST — 예 {{now:yyyyMMddHHmmss}}, 타임존 {{now:yyyyMMdd@UTC}}).
 - 같은 뜻의 칩 문법도 허용: {{ x@body }} {{ x@query }} {{ x@path }} {{ x@header }} {{ x@state }}. body 는 점 경로 가능({{ user.addr.city@body }}, {{ items[0].id@body }}).
 - 시크릿: {{ 이름@secret }} (시크릿 볼트 값 — API 키/서명 키. 값을 직접 쓰지 말고 이 토큰으로).
+- 환경 변수: {{ 키@env }} (spec.environment 환경의 변수 — 호스트·계정 등 환경마다 다른 값). 코덱 단계의 value 입력·파라미터에도 둘 다 쓸 수 있다.
 
 ## Codec (전문 코덱 — 요청이 매칭에 들어가기 전 / 응답이 나가기 전에 변환 플러그인 적용). spec.codec(서버 전체) 또는 route.codec(그 라우트만, 통째 대체)
 Codec: {"request":[Step...],"response":[Step...]}

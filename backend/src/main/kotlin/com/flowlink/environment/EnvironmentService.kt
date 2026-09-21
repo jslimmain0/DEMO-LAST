@@ -62,6 +62,13 @@ class EnvironmentService(
 
     private fun view(e: Environment) = EnvView(e.name, parseVars(e.varsJson), e.updatedAt ?: e.createdAt)
 
+    /** 환경 이름의 변수(없거나 이름이 비면 빈 맵) — Mock 서빙·프로토콜 미리보기·플러그인 시험의 `{{ 키@env }}` 해석용. */
+    @Transactional(readOnly = true)
+    fun vars(name: String?): Map<String, String> {
+        val n = name?.trim().orEmpty(); if (n.isEmpty()) return emptyMap()
+        return repo.findByTenantIdAndName(tenant(), n).map { parseVars(it.varsJson) }.orElse(emptyMap())
+    }
+
     @Transactional(readOnly = true)
     fun list(): List<EnvView> = repo.findByTenantIdOrderByNameAsc(tenant()).map { view(it) }
 

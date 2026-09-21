@@ -39,6 +39,7 @@ class SchemaController {
 필드 코덱:        ({ id, label, kind: 'fieldCodec', params?, encode(value, ctx) { return 문자열 }, decode(value, ctx) { return 문자열 } })
 전문 코덱:        ({ id, label, kind: 'messageCodec', params?, encode(bytes, ctx) { return 바이트배열 }, decode(bytes, ctx) { return 바이트배열 } })
 ctx = { config, direction: 'send'|'recv', field: {name,len,type,pad}|null, message: {필드명: 값} }. id 는 [a-z0-9-] 1~64자(소문자·숫자·하이픈, 첫 글자는 하이픈 불가).
+입력·파라미터 값에는 `{{ 이름@secret }}`(시크릿 볼트)·`{{ 키@env }}`(환경 변수)를 쓸 수 있다 — 워크플로는 실행 환경, Mock 은 spec.environment, 프로토콜 미리보기·시험 실행(plugin_script_try)은 environment 인자의 환경으로 서버가 푼다. 비밀·환경별 값은 직접 적지 말고 토큰으로.
 """
 
         /** 에이전트가 소스 코드에서 워크플로/프로토콜/Mock 을 만들 때 지킬 규약 — 코드에 없는 값은 지어내지 않는다. */

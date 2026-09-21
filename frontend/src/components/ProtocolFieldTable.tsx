@@ -4,14 +4,17 @@ import type { CSSProperties } from 'react'
 import { useState } from 'react'
 import type { CodecInfo, FieldPad, FieldType, ProtocolField, TransformParam } from '../api/types'
 import { FIELD_PADS, FIELD_TYPES, defaultPad, padOf } from '../lib/protocolSpec'
+import { TokenInput } from '../binding/TokenInput'
+import { useVaultSources } from '../lib/vaultSources'
 
-/** 플러그인/코덱 파라미터 폼 — type 별 input/number/select. */
+/** 플러그인/코덱 파라미터 폼 — type 별 input/number/select. 텍스트는 TokenInput — `{{ 이름@secret }}`·`{{ 키@env }}` 를 넣으면 실행 환경(워크플로 실행·Mock 환경·미리보기 환경)에서 풀린다. */
 export function ParamsForm({ params, config, onChange, readOnly }: {
   params: TransformParam[]
   config?: Record<string, string>
   onChange: (config: Record<string, string>) => void
   readOnly: boolean
 }) {
+  const sources = useVaultSources(null)
   return (
     <>
       {params.map((p) => {
@@ -24,9 +27,11 @@ export function ParamsForm({ params, config, onChange, readOnly }: {
               <select value={val} disabled={readOnly} onChange={(e) => set(e.target.value)} style={{ ...sel, minWidth: 100 }}>
                 {p.options!.map((o) => <option key={o} value={o}>{o}</option>)}
               </select>
-            ) : (
+            ) : p.type === 'number' || readOnly ? (
               <input type={p.type === 'number' ? 'number' : 'text'} value={val} disabled={readOnly} placeholder={p.placeholder}
                 onChange={(e) => set(e.target.value)} style={{ ...input, width: p.type === 'number' ? 90 : 150 }} />
+            ) : (
+              <span style={{ display: 'flex', minWidth: 150, flex: 1 }}><TokenInput value={val ?? ''} onChange={set} sources={sources} placeholder={p.placeholder} ariaLabel={`파라미터 ${p.key}`} /></span>
             )}
           </label>
         )

@@ -33,7 +33,7 @@ class TcpNodeExecutor(private val tokens: TokenResolver, private val protocols: 
         val values = LinkedHashMap<String, String>()
         for ((k, v) in node.tcpValues ?: emptyMap()) values[k] = if (v.contains("{{")) tokens.stringify(tokens.resolveLiteral(v, ctx)) else v
         val enc = try {
-            ProtocolCodec.encode(spec, key, values, Direction.SEND, protocols.plugins())
+            ProtocolCodec.encode(spec, key, values, Direction.SEND, protocols.plugins(), resolve = { tokens.resolveTokens(it, ctx) }) // 코덱 파라미터의 {{ 이름@secret }}·{{ 키@env }}
         } catch (e: ProtocolCodec.ProtocolException) {
             throw IllegalArgumentException(e.message, e)
         } catch (e: RuntimeException) {
@@ -59,7 +59,7 @@ class TcpNodeExecutor(private val tokens: TokenResolver, private val protocols: 
         if (b.host.isBlank()) return NodeResult.fail(0, b.reqText, "⚠ 호스트가 없습니다.")
         return try {
             val x = TcpClient.exchange(b.host, b.port, b.timeoutMs, b.encoded.bytes, b.spec)
-            val d = ProtocolCodec.decode(b.spec, x.response.bytes, Direction.RECV, protocols.plugins())
+            val d = ProtocolCodec.decode(b.spec, x.response.bytes, Direction.RECV, protocols.plugins(), resolve = { tokens.resolveTokens(it, ctx) })
             val out = LinkedHashMap<String, Any?>()
             out.putAll(d.header)
             if (d.body != null) out.putAll(d.body) else out["body"] = TcpBytes.decodeEscaped(d.rawBody, b.spec.charset())

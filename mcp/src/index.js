@@ -629,11 +629,13 @@ tool('plugin_script_get', {
 tool('plugin_script_try', {
     title: '스크립트 플러그인 시험 실행(저장 없음)',
     description: '소스를 샌드박스에서 1회 실행한다 — 저장하지 않으며 컴파일 검사를 겸한다(오류는 "N행 M열: …"). 입력을 안 주면 컴파일만(메타). '
-        + 'transform: inputs·config · fieldCodec: value + fn(encode|decode) + direction(send|recv) (+message) · messageCodec: bytesB64 + fn. 작성 규격과 fl.* 함수는 flowlink_guide(plugin).',
+        + 'transform: inputs·config · fieldCodec: value + fn(encode|decode) + direction(send|recv) (+message) · messageCodec: bytesB64 + fn. '
+        + '입력·config 의 {{ 이름@secret }}·{{ 키@env }} 는 environment(환경 이름)로 서버가 푼다. 작성 규격과 fl.* 함수는 flowlink_guide(plugin).',
     inputSchema: {
         source: z.string(), inputs: z.record(z.string(), z.string()).optional(), config: z.record(z.string(), z.string()).optional(),
         value: z.string().optional(), fn: z.enum(['encode', 'decode']).optional(), direction: z.enum(['send', 'recv']).optional(),
         message: z.record(z.string(), z.string()).optional(), bytesB64: z.string().optional(),
+        environment: z.string().optional(),
     },
 }, async (a) => run(async () => {
     const r = await scriptErr(() => api('POST', '/plugins/scripts/try', a));

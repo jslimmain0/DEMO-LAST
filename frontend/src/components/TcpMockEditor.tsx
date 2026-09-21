@@ -12,6 +12,7 @@ import { toast } from './toast'
 import { relTime } from '../lib/format'
 import { byteLen, lintTcpRules, requestKeys, withOffsets } from '../lib/protocolSpec'
 import { tcpMockSources } from '../lib/mockSources'
+import { useVaultSources } from '../lib/vaultSources'
 import { FieldRow, PreviewBox } from '../panels/TcpNodePanel'
 
 const COND_OPS: NonNullable<MockTcpCond['op']>[] = ['eq', 'ne', 'contains', 'startswith', 'endswith', 'regex', 'exists']
@@ -54,7 +55,8 @@ export function tcpRuleSummary(rule: MockTcpRuleSpec, spec: ProtocolSpec | undef
 
 // ---------- 연결 ----------
 
-export function TcpConnPanel({ tcp, readOnly, onChange }: { tcp: MockTcpSpec; readOnly?: boolean; onChange: (patch: Partial<MockTcpSpec>) => void }) {
+export function TcpConnPanel({ tcp, environment, readOnly, onChange }: { tcp: MockTcpSpec; environment?: string | null; readOnly?: boolean; onChange: (patch: Partial<MockTcpSpec>) => void }) {
+  const vault = useVaultSources(environment) // upstream 주소도 환경마다 다르다 — {{ 키@env }}·{{ 이름@secret }}
   const protos = useQuery({ queryKey: ['protocols'], queryFn: protocolsApi.list, staleTime: 15_000 })
   const addr = `${window.location.hostname || 'localhost'}:${tcp.port ?? 9091}`
   return (
@@ -82,8 +84,10 @@ export function TcpConnPanel({ tcp, readOnly, onChange }: { tcp: MockTcpSpec; re
         </div>
         <div style={row}>
           <span style={{ ...lbl, minWidth: 96 }}>실서버(upstream)</span>
-          <input style={{ ...input, width: 220, fontFamily: 'var(--fl-font-mono)' }} value={tcp.upstream ?? ''} placeholder="10.20.3.14:9600" disabled={readOnly} aria-label="upstream host:port"
-            onChange={(e) => onChange({ upstream: e.target.value.trim() || null })} />
+          <span style={{ display: 'flex', width: 220 }}>
+            <TokenInput ariaLabel="upstream host:port" value={tcp.upstream ?? ''} sources={vault} placeholder="10.20.3.14:9600"
+              onChange={(v) => onChange({ upstream: v.trim() || null })} />
+          </span>
           <span style={meta}>proxy 규칙이 넘길 실서버 — 비워 두면 mock 응답만</span>
         </div>
         <div style={row}>
@@ -104,11 +108,11 @@ export function TcpConnPanel({ tcp, readOnly, onChange }: { tcp: MockTcpSpec; re
 
 // ---------- 규칙 상세 ----------
 
-export function TcpRuleDetail({ rule, index, total, spec, secrets, readOnly, onChange, onDelete, onDup, onMove }: {
-  rule: MockTcpRuleSpec; index: number; total: number; spec: ProtocolSpec | undefined; secrets: string[]; readOnly?: boolean
+export function TcpRuleDetail({ rule, index, total, spec, secrets, envKeys, readOnly, onChange, onDelete, onDup, onMove }: {
+  rule: MockTcpRuleSpec; index: number; total: number; spec: ProtocolSpec | undefined; secrets: string[]; envKeys?: string[]; readOnly?: boolean
   onChange: (patch: Partial<MockTcpRuleSpec>) => void; onDelete: () => void; onDup: () => void; onMove: (d: -1 | 1) => void
 }) {
-  const sources = useMemo(() => tcpMockSources(spec, secrets), [spec, secrets])
+  const sources = useMemo(() => tcpMockSources(spec, secrets, envKeys ?? []), [spec, secrets, envKeys])
   // 이 규칙 하나만 린트 — upstream 은 연결 화면 책임이라 '-' 로 두고 필드 경고만 쓴다
   const lints = useMemo(() => (spec ? lintTcpRules({ upstream: '-', rules: [rule] }, spec).map((m) => m.replace(/^규칙 [^:]+: /, '')) : []), [rule, spec])
   const conds = rule.when ?? []
@@ -156,8 +160,10 @@ export function TcpRuleDetail({ rule, index, total, spec, secrets, readOnly, onC
             <select style={{ ...input, width: 120 }} value={c.op ?? 'eq'} disabled={readOnly} aria-label={`조건 ${i + 1} 연산자`} onChange={(e) => setCond(i, { op: e.target.value as MockTcpCond['op'] })}>
               {COND_OPS.map((o) => <option key={o} value={o}>{o}</option>)}
             </select>
-            <input style={{ ...input, flex: 1, minWidth: 100, fontFamily: 'var(--fl-font-mono)' }} value={c.value ?? ''} placeholder="값" disabled={readOnly || c.op === 'exists'}
-              aria-label={`조건 ${i + 1} 값`} onChange={(e) => setCond(i, { value: e.target.value })} />
+            {c.op === 'exists'
+              ? <span style={{ flex: 1, minWidth: 100, fontSize: 11.5, color: 'var(--fl-text-muted)' }}>(값 없음)</span>
+              : <div style={{ flex: 1, minWidth: 100 }}><TokenInput ariaLabel={`조건 ${i + 1} 값`} value={c.value ?? ''} sources={sources} placeholder="값 또는 { } 데이터 삽입"
+                  onChange={(v) => setCond(i, { value: v })} /></div>}
             {!readOnly && <button style={{ ...miniBtn, color: 'var(--fl-fail)' }} onClick={() => onChange({ when: conds.filter((_, ci) => ci !== i) })} aria-label={`조건 ${i + 1} 삭제`}>×</button>}
           </div>
         ))}

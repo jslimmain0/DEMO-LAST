@@ -31,7 +31,10 @@ class TcpMockSession(
     private val upstreamFactory: () -> Upstream?,
     private val mask: (String) -> String = { it },
     private val sleeper: (Long) -> Unit = { Thread.sleep(it) },
+    private val env: Map<String, String> = emptyMap(),
 ) {
+    /** 코덱 파라미터 안의 `{{ 이름@secret }}`·`{{ 키@env }}` — 이 Mock 의 환경 스코프로 푼다. */
+    private val resolve: (String) -> String = MockSecretProvider.Scope(secrets, env).resolver()
     class Upstream(val input: InputStream, val output: OutputStream, val close: () -> Unit)
 
     private var upstream: Upstream? = null
@@ -54,7 +57,7 @@ class TcpMockSession(
 
     /** 프레임 하나 처리. false = 연결을 끊어야 함(reset). */
     fun handleFrame(frame: Framer.Frame, output: OutputStream, onReset: () -> Unit): Boolean {
-        val decoded = try { ProtocolCodec.decode(spec, frame.bytes, Direction.SEND, plugins) } catch (e: ProtocolCodec.ProtocolException) {
+        val decoded = try { ProtocolCodec.decode(spec, frame.bytes, Direction.SEND, plugins, resolve = resolve) } catch (e: ProtocolCodec.ProtocolException) {
             log(entry("in", "none", null, emptyMap(), frame.bytes, frame.chunks, null, e.message, "error", frame.partial)); return true
         } catch (e: Exception) { // 코덱 플러그인 등에서 튀어나온 예외 — 연결을 조용히 죽이지 않고 로그 행으로
             log(entry("in", "none", null, emptyMap(), frame.bytes, frame.chunks, null, "처리 오류: ${e.message ?: e}", "error", frame.partial)); return true
@@ -90,7 +93,7 @@ class TcpMockSession(
         val field = c.field?.trim().orEmpty()
         if (field.isEmpty()) return true // 편집 중 미완성 조건
         val actual = values[field]?.trim() ?: return false
-        val v = c.value ?: ""
+        val v = resolve(c.value ?: "") // 비교값의 `{{ 이름@secret }}`·`{{ 키@env }}`
         return when (c.op?.lowercase(Locale.ROOT) ?: "eq") {
             "eq" -> actual == v.trim()
             "ne" -> actual != v.trim()
@@ -106,14 +109,14 @@ class TcpMockSession(
     // ---------- mock 응답 ----------
 
     private fun mockResponse(rule: MockTcpRule, decoded: ProtocolCodec.Decoded): ByteArray? {
-        val ctx = MockContext(seq = seq(), secrets = secrets, tcpFields = decoded.values())
+        val ctx = MockContext(seq = seq(), secrets = secrets, tcpFields = decoded.values(), env = env)
         val fields = LinkedHashMap<String, String>(decoded.header) // 헤더 에코(길이는 자동)
         for ((k, tpl) in rule.thenFields()) fields[k] = MockTemplate.render(tpl, ctx)
         val disc = if (spec.hasDiscriminator()) fields[spec.discriminator!!.trim()] else null
         val msg = spec.lookup(disc, Direction.RECV) ?: run {
             log(entry("out", "mock", disc, fields, ByteArray(0), null, rule.id, "응답 전문 '${disc ?: Direction.RECV.key}' 정의가 없습니다.", "error")); return null
         }
-        val enc = try { ProtocolCodec.encode(spec, msg.keyOrEmpty(), fields, Direction.SEND, plugins, lenient = true) } catch (e: ProtocolCodec.ProtocolException) {
+        val enc = try { ProtocolCodec.encode(spec, msg.keyOrEmpty(), fields, Direction.SEND, plugins, lenient = true, resolve = resolve) } catch (e: ProtocolCodec.ProtocolException) {
             log(entry("out", "mock", disc, fields, ByteArray(0), null, rule.id, e.message, "error")); return null
         } catch (e: Exception) {
             log(entry("out", "mock", disc, fields, ByteArray(0), null, rule.id, "처리 오류: ${e.message ?: e}", "error")); return null
@@ -132,7 +135,7 @@ class TcpMockSession(
         return try {
             up.output.write(frame.bytes); up.output.flush()
             val r = Framer.readFrame(up.input, spec) ?: throw IOException("upstream 이 응답 없이 연결을 닫았습니다.")
-            val d = runCatching { ProtocolCodec.decode(spec, r.bytes, Direction.RECV, plugins) }.getOrNull()
+            val d = runCatching { ProtocolCodec.decode(spec, r.bytes, Direction.RECV, plugins, resolve = resolve) }.getOrNull()
             log(entry("out", "proxy", d?.disc ?: d?.messageKey, d?.values() ?: emptyMap(), r.bytes, r.chunks, rule.id, d?.warnings?.joinToString(" · ")?.ifEmpty { null }, if (d == null || d.warnings.isNotEmpty()) "warn" else "info", r.partial))
             r.bytes
         } catch (e: Exception) {

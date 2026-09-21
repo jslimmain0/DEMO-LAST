@@ -117,11 +117,15 @@ object ProtocolCodec {
         else -> s
     }
 
+    /** 코덱 파라미터의 `{{ 토큰 }}` 을 호출자의 스코프(워크플로 실행 문맥·Mock 환경·미리보기 환경)로 푼다 — 토큰이 없으면 그대로. */
+    private fun Map<String, String>.resolved(resolve: (String) -> String): Map<String, String> =
+        if (values.none { it.contains("{{") }) this else mapValues { resolve(it.value) }
+
     // ---------- encode ----------
 
     fun encode(
         spec: ProtocolSpec, key: String, values: Map<String, String>, dir: Direction = Direction.SEND,
-        plugins: PluginLookup = NO_PLUGINS, lenient: Boolean = false,
+        plugins: PluginLookup = NO_PLUGINS, lenient: Boolean = false, resolve: (String) -> String = { it },
     ): Encoded {
         val msg = spec.message(key) ?: throw ProtocolException(null, "정의되지 않은 전문: $key")
         val cs = spec.charset()
@@ -135,7 +139,7 @@ object ProtocolCodec {
         val body = ByteArrayOutputStream()
         var offset = spec.headerLen()
         for (f in msg.fieldsOrEmpty()) {
-            val r = encodeField(f, all[f.nameOrEmpty()] ?: "", offset, cs, all, plugins, lenient, dir)
+            val r = encodeField(f, all[f.nameOrEmpty()] ?: "", offset, cs, all, plugins, lenient, dir, resolve)
             body.write(r.first); slices.add(r.second); r.second.warn?.let { warnings += it }
             offset += f.lenOrZero()
         }
@@ -143,7 +147,7 @@ object ProtocolCodec {
         for (p in spec.messagePlugins ?: emptyList()) {
             val id = p.id?.trim().orEmpty(); if (id.isEmpty()) continue
             val mc = plugins.find(id) as? MessageCodec ?: throw ProtocolException(null, "메시지 플러그인 '$id' 을 찾을 수 없습니다(MessageCodec).")
-            bodyBytes = mc.encode(bodyBytes, CodecCtx(null, all, p.configOrEmpty(), dir.name.lowercase()))
+            bodyBytes = mc.encode(bodyBytes, CodecCtx(null, all, p.configOrEmpty().resolved(resolve), dir.name.lowercase()))
         }
         val total = spec.headerLen() + bodyBytes.size
         val head = ByteArrayOutputStream()
@@ -156,7 +160,7 @@ object ProtocolCodec {
                 val b = lengthBytes(spec, f, declared)
                 head.write(b); headSlices.add(FieldSlice(n, offset, f.lenOrZero(), b.size, declared.toString()))
             } else {
-                val r = encodeField(f, all[n] ?: "", offset, cs, all, plugins, lenient, dir)
+                val r = encodeField(f, all[n] ?: "", offset, cs, all, plugins, lenient, dir, resolve)
                 head.write(r.first); headSlices.add(r.second); r.second.warn?.let { warnings += it }
             }
             offset += f.lenOrZero()
@@ -169,7 +173,7 @@ object ProtocolCodec {
 
     private fun encodeField(
         f: Field, value: String, offset: Int, cs: Charset, message: Map<String, String>,
-        plugins: PluginLookup, lenient: Boolean, dir: Direction,
+        plugins: PluginLookup, lenient: Boolean, dir: Direction, resolve: (String) -> String,
     ): Pair<ByteArray, FieldSlice> {
         val name = f.nameOrEmpty()
         val type = f.typeOr()
@@ -177,7 +181,7 @@ object ProtocolCodec {
         var v = value
         f.plugin?.id?.trim()?.takeIf { it.isNotEmpty() }?.let { id ->
             val fc = plugins.find(id) as? FieldCodec ?: throw ProtocolException(name, "필드 플러그인 '$id' 을 찾을 수 없습니다(FieldCodec).")
-            v = fc.encode(v, CodecCtx(FieldInfo(name, len, type, f.padOr()), message, f.plugin.configOrEmpty(), dir.name.lowercase()))
+            v = fc.encode(v, CodecCtx(FieldInfo(name, len, type, f.padOr()), message, f.plugin.configOrEmpty().resolved(resolve), dir.name.lowercase()))
         }
         val binary = type == "binary"
         var raw: ByteArray = when (type) {
@@ -200,7 +204,7 @@ object ProtocolCodec {
 
     // ---------- decode ----------
 
-    fun decode(spec: ProtocolSpec, frame: ByteArray, dir: Direction = Direction.RECV, plugins: PluginLookup = NO_PLUGINS): Decoded {
+    fun decode(spec: ProtocolSpec, frame: ByteArray, dir: Direction = Direction.RECV, plugins: PluginLookup = NO_PLUGINS, resolve: (String) -> String = { it }): Decoded {
         val cs = spec.charset()
         val hl = spec.headerLen()
         if (frame.size < hl) throw ProtocolException(null, "전문(${frame.size}B)이 헤더 길이(${hl}B)보다 짧습니다.")
@@ -210,7 +214,7 @@ object ProtocolCodec {
         var offset = 0
         for (f in spec.headerOrEmpty()) {
             val slice = frame.copyOfRange(offset, offset + f.lenOrZero())
-            val v = if (f.typeOr() == "length") parseLength(spec, frame).toString() else decodeField(f, slice, cs, header, plugins, dir)
+            val v = if (f.typeOr() == "length") parseLength(spec, frame).toString() else decodeField(f, slice, cs, header, plugins, dir, resolve)
             header[f.nameOrEmpty()] = v
             slices.add(FieldSlice(f.nameOrEmpty(), offset, f.lenOrZero(), slice.size, v))
             offset += f.lenOrZero()
@@ -222,7 +226,7 @@ object ProtocolCodec {
         for (p in (spec.messagePlugins ?: emptyList()).asReversed()) {
             val id = p.id?.trim().orEmpty(); if (id.isEmpty()) continue
             val mc = plugins.find(id) as? MessageCodec ?: throw ProtocolException(null, "메시지 플러그인 '$id' 을 찾을 수 없습니다(MessageCodec).")
-            body = mc.decode(body, CodecCtx(null, header, p.configOrEmpty(), dir.name.lowercase()))
+            body = mc.decode(body, CodecCtx(null, header, p.configOrEmpty().resolved(resolve), dir.name.lowercase()))
         }
         val disc = if (spec.hasDiscriminator()) header[spec.discriminator!!.trim()] else null
         val msg = spec.lookup(disc, dir) ?: return Decoded(header, disc, null, null, body, slices, warnings)
@@ -233,7 +237,7 @@ object ProtocolCodec {
             val end = minOf(offset + f.lenOrZero(), body.size)
             val slice = if (offset >= body.size) ByteArray(0) else body.copyOfRange(offset, end)
             if (slice.size < f.lenOrZero()) warnings += "본문이 짧아 '${f.nameOrEmpty()}' 가 ${slice.size}/${f.lenOrZero()}B 만 왔습니다."
-            val v = decodeField(f, slice, cs, all, plugins, dir)
+            val v = decodeField(f, slice, cs, all, plugins, dir, resolve)
             map[f.nameOrEmpty()] = v; all[f.nameOrEmpty()] = v
             slices.add(FieldSlice(f.nameOrEmpty(), hl + offset, f.lenOrZero(), slice.size, v))
             offset += f.lenOrZero()
@@ -242,7 +246,7 @@ object ProtocolCodec {
         return Decoded(header, disc, msg.keyOrEmpty(), map, body, slices, warnings)
     }
 
-    private fun decodeField(f: Field, slice: ByteArray, cs: Charset, message: Map<String, String>, plugins: PluginLookup, dir: Direction): String {
+    private fun decodeField(f: Field, slice: ByteArray, cs: Charset, message: Map<String, String>, plugins: PluginLookup, dir: Direction, resolve: (String) -> String): String {
         val type = f.typeOr()
         var v = when (type) {
             "binary" -> TcpBytes.hexDump(slice)
@@ -251,7 +255,7 @@ object ProtocolCodec {
         }
         f.plugin?.id?.trim()?.takeIf { it.isNotEmpty() }?.let { id ->
             val fc = plugins.find(id) as? FieldCodec ?: throw ProtocolException(f.nameOrEmpty(), "필드 플러그인 '$id' 을 찾을 수 없습니다(FieldCodec).")
-            v = fc.decode(v, CodecCtx(FieldInfo(f.nameOrEmpty(), f.lenOrZero(), type, f.padOr()), message, f.plugin.configOrEmpty(), dir.name.lowercase()))
+            v = fc.decode(v, CodecCtx(FieldInfo(f.nameOrEmpty(), f.lenOrZero(), type, f.padOr()), message, f.plugin.configOrEmpty().resolved(resolve), dir.name.lowercase()))
         }
         return v
     }

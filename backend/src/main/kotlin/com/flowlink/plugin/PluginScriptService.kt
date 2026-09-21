@@ -35,6 +35,7 @@ class PluginScriptService(
     @Lazy private val registry: TransformRegistry,
     @Lazy private val usages: PluginUsageIndex,
     private val notifier: com.flowlink.notify.NotificationService,
+    private val scopes: com.flowlink.mock.MockSecretProvider,
 ) : ScriptPluginLoader {
     private val log = LoggerFactory.getLogger(PluginScriptService::class.java)
     private fun tenant() = TenantContext.getTenantId()
@@ -94,10 +95,14 @@ class PluginScriptService(
         val meta = PluginScriptDtos.MetaView.of(cs.meta)
         val hasInput = req.inputs != null || req.value != null || req.bytesB64 != null
         if (!hasInput) return PluginScriptDtos.TryResult(meta)
+        // 입력·파라미터의 {{ 이름@secret }}·{{ 키@env }} — 요청한 환경 스코프로 서버에서 푼다(값은 저장 안 됨, 샘플엔 토큰만 남는다)
+        val r = scopes.scope(tenant(), req.environment, cached = false).resolver()
+        fun res(m: Map<String, String>?) = m?.mapValues { r(it.value) }
+        val q = req.copy(inputs = res(req.inputs), config = res(req.config), value = req.value?.let(r), message = res(req.message))
         return when (cs.meta.kind) {
-            ScriptMeta.TRANSFORM -> rt.runTransform(cs, req.inputs ?: emptyMap(), req.config ?: emptyMap()).let { PluginScriptDtos.TryResult(meta, outputs = it.value, logs = it.logs, durationMs = it.durationMs) }
-            ScriptMeta.FIELD_CODEC -> rt.runFieldCodec(cs, req.value ?: "", fnOf(req.fn), codecCtx(req)).let { PluginScriptDtos.TryResult(meta, result = it.value, logs = it.logs, durationMs = it.durationMs) }
-            else -> rt.runMessageCodec(cs, fnOf(req.fn), Base64.getDecoder().decode(req.bytesB64 ?: ""), codecCtx(req)).let { PluginScriptDtos.TryResult(meta, bytesB64 = Base64.getEncoder().encodeToString(it.value), logs = it.logs, durationMs = it.durationMs) }
+            ScriptMeta.TRANSFORM -> rt.runTransform(cs, q.inputs ?: emptyMap(), q.config ?: emptyMap()).let { PluginScriptDtos.TryResult(meta, outputs = it.value, logs = it.logs, durationMs = it.durationMs) }
+            ScriptMeta.FIELD_CODEC -> rt.runFieldCodec(cs, q.value ?: "", fnOf(q.fn), codecCtx(req)).let { PluginScriptDtos.TryResult(meta, result = it.value, logs = it.logs, durationMs = it.durationMs) }
+            else -> rt.runMessageCodec(cs, fnOf(q.fn), Base64.getDecoder().decode(q.bytesB64 ?: ""), codecCtx(req)).let { PluginScriptDtos.TryResult(meta, bytesB64 = Base64.getEncoder().encodeToString(it.value), logs = it.logs, durationMs = it.durationMs) }
         }
     }
     private fun fnOf(fn: String?) = if (fn == "decode") "decode" else "encode"

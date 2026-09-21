@@ -79,4 +79,10 @@ class MockTemplateTest {
         assertThat(MockTemplate.render("{{ now:j }}", c)).isEmpty()      // 잘못된 패턴
         assertThat(MockTemplate.render("{{ time@body }}", c)).isEmpty()  // 본문 필드 참조(없음) — 시각 토큰 아님
     }
+
+    @Test
+    fun `env - 환경 변수 토큰, 없으면 빈 문자열(시크릿과 같은 규약)`() {
+        val ctx = MockContext(env = mapOf("host" to "10.0.0.1"), secrets = mapOf("k" to "s3"))
+        assertThat(MockTemplate.render("{{ host@env }}:{{ k@secret }}:{{ nope@env }}", ctx)).isEqualTo("10.0.0.1:s3:")
+    }
 }

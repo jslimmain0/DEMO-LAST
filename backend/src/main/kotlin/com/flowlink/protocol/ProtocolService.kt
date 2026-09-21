@@ -23,6 +23,7 @@ class ProtocolService(
     private val json: JsonService,
     private val workspace: WorkspaceService,
     private val transforms: TransformRegistry,
+    private val scopes: com.flowlink.mock.MockSecretProvider,
     private val events: ApplicationEventPublisher,
 ) {
     private fun tenant(): String = TenantContext.getTenantId()
@@ -98,7 +99,7 @@ class ProtocolService(
         if (key.isEmpty()) return ProtocolDtos.PreviewResult(0, "", "", emptyList(), listOf(ProtocolDtos.PreviewError(null, "전문(key)을 고르세요.")))
         val dir = if ((req.direction ?: "send").equals("recv", ignoreCase = true)) Direction.RECV else Direction.SEND
         return try {
-            val e = ProtocolCodec.encode(spec, key, req.values ?: emptyMap(), dir, plugins())
+            val e = ProtocolCodec.encode(spec, key, req.values ?: emptyMap(), dir, plugins(), resolve = scopes.scope(tenant(), req.environment, cached = false).resolver())
             ProtocolDtos.PreviewResult(e.bytes.size, TcpBytes.hexDump(e.bytes), TcpBytes.printable(e.bytes, spec.charset()), e.fields, emptyList(), e.warnings)
         } catch (e: ProtocolCodec.ProtocolException) {
             ProtocolDtos.PreviewResult(0, "", "", emptyList(), listOf(ProtocolDtos.PreviewError(e.field, e.message ?: "조립 실패")))

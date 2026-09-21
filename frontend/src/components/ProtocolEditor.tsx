@@ -16,6 +16,7 @@ import { AskDialog } from './AskDialog'
 import type { AskSpec } from './AskDialog'
 import { Modal } from './Modal'
 import { FieldTable, ParamsForm } from './ProtocolFieldTable'
+import { activeEnvName } from '../lib/environments'
 import { toast } from './toast'
 
 const ENCODINGS = ['EUC-KR', 'MS949', 'UTF-8', 'US-ASCII']
@@ -313,7 +314,7 @@ function PreviewSection({ spec, tab }: { spec: ProtocolSpec; tab: string }) {
   const fields = fieldsOf(spec, key)
   // 현재 전문에 있는(길이 자동 제외) 필드만 보낸다 — 전문을 바꾸면 남아 있던 값이 따라가지 않게
   const preview = useMutation({
-    mutationFn: () => protocolsApi.preview({ spec, key, values: Object.fromEntries(fields.filter((f) => f.type !== 'length').map((f) => [f.name, values[f.name] ?? ''])) }),
+    mutationFn: () => protocolsApi.preview({ spec, key, environment: activeEnvName(), values: Object.fromEntries(fields.filter((f) => f.type !== 'length').map((f) => [f.name, values[f.name] ?? ''])) }),
   })
   const result = preview.data
   const errOf = (name: string) => result?.errors.find((e) => e.field === name)?.message

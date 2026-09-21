@@ -224,4 +224,17 @@ class ProtocolCodecTest {
         )
         assertThat(big.validate()).anyMatch { it.contains("상한") }
     }
+
+    @Test
+    fun `코덱 파라미터의 토큰은 호출자의 resolve 로 풀린다(없으면 그대로)`() {
+        val cfg = object : FieldCodec { override fun id() = "cfg"; override fun encode(v: String, ctx: CodecCtx) = (ctx.config["k"] ?: "?") + v; override fun decode(v: String, ctx: CodecCtx) = v.removePrefix(ctx.config["k"] ?: "?") }
+        val lk = ProtocolCodec.PluginLookup { if (it == "cfg") cfg else null }
+        val s = spec().copy(messages = listOf(Message("0210", null, listOf(Field("계좌번호", 20, "ascii", plugin = PluginRef("cfg", mapOf("k" to "{{ pre@env }}")))))))
+        val resolve: (String) -> String = { it.replace("{{ pre@env }}", "X-") }
+        val e = ProtocolCodec.encode(s, "0210", mapOf("계좌번호" to "123"), plugins = lk, resolve = resolve)
+        assertThat(e.fields.first { it.name == "계좌번호" }.value.trim()).isEqualTo("X-123")
+        assertThat(ProtocolCodec.decode(s, e.bytes, Direction.RECV, lk, resolve = resolve).body!!["계좌번호"]).isEqualTo("123")
+        val raw = ProtocolCodec.encode(s, "0210", mapOf("계좌번호" to "123"), plugins = lk)
+        assertThat(raw.fields.first { it.name == "계좌번호" }.value).startsWith("{{ pre@env }}123")
+    }
 }

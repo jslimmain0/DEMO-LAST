@@ -90,7 +90,7 @@ export const suitesApi = {
 export const transformsApi = {
   list: () => http.get<import('./types').TransformInfo[]>('/transforms').then((r) => r.data),
   // 미리보기 — 샘플 입력/설정으로 변환 결과를 즉시 확인(순수 계산)
-  preview: (id: string, body: { inputs: Record<string, string>; config: Record<string, string> }) =>
+  preview: (id: string, body: { inputs: Record<string, string>; config: Record<string, string>; environment?: string | null }) =>
     http.post<import('./types').TransformPreviewResponse>(`/transforms/${id}/preview`, body).then((r) => r.data),
 }
 
@@ -206,7 +206,7 @@ export const protocolsApi = {
   update: (id: string, body: { name?: string; spec?: import('./types').ProtocolSpec }) => http.put<import('./types').ProtocolDetail>(`/protocols/${id}`, body).then((r) => r.data),
   remove: (id: string) => http.delete(`/protocols/${id}`).then(() => undefined),
   // 편집 중 spec 으로 조립 미리보기(저장 없음) — 검증 실패는 errors 로 온다
-  preview: (body: { spec: import('./types').ProtocolSpec; key: string; values: Record<string, string>; direction?: 'send' | 'recv' }) =>
+  preview: (body: { spec: import('./types').ProtocolSpec; key: string; values: Record<string, string>; direction?: 'send' | 'recv'; environment?: string | null }) =>
     http.post<import('./types').ProtocolPreview>('/protocols/preview', body).then((r) => r.data),
 }
 export const codecsApi = { list: () => http.get<import('./types').CodecInfo[]>('/codecs').then((r) => r.data) }

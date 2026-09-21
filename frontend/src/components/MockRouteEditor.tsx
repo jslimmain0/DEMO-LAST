@@ -1,7 +1,7 @@
 import type { CSSProperties } from 'react'
 import { useMemo, useRef, useState } from 'react'
 import type { HttpMethod, MockCodecSpec, MockCond, MockExpect, MockExpectField, MockRouteSpec, MockRuleSpec, MockServerSpec } from '../api/types'
-import type { SecretView } from '../api/client'
+import type { SecretView, EnvView } from '../api/client'
 import { mocksApi } from '../api/client'
 import { BindingPicker } from '../binding/BindingPicker'
 import { TokenInput } from '../binding/TokenInput'
@@ -29,8 +29,8 @@ const COND_OPS = ['eq', 'ne', 'exists', 'contains', 'gt', 'gte', 'lt', 'lte', 'r
  * HTTP 라우트 상세 — 메서드·경로, 예상 요청(필드마다 ◈ 코덱), 규칙(조건·응답·헤더·상태·콜백, 응답 JSON 키마다 ◈ 코덱), 코덱 요약.
  * 코덱은 "필드에서 시작": 필드 옆 ◈ 가 **이 라우트에 실제 적용되는 코덱**(라우트 전용이면 route.codec, 아니면 서버 코덱)에 단계를 만든다.
  */
-export function RouteCard({ base, ensureSaved, mockId, spec, secrets, route, readOnly, onChange, onRemove, onDup, onUp, onDown, onServerCodec, onGoCodec }: {
-  base: string; ensureSaved: () => Promise<boolean>; mockId: string; spec: MockServerSpec; secrets: SecretView[]
+export function RouteCard({ base, ensureSaved, mockId, spec, secrets, envs, route, readOnly, onChange, onRemove, onDup, onUp, onDown, onServerCodec, onGoCodec }: {
+  base: string; ensureSaved: () => Promise<boolean>; mockId: string; spec: MockServerSpec; secrets: SecretView[]; envs?: EnvView[]
   route: MockRouteSpec; readOnly?: boolean
   onChange: (r: MockRouteSpec) => void; onRemove: () => void; onDup: () => void; onUp: () => void; onDown: () => void
   onServerCodec?: (c: MockCodecSpec | null) => void // 서버 코덱(spec.codec) 갱신 — 라우트 전용 코덱이 없을 때 필드 ◈ 가 여기에 쓴다
@@ -41,7 +41,7 @@ export function RouteCard({ base, ensureSaved, mockId, spec, secrets, route, rea
     const copy = { ...route.rules[i], id: newId() }
     onChange({ ...route, rules: [...route.rules.slice(0, i + 1), copy, ...route.rules.slice(i + 1)] })
   }
-  const sources = useMemo(() => mockSources({ spec, route, secrets, environment: spec.environment }), [spec, route, secrets])
+  const sources = useMemo(() => mockSources({ spec, route, secrets, envs, environment: spec.environment }), [spec, route, secrets, envs])
   const [expectOpen, setExpectOpen] = useState(() => !!(route.expect && ((route.expect.body?.length ?? 0) + (route.expect.query?.length ?? 0) + (route.expect.header?.length ?? 0)) > 0))
   const [codecOpen, setCodecOpen] = useState(false) // 이 라우트만 코덱 편집 펼침
   // 실제 적용 코덱 — 라우트 전용(route.codec 이 있으면 서버 코덱을 통째로 대체) 또는 서버 코덱
@@ -300,7 +300,7 @@ function RuleCard({ rule, index, total, route, sources, readOnly, codec, onCodec
               {COND_OPS.map((o) => <option key={o}>{o}</option>)}
             </select>
             {c.op !== 'exists' && (
-              <input style={{ ...input, flex: 1, fontFamily: 'var(--fl-font-mono)' }} value={c.value ?? ''} placeholder="값" disabled={readOnly} onChange={(e) => setCond(i, { ...c, value: e.target.value })} />
+              <div style={{ flex: 1, minWidth: 120 }}><TokenInput ariaLabel={`조건 ${c.key} 값`} value={c.value ?? ''} sources={sources} placeholder="값 또는 { } 데이터 삽입" onChange={(v) => setCond(i, { ...c, value: v })} /></div>
             )}
             {!readOnly && <button style={miniBtn} onClick={() => onChange({ ...rule, when: conds.filter((_, xi) => xi !== i) })}>×</button>}
           </div>

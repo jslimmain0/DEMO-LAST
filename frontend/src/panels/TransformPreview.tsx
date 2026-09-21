@@ -1,6 +1,7 @@
 import type { CSSProperties } from 'react'
 import { useState } from 'react'
 import { transformsApi } from '../api/client'
+import { activeEnvName } from '../lib/environments'
 import type { TransformInfo } from '../api/types'
 
 /**
@@ -15,7 +16,7 @@ export function TransformPreview({ transform, config }: { transform: TransformIn
 
   const run = async () => {
     setBusy(true)
-    try { setResult(await transformsApi.preview(transform.id, { inputs, config })) }
+    try { setResult(await transformsApi.preview(transform.id, { inputs, config, environment: activeEnvName() })) }
     catch (e) { setResult({ ok: false, outputs: {}, error: e instanceof Error ? e.message : String(e) }) }
     finally { setBusy(false) }
   }

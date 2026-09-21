@@ -1,4 +1,4 @@
-import type { SecretView } from '../api/client'
+import type { EnvView, SecretView } from '../api/client'
 import type { MockRouteSpec, MockServerSpec, ProtocolSpec } from '../api/types'
 import type { BindableItem, BindableSource } from '../binding/upstream'
 
@@ -11,11 +11,13 @@ export interface MockSourceOpts {
   spec: MockServerSpec
   route?: MockRouteSpec | null
   secrets?: SecretView[]
-  /** 이 Mock 의 시크릿 환경(spec.environment). 공통 + 이 환경의 시크릿이 적용 대상. */
+  /** 이 Mock 의 환경(spec.environment). 공통 + 이 환경의 시크릿, 이 환경의 변수({{ 키@env }})가 적용 대상. */
   environment?: string | null
+  envs?: EnvView[]
 }
 
-const item = (key: string, tag: string, type?: string): BindableItem => ({ key, type, scope: null, group: 'request', tag })
+export const srcItem = (key: string, tag: string, type?: string): BindableItem => ({ key, type, scope: null, group: 'request', tag })
+const item = srcItem
 
 /** 경로 패턴(/users/{id}/orders/{no})의 파라미터 이름. */
 export function pathParamNames(path: string | undefined | null): string[] {
@@ -41,6 +43,14 @@ export function applicableSecretNames(secrets: SecretView[] | undefined, environ
   return [...names].sort((a, b) => a.localeCompare(b))
 }
 
+/** 환경 변수 키 — environment 가 있으면 그 환경의 키, 없으면 [] (all=true 면 모든 환경의 키 합집합 — 실행 환경이 정해지지 않은 편집기용). */
+export function envKeys(envs: EnvView[] | undefined, environment: string | null | undefined, all = false): string[] {
+  const env = environment?.trim() || null
+  const keys = new Set<string>()
+  for (const e of envs ?? []) if (env ? e.name === env : all) for (const k of Object.keys(e.vars ?? {})) if (k.trim()) keys.add(k.trim())
+  return [...keys].sort((a, b) => a.localeCompare(b))
+}
+
 export function mockSources(o: MockSourceOpts): BindableSource[] {
   const out: BindableSource[] = []
   const r = o.route
@@ -56,6 +66,8 @@ export function mockSources(o: MockSourceOpts): BindableSource[] {
   if (st.length) out.push({ id: 'state', name: '서버 상태', type: 'mock', cat: 'set', items: st.map((k) => item(k, '상태')) })
   const sec = applicableSecretNames(o.secrets, o.environment)
   if (sec.length) out.push({ id: 'secret', name: '시크릿 볼트', type: 'mock', cat: 'secret', items: sec.map((k) => item(k, '시크릿')) })
+  const ek = envKeys(o.envs, o.environment)
+  if (ek.length) out.push({ id: 'env', name: `환경 변수 (${o.environment})`, type: 'mock', cat: 'env', items: ek.map((k) => item(k, '환경')) })
   return out
 }
 
@@ -63,13 +75,14 @@ export function mockSources(o: MockSourceOpts): BindableSource[] {
  * TCP Mock 편집기의 피커 소스 — 프로토콜의 요청 필드(헤더 + 모든 전문 본문 필드)와 시크릿.
  * `{{ 계좌번호@req }}` 로 직렬화되고 백엔드가 수신 전문의 그 필드 값으로 치환한다(`seq`/`now`/`today` 는 TokenInput 자동완성 내장).
  */
-export function tcpMockSources(spec: ProtocolSpec | undefined, secretNames: string[]): BindableSource[] {
+export function tcpMockSources(spec: ProtocolSpec | undefined, secretNames: string[], envKeyList: string[] = []): BindableSource[] {
   const out: BindableSource[] = []
   if (spec) {
     const names = [...new Set([...spec.header, ...spec.messages.flatMap((m) => m.fields)].map((f) => f.name?.trim() ?? '').filter(Boolean))]
     if (names.length) out.push({ id: 'req', name: '요청 전문 필드', type: 'mock', cat: 'tcp', items: names.map((k) => item(k, '요청')) })
   }
   if (secretNames.length) out.push({ id: 'secret', name: '시크릿 볼트', type: 'mock', cat: 'secret', items: secretNames.map((k) => item(k, '시크릿')) })
+  if (envKeyList.length) out.push({ id: 'env', name: '환경 변수', type: 'mock', cat: 'env', items: envKeyList.map((k) => item(k, '환경')) })
   return out
 }
 

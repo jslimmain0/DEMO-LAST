@@ -115,18 +115,19 @@ class MockGatewayController(
         // 상태 있는 목: 서버(slug)별 상태 맵 + 규칙 히트수(순차 응답)를 store 에서 — 조건/템플릿에서 {{state.KEY}}·source=state.
         val state = store.state(server.id)
         val hits = store.hitsSnapshot(server.id)
-        val secrets = secretProvider.secrets(server.tenantId, spec.environment)
+        val scope = secretProvider.scope(server.tenantId, spec.environment)
+        val secrets = scope.secrets
         val masks = SecretMasker.variants(secrets.values)
         val mapper = json.mapper()
         val lookup: (String) -> FlowTransform? = { transforms.get(it).orElse(null) }
         // 전문 코덱 — 경로/메서드가 맞은 라우트의 유효 코덱(라우트 > 서버)으로 본문/필드/헤더를 디코딩한 뒤 조건·템플릿에 넘긴다.
         var decoded: String? = null
         var matchedRoute: MockSpec.MockRoute? = null
-        val match = runtime.match(spec.routesOrEmpty(), req, state, hits) { route, r ->
+        val match = runtime.match(spec.routesOrEmpty(), req, state, hits, secrets, scope.env) { route, r ->
             matchedRoute = route
             val steps = MockCodec.effective(spec.codec, route.codec)?.request
             if (steps.isNullOrEmpty()) r else {
-                val ctx = MockContext(pathParams = MockRuntime.matchPath(route.path, r.path) ?: emptyMap(), state = state, secrets = secrets, json = mapper)
+                val ctx = MockContext(pathParams = MockRuntime.matchPath(route.path, r.path) ?: emptyMap(), state = state, secrets = secrets, json = mapper, env = scope.env)
                 val out = MockCodec.applyRequest(steps, r, ctx, lookup, mapper)
                 decoded = out.bodyText
                 out
@@ -147,10 +148,10 @@ class MockGatewayController(
         val pathParams = match.get().pathParams
         val responseCodec: MockRuntime.ResponseCodec? =
             if (respSteps.isNullOrEmpty()) null else MockRuntime.ResponseCodec { body, headers, ct ->
-                val ctx = MockContext(req = matchedReq, pathParams = pathParams, seq = seq, state = state, secrets = secrets, json = mapper)
+                val ctx = MockContext(req = matchedReq, pathParams = pathParams, seq = seq, state = state, secrets = secrets, json = mapper, env = scope.env)
                 MockCodec.applyResponse(respSteps, body, headers, ct, ctx, lookup, mapper)
             }
-        val resp = runtime.render(rule, matchedReq, pathParams, seq, state, responseCodec, secrets, mapper)
+        val resp = runtime.render(rule, matchedReq, pathParams, seq, state, responseCodec, secrets, mapper, scope.env)
         // 렌더가 반환한 setState 를 서버 상태에 반영(다음 호출의 조건/템플릿에 보임)
         if (resp.setState.isNotEmpty()) state.putAll(resp.setState)
         return Served(resp, rule.id, decoded, masks)

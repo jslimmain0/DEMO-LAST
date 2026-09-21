@@ -296,7 +296,8 @@ class MockServerService(
         if (!workspace.isApproved(workspace.currentUsername())) throw com.flowlink.common.error.ForbiddenException("코덱 시험은 가입 승인 후 가능합니다(시크릿 값 사용).")
         val codec = req.codec ?: throw BadRequestException("codec 이 없습니다.")
         val side = (req.side ?: "request").lowercase(Locale.ROOT)
-        val secrets = secretProvider.secrets(tenant(), req.environment)
+        val scope = secretProvider.scope(tenant(), req.environment, cached = false)
+        val secrets = scope.secrets
         val mapper = json.mapper()
         val lookup: (String) -> com.flowlink.transform.FlowTransform? = { transforms.get(it).orElse(null) }
         val traces = ArrayList<MockCodec.StepTrace>()
@@ -308,7 +309,7 @@ class MockServerService(
         fun m(s: String) = com.flowlink.execution.engine.SecretMasker.mask(s, masks) ?: s
         try {
             if (side == "response") {
-                val ctx = MockContext(req = MockHttp.MockRequest("POST", "/", emptyMap(), headersIn, "", emptyMap()), seq = 1001L, secrets = secrets, json = mapper)
+                val ctx = MockContext(req = MockHttp.MockRequest("POST", "/", emptyMap(), headersIn, "", emptyMap()), seq = 1001L, secrets = secrets, json = mapper, env = scope.env)
                 val headers = LinkedHashMap<String, String>()
                 val out = MockCodec.applyResponse(codec.response, message, headers, ct, ctx, lookup, mapper, traces)
                 return MockDtos.CodecTryResult(m(out), headers.mapValues { m(it.value) }, emptyMap(), traces.map { it.copy(input = m(it.input), output = m(it.output)) })
@@ -316,7 +317,7 @@ class MockServerService(
             val cs = MockHttp.charsetFromContentType(ct)
             if (!headersIn.containsKey("content-type")) headersIn["content-type"] = ct
             val request = MockHttp.MockRequest("POST", "/", emptyMap(), headersIn, message, MockHttp.parseBodyFields(message, ct, cs, mapper))
-            val ctx = MockContext(seq = 1001L, secrets = secrets, json = mapper)
+            val ctx = MockContext(seq = 1001L, secrets = secrets, json = mapper, env = scope.env)
             val out = MockCodec.applyRequest(codec.request, request, ctx, lookup, mapper, traces)
             return MockDtos.CodecTryResult(m(out.bodyText), out.headers.mapValues { m(it.value) }, out.bodyFields.mapValues { m(it.value) }, traces.map { it.copy(input = m(it.input), output = m(it.output)) })
         } catch (e: MockCodec.CodecException) {
@@ -477,19 +478,21 @@ class MockServerService(
     // @Transactional 없음 — 소켓 왕복(최대 timeoutMs) 동안 DB 커넥션을 붙잡지 않는다(조회는 리포지토리 자체 트랜잭션).
     fun tcpSend(id: UUID, req: MockDtos.TcpSendRequest): MockDtos.TcpSendResult {
         val m = findReadable(id)
-        val tcp = parseSpec(m.specJson).tcp ?: throw BadRequestException("TCP Mock 이 아닙니다.")
+        val mockSpec = parseSpec(m.specJson)
+        val tcp = mockSpec.tcp ?: throw BadRequestException("TCP Mock 이 아닙니다.")
+        val resolve = secretProvider.scope(m.tenantId, mockSpec.environment, cached = false).resolver() // 코덱 파라미터의 {{ 이름@secret }}·{{ 키@env }}
         val port = tcpRegistry.listeningPort(id) ?: throw BadRequestException("리스너가 열려 있지 않습니다(Mock 켜짐·프로토콜 선택 확인).")
         val pid = tcp.protocolId?.trim()?.takeIf { it.isNotEmpty() } ?: throw BadRequestException("프로토콜을 먼저 고르세요.")
         val spec = protocolService.specOf(UUID.fromString(pid), m.tenantId)
         val key = req.key?.trim()?.takeIf { it.isNotEmpty() } ?: throw BadRequestException("전문(key)을 고르세요.")
         val enc = try {
-            ProtocolCodec.encode(spec, key, req.values ?: emptyMap(), Direction.SEND, protocolService.plugins())
+            ProtocolCodec.encode(spec, key, req.values ?: emptyMap(), Direction.SEND, protocolService.plugins(), resolve = resolve)
         } catch (e: ProtocolCodec.ProtocolException) { throw BadRequestException(e.message ?: "조립 실패") }
         val x = try {
             TcpClient.exchange("127.0.0.1", port, tcp.timeoutMs?.takeIf { it > 0 } ?: 5000, enc.bytes, spec)
         } catch (e: Exception) { throw BadRequestException("전송 실패: ${e.message}") }
         val d = try {
-            ProtocolCodec.decode(spec, x.response.bytes, Direction.RECV, protocolService.plugins())
+            ProtocolCodec.decode(spec, x.response.bytes, Direction.RECV, protocolService.plugins(), resolve = resolve)
         } catch (e: ProtocolCodec.ProtocolException) { throw BadRequestException(e.message ?: "응답 해석 실패") }
         val cs = spec.charset()
         return MockDtos.TcpSendResult(

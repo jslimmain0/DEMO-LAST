@@ -47,12 +47,13 @@ Callback(응답 후 웹훅 발사 — 승인/입금 노티): {"afterMs":1000,"ur
 
 ## Codec (전문 코덱 — 요청이 매칭에 들어가기 전 / 응답이 나가기 전에 변환 플러그인 적용). spec.codec(서버 전체) 또는 route.codec(그 라우트만, 통째 대체)
 Codec: {"request":[Step...],"response":[Step...]}
-Step: {"id":"<변환 플러그인 id — 업로드된 JAR 플러그인의 id 만(목록이 비어 있으면 codec 을 만들지 마라)>",
+Step: {"id":"<승인된 변환 플러그인 id(plugin_list) — 암복호화·해시·서명은 반드시 이걸로. 없으면 만들어 승인 요청하고, 규격을 모르면 사용자에게 물어라>",
        "target":"body|fields|header","fields":["card.no"],"header":"X-Signature",
        "inputs":[{"key":"input","mode":"message"},{"key":"key","mode":"value","value":"{{ hmacKey@secret }}"}],
        "config":[{"key":"pattern","value":"a"}],"outputKey":null}
 - target: body=전문 전체(기본) · fields=지정 필드만(JSON 점 경로/urlencoded 키, TCP 필드명) · header=헤더(요청 전: 그 헤더값 변환, 응답 후: 본문을 입력으로 결과를 헤더에 기록 — 서명 패턴).
 - inputs: 플러그인 입력 포트마다 message(전문/대상 값, 정확히 1개) 또는 value(템플릿 — 키/iv 는 {{ 이름@secret }}). 모르면 inputs 생략(첫 포트=전문).
+- 필드 하나만 바꿀 땐 target=fields, 전문 전체면 body. (프로토콜 쪽은 필드=Field.plugin, 전문=messagePlugins 로 따로 건다.)
 - 같은 target 의 단계는 위→아래 체인. 예: 요청 전 [플러그인A(body)] → 응답 후 [플러그인B(header X-Sig, key={{ k@secret }})].
 JSON body 는 문자열이므로 따옴표 이스케이프: "body":"{\"ok\":true,\"id\":\"{{uuid}}\"}".
 결제창 같은 웹페이지는 contentType:"html" + body 에 HTML(폼 자동 submit 으로 returnUrl 콜백) 을 넣는다.

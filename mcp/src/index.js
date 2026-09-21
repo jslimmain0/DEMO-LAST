@@ -81,6 +81,7 @@ tool('flowlink_guide', {
     title: '규격 가이드',
     description: '워크플로 그래프(flow=노드 타입 전체 레퍼런스, 각 노드 JSON 예시 포함)·프로토콜(protocol)·HTTP Mock(mock) JSON 규격과 에이전트 규약(rules) 원문. nodes=flow 별칭(노드 설명). 무언가 만들기 전에 해당 topic 을 한 번 읽는다. TRANSFORM 노드/코덱을 쓰려면 먼저 plugin_list. plugin=스크립트 플러그인 작성 규격+fl 헬퍼.',
     inputSchema: { topic: z.enum(['flow', 'nodes', 'protocol', 'mock', 'plugin', 'rules', 'all']) },
+    // plugin: 스크립트 플러그인 작성 규격 + 어디에 붙이나(필드/전문/Mock/워크플로) + fl.* 암복호화 함수 목록
 }, async ({ topic }) => run(async () => {
     const s = await api('GET', '/schemas');
     if (topic === 'all')
@@ -545,7 +546,9 @@ const ioStr = (io) => (io ?? []).map((p) => `${p.key}:${p.type}`).join(',') || '
 const paramStr = (ps) => (ps ?? []).map((p) => `${p.key}(${p.type}${p.defaultValue ? '=' + p.defaultValue : ''}${p.options?.length ? ' [' + p.options.join('|') + ']' : ''})`).join(' ');
 tool('plugin_list', {
     title: '플러그인 목록(변환·코덱)',
-    description: 'TRANSFORM 노드에 쓰는 변환 플러그인과 Mock/전문에 쓰는 코덱 플러그인 목록(id·설명·입출력 포트·파라미터). 플러그인은 화면 /plugins 또는 plugin_script_upsert 로 JS 작성 → 관리자 승인 — 규격은 flowlink_guide(plugin). 목록에 없는 id 는 지어내지 말고, 필요한 변환이 없으면 plugin_script_upsert 로 초안을 만들어 승인을 요청한다.',
+    description: '쓸 수 있는 플러그인 목록(승인본만) — 변환(transform: TRANSFORM 노드·Mock 코덱 단계)과 코덱(fieldCodec: 프로토콜 필드 / messageCodec: 전문 본문 전체). '
+        + '암복호화·해시·서명·마스킹이 필요하면 값을 직접 만들지 말고 여기 있는 플러그인을 건다 — 필드 하나=프로토콜 Field.plugin, 전문 전체=messagePlugins, Mock=codec.request/response, 워크플로=TRANSFORM 노드. '
+        + '없으면 plugin_script_upsert 로 만들어 승인 요청(flowlink_guide(plugin) 에 규격·부착 위치·물어볼 것 정리).',
     inputSchema: {},
 }, async () => run(async () => {
     const [transforms, codecs] = await Promise.all([

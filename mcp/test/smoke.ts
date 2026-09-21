@@ -169,7 +169,10 @@ async function scenario({ client, call }: { client: Client; call: Call }, base: 
   assert.match(await call('flowlink_guide', { topic: 'rules' }), /지어내지 않는다/); ok('guide rules')
   assert.match(await call('flowlink_guide', { topic: 'protocol' }), /lengthField|header/); ok('guide protocol')
   assert.match(await call('flowlink_guide', { topic: 'nodes' }), /tcp:|transform:|START/); ok('guide nodes (node reference)')
-  const gp = await call('flowlink_guide', { topic: 'plugin' }); assert.match(gp, /fl\.aes\.encrypt/); assert.match(gp, /fl\.des\.encrypt/); assert.match(gp, /plugin_script_upsert/); ok('guide plugin (fl manifest + des + MCP 흐름)')
+  const gp = await call('flowlink_guide', { topic: 'plugin' })
+  for (const re of [/fl\.aes\.encrypt/, /fl\.des3\.encrypt/, /fl\.jwt\.sign/, /fl\.crc16/, /plugin_script_upsert/, /messagePlugins/, /Field\.plugin/, /모르면 묻는다/]) assert.match(gp, re)
+  ok('guide plugin (fl 매니페스트 + 부착 위치 + 물어볼 것)')
+  const gr = await call('flowlink_guide', { topic: 'rules' }); assert.match(gr, /모르면 그때그때 묻는다/); assert.match(gr, /messagePlugins/); ok('guide rules (플러그인 부착·질문 규약)')
 
   const pl = await call('plugin_list')
   assert.match(pl, /변환\(transform\)/); assert.match(pl, /코덱\(codec\)/); ok('plugin_list transforms+codecs')

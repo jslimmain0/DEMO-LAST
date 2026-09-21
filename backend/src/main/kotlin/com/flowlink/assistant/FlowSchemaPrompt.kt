@@ -61,7 +61,8 @@ form: {"id":"f1","type":"form","cat":"form","x":480,"y":180,"formAction":"http:/
 wait: {"id":"w1","type":"wait","cat":"wait","x":700,"y":180,"waitTimeoutSec":120,"callbackRespType":"text","callbackRespBody":"OK","outputs":[{"key":"resultCode","type":"string"}]}
 input: {"id":"i1","type":"input","cat":"input","x":480,"y":180,"waitMsg":"OTP 입력","waitFields":[{"id":"w","key":"otp","label":"OTP","type":"string"}]}
 transform: {"id":"t1","type":"transform","cat":"transform","x":700,"y":180,"transformId":"<플러그인 id>","config":{},"fields":{"params":[],"headers":[],"body":[{"id":"b1","key":"a","value":"완료: "},{"id":"b2","key":"b","value":"{{ name@h1 }}"}]},"outputs":[{"key":"result","type":"string"}]}
-   transformId 는 업로드된 변환 플러그인 id 만 — 목록이 비어 있으면 transform 노드를 만들지 마라.
+   transformId 는 승인된 변환 플러그인 id 만(plugin_list). 암복호화·해시·서명·마스킹은 손으로 계산하지 말고 이 노드로 한다.
+   필요한 플러그인이 없으면 만들어 승인 요청하고(plugin_script_upsert→try→submit), 알고리즘·키 출처를 모르면 사용자에게 물어라.
 tcp: {"id":"tc1","type":"tcp","cat":"tcp","x":480,"y":180,"tcpHost":"127.0.0.1","tcpPort":9600,"tcpTimeoutMs":5000,"protocolId":"<프로토콜 id>","tcpMessage":"0210","tcpValues":{"계좌번호":"1122334567890"},"tcpResponseMessage":"0211","outputs":[{"key":"응답코드","type":"string"}]}
    protocolId 는 사용자가 알려준 프로토콜 id 만 — 모르면 tcp 노드를 만들지 말고 "프로토콜 화면에서 먼저 정의" 하라고 답하라. 출력 키 = 응답 전문의 헤더+본문 필드 이름.
 note: {"id":"n1","type":"note","cat":"note","x":300,"y":360,"noteText":"메모","noteColor":"yellow"}   // 실행 제외

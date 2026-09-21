@@ -35,6 +35,22 @@ class SchemaController {
 승인 요청 뒤: 사용자에게 '승인 대기 중 — 관리자 승인 필요' 라고 알리고 plugin_script_wait 로 기다린다. 승인되면 사용자에게 다시 알리고 이어서 배선, 반려면 사유를 전하고 초안을 고쳐 재요청.
 예제: 화면 '예제에서 시작…' 에 레거시 des-cipher 포팅(des-encrypt/des-decrypt — DES/ECB, zero 패딩, hex)이 있다. 키를 hex/base64 로 받으면 `fl.hex.dec(k, { as: 'bytes' })` 로 바이트 키를 넘긴다.
 
+## 암복호화·해시·서명이 필요하면 값을 지어내지 말고 플러그인을 쓴다 — 붙이는 자리는 셋
+| 어디에 | 무엇을 | kind | 붙이는 법 |
+|---|---|---|---|
+| 전문의 **필드 하나**(카드번호·계좌번호…) | 그 필드 값만 암복호/마스킹 | `fieldCodec` | 프로토콜 spec 의 `Field.plugin = { id, config }` (protocol_upsert) |
+| 전문 **본문 전체** | 본문 bytes 통째 암복호(헤더는 평문, 길이 계산 전) | `messageCodec` | 프로토콜 spec 의 `messagePlugins: [{ id, config }]` |
+| **Mock 코덱 단계** | 요청이 매칭에 들어가기 전 / 응답이 나가기 전 | `transform` | Mock spec 의 `codec.request[]` · `codec.response[]` (target: body/fields/header) |
+| **워크플로 값 변환** | 노드 사이에서 값 하나를 바꿈 | `transform` | TRANSFORM 노드의 `transformId` + 입력 포트 |
+쓸 수 있는 id 는 plugin_list(승인본만). 필요한 게 없으면 **만들어라**: plugin_script_upsert(초안) → plugin_script_try(시험) → plugin_script_submit(승인 요청) → plugin_script_wait(결과).
+키·IV 는 스크립트에 박지 말고 파라미터로 받아 `{{ 이름@secret }}`·`{{ 키@env }}` 로 채운다(서버가 실행 환경으로 푼다).
+
+## 모르면 묻는다 — 추측이 제일 비싸다
+암호 규격은 코드로 알 수 없다. 막히는 그 순간 짧게 1~2개만 물어라(한꺼번에 설문지처럼 묻지 말 것):
+알고리즘·모드·패딩(AES-CBC/PKCS5? SEED? 레거시 DES zero 패딩?) · 키/IV 를 어디서 받나(시크릿 이름) · 키 인코딩(utf8/hex/base64) ·
+입출력 인코딩(base64/hex) · 대상 범위(필드 하나인지 본문 전체인지) · 문자셋(EUC-KR?).
+답을 기다리는 동안에는 파라미터와 `{{ 이름@secret }}` 토큰으로 자리를 비워 두고 뼈대를 만들어 둔다 — 값은 지어내지 않는다.
+
 변환(transform):  ({ id, label, description?, inputs?: [{key,label,type?}], outputs?: [{key,label,type?}], params?: [{key,label,type?,defaultValue?,options?,placeholder?}], apply(inputs, config) { return { 출력키: 값 } } })
 필드 코덱:        ({ id, label, kind: 'fieldCodec', params?, encode(value, ctx) { return 문자열 }, decode(value, ctx) { return 문자열 } })
 전문 코덱:        ({ id, label, kind: 'messageCodec', params?, encode(bytes, ctx) { return 바이트배열 }, decode(bytes, ctx) { return 바이트배열 } })
@@ -56,10 +72,15 @@ ctx = { config, direction: 'send'|'recv', field: {name,len,type,pad}|null, messa
    그 mock 의 base URL+경로를 호출해 응답을 보고, TCP=mock_send 로 전문을 보낸다. wait 콜백·웹훅도 http_request 로 쏜다.
    **curl·파이썬·셸로 직접 쏘지 말고 http_request/mock_send 를 써라**(그게 이 서버에 붙어 있는 경로다). 결과는 "돌아가는 초안 + 확인 목록(메모)".
 5. 워크플로에는 START 와 END 가 있어야 하고, 검증은 assert 노드(예: {{ 응답코드@노드 }} == '0000')로 남긴다.
-6. TRANSFORM 노드(transformId)나 Mock 코덱(codec step id)을 쓰려면 plugin_list 로 사용 가능한 플러그인 id·파라미터를 먼저 확인한다.
+6. 암복호화·해시·서명·마스킹은 **플러그인**으로 한다(직접 계산한 값을 전문에 박지 마라). 붙는 자리: 프로토콜 필드 하나=`Field.plugin`(fieldCodec) ·
+   전문 본문 전체=`messagePlugins`(messageCodec) · Mock 코덱 단계=`codec.request/response`(transform) · 워크플로=TRANSFORM 노드 `transformId`(transform).
+   plugin_list 로 사용 가능한 플러그인 id·파라미터를 먼저 확인한다.
    목록에 없는 id 는 지어내지 않는다. 필요한 변환이 없으면 plugin_script_upsert 로 초안을 만들고 plugin_script_try 로 검증한 뒤 plugin_script_submit 으로 승인 요청한다(규격은 flowlink_guide(plugin)).
    승인은 관리자(사람)가 화면에서 하므로, 승인 전에는 그 id 를 쓰는 노드 옆에 메모 노드로 '플러그인 승인 필요' 를 남긴다.
    승인 요청 뒤엔 사용자에게 승인 대기 중임을 알리고 plugin_script_wait 로 결과를 기다려 승인/반려를 다시 알린다.
+7. 모르면 그때그때 묻는다 — 추측해서 만든 전문·암호 규격은 전부 다시 만들어야 한다. 막힌 것만 1~2개 짧게 물어라
+   (알고리즘·모드·패딩 / 키·IV 를 담을 시크릿 이름 / 키·출력 인코딩 / 적용 범위(필드 vs 전문) / 문자셋 / 거래코드·필드 자릿수).
+   답을 기다리는 동안에도 멈추지 말고, 값 자리는 `{{ 이름@secret }}`·`{{ 키@env }}` 토큰과 note 노드로 비워 둔 채 뼈대를 만들어 둔다.
 """
     }
 }

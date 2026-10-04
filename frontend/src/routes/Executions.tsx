@@ -1,15 +1,20 @@
+import { PageHeader } from '../components/PageHeader'
+import { useApi, useWorkspace } from '../app/WorkspaceContext'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { CSSProperties } from 'react'
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import type { ExecutionStatus, ExecutionSummary } from '../api/types'
-import { runsApi, workspacesApi } from '../api/client'
+
+
 import { AppShellTier1 } from '../app/AppShell'
 import { LogBlock } from '../components/NodeExecutionLog'
 import { StatusBadge } from '../components/StatusBadge'
 import { toast } from '../components/toast'
 import { Modal } from '../components/Modal'
+import { AgentBadge } from '../components/AgentSettings'
 import { duration, relTime } from '../lib/format'
+import { apiErrorMessage } from '../lib/apiError'
 
 const STATUS_COLOR: Record<string, string> = {
   SUCCEEDED: 'var(--fl-ok)', FAILED: 'var(--fl-fail)', RUNNING: 'var(--fl-running)',
@@ -32,6 +37,13 @@ const RANGES: Array<[string, string, number | null]> = [
 ]
 
 export function Executions() {
+  const { runsApi } = useApi()
+
+  const scope = useWorkspace()
+  const runtime = { kind: scope.current.origin }
+  const wsId = scope.current.id
+  const workspaces = { data: scope.workspaces }
+  const setWsId = scope.select
   const qc = useQueryClient()
   const [limit, setLimit] = useState(50)
   const [filter, setFilter] = useState<'all' | ExecutionStatus>('all')
@@ -39,24 +51,9 @@ export function Executions() {
   const [q, setQ] = useState('')
   const [openExec, setOpenExec] = useState<string | null>(null)
 
-  // 워크스페이스 스코프 — 대시보드와 같은 선택(fl:workspace)을 공유. 여기서 바꾸면 대시보드도 따라간다.
-  const [wsId, setWsIdRaw] = useState<string>(() => { try { return localStorage.getItem('fl:workspace') ?? 'public' } catch { return 'public' } })
-  const workspaces = useQuery({ queryKey: ['workspaces'], queryFn: workspacesApi.list })
-  const setWsId = (id: string) => {
-    setWsIdRaw(id)
-    try { localStorage.setItem('fl:workspace', id) } catch { /* 프라이빗 모드 */ }
-  }
-  // 저장된 워크스페이스가 사라졌으면(삭제/권한 상실) 공용으로 복귀 — localStorage 도 정리(대시보드와 동일 규칙)
-  useEffect(() => {
-    if (workspaces.data && !workspaces.isFetching && !workspaces.data.some((w) => w.id === wsId)) {
-      setWsIdRaw('public')
-      try { localStorage.setItem('fl:workspace', 'public') } catch { /* 프라이빗 모드 */ }
-    }
-  }, [workspaces.data, workspaces.isFetching, wsId])
-
   const rangeMs = RANGES.find(([k]) => k === range)?.[2] ?? null
   // 서버측 status/기간/워크스페이스 필터 + limit. from 은 쿼리 실행 시점 기준(키에는 range 코드만 넣어 매 렌더 재요청 방지).
-  const { data, isLoading, isError, refetch } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['executions', 'list', limit, filter, range, wsId],
     queryFn: () => runsApi.list({
       limit,
@@ -66,8 +63,6 @@ export function Executions() {
     }),
   })
   const all = data ?? []
-  const okCount = all.filter((e) => e.status === 'SUCCEEDED').length
-  const failCount = all.filter((e) => e.status === 'FAILED').length
   const reRun = useMutation({
     mutationFn: (execId: string) => runsApi.rerun(execId),
     onSuccess: () => { toast('같은 조건으로 재실행을 시작했습니다.', 'ok'); qc.invalidateQueries({ queryKey: ['executions', 'list'] }) },
@@ -76,12 +71,16 @@ export function Executions() {
   const query = q.trim().toLowerCase()
   // status/기간은 서버가 필터 → 여기선 이름 검색만(서버는 flowId 로만 필터하므로 이름은 클라 측)
   const rows = all.filter((e) => !query || (e.flowName ?? '').toLowerCase().includes(query))
+  const okCount = rows.filter((e) => e.status === 'SUCCEEDED').length
+  const failCount = rows.filter((e) => e.status === 'FAILED').length
+  const hasFilters = filter !== 'all' || range !== 'all' || !!query
+  const initialEmpty = !hasFilters && all.length === 0
 
   return (
     <AppShellTier1>
-      <div style={{ maxWidth: 960, margin: '0 auto', padding: '36px 40px 80px' }}>
+      <div className="fl-page fl-execution-catalog">
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
-          <h1 style={{ fontFamily: 'var(--fl-font-head)', fontSize: 'var(--fl-fs-2xl)', letterSpacing: '-.02em', margin: 0 }}>실행 이력</h1>
+          <PageHeader title="실행 이력" />
           {rows.length > 0 && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginLeft: 4 }}>
               <span style={metaMono}>{rows.length}건</span>
@@ -96,7 +95,7 @@ export function Executions() {
             onChange={(e) => setWsId(e.target.value)}
             style={{ marginLeft: 'auto', padding: '7px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', color: 'var(--fl-text)', fontSize: 12.5, cursor: 'pointer' }}
           >
-            {(workspaces.data ?? [{ id: 'public', name: '공용', kind: 'PUBLIC' } as const]).map((w) => (
+            {(workspaces.data ?? [{ id: wsId, name: runtime?.kind === 'local' ? '개인 · 내 PC' : '공용', kind: runtime?.kind === 'local' ? 'PERSONAL' : 'PUBLIC' } as const]).map((w) => (
               <option key={w.id} value={w.id}>{w.kind === 'PERSONAL' ? '🔒' : w.kind === 'TEAM' ? '👥' : '🌐'} {w.name}</option>
             ))}
           </select>
@@ -109,7 +108,7 @@ export function Executions() {
               style={{ padding: '7px 11px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', color: 'var(--fl-text)', fontSize: 13, minWidth: 220 }} />
             <div style={{ display: 'flex', gap: 3 }}>
               {([['all', '전체'], ['SUCCEEDED', '성공'], ['FAILED', '실패'], ['WAITING', '대기'], ['CANCELLED', '취소']] as const).map(([k, lbl]) => (
-                <button key={k} onClick={() => setFilter(k)} style={{ padding: '5px 11px', fontSize: 12, border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-pill)', cursor: 'pointer', background: filter === k ? 'var(--fl-primary)' : 'transparent', color: filter === k ? '#fff' : 'var(--fl-text-muted)', fontWeight: 500 }}>{lbl}</button>
+                <button key={k} onClick={() => setFilter(k)} style={{ padding: '5px 11px', fontSize: 12, border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', cursor: 'pointer', background: filter === k ? 'var(--fl-action-primary-bg)' : 'transparent', color: filter === k ? 'var(--fl-action-primary-ink)' : 'var(--fl-text-muted)', fontWeight: 500 }}>{lbl}</button>
               ))}
             </div>
             <div style={{ display: 'flex', gap: 3, marginLeft: 4 }} title="기간 필터">
@@ -126,21 +125,24 @@ export function Executions() {
             <div style={errorBox}>
               <div style={{ fontSize: 22 }}>⚠</div>
               <div>
-                <div style={{ fontWeight: 600 }}>백엔드(18080)에 연결하지 못했어요.</div>
-                <div style={{ fontSize: 12.5, color: 'var(--fl-text-muted)', marginTop: 4 }}>백엔드를 먼저 실행하세요 — <code style={codeChip}>scripts\dev-all.ps1</code></div>
+                <div style={{ fontWeight: 600 }}>{scope.current.origin === 'local' ? '개인 PC의' : '서버 공간의'} 실행 이력을 불러오지 못했습니다.</div>
+                <div style={{ fontSize: 12.5, color: 'var(--fl-text-muted)', marginTop: 4 }}>{apiErrorMessage(error, '연결 상태와 공간 접근 권한을 확인한 뒤 다시 시도하세요.')}</div>
               </div>
               <button onClick={() => refetch()} style={{ ...ghostBtn, marginLeft: 'auto' }}>다시 시도</button>
             </div>
           )}
-          {data && rows.length === 0 && (
+          {data && !isLoading && !isError && initialEmpty && (
             <div style={emptyBox}>
               <div style={{ fontFamily: 'var(--fl-font-head)', fontWeight: 700, fontSize: 17 }}>아직 실행 이력이 없습니다</div>
               <div style={{ color: 'var(--fl-text-muted)', fontSize: 13.5, marginTop: 6 }}>워크플로를 열어 <b>▶ 실행</b>하면 여기에 기록됩니다.</div>
             </div>
           )}
 
-          {data && all.length > 0 && rows.length === 0 && (
-            <div style={{ padding: 16, color: 'var(--fl-text-muted)', fontSize: 13 }}>이 조건에 해당하는 실행이 없습니다.</div>
+          {data && !isLoading && !isError && !initialEmpty && rows.length === 0 && (
+            <div style={{ ...emptyBox, fontSize: 13 }}>
+              <p style={{ margin: '0 0 12px', color: 'var(--fl-text-muted)' }}>이 조건에 해당하는 실행이 없습니다.</p>
+              <button style={ghostBtn} onClick={() => { setFilter('all'); setRange('all'); setQ('') }}>필터 해제</button>
+            </div>
           )}
           <div style={{ display: 'grid', gap: 10 }}>
             {rows.map((e) => {
@@ -150,9 +152,11 @@ export function Executions() {
                   style={{ ...rowCard, borderLeft: `3px solid ${statusColor(e.status)}`, cursor: 'pointer' }}
                   title="클릭하면 노드별 결과를 봅니다">
                   <StatusBadge status={e.status} />
-                  <span style={{ fontFamily: 'var(--fl-font-head)', fontWeight: 600, fontSize: 14.5, color: 'var(--fl-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <button type="button" aria-label={`${e.flowName ?? '삭제된 워크플로'} 실행 결과 상세 보기`} title="실행 결과 상세 보기"
+                    onClick={(event) => { event.stopPropagation(); setOpenExec(e.id) }}
+                    style={{ fontFamily: 'var(--fl-font-head)', fontWeight: 600, fontSize: 14.5, color: 'var(--fl-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0, border: 0, background: 'transparent', padding: 0, textAlign: 'left', cursor: 'pointer' }}>
                     {e.flowName ?? `삭제된 워크플로 (${e.flowId.slice(0, 8)})`}
-                  </span>
+                  </button>
                   <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 14, flexShrink: 0 }}>
                     <span style={metaMono}>{TRIGGER_LABEL[e.trigger] ?? e.trigger}</span>
                     {el && <span style={metaMono}>{el}</span>}
@@ -183,7 +187,11 @@ function nodeSig(nd: { responseText?: string | null; output?: unknown }): string
 
 // 과거 실행 상세 — 노드별 요청/응답/출력 재열람(에디터 안 열고) + 이전 실행과 비교(응답 diff)
 function ExecutionDetailModal({ execId, onClose }: { execId: string; onClose: () => void }) {
-  const { data, isLoading, isError, refetch } = useQuery({ queryKey: ['execution', execId], queryFn: () => runsApi.get(execId) })
+  const { runsApi } = useApi()
+  const scope = useWorkspace()
+
+  const { data, isLoading, isError, refetch } = useQuery({ queryKey: ['execution', execId], queryFn: () => runsApi.get(execId), refetchInterval: q => ['RUNNING', 'WAITING'].includes(q.state.data?.status ?? '') ? 1000 : false })
+  const cancel = useMutation({ mutationFn: () => runsApi.resume(execId, { nodeId: data?.pendingAgent?.nodeId, aborted: true, error: '사용자가 실행을 중단했습니다.' }), onSuccess: () => { void refetch() }, onError: () => toast('중단 요청에 실패했습니다. 연결 상태를 확인하세요.', 'error') })
   const [openNode, setOpenNode] = useState<string | null>(null)
   const [compare, setCompare] = useState(false)
 
@@ -205,11 +213,17 @@ function ExecutionDetailModal({ execId, onClose }: { execId: string; onClose: ()
           <button
             onClick={() => setCompare((v) => !v)}
             title="같은 플로우의 직전 실행과 응답을 비교합니다"
-            style={{ marginLeft: 'auto', fontSize: 12, padding: '5px 11px', borderRadius: 'var(--fl-radius-pill)', cursor: 'pointer', border: '1px solid var(--fl-border)', background: compare ? 'var(--fl-primary)' : 'transparent', color: compare ? '#fff' : 'var(--fl-text-muted)', fontWeight: 600 }}
+            style={{ marginLeft: 'auto', fontSize: 12, padding: '5px 11px', borderRadius: 'var(--fl-radius-sm)', cursor: 'pointer', border: '1px solid var(--fl-border)', background: compare ? 'var(--fl-action-primary-bg)' : 'transparent', color: compare ? 'var(--fl-action-primary-ink)' : 'var(--fl-text-muted)', fontWeight: 600 }}
           >⇄ 이전 실행과 비교</button>
           <button onClick={onClose} aria-label="닫기" style={{ border: 'none', background: 'transparent', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 18 }}>×</button>
         </header>
         <div style={{ overflowY: 'auto', flex: 1 }}>
+          {data?.pendingAgent && <div role="status" style={{ padding: 16, borderBottom: '1px solid var(--fl-border)', fontSize: 12, lineHeight: 1.6, color: data.pendingAgent.status === 'UNKNOWN' ? 'var(--fl-waiting)' : 'var(--fl-text-muted)' }}>
+            <AgentBadge agent={data.pendingAgent.agent} /> {data.pendingAgent.nodeName || data.pendingAgent.nodeId} · {data.pendingAgent.status === 'UNKNOWN' ? '결과 확인 필요 — 요청이 처리됐을 수 있어 자동 재실행하지 않습니다.' : '에이전트 작업 대기·처리 중'}
+            {data.pendingAgent.error && <p>{data.pendingAgent.error}</p>}
+            {scope.current.myRole !== 'VIEWER' && <button onClick={() => cancel.mutate()} disabled={cancel.isPending} style={{ ...ghostBtn, marginLeft: 8 }}>실행 중단</button>}
+          </div>}
+          {data && ['RUNNING', 'WAITING'].includes(data.status) && <p style={{ padding: '0 16px', fontSize: 12 }}><Link to={`/flows/${data.flowId}?execution=${encodeURIComponent(data.id)}`}>에디터에서 이 실행 이어보기 →</Link></p>}
           {isLoading && <div style={{ padding: 20, color: 'var(--fl-text-muted)', fontSize: 13 }}>불러오는 중…</div>}
           {isError && (
             <div style={{ padding: 20, display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -234,6 +248,7 @@ function ExecutionDetailModal({ execId, onClose }: { execId: string; onClose: ()
                 <button onClick={() => setOpenNode(open ? null : nd.id)} style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '9px 14px', border: 'none', background: 'transparent', color: 'var(--fl-text)', cursor: 'pointer', textAlign: 'left' }}>
                   <span style={{ fontSize: 12, fontWeight: 700, color: nd.status === 'FAILED' ? 'var(--fl-fail)' : nd.status === 'SKIPPED' ? 'var(--fl-text-muted)' : 'var(--fl-ok)' }}>{nd.status === 'FAILED' ? '✕' : nd.status === 'SKIPPED' ? '⊘' : '✓'}</span>
                   <span style={{ fontSize: 13.5, fontWeight: 600 }}>{nd.nodeName || nd.nodeId}</span>
+                  {nd.executionAgent && <AgentBadge agent={nd.executionAgent} />}
                   {changed && <span style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--fl-put)', border: '1px solid var(--fl-put)', borderRadius: 8, padding: '0 6px' }}>변경</span>}
                   {compare && !changed && p && <span style={{ fontSize: 10.5, color: 'var(--fl-text-muted)' }}>동일</span>}
                   {isNew && <span style={{ fontSize: 10.5, color: 'var(--fl-ok)' }}>신규</span>}
@@ -270,4 +285,3 @@ const metaMono: CSSProperties = { fontSize: 11.5, color: 'var(--fl-text-muted)',
 const ghostBtn: CSSProperties = { border: '1px solid var(--fl-border)', background: 'var(--fl-surface)', color: 'var(--fl-text)', padding: '8px 14px', borderRadius: 'var(--fl-radius-sm)', fontSize: 13, cursor: 'pointer' }
 const emptyBox: CSSProperties = { border: '1.5px dashed var(--fl-border)', borderRadius: 16, padding: 48, textAlign: 'center', color: 'var(--fl-text-muted)' }
 const errorBox: CSSProperties = { display: 'flex', alignItems: 'center', gap: 14, border: '1px solid var(--fl-fail)', borderRadius: 12, padding: 18, color: 'var(--fl-text)' }
-const codeChip: CSSProperties = { fontFamily: 'var(--fl-font-mono)', fontSize: 11.5, background: 'var(--fl-surface-2)', padding: '1px 6px', borderRadius: 5 }

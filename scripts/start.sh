@@ -19,7 +19,7 @@ LOG="$RUN_DIR/flowlink.log"
 MCP_PID_FILE="$RUN_DIR/flowlink-mcp.pid"
 MCP_LOG="$RUN_DIR/flowlink-mcp.log"
 MCP_PORT="${FLOWLINK_MCP_PORT:-18090}"
-JAR="$ROOT/backend/build/libs/flowlink.jar"
+JAR="$ROOT/backend/server-app/build/libs/flowlink-server.jar"
 PORT="${FLOWLINK_PORT:-18080}"
 CTX="${FLOWLINK_CONTEXT_PATH:-}"; CTX="${CTX#/}"; CTX="${CTX%/}"; [ -n "$CTX" ] && CTX="/$CTX"   # 정규화: /flowlink (Spring 규약)
 
@@ -47,7 +47,7 @@ if [ "$BUILD" -eq 1 ] || [ ! -f "$JAR" ]; then
   echo "▶ 프론트엔드 빌드…"
   ( cd "$ROOT/frontend" && { [ -d node_modules ] || npm ci; } && npm run build )
   echo "▶ 백엔드 bootJar…"
-  ( cd "$ROOT/backend" && sh gradlew bootJar -q )
+  ( cd "$ROOT/backend" && sh gradlew :server-app:bootJar -q )
 fi
 # MCP HTTP 서버 의존성(순수 JS, 빌드 없음 — node_modules 만)
 if [ "$MCP_PORT" != "0" ] && command -v node >/dev/null 2>&1 && [ ! -d "$ROOT/mcp/node_modules" ]; then

@@ -556,8 +556,8 @@ const dlgCard: CSSProperties = {
 
 const dlgDoneBtn: CSSProperties = {
   border: 'none',
-  background: 'var(--fl-primary)',
-  color: '#fff',
+  background: 'var(--fl-action-primary-bg)',
+  color: 'var(--fl-action-primary-ink)',
   padding: '8px 18px',
   borderRadius: 'var(--fl-radius-sm)',
   fontWeight: 600,

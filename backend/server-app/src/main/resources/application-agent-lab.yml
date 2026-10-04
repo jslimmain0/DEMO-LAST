@@ -1,0 +1,5 @@
+# 외부 GitHub 승인 없이 개발용 계정으로 동일한 JWT/권한/가입 경로를 검증한다.
+# 운영 프로파일에서는 절대 포함하지 않는다.
+flowlink:
+  auth:
+    mock-login: true

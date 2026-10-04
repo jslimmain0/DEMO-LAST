@@ -1,10 +1,13 @@
+import { useApi, useWorkspace } from '../app/WorkspaceContext'
+import './editor.css'
+import { AppIcon } from '../components/AppIcon'
 import { ReactFlowProvider, useReactFlow } from '@xyflow/react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import type { CSSProperties } from 'react'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
-import type { ExecutionDetail, PendingClientRequest, PendingInputRequest, ResumeRequest, RunRequest } from '../api/types'
-import { adminApi, flowsApi, runsApi } from '../api/client'
+import { Link, useParams, useSearchParams } from 'react-router-dom'
+import type { ExecutionDetail, FlowGraph, PendingClientRequest, PendingInputRequest, ResumeRequest, RunRequest } from '../api/types'
+
 import { catColor, typeIcon, typeLabel } from '../canvas/nodeMeta'
 import { FlowCanvas } from '../canvas/FlowCanvas'
 import { Palette } from '../canvas/Palette'
@@ -25,8 +28,8 @@ import { TriggersDialog } from '../components/TriggersDialog'
 import { SecretsDialog } from '../components/SecretsDialog'
 import { AssistantPanel } from '../components/AssistantPanel'
 import { AssistantLoginGate } from '../components/AssistantLoginGate'
-import { activeEnvVars, activeEnvName, ensureEnvLoaded } from '../lib/environments'
-import { activeInputVars, loadRunInput } from '../lib/runInput'
+import { useEnvironment } from '../lib/environments'
+import { useRunInputActions } from '../lib/runInput'
 import { toast } from '../components/toast'
 import { useAuth, usePermissions } from '../auth/AuthContext'
 import { getAccessToken } from '../auth/auth'
@@ -37,14 +40,30 @@ import { computeRunView } from '../lib/runProgress'
 import { useEditorStore } from '../store/editorStore'
 import { collectIssues } from '../lib/issues'
 import { isAxiosError } from 'axios'
+import { ExecutionPlanDialog } from '../components/ExecutionPlanDialog'
+import { useCatalogReturn } from '../lib/useCatalogNavigation'
+import { useUnsavedNavigation } from '../components/UnsavedNavigation'
 
 export function Editor() {
+  const scope = useWorkspace()
+  const [planOpen, setPlanOpen] = useState(false)
+ const { loadRunInput, activeInputVars } = useRunInputActions()
+
+ const { ensureEnvLoaded, prepareForRun, activeEnvVars, activeEnvName } = useEnvironment()
+
+  const { flowsApi, adminApi, runsApi } = useApi()
+
   const { id } = useParams()
+  const [routeParams] = useSearchParams()
+  const resumeExecutionId = routeParams.get('execution')
+  const resumedRef = useRef<string | null>(null)
   const flowId = id ?? ''
   const loadGraph = useEditorStore((s) => s.loadGraph)
   const flowName = useEditorStore((s) => s.flowName)
   const setName = useEditorStore((s) => s.setName)
   const dirty = useEditorStore((s) => s.dirty)
+  const selectedId = useEditorStore((s) => s.selectedId)
+  const paletteToggleRef = useRef<HTMLButtonElement>(null)
   const getGraph = useEditorStore((s) => s.getGraph)
   const markSaved = useEditorStore((s) => s.markSaved)
   const addPaletteGroup = useEditorStore((s) => s.addPaletteGroup)
@@ -53,21 +72,21 @@ export function Editor() {
   const focusNode = useEditorStore((s) => s.focusNode)
 
   const { canEdit: canEditGlobal, isViewer: isViewerGlobal } = usePermissions()
-  const { me, enabled: authEnabled, isGuest } = useAuth()
+  const { me, enabled: authEnabled, isGuest, desktop } = useAuth()
 
   // presence — 같은 플로우를 연 사람들끼리 커서/편집중/저장 알림(별도 presenceStore, 그래프 불변)
   useEffect(() => {
     if (!id) return
     // 이름: 로그인 사용자명, 게스트/dev 는 브라우저별 닉네임(게스트 /me 는 전원 "guest" 라 devNickname 사용)
     const displayName = authEnabled && !isGuest ? (me?.username ?? devNickname()) : devNickname()
-    presence.connect(id, displayName, authEnabled && !isGuest ? getAccessToken : undefined)
+    presence.connect(id, displayName, authEnabled && !isGuest ? getAccessToken : undefined, !!desktop && scope.current.origin === 'server')
     startCollab() // 실시간 공동 편집(그래프 변경 중계·적용)
     // 선택 노드 변경 → 편집중 신호(속성 패널이 그 노드를 편집 중)
     const unsub = useEditorStore.subscribe((s, prev) => {
       if (s.selectedId !== prev.selectedId) presence.sendEditing(s.selectedId)
     })
     return () => { unsub(); stopCollab(); presence.close() }
-  }, [id, me?.username, authEnabled, isGuest])
+  }, [id, me?.username, authEnabled, isGuest, desktop, scope.current.origin])
 
   const [execution, setExecution] = useState<ExecutionDetail | null>(null)
   const [running, setRunning] = useState(false)
@@ -78,9 +97,13 @@ export function Editor() {
   // wait(콜백 대기) 진행 상태 — RunPanel 카운트다운/수신 URL 표시용
   const [waitStatus, setWaitStatus] = useState<WaitStatus | null>(null)
   const stopRef = useRef<AbortController | null>(null)
+  const detachedRef = useRef(false)
+  useEffect(() => { detachedRef.current = false; return () => { detachedRef.current = true; stopRef.current?.abort() } }, [])
   // 최신 flowId 를 비동기 실행 루프가 참조 — 플로우 전환 후 낡은 실행이 새 화면을 덧칠하지 않게 가드
   const flowIdRef = useRef(flowId)
   flowIdRef.current = flowId
+  const isCurrentEditor = () => !detachedRef.current && flowIdRef.current === flowId && useEditorStore.getState().flowId === flowId
+  const savedVersionRef = useRef<{ flowId: string; version: number } | null>(null)
   // input(사용자 입력) 노드 모달 — 실행 루프가 confirm 값(취소=null)을 기다리도록 resolver 보관
   const [pendingInput, setPendingInput] = useState<PendingInputRequest | null>(null)
   const inputResolverRef = useRef<((values: Record<string, unknown> | null) => void) | null>(null)
@@ -96,13 +119,14 @@ export function Editor() {
 
   // 패널 크기(좌 팔레트 / 우 속성 / 하 로그) — 드래그로 조절하고 localStorage 에 유지
   const [paletteW, setPaletteW] = useState(() => loadSize('paletteW', 200, 160, 420))
-  const [propertyW, setPropertyW] = useState(() => loadSize('propertyW', 380, 300, 640))
+  const [propertyW, setPropertyW] = useState(() => loadSize('propertyW', 400, 360, 460))
   const [runH, setRunH] = useState(() => loadSize('runH', 260, 120, 600))
   // AI 어시스턴트 패널(오른쪽 채팅) — 너비 + 열림 상태 지속
   const [assistantW, setAssistantW] = useState(() => loadSize('assistantW', 360, 300, 560))
   const [assistantOpen, setAssistantOpen] = useState(() => localStorage.getItem('fl:editor:assistant') === '1')
   // 사이드바 접기 + 속성 패널 넓게 편집(모달) (localStorage 지속)
   const [paletteCollapsed, setPaletteCollapsed] = useState(() => localStorage.getItem('fl:editor:palColl') === '1')
+  const [floatingPaletteOpen, setFloatingPaletteOpen] = useState(!paletteCollapsed)
   const [propCollapsed, setPropCollapsed] = useState(() => localStorage.getItem('fl:editor:propColl') === '1')
   const [propModal, setPropModal] = useState(false) // 좁은 사이드 대신 넓은 모달로 편집
   const persistUI = (k: string, v: string) => { try { localStorage.setItem(k, v) } catch { /* 프라이빗 모드 무시 */ } }
@@ -126,6 +150,7 @@ export function Editor() {
   const autoLayout = useEditorStore((s) => s.autoLayout)
   const setAllCollapsed = useEditorStore((s) => s.setAllCollapsed)
   const nodeCount = useEditorStore((s) => s.nodes.length)
+  const hasTask = useEditorStore((s) => s.nodes.some(n => !['start', 'end', 'note', 'group'].includes(String(n.data.type))))
   const zen = paletteCollapsed && propCollapsed
   const toggleZen = () => {
     const next = !zen
@@ -134,7 +159,7 @@ export function Editor() {
   }
   const resetPanels = () => {
     setPaletteW(200); saveSize('paletteW', 200)
-    setPropertyW(330); saveSize('propertyW', 330)
+    setPropertyW(400); saveSize('propertyW', 400)
     setRunH(260); saveSize('runH', 260)
     setPaletteCollapsed(false); persistUI('fl:editor:palColl', '0')
     setPropCollapsed(false); persistUI('fl:editor:propColl', '0')
@@ -155,15 +180,19 @@ export function Editor() {
     return () => window.removeEventListener('resize', onResize)
   }, [])
   const maxPaletteW = Math.max(160, Math.min(420, Math.round(vp.w * 0.35)))
-  const maxPropertyW = Math.max(300, Math.min(560, Math.round(vp.w * 0.45)))
+  const maxPropertyW = Math.max(360, Math.min(400, Math.round(vp.w * 0.4)))
+  const narrowEditor = vp.w < 1100
+  const paletteVisible = !paletteCollapsed && (!narrowEditor || floatingPaletteOpen)
+  useEffect(() => { if (selectedId && narrowEditor) setFloatingPaletteOpen(false) }, [selectedId, narrowEditor])
   const maxAssistantW = Math.max(300, Math.min(560, Math.round(vp.w * 0.45)))
   const maxRunH = Math.max(120, Math.min(600, vp.h - 160))
   useEffect(() => { setPaletteW((w) => Math.min(w, maxPaletteW)) }, [maxPaletteW])
-  useEffect(() => { setPropertyW((w) => Math.min(w, maxPropertyW)) }, [maxPropertyW])
+  useEffect(() => { setPropertyW((w) => Math.max(360, Math.min(w, maxPropertyW))) }, [maxPropertyW])
   useEffect(() => { setAssistantW((w) => Math.min(w, maxAssistantW)) }, [maxAssistantW])
   useEffect(() => { setRunH((h) => Math.min(h, maxRunH)) }, [maxRunH])
 
   const flowQuery = useQuery({ queryKey: ['flow', flowId], queryFn: () => flowsApi.get(flowId), enabled: !!flowId })
+  const returnToList = useCatalogReturn('flows', flowQuery.data?.folderId)
   // 가입 승인 대기(PENDING) — AI 패널을 게이트(Copilot 연결까지 시킨 뒤 첫 채팅 403 나던 헛수고 방지)
   const aiMe = useQuery({ queryKey: ['admin', 'me'], queryFn: adminApi.me, staleTime: 30_000 })
   const aiPending = aiMe.data?.myStatus === 'PENDING'
@@ -270,31 +299,62 @@ export function Editor() {
   const undo = useEditorStore((s) => s.undo)
   const redo = useEditorStore((s) => s.redo)
 
+  const hydratedFlowRef = useRef<string | null>(null)
   useEffect(() => {
-    if (flowQuery.data) loadGraph(flowQuery.data.id, flowQuery.data.name, flowQuery.data.graph)
+    if (flowQuery.data) {
+      const current = useEditorStore.getState()
+      if (hydratedFlowRef.current === flowQuery.data.id && current.flowId === flowQuery.data.id && current.dirty) return
+      hydratedFlowRef.current = flowQuery.data.id
+      loadGraph(flowQuery.data.id, flowQuery.data.name, flowQuery.data.graph)
+      savedVersionRef.current = { flowId: flowQuery.data.id, version: flowQuery.data.currentVersion }
+    }
   }, [flowQuery.data, loadGraph])
 
-  // 현재 플로우의 저장된 실행 입력을 로드 — {{ 키@input }} 바인딩 소스 + onRun 이 주입
-  useEffect(() => { loadRunInput(flowId); void ensureEnvLoaded().catch(() => {}) }, [flowId])
+  const reloadSavedGraph = async (snapshot: FlowGraph = getGraph()) => {
+    const before = JSON.stringify(snapshot)
+    const result = await flowQuery.refetch()
+    if (!result.data || !isCurrentEditor()) return
+    if (useEditorStore.getState().dirty && JSON.stringify(getGraph()) !== before) {
+      toast('불러오는 동안 추가한 변경을 유지했습니다. 최신 버전을 불러오려면 다시 선택하세요.', 'info')
+      return
+    }
+    loadGraph(result.data.id, result.data.name, result.data.graph)
+    savedVersionRef.current = { flowId: result.data.id, version: result.data.currentVersion }
+  }
 
-  // 이탈 경고 — 미저장 편집 또는 실행 중(탭을 닫으면 실행이 끊긴다)
+  // 현재 플로우의 저장된 실행 입력을 로드 — {{ 키@input }} 바인딩 소스 + onRun 이 주입
+  useEffect(() => { loadRunInput(flowId); void ensureEnvLoaded().catch(() => {}) }, [flowId, loadRunInput, ensureEnvLoaded])
+
+  // 에이전트 실행은 화면을 닫아도 계속된다. 브라우저의 사용자 입력 대기는 별도로 안내한다.
   useEffect(() => {
     const handler = (e: BeforeUnloadEvent) => {
-      if (dirty || running) { e.preventDefault(); e.returnValue = '' }
+      if (execution?.pendingInput || execution?.pendingForm) { e.preventDefault(); e.returnValue = '' }
     }
     window.addEventListener('beforeunload', handler)
     return () => window.removeEventListener('beforeunload', handler)
-  }, [dirty, running])
+  }, [execution?.pendingInput, execution?.pendingForm])
 
   const save = useMutation({
-    mutationFn: () => flowsApi.saveVersion(flowId, { graph: getGraph() }),
-    onSuccess: () => { markSaved(); presence.sendSaved() },
+    mutationFn: async () => {
+      if (!isCurrentEditor()) throw new Error('작업 공간이 변경되었습니다. 현재 워크플로에서 다시 저장하세요.')
+      const graph = structuredClone(getGraph())
+      const version = await flowsApi.saveVersion(flowId, { graph })
+      return { flowId, graph, version }
+    },
+    onSuccess: (saved) => {
+      if (!isCurrentEditor() || saved.flowId !== flowId) return
+      savedVersionRef.current = { flowId, version: saved.version.versionNo }
+      if (JSON.stringify(getGraph()) === JSON.stringify(saved.graph)) markSaved()
+      presence.sendSaved()
+    },
     onError: (e) => {
+      if (!isCurrentEditor()) return
       if (isAxiosError(e) && e.response?.status === 409) setSaveConflict(true)
       // 서버 메시지(403 "viewer 롤은 조회만 가능합니다" 등)를 그대로 — raw axios 문구만 나오던 갭 수정
       else toast(`저장 실패: ${isAxiosError(e) ? ((e.response?.data as { message?: string })?.message ?? e.message) : e instanceof Error ? e.message : e}`, 'error')
     },
   })
+  useUnsavedNavigation({ dirty, saving: save.isPending, label: '워크플로' })
   // Ctrl+S 가 최신 상태(dirty/isPending)를 보고 저장하게 매 렌더 갱신 — 저장 버튼과 동일 조건
   useEffect(() => {
     saveShortcutRef.current = () => {
@@ -308,8 +368,9 @@ export function Editor() {
     return () => clearTimeout(t)
   }, [autosave, canEdit, dirty, save])
 
-  const onRun = async () => {
-    if (!canEdit) return
+  const onRun = () => setPlanOpen(true)
+  const executeRun = async (existingExecutionId?: string, agentDependencies?: RunRequest['agentDependencies'], agentEnvironments?: RunRequest['agentEnvironments']) => {
+    if (!canEdit || !isCurrentEditor()) return
     setShowLog(true)
     setRunning(true)
     setExecution(null)
@@ -317,22 +378,32 @@ export function Editor() {
     const stop = new AbortController()
     stopRef.current = stop
     const setWaitingNode = useEditorStore.getState().setWaitingNode
+    const canContinue = () => isCurrentEditor() && stopRef.current === stop
     try {
-      if (useEditorStore.getState().dirty) await save.mutateAsync()
+      if (!existingExecutionId) await prepareForRun()
+      if (!canContinue() || stop.signal.aborted) return
+      let versionNo = savedVersionRef.current?.flowId === flowId ? savedVersionRef.current.version : undefined
+      if (!existingExecutionId && useEditorStore.getState().dirty) {
+        const saved = await save.mutateAsync()
+        if (!canContinue() || stop.signal.aborted) return
+        if (JSON.stringify(getGraph()) !== JSON.stringify(saved.graph)) throw new Error('실행 준비 중 워크플로가 변경되었습니다. 실행 계획을 다시 확인하세요.')
+        versionNo = saved.version.versionNo
+      }
 
       // 비동기 실행: POST 는 즉시 RUNNING 을 반환하고, 이 루프가 폴링 드라이버가 된다 —
       // 폴링 스냅샷이 실행 경과 애니메이션(runView)도 함께 구동한다(별도 baseline 폴러 불필요).
       // pending(브라우저 협업 지점)을 만나면 처리 후 resume(즉시 반환) → 다시 폴링으로 다음 상태를 감지.
       // 활성 환경(dev/staging/prod)의 변수 + 실행 입력을 주입 — 백엔드가 `{{ 키@env }}`/`{{ 키@input }}` 로 해석한다.
-      await ensureEnvLoaded().catch(() => {}) // 서버 환경이 아직 안 왔으면 기다린다(실패 시 빈 env 로 실행)
       const envVars = activeEnvVars()
       const inputVars = activeInputVars()
       const envName = activeEnvName()
-      const body: RunRequest = {}
+      const body: RunRequest = { agentDependencies, agentEnvironments, versionNo }
       if (Object.keys(envVars).length) body.env = envVars
       if (Object.keys(inputVars).length) body.input = inputVars
       if (envName) body.envName = envName // 시크릿 환경 스코프 선택(공통 위에 오버레이)
-      let detail = await runsApi.run(flowId, Object.keys(body).length ? body : undefined)
+      let detail = existingExecutionId ? await runsApi.get(existingExecutionId) : await runsApi.run(flowId, Object.keys(body).length ? body : undefined)
+      if (!canContinue()) return
+      if (detail.flowId !== flowId) throw new Error('이 실행은 다른 워크플로에 속합니다.')
       setExecution(detail)
       let guard = 0
       let waitBannerNode: string | null = null
@@ -343,6 +414,7 @@ export function Editor() {
         else stop.signal.addEventListener('abort', () => resolve('__abort__'), { once: true })
       })
       while (guard++ < 5000) {
+        if (!canContinue()) break
         if (detail.status !== 'RUNNING' && detail.status !== 'WAITING') break // 종료(SUCCEEDED/FAILED/CANCELLED)
 
         // ⏹ 중단 — pending 지점이면 그 노드를 중단 사유로 재개해 CANCELLED 로 마감.
@@ -350,10 +422,12 @@ export function Editor() {
         if (stop.signal.aborted) {
           // 플로우 전환으로 인한 abort 면 UI 갱신은 새 플로우 몫 — 취소 resume 만 보내고 화면은 안 건드린다
           const switched = flowIdRef.current !== flowId
+          if (switched || detachedRef.current) break
           // 최신 스냅샷으로 pending 노드를 다시 확인 — 마지막 폴링 이후 다음 대기 지점으로 넘어갔을 수 있어
           // 낡은 nodeId 로 resume 하면 claim 이 어긋나 취소가 무산된다(실패는 무시하고 기존 값 폴백)
           try { detail = await runsApi.get(detail.id) } catch { /* 스냅샷 갱신 실패 — 기존 detail 사용 */ }
-          const nodeId = detail.pendingForm?.nodeId ?? detail.pendingWait?.nodeId ?? detail.pendingInput?.nodeId ?? detail.pendingClient?.nodeId
+          if (!canContinue()) break
+          const nodeId = detail.pendingAgent?.nodeId ?? detail.pendingForm?.nodeId ?? detail.pendingWait?.nodeId ?? detail.pendingInput?.nodeId ?? detail.pendingClient?.nodeId
           if (nodeId) {
             await runsApi.resume(detail.id, { nodeId, error: '실행이 중단되었습니다.', aborted: true })
             // 취소 확정(비동기 재개)을 짧게 폴링 — 같은 플로우를 계속 보고 있을 때만 화면 반영
@@ -361,6 +435,7 @@ export function Editor() {
               for (let i = 0; i < 20; i++) {
                 await sleep(300)
                 detail = await runsApi.get(detail.id)
+                if (!canContinue()) return
                 setExecution(detail)
                 if (detail.status !== 'RUNNING' && detail.status !== 'WAITING') break
               }
@@ -369,11 +444,15 @@ export function Editor() {
           break
         }
 
-        if (detail.pendingInput) {
+        if (detail.pendingAgent) {
+          // Native Dispatcher owns agent tasks, including retries and durable result acknowledgement.
+          setWaitingNode(detail.pendingAgent.nodeId)
+        } else if (detail.pendingInput) {
           // 사용자 입력 대기: 모달에 값 입력 → confirm 값이 노드 출력. 취소는 실행 중단.
           // ⏹/플로우 전환 abort 도 함께 대기 — 모달에 갇혀 중단 버튼이 먹통되지 않게(먼저 오는 것 채택)
           const pi = detail.pendingInput
           const values = await Promise.race([askInput(pi), aborted])
+          if (!canContinue()) return
           if (values === '__abort__') { resolveInput(null); continue } // 루프 상단 중단 처리로
           await runsApi.resume(detail.id, values === null
             ? { nodeId: pi.nodeId, error: '사용자가 입력을 취소했습니다.', aborted: true }
@@ -389,8 +468,11 @@ export function Editor() {
             : { nodeId: pf.nodeId, popupOpened: true })
         } else if (detail.pendingClient) {
           const resumeBody = await callClientRequest(detail.pendingClient)
+          if (!canContinue()) return
           await runsApi.resume(detail.id, resumeBody)
         }
+
+        if (!canContinue()) return
 
         // wait 배너/펄스 — pendingWait 가 보이는 동안 유지(콜백/타임아웃은 백엔드가 자가 재개)
         const pw = detail.pendingWait
@@ -415,6 +497,7 @@ export function Editor() {
         // 마지막 스냅샷을 유지하고 계속 폴링, 연속 임계 초과 시에만 포기(재시작 중 추적 유실 방지).
         try {
           const next = await runsApi.get(detail.id)
+          if (!canContinue()) return
           pollFailures = 0
           detail = next
           setExecution(detail)
@@ -423,37 +506,47 @@ export function Editor() {
         }
       }
     } catch (e) {
+      if (!canContinue()) return
       // 저장 409 는 save.onError 가 충돌 다이얼로그로 안내 — 여기선 중복 토스트만 피한다
       if (!(isAxiosError(e) && e.response?.status === 409)) {
-        toast(`실행 실패: ${isAxiosError(e) ? (e.response?.data as { message?: string })?.message ?? e.message : e instanceof Error ? e.message : e}`, 'error')
+        toast(`실행 요청·조회 오류: ${isAxiosError(e) ? (e.response?.data as { message?: string })?.message ?? e.message : e instanceof Error ? e.message : e} — 실행 이력에서 상태를 확인할 수 있습니다.`, 'error')
       }
-      setExecution(null)
     } finally {
-      stopRef.current = null
-      setWaitingNode(null)
-      setWaitStatus(null)
-      inputResolverRef.current = null
-      setPendingInput(null)
-      setRunning(false)
+      if (canContinue()) {
+        stopRef.current = null
+        setWaitingNode(null)
+        setWaitStatus(null)
+        inputResolverRef.current = null
+        setPendingInput(null)
+        setRunning(false)
+      }
     }
   }
 
   // ⏹ 실행 중단 — wait 대기를 즉시 해제하고 실행을 CANCELLED 로 마감한다.
   const onStop = () => stopRef.current?.abort()
+  useEffect(() => {
+    if (!resumeExecutionId || !flowQuery.data || resumedRef.current === resumeExecutionId) return
+    resumedRef.current = resumeExecutionId
+    void executeRun(resumeExecutionId)
+    // 실행 식별자당 한 번 연결한다. 조회 갱신은 실행 루프가 담당한다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resumeExecutionId, flowQuery.data])
 
   if (flowQuery.isLoading) return <div style={{ padding: 40, color: 'var(--fl-text-muted)' }}>불러오는 중…</div>
   if (flowQuery.isError) return <div style={{ padding: 40, color: 'var(--fl-fail)' }}>워크플로를 불러오지 못했습니다. 백엔드(18080)를 확인하세요.</div>
 
   return (
-    <div style={{ height: '100dvh', display: 'flex', flexDirection: 'column', background: 'var(--fl-bg)', overflow: 'hidden' }}>
-      {/* top-bar */}
-      <header style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 14px', borderBottom: '1px solid var(--fl-border)', background: 'var(--fl-surface)' }}>
-        {/* ← 는 홈이 아니라 이 워크플로가 담긴 폴더로 — 탐색기에서 온 흐름 유지 */}
+    <div className="fl-editor-workbench" style={{ height: '100dvh', display: 'flex', flexDirection: 'column', background: 'var(--fl-bg)', overflow: 'hidden' }}>
+      <header className="fl-editor-heading">
+        {/* 출발 목록으로 복귀하며, 직접 진입한 경우 소속 폴더를 사용한다. */}
         <Link
-          to={flowQuery.data?.folderId ? `/flows?folder=${flowQuery.data.folderId}` : '/flows'}
+          to={returnToList.to}
+          state={returnToList.state}
           aria-label="워크플로 목록"
           style={{ textDecoration: 'none', color: 'var(--fl-text-muted)', fontSize: 18 }}
         >←</Link>
+        <span title={`${scope.current.name} · ${scope.current.id}`} style={{ maxWidth: 230, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 12, color: 'var(--fl-text-muted)' }}>{scope.current.name} <span style={{ color: 'var(--fl-primary)' }}> / </span></span>
         <input
           aria-label="워크플로 이름"
           className="fl-name-input"
@@ -461,9 +554,10 @@ export function Editor() {
           onChange={(e) => setName(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter' || e.key === 'Escape') (e.target as HTMLInputElement).blur() }}
           title="워크플로 이름 — 눌러서 편집"
-          style={{ fontFamily: 'var(--fl-font-head)', fontWeight: 600, fontSize: 15, border: '1px solid transparent', borderRadius: 8, padding: '6px 8px', background: 'transparent', color: 'var(--fl-text)', minWidth: 220 }}
+          style={{ fontFamily: 'var(--fl-font-head)', fontWeight: 600, fontSize: 15, border: '1px solid transparent', borderRadius: 8, padding: '6px 8px', background: 'transparent', color: 'var(--fl-text)', flex: '1 1 140px', minWidth: 120, maxWidth: 280 }}
         />
-        <span style={{ fontSize: 12, color: dirty ? 'var(--fl-put)' : 'var(--fl-text-muted)' }}>{dirty ? '● 미저장' : '저장됨'}</span>
+        <span role="status" style={{ fontSize: 12, color: dirty ? 'var(--fl-put)' : 'var(--fl-text-muted)' }}>{save.isPending ? '저장 중…' : dirty ? '● 미저장' : '저장됨'}</span>
+        <span className="fl-editor-storage" style={{ fontSize: 12, color: 'var(--fl-text-muted)' }}>저장 위치 · {scope.current.origin === 'local' ? '내 PC' : '서버'}</span>
         {isViewer && (
           <span title="viewer 역할은 조회만 가능합니다 — 저장/실행이 비활성화됩니다"
             style={{ fontSize: 12, fontWeight: 600, color: 'var(--fl-waiting)', border: '1px solid var(--fl-waiting)', borderRadius: 'var(--fl-radius-pill)', padding: '2px 8px' }}>
@@ -473,24 +567,37 @@ export function Editor() {
         {copyNote && <span role="status" style={{ fontSize: 12, color: 'var(--fl-primary)', fontWeight: 600 }}>{copyNote}</span>}
         <span title="노드 수" style={{ fontSize: 11.5, color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)' }}>노드 {nodeCount}</span>
         <IssueBadge />
-        <EnvSwitcher />
         <PresenceAvatars />
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, position: 'relative' }}>
+        <div className="fl-editor-primary-actions">
+          {running && <button onClick={onStop} style={stopBtn} title="실행 중단 — 대기 중이면 즉시 해제됩니다">⏹ 중단</button>}
+          <button onClick={() => save.mutate()} disabled={save.isPending || !dirty || !canEdit} title={canEdit ? undefined : 'viewer 역할은 저장할 수 없습니다'} style={saveBtn}>저장</button>
+          <button onClick={() => onRun()} disabled={running || !canEdit} title={canEdit ? '노드별 PC·서버 실행 위치와 자원을 확인한 뒤 실행합니다' : 'viewer 역할은 실행할 수 없습니다'} style={runBtn}><AppIcon name={running ? 'pause' : 'play'} size={16} />{running ? '실행 중…' : '실행 계획'}</button>
+        </div>
+      </header>
+      <div className="fl-editor-toolbar" role="toolbar" aria-label="워크플로 편집과 실행">
+        <button ref={paletteToggleRef} type="button" aria-expanded={paletteVisible} aria-controls="editor-palette" onClick={() => {
+          const next = !paletteVisible; setFloatingPaletteOpen(next); setPaletteCollapsed(!next); persistUI('fl:editor:palColl', next ? '0' : '1')
+          if (next) requestAnimationFrame(() => document.querySelector<HTMLInputElement>('#editor-palette input')?.focus())
+        }} style={ghostBtn}><AppIcon name="plus" size={16} /> 노드 추가</button>
+        <EnvSwitcher />
+        <div className="fl-editor-tools" style={{ display: 'flex', gap: 6, position: 'relative', alignItems: 'center', flex: 1 }}>
           <button onClick={() => setAssistantOpen((v) => {
             const next = !v
             persistUI('fl:editor:assistant', next ? '1' : '0')
             // 좁은 화면에서 팔레트+속성+어시스턴트 3열이 캔버스를 0으로 짓누르지 않게, 열 때 속성 패널 자동 접기
             if (next && !propCollapsed && vp.w < 1200) { setPropCollapsed(true); persistUI('fl:editor:propColl', '1') }
             return next
-          })} title="AI 어시스턴트 — 자연어로 플로우 만들기" aria-label="AI 어시스턴트" style={{ ...ghostBtn, padding: '8px 11px', color: assistantOpen ? 'var(--fl-primary)' : undefined }}>✨ AI</button>
-          <button onClick={undo} disabled={!canUndo} aria-label="되돌리기" title="되돌리기 (Ctrl+Z)" style={{ ...ghostBtn, padding: '8px 11px', opacity: canUndo ? 1 : 0.4 }}>↺</button>
-          <button onClick={redo} disabled={!canRedo} aria-label="다시 실행" title="다시 실행 (Ctrl+Shift+Z)" style={{ ...ghostBtn, padding: '8px 11px', opacity: canRedo ? 1 : 0.4 }}>↻</button>
-          <button onClick={() => setToolsOpen((v) => !v)} title="도구" aria-label="도구 메뉴" style={{ ...ghostBtn, padding: '8px 11px' }}>⋯ 도구</button>
+          })} title="AI 어시스턴트 — 자연어로 플로우 만들기" aria-label="AI 어시스턴트" style={{ ...ghostBtn, padding: '8px 11px', color: assistantOpen ? 'var(--fl-primary)' : undefined }}><AppIcon name="sparkles" size={16} /> 어시스턴트</button>
+          <button onClick={undo} disabled={!canUndo} aria-label="되돌리기" title="되돌리기 (Ctrl+Z)" style={{ ...ghostBtn, padding: '8px 11px', opacity: canUndo ? 1 : 0.4 }}><AppIcon name="undo" size={16} /></button>
+          <button onClick={redo} disabled={!canRedo} aria-label="다시 실행" title="다시 실행 (Ctrl+Shift+Z)" style={{ ...ghostBtn, padding: '8px 11px', opacity: canRedo ? 1 : 0.4 }}><AppIcon name="redo" size={16} /></button>
+          <button onClick={() => setToolsOpen((v) => !v)} title="도구" aria-label="도구 메뉴" style={{ ...ghostBtn, padding: '8px 11px' }}><AppIcon name="more" size={16} /> 작업 도구</button>
           {toolsOpen && (
             <>
               <div style={{ position: 'fixed', inset: 0, zIndex: 90 }} onClick={() => setToolsOpen(false)} />
               <div style={toolsMenu}>
                 <button style={toolItem} onClick={() => { autoLayout(); setToolsOpen(false) }}>⇥ 자동 정렬</button>
+                <button style={toolItem} disabled={!canEdit} onClick={() => { setImportTab('workflow'); setToolsOpen(false) }}>가져오기 · 워크플로 / API / cURL</button>
+                <button style={toolItem} onClick={() => { setWorkflowIO('export'); setToolsOpen(false) }}>내보내기</button>
                 <button style={toolItem} onClick={() => { setAllCollapsed(true); setToolsOpen(false) }}>▸ 모두 접기</button>
                 <button style={toolItem} onClick={() => { setAllCollapsed(false); setToolsOpen(false) }}>▾ 모두 펴기</button>
                 <button style={{ ...toolItem, opacity: canEdit && !running ? 1 : 0.4 }} disabled={!canEdit || running} onClick={() => { onRun(); setToolsOpen(false) }}>▶ 재실행</button>
@@ -507,37 +614,35 @@ export function Editor() {
               </div>
             </>
           )}
-          <button onClick={() => setImportTab('workflow')} disabled={!canEdit} style={{ ...ghostBtn, opacity: canEdit ? 1 : 0.4 }} title="워크플로 JSON · OpenAPI/Swagger · cURL 가져오기">가져오기</button>
-          <button onClick={() => setWorkflowIO('export')} style={ghostBtn}>내보내기</button>
-          {running && <button onClick={onStop} style={stopBtn} title="실행 중단 — 대기 중이면 즉시 해제됩니다">⏹ 중단</button>}
-          <button onClick={() => onRun()} disabled={running || !canEdit} title={canEdit ? undefined : 'viewer 역할은 실행할 수 없습니다'} style={runBtn}>{running ? '실행 중…' : '▶ 실행'}</button>
-          <button onClick={() => save.mutate()} disabled={save.isPending || !dirty || !canEdit} title={canEdit ? undefined : 'viewer 역할은 저장할 수 없습니다'} style={saveBtn}>💾 저장</button>
+          <span style={{ flex: 1 }} />
+
         </div>
-      </header>
+      </div>
+      {!hasTask && canEdit && <div role="note" className="fl-editor-start-hint">노드 추가에서 <b>API 호출</b>을 고른 뒤 시작 → API 호출 → 끝을 연결하세요. 주소와 요청을 편집하고 실행 계획에서 확인합니다. 기존 API는 작업 도구 → 가져오기로 추가할 수 있습니다.</div>}
 
       <ReactFlowProvider>
-        <div style={{ flex: 1, display: 'flex', minHeight: 0, overflow: 'hidden' }}>
-          {!paletteCollapsed ? (
-            <>
-              <Palette width={paletteW} onCollapse={() => { setPaletteCollapsed(true); persistUI('fl:editor:palColl', '1') }} />
-              <ResizeHandle axis="x" sign={1} size={paletteW} min={160} max={maxPaletteW} defaultSize={200} onResize={setPaletteW} onResizeEnd={(n) => saveSize('paletteW', n)} ariaLabel="팔레트 너비 조절" />
-            </>
+        <div className="fl-editor-stage" style={{ flex: 1, display: 'flex', minHeight: 0, overflow: 'hidden', position: 'relative' }}>
+          {paletteVisible ? (
+            <div className={narrowEditor ? 'fl-editor-palette-drawer' : 'fl-editor-palette-docked'}>
+              <Palette width={narrowEditor ? 200 : paletteW} onCollapse={() => { setPaletteCollapsed(true); persistUI('fl:editor:palColl', '1'); paletteToggleRef.current?.focus() }} />
+              {!narrowEditor && <ResizeHandle axis="x" sign={1} size={paletteW} min={160} max={maxPaletteW} defaultSize={200} onResize={setPaletteW} onResizeEnd={(n) => saveSize('paletteW', n)} ariaLabel="팔레트 너비 조절" />}
+            </div>
           ) : (
-            <button onClick={() => { setPaletteCollapsed(false); persistUI('fl:editor:palColl', '0') }} title="노드 팔레트 펼치기" aria-label="노드 팔레트 펼치기" style={expandStrip}>»</button>
+            <button onClick={() => { setPaletteCollapsed(false); setFloatingPaletteOpen(true); persistUI('fl:editor:palColl', '0'); requestAnimationFrame(() => document.querySelector<HTMLInputElement>('#editor-palette input')?.focus()) }} title="노드 팔레트 펼치기" aria-label="노드 팔레트 펼치기" style={expandStrip}>»</button>
           )}
           <div style={{ flex: 1, minWidth: 0 }}>
             <FlowCanvas />
           </div>
-          {propCollapsed ? (
+          {selectedId && (propCollapsed ? (
             <button onClick={() => { setPropCollapsed(false); persistUI('fl:editor:propColl', '0') }} title="속성 패널 펼치기" aria-label="속성 패널 펼치기" style={expandStrip}>«</button>
           ) : (
             <>
-              <ResizeHandle axis="x" sign={-1} size={propertyW} min={300} max={maxPropertyW} defaultSize={330} onResize={setPropertyW} onResizeEnd={(n) => saveSize('propertyW', n)} ariaLabel="속성 패널 너비 조절" />
+              <ResizeHandle axis="x" sign={-1} size={propertyW} min={360} max={maxPropertyW} defaultSize={400} onResize={setPropertyW} onResizeEnd={(n) => saveSize('propertyW', n)} ariaLabel="속성 패널 너비 조절" />
               <PropertyPanel width={propertyW}
                 onExpand={() => setPropModal(true)}
                 onCollapse={() => { setPropCollapsed(true); persistUI('fl:editor:propColl', '1') }} />
             </>
-          )}
+          ))}
           {assistantOpen && (
             <>
               <ResizeHandle axis="x" sign={-1} size={assistantW} min={300} max={maxAssistantW} defaultSize={360} onResize={setAssistantW} onResizeEnd={(n) => saveSize('assistantW', n)} ariaLabel="어시스턴트 패널 너비 조절" />
@@ -547,6 +652,7 @@ export function Editor() {
             </>
           )}
         </div>
+        {!showLog && <button className="fl-editor-run-summary" onClick={() => setShowLog(true)}><strong>실행 결과</strong><span>{running ? '실행 중…' : execution ? execution.status === 'SUCCEEDED' ? '성공' : execution.status === 'FAILED' ? '실패' : '실행 상태 확인' : '실행하면 결과가 여기에 표시됩니다.'}</span><span>펼치기 ↑</span></button>}
         {showLog && (
           <>
             <ResizeHandle axis="y" sign={-1} size={runH} min={120} max={maxRunH} defaultSize={260} onResize={setRunH} onResizeEnd={(n) => saveSize('runH', n)} ariaLabel="실행 로그 높이 조절" />
@@ -573,11 +679,12 @@ export function Editor() {
           <VersionHistoryDialog
             flowId={flowId}
             currentGraph={getGraph()}
-            onRestored={() => { void flowQuery.refetch() }}
+            onRestored={(snapshot) => { void reloadSavedGraph(snapshot) }}
             onClose={() => setVersionsOpen(false)}
           />
         )}
         {runInputOpen && <RunInputDialog onClose={() => setRunInputOpen(false)} onRun={() => onRun()} />}
+        {planOpen && <ExecutionPlanDialog onClose={() => setPlanOpen(false)} onRun={(dependencies, environments) => void executeRun(undefined, dependencies, environments)} />}
         {triggersOpen && <TriggersDialog flowId={flowId} onClose={() => setTriggersOpen(false)} />}
         {secretsOpen && <SecretsDialog onClose={() => setSecretsOpen(false)} />}
         {searchOpen && <NodeSearch onClose={() => setSearchOpen(false)} />}
@@ -593,7 +700,7 @@ export function Editor() {
       {saveConflict && (
         <ConflictDialog
           onRetry={() => save.mutate()}
-          onReload={() => { void flowQuery.refetch() }}
+          onReload={() => { void reloadSavedGraph() }}
           onClose={() => setSaveConflict(false)}
         />
       )}
@@ -678,9 +785,9 @@ async function callClientRequest(p: PendingClientRequest): Promise<ResumeRequest
 }
 
 const ghostBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', padding: '8px 14px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 13, fontWeight: 600, textDecoration: 'none', cursor: 'pointer' }
-const runBtn: CSSProperties = { ...ghostBtn, border: 'none', background: 'var(--fl-ok)', color: '#fff' }
-const stopBtn: CSSProperties = { ...ghostBtn, border: 'none', background: 'var(--fl-fail)', color: '#fff' }
-const saveBtn: CSSProperties = { ...ghostBtn, border: 'none', background: 'var(--fl-primary)', color: '#fff' }
+const runBtn: CSSProperties = { ...ghostBtn, border: 'none', background: 'var(--fl-action-primary-bg)', color: 'var(--fl-action-primary-ink)' }
+const stopBtn: CSSProperties = { ...ghostBtn, border: 'none', background: 'var(--fl-action-danger-bg)', color: 'var(--fl-action-danger-ink)' }
+const saveBtn: CSSProperties = { ...ghostBtn, background: 'var(--fl-surface)', color: 'var(--fl-text)' }
 // 접힌 사이드바를 펼치는 얇은 세로 바
 const expandStrip: CSSProperties = { width: 22, flexShrink: 0, border: 'none', borderLeft: '1px solid var(--fl-border)', borderRight: '1px solid var(--fl-border)', background: 'var(--fl-surface)', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 13 }
 // 넓은 속성 편집 모달(배경 딤 + 중앙 카드)

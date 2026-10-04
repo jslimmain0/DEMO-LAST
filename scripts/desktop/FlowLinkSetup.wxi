@@ -1,0 +1,14 @@
+<!-- Injected into the stock JDK 21 Product; jpackage retains file and upgrade ownership. -->
+<WixVariable Id="WixUIBannerBmp" Value="__BANNER__" />
+<WixVariable Id="WixUIDialogBmp" Value="__DIALOG__" />
+<Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT" Value="FlowLink 실행 · 시작 안내 열기" />
+<Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOX" Value="1" />
+<Property Id="WIXUI_EXITDIALOGOPTIONALTEXT" Value="개인 워크스페이스는 이 PC에 보관됩니다. 사내 서버 로그인과 IDE 연결 설정은 앱의 시작 안내에서 진행하세요." />
+<CustomAction Id="FlowLinkLaunch" Directory="INSTALLDIR"
+              ExeCommand="&quot;[INSTALLDIR]FlowLink.exe&quot;"
+              Return="asyncNoWait" Execute="immediate" Impersonate="yes" />
+<UI>
+  <Publish Dialog="ExitDialog" Control="Finish" Event="DoAction" Value="FlowLinkLaunch" Order="1">
+    WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1 AND NOT Installed
+  </Publish>
+</UI>

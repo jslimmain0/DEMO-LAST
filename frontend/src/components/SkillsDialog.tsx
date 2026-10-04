@@ -1,7 +1,8 @@
+import { useApi } from '../app/WorkspaceContext'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { CSSProperties } from 'react'
 import { useEffect, useRef, useState } from 'react'
-import { assistantApi } from '../api/client'
+
 import type { Skill } from '../api/types'
 import { usePermissions } from '../auth/AuthContext'
 import { newId } from '../lib/ids'
@@ -13,6 +14,8 @@ import { toast } from './toast'
  * + 팀 지침(admin, 항상 주입) + GitHub 연결(OAuth) 설정(admin).
  */
 export function SkillsDialog({ onClose, onApplyPrompt }: { onClose: () => void; onApplyPrompt?: (prompt: string) => void }) {
+  const { assistantApi } = useApi()
+
   const qc = useQueryClient()
   const q = useQuery({ queryKey: ['assistant', 'skills'], queryFn: assistantApi.skills })
   const { canAdmin } = usePermissions()
@@ -102,6 +105,6 @@ const mono: CSSProperties = { padding: '7px 9px', border: '1px solid var(--fl-bo
 const card: CSSProperties = { border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', padding: 10 }
 const xBtn: CSSProperties = { width: 28, height: 28, borderRadius: 8, border: 'none', background: 'var(--fl-surface-2)', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 15 }
 const xBtnSm: CSSProperties = { width: 24, height: 24, flexShrink: 0, borderRadius: 6, border: '1px solid var(--fl-border)', background: 'var(--fl-surface)', color: 'var(--fl-text-muted)', cursor: 'pointer' }
-const primary: CSSProperties = { padding: '7px 12px', border: 'none', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-primary)', color: '#fff', cursor: 'pointer', fontSize: 12.5, fontWeight: 600, whiteSpace: 'nowrap' }
+const primary: CSSProperties = { padding: '7px 12px', border: 'none', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-action-primary-bg)', color: 'var(--fl-action-primary-ink)', cursor: 'pointer', fontSize: 12.5, fontWeight: 600, whiteSpace: 'nowrap' }
 const applyBtn: CSSProperties = { flexShrink: 0, padding: '5px 11px', border: '1px solid var(--fl-primary)', borderRadius: 'var(--fl-radius-sm)', background: 'transparent', color: 'var(--fl-primary)', cursor: 'pointer', fontSize: 12, fontWeight: 600 }
 const ghostMini: CSSProperties = { padding: '5px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 12 }

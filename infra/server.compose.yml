@@ -1,0 +1,61 @@
+# 사내 배포. agent-lab 모킹 프로파일을 포함하지 않는다. 앞단 HTTPS 프록시의 주소를 아래 env로 지정한다.
+name: flowlink-server
+services:
+  server:
+    image: flowlink:0.3.7
+    build:
+      context: ..
+      dockerfile: infra/agent-test.Dockerfile
+    ports:
+      - "127.0.0.1:18080:18080"
+      - "127.0.0.1:18090:18090"
+      - "${FLOWLINK_MOCK_TCP_BIND:-0.0.0.0}:9091-9190:9091-9190"
+    environment:
+      SPRING_PROFILES_ACTIVE: dev
+      FLOWLINK_AUTH_GITHUB_ENABLED: "true"
+      FLOWLINK_AUTH_GUEST_ENABLED: "false"
+      FLOWLINK_AUTH_MOCK_LOGIN: "false"
+      FLOWLINK_DB_URL: ${FLOWLINK_DB_URL:?Oracle JDBC URL required}
+      FLOWLINK_DB_USER: ${FLOWLINK_DB_USER:?Oracle user required}
+      FLOWLINK_DB_PASSWORD: ${FLOWLINK_DB_PASSWORD:?Oracle password required}
+      FLOWLINK_EXECUTION_STATE_SECRET: ${FLOWLINK_EXECUTION_STATE_SECRET:?Persistent encryption key required}
+      FLOWLINK_VAULT_TRANSIT_ENABLED: ${FLOWLINK_VAULT_TRANSIT_ENABLED:-false}
+      FLOWLINK_VAULT_ADDRESS: ${FLOWLINK_VAULT_ADDRESS:-http://vault:8200}
+      FLOWLINK_VAULT_TRANSIT_MOUNT: ${FLOWLINK_VAULT_TRANSIT_MOUNT:-transit}
+      FLOWLINK_VAULT_TRANSIT_KEY: ${FLOWLINK_VAULT_TRANSIT_KEY:-flowlink}
+      FLOWLINK_VAULT_APPROLE_ROLE_ID: ${FLOWLINK_VAULT_APPROLE_ROLE_ID:-}
+      FLOWLINK_VAULT_APPROLE_SECRET_ID: ${FLOWLINK_VAULT_APPROLE_SECRET_ID:-}
+      FLOWLINK_VAULT_APPROLE_MOUNT: ${FLOWLINK_VAULT_APPROLE_MOUNT:-approle}
+      FLOWLINK_PUBLIC_URL: ${FLOWLINK_PUBLIC_URL:?External HTTPS app URL required}
+      FLOWLINK_PUBLIC_MCP_URL: ${FLOWLINK_PUBLIC_MCP_URL:?External HTTPS MCP URL required}
+      FLOWLINK_MCP_PORT: "18090"
+      FLOWLINK_DISTRIBUTION_DIR: /app/downloads
+      FLOWLINK_MOCK_TCP_PORT_START: "9091"
+      FLOWLINK_MOCK_TCP_PORT_END: "9190"
+      FLOWLINK_MOCK_TCP_ADVERTISED_HOST: ${FLOWLINK_MOCK_TCP_ADVERTISED_HOST:?Reachable server hostname required}
+      FLOWLINK_PLUGINS_DIR: /home/gradle/plugins
+    volumes:
+      - server-files:/home/gradle
+      - ${FLOWLINK_DOWNLOAD_DIR:?Directory with release-manifest.json and versioned MSI required}:/app/downloads:ro
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:18080/api/v1/auth/config"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+    stop_grace_period: 30s
+    restart: unless-stopped
+  mcp:
+    image: flowlink:0.3.7
+    entrypoint: ["node", "--use-system-ca", "/app/mcp/src/index.js"]
+    network_mode: service:server
+    environment:
+      FLOWLINK_URL: http://127.0.0.1:18080
+      FLOWLINK_MCP_PORT: "18090"
+    volumes:
+      - server-files:/home/gradle
+    depends_on:
+      server:
+        condition: service_healthy
+    restart: unless-stopped
+volumes:
+  server-files:

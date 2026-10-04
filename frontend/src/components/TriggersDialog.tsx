@@ -1,8 +1,8 @@
-import { appUrl } from '../lib/appBase'
+import { useApi } from '../app/WorkspaceContext'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { CSSProperties } from 'react'
 import { useState } from 'react'
-import { triggersApi } from '../api/client'
+
 import type { TriggerView } from '../api/types'
 import { toast } from './toast'
 import { Modal } from './Modal'
@@ -20,6 +20,8 @@ const CRON_PRESETS: Array<[string, string]> = [
 ]
 
 export function TriggersDialog({ flowId, onClose }: { flowId: string; onClose: () => void }) {
+  const { triggersApi, resourceUrl } = useApi()
+
   const qc = useQueryClient()
   const q = useQuery({ queryKey: ['triggers', flowId], queryFn: () => triggersApi.list(flowId) })
   const [cron, setCron] = useState('0 0 3 * * *')
@@ -45,7 +47,7 @@ export function TriggersDialog({ flowId, onClose }: { flowId: string; onClose: (
   })
 
   const list = q.data ?? []
-  const origin = appUrl('') // 오리진 + context path — 웹훅 URL 은 밖에서 부르는 절대 주소
+  const origin = resourceUrl('')
 
   return (
     <Modal onClose={onClose} ariaLabel="트리거" width={620} maxWidth="96vw" maxHeight="88vh">
@@ -118,7 +120,7 @@ const hint: CSSProperties = { fontSize: 11.5, color: 'var(--fl-text-muted)', lin
 const label: CSSProperties = { display: 'block', fontSize: 11.5, fontWeight: 600, color: 'var(--fl-text-muted)', margin: '0 0 5px' }
 const mono: CSSProperties = { flex: 1, padding: '8px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 12.5, fontFamily: 'var(--fl-font-mono)' }
 const xBtn: CSSProperties = { width: 28, height: 28, borderRadius: 8, border: 'none', background: 'var(--fl-surface-2)', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 15 }
-const primary: CSSProperties = { padding: '8px 14px', border: 'none', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-primary)', color: '#fff', cursor: 'pointer', fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap' }
+const primary: CSSProperties = { padding: '8px 14px', border: 'none', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-action-primary-bg)', color: 'var(--fl-action-primary-ink)', cursor: 'pointer', fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap' }
 const ghost: CSSProperties = { padding: '8px 14px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'transparent', color: 'var(--fl-text)', cursor: 'pointer', fontSize: 13 }
 const chip: CSSProperties = { padding: '4px 9px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-pill)', background: 'transparent', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 11.5 }
 const miniBtn: CSSProperties = { padding: '4px 8px', border: '1px solid var(--fl-border)', borderRadius: 6, background: 'var(--fl-surface)', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 11.5, flexShrink: 0 }

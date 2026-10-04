@@ -1,4 +1,5 @@
 import type { CSSProperties, KeyboardEvent, ReactNode } from 'react'
+import { useEffect, useRef } from 'react'
 import { useEscapeClose } from './useEscapeClose'
 
 /**
@@ -32,14 +33,35 @@ export function Modal({
   children: ReactNode
 }) {
   useEscapeClose(onClose)
+  const cardRef = useRef<HTMLDivElement>(null)
+  const previousFocus = useRef(document.activeElement as HTMLElement | null)
+  useEffect(() => {
+    const previous = previousFocus.current
+    const card = cardRef.current
+    if (!card) return
+    if (!card.contains(document.activeElement)) (card.querySelector<HTMLElement>('input, select, textarea, button, [tabindex="0"]') ?? card).focus({ preventScroll: true })
+    return () => { if (previous?.isConnected) previous.focus({ preventScroll: true }) }
+  }, [])
+  const handleKey = (event: KeyboardEvent<HTMLDivElement>) => {
+    onKeyDown?.(event)
+    if (event.key !== 'Tab' || event.defaultPrevented) return
+    const elements = Array.from(cardRef.current?.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), a[href], [tabindex="0"], [contenteditable="true"]') ?? [])
+      .filter(el => el.getClientRects().length > 0 && el.getAttribute('aria-hidden') !== 'true')
+    const first = elements[0], last = elements.at(-1)
+    if (!first) { event.preventDefault(); cardRef.current?.focus(); return }
+    if (event.shiftKey && (document.activeElement === first || document.activeElement === cardRef.current)) { event.preventDefault(); last?.focus() }
+    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus() }
+  }
+  const bounded = (value: number | string, viewport: 'vw' | 'dvh') => `min(${typeof value === 'number' ? `${value}px` : value}, calc(100${viewport} - var(--fl-modal-gutter) - var(--fl-modal-gutter)))`
+  const dimensions: CSSProperties = { width, height, ...card,
+    maxWidth: bounded(card?.maxWidth ?? maxWidth, 'vw'),
+    maxHeight: bounded(card?.maxHeight ?? maxHeight, 'dvh'),
+  }
   return (
-    <div role="dialog" aria-modal="true" aria-label={ariaLabel} style={{ ...OVERLAY, zIndex }} onClick={closeOnBackdrop ? onClose : undefined}>
-      <div style={{ ...CARD, width, maxWidth, height, maxHeight, ...card }} onClick={(e) => e.stopPropagation()} onKeyDown={onKeyDown}>
+    <div role="dialog" aria-modal="true" aria-label={ariaLabel} className="fl-modal-overlay" style={{ zIndex }} onClick={closeOnBackdrop ? onClose : undefined}>
+      <div ref={cardRef} tabIndex={-1} className="fl-modal-card" style={dimensions} onClick={(e) => e.stopPropagation()} onKeyDown={handleKey}>
         {children}
       </div>
     </div>
   )
 }
-
-const OVERLAY: CSSProperties = { position: 'fixed', inset: 0, background: 'rgba(26,29,39,.4)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }
-const CARD: CSSProperties = { background: 'var(--fl-surface)', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-lg)', boxShadow: 'var(--fl-shadow-lg)', overflow: 'hidden', display: 'flex', flexDirection: 'column' }

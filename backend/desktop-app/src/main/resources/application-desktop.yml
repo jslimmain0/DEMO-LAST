@@ -1,0 +1,33 @@
+# 설치형 개인 런타임. local 프로파일과 함께 사용한다.
+flowlink:
+  desktop:
+    data-dir: ${FLOWLINK_AGENT_DATA_DIR:${LOCALAPPDATA:${user.home}/.local/share}/FlowLink}
+  runtime:
+    name: 내 PC
+    public-url: ''
+  auth:
+    github-enabled: false
+  plugins:
+    dir: ${flowlink.desktop.data-dir}/plugins
+  vault:
+    enabled: false
+    transit:
+      enabled: false
+spring:
+  datasource:
+    # 완료 응답 직후 프로세스가 종료되어도 커밋된 WAIT 스냅샷을 잃지 않도록 즉시 디스크 기록.
+    url: jdbc:h2:file:${flowlink.desktop.data-dir}/db/flowlink;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;WRITE_DELAY=0
+  h2:
+    console:
+      enabled: false
+server:
+  address: 127.0.0.1
+  servlet:
+    context-path: ''
+logging:
+  file:
+    name: ${flowlink.desktop.data-dir}/logs/flowlink.log
+  logback:
+    rollingpolicy:
+      max-file-size: 5MB
+      max-history: 7

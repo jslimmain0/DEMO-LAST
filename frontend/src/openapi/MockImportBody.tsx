@@ -1,8 +1,9 @@
+import { useApi } from '../app/WorkspaceContext'
 // frontend/src/openapi/MockImportBody.tsx — Mock 서버 규격을 팔레트 템플릿으로: HTTP 는 라우트마다 HTTP 노드, TCP 는 요청 전문마다 TCP 노드
 import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import type { GraphNode, HttpMethod, PaletteGroup } from '../api/types'
-import { mockBaseUrl, mocksApi, protocolsApi } from '../api/client'
+
 import { useAuth } from '../auth/AuthContext'
 import { makeNode } from '../canvas/nodeFactory'
 import { newId } from '../lib/ids'
@@ -10,6 +11,8 @@ import { apiErrorMessage } from '../lib/apiError'
 import { requestKeys } from '../lib/protocolSpec'
 
 export function MockImportBody({ onImport, onClose }: { onImport: (g: PaletteGroup) => void; onClose: () => void }) {
+  const { mocksApi, protocolsApi, mockBaseUrl } = useApi()
+
   const fleet = useQuery({ queryKey: ['mock-fleet'], queryFn: mocksApi.fleet })
   const { me } = useAuth()
   const [q, setQ] = useState('')
@@ -32,7 +35,7 @@ export function MockImportBody({ onImport, onClose }: { onImport: (g: PaletteGro
           items.push({ id: newId(), label: node.name!, path: `:${tcp.port} ${m.key}`, node })
         }
       } else {
-        const base = mockBaseUrl(d.slug, me?.tenant)
+        const base = mockBaseUrl(d.slug, me?.tenant, d.basePath)
         for (const r of d.spec?.routes ?? []) {
           const method = ((r.method ?? 'GET').toUpperCase() === 'ANY' ? 'GET' : (r.method ?? 'GET').toUpperCase()) as HttpMethod
           const rp = r.path ?? '/'

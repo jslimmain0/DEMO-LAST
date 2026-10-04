@@ -1,8 +1,9 @@
+import { useApi } from '../app/WorkspaceContext'
 import { useQuery } from '@tanstack/react-query'
 import type { CSSProperties } from 'react'
 import { useMemo, useState } from 'react'
 import type { MockCodecInput, MockCodecSpec, MockCodecStep, MockCodecStepTrace, MockCodecTarget, TransformInfo } from '../api/types'
-import { mocksApi, transformsApi } from '../api/client'
+
 import { TokenInput } from '../binding/TokenInput'
 import type { BindableSource } from '../binding/upstream'
 import { apiErrorMessage } from '../lib/apiError'
@@ -27,6 +28,8 @@ export function MockCodecEditor({ codec, onChange, readOnly, compact, sources = 
   mockId?: string                  // 있으면 [시험해보기](codec-try) 노출 — HTTP 만
   environment?: string | null      // 시크릿 스코프(시험 시 서버에 전달)
 }) {
+  const { transformsApi } = useApi()
+
   const transforms = useQuery({ queryKey: ['transforms'], queryFn: transformsApi.list, staleTime: 60_000 })
   const list = transforms.data ?? []
   const c = codec ?? {}
@@ -146,7 +149,7 @@ function StepCard({ step: s, index: i, side, list, readOnly, sources, hints, onC
               <div style={{ display: 'inline-flex', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', overflow: 'hidden' }} title="적용 범위 — 전체 / 특정 필드만 / 헤더">
                 {(['body', 'fields', 'header'] as MockCodecTarget[]).map((tg) => (
                   <button key={tg} disabled={readOnly} onClick={() => onChange({ target: tg })}
-                    style={{ padding: '3px 10px', border: 'none', cursor: 'pointer', fontSize: 11.5, fontWeight: 600, background: target === tg ? 'var(--fl-primary)' : 'transparent', color: target === tg ? '#fff' : 'var(--fl-text-muted)' }}>
+                    style={{ padding: '3px 10px', border: 'none', cursor: 'pointer', fontSize: 11.5, fontWeight: 600, background: target === tg ? 'var(--fl-action-primary-bg)' : 'transparent', color: target === tg ? 'var(--fl-action-primary-ink)' : 'var(--fl-text-muted)' }}>
                     {tg === 'body' ? '본문 전체' : tg === 'fields' ? '특정 필드만' : '헤더'}
                   </button>
                 ))}
@@ -240,6 +243,8 @@ function FieldsInput({ value, onChange, disabled, hasHints }: { value: string[];
 
 /** 코덱 시험 — 미저장 코덱을 샘플 전문에 서버에서 적용(실제 시크릿 사용, 결과는 마스킹) → 단계별 입력/출력. */
 function CodecTryPanel({ mockId, codec, environment }: { mockId: string; codec: MockCodecSpec; environment?: string | null }) {
+  const { mocksApi } = useApi()
+
   const [open, setOpen] = useState(false)
   const [side, setSide] = useState<Side>(codec.request?.length ? 'request' : 'response')
   const [message, setMessage] = useState('')
@@ -268,7 +273,7 @@ function CodecTryPanel({ mockId, codec, environment }: { mockId: string; codec: 
           <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
             <div style={{ display: 'inline-flex', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', overflow: 'hidden' }}>
               {(['request', 'response'] as const).map((sd) => (
-                <button key={sd} onClick={() => setSide(sd)} disabled={!(codec[sd]?.length)} style={{ padding: '3px 10px', border: 'none', cursor: 'pointer', fontSize: 11.5, fontWeight: 600, background: side === sd ? 'var(--fl-primary)' : 'transparent', color: side === sd ? '#fff' : 'var(--fl-text-muted)', opacity: codec[sd]?.length ? 1 : 0.4 }}>{sd === 'request' ? '요청 전' : '응답 후'}</button>
+                <button key={sd} onClick={() => setSide(sd)} disabled={!(codec[sd]?.length)} style={{ padding: '3px 10px', border: 'none', cursor: 'pointer', fontSize: 11.5, fontWeight: 600, background: side === sd ? 'var(--fl-action-primary-bg)' : 'transparent', color: side === sd ? 'var(--fl-action-primary-ink)' : 'var(--fl-text-muted)', opacity: codec[sd]?.length ? 1 : 0.4 }}>{sd === 'request' ? '요청 전' : '응답 후'}</button>
               ))}
             </div>
             <span style={lbl}>Content-Type</span>

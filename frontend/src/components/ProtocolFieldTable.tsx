@@ -1,7 +1,7 @@
 // frontend/src/components/ProtocolFieldTable.tsx — 고정길이 필드 표(이름/길이/타입/패딩/오프셋/필드 플러그인) + 파라미터 폼.
 // 오프셋은 baseOffset 부터 누적(읽기전용) — 헤더 표는 0, 본문 표는 tableLen(header) 부터.
 import type { CSSProperties } from 'react'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { CodecInfo, FieldPad, FieldType, ProtocolField, TransformParam } from '../api/types'
 import { FIELD_PADS, FIELD_TYPES, defaultPad, padOf } from '../lib/protocolSpec'
 import { TokenInput } from '../binding/TokenInput'
@@ -54,6 +54,10 @@ export function FieldTable({ fields, onChange, baseOffset, codecs, readOnly, len
   // pad 를 손댄 행은 type 을 바꿔도 pad 를 유지한다(그 외에는 defaultPad 로 따라감)
   const [padTouched, setPadTouched] = useState<Set<number>>(() => new Set())
   const [pluginRow, setPluginRow] = useState<number | null>(null)
+  const [query, setQuery] = useState('')
+  const [onlyIssues, setOnlyIssues] = useState(false)
+  const list = useRef<HTMLDivElement>(null)
+  const focusLast = useRef(false)
   const fieldCodecs = codecs.filter((c) => c.layer === 'field')
 
   const seen = new Map<string, number>()
@@ -71,18 +75,36 @@ export function FieldTable({ fields, onChange, baseOffset, codecs, readOnly, len
     onChange(next)
   }
   const remove = (i: number) => { setPadTouched(new Set()); setPluginRow(null); onChange(fields.filter((_, j) => j !== i)) }
-  const add = (type: FieldType, len: number, pad: FieldPad) => onChange([...fields, { name: `필드${fields.length + 1}`, len, type, pad }])
+  const add = (type: FieldType, len: number, pad: FieldPad) => {
+    setQuery(''); setOnlyIssues(false); focusLast.current = true
+    onChange([...fields, { name: `필드${fields.length + 1}`, len, type, pad }])
+  }
+  useEffect(() => {
+    if (!focusLast.current) return
+    const input = list.current?.querySelector<HTMLInputElement>(`[data-protocol-row="${fields.length - 1}"]`)
+    if (input) { input.focus(); input.scrollIntoView({ block: 'nearest' }); focusLast.current = false }
+  }, [fields.length])
 
   let off = baseOffset
   const offsets = fields.map((f) => { const o = off; off += Number(f.len) || 0; return o })
+  const search = query.trim().toLocaleLowerCase()
+  const shown = fields.map((f, i) => ({ f, i })).filter(({ f }) =>
+    (!search || `${f.name} ${f.type} ${f.plugin?.id ?? ''}`.toLocaleLowerCase().includes(search)) &&
+    (!onlyIssues || !f.name.trim() || f.len < 1 || (seen.get(f.name) ?? 0) > 1 || reserved.has(f.name)))
 
   return (
     <div>
+      {(fields.length > 5 || query || onlyIssues) && <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 8 }}>
+        <input type="search" aria-label="전문 필드 검색" value={query} onChange={e => setQuery(e.target.value)} placeholder="필드 이름·타입·플러그인 검색" style={{ ...input, minWidth: 190, flex: 1 }} />
+        <label style={{ display: 'flex', gap: 5, alignItems: 'center', fontSize: 12 }}><input type="checkbox" checked={onlyIssues} onChange={e => setOnlyIssues(e.target.checked)} />중복·미완성만</label>
+        <span role="status" style={{ fontSize: 12, color: 'var(--fl-text-muted)' }}>{shown.length} / {fields.length}개</span>
+      </div>}
+      <div ref={list} style={{ maxHeight: 'min(460px, 55vh)', overflow: 'auto', paddingBottom: 4 }}>
       <div style={grid}>
         {['', '이름', '길이', '타입', '패딩', '위치', '◈', ''].map((h, i) => (
           <div key={i} style={th}>{h}</div>
         ))}
-        {fields.map((f, i) => {
+        {shown.map(({ f, i }) => {
           const isLen = f.type === 'length'
           const clash = reserved.has(f.name)
           const dupe = (seen.get(f.name) ?? 0) > 1 || clash
@@ -94,7 +116,7 @@ export function FieldTable({ fields, onChange, baseOffset, codecs, readOnly, len
                 <button aria-label="아래로" title="아래로" disabled={readOnly || i === fields.length - 1} onClick={() => move(i, 1)} style={arrowBtn}>▼</button>
               </div>
               <div style={{ ...td, ...rowBg }}>
-                <input aria-label={`필드 ${i + 1} 이름`} value={f.name} disabled={readOnly} onChange={(e) => patch(i, { name: e.target.value })}
+                <input aria-label={`필드 ${i + 1} 이름`} data-protocol-row={i} value={f.name} readOnly={readOnly} onChange={(e) => patch(i, { name: e.target.value })}
                   title={clash ? '헤더와 이름이 겹칩니다' : dupe ? '이름이 중복됩니다 — 바인딩이 섞입니다' : f.name === lengthField ? '프레이밍 길이 필드' : undefined}
                   style={{ ...input, width: '100%', ...(dupe ? { borderColor: 'var(--fl-fail)' } : null) }} />
               </div>
@@ -148,7 +170,9 @@ export function FieldTable({ fields, onChange, baseOffset, codecs, readOnly, len
           )
         })}
       </div>
+      </div>
       {!fields.length && <div style={{ fontSize: 12.5, color: 'var(--fl-text-muted)', padding: '10px 2px' }}>필드가 없습니다.</div>}
+      {fields.length > 0 && shown.length === 0 && <div style={{ fontSize: 12, color: 'var(--fl-text-muted)', padding: 10 }}>일치하는 필드가 없습니다. <button style={miniBtn} onClick={() => { setQuery(''); setOnlyIssues(false) }}>필터 초기화</button></div>}
       {!readOnly && (
         <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
           <button onClick={() => add('string', 10, 'right/space')} style={miniBtn}>+ 문자 필드</button>
@@ -159,8 +183,8 @@ export function FieldTable({ fields, onChange, baseOffset, codecs, readOnly, len
   )
 }
 
-const grid: CSSProperties = { display: 'grid', gridTemplateColumns: '48px minmax(120px,1fr) 78px 104px 118px 88px 32px 30px', gap: 4, alignItems: 'center' }
-const th: CSSProperties = { fontSize: 11, fontWeight: 700, color: 'var(--fl-text-muted)', padding: '0 2px 2px' }
+const grid: CSSProperties = { display: 'grid', minWidth: 790, gridTemplateColumns: '48px minmax(200px,1fr) 78px 104px 118px 88px 32px 30px', gap: 4, alignItems: 'center' }
+const th: CSSProperties = { fontSize: 11, fontWeight: 700, color: 'var(--fl-text-muted)', padding: '6px 2px', position: 'sticky', top: 0, zIndex: 1, background: 'var(--fl-surface)' }
 const td: CSSProperties = { padding: '2px', borderRadius: 4, minWidth: 0 }
 const input: CSSProperties = { padding: '5px 8px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', color: 'var(--fl-text)', fontSize: 12.5 }
 const sel: CSSProperties = { padding: '5px 6px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', color: 'var(--fl-text)', fontSize: 12, cursor: 'pointer' }

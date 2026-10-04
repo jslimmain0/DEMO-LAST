@@ -1,9 +1,10 @@
+import { useApi } from '../app/WorkspaceContext'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { CSSProperties } from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import type { HttpMethod, MockRequestLog, MockRouteSpec, MockServerSpec, MockTcpRuleSpec, MockTcpSpec, ProtocolSpec, TcpLogEntry } from '../api/types'
-import { adminApi, mockBaseUrl, mocksApi, secretsApi, workspacesApi, environmentsApi } from '../api/client'
+import type { HttpMethod, MockRequestLog, MockRouteSpec, MockServerDetail, MockServerSpec, MockTcpRuleSpec, MockTcpSpec, ProtocolSpec, TcpLogEntry } from '../api/types'
+
 import type { SecretView } from '../api/client'
 import { AppShellTier1 } from '../app/AppShell'
 import { useAuth, usePermissions } from '../auth/AuthContext'
@@ -29,6 +30,8 @@ import { applicableSecretNames, mockSources, envKeys } from '../lib/mockSources'
 import { lintTcpRules } from '../lib/protocolSpec'
 import { useProtocol } from '../panels/TcpNodePanel'
 import { relTime } from '../lib/format'
+import { useCatalogReturn } from '../lib/useCatalogNavigation'
+import { useUnsavedNavigation } from '../components/UnsavedNavigation'
 
 const methodColor = (m: string): string => METHOD_COLOR[m as HttpMethod] ?? 'var(--fl-cat-generic)'
 const EMPTY_TCP: MockTcpSpec = { port: 9091, protocolId: null, upstream: null, timeoutMs: 5000, rules: [] }
@@ -48,9 +51,12 @@ type NavSel =
  * 헤더: 이름 인라인·미저장 표시·자동 저장·Ctrl+S·🕘 버전·⋯ 도구·✨ AI.
  */
 export function MockServerEditor() {
+  const { adminApi, mocksApi, workspacesApi, secretsApi, environmentsApi, mockBaseUrl } = useApi()
+
   const { id = '' } = useParams()
   const qc = useQueryClient()
   const navigate = useNavigate()
+  const returnToList = useCatalogReturn('mocks')
   const { canEdit: canEditGlobal } = usePermissions()
   const { me, isGuest } = useAuth()
   const aiMe = useQuery({ queryKey: ['admin', 'me'], queryFn: adminApi.me, staleTime: 30_000 })
@@ -64,6 +70,9 @@ export function MockServerEditor() {
   const [spec, setSpec] = useState<MockServerSpec>({ routes: [] })
   const [name, setName] = useState('')
   const [dirty, setDirty] = useState(false)
+  const draftRef = useRef({ id, name, spec, dirty }); draftRef.current = { id, name, spec, dirty }
+  const activeRef = useRef(true)
+  useEffect(() => { activeRef.current = true; return () => { activeRef.current = false } }, [])
   const [note, setNote] = useState<string | null>(null)
   const [aiOpen, setAiOpen] = useState(false)
   const [transfer, setTransfer] = useState<'export' | 'import' | null>(null)
@@ -92,6 +101,7 @@ export function MockServerEditor() {
   const loadedRef = useRef<string | null>(null)
   useEffect(() => {
     if (!detail.data) return
+    if (loadedRef.current === detail.data.id && draftRef.current.dirty) return
     setSpec(detail.data.spec ?? { routes: [] })
     setName(detail.data.name)
     setDirty(false)
@@ -109,12 +119,37 @@ export function MockServerEditor() {
 
   const save = useMutation({
     mutationFn: async () => {
-      if (name.trim() && name.trim() !== detail.data?.name) await mocksApi.update(id, { name: name.trim() })
-      return mocksApi.updateSpec(id, spec)
+      const snapshot = structuredClone(draftRef.current)
+      if (snapshot.name.trim() && snapshot.name.trim() !== detail.data?.name) await mocksApi.update(snapshot.id, { name: snapshot.name.trim() })
+      await mocksApi.updateSpec(snapshot.id, snapshot.spec)
+      return snapshot
     },
-    onSuccess: () => { setDirty(false); setNote('저장됨 — 즉시 서빙에 반영됩니다.'); invalidate() },
+    onSuccess: (snapshot) => {
+      const current = draftRef.current
+      if (!activeRef.current || current.id !== snapshot.id) return
+      const unchanged = current.name === snapshot.name && JSON.stringify(current.spec) === JSON.stringify(snapshot.spec)
+      draftRef.current.dirty = !unchanged
+      setDirty(!unchanged)
+      setNote(unchanged ? '저장됨 — 즉시 서빙에 반영됩니다.' : '이전 변경은 저장됐습니다. 추가 편집을 저장하세요.')
+      invalidate()
+    },
     onError: (e) => setNote(apiErrorMessage(e, '저장에 실패했습니다')),
   })
+  useUnsavedNavigation({ dirty, saving: save.isPending, label: 'Mock 정의' })
+  const applyVersion = (saved: MockServerDetail, snapshot: MockServerSpec) => {
+    const current = draftRef.current
+    if (!activeRef.current || current.id !== saved.id) return
+    if (JSON.stringify(current.spec) !== JSON.stringify(snapshot)) {
+      setNote('버전은 서버에 반영됐습니다. 추가 편집은 유지됩니다.')
+      return
+    }
+    const next = saved.spec ?? { routes: [] }
+    const remainsDirty = current.name !== saved.name
+    draftRef.current = { ...current, spec: next, dirty: remainsDirty }
+    setSpec(next); setDirty(remainsDirty)
+    setNote(remainsDirty ? '버전은 반영됐습니다. 이름 변경을 저장하세요.' : '저장됨 — 선택한 버전을 반영했습니다.')
+    invalidate()
+  }
   const toggle = useMutation({ mutationFn: () => mocksApi.update(id, { enabled: !detail.data?.enabled }), onSuccess: invalidate })
   const reset = useMutation({ mutationFn: () => mocksApi.reset(id), onSuccess: () => { toast('상태·요청 기록을 초기화했습니다.', 'ok'); qc.invalidateQueries({ queryKey: ['mock-requests', id] }); qc.invalidateQueries({ queryKey: ['mock-state', id] }) } })
   const duplicate = useMutation({
@@ -133,7 +168,7 @@ export function MockServerEditor() {
   })
   const mutate = useCallback((fn: (s: MockServerSpec) => MockServerSpec) => { setSpec((s) => fn(s)); setDirty(true); setNote(null) }, [])
   const d = detail.data
-  const base = d ? mockBaseUrl(d.slug, me?.tenant) : ''
+  const base = d ? mockBaseUrl(d.slug, me?.tenant, d.basePath) : ''
   const kind = d?.kind ?? 'HTTP'
   const isTcp = kind === 'TCP'
   const isHttp = !isTcp
@@ -153,7 +188,11 @@ export function MockServerEditor() {
   const ensureSaved = async (): Promise<boolean> => {
     if (!dirty) return true
     if (!canEdit) { toast('미저장 편집이 있습니다 — 먼저 저장하세요(테스트는 저장된 mock 을 호출합니다).', 'error'); return false }
-    try { await save.mutateAsync(); return true } catch { toast('저장 실패 — 미저장 편집을 반영하지 못했습니다.', 'error'); return false }
+    try {
+      await save.mutateAsync()
+      if (draftRef.current.dirty) { toast('저장 중 추가 편집이 있습니다. 먼저 저장을 완료하세요.', 'error'); return false }
+      return true
+    } catch { toast('저장 실패 — 미저장 편집을 반영하지 못했습니다.', 'error'); return false }
   }
 
   // Ctrl+S 저장(입력 중에도) · Esc 메뉴 닫기
@@ -181,10 +220,7 @@ export function MockServerEditor() {
     return () => clearTimeout(t)
   }, [autosave, canEdit, dirty, spec, name, save.isPending])
   useEffect(() => { if (!note?.startsWith('저장됨')) return; const t = setTimeout(() => setNote(null), 2500); return () => clearTimeout(t) }, [note])
-  const leave = () => {
-    if (!dirty) { navigate('/mocks'); return }
-    setAsk({ title: '저장하지 않은 변경', message: '저장하지 않은 편집이 있습니다. 저장하지 않고 나갈까요?', danger: true, confirmLabel: '나가기', onConfirm: () => navigate('/mocks') })
-  }
+  const leave = () => navigate(returnToList.to, { state: returnToList.state })
 
   // 트래픽(요청 기록) — 좌측 목록 히트 수·무매칭 배지·하단 패널 공용. 3초 폴링.
   const reqs = useQuery({ queryKey: ['mock-requests', id], queryFn: () => mocksApi.requests(id), enabled: !!id && !isTcp, refetchInterval: 3000, retry: false })
@@ -326,7 +362,7 @@ export function MockServerEditor() {
                   </div>
                   <div style={divider} />
                   <button onClick={() => setNav({ kind: 'codec' })} style={{ ...navItem, ...(nav.kind === 'codec' ? navActive : null) }}>
-                    <span aria-hidden>◈</span><span style={{ flex: 1 }}>본문·헤더 코덱</span>{codecActive && <span style={{ ...hitBadge, background: 'var(--fl-primary)', color: '#fff' }}>{codecCnt.request + codecCnt.response}</span>}
+                    <span aria-hidden>◈</span><span style={{ flex: 1 }}>본문·헤더 코덱</span>{codecActive && <span style={{ ...hitBadge, background: 'var(--fl-action-primary-bg)', color: 'var(--fl-action-primary-ink)' }}>{codecCnt.request + codecCnt.response}</span>}
                   </button>
                 </>
               )}
@@ -507,7 +543,7 @@ export function MockServerEditor() {
             : <MockAssistantPanel spec={spec} mockId={id} onApply={(newSpec) => mutate(() => newSpec)} onClose={() => setAiOpen(false)} />)}
           {transfer === 'export' && <MockExportDialog mock={d} spec={spec} onClose={() => setTransfer(null)} />}
           {transfer === 'import' && <MockReplaceSpecDialog onClose={() => setTransfer(null)} onReplace={(newSpec, warnings) => { mutate(() => newSpec); toast(`정의를 교체했습니다 — 저장하면 반영됩니다.${warnings.length ? ' ' + warnings.join(' ') : ''}`, warnings.length ? 'info' : 'ok') }} />}
-          {versionsOpen && <MockVersionHistoryDialog mockId={id} currentSpec={spec} readOnly={!canEdit} onClose={() => setVersionsOpen(false)} onRestored={() => { setDirty(false); invalidate() }} />}
+          {versionsOpen && <MockVersionHistoryDialog mockId={id} currentSpec={spec} readOnly={!canEdit} onClose={() => setVersionsOpen(false)} onRestored={applyVersion} />}
           {jsonOpen && (
             <Modal onClose={() => setJsonOpen(false)} ariaLabel="정의 JSON" width={720}>
               <div style={{ padding: 18, display: 'grid', gap: 8 }}>
@@ -563,6 +599,8 @@ function TrafficPanel({ id, canEdit, base, spec, onSpec, journal, open, onToggle
   protocolId: string | null | undefined; protoSpec: ProtocolSpec | undefined
   onSelectRoute: (routeId: string) => void; onMakeRule: (e: TcpLogEntry) => void; unmatched: number
 }) {
+  const { mocksApi } = useApi()
+
   const qc = useQueryClient()
   const [onlyRoute, setOnlyRoute] = useState(false)
   const [openReq, setOpenReq] = useState<number | null>(null)
@@ -615,7 +653,7 @@ function TrafficPanel({ id, canEdit, base, spec, onSpec, journal, open, onToggle
         {open && (
           <div style={{ display: 'inline-flex', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', overflow: 'hidden', marginLeft: 8 }}>
             {tabs.map(([t, label]) => (
-              <button key={t} onClick={() => onTab(t)} style={{ padding: '3px 10px', border: 'none', cursor: 'pointer', fontSize: 11.5, fontWeight: 600, background: tab === t ? 'var(--fl-primary)' : 'transparent', color: tab === t ? '#fff' : 'var(--fl-text-muted)' }}>{label}</button>
+              <button key={t} onClick={() => onTab(t)} style={{ padding: '3px 10px', border: 'none', cursor: 'pointer', fontSize: 11.5, fontWeight: 600, background: tab === t ? 'var(--fl-action-primary-bg)' : 'transparent', color: tab === t ? 'var(--fl-action-primary-ink)' : 'var(--fl-text-muted)' }}>{label}</button>
             ))}
           </div>
         )}
@@ -722,7 +760,7 @@ const h2: CSSProperties = { fontFamily: 'var(--fl-font-head)', fontSize: 16, mar
 const hint: CSSProperties = { fontSize: 12, color: 'var(--fl-text-muted)', marginTop: 6, lineHeight: 1.6 }
 const code: CSSProperties = { fontFamily: 'var(--fl-font-mono)', fontSize: 11, background: 'var(--fl-surface-2)', padding: '1px 5px', borderRadius: 4 }
 const input: CSSProperties = { padding: '7px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 13 }
-const primaryBtn: CSSProperties = { padding: '8px 16px', border: 'none', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-primary)', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer', whiteSpace: 'nowrap' }
+const primaryBtn: CSSProperties = { padding: '8px 16px', border: 'none', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-action-primary-bg)', color: 'var(--fl-action-primary-ink)', fontWeight: 700, fontSize: 13, cursor: 'pointer', whiteSpace: 'nowrap' }
 const ghostBtn: CSSProperties = { padding: '8px 12px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 12.5, cursor: 'pointer', whiteSpace: 'nowrap' }
 const miniBtn: CSSProperties = { padding: '5px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 12, cursor: 'pointer' }
 const badge: CSSProperties = { padding: '3px 9px', borderRadius: 'var(--fl-radius-pill)', color: '#fff', fontSize: 11, fontWeight: 700 }

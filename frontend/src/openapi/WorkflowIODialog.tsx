@@ -154,8 +154,8 @@ export function WorkflowImportBody({ onImport, onClose }: { onImport: (graph: Fl
 }
 
 const area: CSSProperties = { width: '100%', resize: 'none', fontFamily: 'var(--fl-font-mono)', fontSize: 12, padding: 12, border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', color: 'var(--fl-text)' }
-const primary: CSSProperties = { padding: '9px 18px', border: 'none', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-primary)', color: '#fff', fontWeight: 600, fontSize: 13, cursor: 'pointer' }
+const primary: CSSProperties = { padding: '9px 18px', border: 'none', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-action-primary-bg)', color: 'var(--fl-action-primary-ink)', fontWeight: 600, fontSize: 13, cursor: 'pointer' }
 const ghost: CSSProperties = { padding: '9px 16px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 13, cursor: 'pointer' }
 function tabBtn(active: boolean): CSSProperties {
-  return { padding: '6px 12px', border: 'none', borderRadius: 'var(--fl-radius-sm)', background: active ? 'var(--fl-primary)' : 'transparent', color: active ? '#fff' : 'var(--fl-text-muted)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }
+  return { padding: '6px 12px', border: 'none', borderRadius: 'var(--fl-radius-sm)', background: active ? 'var(--fl-action-primary-bg)' : 'transparent', color: active ? 'var(--fl-action-primary-ink)' : 'var(--fl-text-muted)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }
 }

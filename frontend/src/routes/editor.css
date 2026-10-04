@@ -1,0 +1,44 @@
+.fl-editor-workbench { --editor-canvas: var(--fl-canvas-bg); }
+.fl-editor-workbench .fl-canvas { background:var(--fl-canvas-bg) !important; }
+.fl-editor-heading { display:flex; align-items:center; gap:12px; min-height:64px; padding:10px 20px; border-bottom:1px solid var(--fl-border); background:var(--fl-surface); flex-shrink:0; }
+.fl-editor-heading .fl-name-input { flex:1 1 160px !important; max-width:none !important; min-width:60px !important; font-size:18px !important; letter-spacing:-.025em; }
+.fl-editor-primary-actions { display:flex; align-items:center; gap:8px; margin-left:auto; flex-shrink:0; }
+.fl-editor-primary-actions button { min-height:40px; padding:9px 16px !important; font-weight:650; white-space:nowrap; }
+.fl-editor-toolbar { display:flex; align-items:center; gap:10px; min-height:54px; padding:8px 20px; border-bottom:1px solid var(--fl-border); background:var(--fl-surface-2); flex-shrink:0; }
+.fl-editor-tools { min-width:0; }
+.fl-editor-toolbar button { gap:6px; white-space:nowrap; }
+.fl-editor-primary-actions button { gap:6px; }
+.fl-editor-start-hint { padding:10px 20px; font-size:12px; color:var(--fl-text-muted); line-height:1.6; border-bottom:1px solid var(--fl-border); background:var(--fl-surface); }
+.fl-editor-run-summary { display:flex; align-items:center; gap:16px; text-align:left; border:0; border-top:1px solid var(--fl-border); background:var(--fl-surface); color:var(--fl-text-muted); padding:12px 20px; font-size:12px; flex-shrink:0; cursor:pointer; }
+.fl-editor-run-summary strong { color:var(--fl-text); font-size:13px; }
+.fl-editor-run-summary span:last-child { margin-left:auto; }
+.fl-editor-palette { border-right:1px solid var(--fl-border); }
+.fl-editor-palette button[draggable] { border:0 !important; border-radius:5px !important; min-height:36px !important; padding:8px 10px !important; background:transparent !important; font-size:13px !important; }
+.fl-editor-palette button[draggable]:hover { background:var(--fl-surface-2) !important; }
+.fl-editor-palette input:focus-visible { outline:2px solid var(--fl-primary); outline-offset:2px; }
+.fl-editor-inspector { border-left:1px solid var(--fl-border); }
+.fl-editor-inspector > header { background:var(--fl-surface-2); }
+.fl-editor-node-tools { margin-top:24px; border-top:1px solid var(--fl-border); padding-top:12px; }
+.fl-editor-node-tools > summary { font-size:12px; color:var(--fl-text-muted); cursor:pointer; padding:4px 0; }
+.fl-editor-node-tools > summary:focus-visible { outline:2px solid var(--fl-focus); outline-offset:3px; }
+.fl-editor-inspector input:not([type=checkbox]), .fl-editor-inspector select { min-height:36px; }
+.fl-editor-inspector .fl-agent-settings { border:0 !important; padding:0 0 16px !important; border-bottom:1px solid var(--fl-border) !important; border-radius:0 !important; background:transparent !important; }
+.fl-editor-node { border-radius:8px !important; box-shadow:0 2px 6px #1524400d !important; }
+.fl-editor-node--selected { outline:2px solid var(--fl-primary); outline-offset:2px; }
+.fl-editor-node .fl-agent-badge { border:0; background:transparent; padding:0; font-size:11px; }
+.fl-editor-node .react-flow__handle { box-shadow:0 0 0 3px var(--fl-surface); }
+.fl-editor-method > span { color:inherit !important; background:color-mix(in srgb,currentColor 10%,transparent) !important; border:1px solid color-mix(in srgb,currentColor 25%,transparent); }
+@media(max-width:1100px) { .fl-editor-heading > span[title="노드 수"], .fl-editor-heading > .fl-editor-storage { display:none; } .fl-editor-heading { gap:8px; padding:10px 12px; } }
+@media(max-width:800px) { .fl-editor-heading > span:first-of-type { display:none; } .fl-editor-primary-actions button { padding:8px 10px !important; } .fl-editor-toolbar { padding:8px 12px; flex-wrap:wrap; } }
+.fl-editor-palette-docked { display:flex; flex-shrink:0; min-height:0; }
+.fl-editor-palette-drawer { position:absolute; inset:0 auto 0 0; width:200px; z-index:30; display:flex; min-height:0; background:var(--fl-surface); box-shadow:8px 0 24px #0003; }
+.fl-editor-palette-drawer .fl-editor-palette { height:100%; box-sizing:border-box; }
+.fl-editor-field-list { container-type:inline-size; min-width:0; }
+.fl-editor-field-row { display:flex; flex-direction:column; gap:6px; margin-bottom:12px; min-width:0; }
+.fl-editor-field-main { display:flex; align-items:center; gap:6px; min-width:0; }
+.fl-editor-field-main input { width:0; min-width:0; }
+.fl-editor-field-main select { flex-shrink:0; }
+.fl-editor-field-actions { display:flex; justify-content:flex-end; align-items:center; flex-wrap:wrap; gap:6px; min-height:30px; }
+.fl-editor-field-actions > button { min-height:30px; }
+@container (min-width:520px) { .fl-editor-field-row { flex-direction:row; align-items:center; } .fl-editor-field-main { flex:1; } .fl-editor-field-row > input { min-width:100px; width:140px; flex:1; } .fl-editor-field-actions { flex-shrink:0; } }
+@media(max-width:1100px) { .fl-editor-toolbar { flex-wrap:wrap; padding:8px 12px; gap:8px; } .fl-editor-toolbar > div { min-width:0; } }

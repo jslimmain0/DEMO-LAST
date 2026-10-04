@@ -1,6 +1,7 @@
+import { useApi } from '../app/WorkspaceContext'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { CSSProperties } from 'react'
-import { assistantApi } from '../api/client'
+
 import { Modal } from './Modal'
 import { toast } from './toast'
 
@@ -13,6 +14,8 @@ export function SessionsDialog({ currentId, onClose, onLoad, onNew }: {
   onLoad: (id: string) => void
   onNew: () => void
 }) {
+  const { assistantApi } = useApi()
+
   const qc = useQueryClient()
   const listQ = useQuery({ queryKey: ['assistant', 'sessions'], queryFn: assistantApi.sessions })
   const del = useMutation({

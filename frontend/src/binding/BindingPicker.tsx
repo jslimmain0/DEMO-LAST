@@ -34,6 +34,7 @@ export function BindingPicker({
   onClose: () => void
 }) {
   const [q, setQ] = useState('')
+  const [group, setGroup] = useState('all')
   // 기본 접힘 — 노드가 많을 때 칩 벽이 한 번에 쏟아지지 않게. 소스가 2개 이하면 바로 펼쳐준다.
   const [openSecs, setOpenSecs] = useState<Set<string>>(() =>
     sources.length <= 2 ? new Set(sources.map((s) => s.id)) : new Set())
@@ -43,7 +44,7 @@ export function BindingPicker({
 
   // 최근 사용 — 현재 소스에 아직 존재하는 것만(지워진 노드/키는 자연 탈락). 검색 중엔 숨김(중복 노출 방지).
   const recent = useMemo<Entry[]>(() => {
-    if (query) return []
+    if (query || group !== 'all') return []
     const out: Entry[] = []
     for (const r of getRecentBindings()) {
       const src = sources.find((s) => s.id === r.sourceId)
@@ -52,7 +53,7 @@ export function BindingPicker({
       if (it) out.push({ it, src })
     }
     return out
-  }, [sources, query])
+  }, [sources, query, group])
 
   const sections = useMemo<Section[]>(() => {
     const list: Section[] = []
@@ -60,17 +61,19 @@ export function BindingPicker({
       list.push({ id: '__recent', label: '최근 사용', icon: '🕘', entries: recent, total: recent.length, hiddenCount: 0, collapsible: false, isRecent: true })
     }
     for (const s of sources) {
-      let items = s.items
+      let items = s.items.filter(it => group === 'all' || it.group === group)
       if (query) {
-        items = s.items.filter((it) => it.key.toLowerCase().includes(query))
+        const candidates = items
+        items = candidates.filter((it) => it.key.toLowerCase().includes(query))
         // 키가 안 걸려도 노드 이름이 걸리면 그 노드의 전체 항목을 보여준다(빈 섹션 방지)
-        if (items.length === 0 && s.name.toLowerCase().includes(query)) items = s.items
+        if (items.length === 0 && s.name.toLowerCase().includes(query)) items = candidates
         if (items.length === 0) continue
       }
+      if (group !== 'all' && items.length === 0) continue
       const total = items.length
       let entries = items.map((it) => ({ it, src: s }))
       let hiddenCount = 0
-      if (!query && !openSecs.has(s.id)) {
+      if (!query && group === 'all' && !openSecs.has(s.id)) {
         entries = []
       } else if (!query && !showAll.has(s.id) && entries.length > TRUNC) {
         hiddenCount = entries.length - TRUNC
@@ -79,11 +82,11 @@ export function BindingPicker({
       list.push({
         id: s.id, label: s.name, sub: `${typeLabel(s.type)} · #${s.id}`,
         icon: typeIcon(s.type), iconColor: catColor(s.cat),
-        entries, total, hiddenCount, collapsible: !query,
+        entries, total, hiddenCount, collapsible: !query && group === 'all',
       })
     }
     return list
-  }, [sources, recent, query, openSecs, showAll])
+  }, [sources, recent, query, openSecs, showAll, group])
 
   const pick = (e: Entry) => {
     const b: Binding = { nodeName: e.src.name, cat: e.src.cat, key: e.it.key, sourceId: e.src.id, scope: e.it.scope }
@@ -95,14 +98,14 @@ export function BindingPicker({
   // 키보드 선택 — 검색 후 방향키로 이동, Enter 로 삽입. flat 은 렌더 순서와 동일.
   const flat = useMemo(() => sections.flatMap((sec) => sec.entries), [sections])
   const [active, setActive] = useState(0)
-  useEffect(() => { setActive(0) }, [q])
+  useEffect(() => { setActive(0) }, [q, group])
   useEffect(() => { if (active >= flat.length) setActive(Math.max(0, flat.length - 1)) }, [flat.length, active])
   // 활성 칩이 스크롤 밖이면 따라간다
   useEffect(() => {
     listRef.current?.querySelector('[data-bp-active="1"]')?.scrollIntoView({ block: 'nearest' })
   }, [active, flat])
   const onKey = (e: ReactKeyboardEvent) => {
-    if (e.key === 'ArrowDown') { e.preventDefault(); setActive((a) => Math.min(a + 1, flat.length - 1)) }
+    if (e.key === 'ArrowDown') { e.preventDefault(); setActive((a) => Math.max(0, Math.min(a + 1, flat.length - 1))) }
     else if (e.key === 'ArrowUp') { e.preventDefault(); setActive((a) => Math.max(a - 1, 0)) }
     else if (e.key === 'Enter') { e.preventDefault(); const sel = flat[active]; if (sel) pick(sel) }
     else if (e.key === 'Escape' && q) { e.stopPropagation(); setQ('') } // Esc 1회=검색어 지움, 2회=닫기
@@ -128,11 +131,11 @@ export function BindingPicker({
 
   let gi = -1
   return (
-    <Modal onClose={onClose} ariaLabel="데이터 삽입" width={520} maxWidth="100%" maxHeight="70vh">
+    <Modal onClose={onClose} ariaLabel="데이터 삽입" width={760} maxHeight="80vh">
         <header style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 16px', borderBottom: '1px solid var(--fl-border)' }}>
           <strong style={{ fontFamily: 'var(--fl-font-head)', fontSize: 15 }}>데이터 삽입</strong>
-          <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={onKey} placeholder="키·노드 검색… (↑↓ 이동, Enter 삽입)" style={search} />
-          {!query && sources.length > 0 && (
+          <input type="search" aria-label="바인딩 키 또는 노드 검색" autoFocus value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={onKey} placeholder="키·노드 검색… (↑↓ 이동, Enter 삽입)" style={{ ...search, minWidth: 0 }} />
+          {!query && group === 'all' && sources.length > 0 && (
             <button onClick={toggleAll} title={anyCollapsed ? '모든 섹션 펼치기' : '모든 섹션 접기'}
               style={{ flexShrink: 0, padding: '5px 9px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text-muted)', fontSize: 11.5, whiteSpace: 'nowrap' }}>
               {anyCollapsed ? '▾ 모두 펼치기' : '▸ 모두 접기'}
@@ -140,6 +143,13 @@ export function BindingPicker({
           )}
           <button onClick={onClose} aria-label="닫기" style={{ border: 'none', background: 'transparent', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 18 }}>×</button>
         </header>
+
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '8px 16px', borderBottom: '1px solid var(--fl-border)' }}>
+          <select aria-label="바인딩 항목 종류" value={group} onChange={e => setGroup(e.target.value)} style={{ ...search, flex: '0 1 150px' }}>
+            <option value="all">모든 항목</option><option value="response">응답·출력</option><option value="request">요청 값</option>
+          </select>
+          <span role="status" style={{ fontSize: 12, color: 'var(--fl-text-muted)' }}>{sections.filter(s => !s.isRecent).reduce((n, s) => n + s.total, 0)}개 항목 · {sections.filter(s => !s.isRecent).length}개 소스</span>
+        </div>
 
         <div ref={listRef} style={{ overflowY: 'auto', padding: 8, flex: 1 }}>
           {sections.length === 0 && (
@@ -162,7 +172,7 @@ export function BindingPicker({
               >
                 {sec.collapsible && !sec.isRecent && <span aria-hidden style={{ fontSize: 9, width: 10, flexShrink: 0 }}>{isCollapsed ? '▸' : '▾'}</span>}
                 <span aria-hidden style={{ color: sec.iconColor }}>{sec.icon}</span>
-                {sec.label}
+                <span title={sec.label} style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sec.label}</span>
                 <span style={countBadge}>{sec.total}</span>
                 {sec.sub && <span style={{ fontWeight: 400, fontFamily: 'var(--fl-font-mono)', fontSize: 10.5, opacity: 0.7, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sec.sub}</span>}
               </div>
@@ -171,14 +181,15 @@ export function BindingPicker({
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: '0 8px 4px 27px' }}>
                 {sec.entries.map((e, i) => {
                   gi++
-                  const isActive = gi === active
+                  const index = gi
+                  const isActive = index === active
                   const isResp = e.it.group === 'response'
                   return (
                   <button
                     key={`${e.src.id}-${e.it.group}-${e.it.key}-${i}`}
                     data-bp-active={isActive ? '1' : undefined}
                     onClick={() => pick(e)}
-                    onMouseEnter={() => setActive(gi)}
+                    onMouseEnter={() => setActive(index)}
                     className="fl-bind-chip"
                     title={`${e.it.tag ?? (isResp ? '응답' : '요청')} · ${e.it.key}${e.it.type ? ` (${e.it.type})` : ''}${sec.isRecent ? ` — ${e.src.name}` : ''}`}
                     style={{ ...chipBtn(isResp), ...(isActive ? { outline: '2px solid var(--fl-primary)', outlineOffset: 1 } : {}) }}

@@ -1,7 +1,8 @@
+import { useApi } from '../app/WorkspaceContext'
 // 플러그인 실행 패널 — 컴파일 메타로 입력 폼을 자동 생성하고, 샌드박스에서 1회 실행해 출력·콘솔·소요 시간을 보여준다.
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
-import { pluginsApi } from '../api/client'
+
 import type { PluginScriptMeta, PluginTryRequest, PluginTryResult, ScriptErrorBody } from '../api/types'
 import type { EditorDiagnostic } from './CodeEditor'
 import { JsonTree } from './JsonTree'
@@ -21,6 +22,8 @@ const b64 = { enc: (bytes: Uint8Array) => btoa(String.fromCharCode(...bytes)), d
 const hex = { enc: (bytes: Uint8Array) => [...bytes].map((b) => b.toString(16).padStart(2, '0')).join(' '), dec: (s: string) => Uint8Array.from((s.replace(/[^0-9a-f]/gi, '').match(/.{2}/g) ?? []).map((h) => parseInt(h, 16))) }
 
 export function PluginRunPanel({ source, scriptId, canRun, onDiagnostics }: { source: string; scriptId: string | null; canRun: boolean; onDiagnostics: (d: EditorDiagnostic[]) => void }) {
+  const { pluginsApi } = useApi()
+
   const key = `fl:plugrun:${scriptId ?? 'new'}`
   // {{ 이름@secret }}·{{ 키@env }} 칩 — 활성 환경 기준(서버가 시험 실행 때 그 환경으로 푼다)
   const envStore = useEnvStore()
@@ -47,7 +50,7 @@ export function PluginRunPanel({ source, scriptId, canRun, onDiagnostics }: { so
     }, 600)
     return () => clearTimeout(t)
     // key: 저장으로 scriptId 가 생기면(초안→상세) 위 효과가 meta 를 비우므로 여기서 다시 컴파일해야 폼이 돌아온다
-  }, [source, canRun, onDiagnostics, key])
+  }, [source, canRun, onDiagnostics, key, pluginsApi])
 
   const request = useMemo((): PluginTryRequest | null => {
     if (!meta) return null

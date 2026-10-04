@@ -1,48 +1,60 @@
+import { useApi, useWorkspace } from '../app/WorkspaceContext'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { CSSProperties, ReactNode } from 'react'
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import type { ExecutionSummary, FlowSummary, FolderSummary } from '../api/types'
-import { adminApi, flowsApi, foldersApi, runsApi, suitesApi, workspacesApi } from '../api/client'
+
 import type { SuiteRunItem } from '../api/client'
 import { WorkspaceDialog } from '../components/WorkspaceDialog'
 import { AppShellTier1 } from '../app/AppShell'
-import { usePermissions } from '../auth/AuthContext'
+import { useAuth, usePermissions } from '../auth/AuthContext'
 import { AskDialog } from '../components/AskDialog'
 import type { AskSpec } from '../components/AskDialog'
-import { FlowGhost, FlowMini, FlowStrip, dominantCat, fallbackCats } from '../components/MiniFlow'
+import { FlowGhost, FlowMini } from '../components/MiniFlow'
+import { AppIcon } from '../components/AppIcon'
+import { useAnchoredPopover } from '../components/useAnchoredPopover'
+import { typeLabel } from '../canvas/nodeMeta'
 import { StatusBadge } from '../components/StatusBadge'
 import { SuiteRunDialog } from '../components/SuiteRunDialog'
 import { toast } from '../components/toast'
 import { relTime } from '../lib/format'
+import { apiErrorMessage } from '../lib/apiError'
+import { catalogPage, matchesCatalog } from '../lib/catalog'
+import { CatalogPagination } from '../components/CatalogPagination'
+import { useCatalogNavigation } from '../lib/useCatalogNavigation'
+import type { CatalogLink } from '../lib/catalogNavigation'
+import './dashboard.css'
 
 type Sel = 'all' | 'none' | string // 'all' | 'none' | folderId
 type Sort = 'recent' | 'name'
+type Layout = 'cards' | 'list'
+
+function readLayout(key: string): Layout {
+  try { return localStorage.getItem(key) === 'list' ? 'list' : 'cards' } catch { return 'cards' }
+}
 
 export function Dashboard() {
+  const { adminApi, flowsApi, foldersApi, runsApi, suitesApi } = useApi()
+
   const qc = useQueryClient()
   const navigate = useNavigate()
+  const catalog = useCatalogNavigation('flows')
   const { canEdit: canEditGlobal } = usePermissions()
+  const { desktop } = useAuth()
+  const scope = useWorkspace()
+  const runtime = { kind: scope.current.origin }
+  const wsId = scope.current.id
 
   // ---- 워크스페이스(폴더 위 최상위 스코프) ----
-  const [wsId, setWsIdRaw] = useState<string>(() => { try { return localStorage.getItem('fl:workspace') ?? 'public' } catch { return 'public' } })
-  const workspaces = useQuery({ queryKey: ['workspaces'], queryFn: workspacesApi.list })
   const adminMe = useQuery({ queryKey: ['admin', 'me'], queryFn: adminApi.me, staleTime: 30_000 }) // 승인 대기 안내용(캐시 공유)
-  // 저장된 워크스페이스가 사라졌으면(삭제/권한 상실) 공용으로 복귀 — localStorage 도 함께 정리.
-  // (상태만 되돌리면 죽은 UUID 가 영구 잔존해 매 마운트 403 → 가짜 "백엔드 연결 실패"로 보이던 버그)
-  // isFetching 중엔 판정하지 않는다 — 새 워크스페이스 생성 직후 stale 목록으로 되돌리는 레이스 방지.
-  useEffect(() => {
-    if (workspaces.data && !workspaces.isFetching && !workspaces.data.some((w) => w.id === wsId)) {
-      setWsIdRaw('public')
-      try { localStorage.setItem('fl:workspace', 'public') } catch { /* 프라이빗 모드 */ }
-    }
-  }, [workspaces.data, workspaces.isFetching, wsId])
-  const currentWs = workspaces.data?.find((w) => w.id === wsId)
+  const currentWs = scope.current
   const wsRole = currentWs?.myRole ?? 'EDITOR'
   const canEdit = canEditGlobal && wsRole !== 'VIEWER' // VIEWER 롤은 조회만
   const [wsDialog, setWsDialog] = useState(false)
   // 팀 생성 가능 여부 — 개인 워크스페이스 부재 = 게스트/승인 대기(백엔드 403 대신 옵션 자체를 숨김)
-  const canCreateWs = (workspaces.data ?? []).some((w) => w.kind === 'PERSONAL')
+  const canCreateWs = scope.connected && (desktop || runtime.kind === 'server') && adminMe.data?.myStatus === 'APPROVED'
 
   const flows = useQuery({ queryKey: ['flows', wsId], queryFn: () => flowsApi.list(wsId) })
   const folders = useQuery({ queryKey: ['folders', wsId], queryFn: () => foldersApi.list(wsId) })
@@ -51,23 +63,35 @@ export function Dashboard() {
 
   // 현재 위치(홈/폴더)는 URL(?folder=id)이 진실원 — 에디터에서 ←/브라우저 뒤로가기로 돌아와도
   // 보고 있던 폴더가 유지된다. 폴더 이동은 history 를 쌓아 탐색기처럼 뒤로가기로 상위 복귀 가능.
-  const [params, setParams] = useSearchParams()
+  const [params] = useSearchParams()
   const sel: Sel = params.get('folder') ?? 'all'
-  const setSel = (s: Sel) => setParams(s === 'all' || s === 'none' ? {} : { folder: s })
+  const setSel = (s: Sel) => {
+    const next = new URLSearchParams(params)
+    if (s === 'all') next.delete('folder'); else next.set('folder', s)
+    catalog.update({ page: 1 }, next.toString(), false)
+  }
   // 워크스페이스 전환 — 위치/검색/선택 초기화 + localStorage 지속
   const setWsId = (id: string) => {
-    setWsIdRaw(id)
-    try { localStorage.setItem('fl:workspace', id) } catch { /* 프라이빗 모드 */ }
-    setParams({}, { replace: true })
-    setSearch('')
+    scope.select(id)
     setSelectMode(false)
     setSelectedIds(new Set())
   }
-  const [search, setSearch] = useState('')
-  const [sort, setSort] = useState<Sort>('recent')
+  const search = catalog.view.search
+  const sort = catalog.view.sort as Sort
+  const setSearch = (search: string) => catalog.update({ search, page: 1 })
+  const setSort = (sort: Sort) => catalog.update({ sort, page: 1 })
   const [selectMode, setSelectMode] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const selectAllRef = useRef<HTMLInputElement>(null)
+  // 보기는 사용자 선호이며 검색/페이지/선택 집합과 독립적이다.
+  const layoutKey = `fl:flows:layout:${scope.scopeKey}`
+  const [layoutPreference, setLayoutPreference] = useState(() => ({ key: layoutKey, value: readLayout(layoutKey) }))
+  const layout = layoutPreference.key === layoutKey ? layoutPreference.value : readLayout(layoutKey)
+  const setLayout = (value: Layout) => {
+    setLayoutPreference({ key: layoutKey, value })
+    try { localStorage.setItem(layoutKey, value) } catch { /* 프라이빗 모드 */ }
+  }
+  const [expandedFolderScope, setExpandedFolderScope] = useState<string | null>(null)
 
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ['flows'] })
@@ -77,15 +101,19 @@ export function Dashboard() {
   // URL 의 folder 가 삭제된/없는 폴더면 홈으로 정리(브레드크럼·필터가 빈 화면이 되는 것 방지)
   useEffect(() => {
     if (folders.data && isFolderId(sel) && !folders.data.some((f) => f.id === sel)) {
-      setParams({}, { replace: true })
+      const next = new URLSearchParams(params)
+      next.delete('folder')
+      catalog.update({ page: 1 }, next.toString())
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [folders.data, sel])
 
   const createFlow = useMutation({
     mutationFn: () => flowsApi.create({ name: '새 워크플로', folderId: isFolderId(sel) ? sel : null, workspaceId: wsId === 'public' ? null : wsId }),
-    onSuccess: (flow) => navigate(`/flows/${flow.id}`),
+    onSuccess: invalidate,
   })
+  // 호출별 콜백은 화면이 살아 있을 때만 실행된다. 공간 전환 후 늦은 응답이 현재 화면을 옮기지 않게 한다.
+  const newFlow = () => createFlow.mutate(undefined, { onSuccess: flow => { const link = catalog.detail(flow.id); navigate(link.to, { state: link.state }) } })
   const removeFlow = useMutation({ mutationFn: (id: string) => flowsApi.remove(id), onSuccess: invalidate })
   const duplicateFlow = useMutation({
     mutationFn: async (f: FlowSummary) => {
@@ -97,8 +125,8 @@ export function Dashboard() {
     },
     onSuccess: invalidate,
   })
-  const moveFlow = useMutation({ mutationFn: (v: { id: string; folderId: string | null }) => flowsApi.move(v.id, v.folderId), onSuccess: invalidate })
-  const moveFolder = useMutation({ mutationFn: (v: { id: string; parentId: string | null }) => foldersApi.move(v.id, v.parentId), onSuccess: invalidate })
+  const moveFlow = useMutation({ mutationFn: (v: { id: string; folderId: string | null }) => flowsApi.move(v.id, v.folderId), onSuccess: invalidate, onError: error => toast(apiErrorMessage(error, '워크플로를 이동하지 못했습니다. 접근 권한과 연결 상태를 확인하세요.'), 'error') })
+  const moveFolder = useMutation({ mutationFn: (v: { id: string; parentId: string | null }) => foldersApi.move(v.id, v.parentId), onSuccess: invalidate, onError: error => toast(apiErrorMessage(error, '폴더를 이동하지 못했습니다. 접근 권한과 연결 상태를 확인하세요.'), 'error') })
   const createFolder = useMutation({ mutationFn: (v: { name: string; parentId: string | null }) => foldersApi.create(v.name, v.parentId, wsId), onSuccess: invalidate })
   const renameFolder = useMutation({ mutationFn: (v: { id: string; name: string }) => foldersApi.rename(v.id, v.name), onSuccess: invalidate })
   const removeFolder = useMutation({ mutationFn: (id: string) => foldersApi.remove(id), onSuccess: invalidate })
@@ -113,16 +141,15 @@ export function Dashboard() {
   // 앱 다이얼로그(prompt/confirm 대체)
   const [ask, setAsk] = useState<AskSpec | null>(null)
 
-  // 즐겨찾기(핀) — localStorage, **워크스페이스별 분리**(팀 즐겨찾기가 공용에서 유령처럼 사라졌다 돌아오는 혼란 방지).
-  // 공용은 구(단일) 키를 1회 승계.
-  const favKey = `fl:favorites:${wsId}`
+  // 즐겨찾기도 서버 주소·계정·워크스페이스별로 분리한다.
+  const favKey = `fl:favorites:${scope.scopeKey}`
   const [favorites, setFavorites] = useState<string[]>([])
   useEffect(() => {
     try {
-      const raw = localStorage.getItem(favKey) ?? (wsId === 'public' ? localStorage.getItem('fl:favorites') : null)
+      const raw = localStorage.getItem(favKey)
       setFavorites(raw ? (JSON.parse(raw) as string[]) : [])
     } catch { setFavorites([]) }
-  }, [favKey, wsId])
+  }, [favKey])
   const toggleFav = (id: string) => setFavorites((prev) => {
     const next = prev.includes(id) ? prev.filter((x) => x !== id) : [id, ...prev]
     try { localStorage.setItem(favKey, JSON.stringify(next)) } catch { /* 프라이빗 모드 */ }
@@ -137,9 +164,12 @@ export function Dashboard() {
   const childFolders = (parentId: string | null) => folderList.filter((f) => (f.parentId ?? null) === parentId)
   // 현재 스코프의 하위 폴더(탐색기 타일) — 전체=루트 폴더들, 폴더 안=그 폴더의 하위. 미분류/검색 중엔 없음.
   const scopeFolders = sel === 'none' || search.trim() ? [] : childFolders(isFolderId(sel) ? sel : null)
+  const folderScopeKey = `${scope.scopeKey}:${sel}`
+  const showAllFolders = expandedFolderScope === folderScopeKey
+  const shownFolders = showAllFolders ? scopeFolders : scopeFolders.slice(0, 8)
   // URL 의 folder 가 이 워크스페이스에 실재할 때만 폴더 컨텍스트 액션 허용 — ws 전환 직후/뒤로가기로
   // 타 ws 폴더가 sel 에 남아 그 안에 생성·실행하는 교차 배치 방지(백엔드 400 방어와 이중)
-  const scopeReady = !isFolderId(sel) || (folders.data?.some((f) => f.id === sel) ?? false)
+  const scopeReady = !scope.loading && (!isFolderId(sel) || (folders.data?.some((f) => f.id === sel) ?? false))
   // 브레드크럼 경로(루트→현재). 데이터 오염(사이클)에도 멈추도록 가드.
   const folderPath = useMemo(() => {
     if (!isFolderId(sel)) return [] as FolderSummary[]
@@ -166,14 +196,28 @@ export function Dashboard() {
     walk(null, 0)
     return out
   }, [folderList])
+  const folderLabels = useMemo(() => {
+    const byId = new Map(folderList.map(folder => [folder.id, folder]))
+    return new Map(folderList.map(folder => {
+      const names: string[] = []
+      const seen = new Set<string>()
+      let current: FolderSummary | undefined = folder
+      while (current && !seen.has(current.id)) {
+        seen.add(current.id)
+        names.unshift(current.name)
+        current = current.parentId ? byId.get(current.parentId) : undefined
+      }
+      return [folder.id, names.join(' / ')]
+    }))
+  }, [folderList])
+  const flowFolderLabel = (flow: FlowSummary) => flow.folderId ? folderLabels.get(flow.folderId) ?? '폴더 정보 없음' : '홈 · 미분류'
 
   const createWs = useMutation({
-    mutationFn: (name: string) => workspacesApi.create(name),
-    // 목록 refetch 완료 후 전환 — stale 목록 기준의 자동 복귀 레이스 방지(이중 안전망)
-    onSuccess: async (ws) => { await qc.invalidateQueries({ queryKey: ['workspaces'] }); setWsId(ws.id); toast(`워크스페이스 "${ws.name}" 생성됨`, 'ok') },
+    mutationFn: (name: string) => scope.agentApi('server').workspacesApi.create(name),
+    onSuccess: (ws) => { scope.refresh(); toast(`워크스페이스 "${ws.name}" 생성됨`, 'ok') },
     onError: (e) => toast((e as { response?: { data?: { message?: string } } })?.response?.data?.message ?? '워크스페이스 생성에 실패했습니다.', 'error'),
   })
-  const newTeamWs = () => setAsk({ title: '새 팀 워크스페이스', input: { label: '워크스페이스 이름', placeholder: '예: 결제팀' }, confirmLabel: '만들기', onConfirm: (name) => createWs.mutate(name) })
+  const newTeamWs = () => setAsk({ title: '새 팀 워크스페이스', input: { label: '워크스페이스 이름', placeholder: '예: 결제팀' }, confirmLabel: '만들기', onConfirm: (name) => createWs.mutate(name, { onSuccess: ws => scope.select(ws.id, 'server') }) })
 
   const newFolderIn = (parentId: string | null) => {
     setAsk({ title: parentId ? '새 하위 폴더' : '새 폴더', input: { label: '폴더 이름', placeholder: '폴더 이름' }, confirmLabel: '만들기', onConfirm: (name) => createFolder.mutate({ name, parentId }) })
@@ -198,6 +242,7 @@ export function Dashboard() {
   }
   /** 지금 끌고 있는 것을 folderId(null=루트/미분류)에 놓을 수 있는가 — 폴더는 자기/자기 하위 금지. */
   const canDropInto = (folderId: string | null): boolean => {
+    if (!canEdit) return false
     const d = dragRef.current
     if (!d) return false
     if (d.kind === 'flows') return true
@@ -258,13 +303,21 @@ export function Dashboard() {
     // 홈(루트)은 탐색기처럼 미분류만 — 폴더 안 워크플로는 폴더에 들어가야 보인다. 검색 중엔 전체를 뒤진다.
     else if (!q) list = list.filter((f) => !f.folderId)
     // 이름·설명 + 노드 내용(nodeText: 노드 이름/URL/조건 등)까지 가로질러 검색
-    if (q) list = list.filter((f) => f.name.toLowerCase().includes(q) || (f.description ?? '').toLowerCase().includes(q) || (f.nodeText ?? '').includes(q))
+    if (q) list = list.filter((f) => matchesCatalog(q, [f.name, f.description, f.nodeText]))
     list = [...list].sort((a, b) => (sort === 'name' ? a.name.localeCompare(b.name) : (b.updatedAt ?? '').localeCompare(a.updatedAt ?? '')))
     return list
   }, [allFlows, sel, search, sort])
+  const flowPage = catalog.view.page
+  const flowPageSize = catalog.view.size
+  const setFlowPage = (page: number) => catalog.update({ page })
+  const setFlowPageSize = (size: number) => catalog.update({ size, page: 1 })
+  const page = catalogPage(visible.length, flowPage, flowPageSize)
 
   // ---- 다중 선택 + 일괄 삭제 ----
   const visibleIds = visible.map((f) => f.id)
+  const selectedOutsideScope = [...selectedIds].filter(id => !visibleIds.includes(id)).length
+  const pageIds = new Set(visible.slice(page.start, page.end).map(flow => flow.id))
+  const selectedOutsidePage = [...selectedIds].filter(id => !pageIds.has(id)).length
   const allSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedIds.has(id))
   const someSelected = visibleIds.some((id) => selectedIds.has(id))
   useEffect(() => {
@@ -320,44 +373,25 @@ export function Dashboard() {
           count={f.flowCount}
           active={sel === f.id}
           onClick={() => setSel(f.id)}
-          glyph={depth === 0 ? '▸' : '·'}
+          glyph={<AppIcon name="folder" size={15} />}
           indent={depth}
-          accent={fallbackCats(f.id, 1)[0]}
+          title={folderLabels.get(f.id)}
           drop={dropTo(f.id)}
-          onRename={() => askRenameFolder(f)}
-          onDelete={() => deleteFolder(f)}
         />
         {depth < 30 && renderFolderTree(f.id, depth + 1)}
       </div>
     ))
 
-  const wsGlyph = (kind: string) => (kind === 'PERSONAL' ? '🔒' : kind === 'TEAM' ? '👥' : '🌐')
   const folderNav = (
     <>
-      <div style={sidebarLabel}>워크스페이스</div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '0 10px 4px' }}>
-        <select
-          aria-label="워크스페이스 선택"
-          value={wsId}
-          onChange={(e) => { if (e.target.value === '@new') { newTeamWs() } else { setWsId(e.target.value) } }}
-          style={wsSelect}
-        >
-          {(workspaces.data ?? [{ id: 'public', name: '공용', kind: 'PUBLIC', myRole: 'EDITOR', canManage: false } as const]).map((w) => (
-            <option key={w.id} value={w.id}>{wsGlyph(w.kind)} {w.name}{w.myRole === 'VIEWER' ? ' (읽기전용)' : ''}</option>
-          ))}
-          {canCreateWs && <option value="@new">＋ 새 팀 워크스페이스…</option>}
-        </select>
-        <button onClick={() => setWsDialog(true)} title="워크스페이스 관리(멤버·롤)" aria-label="워크스페이스 관리" style={wsGearBtn}>⚙</button>
-      </div>
       {wsRole === 'VIEWER' && <div style={{ padding: '0 12px 6px', fontSize: 11.5, color: 'var(--fl-text-muted)' }}>읽기전용 — 조회만 가능합니다</div>}
       {adminMe.data?.myStatus === 'PENDING' && (
         <div style={{ margin: '0 10px 6px', padding: '7px 10px', borderRadius: 'var(--fl-radius-sm)', background: 'color-mix(in srgb, var(--fl-waiting) 14%, transparent)', fontSize: 11.5, color: 'var(--fl-text)', lineHeight: 1.5 }}>
-          ⏳ 가입 승인 대기 중 — 승인되면 개인 워크스페이스·팀·AI 를 쓸 수 있어요
+          ⏳ 가입 승인 대기 중 — 승인되면 팀·AI 를 쓸 수 있어요
         </div>
       )}
-      <div style={sidebarLabel}>워크플로</div>
       {/* 홈 = 탐색기 루트: 폴더 타일 + 미분류 워크플로. 여기로 드롭하면 폴더 밖(미분류)으로 꺼낸다. */}
-      <SidebarItem label="홈" count={noneCount} active={sel === 'all'} onClick={() => setSel('all')} glyph="▤" drop={dropTo(null)} />
+      <SidebarItem label="홈" count={noneCount} active={sel === 'all'} onClick={() => setSel('all')} glyph={<AppIcon name="flow" size={15} />} drop={dropTo(null)} />
       <div style={sidebarLabel}>폴더</div>
       {renderFolderTree(null, 0)}
       {canEdit && <button onClick={() => newFolderIn(null)} style={newFolderBtn}>+ 새 폴더</button>}
@@ -366,12 +400,12 @@ export function Dashboard() {
 
   return (
     <AppShellTier1 sidebarExtra={folderNav}>
-      <div style={{ minWidth: 0, padding: '28px 40px 80px', display: 'flex', flexDirection: 'column', gap: 'var(--fl-sp-7)' }}>
+      <div className="fl-flow-workspace">
           {/* hero 밴드 — 최근 워크플로를 실제 노드 흐름으로 연다 */}
-          {heroFlow && <Hero flow={heroFlow} lastRun={lastRunByFlow.get(heroFlow.id)} />}
+          <header className="fl-workbench-title"><div><h1>워크플로</h1><span>흐름을 찾아 편집하고 실행합니다.</span></div><div style={{ display: 'flex', gap: 8 }}>{canCreateWs && <button onClick={newTeamWs} className="fl-workbench-button">+ 새 팀 공간</button>}<button onClick={() => setWsDialog(true)} className="fl-workbench-button">공간 관리</button></div></header>{heroFlow && <Hero flow={heroFlow} detailLink={catalog.detail(heroFlow.id)} lastRun={lastRunByFlow.get(heroFlow.id)} />}
 
           {/* 툴바 — 폴더 안이면 브레드크럼(전체 › 부모 › 현재)으로 위로 이동 */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <div className="fl-flow-toolbar" style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
             <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, minWidth: 0, flexWrap: 'wrap' }}>
               {folderPath.length > 0 ? (
                 <nav aria-label="폴더 경로" style={{ display: 'flex', alignItems: 'baseline', gap: 6, minWidth: 0, flexWrap: 'wrap' }}>
@@ -392,10 +426,10 @@ export function Dashboard() {
               )}
               <span style={{ fontSize: 'var(--fl-fs-xs)', color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)' }}>{visible.length}</span>
             </div>
-            <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
-              <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+            <div className="fl-flow-toolbar-actions" style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <div className="fl-flow-search" style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
                 <span aria-hidden style={{ position: 'absolute', left: 11, color: 'var(--fl-text-muted)', fontSize: 13, pointerEvents: 'none' }}>⌕</span>
-                <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="검색" aria-label="워크플로 검색" style={searchBox}
+                <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="이름·설명·노드 내용 검색" aria-label={isFolderId(sel) ? '이 폴더의 워크플로 검색' : sel === 'none' ? '미분류 워크플로 검색' : '전체 워크플로 검색'} style={searchBox}
                   onKeyDown={(e) => { if (e.key === 'Escape' && search) { e.stopPropagation(); setSearch('') } }} />
                 {search && (
                   <button onClick={() => setSearch('')} aria-label="검색 지우기" title="지우기 (Esc)"
@@ -403,8 +437,12 @@ export function Dashboard() {
                 )}
               </div>
               <div style={seg} role="group" aria-label="정렬">
-                <button onClick={() => setSort('recent')} style={segBtn(sort === 'recent')}>최근</button>
-                <button onClick={() => setSort('name')} style={segBtn(sort === 'name')}>이름</button>
+                <button onClick={() => setSort('recent')} aria-pressed={sort === 'recent'} style={segBtn(sort === 'recent')}>최근</button>
+                <button onClick={() => setSort('name')} aria-pressed={sort === 'name'} style={segBtn(sort === 'name')}>이름</button>
+              </div>
+              <div className="fl-flow-view-toggle" style={seg} role="group" aria-label="워크플로 보기">
+                <button onClick={() => setLayout('cards')} aria-pressed={layout === 'cards'} style={segBtn(layout === 'cards')}><AppIcon name="workspace" size={15} /> 카드</button>
+                <button onClick={() => setLayout('list')} aria-pressed={layout === 'list'} style={segBtn(layout === 'list')}><AppIcon name="list" size={15} /> 목록</button>
               </div>
               {canEdit && sel !== 'all' && sel !== 'none' && !selectMode && (
                 <button onClick={() => runSuite.mutate({ folderId: sel })} disabled={runSuite.isPending || !scopeReady} title="이 폴더의 워크플로를 한 번에 실행하고 성공/실패를 봅니다" style={selectToggleBtn(false)}>▶ 폴더 실행</button>
@@ -412,18 +450,21 @@ export function Dashboard() {
               {canEdit && (visible.length > 0 || selectMode) && (
                 <button onClick={toggleSelectMode} aria-pressed={selectMode} style={selectToggleBtn(selectMode)}>{selectMode ? '선택 완료' : '☑ 선택'}</button>
               )}
-              {canEdit && <button onClick={() => createFlow.mutate()} disabled={createFlow.isPending || !scopeReady} style={primaryBtn}>+ 새 워크플로</button>}
+              {canEdit && <button onClick={newFlow} disabled={createFlow.isPending || !scopeReady} style={primaryBtn}>+ 새 워크플로</button>}
             </div>
           </div>
 
           {/* 선택 액션 바 */}
           {selectMode && (
-            <div style={selectBar}>
+            <div className="fl-flow-selection" style={selectBar}>
               <label style={selectAllLabel}>
                 <input ref={selectAllRef} type="checkbox" checked={allSelected} onChange={toggleAll} style={{ width: 16, height: 16, accentColor: 'var(--fl-primary)', cursor: 'pointer' }} />
-                전체 선택
+                현재 범위 전체 선택 ({visible.length})
               </label>
               <span style={{ fontSize: 12.5, color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)' }}>{selectedIds.size}개 선택됨</span>
+              <span style={{ fontSize: 12, color: 'var(--fl-text-muted)' }}>카드 본문 또는 체크박스로 선택</span>
+              {selectedOutsidePage > 0 && <span className="fl-selection-hidden" role="status" style={{ fontSize: 12, color: 'var(--fl-text-muted)' }}>이 페이지 밖 {selectedOutsidePage}개{selectedOutsideScope > 0 ? ` · 현재 범위 밖 ${selectedOutsideScope}개 포함` : ''}</span>}
+              {selectedIds.size > 0 && <button onClick={() => setSelectedIds(new Set())} style={ghostBtn}>선택 해제</button>}
               <span style={{ fontSize: 12, color: 'var(--fl-text-muted)' }}>· 카드를 폴더로 끌어다 놓거나:</span>
               <select
                 aria-label="선택 항목 폴더로 이동"
@@ -443,12 +484,18 @@ export function Dashboard() {
             </div>
           )}
 
-          {/* 폴더 타일(탐색기) — 현재 위치의 하위 폴더를 크게, 클릭해 들어간다. 드래그로 넣기/재배치 가능 */}
-          {(scopeFolders.length > 0 || (sel !== 'none' && !search.trim() && !selectMode)) && (
-            <div>
-              <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--fl-text-muted)', letterSpacing: '.05em', textTransform: 'uppercase', marginBottom: 10 }}>폴더</div>
-              <div style={folderGrid}>
-                {scopeFolders.map((f) => (
+          {/* 하위 폴더가 없어도 정리 동선은 작은 섹션으로 남긴다. */}
+          {sel !== 'none' && !search.trim() && (
+            <section className="fl-folder-section" aria-label="하위 폴더">
+              <div className="fl-folder-heading">
+                <h3>폴더 <span>{scopeFolders.length}</span></h3>
+                {canEdit && <button onClick={() => newFolderIn(isFolderId(sel) ? sel : null)} disabled={!scopeReady} style={ghostBtn}><AppIcon name="plus" size={14} /> 새 폴더</button>}
+              </div>
+              {folders.isLoading ? <p className="fl-folder-hint">폴더를 불러오는 중…</p>
+                : folders.isError ? <p className="fl-folder-hint">폴더를 불러오지 못했습니다. <button onClick={() => folders.refetch()} style={ghostBtn}>다시 시도</button></p>
+                : scopeFolders.length === 0 ? <p className="fl-folder-hint">{canEdit ? '폴더를 만들어 워크플로를 묶고, 카드를 끌어 정리하세요.' : '현재 위치에 하위 폴더가 없습니다.'}</p> : null}
+              <div className="fl-folder-strip">
+                {shownFolders.map((f) => (
                   <FolderTile
                     key={f.id}
                     folder={f}
@@ -462,34 +509,25 @@ export function Dashboard() {
                     readOnly={!canEdit}
                   />
                 ))}
-                {canEdit && sel !== 'none' && !search.trim() && !selectMode && (
-                  <button
-                    onClick={() => newFolderIn(isFolderId(sel) ? sel : null)}
-                    aria-label={isFolderId(sel) ? '이 폴더 안에 새 폴더' : '새 폴더 만들기'}
-                    style={newFolderTile}
-                  >
-                    <span aria-hidden style={{ fontSize: 22, lineHeight: 1 }}>+</span>
-                    <span>새 폴더</span>
-                  </button>
-                )}
               </div>
-            </div>
+              {scopeFolders.length > 8 && <button className="fl-folder-more" aria-expanded={showAllFolders} onClick={() => setExpandedFolderScope(showAllFolders ? null : folderScopeKey)}>{showAllFolders ? '폴더 접기' : `폴더 ${scopeFolders.length - shownFolders.length}개 더 보기`}</button>}
+            </section>
           )}
 
           {/* 그리드 */}
-          {flows.isLoading && <Grid>{[0, 1, 2, 3].map((i) => <CardSkeleton key={i} />)}</Grid>}
+          {flows.isLoading && <Grid layout={layout}>{[0, 1, 2, 3].map((i) => <CardSkeleton key={i} />)}</Grid>}
           {flows.isError && (
             <div style={errorBox}>
               <div style={{ fontSize: 22 }}>⚠</div>
               <div>
-                <div style={{ fontWeight: 600 }}>백엔드(18080)에 연결하지 못했어요.</div>
-                <div style={{ fontSize: 12.5, color: 'var(--fl-text-muted)', marginTop: 4 }}>백엔드를 먼저 실행하세요 — <code style={codeChip}>scripts\dev-all.ps1</code></div>
+                <div style={{ fontWeight: 600 }}>이 공간의 워크플로를 불러오지 못했습니다.</div>
+                <div style={{ fontSize: 12.5, color: 'var(--fl-text-muted)', marginTop: 4 }}>{scope.current.origin === 'local' ? '트레이에서 FlowLink가 실행 중인지 확인한 뒤 다시 시도하세요.' : '회사 서버 연결과 이 공간의 접근 권한을 확인한 뒤 다시 시도하세요.'}</div>
               </div>
               <button onClick={() => flows.refetch()} style={{ ...ghostBtn, marginLeft: 'auto' }}>다시 시도</button>
             </div>
           )}
           {flows.data && visible.length === 0 && (search.trim() !== '' || scopeFolders.length === 0) && (
-            <EmptyState mode={search ? 'search' : sel === 'all' ? 'onboarding' : 'folder'} onCreate={() => createFlow.mutate()} onClearSearch={() => setSearch('')} />
+            <EmptyState mode={search ? 'search' : sel === 'all' ? 'onboarding' : 'folder'} canEdit={canEdit} ready={scopeReady} creating={createFlow.isPending} mockHref={`/mocks?space=${encodeURIComponent(`${scope.current.origin}:${scope.current.id}`)}`} onCreate={newFlow} onClearSearch={() => setSearch('')} />
           )}
 
           {/* 즐겨찾기 — 홈에서만, 검색·선택 모드 아닐 때 상단 고정 */}
@@ -499,9 +537,9 @@ export function Dashboard() {
             return (
               <div style={{ marginBottom: 22 }}>
                 <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--fl-text-muted)', letterSpacing: '.05em', textTransform: 'uppercase', marginBottom: 10 }}>★ 즐겨찾기</div>
-                <Grid>
+                <Grid layout={layout}>
                   {favFlows.map((f) => (
-                    <FlowCard key={'fav-' + f.id} flow={f} lastRun={lastRunByFlow.get(f.id)} folderOptions={flatFolders}
+                    <FlowCard key={'fav-' + f.id} flow={f} detailLink={catalog.detail(f.id)} lastRun={lastRunByFlow.get(f.id)} runState={runs.isError ? 'error' : runs.isPending ? 'loading' : 'ready'} folderOptions={flatFolders} folderLabel={flowFolderLabel(f)}
                       selectMode={false} selected={false} onToggleSelect={() => {}}
                       pinned onTogglePin={() => toggleFav(f.id)}
                       onRename={() => askRenameFlow(f)} onDuplicate={() => duplicateFlow.mutate(f)}
@@ -515,15 +553,18 @@ export function Dashboard() {
 
           {visible.length > 0 && (
             <div>
-              {!selectMode && !search.trim() && sel !== 'none' && (
-                <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--fl-text-muted)', letterSpacing: '.05em', textTransform: 'uppercase', marginBottom: 10 }}>워크플로</div>
+              {layout === 'list' && !selectMode && !search.trim() && sel !== 'none' && (
+                <div className="fl-flow-list-heading"><span>워크플로 이름</span><span>최근 실행 · 저장 버전</span></div>
               )}
-            <Grid>
-              {visible.map((f) => (
+            <Grid layout={layout}>
+              {visible.slice(page.start, page.end).map((f) => (
                 <FlowCard
                   key={f.id}
                   flow={f}
+                  detailLink={catalog.detail(f.id)}
                   lastRun={lastRunByFlow.get(f.id)}
+                  runState={runs.isError ? 'error' : runs.isPending ? 'loading' : 'ready'}
+                  folderLabel={search.trim() ? flowFolderLabel(f) : undefined}
                   folderOptions={flatFolders}
                   selectMode={selectMode}
                   selected={selectedIds.has(f.id)}
@@ -540,16 +581,17 @@ export function Dashboard() {
                 />
               ))}
             </Grid>
+            <CatalogPagination label="워크플로" total={visible.length} page={page.page} size={flowPageSize} onPage={setFlowPage} onSize={setFlowPageSize} />
             </div>
           )}
         </div>
       {ask && <AskDialog spec={ask} onClose={() => setAsk(null)} />}
       {suiteItems && <SuiteRunDialog items={suiteItems} onClose={() => setSuiteItems(null)} />}
-      {wsDialog && (
+      {wsDialog && currentWs && (
         <WorkspaceDialog
-          current={currentWs ?? { id: 'public', name: '공용', kind: 'PUBLIC', myRole: 'EDITOR', canManage: false }}
+          current={currentWs}
           onClose={() => setWsDialog(false)}
-          onDeleted={() => { setWsDialog(false); setWsId('public'); qc.invalidateQueries({ queryKey: ['workspaces'] }) }}
+          onDeleted={() => { setWsDialog(false); scope.refresh(); setWsId('public') }}
         />
       )}
     </AppShellTier1>
@@ -558,45 +600,25 @@ export function Dashboard() {
 
 // ---------- hero ----------
 
-function Hero({ flow, lastRun }: { flow: FlowSummary; lastRun?: ExecutionSummary }) {
+function Hero({ flow, lastRun, detailLink }: { flow: FlowSummary; lastRun?: ExecutionSummary; detailLink: CatalogLink }) {
   // 목록 요약(nodeTypes/nodeCats)로 미리보기 — 카드별 graph 재조회(N+1) 없이 그린다
-  const miniNodes = (flow.nodeTypes ?? []).map((t, i) => ({ type: t, cat: flow.nodeCats?.[i] }))
-  return (
-    <section style={heroBand} aria-label="최근 워크플로">
-      <div style={{ fontSize: 'var(--fl-fs-xs)', fontFamily: 'var(--fl-font-mono)', color: 'var(--fl-text-muted)', letterSpacing: '.04em', textTransform: 'uppercase' }}>최근 작업</div>
-      <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 24, flexWrap: 'wrap', marginTop: 10 }}>
-        <div style={{ minWidth: 0 }}>
-          <Link to={`/flows/${flow.id}`} style={{ display: 'block', fontFamily: 'var(--fl-font-head)', fontSize: 'var(--fl-fs-3xl)', fontWeight: 500, letterSpacing: '-.02em', color: 'var(--fl-text)', textDecoration: 'none', lineHeight: 1.05 }}>{flow.name}</Link>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 12, flexWrap: 'wrap' }}>
-            {miniNodes.length > 0 ? <FlowStrip nodes={miniNodes} /> : <div style={{ height: 30 }} />}
-          </div>
-        </div>
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 10 }}>
-          {lastRun ? (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <StatusBadge status={lastRun.status} />
-              <span style={{ fontSize: 'var(--fl-fs-xs)', color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)' }}>{relTime(lastRun.startedAt)}</span>
-            </div>
-          ) : (
-            <span style={{ fontSize: 'var(--fl-fs-xs)', color: 'var(--fl-text-muted)' }}>아직 실행 전</span>
-          )}
-          <Link to={`/flows/${flow.id}`} style={heroOpenBtn}>열기 →</Link>
-        </div>
-      </div>
-    </section>
-  )
+  return <section className="fl-recent-work" aria-label="최근 워크플로"><span>최근 작업</span><Link to={detailLink.to} state={detailLink.state}>{flow.name}</Link>{lastRun && <StatusBadge status={lastRun.status} />}<Link className="fl-recent-open" to={detailLink.to} state={detailLink.state}>이어서 편집 →</Link></section>
+
 }
 
 // ---------- 카드 ----------
 
-function FlowCard({ flow, lastRun, folderOptions, selectMode, selected, pinned, onTogglePin, onToggleSelect, onRename, onDuplicate, onDelete, onMove, onDragStartSelf, onDragEndSelf, readOnly }: {
+function FlowCard({ flow, detailLink, lastRun, runState, folderOptions, folderLabel, selectMode, selected, pinned, onTogglePin, onToggleSelect, onRename, onDuplicate, onDelete, onMove, onDragStartSelf, onDragEndSelf, readOnly }: {
   flow: FlowSummary
+  detailLink: CatalogLink
   lastRun?: ExecutionSummary
-  folderOptions: Array<{ f: FolderSummary; depth: number }> // 트리 순서 + 깊이(들여쓰기 라벨)
+  runState: 'loading' | 'error' | 'ready'
+  folderOptions: Array<{ f: FolderSummary; depth: number }>
+  folderLabel?: string
   selectMode: boolean
   selected: boolean
   pinned?: boolean
-  onTogglePin?: () => void
+  onTogglePin: () => void
   onToggleSelect: () => void
   onRename: () => void
   onDuplicate: () => void
@@ -604,93 +626,91 @@ function FlowCard({ flow, lastRun, folderOptions, selectMode, selected, pinned, 
   onMove: (folderId: string | null) => void
   onDragStartSelf: () => void
   onDragEndSelf: () => void
-  readOnly?: boolean // viewer — 복제/이동/삭제/드래그 숨김(서버 403 이 최종 권위, UI 는 편의)
+  readOnly?: boolean
 }) {
-  const navigate = useNavigate()
-  // 목록 요약(nodeCats/nodeCount)로 미리보기 — 카드별 graph 재조회(N+1) 제거
-  const cats = flow.nodeCats ?? flow.nodeTypes
-  const spine = dominantCat(cats, flow.id)
-  const nodeCount = flow.nodeCount
+  // 실제 저장된 타입 요약이다. 연결 순서나 전체 그래프를 추정하지 않는다.
+  const types = flow.nodeTypes ?? []
+  const summary = [...new Set(types)].map(typeLabel).join(' · ')
   const [menu, setMenu] = useState(false)
-  const openCard = selectMode ? onToggleSelect : () => navigate(`/flows/${flow.id}`)
-  const menuRef = useRef<HTMLDivElement>(null)
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const firstActionRef = useRef<HTMLButtonElement>(null)
+  const anchored = useAnchoredPopover(triggerRef, menu, 224)
+  const closeMenu = () => { setMenu(false); triggerRef.current?.focus({ preventScroll: true }) }
   useEffect(() => {
     if (!menu) return
-    const onDoc = (e: MouseEvent) => { if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenu(false) }
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setMenu(false) }
+    const onDoc = (event: MouseEvent) => {
+      if (!anchored.popupRef.current?.contains(event.target as Node) && !triggerRef.current?.contains(event.target as Node)) setMenu(false)
+    }
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') { event.preventDefault(); setMenu(false); triggerRef.current?.focus({ preventScroll: true }) }
+    }
     document.addEventListener('mousedown', onDoc)
     document.addEventListener('keydown', onKey)
     return () => { document.removeEventListener('mousedown', onDoc); document.removeEventListener('keydown', onKey) }
-  }, [menu])
+  }, [menu, anchored.popupRef])
+  useEffect(() => {
+    if (menu && anchored.ready) firstActionRef.current?.focus({ preventScroll: true })
+  }, [menu, anchored.ready])
+  useEffect(() => { if (selectMode || readOnly) setMenu(false) }, [selectMode, readOnly])
+
+  const cardContent = <>
+    <span className="fl-flow-identity">
+      <span className="fl-flow-name" title={flow.name}>{flow.name}</span>
+      {flow.description && <span className="fl-flow-description" title={flow.description}>{flow.description}</span>}
+    </span>
+    {folderLabel && <span className="fl-flow-folder" title={folderLabel}><AppIcon name="folder" size={13} /> {folderLabel}</span>}
+    <span className="fl-flow-preview">
+      {types.length > 0 ? <><FlowMini cats={flow.nodeCats ?? types} /><span title={'저장된 노드 종류: ' + summary}>{summary}</span></> : <span>{flow.nodeCount === 0 ? '아직 노드가 없습니다' : '구성 정보 없음'}</span>}
+      {flow.nodeCount != null && flow.nodeCount > 0 && <span className="fl-flow-node-count">노드 {flow.nodeCount}개</span>}
+    </span>
+  </>
 
   return (
     <article
       className="fl-flow-card"
-      role="button"
-      tabIndex={0}
-      onClick={openCard}
-      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openCard() } }}
+      data-selected={selected || undefined}
+      aria-label={flow.name}
       draggable={!readOnly}
-      onDragStart={(e) => {
-        if (readOnly) return
-        e.dataTransfer.effectAllowed = 'move'
-        e.dataTransfer.setData('text/plain', flow.name) // 외부 드롭용 표시값(내부 이동은 ref 기반)
+      onDragStart={(event) => {
+        if (readOnly || !(event.target instanceof Element) || event.target.closest('button:not(.fl-flow-open),input,select')) { event.preventDefault(); return }
+        event.dataTransfer.effectAllowed = 'move'
+        event.dataTransfer.setData('text/plain', flow.name)
         onDragStartSelf()
       }}
       onDragEnd={onDragEndSelf}
-      style={{ ...card, borderLeft: `3px solid ${varCat(spine)}`, cursor: 'pointer', ...(selected ? selectedCard : null) }}
     >
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
-        {selectMode && (
-          <input
-            type="checkbox"
-            checked={selected}
-            onChange={onToggleSelect}
-            onClick={(e) => e.stopPropagation()}
-            aria-label={`${flow.name} 선택`}
-            style={cardCheckbox}
-          />
-        )}
-        <div style={{ minWidth: 0, flex: 1 }}>
-          <span style={cardTitle}>{flow.name}</span>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, minHeight: 12 }}>
-            {cats ? <FlowMini cats={cats} /> : <FlowMini cats={fallbackCats(flow.id, 4)} />}
-            {nodeCount != null && <span style={metaMono}>노드 {nodeCount}</span>}
-          </div>
+      <div className="fl-flow-card-top">
+        {selectMode && <input type="checkbox" checked={selected} onChange={onToggleSelect} aria-label={flow.name + ' 선택'} style={cardCheckbox} />}
+        {selectMode
+          ? <button className="fl-flow-open" onClick={onToggleSelect} aria-pressed={selected} aria-label={flow.name + ' 선택'}>{cardContent}</button>
+          : <Link className="fl-flow-open" to={detailLink.to} state={detailLink.state} draggable={false}>{cardContent}</Link>}
+        <div className="fl-flow-card-actions">
+          <button onClick={onTogglePin} aria-label={flow.name + ' 즐겨찾기 ' + (pinned ? '해제' : '추가')} aria-pressed={!!pinned} title={pinned ? '즐겨찾기 해제' : '즐겨찾기 추가'} className="fl-flow-favorite" style={iconBtn}>{pinned ? '★' : '☆'}</button>
+          {!selectMode && !readOnly && <button ref={triggerRef} onClick={() => setMenu(value => !value)} aria-label={flow.name + ' 작업 메뉴'} aria-haspopup="dialog" aria-expanded={menu} title="작업" style={iconBtn}><AppIcon name="more" size={17} /></button>}
         </div>
-        {!selectMode && !readOnly && (
-          <div ref={menuRef} className="fl-card-actions" onClick={(e) => e.stopPropagation()} style={{ position: 'relative', flexShrink: 0 }}>
-            <button onClick={() => setMenu((v) => !v)} aria-label={`${flow.name} 작업 메뉴`} aria-haspopup="menu" aria-expanded={menu} title="작업" style={iconBtn}>⋯</button>
-            {menu && (
-              <div role="menu" style={menuBox}>
-                {onTogglePin && <button role="menuitem" onClick={() => { onTogglePin(); setMenu(false) }} style={menuItem}>{pinned ? '☆ 즐겨찾기 해제' : '★ 즐겨찾기'}</button>}
-                <button role="menuitem" onClick={() => { onRename(); setMenu(false) }} style={menuItem}>✎ 이름 바꾸기</button>
-                <button role="menuitem" onClick={() => { onDuplicate(); setMenu(false) }} style={menuItem}>⧉ 복제</button>
-                <div style={{ padding: '6px 10px 4px', fontSize: 11, color: 'var(--fl-text-muted)' }}>폴더로 이동</div>
-                <select aria-label="폴더 이동" value={flow.folderId ?? ''} onChange={(e) => { onMove(e.target.value || null); setMenu(false) }} style={menuSelect}>
-                  <option value="">미분류</option>
-                  {folderOptions.map(({ f: fo, depth }) => (
-                    <option key={fo.id} value={fo.id}>{'  '.repeat(depth) + (depth > 0 ? '└ ' : '') + fo.name}</option>
-                  ))}
-                </select>
-                <button role="menuitem" onClick={() => { onDelete(); setMenu(false) }} style={{ ...menuItem, color: 'var(--fl-fail)' }}>🗑 삭제</button>
-              </div>
-            )}
-          </div>
-        )}
       </div>
-
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 14, flexWrap: 'wrap' }}>
-        {lastRun ? (
-          <>
-            <StatusBadge status={lastRun.status} />
-            <span style={metaMono}>{relTime(lastRun.startedAt)}</span>
-          </>
-        ) : (
-          <span style={{ fontSize: 11.5, color: 'var(--fl-text-muted)' }}>미실행 · ▶ 실행하면 여기에 표시</span>
-        )}
-        <span style={{ marginLeft: 'auto', ...metaMono }}>v{flow.currentVersion} · {relTime(flow.updatedAt) || '방금'}</span>
+      <div className="fl-flow-footer">
+        <div className="fl-flow-result">
+          {lastRun ? <><StatusBadge status={lastRun.status} /><span title={lastRun.startedAt ? new Date(lastRun.startedAt).toLocaleString('ko-KR') : undefined}>{relTime(lastRun.startedAt)}</span></>
+            : <span title={runState === 'ready' ? '이 공간의 최근 실행 50건 기준입니다.' : undefined}>{runState === 'loading' ? '최근 실행 확인 중…' : runState === 'error' ? '최근 실행을 확인하지 못했습니다' : '최근 실행 기록 없음'}</span>}
+        </div>
+        <div className="fl-flow-version" title={'마지막 저장 ' + new Date(flow.updatedAt).toLocaleString('ko-KR')}>v{flow.currentVersion} · {relTime(flow.updatedAt) || '방금'} 저장</div>
       </div>
+      {menu && createPortal(
+        <div ref={anchored.popupRef} role="dialog" aria-label={flow.name + ' 작업'} style={{ ...menuBox, ...anchored.style }}
+          onBlur={event => { if (event.relatedTarget && !event.currentTarget.contains(event.relatedTarget) && event.relatedTarget !== triggerRef.current) setMenu(false) }}>
+          <button ref={firstActionRef} onClick={() => { closeMenu(); onRename() }} style={menuItem}>이름 바꾸기</button>
+          <button onClick={() => { closeMenu(); onDuplicate() }} style={menuItem}><AppIcon name="copy" size={14} /> 복제</button>
+          <label style={{ padding: '6px 5px 4px', fontSize: 12, color: 'var(--fl-text-muted)' }}>
+            폴더로 이동
+            <select aria-label={flow.name + ' 폴더 이동'} value={flow.folderId ?? ''} onChange={event => { onMove(event.target.value || null); closeMenu() }} style={menuSelect}>
+              <option value="">미분류</option>
+              {folderOptions.map(({ f: folder, depth }) => <option key={folder.id} value={folder.id}>{'  '.repeat(Math.min(depth, 8)) + (depth > 0 ? '└ ' : '') + folder.name}</option>)}
+            </select>
+          </label>
+          <button onClick={() => { closeMenu(); onDelete() }} style={{ ...menuItem, color: 'var(--fl-fail)' }}><AppIcon name="trash" size={14} /> 삭제</button>
+        </div>, document.body
+      )}
     </article>
   )
 }
@@ -715,18 +735,12 @@ function FolderTile({ folder, subCount, onOpen, drop, onDragStartSelf, onDragEnd
   readOnly?: boolean // viewer — 이름변경/삭제/드래그 숨김
 }) {
   const [over, setOver] = useState(false)
-  const accent = varCat(fallbackCats(folder.id, 1)[0])
   return (
     <article
-      className="fl-flow-card"
-      role="button"
-      tabIndex={0}
-      onClick={onOpen}
-      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen() } }}
-      aria-label={`${folder.name} 폴더 열기`}
+      className="fl-folder-tile"
       draggable={!readOnly}
       onDragStart={(e) => {
-        if (readOnly) return
+        if (readOnly || !(e.target instanceof Element) || e.target.closest('.fl-folder-actions')) { e.preventDefault(); return }
         e.dataTransfer.effectAllowed = 'move'
         e.dataTransfer.setData('text/plain', folder.name)
         onDragStartSelf()
@@ -741,40 +755,30 @@ function FolderTile({ folder, subCount, onOpen, drop, onDragStartSelf, onDragEnd
       onDragLeave={() => setOver(false)}
       onDrop={(e) => { e.preventDefault(); setOver(false); drop.onDrop() }}
       style={{
-        ...folderTileStyle,
         ...(over ? dropActive : null),
         ...(drop.dragging && drop.canDrop() && !over ? dropHint : null),
       }}
     >
-      <FolderGlyph color={accent} />
-      <div style={{ minWidth: 0, flex: 1 }}>
-        <div style={{ fontFamily: 'var(--fl-font-head)', fontWeight: 600, fontSize: 14.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{folder.name}</div>
-        <div style={{ ...metaMono, marginTop: 4 }}>
-          워크플로 {folder.flowCount}{subCount > 0 ? ` · 폴더 ${subCount}` : ''}
-        </div>
-      </div>
+      <button className="fl-folder-open" onClick={onOpen} title={`${folder.name} 폴더 열기`}>
+        <AppIcon name="folder" size={28} />
+        <span className="fl-folder-info">
+          <span className="fl-folder-name">{folder.name}</span>
+          <span className="fl-folder-count">워크플로 {folder.flowCount}{subCount > 0 ? ` · 폴더 ${subCount}` : ''}</span>
+        </span>
+      </button>
       {!readOnly && (
-        <div className="fl-card-actions" onClick={(e) => e.stopPropagation()} style={{ display: 'flex', flexShrink: 0 }}>
-          <button onClick={onRename} aria-label="이름 변경" title="이름 변경" style={miniBtn}>✎</button>
-          <button onClick={onDelete} aria-label="삭제" title="삭제" style={miniBtn}>×</button>
+        <div className="fl-folder-actions">
+          <button onClick={onRename} aria-label={`${folder.name} 이름 변경`} title="이름 변경" style={miniBtn}>✎</button>
+          <button onClick={onDelete} aria-label={`${folder.name} 삭제`} title="삭제" style={miniBtn}><AppIcon name="close" size={14} /></button>
         </div>
       )}
     </article>
   )
 }
 
-function FolderGlyph({ color }: { color: string }) {
-  return (
-    <svg width="34" height="28" viewBox="0 0 34 28" aria-hidden style={{ flexShrink: 0 }}>
-      <path d="M2 5.5C2 4.1 3.1 3 4.5 3h8l3 3.5h14c1.4 0 2.5 1.1 2.5 2.5v14c0 1.4-1.1 2.5-2.5 2.5h-25C3.1 25.5 2 24.4 2 23V5.5Z"
-        fill={`color-mix(in srgb, ${color} 22%, var(--fl-surface-2))`} stroke={color} strokeWidth="1.6" />
-    </svg>
-  )
-}
-
 function CardSkeleton() {
   return (
-    <div style={{ ...card, borderLeft: '3px solid var(--fl-border)' }}>
+    <div className="fl-flow-card" aria-hidden="true">
       <div style={{ height: 15, width: '55%', background: 'var(--fl-surface-2)', borderRadius: 5 }} />
       <div style={{ height: 9, width: 90, background: 'var(--fl-surface-2)', borderRadius: 5, marginTop: 12 }} />
       <div style={{ height: 20, width: 120, background: 'var(--fl-surface-2)', borderRadius: 'var(--fl-radius-pill)', marginTop: 18 }} />
@@ -784,7 +788,7 @@ function CardSkeleton() {
 
 // ---------- 빈 상태 ----------
 
-function EmptyState({ mode, onCreate, onClearSearch }: { mode: 'onboarding' | 'folder' | 'search'; onCreate: () => void; onClearSearch: () => void }) {
+function EmptyState({ mode, canEdit, ready, creating, mockHref, onCreate, onClearSearch }: { mode: 'onboarding' | 'folder' | 'search'; canEdit: boolean; ready: boolean; creating: boolean; mockHref: string; onCreate: () => void; onClearSearch: () => void }) {
   if (mode === 'search') {
     return (
       <div style={emptyBox}>
@@ -797,20 +801,20 @@ function EmptyState({ mode, onCreate, onClearSearch }: { mode: 'onboarding' | 'f
     return <div style={emptyBox}><div style={{ color: 'var(--fl-text-muted)', fontSize: 14 }}>이 폴더에 워크플로가 없습니다.</div></div>
   }
   return (
-    <div style={{ ...emptyBox, padding: '56px 48px', display: 'grid', gap: 18, justifyItems: 'center' }}>
+    <div style={{ ...emptyBox, padding: '32px 28px', display: 'grid', gap: 16, justifyItems: 'center' }}>
       <FlowGhost />
       <div style={{ textAlign: 'center' }}>
-        <div style={{ fontFamily: 'var(--fl-font-head)', fontWeight: 700, fontSize: 18 }}>첫 워크플로를 만들어 보세요</div>
-        <div style={{ color: 'var(--fl-text-muted)', fontSize: 13.5, marginTop: 6 }}>노드를 이어 API 호출·폼·콜백·검증 흐름을 그리고 실행합니다.</div>
+        <div style={{ fontFamily: 'var(--fl-font-head)', fontWeight: 700, fontSize: 18 }}>{canEdit ? '첫 워크플로를 만들어 보세요' : '아직 워크플로가 없습니다'}</div>
+        <div style={{ color: 'var(--fl-text-muted)', fontSize: 13.5, marginTop: 6 }}>{canEdit ? 'HTTP 노드를 추가해 API를 호출하고, 실행 결과를 확인하세요. 기존 API는 cURL·OpenAPI로 가져올 수 있습니다.' : '이 공간은 읽기 전용입니다. 팀 편집자에게 생성을 요청하거나 관리자에게 편집 권한을 요청하세요.'}</div>
       </div>
-      <button onClick={onCreate} style={primaryBtn}>+ 새 워크플로</button>
+      {canEdit && <><button onClick={onCreate} disabled={creating || !ready} style={primaryBtn}>{creating ? '만드는 중…' : '+ 새 워크플로'}</button><Link to={mockHref} style={{ fontSize: 12.5, color: 'var(--fl-primary)' }}>대상 API가 아직 없나요? HTTP Mock 만들기 →</Link></>}
     </div>
   )
 }
 
 // ---------- 사이드바 항목 ----------
 
-function SidebarItem({ label, count, active, onClick, glyph, accent, indent = 0, drop, onRename, onDelete }: { label: string; count: number; active: boolean; onClick: () => void; glyph: string; accent?: string; indent?: number; drop?: DropSpec; onRename?: () => void; onDelete?: () => void }) {
+function SidebarItem({ label, count, active, onClick, glyph, title, indent = 0, drop }: { label: string; count: number; active: boolean; onClick: () => void; glyph: ReactNode; title?: string; indent?: number; drop?: DropSpec }) {
   const [over, setOver] = useState(false)
   return (
     <div
@@ -818,18 +822,16 @@ function SidebarItem({ label, count, active, onClick, glyph, accent, indent = 0,
       onDragLeave={drop ? () => setOver(false) : undefined}
       onDrop={drop ? (e) => { e.preventDefault(); setOver(false); drop.onDrop() } : undefined}
       style={{
-        display: 'flex', alignItems: 'center', borderRadius: 'var(--fl-radius-sm)',
+        display: 'flex', alignItems: 'center', minWidth: 0, borderRadius: 'var(--fl-radius-sm)',
         background: over ? 'color-mix(in srgb, var(--fl-primary) 14%, var(--fl-surface))' : active ? 'var(--fl-surface-2)' : 'transparent',
         borderLeft: `2px solid ${over ? 'var(--fl-primary)' : active ? 'var(--fl-primary)' : 'transparent'}`,
         outline: over ? '1.5px dashed var(--fl-primary)' : 'none', outlineOffset: -1,
       }}>
-      <button onClick={onClick} style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 9, padding: '8px 10px', paddingLeft: 10 + Math.min(indent, 8) * 14, border: 'none', background: 'transparent', cursor: 'pointer', color: active ? 'var(--fl-text)' : 'var(--fl-text-muted)', fontWeight: active ? 600 : 500, fontSize: 13.5, textAlign: 'left' }}>
-        <span aria-hidden style={{ width: 16, textAlign: 'center', color: accent ? varCat(accent) : 'inherit' }}>{glyph}</span>
-        <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
-        <span style={{ fontSize: 11.5, color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)' }}>{count}</span>
+      <button onClick={onClick} title={title ?? label} aria-current={active ? 'page' : undefined} style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 6, padding: '8px 6px', paddingLeft: 8 + Math.min(indent, 3) * 8, border: 'none', background: 'transparent', cursor: 'pointer', color: active ? 'var(--fl-text)' : 'var(--fl-text-muted)', fontWeight: active ? 600 : 500, fontSize: 13.5, textAlign: 'left' }}>
+        <span aria-hidden style={{ width: 16, flexShrink: 0, textAlign: 'center' }}>{glyph}</span>
+        <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
+        <span style={{ flexShrink: 0, fontSize: 11.5, color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)' }}>{count}</span>
       </button>
-      {onRename && <button onClick={onRename} aria-label="이름 변경" title="이름 변경" style={miniBtn}>✎</button>}
-      {onDelete && <button onClick={onDelete} aria-label="삭제" title="삭제" style={miniBtn}>×</button>}
     </div>
   )
 }
@@ -851,57 +853,36 @@ function CrumbButton({ label, onClick, drop }: { label: string; onClick: () => v
   )
 }
 
-function Grid({ children }: { children: ReactNode }) {
-  return <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 400px))', justifyContent: 'start', gap: 20 }}>{children}</div>
+function Grid({ children, layout }: { children: ReactNode; layout: Layout }) {
+  return <div className={layout === 'cards' ? 'fl-dashboard-grid' : 'fl-dashboard-list'}>{children}</div>
 }
 
 function isFolderId(s: Sel): s is string {
   return s !== 'all' && s !== 'none'
 }
 
-// cat 키 → CSS 변수 참조. MiniFlow 의 catColor 와 동일 매핑.
-function varCat(cat: string): string {
-  const known = ['auth', 'bank', 'card', 'generic', 'set', 'if', 'assert', 'form', 'input', 'wait', 'start', 'end']
-  if (known.includes(cat)) return `var(--fl-cat-${cat})`
-  if (cat === 'transform') return 'var(--fl-patch)'
-  if (cat === 'tcp') return 'var(--fl-post)'
-  return 'var(--fl-cat-generic)'
-}
-
 const sidebarLabel: CSSProperties = { fontSize: 11, fontWeight: 700, color: 'var(--fl-text-muted)', textTransform: 'uppercase', letterSpacing: '.06em', margin: '16px 8px 6px' }
 const crumbBtn: CSSProperties = { border: 'none', background: 'transparent', padding: 0, cursor: 'pointer', color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-head)', fontSize: 'var(--fl-fs-xl)', fontWeight: 500, letterSpacing: '-.01em' }
 const crumbCurrent: CSSProperties = { fontFamily: 'var(--fl-font-head)', fontSize: 'var(--fl-fs-xl)', fontWeight: 600, letterSpacing: '-.01em', margin: 0 }
-const folderGrid: CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 300px))', justifyContent: 'start', gap: 14 }
-const folderTileStyle: CSSProperties = { display: 'flex', alignItems: 'center', gap: 12, background: 'var(--fl-surface)', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-lg)', padding: '14px 16px', boxShadow: 'var(--fl-shadow)', cursor: 'pointer' }
 // 드래그 중 드롭 가능한 폴더 힌트(연한 점선) / 드래그오버 중 활성(강조)
 const dropHint: CSSProperties = { border: '1px dashed color-mix(in srgb, var(--fl-primary) 45%, var(--fl-border))' }
 const dropActive: CSSProperties = { border: '1.5px dashed var(--fl-primary)', background: 'color-mix(in srgb, var(--fl-primary) 10%, var(--fl-surface))', boxShadow: 'var(--fl-shadow-lg)' }
 const bulkMoveSel: CSSProperties = { height: 32, padding: '0 8px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 12.5, cursor: 'pointer' }
-const newFolderTile: CSSProperties = { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, minHeight: 58, border: '1.5px dashed var(--fl-border)', borderRadius: 'var(--fl-radius-lg)', background: 'transparent', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 13 }
 const newFolderBtn: CSSProperties = { width: '100%', marginTop: 8, padding: '8px', border: '1px dashed var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'transparent', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 13 }
-const wsSelect: CSSProperties = { flex: 1, minWidth: 0, padding: '7px 8px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 12.5, cursor: 'pointer' }
-const wsGearBtn: CSSProperties = { flexShrink: 0, width: 30, height: 30, border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 14, lineHeight: 1 }
-const heroBand: CSSProperties = { padding: '24px 28px', borderRadius: 'var(--fl-radius-lg)', background: 'var(--fl-surface)', border: '1px solid var(--fl-border)' }
-const heroOpenBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: 'var(--fl-primary)', color: '#fff', border: 'none', padding: '9px 16px', borderRadius: 10, fontWeight: 600, fontSize: 13.5, textDecoration: 'none' }
-const primaryBtn: CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, background: 'var(--fl-primary)', color: '#fff', border: 'none', padding: '9px 16px', borderRadius: 10, fontWeight: 600, fontSize: 13.5, cursor: 'pointer', height: 38 }
+const primaryBtn: CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, background: 'var(--fl-action-primary-bg)', color: 'var(--fl-action-primary-ink)', border: 'none', padding: '9px 16px', borderRadius: 10, fontWeight: 600, fontSize: 13.5, cursor: 'pointer', height: 38 }
 const ghostBtn: CSSProperties = { border: '1px solid var(--fl-border)', background: 'var(--fl-surface)', color: 'var(--fl-text)', padding: '8px 14px', borderRadius: 'var(--fl-radius-sm)', fontSize: 13, cursor: 'pointer' }
-const searchBox: CSSProperties = { padding: '0 12px 0 30px', height: 38, border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 13, width: 200 }
+const searchBox: CSSProperties = { padding: '0 12px 0 30px', height: 38, border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 13, width: 240 }
 const seg: CSSProperties = { display: 'flex', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', overflow: 'hidden', height: 38 }
 const segBtn = (on: boolean): CSSProperties => ({ padding: '0 12px', border: 'none', background: on ? 'var(--fl-surface-2)' : 'transparent', color: on ? 'var(--fl-text)' : 'var(--fl-text-muted)', fontSize: 12.5, fontWeight: on ? 600 : 500, cursor: 'pointer' })
-const card: CSSProperties = { background: 'var(--fl-surface)', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-lg)', padding: '16px 18px', boxShadow: 'var(--fl-shadow)' }
-const cardTitle: CSSProperties = { fontFamily: 'var(--fl-font-head)', fontWeight: 600, fontSize: 15.5, color: 'var(--fl-text)', textDecoration: 'none', display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }
-const selectedCard: CSSProperties = { boxShadow: '0 0 0 2px var(--fl-primary), var(--fl-shadow)', background: 'var(--fl-surface-2)' }
 const cardCheckbox: CSSProperties = { width: 18, height: 18, marginTop: 2, cursor: 'pointer', accentColor: 'var(--fl-primary)', flexShrink: 0 }
 const selectToggleBtn = (on: boolean): CSSProperties => ({ display: 'flex', alignItems: 'center', gap: 6, height: 38, padding: '0 14px', borderRadius: 'var(--fl-radius-sm)', border: `1px solid ${on ? 'var(--fl-primary)' : 'var(--fl-border)'}`, background: on ? 'var(--fl-surface-2)' : 'var(--fl-surface)', color: on ? 'var(--fl-text)' : 'var(--fl-text-muted)', fontSize: 13, fontWeight: on ? 600 : 500, cursor: 'pointer' })
 const selectBar: CSSProperties = { display: 'flex', alignItems: 'center', gap: 14, padding: '10px 14px', borderRadius: 'var(--fl-radius-sm)', border: '1px solid var(--fl-border)', background: 'var(--fl-surface)' }
 const selectAllLabel: CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--fl-text)', cursor: 'pointer', userSelect: 'none' }
-const dangerBtn = (disabled: boolean): CSSProperties => ({ display: 'flex', alignItems: 'center', gap: 6, background: 'var(--fl-fail)', color: '#fff', border: 'none', padding: '8px 14px', borderRadius: 10, fontWeight: 600, fontSize: 13, cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.5 : 1, height: 36 })
-const metaMono: CSSProperties = { fontSize: 11.5, color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)' }
+const dangerBtn = (disabled: boolean): CSSProperties => ({ display: 'flex', alignItems: 'center', gap: 6, background: 'var(--fl-action-danger-bg)', color: 'var(--fl-action-danger-ink)', border: 'none', padding: '8px 14px', borderRadius: 10, fontWeight: 600, fontSize: 13, cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.5 : 1, height: 36 })
 const iconBtn: CSSProperties = { width: 30, height: 30, borderRadius: 8, border: '1px solid var(--fl-border)', background: 'var(--fl-surface)', cursor: 'pointer', color: 'var(--fl-text-muted)', fontSize: 15 }
-const miniBtn: CSSProperties = { width: 24, height: 28, border: 'none', background: 'transparent', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 12 }
-const menuBox: CSSProperties = { position: 'absolute', top: 34, right: 0, width: 168, background: 'var(--fl-surface)', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', boxShadow: 'var(--fl-shadow-lg)', padding: 5, zIndex: 20, display: 'grid', gap: 2 }
+const miniBtn: CSSProperties = { width: 24, height: 28, flexShrink: 0, border: 'none', background: 'transparent', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 12 }
+const menuBox: CSSProperties = { background: 'var(--fl-surface)', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', boxShadow: 'var(--fl-shadow-lg)', padding: 5, zIndex: 100, display: 'grid', gap: 2 }
 const menuItem: CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '7px 10px', border: 'none', background: 'transparent', color: 'var(--fl-text)', fontSize: 13, cursor: 'pointer', textAlign: 'left', borderRadius: 6 }
 const menuSelect: CSSProperties = { width: '100%', padding: '6px 8px', margin: '0 0 2px', border: '1px solid var(--fl-border)', borderRadius: 6, background: 'var(--fl-surface-2)', color: 'var(--fl-text)', fontSize: 12.5 }
 const emptyBox: CSSProperties = { border: '1.5px dashed var(--fl-border)', borderRadius: 16, padding: 40, textAlign: 'center', color: 'var(--fl-text-muted)', fontSize: 14 }
 const errorBox: CSSProperties = { display: 'flex', alignItems: 'center', gap: 14, border: '1px solid var(--fl-fail)', borderRadius: 12, padding: 18, color: 'var(--fl-text)' }
-const codeChip: CSSProperties = { fontFamily: 'var(--fl-font-mono)', fontSize: 11.5, background: 'var(--fl-surface-2)', padding: '1px 6px', borderRadius: 5 }

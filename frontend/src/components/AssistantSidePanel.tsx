@@ -1,7 +1,8 @@
+import { useApi } from '../app/WorkspaceContext'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { CSSProperties } from 'react'
 import { useEffect, useRef, useState } from 'react'
-import { assistantApi } from '../api/client'
+
 import type { AssistantMessage } from '../api/types'
 import { usePermissions } from '../auth/AuthContext'
 import { toast } from './toast'
@@ -28,6 +29,8 @@ export function AssistantSidePanel<T>({ title, intro, placeholder, request, summ
   applyLabel?: string
   appliedToast: string
 }) {
+  const { assistantApi } = useApi()
+
   const { canEdit } = usePermissions()
   const qc = useQueryClient()
   const oauthQ = useQuery({ queryKey: ['assistant', 'oauth', 'status'], queryFn: assistantApi.oauthStatus, refetchInterval: false })
@@ -160,9 +163,9 @@ function badge(real?: boolean): CSSProperties {
   return { fontSize: 10, fontWeight: 700, fontFamily: 'var(--fl-font-mono)', padding: '2px 7px', borderRadius: 999, border: '1px solid var(--fl-border)', color: real ? 'var(--fl-primary)' : 'var(--fl-text-muted)', background: real ? 'rgba(97,85,245,.12)' : 'var(--fl-surface-2)' }
 }
 function bubble(role: string): CSSProperties {
-  return { padding: '8px 11px', borderRadius: 12, fontSize: 12.5, lineHeight: 1.55, whiteSpace: 'pre-wrap', wordBreak: 'break-word', background: role === 'user' ? 'var(--fl-primary)' : 'var(--fl-surface-2)', color: role === 'user' ? '#fff' : 'var(--fl-text)', border: role === 'user' ? 'none' : '1px solid var(--fl-border)' }
+  return { padding: '8px 11px', borderRadius: 12, fontSize: 12.5, lineHeight: 1.55, whiteSpace: 'pre-wrap', wordBreak: 'break-word', background: role === 'user' ? 'var(--fl-action-primary-bg)' : 'var(--fl-surface-2)', color: role === 'user' ? 'var(--fl-action-primary-ink)' : 'var(--fl-text)', border: role === 'user' ? 'none' : '1px solid var(--fl-border)' }
 }
 const xBtn: CSSProperties = { width: 26, height: 26, borderRadius: 7, border: 'none', background: 'var(--fl-surface-2)', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 15 }
-const connectBtn: CSSProperties = { padding: '4px 10px', borderRadius: 999, border: 'none', background: 'var(--fl-primary)', color: '#fff', cursor: 'pointer', fontSize: 11, fontWeight: 700 }
-const sendBtn: CSSProperties = { flexShrink: 0, padding: '8px 12px', border: 'none', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-primary)', color: '#fff', cursor: 'pointer', fontSize: 12.5, fontWeight: 600 }
+const connectBtn: CSSProperties = { padding: '4px 10px', borderRadius: 999, border: 'none', background: 'var(--fl-action-primary-bg)', color: 'var(--fl-action-primary-ink)', cursor: 'pointer', fontSize: 11, fontWeight: 700 }
+const sendBtn: CSSProperties = { flexShrink: 0, padding: '8px 12px', border: 'none', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-action-primary-bg)', color: 'var(--fl-action-primary-ink)', cursor: 'pointer', fontSize: 12.5, fontWeight: 600 }
 const applyBtn: CSSProperties = { padding: '6px 12px', border: '1px solid var(--fl-primary)', borderRadius: 'var(--fl-radius-sm)', background: 'transparent', color: 'var(--fl-primary)', cursor: 'pointer', fontSize: 12, fontWeight: 600 }

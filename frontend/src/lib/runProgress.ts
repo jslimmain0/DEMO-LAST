@@ -58,12 +58,13 @@ export function computeRunView(
   }
 
   const pendingId =
+    detail?.pendingAgent?.nodeId ??
     detail?.pendingWait?.nodeId ??
     detail?.pendingClient?.nodeId ??
     detail?.pendingForm?.nodeId ??
     detail?.pendingInput?.nodeId ??
     null
-  if (pendingId) nodeStates[pendingId] = detail?.pendingWait ? 'waiting' : 'running'
+  if (pendingId) nodeStates[pendingId] = detail?.pendingWait || detail?.pendingAgent ? 'waiting' : 'running'
 
   // 엣지가 "지나간 경로"인지 — 출발 노드가 성공했고, IF 면 택한 분기와 포트가 일치해야 한다.
   const traversed = (e: Edge): boolean => {
@@ -104,7 +105,7 @@ export function computeRunView(
 }
 
 // 백엔드 FlowExecutor.topoOrder(Kahn) 미러 — 실행 순서 추정용. 사이클 잔여는 뒤에 덧붙인다.
-function topoOrder(nodes: Node[], edges: Edge[]): string[] {
+export function topoOrder(nodes: Node[], edges: Edge[]): string[] {
   const indeg = new Map<string, number>()
   const adj = new Map<string, string[]>()
   for (const n of nodes) {

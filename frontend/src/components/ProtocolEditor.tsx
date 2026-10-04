@@ -1,3 +1,4 @@
+import { useApi, useWorkspace } from '../app/WorkspaceContext'
 // frontend/src/components/ProtocolEditor.tsx — 프로토콜(고정길이 전문 규격) 편집기.
 // 기본(인코딩) · 프레이밍(길이 필드/형식/포함 여부/분기 필드) · 헤더 표 · 전문 표(탭·표 붙여넣기) ·
 // 메시지 플러그인 체인 · 미리보기(백엔드 조립). 저장 전까지는 전부 로컬 spec 편집.
@@ -5,7 +6,7 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import type { CSSProperties } from 'react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { adminApi, codecsApi, protocolsApi } from '../api/client'
+
 import type { CodecInfo, PluginRef, ProtocolDetail, ProtocolField, ProtocolSpec } from '../api/types'
 import { useAuth } from '../auth/AuthContext'
 import { AssistantLoginGate } from './AssistantLoginGate'
@@ -16,22 +17,31 @@ import { AskDialog } from './AskDialog'
 import type { AskSpec } from './AskDialog'
 import { Modal } from './Modal'
 import { FieldTable, ParamsForm } from './ProtocolFieldTable'
-import { activeEnvName } from '../lib/environments'
+import { useEnvironment, useEnvStore } from '../lib/environments'
 import { toast } from './toast'
+import { ResourceScopeNote } from './ResourceScopeNote'
+import { useUnsavedNavigation } from './UnsavedNavigation'
 
 const ENCODINGS = ['EUC-KR', 'MS949', 'UTF-8', 'US-ASCII']
 
 export function ProtocolEditor({ detail, canEdit, onSaved }: { detail: ProtocolDetail; canEdit: boolean; onSaved: () => void }) {
+  const { adminApi, codecsApi, protocolsApi } = useApi()
+  const scope = useWorkspace()
+
   const navigate = useNavigate()
-  const [searchParams, setSearchParams] = useSearchParams()
+  const [searchParams] = useSearchParams()
   const [name, setName] = useState(detail.name)
   const [spec, setSpecRaw] = useState<ProtocolSpec>(() => structuredClone(detail.spec))
   const [dirty, setDirty] = useState(false)
+  const draftRef = useRef({ name, spec }); draftRef.current = { name, spec }
+  const activeRef = useRef(true)
+  useEffect(() => { activeRef.current = true; return () => { activeRef.current = false } }, [])
   const [tab, setTab] = useState(detail.spec.messages[0]?.key ?? '')
   const [errors, setErrors] = useState<string[]>([])
   const [ask, setAsk] = useState<AskSpec | null>(null)
   const [pasting, setPasting] = useState(false)
   const [aiOpen, setAiOpen] = useState(false)
+  const [messageSearch, setMessageSearch] = useState('')
   const { isGuest } = useAuth()
   const aiMe = useQuery({ queryKey: ['admin', 'me'], queryFn: adminApi.me, staleTime: 30_000 })
   const aiPending = aiMe.data?.myStatus === 'PENDING'
@@ -47,10 +57,20 @@ export function ProtocolEditor({ detail, canEdit, onSaved }: { detail: ProtocolD
   const codecList = useMemo(() => codecs.data ?? [], [codecs.data])
 
   const save = useMutation({
-    mutationFn: () => protocolsApi.update(detail.id, { name, spec }),
-    onSuccess: () => { setDirty(false); setErrors([]); toast('저장됨', 'ok'); onSaved() },
+    mutationFn: async () => {
+      const snapshot = structuredClone(draftRef.current)
+      await protocolsApi.update(detail.id, snapshot)
+      return snapshot
+    },
+    onSuccess: (snapshot) => {
+      if (!activeRef.current) return
+      const unchanged = JSON.stringify(draftRef.current) === JSON.stringify(snapshot)
+      setDirty(!unchanged); setErrors([])
+      toast(unchanged ? '저장됨' : '이전 변경은 저장됐습니다. 추가 편집을 저장하세요.', 'ok'); onSaved()
+    },
     onError: (e) => setErrors([apiErrorMessage(e)]),
   })
+  const { navigateSaved } = useUnsavedNavigation({ dirty, saving: save.isPending, label: '전문 규격' })
   const duplicate = useMutation({
     mutationFn: () => protocolsApi.create(`${name} (복제)`, spec),
     onSuccess: (d) => { onSaved(); navigate(`/protocols/${d.id}`) },
@@ -58,7 +78,7 @@ export function ProtocolEditor({ detail, canEdit, onSaved }: { detail: ProtocolD
   })
   const remove = useMutation({
     mutationFn: () => protocolsApi.remove(detail.id),
-    onSuccess: () => { setDirty(false); onSaved(); navigate('/protocols') },
+    onSuccess: () => { setDirty(false); onSaved(); navigateSaved(`/protocols?space=${encodeURIComponent(`${scope.current.origin}:${scope.current.id}`)}`) },
     onError: (e) => setErrors([apiErrorMessage(e)]),
   })
 
@@ -82,8 +102,11 @@ export function ProtocolEditor({ detail, canEdit, onSaved }: { detail: ProtocolD
       return { ...cur, messages: [...cur.messages, { key: add, label: '', fields: [] }] }
     })
     setTab(add)
-    setSearchParams({}, { replace: true })
-  }, [searchParams, setSearchParams])
+    const next = new URLSearchParams(searchParams)
+    next.delete('add')
+    next.set('space', `${scope.current.origin}:${scope.current.id}`)
+    navigateSaved(`/protocols/${detail.id}?${next}`, { replace: true })
+  }, [searchParams, navigateSaved, detail.id, scope.current.origin, scope.current.id])
   // 미저장 이탈 경고
   useEffect(() => {
     if (!dirty) return
@@ -123,6 +146,7 @@ export function ProtocolEditor({ detail, canEdit, onSaved }: { detail: ProtocolD
       {errors.length > 0 && <div style={{ ...banner, borderColor: 'var(--fl-fail)', color: 'var(--fl-fail)' }}>{errors.map((m, i) => <div key={i}>⚠ {m}</div>)}</div>}
 
       <div style={{ padding: '4px 20px 60px', display: 'grid', gap: 18 }}>
+        <ResourceScopeNote />
         {/* ① 기본 */}
         <section style={section}>
           <div style={secTitle}>기본</div>
@@ -192,20 +216,22 @@ export function ProtocolEditor({ detail, canEdit, onSaved }: { detail: ProtocolD
 
         {/* ④ 전문 */}
         <section style={section}>
-          <div style={secTitle}>전문</div>
-          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 10 }}>
-            {spec.messages.map((m) => (
-              <button key={m.key} onClick={() => setTab(m.key)} style={{ ...tabBtn, ...(m.key === tab ? tabOn : null) }}>
+          <div style={secTitle}>전문 <span style={hint}>{spec.messages.length}개</span></div>
+          {(spec.messages.length > 5 || messageSearch) && <input type="search" aria-label="전문 key 또는 이름 검색" value={messageSearch} onChange={e => setMessageSearch(e.target.value)} placeholder="전문 key 또는 이름 검색" style={{ ...input, width: 'min(420px, 100%)', marginBottom: 8, boxSizing: 'border-box' }} />}
+          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 10, maxHeight: 170, overflowY: 'auto', padding: 2 }}>
+            {spec.messages.filter(m => `${m.key} ${m.label ?? ''}`.toLocaleLowerCase().includes(messageSearch.trim().toLocaleLowerCase())).map((m) => (
+              <button key={m.key} aria-pressed={m.key === tab} title={`${m.key} · ${m.label ?? ''}`} onClick={() => setTab(m.key)} style={{ ...tabBtn, ...(m.key === tab ? tabOn : null), maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 <b style={mono}>{m.key}</b>{m.label ? ` · ${m.label}` : ''}
               </button>
             ))}
+            {messageSearch && !spec.messages.some(m => `${m.key} ${m.label ?? ''}`.toLocaleLowerCase().includes(messageSearch.trim().toLocaleLowerCase())) && <p role="status" style={hint}>일치하는 전문이 없습니다.</p>}
             {canEdit && (
               <button style={tabBtn} onClick={() => setAsk({
                 title: '전문 추가', input: { label: '전문 key (예: 0210 — 분기 필드 값)', placeholder: '0210' }, confirmLabel: '추가',
                 onConfirm: (key) => {
                   if (spec.messages.some((m) => m.key === key)) { toast('같은 key 의 전문이 이미 있습니다', 'error'); return }
                   patch({ messages: [...spec.messages, { key, label: '', fields: [] }] })
-                  setTab(key)
+                  setTab(key); setMessageSearch('')
                 },
               })}>+ 전문 추가</button>
             )}
@@ -224,9 +250,10 @@ export function ProtocolEditor({ detail, canEdit, onSaved }: { detail: ProtocolD
                 {canEdit && <button style={miniBtn} onClick={() => setPasting(true)}>📋 표 붙여넣기</button>}
                 {canEdit && (
                   <button style={miniBtn} onClick={() => {
-                    const key = `${msg.key}-복사`
+                    let key = `${msg.key}-복사`
+                    for (let suffix = 2; spec.messages.some(m => m.key === key); suffix++) key = `${msg.key}-복사-${suffix}`
                     patch({ messages: [...spec.messages, { ...structuredClone(msg), key }] })
-                    setTab(key)
+                    setTab(key); setMessageSearch('')
                   }}>복제</button>
                 )}
                 {canEdit && spec.messages.length > 1 && (
@@ -306,17 +333,38 @@ function MessagePlugins({ spec, patch, codecs, readOnly }: { spec: ProtocolSpec;
 
 /** ⑥ 백엔드 조립 미리보기 — 저장 없이 현재 편집 중 spec 으로. */
 function PreviewSection({ spec, tab }: { spec: ProtocolSpec; tab: string }) {
+  const { activeEnvName, prepareForRun } = useEnvironment()
+  const envStore = useEnvStore()
+  const { scopeKey } = useWorkspace()
+
+  const { protocolsApi } = useApi()
+
   const [key, setKey] = useState(tab)
   const [values, setValues] = useState<Record<string, string>>({})
+  const [fieldSearch, setFieldSearch] = useState('')
   useEffect(() => { setKey(tab) }, [tab])
   // 전문이 바뀌면 값은 비운다 — 이름이 같아도 다른 전문의 값이 따라오면 안 된다
-  useEffect(() => { setValues({}) }, [key])
+  useEffect(() => { setValues({}); setFieldSearch('') }, [key])
   const fields = fieldsOf(spec, key)
   // 현재 전문에 있는(길이 자동 제외) 필드만 보낸다 — 전문을 바꾸면 남아 있던 값이 따라가지 않게
+  const signature = JSON.stringify([scopeKey, spec, key, values, envStore.active, envStore.envs[envStore.active ?? '']])
+  const target = useRef(signature)
+  target.current = signature
+  const mounted = useRef(false)
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false } }, [])
   const preview = useMutation({
-    mutationFn: () => protocolsApi.preview({ spec, key, environment: activeEnvName(), values: Object.fromEntries(fields.filter((f) => f.type !== 'length').map((f) => [f.name, values[f.name] ?? ''])) }),
+    mutationFn: async () => {
+      const snapshot = signature
+      const current = () => mounted.current && target.current === snapshot
+      try {
+        await prepareForRun()
+        if (!current()) return undefined
+        const result = await protocolsApi.preview({ spec, key, environment: activeEnvName(), values: Object.fromEntries(fields.filter((f) => f.type !== 'length').map((f) => [f.name, values[f.name] ?? ''])) })
+        return current() ? { signature: snapshot, result } : undefined
+      } catch (error) { if (current()) throw error; return undefined }
+    },
   })
-  const result = preview.data
+  const result = preview.data?.signature === signature ? preview.data.result : undefined
   const errOf = (name: string) => result?.errors.find((e) => e.field === name)?.message
   const general = result?.errors.filter((e) => !e.field) ?? []
 
@@ -330,26 +378,28 @@ function PreviewSection({ spec, tab }: { spec: ProtocolSpec; tab: string }) {
         <button onClick={() => preview.mutate()} disabled={preview.isPending} style={primaryBtn}>{preview.isPending ? '조립 중…' : '🔍 조립'}</button>
         {preview.isError && <span style={{ fontSize: 12, color: 'var(--fl-fail)' }}>⚠ {apiErrorMessage(preview.error)}</span>}
       </div>
-      <div style={{ display: 'grid', gap: 5, maxWidth: 560 }}>
-        {fields.map((f) => {
+      {(fields.length > 5 || fieldSearch) && <input type="search" aria-label="미리보기 필드 검색" value={fieldSearch} onChange={e => setFieldSearch(e.target.value)} placeholder={`필드 이름 검색 · ${fields.length}개`} style={{ ...input, width: 'min(420px, 100%)', marginBottom: 8, boxSizing: 'border-box' }} />}
+      <div style={{ display: 'grid', gap: 5, maxWidth: 880, maxHeight: 320, overflowY: 'auto', padding: 2 }}>
+        {fields.filter(f => f.name.toLocaleLowerCase().includes(fieldSearch.trim().toLocaleLowerCase())).map((f) => {
           const auto = f.type === 'length'
           const e = errOf(f.name)
           return (
             <label key={f.name} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ ...lbl, fontFamily: 'var(--fl-font-mono)', fontSize: 12 }}>{f.name}</span>
+              <span title={f.name} style={{ ...lbl, width: '35%', minWidth: 0, overflowWrap: 'anywhere', fontFamily: 'var(--fl-font-mono)', fontSize: 12 }}>{f.name}</span>
               <input aria-label={`${f.name} 값`} value={auto ? '' : values[f.name] ?? ''} disabled={auto} placeholder={auto ? '자동' : `${f.len}B`}
-                onChange={(ev) => setValues({ ...values, [f.name]: ev.target.value })} style={{ ...input, flex: 1 }} />
+                onChange={(ev) => setValues({ ...values, [f.name]: ev.target.value })} style={{ ...input, flex: 1, minWidth: 0 }} />
               {e && <span style={{ fontSize: 11.5, color: 'var(--fl-fail)' }}>⚠ {e}</span>}
             </label>
           )
         })}
+        {fieldSearch && !fields.some(f => f.name.toLocaleLowerCase().includes(fieldSearch.trim().toLocaleLowerCase())) && <p role="status" style={hint}>일치하는 필드가 없습니다.</p>}
       </div>
       {result && (
         <div style={{ marginTop: 12, display: 'grid', gap: 8 }}>
           <div style={{ ...mono, fontSize: 12.5, fontWeight: 700 }}>총 {result.total}B</div>
           {general.map((e, i) => <div key={i} style={{ fontSize: 12, color: 'var(--fl-fail)' }}>⚠ {e.message}</div>)}
           {(result.warnings ?? []).map((w, i) => <div key={i} style={{ fontSize: 12, color: 'var(--fl-warn, #b8860b)' }}>⚠ {w}</div>)}
-          <div style={{ display: 'grid', gap: 2 }}>
+          <div style={{ display: 'grid', gap: 2, maxHeight: 230, overflowY: 'auto' }}>
             {result.fields.map((f, i) => (
               <div key={i} style={{ ...mono, fontSize: 11.5, color: 'var(--fl-text-muted)' }}>
                 @{f.offset} · <span style={{ color: 'var(--fl-text)' }}>{f.name}</span> · {f.actualBytes}/{f.len} B
@@ -379,7 +429,7 @@ function PasteDialog({ header, onClose, onApply }: {
     <Modal onClose={onClose} ariaLabel="표 붙여넣기" width={720} card={{ padding: 18, gap: 12 }} closeOnBackdrop={false}>
       <div style={{ fontFamily: 'var(--fl-font-head)', fontWeight: 600, fontSize: 16 }}>📋 표 붙여넣기</div>
       <div style={hint}>명세서 표를 그대로 붙여넣으세요 — 줄마다 <code style={mono}>이름 길이 [타입] [패딩]</code>. 앞 {header.length}개는 헤더로 봅니다.</div>
-      <textarea value={text} onChange={(e) => setText(e.target.value)} autoFocus rows={8} placeholder={'전문길이\t4\tlength\tleft/zero\n거래코드\t4\tascii\tright/space\n계좌번호\t13\tascii'}
+      <textarea aria-label="전문 필드 표 붙여넣기" value={text} onChange={(e) => setText(e.target.value)} autoFocus rows={8} placeholder={'전문길이\t4\tlength\tleft/zero\n거래코드\t4\tascii\tright/space\n계좌번호\t13\tascii'}
         style={{ ...input, width: '100%', fontFamily: 'var(--fl-font-mono)', fontSize: 12, resize: 'vertical' }} />
       <div style={{ maxHeight: 200, overflowY: 'auto', display: 'grid', gap: 2 }}>
         {parsed.fields.map((f, i) => (
@@ -401,8 +451,8 @@ function PasteDialog({ header, onClose, onApply }: {
 }
 
 // ---------- 스타일 ----------
-const topBar: CSSProperties = { position: 'sticky', top: 0, zIndex: 2, display: 'flex', alignItems: 'center', gap: 8, padding: '12px 20px', borderBottom: '1px solid var(--fl-border)', background: 'var(--fl-surface)' }
-const nameInput: CSSProperties = { padding: '6px 10px', border: '1px solid transparent', borderRadius: 'var(--fl-radius-sm)', background: 'transparent', color: 'var(--fl-text)', fontSize: 17, fontWeight: 700, fontFamily: 'var(--fl-font-head)', minWidth: 220 }
+const topBar: CSSProperties = { position: 'sticky', top: 0, zIndex: 2, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, padding: '12px 20px', borderBottom: '1px solid var(--fl-border)', background: 'var(--fl-surface)' }
+const nameInput: CSSProperties = { padding: '6px 10px', border: '1px solid transparent', borderRadius: 'var(--fl-radius-sm)', background: 'transparent', color: 'var(--fl-text)', fontSize: 17, fontWeight: 700, fontFamily: 'var(--fl-font-head)', minWidth: 150, flex: '1 1 240px' }
 const dirtyBadge: CSSProperties = { fontSize: 11.5, fontWeight: 700, color: 'var(--fl-warn, #b8860b)' }
 const banner: CSSProperties = { margin: '10px 20px 0', padding: '8px 12px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', fontSize: 12.5, display: 'grid', gap: 3 }
 const section: CSSProperties = { padding: 14, border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius)', background: 'var(--fl-surface)' }
@@ -415,10 +465,10 @@ const mono: CSSProperties = { fontFamily: 'var(--fl-font-mono)' }
 const input: CSSProperties = { padding: '6px 9px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', color: 'var(--fl-text)', fontSize: 12.5 }
 const sel: CSSProperties = { padding: '6px 8px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', color: 'var(--fl-text)', fontSize: 12.5, cursor: 'pointer' }
 const tabBtn: CSSProperties = { padding: '6px 11px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', color: 'var(--fl-text-muted)', fontSize: 12.5, cursor: 'pointer' }
-const tabOn: CSSProperties = { background: 'var(--fl-primary)', color: '#fff', borderColor: 'var(--fl-primary)' }
-const primaryBtn: CSSProperties = { padding: '7px 14px', border: 'none', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-primary)', color: '#fff', fontWeight: 600, fontSize: 12.5, cursor: 'pointer' }
+const tabOn: CSSProperties = { background: 'var(--fl-action-primary-bg)', color: 'var(--fl-action-primary-ink)', borderColor: 'var(--fl-primary)' }
+const primaryBtn: CSSProperties = { padding: '7px 14px', border: 'none', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-action-primary-bg)', color: 'var(--fl-action-primary-ink)', fontWeight: 600, fontSize: 12.5, cursor: 'pointer' }
 const ghostBtn: CSSProperties = { padding: '7px 12px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 12.5, cursor: 'pointer' }
 const miniBtn: CSSProperties = { padding: '5px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 12, cursor: 'pointer' }
 const arrowBtn: CSSProperties = { width: 21, height: 24, padding: 0, border: '1px solid var(--fl-border)', borderRadius: 4, background: 'var(--fl-surface)', color: 'var(--fl-text-muted)', fontSize: 10, cursor: 'pointer' }
 const pluginRow: CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', padding: '8px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)' }
-const pre: CSSProperties = { margin: 0, padding: 10, borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', fontFamily: 'var(--fl-font-mono)', fontSize: 11.5, whiteSpace: 'pre-wrap', wordBreak: 'break-all', color: 'var(--fl-text)' }
+const pre: CSSProperties = { margin: 0, padding: 10, maxHeight: 280, overflow: 'auto', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', fontFamily: 'var(--fl-font-mono)', fontSize: 11.5, whiteSpace: 'pre-wrap', wordBreak: 'break-all', color: 'var(--fl-text)' }

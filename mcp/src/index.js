@@ -8,27 +8,49 @@
 // 툴은 REST 1:1 이 아니라 작업 단위이고, 응답은 에이전트 컨텍스트를 아끼려 짧은 텍스트 요약이다.
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import cors from 'cors';
 import express from 'express';
 import { createRequire } from 'node:module';
 import { z } from 'zod';
-import { ApiError, BASE, api, auth, sleep, withToken } from './client.js';
+import { ApiError, BASE, api, auth, credentials, sleep, withToken, withTarget, withWorkspace, currentTarget, currentWorkspace, resourceBase, desktopAgent } from './client.js';
 import { gate, oauthRouter } from './oauth.js';
 const VERSION = createRequire(import.meta.url)('../package.json').version;
 /** 툴 레지스트리 — 요청마다 새 McpServer 를 만들어야 해서(stateless) 등록을 함수로 미룬다. */
 const TOOLS = [];
-const tool = (name, cfg, handler) => TOOLS.push({ name, cfg, handler });
-function buildServer() {
+const TARGET_ARG = z.enum(['local', 'server']).optional().describe('저장 자원 위치. local=Windows 앱 개인 H2, server=로그인한 서버 공용·팀. 노드 실행 위치(executionAgent)와 별개. 생략=현재 MCP 연결 기본값');
+const WORKSPACE_ARG = z.string().optional().describe('선택 target의 워크스페이스 이름 또는 id. 생략=local 개인 공간 / server 공용');
+const UNSCOPED_TOOLS = new Set(['flowlink_status', 'flowlink_update_status', 'flowlink_guide', 'workspace_list', 'http_request']);
+const tool = (name, cfg, handler) => TOOLS.push({ name,
+    cfg: { ...cfg, inputSchema: { target: TARGET_ARG, workspace: WORKSPACE_ARG, ...cfg.inputSchema } },
+    handler: async (args, extra) => {
+        try {
+            return await withTarget(args.target, async () => {
+                const invoke = () => {
+                    const values = { ...args };
+                    if (name !== 'workspace_list') delete values.target;
+                    if (!Object.hasOwn(cfg.inputSchema, 'workspace')) delete values.workspace;
+                    return handler(values, extra);
+                };
+                if (UNSCOPED_TOOLS.has(name) && !args.workspace) return invoke();
+                const workspace = await wsOf(args.workspace);
+                return withWorkspace(workspace.id, invoke);
+            });
+        } catch (e) { return fail(e); }
+    },
+});
+function buildServer(token) {
     const server = new McpServer({ name: 'flowlink', version: VERSION });
     for (const t of TOOLS)
-        server.registerTool(t.name, t.cfg, t.handler);
+        server.registerTool(t.name, t.cfg, token === undefined ? t.handler :
+            (args, extra) => withToken(token, () => t.handler(args, extra)));
     return server;
 }
 const ok = (text) => ({ content: [{ type: 'text', text }] });
 const fail = (e) => {
     let hint = '';
     // 문지기(gate)가 무효 토큰·(로그인 필수 서버의) 무토큰을 401 로 미리 걸러낸다. 여기 401 은 게스트가 로그인 필수 경로(AI 등)를 친 것 아니면 호출 도중 만료.
-    const LOGIN = ' MCP 클라이언트에서 flowlink 서버를 인증(로그인)하세요 — 브라우저가 열려 GitHub 로 로그인합니다.';
+    const LOGIN = desktopAgent ? ' FlowLink Windows 앱의 서버 연결에서 다시 로그인하세요.' : ' MCP 클라이언트에서 flowlink 서버를 인증(로그인)하세요 — 브라우저가 열려 GitHub 로 로그인합니다.';
     if (e instanceof ApiError && e.status === 401)
         hint = auth.token() ? '\n→ 로그인 토큰이 만료됐거나 무효합니다.' + LOGIN : '\n→ 로그인이 필요합니다.' + LOGIN;
     else if (e instanceof ApiError && e.status === 403)
@@ -57,16 +79,19 @@ tool('flowlink_status', {
     description: '연결된 FlowLink 주소·인증 모드·로그인 상태·승인 여부. 다른 툴이 403 이면 먼저 이걸로 확인.',
     inputSchema: {},
 }, async () => run(async () => {
-    const lines = [`url: ${BASE}`, 'transport: http(서빙 — 요청은 FlowLink 서버에서 나간다)'];
+    const lines = [`url: ${BASE}`, `transport: ${process.argv.includes('--stdio') ? 'stdio' : 'http'}`,
+        `저장 자원 위치: ${currentTarget()} · 노드 요청 출발지: 각 노드의 executionAgent · http_request 출발지: MCP 프로세스`,
+        '개인 공간은 PC H2, 공용·팀은 서버 DB입니다. target은 자원 위치이고 node.executionAgent는 실행 위치입니다.'];
     const cfg = await api('GET', '/auth/config');
     const mode = cfg.mode ?? (cfg.enabled ? 'github' : 'none');
+    if (cfg.runtime) lines.push(`실행 위치: ${cfg.runtime.name} (${cfg.runtime.kind})${cfg.runtime.deviceId ? ` · 장치 ${cfg.runtime.deviceId}` : ''}`);
     lines.push(`auth mode: ${mode}`);
     if (mode !== 'github') {
         lines.push('login: 불필요(dev 모드 — 전권)');
         return lines.join('\n');
     }
     // github 모드 — 무토큰으로 여기 왔다면 게스트 스위치가 켜진 서버(익명 허용). 토큰이 있으면 문지기가 이미 검증했다.
-    if (!auth.token()) {
+    if (!auth.token() && !desktopAgent) {
         lines.push('login: 없음 · 게스트(게스트 스위치 ON) — 읽기·워크플로·Mock 은 그대로, 프로토콜/환경 저장·AI 는 승인 사용자 필요. 내 이름으로 하려면 MCP 클라이언트에서 flowlink 서버를 인증(로그인).');
         return lines.join('\n');
     }
@@ -76,6 +101,27 @@ tool('flowlink_status', {
         lines.push(`plugins: 승인 대기 ${me.pendingPlugins}건 — 화면 /admin 에서 승인 (plugin_script_list status=PENDING 으로 확인)`);
     return lines.join('\n');
 }));
+// Read-only release information. Installation remains an explicit Windows-app action.
+tool('flowlink_update_status', {
+    title: '앱 업데이트 확인',
+    description: '서버의 현재 버전과 검증된 Windows 배포 버전을 조회합니다. PC 설치 버전을 알 수 없으면 최신이라고 추정하지 않습니다. 설치는 Windows 앱의 업데이트 창에서 사용자가 시작합니다.',
+    inputSchema: {},
+    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+}, async () => run(async () => {
+    const release = await withTarget('server', () => api('GET', '/distribution'));
+    const lines = [`MCP 서버 버전: ${VERSION}`, `백엔드 서버 버전: ${release.serverVersion ?? '확인 불가'}`,
+        `Windows 배포 상태: ${release.releaseStatus ?? '업데이트 메타데이터 미지원'}`,
+        release.releaseMessage ?? '서버를 업데이트한 후 다시 확인하세요.'];
+    if (release.available && release.version) lines.push(`Windows 배포 버전: ${release.version}`, `설치파일: ${release.installerUrl}`);
+    if (desktopAgent) {
+        try {
+            const local = await withTarget('local', () => api('GET', '/desktop/update'));
+            lines.push(`이 PC 설치 버전: ${local.currentVersion}`, `업데이트 상태: ${local.phase}`, local.message);
+        } catch { lines.push('이 PC의 업데이트 상태를 확인하지 못했습니다. Windows 앱에서 확인하세요.'); }
+    } else lines.push('PC 설치 버전은 이 서버 연결에서 확인되지 않습니다. Windows 앱 또는 웹 설정의 앱 업데이트를 여세요.');
+    lines.push('앱·트레이·PC 호출 기능은 하나의 MSI로 갱신됩니다. 중앙 MCP 서버는 서버 배포로 갱신합니다.');
+    return lines.filter(Boolean).join('\n');
+}));
 // ---------- 가이드(스키마 원문) ----------
 tool('flowlink_guide', {
     title: '규격 가이드',
@@ -84,6 +130,8 @@ tool('flowlink_guide', {
     // plugin: 스크립트 플러그인 작성 규격 + 어디에 붙이나(필드/전문/Mock/워크플로) + fl.* 암복호화 함수 목록
 }, async ({ topic }) => run(async () => {
     const s = await api('GET', '/schemas');
+    const hybrid = '\n\n하이브리드 에이전트: MCP 툴의 target(local|server)과 workspace는 저장 위치를 고릅니다. Windows 앱 연결에서는 로그인 후에도 target=local 개인 공간을 계속 사용합니다. 그래프 노드의 executionAgent(local|server, 생략=저장 위치 기본)는 그 노드가 실행될 에이전트입니다. agentEnvironment는 해당 실행기의 환경 이름, agentMock은 해당 실행기의 Mock slug, agentWorkspaceId는 서버 자원 공간(public 또는 UUID)입니다. protocolId와 transformId도 실행할 에이전트에서 목록을 조회해 선택하세요. agentOutputs 생략=선언 출력 및 하위 참조 키 자동 선택, []=경계 출력 전달 없음, [키...]=해당 키만 전달. 시크릿은 이름으로 해당 실행기에서 읽으며 값을 복사하지 않습니다. WAIT·Mock 리스너는 저장 공간에 고정(개인=PC, 공용·팀=서버), FORM/INPUT은 사용자 PC 화면입니다. pendingAgent는 Windows 앱 Dispatcher가 처리하므로 MCP가 대신 요청을 보내거나 정상 결과로 resume하지 않습니다. UNKNOWN은 결과 불명확이므로 재실행하지 말고 execution_get으로 확인하거나 명시적 abort로 중단하세요.';
+    for (const key of ['flow', 'rules']) if (typeof s[key] === 'string') s[key] += hybrid;
     if (topic === 'all')
         return Object.entries(s).map(([k, v]) => `# ${k}\n${v}`).join('\n\n');
     if (topic === 'nodes')
@@ -91,13 +139,15 @@ tool('flowlink_guide', {
     return s[topic] ?? `(${topic} 없음)`;
 }));
 // ---------- 워크스페이스 · 폴더 (이름으로 지목 — "어느 워크스페이스의 어느 폴더에서") ----------
-/** 워크스페이스 참조(이름·id·'public'·생략=공용) → { id, name, q }. q 는 REST 에 넣는 값(공용=null). 없으면 볼 수 있는 목록을 보여주며 실패. */
+/** 선택 에이전트 안에서 이름·id를 해석한다. 같은 이름이 여럿이면 임의 선택하지 않는다. */
 async function wsOf(ref) {
-    const r = (ref ?? '').trim();
-    if (!r || r === 'public' || r === '공용')
-        return { id: 'public', name: '공용', q: null };
+    const r = (ref ?? currentWorkspace() ?? '').trim();
     const list = await api('GET', '/workspaces');
-    const hit = list.find((w) => w.id === r) ?? list.find((w) => w.name.toLowerCase() === r.toLowerCase());
+    const named = list.filter(w => w.name.toLowerCase() === r.toLowerCase());
+    const byId = list.find(w => w.id === r);
+    if (!byId && named.length > 1) throw new Error(`워크스페이스 이름이 겹칩니다: ${r}. workspace_list의 id로 지정하세요.`);
+    const hit = !r ? list.find(w => w.kind === (currentTarget() === 'local' ? 'PERSONAL' : 'PUBLIC'))
+        : byId ?? ((r === 'local' || r === '개인') && currentTarget() === 'local' ? list.find((w) => w.kind === 'PERSONAL') : named[0]);
     if (!hit)
         throw new Error(`워크스페이스 없음: ${r} — 내가 볼 수 있는 것: ${list.map((w) => w.name).join(', ')}`);
     return { id: hit.id, name: hit.name, q: hit.id };
@@ -124,13 +174,20 @@ async function folderOf(w, ref, fs) {
         throw new Error(`폴더 이름이 겹칩니다: ${hits.map((f) => f.path).join(' · ')} — 경로("상위/하위")로 지목하세요`);
     throw new Error(`폴더 없음: ${r} (${w.name}) — 있는 폴더: ${fs.map((f) => f.path).join(', ') || '(없음)'}`);
 }
-const WS_ARG = z.string().optional().describe('워크스페이스 이름 또는 id(workspace_list). 생략=공용');
+const WS_ARG = WORKSPACE_ARG;
 const FOLDER_ARG = z.string().optional().describe('폴더 이름 또는 "상위/하위" 경로(folder_list). 생략 또는 "/"=루트');
 tool('workspace_list', {
     title: '워크스페이스 목록',
-    description: '내가 볼 수 있는 워크스페이스(공용·개인·팀)와 내 롤. 다른 툴의 workspace 인자엔 여기 이름(또는 id)을 쓴다. 생략=공용.',
+    description: '개인·공용·팀 워크스페이스와 내 롤. Windows 앱 연결에서 target 생략 시 개인+로그인한 서버 목록을 함께 표시한다. 다른 툴에는 여기에 나온 target과 workspace id를 쓴다.',
     inputSchema: {},
-}, async () => run(async () => (await api('GET', '/workspaces')).map((w) => `${w.name} [${w.id}] ${w.kind} · 내 롤 ${w.myRole}`).join('\n')));
+}, async ({ target }) => run(async () => {
+    const list = async () => (await api('GET', '/workspaces')).map(w => `${w.name} [${w.id}] ${w.kind} · target=${currentTarget()} · 내 롤 ${w.myRole}`).join('\n');
+    if (!desktopAgent || target) return list();
+    const local = await withTarget('local', list);
+    let server;
+    try { server = await withTarget('server', list); } catch (e) { server = `서버: ${e.message}`; }
+    return `${local}\n${server}`;
+}));
 tool('workspace_get', {
     title: '워크스페이스 한눈에',
     description: '워크스페이스 하나의 폴더 트리 + 각 폴더의 워크플로 + Mock 목록. "어느 워크스페이스의 어느 폴더에서" 작업하기 전에 구조를 본다.',
@@ -213,8 +270,8 @@ tool('protocol_upsert', {
 tool('protocol_preview', {
     title: '전문 조립 미리보기',
     description: '프로토콜(id/name 또는 spec)과 전문 key·값으로 실제 바이트를 조립해 hex/텍스트/필드 오프셋을 보여준다(전송 없음). 값 검증 오류도 여기서 잡힌다.',
-    inputSchema: { protocolId: z.string().optional(), name: z.string().optional(), spec: jsonArg.optional(), key: z.string(), values: z.record(z.string(), z.string()).optional() },
-}, async ({ protocolId, name, spec, key, values }) => run(async () => {
+    inputSchema: { protocolId: z.string().optional(), name: z.string().optional(), spec: jsonArg.optional(), key: z.string(), values: z.record(z.string(), z.string()).optional(), environment: z.string().optional() },
+}, async ({ protocolId, name, spec, key, values, environment }) => run(async () => {
     let s = spec;
     if (!s) {
         const p = await findProtocol({ id: protocolId, name });
@@ -222,7 +279,7 @@ tool('protocol_preview', {
             throw new Error('프로토콜 없음');
         s = (await api('GET', `/protocols/${p.id}`)).spec;
     }
-    const r = await api('POST', '/protocols/preview', { spec: s, key, values: values ?? {} });
+    const r = await api('POST', '/protocols/preview', { spec: s, key, values: values ?? {}, environment });
     if (r.errors?.length)
         return '⚠ ' + r.errors.map((e) => `${e.field ? e.field + ': ' : ''}${e.message}`).join(' · ');
     const rows = (r.fields ?? []).map((f) => `@${f.offset} ${f.name}=${JSON.stringify(f.value)} ${f.actualBytes}/${f.len}B${f.warn ? ' ' + f.warn : ''}`).join('\n');
@@ -231,24 +288,30 @@ tool('protocol_preview', {
 tool('protocol_delete', { title: '프로토콜 삭제', description: 'id 로 삭제(참조하는 노드/Mock 은 실행 시 실패).', inputSchema: { id: z.string() } }, async ({ id }) => run(async () => { await api('DELETE', `/protocols/${id}`); return '삭제됨'; }));
 // ---------- Mock ----------
 async function fleet() { return api('GET', '/mock-servers/fleet'); }
-async function findMock(slug) { const f = await fleet(); return f.servers.find((s) => s.slug === slug) ?? null; }
-function mockLine(s, f) {
-    const where = s.kind === 'TCP' ? `:${s.tcpPort ?? '?'} ${s.listening ? 'LISTENING' : s.listenError ? 'FAILED(' + s.listenError + ')' : 'OFF'}` : `${BASE}${f.contextPath ?? ''}/mock/${s.slug}`;
-    const cfg = s.kind === 'TCP' ? `프로토콜 ${s.protocolName ?? '없음'} · 규칙 ${s.tcpRuleCount ?? 0}${s.upstream ? ` · proxy→${s.upstream}` : ''}` : `라우트 ${s.routeCount ?? 0}${(s.routeLabels ?? []).length ? ' (' + s.routeLabels.slice(0, 4).join(', ') + ')' : ''}`;
-    return `${s.name} [${s.slug}] ${s.kind} ${s.enabled ? 'on' : 'off'} ${where} · ${cfg}${s.lastRequestAt ? ` · 최근요청 ${s.lastRequestAt}` : ''}${s.unmatchedRequests ? ` · 무매칭 ${s.unmatchedRequests}` : ''}`;
+async function findMock(slug) {
+    const list = await api('GET', '/mock-servers');
+    const matches = list.filter(s => s.slug === slug);
+    if (matches.length > 1) throw new Error(`Mock slug가 겹칩니다: ${slug}. workspace를 명시하세요.`);
+    return matches[0] ?? null;
 }
-tool('mock_list', { title: 'Mock 목록', description: 'Mock 서버(종류·켜짐·주소/포트·리스너 상태·프로토콜·최근 요청). workspace 생략=전체.', inputSchema: { workspace: WS_ARG } }, async ({ workspace }) => run(async () => {
+function mockLine(s) {
+    const where = s.listener?.advertisedAddress ?? (s.kind === 'TCP' ? `:${s.tcpPort ?? '?'}` : `${resourceBase()}${s.basePath ?? `/mock/ws/${s.workspaceId ?? 'public'}/${s.slug}`}`);
+    const state = s.listener?.state ?? (s.kind === 'TCP' ? (s.listening ? 'LISTENING' : s.listenError ? 'FAILED' : 'OFF') : s.enabled ? 'LISTENING' : 'OFF');
+    const cfg = s.kind === 'TCP' ? `프로토콜 ${s.protocolName ?? '없음'} · 규칙 ${s.tcpRuleCount ?? 0}${s.upstream ? ` · proxy→${s.upstream}` : ''}` : `라우트 ${s.routeCount ?? 0}${(s.routeLabels ?? []).length ? ' (' + s.routeLabels.slice(0, 4).join(', ') + ')' : ''}`;
+    return `${s.name} [${s.slug}] ${s.kind} ${s.enabled ? 'on' : 'off'} ${where} · ${state} · 리슨 ${s.listener?.agent ?? currentTarget()} · workspace=${s.workspaceId ?? 'public'}${s.listener?.error ? ` · ${s.listener.error}` : ''} · ${cfg}${s.lastRequestAt ? ` · 최근요청 ${s.lastRequestAt}` : ''}${s.unmatchedRequests ? ` · 무매칭 ${s.unmatchedRequests}` : ''}`;
+}
+tool('mock_list', { title: 'Mock 목록', description: '선택한 공간의 Mock 서버(종류·주소/포트·실제 리스너 상태·프로토콜·최근 요청). 개인 Mock은 PC, 공용·팀 Mock은 서버에서 리슨한다.', inputSchema: { workspace: WS_ARG } }, async ({ workspace }) => run(async () => {
     const f = await fleet();
-    const w = workspace ? await wsOf(workspace) : null;
-    const rows = w ? f.servers.filter((s) => (s.workspaceId ?? 'public') === w.id) : f.servers; // fleet 은 'public' 문자열
-    return rows.length ? rows.map((s) => mockLine(s, f)).join('\n') : '(Mock 없음)';
+    const w = await wsOf(workspace);
+    const rows = f.servers.filter((s) => (s.workspaceId ?? 'public') === w.id);
+    return rows.length ? rows.map(mockLine).join('\n') : '(Mock 없음)';
 }));
 tool('mock_get', { title: 'Mock 조회', description: 'slug 로 Mock spec JSON 을 가져온다.', inputSchema: { slug: z.string() } }, async ({ slug }) => run(async () => { const m = await findMock(slug); if (!m)
     throw new Error('Mock 없음: ' + slug); const d = await api('GET', `/mock-servers/${m.id}`); return `${d.name} [${d.slug}] ${d.kind} v${d.currentVersion ?? 0}\n` + json(d.spec); }));
 tool('mock_upsert', {
     title: 'Mock 생성/갱신',
     description: 'slug 가 있으면 spec 갱신, 없으면 생성 후 spec 저장. HTTP spec 은 flowlink_guide(mock) 규격, TCP spec 은 {"tcp":{"port","protocolId","upstream","timeoutMs","rules":[{"id","when":[{"field","op","value"}],"then":{"mode":"mock|proxy","fields":{...}},"fault":{...}}]}}. 저장 즉시 서빙/리스너 반영.',
-    inputSchema: { name: z.string().min(1), slug: z.string().regex(/^[a-z0-9-]{3,40}$/, 'slug 는 소문자·숫자·하이픈 3~40자'), type: z.enum(['HTTP', 'TCP']), spec: jsonArg, enabled: z.boolean().optional(), workspace: WS_ARG.describe('생성 시 소속 워크스페이스(이름/id). 생략=공용') },
+    inputSchema: { name: z.string().min(1), slug: z.string().regex(/^[a-z0-9-]{3,40}$/, 'slug 는 소문자·숫자·하이픈 3~40자'), type: z.enum(['HTTP', 'TCP']), spec: jsonArg, enabled: z.boolean().optional(), workspace: WS_ARG },
 }, async ({ name, slug, type, spec, enabled, workspace }) => run(async () => {
     let m = await findMock(slug);
     let created = false;
@@ -264,7 +327,7 @@ tool('mock_upsert', {
         await api('PATCH', `/mock-servers/${m.id}`, { enabled: false });
     const f = await fleet();
     const s = f.servers.find((x) => x.id === m.id);
-    return `${created ? '생성' : '갱신'}: ` + (s ? mockLine(s, f) : slug);
+    return `${created ? '생성' : '갱신'}: ` + (s ? mockLine(s) : slug);
 }));
 tool('mock_send', {
     title: 'TCP Mock 에 전문 보내기',
@@ -330,7 +393,7 @@ tool('mock_clear_log', { title: 'Mock 로그 비우기', description: '요청 �
     await api('DELETE', `/mock-servers/${m.id}/${m.kind === 'TCP' ? 'tcp-log' : 'requests'}`);
     return '로그 비움: ' + slug;
 }));
-tool('mock_usages', { title: 'Mock 을 쓰는 워크플로', description: '각 Mock 을 어느 워크플로가 참조하는지(삭제/변경 전 영향 확인). workspace 생략=공용.', inputSchema: { workspace: WS_ARG } }, async ({ workspace }) => run(async () => {
+tool('mock_usages', { title: 'Mock 을 쓰는 워크플로', description: '선택한 공간의 각 Mock 을 어느 워크플로가 참조하는지(삭제/변경 전 영향 확인).', inputSchema: { workspace: WS_ARG } }, async ({ workspace }) => run(async () => {
     const w = await wsOf(workspace);
     const [u, f] = await Promise.all([api('GET', '/mock-servers/usages', undefined, { workspaceId: w.q }), fleet()]);
     const rows = Object.entries(u).map(([id, flows]) => { const s = f.servers.find((x) => x.id === id); return `${s ? `${s.name} [${s.slug}]` : id} ← ${flows.map((x) => `${x.name} [${x.id}]`).join(', ')}`; });
@@ -346,7 +409,7 @@ tool('codec_try', {
     return `결과: ${clip(r.result, 1500)}\n필드: ${Object.entries(r.fields ?? {}).map(([k, v]) => `${k}=${v}`).join(' · ') || '(없음)'}\n${steps || '(단계 없음)'}`;
 }));
 // ---------- 워크플로 · 실행 ----------
-tool('flow_list', { title: '워크플로 목록', description: '워크플로 목록(폴더 경로/이름·id·노드 수·수정 시각). workspace 생략=공용, folder 로 그 폴더만.', inputSchema: { workspace: WS_ARG, folder: FOLDER_ARG } }, async ({ workspace, folder }) => run(async () => {
+tool('flow_list', { title: '워크플로 목록', description: '선택한 공간의 워크플로 목록(폴더 경로/이름·id·노드 수·수정 시각). folder 로 그 폴더만.', inputSchema: { workspace: WS_ARG, folder: FOLDER_ARG } }, async ({ workspace, folder }) => run(async () => {
     const w = await wsOf(workspace);
     const [fs, l] = await Promise.all([folderList(w), api('GET', '/flows', undefined, { workspaceId: w.q })]);
     const want = folder ? await folderOf(w, folder, fs) : null;
@@ -371,7 +434,7 @@ tool('flow_upsert', {
     }
     const v = await api('POST', `/flows/${flowId}/versions`, { graph, note: note ?? 'mcp', pinned: false });
     const nodes = graph.nodes?.length ?? 0;
-    return `저장: flow ${flowId} v${v.versionNo ?? v.currentVersion ?? '?'} · 노드 ${nodes} · 편집기 ${BASE}/flows/${flowId}`;
+    return `저장: flow ${flowId} v${v.versionNo ?? v.currentVersion ?? '?'} · 노드 ${nodes} · 편집기 ${BASE}/flows/${flowId}?space=${encodeURIComponent(`${currentTarget()}:${currentWorkspace() ?? 'public'}`)}`;
 }));
 tool('flow_update', {
     title: '워크플로 이름/설명/폴더 변경',
@@ -382,7 +445,7 @@ tool('flow_update', {
     if (name != null || description != null)
         await api('PATCH', `/flows/${id}`, { name, description });
     if (folder != null) {
-        const w = { id: d.workspaceId ?? 'public', name: d.workspaceId ?? '공용', q: d.workspaceId ?? null };
+        const w = { id: d.workspaceId ?? 'public', name: d.workspaceId ?? '공용', q: d.workspaceId ?? 'public' };
         await api('PUT', `/flows/${id}/folder`, { folderId: (await folderOf(w, folder))?.id ?? null });
     }
     const n = await api('GET', `/flows/${id}`);
@@ -402,7 +465,7 @@ tool('flow_version', {
 function execSummary(ex, opts) {
     const lines = [`실행 ${ex.id} · ${ex.status}${ex.error ? ` · ${ex.error}` : ''} · ${ex.startedAt}${ex.finishedAt ? ` → ${ex.finishedAt}` : ''}`];
     for (const n of ex.nodes ?? []) {
-        lines.push(`- ${n.nodeId}${n.nodeName ? `(${n.nodeName})` : ''} ${n.nodeType ?? ''} ${n.status}${n.ok ? ' ✓' : ' ✕'}${n.httpStatus ? ` HTTP ${n.httpStatus}` : ''}${n.durationMs != null ? ` ${n.durationMs}ms` : ''}`);
+        lines.push(`- ${n.nodeId}${n.nodeName ? `(${n.nodeName})` : ''} ${n.nodeType ?? ''}${n.executionAgent ? ` [${n.executionAgent}]` : ''} ${n.status}${n.ok ? ' ✓' : ' ✕'}${n.httpStatus ? ` HTTP ${n.httpStatus}` : ''}${n.durationMs != null ? ` ${n.durationMs}ms` : ''}`);
         const lim = opts?.full ? 4000 : 500;
         if (!n.ok || opts?.full) {
             if (n.requestText)
@@ -418,6 +481,11 @@ function execSummary(ex, opts) {
     const pending = ex.pendingInput ? '입력(input) 노드' : ex.pendingForm ? '폼(form) 노드' : ex.pendingClient ? '브라우저 호출(client) 노드' : ex.pendingWait ? `콜백 대기(wait) — 수신 URL ${ex.pendingWait.receiveUrl ?? ''}` : null;
     if (pending)
         lines.push(`⏸ 대기 중: ${pending} — 브라우저(워크플로 페이지)에서 진행하거나 콜백을 보내야 합니다.`);
+    if (ex.pendingAgent) {
+        const p = ex.pendingAgent;
+        lines.push(`에이전트 ${p.agent} · ${p.nodeName ?? p.nodeId} · ${p.status}${p.error ? ` · ${p.error}` : ''}`);
+        lines.push(p.status === 'UNKNOWN' ? '결과를 확인할 수 없습니다. 자동 재실행 금지. execution_get으로 확인하거나 사용자 지시에 따라 execution_resume abort=true로 중단하세요.' : 'Windows 앱 Dispatcher가 처리합니다. MCP에서 이 요청을 대신 보내거나 정상 결과로 resume하지 마세요.');
+    }
     return lines.join('\n');
 }
 tool('flow_run', {
@@ -425,15 +493,7 @@ tool('flow_run', {
     description: '실행을 시작하고 끝날 때까지(최대 timeoutSec, 기본 120초) 기다린 뒤 노드별 결과·출력·실패 사유를 돌려준다. input={{키@input}} 값, envName=활성 환경 이름.',
     inputSchema: { id: z.string(), input: z.record(z.string(), z.unknown()).optional(), envName: z.string().optional(), timeoutSec: z.number().int().min(5).max(600).optional() },
 }, async ({ id, input, envName, timeoutSec }) => run(async () => {
-    let env;
-    if (envName) {
-        try {
-            const list = await api('GET', '/environments');
-            env = list.find((e) => e.name === envName)?.vars;
-        }
-        catch { /* */ }
-    }
-    const started = await api('POST', `/flows/${id}/runs`, { input: input ?? null, env: env ?? null, envName: envName ?? null });
+    const started = await api('POST', `/flows/${id}/runs`, { input: input ?? null, envName: envName ?? null });
     return waitDone(started, timeoutSec);
 }));
 /**
@@ -442,10 +502,11 @@ tool('flow_run', {
  */
 async function waitDone(ex, timeoutSec) {
     const deadline = Date.now() + (timeoutSec ?? 120) * 1000;
-    const busy = (e) => e.status === 'RUNNING' || e.status === 'PENDING' || (e.status === 'WAITING' && !(e.pendingInput || e.pendingForm || e.pendingClient || e.pendingWait));
+    const busy = (e) => e.pendingAgent?.status !== 'UNKNOWN' && (e.status === 'RUNNING' || e.status === 'PENDING' || (e.status === 'WAITING' && !(e.pendingInput || e.pendingForm || e.pendingClient || e.pendingWait)));
     while (busy(ex) && Date.now() < deadline) {
         await sleep(500);
-        ex = await api('GET', `/executions/${ex.id}`);
+        try { ex = await api('GET', `/executions/${ex.id}`); }
+        catch (e) { throw new Error(`실행 ${ex.id} 상태 조회 실패: ${e.message}. 실행은 계속될 수 있습니다. 재호출하지 말고 execution_get으로 확인하세요.`); }
     }
     return execSummary(ex) + (busy(ex) ? '\n(아직 실행 중 — execution_get 으로 다시 확인)' : '');
 }
@@ -466,12 +527,13 @@ tool('execution_resume', {
     inputSchema: { id: z.string(), values: z.record(z.string(), z.unknown()).optional(), abort: z.boolean().optional(), timeoutSec: z.number().int().min(5).max(600).optional() },
 }, async ({ id, values, abort, timeoutSec }) => run(async () => {
     const ex = await api('GET', `/executions/${id}`);
-    const p = ex.pendingInput ?? ex.pendingForm ?? ex.pendingClient;
+    const p = ex.pendingAgent ?? ex.pendingInput ?? ex.pendingForm ?? ex.pendingClient ?? ex.pendingWait;
     if (!p)
         return `대기 중인 노드가 없습니다 (${ex.status})${ex.pendingWait ? ` · wait 노드 대기 중 — 콜백을 ${ex.pendingWait.receiveUrl ?? '(relay 미설정)'} 로 POST 하면 스스로 재개` : ''}`;
     let body, note = '';
     if (abort)
         body = { nodeId: p.nodeId, error: 'MCP 에서 중단', aborted: true };
+    else if (ex.pendingAgent || ex.pendingWait) return execSummary(ex);
     else if (ex.pendingInput)
         body = { nodeId: p.nodeId, formValues: values ?? {} };
     else if (ex.pendingForm) {
@@ -493,12 +555,11 @@ tool('execution_resume', {
 tool('execution_rerun', { title: '같은 조건으로 재실행', description: '실행 id 와 같은 버전·입력으로 다시 실행하고 끝까지 기다린다.', inputSchema: { id: z.string(), timeoutSec: z.number().int().min(5).max(600).optional() } }, async ({ id, timeoutSec }) => run(async () => waitDone(await api('POST', `/executions/${id}/rerun`), timeoutSec)));
 tool('node_run', {
     title: '노드 하나만 실행',
-    description: '워크플로의 노드 하나를 새 컨텍스트로 즉석 실행(이력 미저장) — HTTP/TCP 노드 설정을 맞출 때. input={{키@input}} 값, upstream={소스노드ID:{키:값}} 로 상류 출력 대입. 대기/폼/입력/클라이언트 노드는 불가.',
+    description: '저장된 워크플로의 노드 하나를 지정 에이전트에서 실행하고 이력을 남긴다. input={{키@input}} 값, upstream={소스노드ID:{키:값}}로 상류 출력 대입. UNKNOWN이나 시간 초과 때 재호출하지 말고 execution_get으로 확인한다.',
     inputSchema: { flowId: z.string(), nodeId: z.string(), input: z.record(z.string(), z.unknown()).optional(), envName: z.string().optional(), upstream: z.record(z.string(), z.record(z.string(), z.unknown())).optional() },
 }, async ({ flowId, nodeId, input, envName, upstream }) => run(async () => {
-    const r = await api('POST', `/flows/${flowId}/nodes/${encodeURIComponent(nodeId)}/run`, { input: input ?? null, envName: envName ?? null, upstream: upstream ?? null });
-    return [`${nodeId} ${r.ok ? '✓' : '✕'}${r.httpStatus ? ` HTTP ${r.httpStatus}` : ''}${r.durationMs != null ? ` ${r.durationMs}ms` : ''}`,
-        r.requestText ? `요청: ${clip(r.requestText, 1500)}` : '', r.responseText ? `응답: ${clip(r.responseText, 1500)}` : '', r.output != null ? `출력: ${clip(r.output, 1000)}` : ''].filter(Boolean).join('\n');
+    const started = await api('POST', `/flows/${flowId}/runs`, { onlyNodeId: nodeId, input: input ?? null, envName: envName ?? null, upstream: upstream ?? null });
+    return waitDone(started);
 }));
 tool('suite_run', {
     title: '여러 워크플로 일괄 실행(스위트)',
@@ -517,9 +578,9 @@ tool('suite_run', {
     for (const it of items) {
         if (!it.executionId) { rows.push(`✕ ${it.flowName}: ${it.status}${it.error ? ` · ${it.error}` : ''}`); continue; }
         let ex = await api('GET', `/executions/${it.executionId}`);
-        while (ex.status === 'RUNNING' && Date.now() < deadline) { await sleep(500); ex = await api('GET', `/executions/${it.executionId}`); }
+        while ((ex.status === 'RUNNING' || ex.status === 'PENDING' || (ex.status === 'WAITING' && ex.pendingAgent && ex.pendingAgent.status !== 'UNKNOWN')) && Date.now() < deadline) { await sleep(500); ex = await api('GET', `/executions/${it.executionId}`); }
         const bad = (ex.nodes ?? []).find((n) => !n.ok);
-        rows.push(`${ex.status === 'SUCCEEDED' ? '✓' : ex.status === 'RUNNING' ? '…' : '✕'} ${it.flowName} [${it.executionId}] ${ex.status}${ex.error ? ` · ${clip(ex.error, 120)}` : bad ? ` · ${bad.nodeId} 실패` : ''}`);
+        rows.push(`${ex.status === 'SUCCEEDED' ? '✓' : ['RUNNING', 'PENDING', 'WAITING'].includes(ex.status) ? '…' : '✕'} ${it.flowName} [${it.executionId}] ${ex.status}${ex.pendingAgent?.status === 'UNKNOWN' ? ' · 결과 확인 필요(재실행 금지)' : ex.error ? ` · ${clip(ex.error, 120)}` : bad ? ` · ${bad.nodeId} 실패` : ''}`);
     }
     return `${rows.filter((r) => r.startsWith('✓')).length}/${rows.length} 성공\n${rows.join('\n')}`;
 }));
@@ -573,9 +634,9 @@ tool('plugin_list', {
 tool('transform_preview', {
     title: '변환 미리보기',
     description: '변환 플러그인을 샘플 입력(inputs)·설정(config)으로 실행해 결과를 확인한다(순수 계산, 네트워크 없음). TRANSFORM 노드를 배선하기 전에 config 를 맞추는 용도.',
-    inputSchema: { id: z.string(), inputs: z.record(z.string(), z.string()).optional(), config: z.record(z.string(), z.string()).optional() },
-}, async ({ id, inputs, config }) => run(async () => {
-    const r = await api('POST', `/transforms/${encodeURIComponent(id)}/preview`, { inputs: inputs ?? {}, config: config ?? {} });
+    inputSchema: { id: z.string(), inputs: z.record(z.string(), z.string()).optional(), config: z.record(z.string(), z.string()).optional(), environment: z.string().optional() },
+}, async ({ id, inputs, config, environment }) => run(async () => {
+    const r = await api('POST', `/transforms/${encodeURIComponent(id)}/preview`, { inputs: inputs ?? {}, config: config ?? {}, environment });
     if (!r.ok)
         return `⚠ ${r.error ?? '변환 실패'}`;
     return Object.entries(r.outputs ?? {}).map(([k, v]) => `${k} = ${clip(v, 400)}`).join('\n') || '(출력 없음)';
@@ -585,10 +646,15 @@ const isUuid = (s) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]
 /** 스크립트 참조(uuid · 플러그인 id · 이름) → 상세. 없으면 있는 목록을 보여주며 실패. */
 async function scriptOf(ref) {
     const r = (ref ?? '').trim();
-    if (isUuid(r))
-        return api('GET', `/plugins/scripts/${r}`);
+    if (isUuid(r)) {
+        const script = await api('GET', `/plugins/scripts/${r}`);
+        if (currentWorkspace() && (script.workspaceId ?? 'public') !== currentWorkspace()) throw new Error(`플러그인이 다른 워크스페이스에 있습니다. workspace=${script.workspaceId ?? 'public'}로 지정하세요.`);
+        return script;
+    }
     const list = await api('GET', '/plugins/scripts');
-    const hit = list.find((s) => s.pluginId === r) ?? list.find((s) => s.name === r);
+    const hits = list.filter(s => s.pluginId === r || s.name === r);
+    if (hits.length > 1) throw new Error(`플러그인 이름이 겹칩니다: ${r}. plugin_script_list의 UUID를 지정하세요.`);
+    const hit = hits[0];
     if (!hit)
         throw new Error(`스크립트 플러그인 '${r}' 없음. 있는 것: ${list.map((s) => `${s.pluginId}(${s.status})`).join(', ') || '(없음)'}`);
     return api('GET', `/plugins/scripts/${hit.id}`);
@@ -702,8 +768,8 @@ tool('http_request', {
     title: 'HTTP 요청 보내기(테스트)',
     description: 'Mock 엔드포인트·wait 콜백·웹훅·외부 URL 에 실제 HTTP 요청을 보내 응답을 확인한다. 에이전트는 이걸 쓰고 curl/파이썬으로 직접 쏘지 마라. '
         + 'HTTP Mock 테스트: mock_list 가 보여주는 base URL(예: {서버}/mock/{slug}) 뒤에 라우트 경로를 붙여 호출 → 템플릿 렌더 결과가 응답으로 온다. '
-        + 'url 이 "/" 로 시작하면 FlowLink 주소에 붙인다(예: /mock/pay/orders). 같은 서버면 로그인 토큰을 자동 첨부(Mock 게이트웨이는 무시). '
-        + '요청은 FlowLink 서버에서 나간다 — localhost 는 서버 자신이지 사용자 PC 가 아니다.',
+        + 'url 이 "/" 로 시작하면 FlowLink 주소에 붙인다(예: /mock/pay/orders). 관리 API 경로에만 접속 자격 증명을 자동 첨부한다. '
+        + '요청은 MCP 프로세스에서 나간다. 설치형 stdio의 localhost는 IDE를 실행하는 PC, 서버 HTTP MCP의 localhost는 MCP 서버다.',
     inputSchema: {
         method: z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD']).optional(),
         url: z.string(),
@@ -712,7 +778,7 @@ tool('http_request', {
         timeoutSec: z.number().int().min(1).max(120).optional(),
     },
 }, async ({ method, url, headers, body, timeoutSec }) => run(async () => {
-    const target = /^https?:\/\//.test(url) ? url : BASE + (url.startsWith('/') ? '' : '/') + url;
+    const target = /^https?:\/\//.test(url) ? url : resourceBase() + (url.startsWith('/') ? '' : '/') + url;
     const h = { ...(headers ?? {}) };
     const lc = Object.keys(h).map((k) => k.toLowerCase());
     let payload;
@@ -725,9 +791,9 @@ tool('http_request', {
                 h['Content-Type'] = 'application/json';
         }
     }
-    // 같은 오리진이면 로그인 토큰 첨부(API 경로는 인증 필요, Mock/relay/hooks 는 무시). 외부 URL 엔 절대 첨부하지 않는다.
-    if (target.startsWith(BASE + '/') && auth.token() && !lc.includes('authorization'))
-        h.Authorization = `Bearer ${auth.token()}`;
+    // 관리 API에만 접속 키를 보낸다. Mock·콜백·외부 테스트 대상에는 보내지 않는다.
+    for (const [key, value] of Object.entries(credentials(target)))
+        if (!lc.includes(key.toLowerCase())) h[key] = value;
     const ctl = new AbortController();
     const timer = setTimeout(() => ctl.abort(), (timeoutSec ?? 30) * 1000);
     let r;
@@ -746,6 +812,10 @@ tool('http_request', {
 // ---------- 기동 ----------
 // Streamable HTTP, 세션 없음: 요청마다 새 McpServer+transport 를 만들어 처리하고 응답이 끝나면 닫는다(동시 요청 간 request id 충돌 방지).
 // 인증은 gate(oauth.js): github 모드면 유효 Bearer 없인 401 → 클라이언트가 OAuth 로그인. 통과한 토큰은 요청 컨텍스트에 실어 REST 로 그대로 넘긴다.
+if (process.argv.includes('--stdio')) {
+    const server = buildServer(process.env.FLOWLINK_TOKEN || null);
+    await server.connect(new StdioServerTransport());
+} else {
 const port = Number(process.env.FLOWLINK_MCP_PORT || 18090);
 const host = process.env.FLOWLINK_MCP_HOST || '0.0.0.0';
 const app = express();
@@ -773,3 +843,4 @@ app.use((req, res) => res.status(404).json({ error: 'not found — MCP 엔드포
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, _next) => res.status(err.status ?? 500).json({ error: err instanceof Error ? err.message : String(err) }));
 app.listen(port, host, () => console.error(`flowlink-mcp v${VERSION} http://${host}:${port}/mcp → ${BASE}`));
+}

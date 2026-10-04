@@ -43,4 +43,4 @@ export function AssistantLoginGate({ width, onClose, variant = 'editor', reason 
 }
 
 const xBtn: CSSProperties = { width: 26, height: 26, borderRadius: 7, border: 'none', background: 'var(--fl-surface-2)', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 15 }
-const loginBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 8, padding: '9px 16px', border: 'none', borderRadius: 10, background: 'var(--fl-primary)', color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer' }
+const loginBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 8, padding: '9px 16px', border: 'none', borderRadius: 10, background: 'var(--fl-action-primary-bg)', color: 'var(--fl-action-primary-ink)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }

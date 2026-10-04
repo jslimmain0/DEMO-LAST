@@ -1,11 +1,13 @@
+import { useApi } from '../app/WorkspaceContext'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import type { CSSProperties } from 'react'
 import { useState } from 'react'
-import { adminApi, workspacesApi } from '../api/client'
+
 import type { WorkspaceImportResult, WorkspaceView } from '../api/client'
 import { Modal } from './Modal'
 import { toast } from './toast'
+import { matchesCatalog } from '../lib/catalog'
 
 /**
  * 워크스페이스 관리 다이얼로그 — 현재 워크스페이스의 멤버·롤(OWNER 만 편집).
@@ -16,6 +18,8 @@ export function WorkspaceDialog({ current, onClose, onDeleted }: {
   onClose: () => void
   onDeleted: () => void
 }) {
+  const { adminApi } = useApi()
+
   const me = useQuery({ queryKey: ['admin', 'me'], queryFn: adminApi.me })
   const isTeam = current.kind === 'TEAM'
 
@@ -23,7 +27,7 @@ export function WorkspaceDialog({ current, onClose, onDeleted }: {
     <Modal onClose={onClose} ariaLabel="워크스페이스 관리" width={640} card={{ padding: 0 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '16px 20px 12px', borderBottom: '1px solid var(--fl-border)' }}>
         <strong style={{ fontSize: 15 }}>워크스페이스 관리</strong>
-        <span style={{ fontSize: 12.5, color: 'var(--fl-text-muted)' }}>
+        <span title={current.name} style={{ fontSize: 12.5, color: 'var(--fl-text-muted)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {current.kind === 'PUBLIC' ? '🌐' : current.kind === 'PERSONAL' ? '🔒' : '👥'} {current.name}
         </span>
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 4, alignItems: 'center' }}>
@@ -37,6 +41,8 @@ export function WorkspaceDialog({ current, onClose, onDeleted }: {
         {current.kind === 'PUBLIC' ? (
           <p style={hint}>공용 워크스페이스는 모두(게스트 포함)가 편집할 수 있는 공유 공간입니다 — 멤버·롤이 없습니다.<br />
             접근을 제한하려면 팀 워크스페이스를 만들어 워크플로를 옮기고 멤버에게 롤(OWNER/EDITOR/VIEWER)을 부여하세요.</p>
+        ) : current.kind === 'PERSONAL' ? (
+          <p style={hint}>이 PC의 개인 H2 저장소입니다. 서버 관리자도 접근할 수 없습니다. 공유할 데이터만 직접 내보내 원격 팀에서 가져오세요.</p>
         ) : (
           <MembersTab ws={current} isTeam={isTeam} onDeleted={onDeleted} />
         )}
@@ -51,6 +57,8 @@ export function WorkspaceDialog({ current, onClose, onDeleted }: {
  * 한 JSON 텍스트로. 파일 없이 **복사/붙여넣기**로 다른 워크스페이스·인스턴스에 옮긴다.
  */
 function TransferSection({ ws }: { ws: WorkspaceView }) {
+  const { workspacesApi } = useApi()
+
   const qc = useQueryClient()
   const [mode, setMode] = useState<'none' | 'export' | 'import'>('none')
   const [text, setText] = useState('')
@@ -161,13 +169,23 @@ const ROLES = ['OWNER', 'EDITOR', 'VIEWER'] as const
 const roleDesc: Record<string, string> = { OWNER: '관리+편집', EDITOR: '편집', VIEWER: '조회만' }
 
 function MembersTab({ ws, isTeam, onDeleted }: { ws: WorkspaceView; isTeam: boolean; onDeleted: () => void }) {
+  const { workspacesApi } = useApi()
+
   const qc = useQueryClient()
   const members = useQuery({ queryKey: ['workspaces', ws.id, 'members'], queryFn: () => workspacesApi.members(ws.id), enabled: isTeam })
   const [name, setName] = useState('')
   const [role, setRole] = useState<string>('EDITOR')
   const [armDelete, setArmDelete] = useState(false) // 삭제 2단계 확인(window.confirm 금지 규약)
+  const [moveTo, setMoveTo] = useState('')
+  const [memberSearch, setMemberSearch] = useState('')
+  const [destinationSearch, setDestinationSearch] = useState('')
+  const destinations = useQuery({ queryKey: ['workspaces'], queryFn: workspacesApi.list, enabled: isTeam && ws.canManage })
   const refresh = () => qc.invalidateQueries({ queryKey: ['workspaces', ws.id, 'members'] })
   const errMsg = (e: unknown) => (e as { response?: { data?: { message?: string } } })?.response?.data?.message
+  const matchingMembers = (members.data ?? []).filter(m => matchesCatalog(memberSearch, [m.username, m.role, roleDesc[m.role]]))
+    .sort((a, b) => a.username.localeCompare(b.username, 'ko'))
+  const eligibleDestinations = (destinations.data ?? []).filter(w => w.kind === 'TEAM' && w.id !== ws.id && w.myRole !== 'VIEWER')
+    .sort((a, b) => a.name.localeCompare(b.name, 'ko'))
 
   const put = useMutation({
     mutationFn: (v: { username: string; role: string }) => workspacesApi.putMember(ws.id, v.username, v.role),
@@ -180,8 +198,8 @@ function MembersTab({ ws, isTeam, onDeleted }: { ws: WorkspaceView; isTeam: bool
     onError: (e) => toast(errMsg(e) ?? '멤버 삭제에 실패했습니다.', 'error'),
   })
   const removeWs = useMutation({
-    mutationFn: () => workspacesApi.remove(ws.id),
-    onSuccess: () => { toast('워크스페이스를 삭제했습니다 — 안의 워크플로/폴더는 내 개인 워크스페이스로 이동됨', 'ok'); onDeleted() },
+    mutationFn: () => workspacesApi.remove(ws.id, moveTo || undefined),
+    onSuccess: () => { toast(moveTo ? '데이터를 원격 팀으로 이관하고 팀을 삭제했습니다.' : '빈 팀을 삭제했습니다.', 'ok') },
     onError: (e) => toast(errMsg(e) ?? '삭제에 실패했습니다.', 'error'),
   })
 
@@ -191,19 +209,22 @@ function MembersTab({ ws, isTeam, onDeleted }: { ws: WorkspaceView; isTeam: bool
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       {!ws.canManage && <p style={hint}>멤버 편집은 OWNER 만 할 수 있습니다 (내 롤: {ws.myRole}).</p>}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><input aria-label="워크스페이스 멤버 검색" placeholder="사용자명·역할 검색" value={memberSearch} onChange={e => setMemberSearch(e.target.value)} style={nameInput} /><span role="status" style={hint}>{matchingMembers.length}/{members.data?.length ?? 0}명</span></div>
+      {members.isError && <p role="alert" style={{ ...hint, color: 'var(--fl-fail)' }}>멤버를 불러오지 못했습니다. <button onClick={() => void members.refetch()} style={cancelMini}>다시 불러오기</button></p>}
+      <div style={{ maxHeight: 280, overflow: 'auto' }}>
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-        <thead>
+        <thead style={{ position: 'sticky', top: 0, background: 'var(--fl-surface)' }}>
           <tr style={{ textAlign: 'left', color: 'var(--fl-text-muted)', fontSize: 11.5 }}>
             <th style={th}>사용자</th><th style={th}>롤</th><th style={{ ...th, width: 60 }} />
           </tr>
         </thead>
         <tbody>
-          {(members.data ?? []).map((m) => (
+          {matchingMembers.map((m) => (
             <tr key={m.username} style={{ borderTop: '1px solid var(--fl-border)' }}>
-              <td style={td}><span style={{ fontFamily: 'var(--fl-font-mono)' }}>{m.username}</span></td>
+              <td style={td}><span style={{ fontFamily: 'var(--fl-font-mono)', overflowWrap: 'anywhere' }}>{m.username}</span></td>
               <td style={td}>
                 {ws.canManage ? (
-                  <select value={m.role} onChange={(e) => put.mutate({ username: m.username, role: e.target.value })} style={roleSel}>
+                  <select aria-label={`${m.username} 역할`} value={m.role} onChange={(e) => put.mutate({ username: m.username, role: e.target.value })} style={roleSel}>
                     {ROLES.map((r) => <option key={r} value={r}>{r} — {roleDesc[r]}</option>)}
                   </select>
                 ) : (
@@ -215,13 +236,14 @@ function MembersTab({ ws, isTeam, onDeleted }: { ws: WorkspaceView; isTeam: bool
               </td>
             </tr>
           ))}
-          {members.data && members.data.length === 0 && (
-            <tr><td colSpan={3} style={{ ...td, color: 'var(--fl-text-muted)' }}>멤버가 없습니다.</td></tr>
+          {members.data && matchingMembers.length === 0 && (
+            <tr><td colSpan={3} style={{ ...td, color: 'var(--fl-text-muted)' }}>{memberSearch ? '검색에 맞는 멤버가 없습니다.' : '멤버가 없습니다.'}</td></tr>
           )}
         </tbody>
       </table>
+      </div>
       {ws.canManage && (
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           <input
             value={name}
             onChange={(e) => setName(e.target.value)}
@@ -237,14 +259,19 @@ function MembersTab({ ws, isTeam, onDeleted }: { ws: WorkspaceView; isTeam: bool
         </div>
       )}
       {ws.canManage && (
-        <div style={{ marginTop: 8, paddingTop: 12, borderTop: '1px dashed var(--fl-border)', display: 'flex', alignItems: 'center', gap: 10 }}>
+        <div style={{ marginTop: 8, paddingTop: 12, borderTop: '1px dashed var(--fl-border)', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10 }}>
+          {eligibleDestinations.length > 8 && <input value={destinationSearch} onChange={e => setDestinationSearch(e.target.value)} aria-label="이관할 팀 검색" placeholder="이관할 팀 이름·ID 검색" style={{ ...nameInput, flexBasis: '100%' }} />}
+          <select aria-label="삭제 시 데이터를 이관할 원격 팀" value={moveTo} onChange={e => { setMoveTo(e.target.value); setArmDelete(false) }} style={roleSel}>
+            <option value="">빈 팀 삭제 (이관 없음)</option>
+            {eligibleDestinations.filter(w => w.id === moveTo || matchesCatalog(destinationSearch, [w.name, w.id])).map(w => <option key={w.id} value={w.id}>{w.name}으로 이관</option>)}
+          </select>
           <span style={{ fontSize: 12, color: 'var(--fl-text-muted)' }}>
-            {armDelete ? `"${ws.name}" 을 정말 삭제할까요? 안의 워크플로/폴더/Mock 은 삭제한 사람의 개인 워크스페이스로 이동됩니다(비공개 유지).` : '워크스페이스 삭제 — 안의 워크플로/폴더/Mock 은 삭제한 사람의 개인 워크스페이스로 이동됩니다(비공개 유지).'}
+            {armDelete ? `"${ws.name}" 팀을 정말 삭제할까요? ${moveTo ? '선택한 원격 팀으로 데이터를 이관합니다.' : '빈 팀만 삭제합니다.'}` : '개인·공용 공간으로 자동 이동하지 않습니다.'}
           </span>
           {armDelete ? (
             <span style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
               <button onClick={() => setArmDelete(false)} style={cancelMini}>취소</button>
-              <button onClick={() => removeWs.mutate()} disabled={removeWs.isPending} style={{ ...miniDanger, background: 'var(--fl-fail)', color: '#fff' }}>정말 삭제</button>
+              <button onClick={() => removeWs.mutate(undefined, { onSuccess: onDeleted })} disabled={removeWs.isPending} style={{ ...miniDanger, background: 'var(--fl-action-danger-bg)', color: 'var(--fl-action-danger-ink)' }}>정말 삭제</button>
             </span>
           ) : (
             <button onClick={() => setArmDelete(true)} style={{ ...miniDanger, marginLeft: 'auto' }}>워크스페이스 삭제</button>
@@ -260,8 +287,8 @@ const xBtn: CSSProperties = { width: 28, height: 28, border: 'none', borderRadiu
 const hint: CSSProperties = { fontSize: 12.5, color: 'var(--fl-text-muted)', lineHeight: 1.6, margin: 0 }
 const th: CSSProperties = { padding: '4px 8px', fontWeight: 600 }
 const td: CSSProperties = { padding: '8px' }
-const roleSel: CSSProperties = { padding: '5px 8px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 12.5, cursor: 'pointer' }
+const roleSel: CSSProperties = { maxWidth: '100%', padding: '5px 8px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 12.5, cursor: 'pointer' }
 const nameInput: CSSProperties = { flex: 1, minWidth: 0, padding: '7px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-bg)', color: 'var(--fl-text)', fontSize: 13 }
-const addBtn: CSSProperties = { padding: '7px 14px', border: 'none', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-primary)', color: '#fff', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }
+const addBtn: CSSProperties = { padding: '7px 14px', border: 'none', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-action-primary-bg)', color: 'var(--fl-action-primary-ink)', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }
 const miniDanger: CSSProperties = { padding: '5px 10px', border: '1px solid color-mix(in srgb, var(--fl-fail) 45%, transparent)', borderRadius: 'var(--fl-radius-sm)', background: 'transparent', color: 'var(--fl-fail)', fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap' }
 const cancelMini: CSSProperties = { padding: '5px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'transparent', color: 'var(--fl-text-muted)', fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap' }

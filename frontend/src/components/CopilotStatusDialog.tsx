@@ -1,7 +1,8 @@
+import { useApi } from '../app/WorkspaceContext'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { CSSProperties } from 'react'
 import { useMemo, useState } from 'react'
-import { assistantApi } from '../api/client'
+
 import type { CopilotModel, CopilotQuota } from '../api/types'
 import { Modal } from './Modal'
 import { toast } from './toast'
@@ -11,6 +12,8 @@ import { toast } from './toast'
  * 연결 계정·요금제·쿼터 사용량(프리미엄 요청 등) + 모델 선택(벤더/컨텍스트/비전) + 연결 해제를 한 곳에서 본다.
  */
 export function CopilotStatusDialog({ onClose, canEdit }: { onClose: () => void; canEdit: boolean }) {
+  const { assistantApi } = useApi()
+
   const qc = useQueryClient()
   const infoQ = useQuery({ queryKey: ['assistant', 'oauth', 'info'], queryFn: assistantApi.info, refetchOnWindowFocus: true })
   const modelsQ = useQuery({ queryKey: ['assistant', 'oauth', 'models'], queryFn: assistantApi.models, staleTime: 5 * 60_000 })

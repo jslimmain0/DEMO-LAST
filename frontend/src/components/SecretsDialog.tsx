@@ -1,200 +1,103 @@
+import { useApi, useWorkspace } from '../app/WorkspaceContext'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { CSSProperties } from 'react'
-import { useEffect, useMemo, useState } from 'react'
-import { secretsApi } from '../api/client'
+import { useEffect, useState, type CSSProperties } from 'react'
+import type { SecretView } from '../api/client'
 import { useEnvStore } from '../lib/environments'
 import { Modal } from './Modal'
+import { AskDialog, type AskSpec } from './AskDialog'
 import { toast } from './toast'
+import { ResourceScopeNote } from './ResourceScopeNote'
+import { useUnsavedNavigation } from './UnsavedNavigation'
 
-/**
- * 시크릿 볼트 — Bearer/API 키 등을 이름으로 저장하고 `{{ 이름@secret }}` 로 참조.
- * 값은 서버에서 AES-GCM 암호화 저장(write-only — 목록엔 이름만), 실행 로그/DB 에는 마스킹된다.
- *
- * **환경 스코프**: 각 시크릿은 공통(전역) 또는 특정 환경(dev/staging/prod…) 소속.
- * 실행 시 활성 환경(⚙ 환경 스위처)의 시크릿이 공통 위에 **오버레이**된다(같은 이름이면 환경값이 이김).
- */
 export function SecretsDialog({ onClose }: { onClose: () => void }) {
+  const [dirty, setDirty] = useState(false)
+  useUnsavedNavigation({ dirty, label: '입력한 시크릿 값' })
+  const [ask, setAsk] = useState<AskSpec | null>(null)
+  const close = () => dirty ? setAsk({ title: '저장하지 않은 시크릿', message: '입력한 새 값을 버리고 닫을까요?', confirmLabel: '버리고 닫기', onConfirm: onClose }) : onClose()
+  return <><Modal onClose={close} ariaLabel="시크릿 관리" width={1060} height="min(780px, 90vh)" card={{ padding: 18 }}><SecretsPanel onClose={close} onDraftChange={setDirty} /></Modal>{ask && <AskDialog spec={ask} onClose={() => setAsk(null)} />}</>
+}
+
+export function SecretsPanel({ onClose, onDraftChange, compact = false }: { onClose?: () => void; onDraftChange?: (dirty: boolean) => void; compact?: boolean }) {
+  const { secretsApi } = useApi()
+  const { current } = useWorkspace()
+  const readOnly = current.myRole === 'VIEWER'
   const qc = useQueryClient()
-  const q = useQuery({ queryKey: ['secrets'], queryFn: secretsApi.list })
-  const envStore = useEnvStore()
+  const query = useQuery({ queryKey: ['secrets'], queryFn: secretsApi.list })
+  const environments = useEnvStore()
+  const [selected, setSelected] = useState<SecretView | null>(null)
   const [name, setName] = useState('')
+  const [environment, setEnvironment] = useState('')
   const [value, setValue] = useState('')
-  const [env, setEnv] = useState<string>('') // '' = 공통
+  const [reveal, setReveal] = useState(false)
   const [filter, setFilter] = useState('')
-  const [reveal, setReveal] = useState(false) // 저장 전 값 확인용 표시 토글
-  // 그룹 접기 — 미적용(다른 환경) 그룹은 기본 접힘
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
-  const [collapsedInit, setCollapsedInit] = useState(false)
-  const toggleGroup = (id: string) => setCollapsed((p) => { const n = new Set(p); if (n.has(id)) n.delete(id); else n.add(id); return n })
-
-  // 셀렉트 옵션 = 공통 + 정의된 환경 + 활성 환경(정의 안 됐어도)
-  const envNames = useMemo(() => {
-    const s = new Set<string>(Object.keys(envStore.envs))
-    if (envStore.active) s.add(envStore.active)
-    return Array.from(s).sort()
-  }, [envStore])
-
-  const invalidate = () => qc.invalidateQueries({ queryKey: ['secrets'] })
-  const put = useMutation({
-    mutationFn: () => secretsApi.put(name.trim(), value, env || null),
-    onSuccess: () => { toast('시크릿을 저장했습니다.', 'ok'); setName(''); setValue(''); invalidate() },
-    onError: (e: unknown) => toast(errMsg(e, '저장 실패 — 이름은 영문/숫자/._- 만 허용합니다.'), 'error'),
-  })
-  const del = useMutation({
-    mutationFn: (s: { name: string; environment: string | null }) => secretsApi.remove(s.name, s.environment),
-    onSuccess: () => { toast('시크릿을 삭제했습니다.', 'ok'); invalidate() },
-  })
-  const list = q.data ?? []
-  // 미적용(다른 환경) 그룹은 처음에 접어둔다 — 지금 실행에 안 쓰이는 것들로 목록이 길어지지 않게
-  useEffect(() => {
-    if (collapsedInit || !q.data) return
-    setCollapsed(new Set(q.data
-      .filter((s) => s.environment && s.environment !== envStore.active)
-      .map((s) => `g-${s.environment}`)))
-    setCollapsedInit(true)
-  }, [q.data, collapsedInit, envStore.active])
-  // 공통 먼저, 그다음 환경별 정렬
-  const sorted = [...list].sort((a, b) => {
-    const ea = a.environment ?? '', eb = b.environment ?? ''
-    return ea === eb ? a.name.localeCompare(b.name) : ea.localeCompare(eb)
-  })
-  const f = filter.trim().toLowerCase()
-  const shown = f ? sorted.filter((s) => s.name.toLowerCase().includes(f)) : sorted
-
-  // 실행 시 실제 적용될 항목 계산 — 우선순위: 활성환경 > 공통 (SecretService.activeSecrets 미러)
-  const act = envStore.active
-  const effect = (s: (typeof list)[number]): 'win' | 'shadowed' | 'inactive' => {
-    if (s.environment && s.environment !== act) return 'inactive' // 다른 환경 스코프
-    const sameName = list.filter((x) => x.name === s.name)
-    const envRow = act ? sameName.find((x) => x.environment === act) : undefined
-    const commonRow = sameName.find((x) => !x.environment)
-    const winner = envRow ?? commonRow
-    return winner === s ? 'win' : 'shadowed'
+  const [scope, setScope] = useState('*')
+  const [ask, setAsk] = useState<AskSpec | null>(null)
+  const list = query.data ?? []
+  const names = [...new Set([...Object.keys(environments.envs), ...list.flatMap(item => item.environment ? [item.environment] : [])])].sort()
+  const active = environments.active
+  const appliedNames = new Set(list.filter(item => active && item.environment === active).map(item => item.name))
+  const effect = (item: SecretView) => item.environment && item.environment !== active ? '다른 환경' : !item.environment && appliedNames.has(item.name) ? '환경값으로 대체' : '실행에 적용'
+  const shown = list.filter(item => (scope === '*' || (item.environment ?? '') === scope) && `${item.name} ${item.environment ?? '공통'}`.toLocaleLowerCase().includes(filter.toLocaleLowerCase())).sort((a, b) => a.name.localeCompare(b.name) || (a.environment ?? '').localeCompare(b.environment ?? ''))
+  const reset = () => { setSelected(null); setName(''); setValue(''); setReveal(false) }
+  const choose = (item: SecretView | null) => {
+    const change = () => { setSelected(item); setName(item?.name ?? ''); setEnvironment(item?.environment ?? (scope !== '*' ? scope : '')); setValue(''); setReveal(false) }
+    if (value) setAsk({ title: '입력한 값을 버릴까요?', message: '아직 저장하지 않은 시크릿 값이 있습니다.', confirmLabel: '버리고 선택', onConfirm: change })
+    else change()
   }
-
-  return (
-    <Modal onClose={onClose} ariaLabel="시크릿" width={760} maxHeight="88vh" card={{ padding: 18, display: 'flex', flexDirection: 'column' }}>
-        <header style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, flexShrink: 0 }}>
-          <span aria-hidden>🔑</span>
-          <b style={{ fontSize: 15 }}>시크릿 볼트</b>
-          {list.length > 0 && <span style={{ fontSize: 11.5, color: 'var(--fl-text-muted)', background: 'var(--fl-surface-2)', borderRadius: 999, padding: '2px 8px' }}>{list.length}</span>}
-          <span style={{ flex: 1 }} />
-          <button onClick={onClose} aria-label="닫기" style={xBtn}>×</button>
-        </header>
-        <p style={hint}>
-          Bearer 토큰·API 키 등을 저장하고 <code style={code}>{'{{ 이름@secret }}'}</code> 로 씁니다.
-          값은 암호화 저장되고 실행 로그/DB 에는 <b>마스킹(••••••)</b> 됩니다. 저장된 값은 다시 볼 수 없습니다.
-          시크릿은 <b>서버(S→S) 모드</b> HTTP 노드에서 쓰세요 — 클라이언트(C→S) 모드는 값이 브라우저로 전달돼 대기 상태(미마스킹)에 남을 수 있습니다.
-          {envStore.active
-            ? <> 현재 활성 환경은 <b>{envStore.active}</b> — 실행 시 이 환경의 시크릿이 공통 위에 겹쳐집니다.</>
-            : <> 활성 환경이 없어 <b>공통</b> 시크릿만 적용됩니다(환경 스위처에서 전환).</>}
-        </p>
-
-        {list.length >= 6 && (
-          <input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder={`이름 검색… (${list.length}개)`} aria-label="시크릿 검색"
-            style={{ ...mono, width: '100%', margin: '12px 0 0', fontFamily: 'var(--fl-font-ui)', boxSizing: 'border-box' }} />
-        )}
-        <div style={{ display: 'grid', gap: 6, margin: '12px 0', overflowY: 'auto', minHeight: 0, flex: '1 1 auto', alignContent: 'start' }}>
-          {sorted.length === 0 && !q.isLoading && <p style={{ ...hint, color: 'var(--fl-text-muted)' }}>저장된 시크릿이 없습니다.</p>}
-          {f && shown.length === 0 && sorted.length > 0 && <p style={{ ...hint, color: 'var(--fl-text-muted)' }}>검색과 일치하는 시크릿이 없습니다.</p>}
-          {/* 스코프별 그룹 — 실행 우선순위 순서(활성 환경 → 공통), 미적용 환경은 뒤에 접힘 */}
-          {(() => {
-            const db = shown
-            const groups: Array<{ id: string; title: string; rows: typeof shown; dimmed?: boolean }> = []
-            if (act) {
-              const r = db.filter((s) => s.environment === act)
-              if (r.length) groups.push({ id: 'g-act', title: `활성 환경 · ${act}`, rows: r })
-            }
-            const common = db.filter((s) => !s.environment)
-            if (common.length) groups.push({ id: 'g-common', title: '공통', rows: common })
-            for (const e of [...new Set(db.filter((s) => s.environment && s.environment !== act).map((s) => s.environment as string))].sort()) {
-              groups.push({ id: `g-${e}`, title: `환경 · ${e} — 미적용`, rows: db.filter((s) => s.environment === e), dimmed: true })
-            }
-            return groups.map((grp) => {
-              const isCollapsed = !f && collapsed.has(grp.id)
-              return (
-              <section key={grp.id}>
-                <button onClick={() => toggleGroup(grp.id)} aria-expanded={!isCollapsed}
-                  style={{ display: 'flex', alignItems: 'center', gap: 7, width: '100%', border: 'none', background: 'transparent', padding: '4px 2px', cursor: 'pointer', fontSize: 11.5, fontWeight: 700, color: 'var(--fl-text-muted)', textAlign: 'left' }}>
-                  <span aria-hidden style={{ fontSize: 9, width: 10 }}>{isCollapsed ? '▸' : '▾'}</span>
-                  {grp.title}
-                  <span style={{ fontWeight: 400, background: 'var(--fl-surface-2)', borderRadius: 999, padding: '1px 7px', fontSize: 10.5 }}>{grp.rows.length}</span>
-                </button>
-                {!isCollapsed && (
-                  <div style={{ display: 'grid', gap: 6, marginTop: 2 }}>
-                    {grp.rows.map((s) => {
-                      const eff = effect(s)
-                      return (
-                      <div key={`${s.environment ?? '*'}:${s.name}`} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', opacity: eff === 'inactive' ? 0.55 : 1 }}
-                        title={eff === 'inactive' ? '다른 환경 스코프 — 현재 활성 환경에선 미적용' : undefined}>
-                        <span style={envBadge(s.environment)}>{s.environment ?? '공통'}</span>
-                        <code style={{ flex: 1, fontFamily: 'var(--fl-font-mono)', fontSize: 12.5 }}>{s.name}</code>
-                        {/* 활성 환경 기준 실제 적용 여부 — 같은 이름의 오버레이(환경>공통)를 눈으로 확인 */}
-                        {eff === 'win' && <span title="실행 시 이 값이 적용됩니다" style={effBadge(true)}>✓ 적용</span>}
-                        {eff === 'shadowed' && <span title="같은 이름의 더 높은 우선순위(활성환경 > 공통) 값에 덮입니다" style={effBadge(false)}>덮임</span>}
-                        <span style={{ fontFamily: 'var(--fl-font-mono)', fontSize: 12, color: 'var(--fl-text-muted)', letterSpacing: 2 }}>••••••</span>
-                        <button onClick={() => copy(`{{ ${s.name}@secret }}`)} title="바인딩 토큰 복사" style={miniBtn}>토큰</button>
-                        <button onClick={() => del.mutate({ name: s.name, environment: s.environment })} aria-label="삭제" style={miniBtn}>×</button>
-                      </div>
-                      )
-                    })}
-                  </div>
-                )}
-              </section>
-              )
-            })
-          })()}
+  const save = useMutation({
+    mutationFn: () => secretsApi.put(name.trim(), value, environment || null),
+    onSuccess: () => { toast(selected ? '시크릿 값을 교체했습니다.' : '시크릿을 추가했습니다.', 'ok'); reset(); void qc.invalidateQueries({ queryKey: ['secrets'] }) },
+    onError: () => toast('시크릿 저장 실패. 입력값을 확인하고 다시 저장하세요.', 'error'),
+  })
+  const remove = useMutation({ mutationFn: (item: SecretView) => secretsApi.remove(item.name, item.environment), onSuccess: () => { reset(); toast('시크릿을 삭제했습니다.', 'ok'); void qc.invalidateQueries({ queryKey: ['secrets'] }) } })
+  useUnsavedNavigation({ dirty: false, saving: save.isPending || remove.isPending, label: '시크릿 저장' })
+  const existing = list.some(item => item.name === name.trim() && (item.environment ?? '') === environment)
+  const validName = /^[A-Za-z0-9._-]+$/.test(name.trim())
+  useEffect(() => { onDraftChange?.(!!value); return () => onDraftChange?.(false) }, [value, onDraftChange])
+  useEffect(() => { if (!value) return; const leave = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = '' }; window.addEventListener('beforeunload', leave); return () => window.removeEventListener('beforeunload', leave) }, [value])
+  return <div className="fl-resource-panel" style={{ minHeight: 0, flex: 1, display: 'flex', flexDirection: 'column' }}>
+    {!compact && <header style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 12 }}><b style={{ fontSize: 15 }}>시크릿 관리</b><span style={hint}>{list.length}개</span>{onClose && <button onClick={onClose} style={{ ...button, marginLeft: 'auto' }}>닫기</button>}</header>}
+    {!compact && <ResourceScopeNote />}
+    {readOnly && <p role="status" style={hint}>읽기 전용 공간입니다. 이름과 적용 범위 확인, 바인딩 토큰 복사가 가능합니다.</p>}
+    {!compact && <p style={hint}>{current.origin === 'local' ? '내 PC 데이터베이스에 암호화해 저장합니다.' : '서버 데이터베이스에 암호문을 저장합니다. 서버 정책에 따라 Vault Transit 또는 서버 키로 암호화합니다.'} 저장된 값은 다시 조회할 수 없습니다. 로그에는 마스킹합니다.</p>}
+    <div className="fl-secret-workbench" style={{ marginTop: compact ? 0 : 18, flex: 1, minHeight: 0 }}>
+      <section className="fl-secret-collection" style={{ display: 'flex', flexDirection: 'column', minHeight: 0, minWidth: 0 }} aria-label="시크릿 목록">
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+          <input type="search" aria-label="시크릿 이름 검색" placeholder="이름 검색" value={filter} onChange={event => setFilter(event.target.value)} style={{ ...input, flex: '1 1 180px' }} />
+          <select aria-label="시크릿 환경 필터" value={scope} onChange={event => setScope(event.target.value)} style={input}><option value="*">전체 환경</option><option value="">공통</option>{names.map(item => <option key={item}>{item}</option>)}</select>
+          <button disabled={readOnly} style={button} onClick={() => choose(null)}>+ 새 시크릿</button>
         </div>
-
-        <div style={{ borderTop: '1px solid var(--fl-border)', paddingTop: 12, flexShrink: 0 }}>
-          <label style={label}>새 시크릿 (환경 + 이름 + 값 — Enter 로 저장)</label>
-          <div style={{ display: 'flex', gap: 6 }}>
-            <select value={env} onChange={(e) => setEnv(e.target.value)} style={{ ...mono, flex: '0 0 104px' }} title="환경 스코프">
-              <option value="">공통</option>
-              {envNames.map((n) => <option key={n} value={n}>{n}</option>)}
-            </select>
-            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="예: API_TOKEN" style={{ ...mono, flex: 1 }}
-              onKeyDown={(e) => { if (e.key === 'Enter' && name.trim() && value && !put.isPending) { e.preventDefault(); put.mutate() } }} />
-            <input value={value} onChange={(e) => setValue(e.target.value)} placeholder="값(저장 후 숨김)" type={reveal ? 'text' : 'password'} style={{ ...mono, flex: 1.3 }}
-              onKeyDown={(e) => { if (e.key === 'Enter' && name.trim() && value && !put.isPending) { e.preventDefault(); put.mutate() } }} />
-            <button onClick={() => setReveal((v) => !v)} aria-label={reveal ? '값 숨기기' : '값 표시'} title="저장 전 값 확인(저장 후에는 다시 볼 수 없음)"
-              style={{ ...miniBtn, width: 34, padding: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 14 }}>{reveal ? '🙈' : '👁'}</button>
-            <button onClick={() => put.mutate()} disabled={!name.trim() || !value || put.isPending} style={primary}>저장</button>
-          </div>
-          <p style={{ ...hint, marginTop: 6 }}>
-            같은 이름을 <b>공통</b>과 <b>환경</b>에 둘 다 두면, 실행 시 활성 환경값이 공통값을 덮어씁니다(스테이징 키만 갈아끼우기 등).
-          </p>
+        <div role="status" style={{ ...hint, marginBottom: 8 }}>{shown.length}개 표시 · 활성 환경 {active ?? '없음'}</div>
+        {query.isError && <p role="alert" style={{ color: 'var(--fl-fail)' }}>목록을 불러오지 못했습니다. <button style={button} onClick={() => void query.refetch()}>다시 불러오기</button></p>}
+        <div className="fl-secret-list" style={{ overflowY: 'auto', minHeight: 0 }}>
+          {query.isLoading && <p role="status" style={hint}>이름을 불러오는 중…</p>}
+          {!query.isLoading && !shown.length && <p style={hint}>{list.length ? '검색 조건에 맞는 시크릿이 없습니다.' : '새 시크릿을 추가하세요. 값은 저장 후 숨겨집니다.'}</p>}
+          {shown.map(item => <button className="fl-secret-entry" key={`${item.environment}:${item.name}`} onClick={() => choose(item)} aria-pressed={selected?.name === item.name && selected?.environment === item.environment}>
+            <code style={{ display: 'block', overflowWrap: 'anywhere', fontSize: 13 }}>{item.name}</code><span style={{ ...hint, display: 'block', marginTop: 5 }}>{item.environment ?? '공통'} · {effect(item)}</span>
+          </button>)}
         </div>
-    </Modal>
-  )
+      </section>
+      <section className="fl-secret-editor" aria-label="시크릿 값 편집">
+        <h3 style={{ margin: '0 0 8px', fontSize: 17 }}>{selected ? '선택한 시크릿 값 교체' : '새 시크릿 추가'}</h3>
+        <p style={hint}>{selected ? '이름과 환경은 유지하고 새 값으로 교체합니다.' : '환경별 값이 공통값보다 먼저 적용됩니다.'}</p>
+        <label style={label}>환경<select disabled={readOnly || !!selected || save.isPending} value={environment} onChange={event => setEnvironment(event.target.value)} aria-label="시크릿 환경" style={{ ...input, width: '100%' }}><option value="">공통</option>{names.map(item => <option key={item}>{item}</option>)}</select></label>
+        <label style={label}>이름<input disabled={!!selected || save.isPending} aria-label="시크릿 이름" value={name} onChange={event => setName(event.target.value)} autoComplete="off" placeholder="API_TOKEN" style={{ ...input, width: '100%' }} /></label>
+        <label style={label}>{selected ? '교체할 새 값' : '저장할 값'}<textarea disabled={readOnly || save.isPending} aria-label="새 시크릿 값" value={value} onChange={event => setValue(event.target.value)} autoComplete="off" spellCheck={false} rows={4} style={{ ...input, width: '100%', resize: 'vertical', fontFamily: 'var(--fl-font-mono)', ...(!reveal ? { WebkitTextSecurity: 'disc' } as CSSProperties : {}) }} /></label>
+        <button disabled={readOnly} style={button} aria-pressed={reveal} onClick={() => setReveal(!reveal)}>{reveal ? '입력값 숨기기' : '입력값 확인'}</button>
+        {name && !validName && <p role="alert" style={{ ...hint, color: 'var(--fl-fail)', marginTop: 10 }}>이름은 영문·숫자·점·밑줄·하이픈만 사용할 수 있습니다.</p>}
+        {!selected && existing && <p role="alert" style={{ ...hint, color: 'var(--fl-fail)', marginTop: 10 }}>이 환경에 같은 이름이 있습니다. 목록에서 선택해 값을 교체하세요.</p>}
+        {(save.isError || remove.isError) && <p role="alert" style={{ color: 'var(--fl-fail)', fontSize: 12 }}>저장하지 못했습니다. 입력은 유지됩니다. 다시 시도하세요.</p>}
+        <div style={{ display: 'flex', gap: 8, marginTop: 18 }}><button style={{ ...button, background: 'var(--fl-action-primary-bg)', color: 'var(--fl-action-primary-ink)', borderColor: 'var(--fl-action-primary-bg)' }} disabled={readOnly || !validName || !value || save.isPending || query.isLoading || query.isError || (!selected && existing)} onClick={() => save.mutate()}>{save.isPending ? '저장 중…' : selected ? '새 값으로 교체' : '시크릿 저장'}</button>{selected && <button disabled={readOnly || remove.isPending || save.isPending} style={button} onClick={() => setAsk({ title: '시크릿 삭제', message: `${selected.environment ?? '공통'} / ${selected.name}을 삭제하면 이 값을 사용하는 실행이 실패할 수 있습니다.`, danger: true, confirmLabel: '삭제', onConfirm: () => remove.mutate(selected) })}>삭제</button>}</div>
+        {selected && <div style={{ marginTop: 20 }}><code style={{ fontSize: 12, overflowWrap: 'anywhere' }}>{`{{ ${selected.name}@secret }}`}</code><button style={{ ...button, marginTop: 8 }} onClick={() => void navigator.clipboard.writeText(`{{ ${selected.name}@secret }}`).then(() => toast('바인딩 토큰을 복사했습니다.', 'ok')).catch(() => toast('복사하지 못했습니다.', 'error'))}>바인딩 토큰 복사</button></div>}
+        {compact && <p style={{ ...hint, marginTop: 16 }}>{current.origin === 'local' ? '내 PC 데이터베이스에 암호화해 저장합니다.' : '서버 DB에 암호문을 저장하며, 서버 정책에 따라 Vault Transit 또는 서버 키로 암호화합니다.'} 저장된 값은 다시 조회할 수 없습니다.</p>}
+        <p style={{ ...hint, marginTop: 20 }}>브라우저에서 보내는 요청에 시크릿을 사용하면 값이 브라우저로 전달됩니다.</p>
+      </section>
+    </div>
+    {ask && <AskDialog spec={ask} onClose={() => setAsk(null)} />}
+  </div>
 }
 
-function errMsg(e: unknown, fallback: string): string {
-  const m = (e as { response?: { data?: { message?: string } } })?.response?.data?.message
-  return m || fallback
-}
-function copy(s: string) { void navigator.clipboard?.writeText(s).then(() => toast(`${s} 복사`, 'ok')).catch(() => {}) }
-
-const hint: CSSProperties = { fontSize: 11.5, color: 'var(--fl-text-muted)', lineHeight: 1.6, margin: 0 }
-const label: CSSProperties = { display: 'block', fontSize: 11.5, fontWeight: 600, color: 'var(--fl-text-muted)', margin: '0 0 5px' }
-const code: CSSProperties = { fontFamily: 'var(--fl-font-mono)', fontSize: 11, background: 'var(--fl-surface-2)', padding: '1px 5px', borderRadius: 4 }
-const mono: CSSProperties = { padding: '8px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 12.5, fontFamily: 'var(--fl-font-mono)', minWidth: 0 }
-const xBtn: CSSProperties = { width: 28, height: 28, borderRadius: 8, border: 'none', background: 'var(--fl-surface-2)', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 15 }
-const primary: CSSProperties = { padding: '7px 14px', border: 'none', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-primary)', color: '#fff', cursor: 'pointer', fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap' }
-const miniBtn: CSSProperties = { padding: '4px 8px', border: '1px solid var(--fl-border)', borderRadius: 6, background: 'var(--fl-surface)', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 11.5, flexShrink: 0 }
-function effBadge(win: boolean): CSSProperties {
-  return {
-    flexShrink: 0, fontSize: 10.5, fontWeight: 700, padding: '2px 7px', borderRadius: 999,
-    background: win ? 'color-mix(in srgb, var(--fl-ok) 14%, transparent)' : 'var(--fl-surface)',
-    color: win ? 'var(--fl-ok)' : 'var(--fl-text-muted)',
-    border: `1px solid ${win ? 'color-mix(in srgb, var(--fl-ok) 45%, var(--fl-border))' : 'var(--fl-border)'}`,
-  }
-}
-function envBadge(env: string | null): CSSProperties {
-  return {
-    flexShrink: 0, fontSize: 10.5, fontWeight: 700, padding: '2px 7px', borderRadius: 999,
-    background: env ? 'var(--fl-primary-weak, rgba(59,130,246,0.16))' : 'var(--fl-surface)',
-    color: env ? 'var(--fl-primary)' : 'var(--fl-text-muted)',
-    border: '1px solid var(--fl-border)', letterSpacing: 0.2, minWidth: 34, textAlign: 'center',
-  }
-}
+const hint: CSSProperties = { fontSize: 12, color: 'var(--fl-text-muted)', lineHeight: 1.65, margin: 0 }
+const input: CSSProperties = { minWidth: 0, padding: '9px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 13, boxSizing: 'border-box' }
+const button: CSSProperties = { padding: '8px 12px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', cursor: 'pointer', fontSize: 12, fontWeight: 600 }
+const label: CSSProperties = { display: 'grid', gap: 6, fontSize: 12, color: 'var(--fl-text-muted)', margin: '15px 0' }

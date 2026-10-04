@@ -1,3 +1,4 @@
+import { useApi } from '../app/WorkspaceContext'
 // frontend/src/components/TcpMockEditor.tsx — 프로토콜 참조형 TCP Mock 편집 조각(연결 · 규칙 · 전문 로그 · 보내보기).
 // 전문 레이아웃은 여기서 정의하지 않는다 — 프로토콜(/protocols)이 소유하고 Mock 은 "그 규격을 쓰는 리스너"일 뿐.
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -5,7 +6,7 @@ import type { CSSProperties } from 'react'
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import type { MockTcpCond, MockTcpFault, MockTcpRuleSpec, MockTcpSpec, ProtocolField, ProtocolSpec, TcpLogEntry, TcpSendResult } from '../api/types'
-import { mocksApi, protocolsApi } from '../api/client'
+
 import { TokenInput } from '../binding/TokenInput'
 import { apiErrorMessage } from '../lib/apiError'
 import { toast } from './toast'
@@ -56,6 +57,8 @@ export function tcpRuleSummary(rule: MockTcpRuleSpec, spec: ProtocolSpec | undef
 // ---------- 연결 ----------
 
 export function TcpConnPanel({ tcp, environment, readOnly, onChange }: { tcp: MockTcpSpec; environment?: string | null; readOnly?: boolean; onChange: (patch: Partial<MockTcpSpec>) => void }) {
+  const { protocolsApi } = useApi()
+
   const vault = useVaultSources(environment) // upstream 주소도 환경마다 다르다 — {{ 키@env }}·{{ 이름@secret }}
   const protos = useQuery({ queryKey: ['protocols'], queryFn: protocolsApi.list, staleTime: 15_000 })
   const addr = `${window.location.hostname || 'localhost'}:${tcp.port ?? 9091}`
@@ -176,7 +179,7 @@ export function TcpRuleDetail({ rule, index, total, spec, secrets, envKeys, read
           <span style={boxTitle}>⬆ 어떻게 응답할까</span>
           <div style={seg}>
             {(['mock', 'proxy'] as const).map((m) => (
-              <button key={m} disabled={readOnly} onClick={() => setMode(m)} style={{ ...segBtn, background: mode === m ? 'var(--fl-primary)' : 'transparent', color: mode === m ? '#fff' : 'var(--fl-text-muted)' }}>
+              <button key={m} disabled={readOnly} onClick={() => setMode(m)} style={{ ...segBtn, background: mode === m ? 'var(--fl-action-primary-bg)' : 'transparent', color: mode === m ? 'var(--fl-action-primary-ink)' : 'var(--fl-text-muted)' }}>
                 {m === 'mock' ? 'Mock 응답' : '실서버로 통과(proxy)'}
               </button>
             ))}
@@ -284,6 +287,8 @@ const rowKeys = (rows: TcpLogEntry[]): string[] => {
 }
 
 export function TcpLogPanel({ mockId, protocolId, canEdit, onMakeRule }: { mockId: string; protocolId: string | null | undefined; canEdit?: boolean; onMakeRule?: (e: TcpLogEntry) => void }) {
+  const { mocksApi } = useApi()
+
   const qc = useQueryClient()
   const log = useQuery({ queryKey: ['mock-tcp-log', mockId], queryFn: () => mocksApi.tcpLog(mockId), enabled: !!mockId, refetchInterval: 3000, retry: false })
   const clear = useMutation({
@@ -300,7 +305,7 @@ export function TcpLogPanel({ mockId, protocolId, canEdit, onMakeRule }: { mockI
       <div style={{ display: 'flex', gap: 6, alignItems: 'center', padding: '4px 12px' }}>
         <div style={seg}>
           {([['all', '전체'], ['mock', 'mock'], ['proxy', 'proxy'], ['warn', '⚠']] as const).map(([k, label]) => (
-            <button key={k} onClick={() => setFilter(k)} style={{ ...segBtn, background: filter === k ? 'var(--fl-primary)' : 'transparent', color: filter === k ? '#fff' : 'var(--fl-text-muted)' }}>{label}</button>
+            <button key={k} onClick={() => setFilter(k)} style={{ ...segBtn, background: filter === k ? 'var(--fl-action-primary-bg)' : 'transparent', color: filter === k ? 'var(--fl-action-primary-ink)' : 'var(--fl-text-muted)' }}>{label}</button>
           ))}
         </div>
         <span style={meta}>{rows.length}건</span>
@@ -360,6 +365,8 @@ const hhmmss = (iso: string): string => {
 // ---------- 보내보기 ----------
 
 export function TcpSendPanel({ mockId, spec, ensureSaved }: { mockId: string; spec: ProtocolSpec | undefined; ensureSaved: () => Promise<boolean> }) {
+  const { mocksApi } = useApi()
+
   const qc = useQueryClient()
   const keys = spec ? requestKeys(spec) : []
   const [key, setKey] = useState('')
@@ -444,7 +451,7 @@ const meta: CSSProperties = { fontSize: 11.5, color: 'var(--fl-text-muted)', fon
 const code: CSSProperties = { fontFamily: 'var(--fl-font-mono)', fontSize: 11, background: 'var(--fl-surface-2)', padding: '1px 5px', borderRadius: 4 }
 const input: CSSProperties = { padding: '6px 9px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 12.5 }
 const miniBtn: CSSProperties = { padding: '5px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 12, cursor: 'pointer' }
-const primaryBtn: CSSProperties = { padding: '6px 14px', border: 'none', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-primary)', color: '#fff', fontWeight: 700, fontSize: 12.5, cursor: 'pointer', whiteSpace: 'nowrap' }
+const primaryBtn: CSSProperties = { padding: '6px 14px', border: 'none', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-action-primary-bg)', color: 'var(--fl-action-primary-ink)', fontWeight: 700, fontSize: 12.5, cursor: 'pointer', whiteSpace: 'nowrap' }
 const lbl: CSSProperties = { fontSize: 12, fontWeight: 700 }
 const box: CSSProperties = { border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', padding: 12, background: 'var(--fl-surface-2)' }
 const boxTitle: CSSProperties = { fontSize: 12.5, fontWeight: 700 }

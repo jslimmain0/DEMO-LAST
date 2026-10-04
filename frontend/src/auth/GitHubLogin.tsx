@@ -2,6 +2,7 @@ import type { CSSProperties } from 'react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { authApi, setToken, type DeviceStart } from './auth'
 import { useEscapeClose } from '../components/useEscapeClose'
+import { ServerInstallCard } from '../components/ServerInstallCard'
 
 /**
  * GitHub 로그인 화면 — Copilot 과 동일한 디바이스 플로우. 코드를 표시하고 github.com/login/device 를 열어
@@ -21,7 +22,7 @@ export function GitHubLogin({ onSuccess, onCancel }: { onSuccess: () => void; on
       const d = await authApi.deviceStart()
       setDevice(d)
       try { await navigator.clipboard?.writeText(d.userCode) } catch { /* ignore */ }
-      window.open(d.verificationUri, '_blank', 'noopener')
+      if (d.verificationUri) window.open(d.verificationUri, '_blank', 'noopener')
       let failStreak = 0 // 폴 요청 자체가 연속 실패(세션 소실/서버 재시작)하면 영구 폴링 대신 안내로 종료
       pollRef.current = setInterval(async () => {
         try {
@@ -63,15 +64,16 @@ export function GitHubLogin({ onSuccess, onCancel }: { onSuccess: () => void; on
 
         {device && (
           <div style={{ fontSize: 13.5, lineHeight: 1.6 }}>
-            <p style={{ margin: '0 0 10px' }}>열린 GitHub 페이지에 아래 코드를 입력하세요(복사됨):</p>
+            <p style={{ margin: '0 0 10px' }}>{device.verificationUri ? '열린 GitHub 페이지에 아래 코드를 입력하세요(복사됨):' : '개발용 로그인 모킹입니다. 테스트 계정으로 자동 로그인합니다.'}</p>
             <code style={codeBox}>{device.userCode}</code>
             <p style={{ margin: '12px 0 0', color: 'var(--fl-text-muted)' }}>
               인증하면 자동으로 로그인됩니다…{' '}
-              <a href={device.verificationUri} target="_blank" rel="noreferrer" style={{ color: 'var(--fl-primary)' }}>페이지 다시 열기 ↗</a>
+              {device.verificationUri && <a href={device.verificationUri} target="_blank" rel="noreferrer" style={{ color: 'var(--fl-primary)' }}>페이지 다시 열기 ↗</a>}
             </p>
             <button onClick={start} style={{ ...ghBtn, marginTop: 16, background: 'transparent', color: 'var(--fl-text-muted)', border: '1px solid var(--fl-border)' }}>다시 시작</button>
           </div>
         )}
+        <ServerInstallCard />
       </div>
     </div>
   )
@@ -79,6 +81,6 @@ export function GitHubLogin({ onSuccess, onCancel }: { onSuccess: () => void; on
 
 const overlay: CSSProperties = { position: 'fixed', inset: 0, display: 'grid', placeItems: 'center', background: 'var(--fl-bg, #0f1115)' }
 const card: CSSProperties = { width: 360, maxWidth: '90vw', padding: 32, borderRadius: 14, background: 'var(--fl-surface, #1a1d27)', border: '1px solid var(--fl-border, #2a2e3a)', boxShadow: '0 20px 60px rgba(0,0,0,.4)', textAlign: 'center' }
-const ghBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 18px', border: 'none', borderRadius: 10, background: 'var(--fl-primary, #6155f5)', color: '#fff', fontSize: 14, fontWeight: 700, cursor: 'pointer' }
+const ghBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 18px', border: 'none', borderRadius: 10, background: 'var(--fl-action-primary-bg)', color: 'var(--fl-action-primary-ink)', fontSize: 14, fontWeight: 700, cursor: 'pointer' }
 const codeBox: CSSProperties = { display: 'inline-block', fontSize: 24, fontWeight: 700, letterSpacing: 3, fontFamily: 'var(--fl-font-mono, monospace)', background: 'var(--fl-surface-2, #22262f)', padding: '8px 16px', borderRadius: 8 }
 const closeBtn: CSSProperties = { position: 'absolute', top: 10, right: 10, width: 28, height: 28, borderRadius: 8, border: 'none', background: 'var(--fl-surface-2)', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 16 }

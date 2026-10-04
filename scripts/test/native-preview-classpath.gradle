@@ -1,0 +1,11 @@
+// 기존 root task 호출 계약 유지: -I ... nativeUpdatePreviewClasspath
+// desktop-app test classpath에는 runtime 프로젝트 의존성이 포함된다.
+gradle.projectsEvaluated {
+    def desktop = rootProject.project(':desktop-app')
+    rootProject.tasks.register('nativeUpdatePreviewClasspath') {
+        dependsOn desktop.tasks.named('testClasses'), rootProject.project(':runtime').tasks.named('classes')
+        doLast {
+            new File(rootProject.projectDir.parentFile, '.run/native-update-classpath.txt').text = desktop.sourceSets.test.runtimeClasspath.asPath
+        }
+    }
+}

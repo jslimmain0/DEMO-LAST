@@ -1,16 +1,19 @@
+import { NodeAgentBadge, useNodeResources } from '../components/AgentSettings'
 import { useQuery } from '@tanstack/react-query'
 import { Handle, Position } from '@xyflow/react'
 import type { NodeProps } from '@xyflow/react'
-import { protocolsApi } from '../api/client'
+
 import type { HttpMethod } from '../api/types'
 import { MethodTag } from '../components/MethodTag'
 import { getReachInfoCached } from '../lib/reachable'
 import { useEditorStore } from '../store/editorStore'
 import { asGraphNode } from './graphAdapter'
-import { NODE_W, catColor, typeIcon, typeLabel } from './nodeMeta'
+import { NODE_W, METHOD_COLOR, catColor, typeIcon, typeLabel } from './nodeMeta'
 
 export function NodeCard({ data, selected }: NodeProps) {
   const n = asGraphNode(data)
+  const resources = useNodeResources(n)
+  const { protocolsApi } = resources.api
   const collapsed = !!n.collapsed
   const toggleCollapse = useEditorStore((s) => s.toggleNodeCollapse)
   const waitingId = useEditorStore((s) => s.waitingNodeId)
@@ -22,14 +25,17 @@ export function NodeCard({ data, selected }: NodeProps) {
     return info.hasStart && !info.reachable.has(n.id)
   })
   const waiting = waitingId === n.id || runState === 'waiting'
+  const waitingLabel = n.type === 'wait' ? '콜백 대기 중' : n.type === 'input' ? '사용자 입력 대기' : n.type === 'form' ? '폼 전송 대기' : n.type === 'http' && n.reqMode === 'client' && !n.executionAgent ? '브라우저 요청 대기' : '에이전트 작업 대기'
   const running = runState === 'running'
   const accent = catColor(n.cat)
   const isStart = n.type === 'start'
   const isEnd = n.type === 'end'
   const isHttp = n.type === 'http'
   const isTcp = n.type === 'tcp'
+  const configuredAddress = n.agentMock ? `Mock · ${n.agentMock}` : n.baseUrlBound ? '상위 노드에서 받은 주소' : `${n.baseUrl ?? ''}${n.path || '/'}`
+  const requestAddress = configuredAddress.split(/[?#]/)[0].replace(/(https?:\/\/)[^{}/]*@/, '$1')
   // 프로토콜 이름을 보여주려면 목록이 필요 — TCP 노드일 때만 조회(Editor 가 QueryClientProvider 로 감싸고 있다)
-  const protos = useQuery({ queryKey: ['protocols'], queryFn: protocolsApi.list, staleTime: 30_000, enabled: isTcp })
+  const protos = useQuery({ queryKey: [...resources.key, 'protocols'], queryFn: protocolsApi.list, staleTime: 30_000, enabled: isTcp && resources.available })
   const pname = protos.data?.find((p) => p.id === n.protocolId)?.name
 
   const showUnreachable = unreachable && !selected && !runState && !waiting && !running
@@ -49,7 +55,7 @@ export function NodeCard({ data, selected }: NodeProps) {
 
   return (
     <div
-      className={running ? 'fl-node-running' : undefined}
+      className={`fl-editor-node${selected ? ' fl-editor-node--selected' : ''}${running ? ' fl-node-running' : ''}`}
       style={{
         width: NODE_W, // 고정 폭 — URL/이름이 길어도 늘어나지 않는다(말줄임). fitBounds NODE_W 와 일치
         background: 'var(--fl-surface)',
@@ -71,11 +77,11 @@ export function NodeCard({ data, selected }: NodeProps) {
           </div>
           {!collapsed && (
             <div style={{ fontSize: 11.5, color: showUnreachable ? 'var(--fl-put)' : 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)', fontWeight: showUnreachable ? 600 : 400 }}>
-              {waiting ? '콜백 대기 중…' : running ? '실행 중…' : runState === 'skipped' ? '건너뜀' : showUnreachable ? '⚠ 미연결' : typeLabel(n.type)}
+              {waiting ? `${waitingLabel}…` : running ? '실행 중…' : runState === 'skipped' ? '건너뜀' : showUnreachable ? '⚠ 미연결' : typeLabel(n.type)}
             </div>
           )}
         </div>
-        <RunBadge state={waiting ? 'waiting' : runState} />
+        <RunBadge state={waiting ? 'waiting' : runState} waitingLabel={waitingLabel} />
         {/* 접기/펴기 — 상세행/부라벨을 숨겨 캔버스 정리. nodrag 로 드래그와 분리. */}
         <button
           className="nodrag"
@@ -85,38 +91,20 @@ export function NodeCard({ data, selected }: NodeProps) {
           style={{ flexShrink: 0, width: 18, height: 18, padding: 0, border: 'none', background: 'transparent', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 10, lineHeight: 1 }}
         >{collapsed ? '▸' : '▾'}</button>
       </div>
+      {!collapsed && <div style={{ padding: '0 12px 7px' }}><NodeAgentBadge node={n} /></div>}
 
       {!collapsed && isHttp && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 12px', borderTop: '1px solid var(--fl-border)', background: 'var(--fl-surface-2)' }}>
-          <MethodTag method={(n.method ?? 'GET') as HttpMethod} />
-          <span title={`${n.method ?? 'GET'} ${(n.baseUrl ?? '')}${n.path || '/'}`} style={{ flex: 1, minWidth: 0, fontFamily: 'var(--fl-font-mono)', fontSize: 11.5, color: 'var(--fl-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {n.path || '/'}
+          <span className="fl-editor-method" style={{ color: METHOD_COLOR[(n.method ?? 'GET') as HttpMethod] }}><MethodTag method={(n.method ?? 'GET') as HttpMethod} /></span>
+          <span title={requestAddress} style={{ flex: 1, minWidth: 0, fontFamily: 'var(--fl-font-mono)', fontSize: 11.5, color: 'var(--fl-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {requestAddress}
           </span>
           {n.method && n.method !== 'GET' && n.method !== 'HEAD' && (
             <span title={`본문 종류: ${n.bodyType ?? 'json'}`} style={{ flexShrink: 0, fontSize: 9.5, fontWeight: 700, fontFamily: 'var(--fl-font-mono)', padding: '2px 5px', borderRadius: 'var(--fl-radius-pill)', color: 'var(--fl-text-muted)', background: 'var(--fl-surface)', border: '1px solid var(--fl-border)' }}>
               {(n.bodyType === 'form' || n.bodyType === 'urlencoded') ? 'FORM' : (n.bodyType ?? 'json').toUpperCase()}
             </span>
           )}
-          {(() => {
-            const client = n.reqMode === 'client'
-            return (
-              <span
-                title={client ? '클라이언트 → 서버 (브라우저에서 직접 호출)' : '서버 → 서버 (서버가 대신 호출)'}
-                style={{
-                  flexShrink: 0,
-                  fontSize: 10,
-                  fontWeight: 700,
-                  fontFamily: 'var(--fl-font-mono)',
-                  padding: '2px 6px',
-                  borderRadius: 'var(--fl-radius-pill)',
-                  color: client ? '#0ea5a4' : 'var(--fl-primary)',
-                  background: client ? 'rgba(14,165,164,.12)' : 'rgba(97,85,245,.12)',
-                }}
-              >
-                {client ? 'C→S' : 'S→S'}
-              </span>
-            )
-          })()}
+          {n.reqMode === 'client' && !n.executionAgent && <span style={{ fontSize: 10, color: 'var(--fl-waiting)' }}>브라우저 호환</span>}
         </div>
       )}
 
@@ -138,8 +126,8 @@ export function NodeCard({ data, selected }: NodeProps) {
 }
 
 /** 실행 경과 배지 — 진행 중 스피너 / 성공 ✓ / 실패 ✕ / 건너뜀 ⊘ / 대기 펄스. (role=img 로 보조기기 노출) */
-export function RunBadge({ state }: { state?: string }) {
-  if (state === 'waiting') return <span role="img" className="fl-wait-dot" title="콜백 대기 중" aria-label="콜백 대기 중" />
+export function RunBadge({ state, waitingLabel = '대기 중' }: { state?: string; waitingLabel?: string }) {
+  if (state === 'waiting') return <span role="img" className="fl-wait-dot" title={waitingLabel} aria-label={waitingLabel} />
   if (state === 'running') return <span role="img" className="fl-run-spinner" title="실행 중" aria-label="실행 중" />
   if (state === 'success') return <span role="img" className="fl-run-badge" style={{ color: 'var(--fl-ok)' }} title="성공" aria-label="성공">✓</span>
   if (state === 'failed') return <span role="img" className="fl-run-badge" style={{ color: 'var(--fl-fail)' }} title="실패" aria-label="실패">✕</span>

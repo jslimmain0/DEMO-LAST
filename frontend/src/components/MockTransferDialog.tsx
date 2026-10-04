@@ -1,8 +1,9 @@
+import { useApi } from '../app/WorkspaceContext'
 import { useEffect, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { MockServerDetail, MockServerSpec } from '../api/types'
-import { mocksApi } from '../api/client'
+
 import { apiErrorMessage } from '../lib/apiError'
 import { isValidSlug, nextSlugCandidate, parseMockBundle, prepareImportedSpec, serializeMockBundle, toMockBundle } from '../lib/mockTransfer'
 import type { MockBundle } from '../lib/mockTransfer'
@@ -46,6 +47,8 @@ export function MockExportDialog({ mock, spec, onClose }: { mock: MockServerDeta
  * TCP 는 꺼서 가져온다(포트 전역 자원).
  */
 export function MockImportDialog({ workspaceId, onClose, onImported }: { workspaceId: string | null; onClose: () => void; onImported?: (id: string) => void }) {
+  const { mocksApi } = useApi()
+
   const navigate = useNavigate()
   const [text, setText] = useState('')
   const [bundle, setBundle] = useState<MockBundle | null>(null)
@@ -69,7 +72,7 @@ export function MockImportDialog({ workspaceId, onClose, onImported }: { workspa
       mocksApi.slugCheck(slug).then((r) => setSlugTaken(!r.available)).catch(() => setSlugTaken(null))
     }, 300)
     return () => clearTimeout(t)
-  }, [slug, slugFormatOk, bundle])
+  }, [slug, slugFormatOk, bundle, mocksApi])
   // 충돌이면 -2, -3 … 자동 제안(한 번만 — 사용자가 고친 값은 존중)
   useEffect(() => {
     if (slugTaken !== true || !bundle) return
@@ -187,5 +190,5 @@ const h3: CSSProperties = { margin: 0, fontFamily: 'var(--fl-font-head)', fontSi
 const area: CSSProperties = { width: '100%', minHeight: 220, boxSizing: 'border-box', padding: 10, fontFamily: 'var(--fl-font-mono)', fontSize: 11.5, border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', color: 'var(--fl-text)', resize: 'vertical' }
 const lbl: CSSProperties = { display: 'flex', alignItems: 'center', gap: 10, fontSize: 12.5 }
 const input: CSSProperties = { flex: 1, padding: '7px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 13 }
-const primaryBtn: CSSProperties = { padding: '8px 16px', border: 'none', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-primary)', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }
+const primaryBtn: CSSProperties = { padding: '8px 16px', border: 'none', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-action-primary-bg)', color: 'var(--fl-action-primary-ink)', fontWeight: 700, fontSize: 13, cursor: 'pointer' }
 const miniBtn: CSSProperties = { padding: '5px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 12, cursor: 'pointer' }

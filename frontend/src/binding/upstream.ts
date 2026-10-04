@@ -1,8 +1,6 @@
 // 선택 노드의 '상위(이전) 노드'들이 제공하는 바인딩 가능 항목(요청/응답 규격)을 계산.
 import type { Edge, Node } from '@xyflow/react'
 import { asGraphNode } from '../canvas/graphAdapter'
-import { activeEnvVars } from '../lib/environments'
-import { activeInputVars } from '../lib/runInput'
 
 export interface BindableItem {
   key: string
@@ -80,11 +78,10 @@ function upstreamSources(nodes: Node[], edges: Edge[], targetId: string): Bindab
  * 수신 URL 은 실행 시작 시점에 확정(컨텍스트 시드)되므로 wait 보다 앞의 노드에서도 꽂을 수 있다
  * — 결제요청의 returnUrl/notiUrl 에 넣는 표준 패턴.
  */
-export function bindableSources(nodes: Node[], edges: Edge[], targetId: string): BindableSource[] {
+export function bindableSources(nodes: Node[], edges: Edge[], targetId: string, envVars: Record<string, string> = {}, inputVars: Record<string, string> = {}): BindableSource[] {
   const sources = upstreamSources(nodes, edges, targetId)
   const seen = new Set(sources.map((s) => s.id))
   // 활성 환경(dev/staging/prod)의 변수 — 어느 노드에서나 `{{ 키@env }}` 로 꽂을 수 있다(실행 시 주입).
-  const envVars = activeEnvVars()
   const envKeys = Object.keys(envVars)
   if (envKeys.length) {
     sources.unshift({
@@ -95,7 +92,7 @@ export function bindableSources(nodes: Node[], edges: Edge[], targetId: string):
     })
   }
   // 실행 입력(런타임 파라미터) — `{{ 키@input }}`. 저장된 입력값 키를 노출.
-  const inputKeys = Object.keys(activeInputVars())
+  const inputKeys = Object.keys(inputVars)
   if (inputKeys.length) {
     sources.unshift({
       id: 'input',

@@ -5,6 +5,7 @@ export interface AuthConfig {
   enabled: boolean
   mode: string
   mcpPort?: number | null
+  runtime?: { kind: 'local' | 'server'; name: string; deviceId?: string | null }
 }
 
 /** 백엔드 /auth/me — dev 모드는 전권 가짜 사용자(dev/default), github 게스트 모드(무인증)는 "guest" 전권 사용자. */

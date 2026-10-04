@@ -24,6 +24,7 @@ class PresenceSession {
   private flowId: string | null = null
   private name = ''
   private tokenFn: (() => string | null) | null = null
+  private remote = false
   private retry: number | undefined
   private lastSent = 0
   private pending: { x: number | null; y: number | null } | null = null
@@ -31,18 +32,20 @@ class PresenceSession {
   private editing: string | null = null   // 현재 편집중 노드 — 재접속 시 재announce
   private graphHandler: ((m: Record<string, unknown>) => void) | null = null // 공동 편집 수신
 
-  connect(flowId: string, name: string, tokenFn?: () => string | null) {
+  connect(flowId: string, name: string, tokenFn?: () => string | null, remote = false) {
     this.close()
     this.flowId = flowId
     this.name = name
     this.tokenFn = tokenFn ?? null
+    this.remote = remote
     this.open()
   }
 
   private open() {
     if (!this.flowId) return
     const proto = location.protocol === 'https:' ? 'wss' : 'ws'
-    let url = `${proto}://${location.host}${appBase()}/ws/presence?flowId=${this.flowId}&name=${encodeURIComponent(this.name)}`
+    const remote = this.remote ? '/remote' : ''
+    let url = `${proto}://${location.host}${appBase()}${remote}/ws/presence?flowId=${this.flowId}&name=${encodeURIComponent(this.name)}`
     const token = this.tokenFn?.()
     if (token) url += `&token=${encodeURIComponent(token)}`
     const ws = new WebSocket(url)

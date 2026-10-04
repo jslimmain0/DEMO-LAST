@@ -1,8 +1,9 @@
+import { useApi } from '../app/WorkspaceContext'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { CSSProperties } from 'react'
 import { useState } from 'react'
-import { mocksApi } from '../api/client'
-import type { MockServerSpec } from '../api/types'
+
+import type { MockServerDetail, MockServerSpec } from '../api/types'
 import { diffMockSpecs, mockDiffSummary } from '../lib/mockDiff'
 import { Modal } from './Modal'
 import { toast } from './toast'
@@ -16,8 +17,10 @@ export function MockVersionHistoryDialog({ mockId, currentSpec, readOnly, onClos
   currentSpec: MockServerSpec
   readOnly?: boolean
   onClose: () => void
-  onRestored: () => void
+  onRestored: (saved: MockServerDetail, snapshot: MockServerSpec) => void
 }) {
+  const { mocksApi } = useApi()
+
   const qc = useQueryClient()
   const [selected, setSelected] = useState<number | null>(null)
   const [msg, setMsg] = useState('')
@@ -25,13 +28,22 @@ export function MockVersionHistoryDialog({ mockId, currentSpec, readOnly, onClos
   const preview = useQuery({ queryKey: ['mock-version', mockId, selected], queryFn: () => mocksApi.version(mockId, selected as number), enabled: selected != null })
   const invalidate = () => { qc.invalidateQueries({ queryKey: ['mock-versions', mockId] }); qc.invalidateQueries({ queryKey: ['mock-server', mockId] }); qc.invalidateQueries({ queryKey: ['mock-servers'] }) }
   const restore = useMutation({
-    mutationFn: (no: number) => mocksApi.restoreVersion(mockId, no),
-    onSuccess: (v) => { toast(`v${v.versionNo}로 복원했습니다(서빙 즉시 반영).`, 'ok'); invalidate(); onRestored(); onClose() },
+    mutationFn: async (no: number) => {
+      const snapshot = structuredClone(currentSpec)
+      const version = await mocksApi.restoreVersion(mockId, no)
+      const saved = await mocksApi.get(mockId)
+      return { version, saved, snapshot }
+    },
+    onSuccess: ({ version, saved, snapshot }) => { toast(`v${version.versionNo}로 복원했습니다(서빙 즉시 반영).`, 'ok'); onRestored(saved, snapshot); invalidate(); onClose() },
     onError: (e) => toast(`복원 실패: ${(e as { response?: { data?: { message?: string } } })?.response?.data?.message ?? '오류'}`, 'error'),
   })
   const commit = useMutation({
-    mutationFn: () => mocksApi.updateSpec(mockId, currentSpec, { note: msg.trim() || undefined, pinned: true }),
-    onSuccess: (d) => { toast(`📌 v${d.currentVersion ?? '?'} 보존 버전으로 저장했습니다${msg.trim() ? ` — "${msg.trim()}"` : ''}.`, 'ok'); setMsg(''); invalidate(); onRestored() },
+    mutationFn: async () => {
+      const snapshot = structuredClone(currentSpec)
+      const saved = await mocksApi.updateSpec(mockId, snapshot, { note: msg.trim() || undefined, pinned: true })
+      return { saved, snapshot }
+    },
+    onSuccess: ({ saved, snapshot }) => { toast(`📌 v${saved.currentVersion ?? '?'} 보존 버전으로 저장했습니다${msg.trim() ? ` — "${msg.trim()}"` : ''}.`, 'ok'); setMsg(''); onRestored(saved, snapshot); invalidate() },
     onError: (e) => toast(`보존 저장 실패: ${(e as { response?: { data?: { message?: string } } })?.response?.data?.message ?? '오류'}`, 'error'),
   })
   const pin = useMutation({
@@ -124,9 +136,9 @@ const xBtn: CSSProperties = { width: 30, height: 30, borderRadius: 8, border: 'n
 const pad: CSSProperties = { padding: 14, fontSize: 12.5, color: 'var(--fl-text-muted)' }
 const row: CSSProperties = { display: 'block', width: '100%', textAlign: 'left', padding: '10px 14px', border: 'none', borderBottom: '1px solid var(--fl-border)', background: 'transparent', color: 'var(--fl-text)', cursor: 'pointer' }
 const rowSel: CSSProperties = { background: 'var(--fl-surface-2)', boxShadow: 'inset 3px 0 0 var(--fl-primary)' }
-const badge: CSSProperties = { fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 999, background: 'var(--fl-primary)', color: '#fff' }
+const badge: CSSProperties = { fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 999, background: 'var(--fl-action-primary-bg)', color: 'var(--fl-action-primary-ink)' }
 const pinBadge: CSSProperties = { fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 999, border: '1px solid var(--fl-border)', color: 'var(--fl-text-muted)' }
 const diffBox: CSSProperties = { padding: 12, border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)' }
 const pre: CSSProperties = { margin: '6px 0 0', padding: 10, fontSize: 11, fontFamily: 'var(--fl-font-mono)', background: 'var(--fl-surface-2)', border: '1px solid var(--fl-border)', borderRadius: 6, maxHeight: 220, overflow: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }
-const primary: CSSProperties = { padding: '8px 14px', border: 'none', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-primary)', color: '#fff', fontWeight: 700, fontSize: 12.5, cursor: 'pointer', whiteSpace: 'nowrap' }
+const primary: CSSProperties = { padding: '8px 14px', border: 'none', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-action-primary-bg)', color: 'var(--fl-action-primary-ink)', fontWeight: 700, fontSize: 12.5, cursor: 'pointer', whiteSpace: 'nowrap' }
 const ghost: CSSProperties = { padding: '8px 14px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 12.5, cursor: 'pointer' }

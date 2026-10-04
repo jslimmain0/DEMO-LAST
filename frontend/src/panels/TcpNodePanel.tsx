@@ -1,17 +1,21 @@
+import { useNodeResources } from '../components/AgentSettings'
 // frontend/src/panels/TcpNodePanel.tsx — TCP 노드 속성: 프로토콜·전문 선택 → 필드 값 입력(바이트 카운터·ascii 경고) → 미리보기 / 응답 전문 → 출력 키
 import { useQuery } from '@tanstack/react-query'
-import { useEffect, useState, type CSSProperties } from 'react'
+import type { CSSProperties } from 'react'
 import { Link } from 'react-router-dom'
 import type { GraphNode, NodeOutput, ProtocolField, ProtocolPreview, ProtocolSpec } from '../api/types'
-import { protocolsApi } from '../api/client'
+
 import { TokenInput } from '../binding/TokenInput'
 import type { BindableSource } from '../binding/upstream'
 import { byteLen, fieldsOf, messageKeys, padOf, requestKeys, tableLen, withOffsets } from '../lib/protocolSpec'
 
 type Update = (patch: Partial<GraphNode>) => void
 
-export function useProtocol(id: string | undefined) {
-  return useQuery({ queryKey: ['protocol', id], queryFn: () => protocolsApi.get(id!), enabled: !!id, staleTime: 15_000 })
+export function useProtocol(id: string | undefined, node?: GraphNode) {
+  const resources = useNodeResources(node)
+  const { protocolsApi } = resources.api
+
+  return useQuery({ queryKey: [...resources.key, 'protocol', id], queryFn: () => protocolsApi.get(id!), enabled: !!id && resources.available, staleTime: 15_000 })
 }
 
 /** 응답 전문 키 → outputs(헤더+본문 필드, length 제외). 응답 전문 select 변경 시 node.outputs 를 동기화한다. */
@@ -23,8 +27,11 @@ export function TcpRequestPanel({ node, update, sources, canEdit, preview, previ
   node: GraphNode; update: Update; sources: BindableSource[]; canEdit: boolean
   preview: ProtocolPreview | null; previewErr: string | null; onPreview: () => void
 }) {
-  const protos = useQuery({ queryKey: ['protocols'], queryFn: protocolsApi.list, staleTime: 15_000 })
-  const proto = useProtocol(node.protocolId || undefined)
+  const resources = useNodeResources(node)
+  const { protocolsApi } = resources.api
+
+  const protos = useQuery({ queryKey: [...resources.key, 'protocols'], queryFn: protocolsApi.list, staleTime: 15_000, enabled: resources.available })
+  const proto = useProtocol(node.protocolId || undefined, node)
   const spec = proto.data?.spec
   const values = node.tcpValues ?? {}
   const setValue = (name: string, v: string) => update({ tcpValues: { ...values, [name]: v } })
@@ -36,7 +43,14 @@ export function TcpRequestPanel({ node, update, sources, canEdit, preview, previ
   return (
     <>
       <label style={label}>대상 (host:port)</label>
+      {node.agentMock ? <div style={{ fontSize: 12, lineHeight: 1.6 }}>
+        <span style={{ color: 'var(--fl-text-muted)' }}>기존 Mock 연결 · {node.agentMock}</span>
+        <button type="button" disabled={!canEdit} style={{ ...singleBtn, marginTop: 6 }} onClick={() => update({ agentMock: undefined, tcpHost: '', tcpPort: undefined, tcpPortEnvKey: undefined })}>연결 해제 후 주소 직접 입력</button>
+        <p style={{ color: 'var(--fl-text-muted)' }}>새 호스트와 포트를 입력한 뒤 저장하세요.</p>
+      </div> : <>
       <HostPortInput node={node} update={update} canEdit={canEdit} />
+      {node.tcpPortEnvKey && <p style={{ fontSize: 12, color: 'var(--fl-text-muted)' }}>포트는 기존 환경 키 <code>{node.tcpPortEnvKey}</code>를 사용합니다. 포트를 입력하면 해당 값으로 바뀝니다.</p>}
+      </>}
       <div style={{ display: 'flex', gap: 6 }}>
         <div style={{ flex: 2, minWidth: 0 }}>
           <label style={label}>프로토콜</label>
@@ -45,7 +59,7 @@ export function TcpRequestPanel({ node, update, sources, canEdit, preview, previ
               <option value="">— 선택 —</option>
               {(protos.data ?? []).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
-            <Link to={node.protocolId ? `/protocols/${node.protocolId}` : '/protocols'} style={{ fontSize: 11.5, whiteSpace: 'nowrap', color: 'var(--fl-primary)' }}>관리 →</Link>
+            <Link to={`${node.protocolId ? `/protocols/${node.protocolId}` : '/protocols'}?space=${encodeURIComponent(`${resources.agent}:${resources.workspaceId}`)}`} target="_blank" rel="noreferrer" style={{ fontSize: 11.5, whiteSpace: 'nowrap', color: 'var(--fl-primary)' }}>관리 →</Link>
           </div>
         </div>
         <div style={{ flex: 1, minWidth: 0 }}><label style={label}>타임아웃(ms)</label><input style={field} type="number" value={node.tcpTimeoutMs ?? 5000} readOnly={!canEdit} onChange={(e) => update({ tcpTimeoutMs: Number(e.target.value) })} /></div>
@@ -83,22 +97,15 @@ export function TcpRequestPanel({ node, update, sources, canEdit, preview, previ
   )
 }
 
-/** 필드 한 줄 — 오프셋·타입/패딩·바이트 카운터 + 값(토큰 허용). 토큰이 섞이면 실제 길이는 실행 시에 정해지므로 카운터는 `?`. */
-/** host:port 한 칸 — 저장 모델은 host/port 로 갈라져 있어 "host:" 중간 상태가 사라진다. 원문을 로컬로 들고 파싱해서 저장. */
+/** 호스트와 포트를 나누어 IPv6와 포트 입력 중의 빈 값을 그대로 편집한다. */
 function HostPortInput({ node, update, canEdit }: { node: GraphNode; update: Update; canEdit: boolean }) {
-  const [text, setText] = useState(`${node.tcpHost ?? ''}${node.tcpPort ? ':' + node.tcpPort : ''}`)
-  useEffect(() => { setText(`${node.tcpHost ?? ''}${node.tcpPort ? ':' + node.tcpPort : ''}`) }, [node.id]) // eslint-disable-line react-hooks/exhaustive-deps
   return (
-    <input style={mono} aria-label="대상 host:port" value={text} placeholder="10.20.3.14:9600" readOnly={!canEdit}
-      onChange={(e) => {
-        const v = e.target.value
-        setText(v)
-        const t = v.trim(); const ci = t.lastIndexOf(':')
-        if (ci > 0) {
-          const digits = t.slice(ci + 1).replace(/[^0-9]/g, '')
-          update({ tcpHost: t.slice(0, ci), tcpPort: digits ? Number(digits) : node.tcpPort }) // 포트 입력 중(빈 값)엔 기존 포트 유지
-        } else update({ tcpHost: t })
-      }} />
+    <div style={{ display: 'flex', gap: 6 }}>
+      <input style={{ ...mono, flex: 2, minWidth: 0 }} aria-label="TCP 호스트" value={node.tcpHost ?? ''} placeholder="10.20.3.14" readOnly={!canEdit}
+        onChange={e => update({ tcpHost: e.target.value })} />
+      <input style={{ ...mono, flex: 1, minWidth: 0 }} aria-label="TCP 포트" type="number" min={1} max={65535} value={node.tcpPortEnvKey ? '' : node.tcpPort ?? ''} placeholder={node.tcpPortEnvKey ? '환경 키 사용 중' : '9600'} readOnly={!canEdit}
+        onChange={e => update({ tcpPort: e.target.value ? Number(e.target.value) : undefined, tcpPortEnvKey: undefined })} />
+    </div>
   )
 }
 
@@ -150,7 +157,7 @@ export function PreviewBox({ p }: { p: ProtocolPreview }) {
 }
 
 export function TcpResponsePanel({ node, update, canEdit }: { node: GraphNode; update: Update; canEdit: boolean }) {
-  const proto = useProtocol(node.protocolId || undefined)
+  const proto = useProtocol(node.protocolId || undefined, node)
   const spec = proto.data?.spec
   if (!spec) return <p style={{ fontSize: 11.5, color: 'var(--fl-text-muted)' }}>프로토콜을 먼저 고르세요.</p>
   const outs = outputsFor(spec, node.tcpResponseMessage || undefined)

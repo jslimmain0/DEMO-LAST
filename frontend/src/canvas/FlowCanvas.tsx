@@ -1,9 +1,10 @@
-import { Background, ControlButton, Controls, MiniMap, ReactFlow, useReactFlow } from '@xyflow/react'
+import { useApi } from '../app/WorkspaceContext'
+import { Background, ControlButton, Controls, MiniMap, ReactFlow, getViewportForBounds, useReactFlow } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import type { CSSProperties, DragEvent } from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { GraphNode, NodeType } from '../api/types'
-import { runsApi } from '../api/client'
+
 import { toast } from '../components/toast'
 import { useEditorStore } from '../store/editorStore'
 import { presence } from '../lib/presence'
@@ -16,6 +17,7 @@ import { NoteNode } from './NoteNode'
 import { PresenceOverlay } from './PresenceOverlay'
 import { SwitchNode } from './SwitchNode'
 import { NODE_W, catColor } from './nodeMeta'
+import { revealNodeTranslation } from './revealNode'
 
 const nodeTypes = { flnode: NodeCard, branch: BranchNode, switch: SwitchNode, note: NoteNode, annogroup: GroupNode }
 const edgeTypes = { deletable: DeletableEdge }
@@ -42,6 +44,8 @@ function reclaimCanvasFocus() {
 }
 
 export function FlowCanvas() {
+  const { runsApi } = useApi()
+
   const nodes = useEditorStore((s) => s.nodes)
   const edges = useEditorStore((s) => s.edges)
   const waitingNodeId = useEditorStore((s) => s.waitingNodeId)
@@ -74,7 +78,41 @@ export function FlowCanvas() {
   const flowId = useEditorStore((s) => s.flowId)
   const wsReadOnly = useEditorStore((s) => s.readOnly) // 워크스페이스 VIEWER — 우클릭 실행 숨김
   const focusTick = useEditorStore((s) => s.focusTick)
-  const { screenToFlowPosition, fitBounds, zoomTo, setCenter, getZoom } = useReactFlow()
+  const { screenToFlowPosition, fitBounds, zoomTo, setCenter, getZoom, getViewport, setViewport } = useReactFlow()
+  const canvasRef = useRef<HTMLDivElement>(null)
+  const [compactMinimap, setCompactMinimap] = useState(false)
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    let width = canvas.clientWidth, height = canvas.clientHeight
+    setCompactMinimap(width <= 600)
+    let frame = 0
+    const observer = new ResizeObserver(() => {
+      const nextWidth = canvas.clientWidth
+      if (nextWidth === width && canvas.clientHeight === height) return
+      width = nextWidth; height = canvas.clientHeight
+      setCompactMinimap(width <= 600)
+      cancelAnimationFrame(frame)
+      frame = requestAnimationFrame(() => {
+        const selected = useEditorStore.getState().selectedId
+        if (!selected) return
+        const element = canvas.querySelector<HTMLElement>(`.react-flow__node[data-id="${CSS.escape(selected)}"]`)
+        if (!element) return
+        const outer = canvas.getBoundingClientRect(), node = element.getBoundingClientRect()
+        const minimap = canvas.querySelector<HTMLElement>('.react-flow__minimap')
+        const safeHeight = Math.max(0, outer.height - (minimap ? minimap.getBoundingClientRect().height + 24 : 0))
+        const all = Array.from(canvas.querySelectorAll<HTMLElement>('.react-flow__node')).map(el => el.getBoundingClientRect())
+        const left = Math.min(...all.map(r => r.left)), top = Math.min(...all.map(r => r.top))
+        const right = Math.max(...all.map(r => r.right)), bottom = Math.max(...all.map(r => r.bottom))
+        const bounds = { x: left - outer.left, y: top - outer.top, width: right - left, height: bottom - top }
+        const target = bounds.width <= outer.width - 48 && bounds.height <= safeHeight - 48 ? bounds : { x: node.left - outer.left, y: node.top - outer.top, width: node.width, height: node.height }
+        const move = revealNodeTranslation(target, { width: outer.width, height: safeHeight })
+        if (move.x || move.y) { const viewport = getViewport(); void setViewport({ ...viewport, x: viewport.x + move.x, y: viewport.y + move.y }, { duration: 0 }) }
+      })
+    })
+    observer.observe(canvas)
+    return () => { observer.disconnect(); cancelAnimationFrame(frame) }
+  }, [getViewport, setViewport])
   // 노드 바로가기 — focusNode 신호가 오면 그 노드를 화면 중앙으로(줌 유지, 최소 1)
   useEffect(() => {
     if (focusTick === 0) return
@@ -148,8 +186,9 @@ export function FlowCanvas() {
     const maxX = Math.max(...nodes.map((n, i) => n.position.x + dims[i].w))
     const maxY = Math.max(...nodes.map((n, i) => n.position.y + dims[i].h))
     const rect = { x: minX, y: minY, width: maxX - minX, height: maxY - minY }
-    fitBounds(rect, { padding: 0.22, duration: reducedMotion.current ? 0 : 220 })
-  }, [nodes, flowId, fitBounds])
+    const canvas = canvasRef.current
+    if (canvas) void setViewport(getViewportForBounds(rect, canvas.clientWidth, canvas.clientHeight, 0.1, 1, 0.22), { duration: reducedMotion.current ? 0 : 220 })
+  }, [nodes, flowId, setViewport])
   // 선택(없으면 전체) 영역을 화면에 꽉 채움 — 큰 서브그래프를 한눈에
   const fitToSelection = useCallback(() => {
     const all = useEditorStore.getState().nodes
@@ -198,6 +237,7 @@ export function FlowCanvas() {
 
   return (
     <div
+      ref={canvasRef}
       role="application"
       aria-label="워크플로 캔버스"
       className={connecting ? 'fl-canvas connecting' : 'fl-canvas'}
@@ -262,9 +302,10 @@ export function FlowCanvas() {
         deleteKeyCode={['Delete', 'Backspace']}
         proOptions={{ hideAttribution: true }}
       >
-        {showGrid && <Background gap={22} color="var(--fl-border)" />}
+        {showGrid && <Background gap={24} color="var(--fl-canvas-grid)" />}
         {showMinimap && (
           <MiniMap
+            style={compactMinimap ? { width: 112, height: 84 } : undefined}
             pannable
             zoomable
             nodeColor={(n) => catColor((n.data as { cat?: string }).cat)}

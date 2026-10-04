@@ -72,3 +72,20 @@ export function duplicateKeys(keys: Array<string | undefined>): Set<string> {
   }
   return new Set([...count.entries()].filter(([, n]) => n > 1).map(([k]) => k))
 }
+
+/** 저장 전 붙여넣기 오류를 줄 번호와 함께 표시한다. */
+export function validateDotEnv(text: string): string[] {
+  const errors: string[] = []
+  const seen = new Set<string>()
+  text.split(/\r?\n/).forEach((raw, index) => {
+    const line = raw.trim()
+    if (!line || line.startsWith('#')) return
+    const match = /^(?:export\s+)?([A-Za-z_][\w.-]*)\s*[=:]\s?(.*)$/.exec(line)
+    if (!match) { errors.push(`${index + 1}행: KEY=value 형식을 확인하세요`); return }
+    if (seen.has(match[1])) errors.push(`${index + 1}행: ${match[1]} 키가 중복됩니다`)
+    seen.add(match[1])
+    const value = match[2].trim()
+    if ((value.startsWith('"') && (value.length < 2 || !value.endsWith('"'))) || (value.startsWith("'") && (value.length < 2 || !value.endsWith("'")))) errors.push(`${index + 1}행: 닫는 따옴표가 없습니다`)
+  })
+  return errors
+}

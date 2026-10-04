@@ -4,6 +4,7 @@ import { StatusBadge } from '../components/StatusBadge'
 import { MethodTag } from '../components/MethodTag'
 import { LogBlock, methodOf } from '../components/NodeExecutionLog'
 import { duration } from '../lib/format'
+import { AgentBadge } from '../components/AgentSettings'
 
 /** wait(콜백 대기) 진행 상태 — Editor 실행 루프가 채운다. */
 export interface WaitStatus {
@@ -49,7 +50,7 @@ export function RunPanel({
     if (!execution) return
     const lines = [`# 실행 ${execution.id} · ${execution.status}${execution.error ? ` · ${execution.error}` : ''}`]
     for (const nd of execution.nodes) {
-      lines.push(`\n## [${nd.status}] ${nd.nodeName || nd.nodeId}${nd.httpStatus != null ? ` · HTTP ${nd.httpStatus}` : ''}${nd.durationMs != null ? ` · ${nd.durationMs}ms` : ''}`)
+      lines.push(`\n## [${nd.status}] ${nd.nodeName || nd.nodeId}${nd.executionAgent ? ` · ${nd.executionAgent === 'local' ? '내 PC' : '서버'} 에이전트` : ''}${nd.httpStatus != null ? ` · HTTP ${nd.httpStatus}` : ''}${nd.durationMs != null ? ` · ${nd.durationMs}ms` : ''}`)
       if (nd.requestText) lines.push(`요청:\n${nd.requestText}`)
       if (nd.responseText) lines.push(`응답:\n${nd.responseText}`)
       if (nd.output != null) lines.push(`출력:\n${JSON.stringify(nd.output, null, 2)}`)
@@ -85,7 +86,7 @@ export function RunPanel({
         {execution && execution.nodes.length > 0 && (
           <div style={{ marginLeft: running && onStop ? 12 : 'auto', display: 'flex', gap: 2 }}>
             {([['all', '전체'], ['ok', '성공'], ['fail', '실패'], ['skip', '건너뜀']] as const).map(([k, lbl]) => (
-              <button key={k} onClick={() => setFilter(k)} style={{ padding: '3px 8px', fontSize: 11.5, border: '1px solid var(--fl-border)', borderRadius: 6, cursor: 'pointer', background: filter === k ? 'var(--fl-primary)' : 'transparent', color: filter === k ? '#fff' : 'var(--fl-text-muted)' }}>{lbl}</button>
+              <button key={k} onClick={() => setFilter(k)} style={{ padding: '3px 8px', fontSize: 11.5, border: '1px solid var(--fl-border)', borderRadius: 6, cursor: 'pointer', background: filter === k ? 'var(--fl-action-primary-bg)' : 'transparent', color: filter === k ? 'var(--fl-action-primary-ink)' : 'var(--fl-text-muted)' }}>{lbl}</button>
             ))}
             <button onClick={exportLog} title="실행 로그 전체 내보내기(.txt)" style={{ padding: '3px 8px', fontSize: 11.5, border: '1px solid var(--fl-border)', borderRadius: 6, cursor: 'pointer', background: 'transparent', color: 'var(--fl-text-muted)' }}>⬇ 내보내기</button>
           </div>
@@ -94,12 +95,16 @@ export function RunPanel({
       </header>
 
       <div style={{ flex: 1, overflowY: 'auto' }}>
-        {running && (
+        {(running || execution?.pendingAgent) && (
           waitStatus ? (
             <WaitBanner status={waitStatus} />
           ) : (
             <div role="status" aria-live="polite" style={{ padding: 16, color: 'var(--fl-text-muted)', fontSize: 13 }}>
-              {execution?.pendingInput
+              {execution?.pendingAgent
+                ? execution.pendingAgent.status === 'UNKNOWN'
+                  ? `결과 확인 필요 — ${execution.pendingAgent.nodeName || execution.pendingAgent.nodeId}. 요청이 처리됐을 수 있어 자동으로 재실행하지 않습니다. ${execution.pendingAgent.error ?? ''}`
+                  : `${execution.pendingAgent.agent === 'local' ? '내 PC' : '서버'} 에이전트 ${execution.pendingAgent.status === 'PENDING' ? '연결·작업 대기' : '작업 처리 중'} — ${execution.pendingAgent.nodeName || execution.pendingAgent.nodeId}`
+                : execution?.pendingInput
                 ? `사용자 입력 대기 중… — ${execution.pendingInput.nodeName || execution.pendingInput.nodeId} (입력 창에 값을 넣고 확인하면 진행됩니다)`
                 : execution?.pendingForm
                 ? '팝업을 열고 폼을 제출하는 중…'
@@ -127,6 +132,7 @@ export function RunPanel({
                 <StatusBadge status={nd.status} />
                 {nd.nodeType === 'http' && nd.httpStatus != null && methodOf(nd.requestText) && <MethodTag method={methodOf(nd.requestText)!} />}
                 <span style={{ fontSize: 13, fontWeight: 500 }}>{nd.nodeName || nd.nodeId}</span>
+                {nd.executionAgent && <AgentBadge agent={nd.executionAgent} />}
                 <span style={{ marginLeft: 'auto', display: 'flex', gap: 12, color: 'var(--fl-text-muted)', fontSize: 12, fontFamily: 'var(--fl-font-mono)' }}>
                   {nd.httpStatus != null && <span>{nd.httpStatus}</span>}
                   {nd.durationMs != null && <span>{duration(nd.durationMs)}</span>}
@@ -168,7 +174,7 @@ function WaitBanner({ status }: { status: WaitStatus }) {
     setTestState('sending')
     try {
       const isJson = testBody.trim().startsWith('{') || testBody.trim().startsWith('[')
-      const res = await fetch(path, {
+      const res = await fetch(/^https?:\/\//.test(status.receiveUrl) ? status.receiveUrl : path, {
         method: 'POST',
         headers: { 'Content-Type': isJson ? 'application/json' : 'application/x-www-form-urlencoded' },
         body: testBody,

@@ -1,0 +1,44 @@
+name: flowlink-oracle-vault-test
+services:
+  oracle:
+    image: gvenzl/oracle-free:23.26.3-slim
+    environment:
+      ORACLE_PASSWORD: ${LAB_ORACLE_ADMIN_PASSWORD}
+      APP_USER: flowlink
+      APP_USER_PASSWORD: ${LAB_ORACLE_PASSWORD}
+    ports: ["127.0.0.1:11521:1521"]
+    volumes: ["oracle-data:/opt/oracle/oradata"]
+    healthcheck:
+      test: ["CMD", "healthcheck.sh"]
+      interval: 5s
+      timeout: 5s
+      retries: 120
+  vault:
+    image: hashicorp/vault:1.17
+    cap_add: [IPC_LOCK]
+    environment:
+      VAULT_DEV_ROOT_TOKEN_ID: ${LAB_VAULT_TOKEN}
+      VAULT_DEV_LISTEN_ADDRESS: 0.0.0.0:8200
+    ports: ["127.0.0.1:18200:8200"]
+  server:
+    image: flowlink-oracle-vault-test
+    ports: ["127.0.0.1:18183:18183"]
+    env_file: ../.run/oracle-vault/server.env
+    environment:
+      SPRING_PROFILES_ACTIVE: dev,agent-lab
+      FLOWLINK_PORT: '18183'
+      FLOWLINK_DB_URL: jdbc:oracle:thin:@//oracle:1521/FREEPDB1
+      FLOWLINK_DB_USER: flowlink
+      FLOWLINK_DB_PASSWORD: ${LAB_ORACLE_PASSWORD}
+      FLOWLINK_AUTH_GITHUB_ENABLED: "true"
+      FLOWLINK_AUTH_GUEST_ENABLED: "false"
+      FLOWLINK_VAULT_TRANSIT_ENABLED: "true"
+      FLOWLINK_VAULT_ADDRESS: http://vault:8200
+      FLOWLINK_EXECUTION_SSRF_ALLOW_LOOPBACK: "true"
+      FLOWLINK_EXECUTION_CAPTURE_REQUEST_RESPONSE_BODIES: "true"
+      FLOWLINK_PUBLIC_URL: http://127.0.0.1:18183
+    depends_on:
+      oracle: {condition: service_healthy}
+      vault: {condition: service_started}
+volumes:
+  oracle-data:

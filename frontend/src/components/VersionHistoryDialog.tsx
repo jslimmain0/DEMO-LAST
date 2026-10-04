@@ -1,12 +1,14 @@
+import { useApi } from '../app/WorkspaceContext'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { CSSProperties } from 'react'
 import { useState } from 'react'
-import { flowsApi } from '../api/client'
+
 import type { FlowGraph } from '../api/types'
 import { diffGraphs, diffSummary } from '../lib/graphDiff'
 import { toast } from './toast'
 import { Modal } from './Modal'
 import { useEditorStore } from '../store/editorStore'
+import { useUnsavedNavigation } from './UnsavedNavigation'
 
 /**
  * 버전 기록 — 저장 때마다 쌓인 불변 스냅샷(FlowVersion)을 열람·비교·복원.
@@ -22,8 +24,10 @@ export function VersionHistoryDialog({
   flowId: string
   currentGraph: FlowGraph
   onClose: () => void
-  onRestored: () => void
+  onRestored: (snapshot: FlowGraph) => void
 }) {
+  const { flowsApi } = useApi()
+
   const qc = useQueryClient()
   const [selected, setSelected] = useState<number | null>(null)
   const [commitMsg, setCommitMsg] = useState('')
@@ -37,12 +41,15 @@ export function VersionHistoryDialog({
   })
 
   const restore = useMutation({
-    mutationFn: (no: number) => flowsApi.restoreVersion(flowId, no),
-    onSuccess: (v) => {
+    mutationFn: async (no: number) => {
+      const snapshot = structuredClone(useEditorStore.getState().getGraph())
+      const version = await flowsApi.restoreVersion(flowId, no)
+      return { version, snapshot }
+    },
+    onSuccess: ({ version: v, snapshot }) => {
       toast(`v${v.versionNo}로 복원했습니다.`, 'ok')
-      qc.invalidateQueries({ queryKey: ['flow', flowId] })
       qc.invalidateQueries({ queryKey: ['flow-versions', flowId] })
-      onRestored()
+      onRestored(snapshot)
       onClose()
     },
     onError: () => toast('복원에 실패했습니다.', 'error'),
@@ -51,16 +58,21 @@ export function VersionHistoryDialog({
   // 📌 커밋 — 현재 캔버스를 메시지 달아 보존 버전으로 저장(자동 정리에서 영구 제외).
   // 미저장 편집도 이 스냅샷에 포함되므로 사실상 "메시지 있는 저장 + 영구 보존".
   const commit = useMutation({
-    mutationFn: () => flowsApi.saveVersion(flowId, { graph: currentGraph, note: commitMsg.trim() || undefined, pinned: true }),
-    onSuccess: (v) => {
+    mutationFn: async () => {
+      const snapshot = structuredClone(useEditorStore.getState().getGraph())
+      const version = await flowsApi.saveVersion(flowId, { graph: snapshot, note: commitMsg.trim() || undefined, pinned: true })
+      return { version, snapshot }
+    },
+    onSuccess: ({ version: v, snapshot }) => {
       toast(`📌 v${v.versionNo} 보존 버전으로 저장했습니다${commitMsg.trim() ? ` — "${commitMsg.trim()}"` : ''}.`, 'ok')
       setCommitMsg('')
-      qc.invalidateQueries({ queryKey: ['flow', flowId] })
       qc.invalidateQueries({ queryKey: ['flow-versions', flowId] })
-      onRestored() // 에디터가 flow 를 재조회해 dirty/버전 상태 동기화
+      onRestored(snapshot) // 요청 이후 추가한 편집은 에디터가 보존한다.
     },
     onError: (e) => toast(`보존 저장 실패: ${(e as { response?: { data?: { message?: string } } })?.response?.data?.message ?? '오류'}`, 'error'),
   })
+
+  useUnsavedNavigation({ dirty: false, saving: restore.isPending || commit.isPending, label: '버전 기록' })
 
   const pin = useMutation({
     mutationFn: (v: { no: number; pinned: boolean }) => flowsApi.pinVersion(flowId, v.no, v.pinned),
@@ -159,6 +171,7 @@ export function VersionHistoryDialog({
                 <div style={{ fontSize: 11.5, color: 'var(--fl-text-muted)', marginTop: 12 }}>
                   노드 {preview.data?.nodes?.length ?? 0}개 · 연결 {preview.data?.edges?.length ?? 0}개
                 </div>
+                {!readOnly && selected !== current && <p style={{ fontSize: 12, lineHeight: 1.6, color: 'var(--fl-text-muted)' }}>복원하면 선택한 내용이 새 버전으로 저장되고 현재 캔버스를 교체합니다. 현재 미저장 변경을 남기려면 먼저 보존 버전으로 저장하세요.</p>}
                 <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
                   {!readOnly && (
                     <button
@@ -207,4 +220,4 @@ const rowSel: CSSProperties = { background: 'var(--fl-surface-2)' }
 const pinBadge: CSSProperties = { fontSize: 10, fontWeight: 700, color: 'var(--fl-waiting)', border: '1px solid var(--fl-waiting)', borderRadius: 8, padding: '0 6px', whiteSpace: 'nowrap' }
 const badge: CSSProperties = { fontSize: 10, fontWeight: 700, color: 'var(--fl-primary)', border: '1px solid var(--fl-primary)', borderRadius: 8, padding: '0 6px' }
 const diffBox: CSSProperties = { border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', padding: 12, background: 'var(--fl-surface-2)' }
-const primary: CSSProperties = { padding: '9px 16px', border: 'none', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-primary)', color: '#fff', fontWeight: 600, fontSize: 13, cursor: 'pointer' }
+const primary: CSSProperties = { padding: '9px 16px', border: 'none', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-action-primary-bg)', color: 'var(--fl-action-primary-ink)', fontWeight: 600, fontSize: 13, cursor: 'pointer' }

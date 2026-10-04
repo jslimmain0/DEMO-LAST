@@ -1,4 +1,4 @@
-# FlowLink main app start (Windows). Runs the single jar (UI+API) in background and waits for health.
+﻿# FlowLink main app start (Windows). Runs the single jar (UI+API) in background and waits for health.
 #   powershell -ExecutionPolicy Bypass -File scripts\start.ps1          # run existing jar (default profile local = H2 file)
 #   powershell -ExecutionPolicy Bypass -File scripts\start.ps1 -Build   # rebuild frontend+backend then run
 # Inject DB/auth via env: $env:SPRING_PROFILES_ACTIVE (dev = Oracle), $env:FLOWLINK_DB_URL, ... Port: $env:FLOWLINK_PORT (default 18080).
@@ -17,7 +17,7 @@ $Log = Join-Path $RunDir 'flowlink.log'
 $McpPidFile = Join-Path $RunDir 'flowlink-mcp.pid'
 $McpLog = Join-Path $RunDir 'flowlink-mcp.log'
 $McpPort = if ($env:FLOWLINK_MCP_PORT) { $env:FLOWLINK_MCP_PORT } else { '18090' }
-$Jar = Join-Path $Root 'backend\build\libs\flowlink.jar'
+$Jar = Join-Path $Root 'backend\server-app\build\libs\flowlink-server.jar'
 $Port = if ($env:FLOWLINK_PORT) { $env:FLOWLINK_PORT } else { '18080' }
 $Ctx = if ($env:FLOWLINK_CONTEXT_PATH) { '/' + $env:FLOWLINK_CONTEXT_PATH.Trim('/') } else { '' }
 if ($Ctx -eq '/') { $Ctx = '' }
@@ -49,7 +49,7 @@ if ($Build -or -not (Test-Path $Jar)) {
   Pop-Location
   Write-Host "> Building backend bootJar..."
   Push-Location (Join-Path $Root 'backend')
-  & (Join-Path (Get-Location) 'gradlew.bat') bootJar -q
+  & (Join-Path (Get-Location) 'gradlew.bat') :server-app:bootJar -q
   Pop-Location
 }
 if (-not (Test-Path $Jar)) { Write-Host "ERROR: jar missing: $Jar - run start.ps1 -Build"; exit 1 }

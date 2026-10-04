@@ -1,11 +1,13 @@
-import { useQuery } from '@tanstack/react-query'
+import { useApi, useWorkspace } from '../app/WorkspaceContext'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { isAxiosError } from 'axios'
 import type { CSSProperties, ReactNode } from 'react'
-import { Suspense, lazy, useEffect, useMemo, useState } from 'react'
-import { runsApi, secretsApi, settingsApi, transformsApi } from '../api/client'
+import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react'
+
 import { usePermissions } from '../auth/AuthContext'
 import { toast } from '../components/toast'
 import { TransformPicker } from '../components/TransformPicker'
-import type { Binding, BodyType, GraphNode, HttpMethod, NodeField, NodeOutput, NodeVar, ReqMode, ProtocolPreview, RespType, SingleNodeRunResult, WaitField as WaitFieldT } from '../api/types'
+import type { Binding, BodyType, GraphNode, HttpMethod, NodeField, NodeOutput, NodeVar, ProtocolPreview, RespType, SingleNodeRunResult, WaitField as WaitFieldT } from '../api/types'
 import { BigTextEditor, ExpandCorner } from '../components/BigTextEditor'
 import { JsonTree } from '../components/JsonTree'
 // 워크벤치(전체화면 모달)의 인라인 코드 편집기 — 열 때만 로드(BigTextEditor 와 같은 청크)
@@ -23,14 +25,18 @@ import { fieldsToRaw, rawToFields, headersToRaw, rawToHeaders } from '../lib/bod
 import { duplicateKeys, parseOutputKeys } from '../lib/bulkPaste'
 import { parseCurl, toCurl } from '../lib/curl'
 import { computeReachInfo, isUnreachableExecutable } from '../lib/reachable'
-import { useEnvStore, activeEnvVars, activeEnvName } from '../lib/environments'
+import { useEnvStore, useEnvironment } from '../lib/environments'
 import { useRunInput } from '../lib/runInput'
 import { bindingToToken, isTokenizable, tokenRegex } from '../lib/tokenGrammar'
 import { newId } from '../lib/ids'
+import { presence } from '../lib/presence'
 import { useEditorStore } from '../store/editorStore'
 import { KeyValueEditor } from './KeyValueEditor'
 import { TcpRequestPanel, TcpResponsePanel } from './TcpNodePanel'
 import { TransformPreview } from './TransformPreview'
+import { AgentSettings, useNodeResources, isBrowserRequest, usesOwnerResources } from '../components/AgentSettings'
+import { useAgentEnvironmentBindings } from '../lib/useAgentEnvironmentBindings'
+import { resolveAgentEnvironment } from '../lib/agentEnvironments'
 
 const label: CSSProperties = { display: 'block', fontSize: 11.5, fontWeight: 600, color: 'var(--fl-text-muted)', margin: '12px 0 5px' }
 const field: CSSProperties = { width: '100%', padding: '9px 11px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 13, fontFamily: 'var(--fl-font-ui)' }
@@ -107,8 +113,22 @@ function respOutputLabel(rt: RespType | undefined): string {
 export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseModal, onCollapse }: {
   width?: number | string; modal?: boolean; onExpand?: () => void; onCloseModal?: () => void; onCollapse?: () => void
 }) {
+ const { prepareForRun, activeEnvVars, activeEnvName } = useEnvironment()
+
+  const { runsApi, flowsApi } = useApi()
+  const scope = useWorkspace()
+  const { scopeKey, current } = scope
+  const queryClient = useQueryClient()
+
   const selectedId = useEditorStore((s) => s.selectedId)
   const nodes = useEditorStore((s) => s.nodes)
+  const node = useMemo<GraphNode | null>(() => {
+    const n = nodes.find(x => x.id === selectedId)
+    return n ? asGraphNode(n.data) : null
+  }, [nodes, selectedId])
+  const resources = useNodeResources(node)
+  const agentBindings = useAgentEnvironmentBindings()
+  const { transformsApi, secretsApi } = resources.api
   const edges = useEditorStore((s) => s.edges)
   const flowId = useEditorStore((s) => s.flowId)
   const update = useEditorStore((s) => s.updateNodeData)
@@ -123,6 +143,10 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
   const [bodyConvNote, setBodyConvNote] = useState<string | null>(null) // 필드↔Raw 변환 안내
   const [single, setSingle] = useState<SingleNodeRunResult | null>(null) // 이 노드만 실행 결과
   const [singleRunning, setSingleRunning] = useState(false)
+  const singleTarget = useRef({ flowId, selectedId })
+  singleTarget.current = { flowId, selectedId }
+  const singleMounted = useRef(true)
+  useEffect(() => { singleMounted.current = true; return () => { singleMounted.current = false } }, [])
   const [tcpPrev, setTcpPrev] = useState<ProtocolPreview | null>(null) // TCP 전문 미리보기 결과
   const [tcpPrevErr, setTcpPrevErr] = useState<string | null>(null)
   const [advOpen, setAdvOpen] = useState(false) // HTTP 고급(문자셋) 접기
@@ -130,7 +154,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
   const [secOverride, setSecOverride] = useState<Record<string, boolean>>({}) // HTTP 요청 섹션 접기 오버라이드
   const [previewOpen, setPreviewOpen] = useState(false) // 요청 미리보기 접기
   const focusNode = useEditorStore((s) => s.focusNode)
-  const transforms = useQuery({ queryKey: ['transforms'], queryFn: transformsApi.list })
+  const transforms = useQuery({ queryKey: [...resources.key, 'transforms'], queryFn: transformsApi.list, enabled: resources.available })
   const { canEdit: canEditGlobal } = usePermissions()
   // 워크스페이스 롤 합성 — Editor 가 flow 의 myRole 로 계산해 스토어에 주입(VIEWER 는 단일 실행 등 쓰기 액션 차단)
   const wsReadOnly = useEditorStore((s) => s.readOnly)
@@ -149,20 +173,27 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
   const [upOpen, setUpOpen] = useState(false) // 이전 노드 값 입력 — 기본 접힘(값은 접혀 있어도 실행에 적용)
   useEffect(() => {
     setUpOpen(false)
-    try { setUpVals(JSON.parse(localStorage.getItem(`fl:uprun:${flowId}:${selectedId}`) ?? '{}') as Record<string, string>) }
+    try { setUpVals(JSON.parse(localStorage.getItem(`fl:uprun:${scopeKey}:${flowId}:${selectedId}`) ?? '{}') as Record<string, string>) }
     catch { setUpVals({}) }
-  }, [flowId, selectedId])
+  }, [scopeKey, flowId, selectedId])
   const setUpVal = (k: string, v: string) => setUpVals((p) => {
     const n = { ...p, [k]: v }
-    try { localStorage.setItem(`fl:uprun:${flowId}:${selectedId}`, JSON.stringify(n)) } catch { /* 저장 불가 무시 */ }
+    try { localStorage.setItem(`fl:uprun:${scopeKey}:${flowId}:${selectedId}`, JSON.stringify(n)) } catch { /* 저장 불가 무시 */ }
     return n
   })
 
   // 이 노드만 실행 — 즉석 실행. 활성 환경(env)·시크릿은 전달되고, 상류 노드 값은 아래 입력폼(upstream)으로 넣는다.
   const runSingle = async () => {
-    if (!flowId || !selectedId) return
+    if (!flowId || !selectedId || !canEdit) return
+    const stillSelected = () => singleMounted.current && singleTarget.current.flowId === flowId && singleTarget.current.selectedId === selectedId && useEditorStore.getState().flowId === flowId
+    const showResult = (result: SingleNodeRunResult) => { if (stillSelected()) setSingle(result) }
     setSingleRunning(true)
-    const env = activeEnvVars()
+    try {
+    await prepareForRun()
+    const agentEnvironments = await agentBindings.save()
+    if (node && !usesOwnerResources(node) && resolveAgentEnvironment(node, resources.agent, resources.workspaceId, scope.current, activeEnvName(), agentEnvironments).name === undefined) throw new Error('실행 계획에서 이 실행 위치의 환경을 먼저 선택하세요.')
+    if (!stillSelected()) return
+    const env = !resources.crossBoundary && !node?.agentEnvironment ? activeEnvVars() : {}
     // 이 노드가 참조하는 상류 토큰에 사용자가 넣은 값 → {소스노드: {키: 값}} (bare 토큰은 __prev)
     const rf = nodes.find((x) => x.id === selectedId)
     const upstream: Record<string, Record<string, unknown>> = {}
@@ -175,13 +206,25 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
       }
     }
     const body = {
+      agentEnvironments,
       envName: activeEnvName(),
       ...(Object.keys(env).length ? { env } : {}),
       ...(Object.keys(upstream).length ? { upstream } : {}),
     }
-    try { setSingle(await runsApi.runNode(flowId, selectedId, body)) }
-    catch (e) { setSingle({ ok: false, httpStatus: null, output: null, requestText: null, responseText: e instanceof Error ? e.message : String(e) }) }
-    finally { setSingleRunning(false) }
+      const store = useEditorStore.getState()
+      if (store.dirty) {
+        const graph = store.getGraph()
+        const version = await flowsApi.saveVersion(flowId, { graph })
+        if (!stillSelected()) return
+        if (JSON.stringify(useEditorStore.getState().getGraph()) !== JSON.stringify(graph)) throw new Error('실행 준비 중 워크플로가 변경되었습니다. 이 노드의 설정을 다시 확인하세요.')
+        if (useEditorStore.getState().flowId === flowId && JSON.stringify(useEditorStore.getState().getGraph()) === JSON.stringify(graph)) store.markSaved()
+        presence.sendSaved()
+        void queryClient.invalidateQueries({ queryKey: ['flows'] })
+        showResult(await runsApi.runNode(flowId, selectedId, { ...body, versionNo: version.versionNo }))
+      } else showResult(await runsApi.runNode(flowId, selectedId, body))
+    }
+    catch (e) { showResult({ ok: false, httpStatus: null, output: null, requestText: null, responseText: isAxiosError(e) ? e.response?.data?.message ?? e.message : e instanceof Error ? e.message : String(e) }) }
+    finally { if (stillSelected()) setSingleRunning(false) }
   }
 
   // TCP 전문 미리보기 — 편집 중 노드를 실어 조립 바이트/오프셋/오버플로를 받아온다(전송·저장 없음).
@@ -190,18 +233,22 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
     const n = nodes.find((x) => x.id === selectedId)
     if (!n) return
     setTcpPrevErr(null)
-    try { setTcpPrev(await runsApi.tcpPreview(flowId, selectedId, asGraphNode(n.data))) }
+    try {
+      await prepareForRun()
+      const mapping = await agentBindings.save()
+      const selected = resolveAgentEnvironment(asGraphNode(n.data), resources.agent, resources.workspaceId, scope.current, activeEnvName(), mapping)
+      if (selected.name === undefined) throw new Error('실행 계획에서 이 실행 위치의 환경을 먼저 선택하세요.')
+      setTcpPrev(await resources.api.runsApi.agentTcpPreview(asGraphNode(n.data), selected.name))
+    }
     catch (e) { setTcpPrev(null); setTcpPrevErr(e instanceof Error ? e.message : String(e)) }
   }
-
-  const node = useMemo<GraphNode | null>(() => {
-    const n = nodes.find((x) => x.id === selectedId)
-    return n ? asGraphNode(n.data) : null
-  }, [nodes, selectedId])
 
   // 조상 소스 + 그래프 내 wait 노드 수신 URL(앞 노드에서 returnUrl/notiUrl 에 꽂는 표준 패턴)
   // envStore 를 구독해 활성 환경 변수 변경(스위처/관리 다이얼로그)이 즉시 바인딩 피커에 반영되게 한다.
   const envStore = useEnvStore()
+  const agentEnvs = useQuery({ queryKey: [...resources.key, 'environments'], queryFn: resources.api.environmentsApi.list, enabled: resources.available })
+  const agentEnvName = node ? usesOwnerResources(node) ? envStore.active : resolveAgentEnvironment(node, resources.agent, resources.workspaceId, scope.current, envStore.active, agentBindings.bindings).name : envStore.active
+  const agentEnvVars = !resources.crossBoundary && agentEnvName === envStore.active && agentEnvName ? envStore.envs[agentEnvName] ?? {} : agentEnvs.data?.find(e => e.name === agentEnvName)?.vars ?? {}
   const runInput = useRunInput()
   // 워크벤치(모달)에서 지난 전체 실행의 이 노드 기록을 미리 보여준다 — 임시 단일 실행과 실제 그래프 실행의 단절 해소
   const lastRunQ = useQuery({
@@ -219,23 +266,23 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
 
   // 시크릿 이름을 바인딩 소스로 노출({{ 이름@secret }}) — 값은 서버에만(write-only).
   // 활성 환경에서 적용될 것만 보여준다: 공통 + 활성 환경(백엔드 activeSecrets 오버레이 규칙과 동일, 이름으로 dedupe).
-  const secretsQ = useQuery({ queryKey: ['secrets'], queryFn: secretsApi.list })
+  const secretsQ = useQuery({ queryKey: [...resources.key, 'secrets'], queryFn: secretsApi.list, enabled: resources.available })
   const secretNames = useMemo(() => {
-    const active = envStore.active
+    const active = agentEnvName
     const seen = new Set<string>()
     for (const s of secretsQ.data ?? []) {
       const common = !s.environment
       if (common || s.environment === active) seen.add(s.name)
     }
     return Array.from(seen)
-  }, [secretsQ.data, envStore.active])
+  }, [secretsQ.data, agentEnvName])
   // env/input 을 시그니처로 참조 — bindableSources 가 activeEnvVars/activeInputVars 를 명령형으로 읽으므로,
   // 변경 시 재계산되도록 memo 입력에 포함(린트가 '미사용'으로 오인하지 않게 실제 값으로 참조).
-  const envSig = JSON.stringify(envStore.active ? envStore.envs[envStore.active] ?? {} : {}) + '|' + JSON.stringify(runInput) + '|' + secretNames.join(',')
+  const envSig = JSON.stringify(agentEnvVars) + '|' + JSON.stringify(runInput) + '|' + secretNames.join(',')
   const sources: BindableSource[] = useMemo(
     () => {
       void envSig
-      const base = selectedId ? bindableSources(nodes, edges, selectedId) : []
+      const base = selectedId ? bindableSources(nodes, edges, selectedId, agentEnvVars, runInput) : []
       if (secretNames.length) base.unshift({ id: 'secret', name: '시크릿', type: 'secret', items: secretNames.map((k) => ({ key: k, type: '시크릿', scope: null, group: 'response' as const })) })
       return base
     },
@@ -334,11 +381,13 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
 
   // Base URL 과 Path 는 분리 입력(백엔드 build() 가 base+path 를 이어붙임). 각각 토큰({{ 키@노드 }}) 혼합 가능.
   // baseUrlValue = base 부분만(토큰화 가능한 구 bound 는 토큰 문자열로 표시). mergedUrl = base+path 파생값(cURL·미리보기·쿼리분리용).
-  const baseUrlValue = node.baseUrlBound ? bindingToToken(node.baseUrlBound) : (node.baseUrl ?? '')
+  const legacyMock = !!node.agentMock && !isBrowserRequest(node)
+  const baseUrlValue = legacyMock ? '' : node.baseUrlBound ? bindingToToken(node.baseUrlBound) : (node.baseUrl ?? '')
   const mergedUrl = baseUrlValue + (node.path ?? '')
 
   // URL 의 ?쿼리 → Params 필드로 분리(스마트)
   const urlQuery = (() => {
+    if (legacyMock) return ''
     const qi = mergedUrl.indexOf('?')
     return qi >= 0 ? mergedUrl.slice(qi + 1) : ''
   })()
@@ -380,7 +429,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
     const r = parseCurl(text)
     if (!r) { toast('cURL 을 인식하지 못했습니다. `curl ...` 형식인지 확인하세요.', 'error'); return }
     const patch: Partial<GraphNode> = {
-      method: r.method as HttpMethod, baseUrl: r.url, path: '', baseUrlBound: null,
+      method: r.method as HttpMethod, baseUrl: r.url, path: '', baseUrlBound: null, agentMock: undefined,
       headersRaw: false,
       fields: { params: fields.params ?? [], headers: r.headers.map((h) => ({ id: newId(), key: h.key, value: h.value })), body: fields.body ?? [] },
     }
@@ -457,6 +506,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
 
   // 요청 미리보기 — 보이는 것 = 보내는 것 (쿼리는 URL 에 붙이고, 백엔드가 자동 붙이는 Content-Type 도 포함)
   const previewUrl = (() => {
+    if (legacyMock) return `기존 Mock 연결 · ${node.agentMock}${node.path ?? ''} (주소는 실행 계획에서 확인)`
     if (node.paramsRaw) {
       const raw = (node.rawParams ?? '').trim()
       return raw ? mergedUrl + (mergedUrl.includes('?') ? '&' : '?') + raw : mergedUrl
@@ -601,7 +651,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
   const runResultBox = single ? (
     <div style={{ marginTop: bigResult ? 0 : 8, border: `1px solid ${single.ok ? 'var(--fl-ok)' : 'var(--fl-fail)'}`, borderRadius: 'var(--fl-radius-sm)', overflow: 'hidden' }}>
       <div style={{ padding: bigResult ? '8px 12px' : '6px 10px', fontSize: bigResult ? 12.5 : 12, fontWeight: 600, background: 'var(--fl-surface-2)', color: single.ok ? 'var(--fl-ok)' : 'var(--fl-fail)' }}>
-        {single.ok ? '✓ 성공' : '✕ 실패'}{single.httpStatus != null ? ` · HTTP ${single.httpStatus}` : ''}{single.durationMs != null ? ` · ${single.durationMs}ms` : ''}
+        {single.ok ? '✓ 성공' : '✕ 실패'}{single.httpStatus != null ? ` · HTTP ${single.httpStatus}` : ''}{single.durationMs != null ? ` · ${single.durationMs}ms` : ''}{single.executionId && <a href={appUrl(`/executions?space=${encodeURIComponent(`${current.origin}:${current.id}`)}`)} target="_blank" rel="noreferrer" style={{ marginLeft: 8, color: 'var(--fl-primary)', fontSize: 11 }}>이력 저장됨 ↗</a>}
       </div>
       {single.output != null && (
         bigResult && typeof single.output === 'object' ? (
@@ -718,7 +768,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
   ) : null
 
   return (
-    <aside aria-label="속성" style={{ ...shell, width }}>
+    <aside className="fl-editor-inspector" aria-label="노드 편집" style={{ ...shell, width }}>
       <header style={{ padding: modal ? '14px 16px 12px' : '14px 16px', borderBottom: '1px solid var(--fl-border)' }}>
         {/* 모달(큰 화면)에선 헤더도 본문과 같은 중앙 칼럼 폭. 이름은 입력창이 아니라 '화면 제목'처럼 —
             타입·#id 메타와 활성 환경(실행에 적용될 컨텍스트)을 헤더에 통합한다. */}
@@ -760,52 +810,12 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
 
       {/* 모달(큰 화면)에선 내용을 편한 폭의 중앙 칼럼으로 — 2단 타입(http/tcp)은 넓게 */}
       <div style={{ padding: modal ? '20px 28px' : '16px 18px', overflowY: 'auto', flex: 1, ...(modal ? { width: '100%', maxWidth: modalColW, margin: '0 auto' } : null) }}>
-        {/* 모달에선 타입·#id 가 헤더로 올라갔다 — 도킹에서만 표시 */}
-        {!modal && (
-          <button
-            onClick={() => copyText(id, '노드 id 를 복사했습니다.')}
-            title="노드 id 복사"
-            style={{ border: 'none', background: 'transparent', padding: 0, fontSize: 11, color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)', cursor: 'pointer' }}
-          >{typeLabel(node.type)} · #{id} ⧉</button>
-        )}
-
-        {(upstreamLinks.length > 0 || downstreamLinks.length > 0) && (
-          <div style={{ marginTop: 10, display: 'grid', gap: 6 }}>
-            {upstreamLinks.length > 0 && (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
-                <span style={{ fontSize: 11, color: 'var(--fl-text-muted)', minWidth: 42 }}>← 이전</span>
-                {upstreamLinks.map((lk, i) => { const nl = nodeLabel(lk.id); const pl = portLabelOf(lk.id, lk.port); return (
-                  <button key={'u' + lk.id + i} style={navChip} title={`${nl.name} 로 이동${pl ? ` (${pl} 갈래에서 옴)` : ''}`} onClick={() => focusNode(lk.id)}>
-                    <span aria-hidden style={{ color: catColor(nl.type), flexShrink: 0 }}>{typeIcon(nl.type)}</span>
-                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{nl.name}</span>
-                    {pl && <span style={portTag}>{pl}</span>}
-                  </button>
-                ) })}
-              </div>
-            )}
-            {downstreamLinks.length > 0 && (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
-                <span style={{ fontSize: 11, color: 'var(--fl-text-muted)', minWidth: 42 }}>다음 →</span>
-                {downstreamLinks.map((lk, i) => { const nl = nodeLabel(lk.id); const pl = portLabelOf(id, lk.port); return (
-                  <button key={'d' + lk.id + i} style={navChip} title={`${nl.name} 로 이동${pl ? ` (${pl} 갈래로 나감)` : ''}`} onClick={() => focusNode(lk.id)}>
-                    <span aria-hidden style={{ color: catColor(nl.type), flexShrink: 0 }}>{typeIcon(nl.type)}</span>
-                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{nl.name}</span>
-                    {pl && <span style={portTag}>{pl}</span>}
-                  </button>
-                ) })}
-              </div>
-            )}
-          </div>
-        )}
-
+        <AgentSettings key={id} node={node} update={patch => update(id, patch)} disabled={!canEdit} />
         {unreachable && (
           <div style={{ marginTop: 10, padding: '8px 10px', border: '1px solid var(--fl-put)', borderRadius: 'var(--fl-radius-sm)', background: 'color-mix(in srgb, var(--fl-put) 12%, transparent)', fontSize: 12, color: 'var(--fl-text)', lineHeight: 1.5 }}>
             ⚠ <b>시작(START)에 연결되어 있지 않습니다.</b> 이 노드는 실행 시 <b>건너뜁니다</b> — 위쪽 노드에서 핸들(●)을 끌어 연결하세요.
           </div>
         )}
-
-        {/* 2단 모달(http/tcp)에선 단일 실행이 오른쪽 '응답·확인' 칼럼으로 이동 */}
-        {!twoCol && singleRunBlock}
 
         {(node.type === 'note' || node.type === 'group') && (
           <>
@@ -943,21 +953,25 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
         {node.type === 'http' && (() => {
           // URL 을 이루는 요소들 — 도킹(세로 흐름)과 모달(워크벤치 바)에서 배치만 달리 재사용
           const methodEl = (
-            <select aria-label="메서드" style={methodSel(node.method)} value={node.method ?? 'GET'} onChange={(e) => update(id, { method: e.target.value as HttpMethod })}>
+            <select aria-label="메서드" style={{ ...methodSel(node.method), alignSelf: 'flex-start' }} value={node.method ?? 'GET'} onChange={(e) => update(id, { method: e.target.value as HttpMethod })}>
               {METHODS.map((m) => <option key={m} value={m}>{m}</option>)}
             </select>
           )
-          const baseUrlEl = node.baseUrlBound && !isTokenizable(node.baseUrlBound) ? (
+          const baseUrlEl = legacyMock ? <div style={{ fontSize: 12, lineHeight: 1.6 }}>
+            <span style={{ color: 'var(--fl-text-muted)' }}>기존 Mock 연결 · {node.agentMock}</span>
+            <button type="button" disabled={!canEdit} style={{ ...ghostMini, display: 'block', marginTop: 6 }} onClick={() => update(id, { agentMock: undefined, baseUrl: '', baseUrlBound: null })}>연결 해제 후 주소 직접 입력</button>
+            <p style={hintP}>Path는 유지됩니다. 새 주소를 입력한 뒤 저장하세요.</p>
+          </div> : node.baseUrlBound && !isTokenizable(node.baseUrlBound) ? (
             // 토큰 문법 밖 키/id 의 구(舊) bound — 이관하면 조용히 깨지므로 구조적 바인딩 칩 유지
             <BindingChip binding={node.baseUrlBound} sourceType={sourceType(node.baseUrlBound)} onRemove={() => update(id, { baseUrlBound: null })} />
-          ) : (
+          ) : (<div style={{ minWidth: 0, width: '100%' }}>
             <TokenInput
               ariaLabel="Base URL"
               value={baseUrlValue}
-              onChange={(v) => update(id, { baseUrl: v, baseUrlBound: null })}
+              onChange={(v) => update(id, { baseUrl: v, baseUrlBound: null, agentMock: undefined })}
               sources={sources}
               placeholder="https://api.example.com — { } 로 데이터 삽입"
-            />
+            /></div>
           )
           const pathEl = (
             <TokenInput
@@ -970,7 +984,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
           )
           const urlExtras = (
           <>
-            {!mergedUrl.trim() && !node.baseUrlBound && (
+            {!mergedUrl.trim() && !node.baseUrlBound && (!node.agentMock || isBrowserRequest(node)) && (
               <p style={{ ...hintP, color: 'var(--fl-put)', marginTop: 6 }}>⚠ URL 이 비어 있습니다 — 호출할 주소를 입력하세요.</p>
             )}
             {urlQuery && (
@@ -985,7 +999,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
 
             <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
               <button onClick={() => setCurlText(curlText === null ? '' : null)} style={ghostMini} title="curl 명령을 붙여넣어 이 노드를 채웁니다">cURL 붙여넣기</button>
-              <button onClick={copyCurl} style={ghostMini} title="이 노드를 curl 명령으로 클립보드에 복사(토큰은 그대로)">cURL 로 복사</button>
+              <button onClick={copyCurl} disabled={legacyMock} style={ghostMini} title={legacyMock ? '주소를 직접 입력한 뒤 복사할 수 있습니다.' : '이 노드를 curl 명령으로 클립보드에 복사(토큰은 그대로)'}>cURL 로 복사</button>
             </div>
             {curlText !== null && (
               <div style={{ marginTop: 6 }}>
@@ -999,7 +1013,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
             )}
 
             <button onClick={() => setAdvOpen((v) => !v)} style={advToggle} aria-expanded={advOpen}>
-              {advOpen ? '▾' : '▸'} 고급 — 문자셋 · 요청 방식(서버/클라이언트)
+              {advOpen ? '▾' : '▸'} 고급 — 문자셋
             </button>
             {advOpen && (
               <div style={{ borderLeft: '2px solid var(--fl-border)', paddingLeft: 10, marginTop: 4 }}>
@@ -1012,7 +1026,6 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
                     ⚠ 클라이언트 모드는 브라우저가 요청을 UTF-8로 보내고 응답 디코딩도 브라우저가 처리합니다. 선택한 문자셋은 <b>서버 모드</b>에서 완전히 적용됩니다. (urlencoded/form 요청은 클라이언트 모드에서도 정상)
                   </p>
                 )}
-                <ReqModeToggle mode={node.reqMode} onChange={(m) => update(id, { reqMode: m })} />
               </div>
             )}
 
@@ -1115,7 +1128,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
           const respCfg = (
           <>
             {/* 응답 섹션 — 워크벤치에선 상위 칼럼 제목이 이미 '응답'이라 '파싱 설정'으로 구분(중복 라벨 방지) */}
-            <HttpSection title={twoCol ? '파싱 설정 · 출력 키' : '응답 (Response)'} badge={normRespType(node.respType)} open={secIsOpen('resp')} onToggle={() => toggleSec('resp')}
+            <HttpSection title={twoCol ? '파싱 설정 · 출력 키' : '응답'} badge={normRespType(node.respType)} open={secIsOpen('resp')} onToggle={() => toggleSec('resp')}
               right={<select style={{ ...field, width: 'auto', padding: '5px 6px', fontSize: 12 }} value={normRespType(node.respType)} onChange={(e) => update(id, { respType: e.target.value as RespType })} aria-label="응답 타입">
                 {RESP_TYPES.map((r) => <option key={r} value={r}>{respTypeLabel(r)}</option>)}
               </select>}>
@@ -1257,7 +1270,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
               value={node.transformId ?? ''}
               disabled={wsReadOnly}
               placeholder="선택… (검색 가능)"
-              onCreateNew={() => window.open(appUrl('/plugins?new=transform'), '_blank')}
+              onCreateNew={() => window.open(appUrl(`/plugins?new=transform&space=${encodeURIComponent(`${resources.agent}:${resources.workspaceId}`)}`), '_blank')}
               onChange={(picked) => {
                 if (picked === node.transformId) return // 같은 변환 재선택은 no-op(리셋 방지)
                 const tr = (transforms.data ?? []).find((t) => t.id === picked)
@@ -1334,7 +1347,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
               </p>
             )}
 
-            {selectedTransform && <TransformPreview transform={selectedTransform} config={node.config ?? {}} />}
+            {selectedTransform && <TransformPreview node={node} transform={selectedTransform} config={node.config ?? {}} />}
           </>
         )}
 
@@ -1514,6 +1527,51 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
         )}
 
         {/* 모달(큰 화면)에선 풀폭 알약 대신 우측 정렬 컴팩트 버튼 — 화면 비율에 맞게 */}
+        <details key={id} className="fl-editor-node-tools">
+          <summary>{SINGLE_RUNNABLE.has(node.type) && canEdit ? '노드 정보·연결·단일 실행' : '노드 정보·연결'}</summary>
+        {/* 모달에선 타입·#id 가 헤더로 올라갔다 — 도킹에서만 표시 */}
+        {!modal && (
+          <button
+            onClick={() => copyText(id, '노드 id 를 복사했습니다.')}
+            title="노드 id 복사"
+            style={{ border: 'none', background: 'transparent', padding: 0, fontSize: 11, color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)', cursor: 'pointer' }}
+          >{typeLabel(node.type)} · #{id} ⧉</button>
+        )}
+
+        {(upstreamLinks.length > 0 || downstreamLinks.length > 0) && (
+          <div style={{ marginTop: 10, display: 'grid', gap: 6 }}>
+            {upstreamLinks.length > 0 && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
+                <span style={{ fontSize: 11, color: 'var(--fl-text-muted)', minWidth: 42 }}>← 이전</span>
+                {upstreamLinks.map((lk, i) => { const nl = nodeLabel(lk.id); const pl = portLabelOf(lk.id, lk.port); return (
+                  <button key={'u' + lk.id + i} style={navChip} title={`${nl.name} 로 이동${pl ? ` (${pl} 갈래에서 옴)` : ''}`} onClick={() => focusNode(lk.id)}>
+                    <span aria-hidden style={{ color: catColor(nl.type), flexShrink: 0 }}>{typeIcon(nl.type)}</span>
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{nl.name}</span>
+                    {pl && <span style={portTag}>{pl}</span>}
+                  </button>
+                ) })}
+              </div>
+            )}
+            {downstreamLinks.length > 0 && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
+                <span style={{ fontSize: 11, color: 'var(--fl-text-muted)', minWidth: 42 }}>다음 →</span>
+                {downstreamLinks.map((lk, i) => { const nl = nodeLabel(lk.id); const pl = portLabelOf(id, lk.port); return (
+                  <button key={'d' + lk.id + i} style={navChip} title={`${nl.name} 로 이동${pl ? ` (${pl} 갈래로 나감)` : ''}`} onClick={() => focusNode(lk.id)}>
+                    <span aria-hidden style={{ color: catColor(nl.type), flexShrink: 0 }}>{typeIcon(nl.type)}</span>
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{nl.name}</span>
+                    {pl && <span style={portTag}>{pl}</span>}
+                  </button>
+                ) })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* 2단 모달(http/tcp)에선 단일 실행이 오른쪽 '응답·확인' 칼럼으로 이동 */}
+        {!twoCol && singleRunBlock}
+
+        </details>
+
         {node.type !== 'start' && (
           <div style={{ display: 'flex', gap: 8, marginTop: 28, ...(modal ? { justifyContent: 'flex-end', borderTop: '1px solid var(--fl-border)', paddingTop: 14 } : null) }}>
             <button onClick={() => duplicateSelection()} style={{ ...deleteBtn, marginTop: 0, ...(modal ? compactAction : { flex: 1 }), borderColor: 'var(--fl-border)', color: 'var(--fl-text-muted)' }} title="이 노드 복제 (Ctrl+D)">⧉ 복제</button>
@@ -1554,72 +1612,42 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
   )
 }
 
-function ReqModeToggle({ mode, onChange }: { mode?: ReqMode; onChange: (m: ReqMode) => void }) {
-  const isClient = mode === 'client'
-  return (
-    <>
-      <label style={label}>요청 방식</label>
-      <div style={segWrap}>
-        <button type="button" onClick={() => onChange('server')} style={segBtn(!isClient, 'var(--fl-primary)')}>
-          <ServerIcon /> 서버 → 서버
-        </button>
-        <button type="button" onClick={() => onChange('client')} style={segBtn(isClient, '#0ea5a4')}>
-          <ClientIcon /> 클라이언트 → 서버
-        </button>
-      </div>
-      <p style={{ fontSize: 11.5, color: 'var(--fl-text-muted)', marginTop: 8, lineHeight: 1.5 }}>
-        {isClient
-          ? '브라우저(클라이언트)에서 직접 이 API를 호출합니다. 토큰·세션이 클라이언트에 노출될 수 있습니다.'
-          : '서버가 대신 이 API를 호출합니다. 인증 정보가 외부에 노출되지 않아 민감한 요청에 적합합니다.'}
-      </p>
-    </>
-  )
-}
 
-function ServerIcon() {
-  return (
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden>
-      <rect x="4" y="4" width="16" height="6.5" rx="1.5" stroke="currentColor" strokeWidth="1.7" />
-      <rect x="4" y="13.5" width="16" height="6.5" rx="1.5" stroke="currentColor" strokeWidth="1.7" />
-      <circle cx="7.5" cy="7.2" r="1" fill="currentColor" />
-      <circle cx="7.5" cy="16.7" r="1" fill="currentColor" />
-    </svg>
-  )
-}
 
-function ClientIcon() {
-  return (
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden>
-      <rect x="3" y="5" width="18" height="12" rx="1.8" stroke="currentColor" strokeWidth="1.7" />
-      <path d="M8 21h8M12 17v4" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
-    </svg>
-  )
-}
+
+
+
 
 /** input(사용자 입력) 노드의 입력 필드 정의 편집기 — 키가 그대로 출력 키가 된다. */
 function WaitFieldsEditor({ fields, onChange }: { fields: WaitFieldT[]; onChange: (f: WaitFieldT[]) => void }) {
   const upd = (fid: string, patch: Partial<WaitFieldT>) => onChange(fields.map((f) => (f.id === fid ? { ...f, ...patch } : f)))
   return (
-    <>
+    <div className="fl-editor-field-list">
       {fields.map((f, i) => (
-        <div key={f.id} style={{ display: 'flex', gap: 6, marginBottom: 6, alignItems: 'center' }}>
-          <input style={{ ...mono, flex: 1 }} value={f.key} placeholder="키(=출력)" onChange={(e) => upd(f.id, { key: e.target.value })}
+        <div key={f.id} className="fl-editor-field-row"><div className="fl-editor-field-main">
+          <input aria-label={`입력 키 ${i + 1}`} style={{ ...mono, flex: 1, minWidth: 0 }} value={f.key} placeholder="키(=출력)" onChange={(e) => upd(f.id, { key: e.target.value })}
             onKeyDown={(e) => { if (e.key === 'Enter' && i === fields.length - 1) { e.preventDefault(); onChange([...fields, { id: newId(), key: '', label: '', type: 'string' }]) } }} />
-          <input style={{ ...field, flex: 1 }} value={f.label ?? ''} placeholder="라벨(표시)" onChange={(e) => upd(f.id, { label: e.target.value })} />
-          <select style={{ ...field, width: 84 }} value={f.type ?? 'string'} onChange={(e) => upd(f.id, { type: e.target.value })}>
+
+          <select aria-label={`입력 타입 ${i + 1}`} style={{ ...field, width: 84 }} value={f.type ?? 'string'} onChange={(e) => upd(f.id, { type: e.target.value })}>
             {['string', 'number', 'boolean', 'json'].map((t) => <option key={t} value={t}>{t}</option>)}
           </select>
+          </div>
+          <input aria-label={`입력 표시 이름 ${i + 1}`} style={{ ...field, flex: 1 }} value={f.label ?? ''} placeholder="라벨(표시)" onChange={(e) => upd(f.id, { label: e.target.value })} />
+          <div className="fl-editor-field-actions">
           <RowMove i={i} len={fields.length} onMove={(d) => onChange(moveInList(fields, i, d))} />
           <button onClick={() => onChange(fields.filter((x) => x.id !== f.id))} aria-label="삭제" style={{ width: 26, flexShrink: 0, border: '1px solid var(--fl-border)', borderRadius: 6, background: 'var(--fl-surface)', cursor: 'pointer' }}>×</button>
+          </div>
         </div>
       ))}
       <button onClick={() => onChange([...fields, { id: newId(), key: '', label: '', type: 'string' }])} style={addDashed}>+ 입력 필드</button>
-    </>
+    </div>
   )
 }
 
 /** wait 노드 수신 URL 표시 + 바인딩 토큰 복사. 콜백은 백엔드가 직접 받아 재개한다. */
 function WaitReceiveUrl({ nodeId }: { nodeId: string }) {
+  const { settingsApi } = useApi()
+
   // 설정(콜백 수신 주소)의 실제 적용값으로 표시 — 사이드바 ⚙ 설정에서 저장/수정, 기본은 접속 주소 자동
   const relay = useQuery({ queryKey: ['settings', 'relay'], queryFn: settingsApi.relay })
   const pattern = `${relay.data?.effective ?? '{백엔드}'}/relay/{실행ID}/cb/${nodeId}`
@@ -1718,19 +1746,20 @@ function OutputsEditor({ outputs, onChange, nodeId, usageOf, onGoto }: {
     toast(`출력 키 ${added.length}개 추가${parsed.length !== added.length ? ` (중복 ${parsed.length - added.length}개 건너뜀)` : ''}`, 'ok')
   }
   return (
-    <>
+    <div className="fl-editor-field-list">
       {outputs.map((o, i) => (
-        <div key={i} style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
-          <input
-            style={{ ...mono, flex: 1, ...(o.key.trim() && dup.has(o.key.trim()) ? { borderColor: 'var(--fl-put)', boxShadow: '0 0 0 1px var(--fl-put) inset' } : null) }}
+        <div key={i} className="fl-editor-field-row"><div className="fl-editor-field-main">
+          <input aria-label={`출력 키 ${i + 1}`}
+            style={{ ...mono, flex: 1, minWidth: 0, ...(o.key.trim() && dup.has(o.key.trim()) ? { borderColor: 'var(--fl-put)', boxShadow: '0 0 0 1px var(--fl-put) inset' } : null) }}
             value={o.key} placeholder="키"
             title={o.key.trim() && dup.has(o.key.trim()) ? '중복 키 — 같은 키가 여러 번 선언돼 있습니다' : undefined}
             onChange={(e) => upd(i, { key: e.target.value })}
             onKeyDown={(e) => { if (e.key === 'Enter' && i === outputs.length - 1) { e.preventDefault(); onChange([...outputs, { key: '', type: 'string' }]) } }}
           />
-          <select style={{ ...field, width: 96 }} value={o.type ?? 'string'} onChange={(e) => upd(i, { type: e.target.value })}>
+          <select aria-label={`출력 타입 ${i + 1}`} style={{ ...field, width: 96 }} value={o.type ?? 'string'} onChange={(e) => upd(i, { type: e.target.value })}>
             {OUTPUT_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
           </select>
+          </div><div className="fl-editor-field-actions">
           {nodeId && o.key?.trim() && (
             <button
               onClick={() => { void navigator.clipboard?.writeText(`{{ ${o.key}@${nodeId} }}`).then(() => toast(`{{ ${o.key}@${nodeId} }} 복사`, 'ok')).catch(() => {}) }}
@@ -1779,6 +1808,7 @@ function OutputsEditor({ outputs, onChange, nodeId, usageOf, onGoto }: {
           })()}
           <RowMove i={i} len={outputs.length} onMove={(d) => onChange(moveInList(outputs, i, d))} />
           <button onClick={() => onChange(outputs.filter((_, idx) => idx !== i))} aria-label="삭제" style={{ width: 28, flexShrink: 0, border: '1px solid var(--fl-border)', borderRadius: 6, background: 'var(--fl-surface)', cursor: 'pointer' }}>×</button>
+          </div>
         </div>
       ))}
       <div style={{ display: 'flex', gap: 6 }}>
@@ -1794,12 +1824,12 @@ function OutputsEditor({ outputs, onChange, nodeId, usageOf, onGoto }: {
             style={{ ...mono, width: '100%', minHeight: 72, resize: 'vertical', boxSizing: 'border-box' }}
           />
           <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
-            <button onClick={applyBulk} style={{ padding: '6px 12px', border: 'none', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-primary)', color: '#fff', cursor: 'pointer', fontSize: 12, fontWeight: 600 }}>추가</button>
+            <button onClick={applyBulk} style={{ padding: '6px 12px', border: 'none', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-action-primary-bg)', color: 'var(--fl-action-primary-ink)', cursor: 'pointer', fontSize: 12, fontWeight: 600 }}>추가</button>
             <button onClick={() => { setBulkOpen(false); setBulkText('') }} style={{ padding: '6px 12px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'transparent', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 12 }}>취소</button>
           </div>
         </div>
       )}
-    </>
+    </div>
   )
 }
 
@@ -1878,7 +1908,7 @@ const twoColGrid: CSSProperties = { display: 'grid', gridTemplateColumns: 'minma
 const colHead: CSSProperties = { fontSize: 13, fontWeight: 800, color: 'var(--fl-text)', letterSpacing: '.04em', paddingBottom: 9, marginTop: 10, borderBottom: '2px solid var(--fl-border)' }
 // 워크벤치 URL 바 — [메서드 | Base URL | Path | ▶ 실행] 한 줄(포스트맨 어휘)
 const wbBar: CSSProperties = { display: 'flex', gap: 8, alignItems: 'stretch', margin: '12px 0 4px' }
-const wbRunBtn: CSSProperties = { flexShrink: 0, minWidth: 96, padding: '0 18px', border: 'none', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-primary)', color: '#fff', cursor: 'pointer', fontSize: 13.5, fontWeight: 700 }
+const wbRunBtn: CSSProperties = { alignSelf: 'flex-start', height: 40, flexShrink: 0, minWidth: 96, padding: '0 18px', border: 'none', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-action-primary-bg)', color: 'var(--fl-action-primary-ink)', cursor: 'pointer', fontSize: 13.5, fontWeight: 700 }
 // 응답 패널 빈 상태 — 아직 실행 전
 const respEmpty: CSSProperties = { padding: '22px 16px', border: '1px dashed var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', color: 'var(--fl-text-muted)', fontSize: 12.5, textAlign: 'center', lineHeight: 1.6 }
 const closeBtn: CSSProperties = { width: 30, height: 30, borderRadius: 8, border: 'none', background: 'var(--fl-surface-2)', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 16 }
@@ -1914,13 +1944,13 @@ function HttpSection({ title, badge, open, onToggle, right, children }: {
 }) {
   return (
     <div style={{ borderTop: '1px solid var(--fl-border)', marginTop: 10, paddingTop: 8 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, minHeight: 30 }}>
-        <button onClick={onToggle} aria-expanded={open} style={secHeadBtn}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, minHeight: 30, flexWrap: 'wrap' }}>
+        <button onClick={onToggle} aria-expanded={open} style={{ ...secHeadBtn, minWidth: 160, flexShrink: 0 }}>
           <span aria-hidden style={{ width: 10, display: 'inline-block', fontSize: 10, color: 'var(--fl-text-muted)' }}>{open ? '▾' : '▸'}</span>
           {title}
           {badge ? <span style={secBadge}>{badge === '•' ? '•' : `(${badge})`}</span> : null}
         </button>
-        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>{right}</div>
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6, minWidth: 0, maxWidth: '100%', flexShrink: 0 }}>{right}</div>
       </div>
       {open && <div style={{ marginTop: 8 }}>{children}</div>}
     </div>
@@ -1932,16 +1962,6 @@ function miniSegBtn(active: boolean): CSSProperties {
     padding: '5px 12px', border: 'none', borderRadius: 5, fontSize: 12, fontWeight: 600, cursor: 'pointer',
     background: active ? 'var(--fl-surface)' : 'transparent',
     color: active ? 'var(--fl-primary)' : 'var(--fl-text-muted)',
-    boxShadow: active ? 'var(--fl-shadow)' : 'none',
-  }
-}
-const segWrap: CSSProperties = { display: 'flex', gap: 4, background: 'var(--fl-surface-2)', borderRadius: 9, padding: 3 }
-function segBtn(active: boolean, color: string): CSSProperties {
-  return {
-    flex: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-    fontWeight: 600, fontSize: 12, border: 'none', borderRadius: 7, padding: '7px 6px', cursor: 'pointer',
-    background: active ? 'var(--fl-surface)' : 'transparent',
-    color: active ? color : 'var(--fl-text-muted)',
     boxShadow: active ? 'var(--fl-shadow)' : 'none',
   }
 }

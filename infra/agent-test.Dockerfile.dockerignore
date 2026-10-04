@@ -1,0 +1,15 @@
+**
+!backend
+!backend/server-app
+!backend/server-app/build
+!backend/server-app/build/libs
+!backend/server-app/build/libs/flowlink-server.jar
+!mcp
+!mcp/package.json
+!mcp/package-lock.json
+!mcp/src
+!mcp/src/**
+!mcp/node_modules
+!mcp/node_modules/**
+!mcp/test
+!mcp/test/agent-smoke.ts

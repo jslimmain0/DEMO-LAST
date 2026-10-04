@@ -1,8 +1,9 @@
+import { useApi } from '../app/WorkspaceContext'
 import type { CSSProperties } from 'react'
 import { useMemo, useRef, useState } from 'react'
 import type { HttpMethod, MockCodecSpec, MockCond, MockExpect, MockExpectField, MockRouteSpec, MockRuleSpec, MockServerSpec } from '../api/types'
 import type { SecretView, EnvView } from '../api/client'
-import { mocksApi } from '../api/client'
+
 import { BindingPicker } from '../binding/BindingPicker'
 import { TokenInput } from '../binding/TokenInput'
 import type { BindableSource } from '../binding/upstream'
@@ -36,6 +37,8 @@ export function RouteCard({ base, ensureSaved, mockId, spec, secrets, envs, rout
   onServerCodec?: (c: MockCodecSpec | null) => void // 서버 코덱(spec.codec) 갱신 — 라우트 전용 코덱이 없을 때 필드 ◈ 가 여기에 쓴다
   onGoCodec?: () => void                             // 코덱 화면으로 이동
 }) {
+  const { mocksApi } = useApi()
+
   const setRule = (i: number, u: MockRuleSpec) => onChange({ ...route, rules: route.rules.map((x, xi) => (xi === i ? u : x)) })
   const dupRule = (i: number) => {
     const copy = { ...route.rules[i], id: newId() }

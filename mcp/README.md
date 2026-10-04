@@ -3,6 +3,18 @@
 FlowLink 를 에이전트(Claude Code · VS Code Copilot · Copilot CLI · claude.ai 원격 MCP 등)가 다루게 하는 MCP 서버. 순수 JS, 빌드 없음(Node 20+).
 FlowLink 서버 옆에 떠서(`scripts/start.sh` / `start.ps1` 이 jar 와 함께 띄움) Streamable HTTP 로 `http://<flowlink-host>:18090/mcp` 를 연다 — 설치 없음, 토큰 설정 없음.
 
+## 설치형 개인 에이전트
+
+Windows 패키지는 Java·Node·화면/API를 포함한다. 실행 후 트레이의 **MCP 연결 (VS Code / IntelliJ)**에서 설정을 복사하거나 VS Code에 등록한다. IDE가 내장 Node로 stdio MCP를 실행하고 개인 앱에 연결한다. 서버 로그인 없이 PC에서 실행하며 개인 데이터는 PC에 저장한다. [빌드·실행·검증 결과](../docs/DESKTOP_AGENT_PROGRESS.md).
+
+개발 중에는 실행된 개인 앱의 접속 파일로 연결한다(정상 실행 시 stdout은 MCP 메시지 전용).
+
+```powershell
+node --use-system-ca src/index.js --stdio --agent-file C:\개인저장소\agent.json
+```
+
+워크플로 HTTP·TCP는 연결된 FlowLink 런타임에서, `http_request`는 MCP 프로세스에서 실행한다. 설치형 stdio는 PC에서 실행하고 서버 HTTP MCP는 서버에서 실행한다. 브라우저에서 화면을 열었다는 이유로 서버 요청의 출발지가 PC로 바뀌지는 않는다.
+
 ## 붙이기
 
 클라이언트 설정은 URL 한 줄. 화면 설정(⚙)이 정확한 주소와 등록 명령을 보여준다.

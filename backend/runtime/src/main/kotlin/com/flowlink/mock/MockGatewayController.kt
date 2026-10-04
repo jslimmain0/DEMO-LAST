@@ -1,0 +1,244 @@
+package com.flowlink.mock
+
+import com.flowlink.common.json.JsonService
+import com.flowlink.common.tenant.TenantContext
+import com.flowlink.core.domain.MockServer
+import com.flowlink.execution.engine.SecretMasker
+import com.flowlink.mock.MockHttp.MockRequest
+import com.flowlink.mock.MockHttp.MockResponse
+import com.flowlink.transform.FlowTransform
+import com.flowlink.transform.TransformRegistry
+import jakarta.servlet.http.HttpServletRequest
+import org.slf4j.LoggerFactory
+import org.springframework.http.ResponseEntity
+import org.springframework.web.bind.annotation.PathVariable
+import org.springframework.web.bind.annotation.RequestMapping
+import org.springframework.web.bind.annotation.RestController
+import java.nio.charset.StandardCharsets
+import java.time.Instant
+import java.util.ArrayList
+import java.util.LinkedHashMap
+import java.util.Locale
+import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
+
+/**
+ * Mock 서빙 게이트웨이 — `/mock/{slug}` 이하 전 메서드 캐치올.
+ * 무인증(외부 시스템 흉내) + CORS 전면 오픈(클라이언트 모드 노드가 브라우저에서 직접 호출).
+ * 사용자 정의 라우트는 [MockRuntime]가 매칭·렌더한다. 전문 코덱([MockCodec])은 매칭 전(요청)·전송 전(응답)에 적용.
+ * 시크릿(`{{ 이름@secret }}`)은 Mock 의 시크릿 환경(spec.environment)으로 조회([MockSecretProvider], 10초 캐시).
+ * 어떤 요청도 이 게이트웨이에서 예외로 새 나가지 않는다(전체 try/catch → 500 JSON).
+ */
+@RestController
+class MockGatewayController(
+    private val service: MockServerService,
+    private val runtime: MockRuntime,
+    private val dispatcher: MockCallbackDispatcher,
+    private val store: MockRuntimeStore,
+    private val json: JsonService,
+    private val transforms: TransformRegistry,
+    private val secretProvider: MockSecretProvider,
+) {
+
+    /** 서버별 파싱된 spec 캐시(raw JSON 이 그대로면 재파싱 생략 — mock 은 반복 호출되는 경로). */
+    private val specCache: MutableMap<UUID, Pair<String, MockSpec>> = ConcurrentHashMap()
+
+    /** handleCustom 결과 — 응답 + 요청 기록(journal)용 매칭 규칙 id + 요청 코덱 결과(코덱 없으면 null) + 마스킹 후보. */
+    private data class Served(val response: MockResponse, val matchedRuleId: String?, val decodedBody: String? = null, val masks: List<String> = emptyList())
+
+    @RequestMapping(path = ["/mock/{first}", "/mock/{first}/**"])
+    fun handle(@PathVariable first: String, request: HttpServletRequest): ResponseEntity<ByteArray> {
+        if ("OPTIONS".equals(request.method, ignoreCase = true)) {
+            return withCors(ResponseEntity.noContent()).build()
+        }
+        val prevTenant = TenantContext.getTenantId()
+        return try {
+            // slug 는 팀 스코프 — /mock/{tenant}/{slug}/… 우선, 실패 시 레거시 /mock/{slug}/…(default 테넌트)
+            val resolved = MockPathResolver.resolve(pathInApp(request),
+                workspaceLookup = { w, s -> service.findForServingWorkspace(w, s).orElse(null) },
+                lookup = { t, s -> service.findForServing(t, s).orElse(null) },
+            ) ?: return jsonError(404, "mock 서버가 없거나 비활성화됨: $first")
+            val server = resolved.server
+            TenantContext.setTenantId(server.tenantId) // 시크릿/환경 조회는 Mock 소유 테넌트 기준
+            val req = parse(resolved.pathPrefix, request)
+            log.info("[mock:{}/{}] {} {}", server.tenantId, server.slug, req.method, req.path)
+
+            val served = handleCustom(server, req)
+            val res = served.response
+
+            // 요청 기록(journal) — /__routes 등 인트로스펙션은 제외. 시크릿 값은 마스킹(요청에 실려 왔을 수 있음).
+            if (req.path != "/__routes" && req.path != "/__requests") {
+                val masks = served.masks
+                store.record(server.id, MockRuntimeStore.JournalEntry(
+                    Instant.now(), req.method, req.path, req.query, req.headers.mapValues { SecretMasker.mask(it.value, masks) ?: it.value },
+                    (SecretMasker.mask(req.bodyText, masks) ?: req.bodyText).take(MockRuntimeStore.BODY_CAP), served.matchedRuleId,
+                    res.status, res.delayMs, res.callback != null, served.decodedBody?.let { SecretMasker.mask(it, masks) ?: it }?.take(MockRuntimeStore.BODY_CAP),
+                ))
+            }
+
+            if (res.delayMs > 0) {
+                try {
+                    Thread.sleep(res.delayMs.toLong())
+                } catch (ie: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                }
+            }
+            if (res.callback != null) {
+                dispatcher.fire(res.callback)
+            }
+            val b = withCors(ResponseEntity.status(res.status))
+                .header("Content-Type", res.contentType)
+            res.headers.forEach { (k, v) -> b.header(k, v) }
+            b.body(res.body)
+        } catch (e: Exception) {
+            log.warn("[mock:{}] 처리 오류: {}", first, if (e.message == null) e.toString() else e.message)
+            jsonError(500, "mock 처리 오류: " + (if (e.message == null) e.toString() else e.message))
+        } finally {
+            TenantContext.setTenantId(prevTenant)
+        }
+    }
+
+    private fun handleCustom(server: MockServer, req: MockRequest): Served {
+        val spec = cachedSpec(server)
+        if ("/__routes" == req.path) {
+            val routes = spec.routesOrEmpty().map { r ->
+                mapOf(
+                    "method" to (r.method ?: "ANY"),
+                    "path" to (r.path ?: ""),
+                    "rules" to r.rulesOrEmpty().size
+                )
+            }
+            return Served(MockResponse.of(
+                200, "application/json; charset=UTF-8",
+                json.toJson(mapOf("kind" to "CUSTOM", "routes" to routes)).toByteArray(StandardCharsets.UTF_8)
+            ), null)
+        }
+        // 상태 있는 목: 서버(slug)별 상태 맵 + 규칙 히트수(순차 응답)를 store 에서 — 조건/템플릿에서 {{state.KEY}}·source=state.
+        val state = store.state(server.id)
+        val hits = store.hitsSnapshot(server.id)
+        val scope = secretProvider.scope(server.tenantId, spec.environment, workspaceId = server.workspaceId)
+        val secrets = scope.secrets
+        val masks = SecretMasker.variants(secrets.values)
+        val mapper = json.mapper()
+        val lookup: (String) -> FlowTransform? = { transforms.get(it, server.workspaceId, server.tenantId).orElse(null) }
+        // 전문 코덱 — 경로/메서드가 맞은 라우트의 유효 코덱(라우트 > 서버)으로 본문/필드/헤더를 디코딩한 뒤 조건·템플릿에 넘긴다.
+        var decoded: String? = null
+        var matchedRoute: MockSpec.MockRoute? = null
+        val match = runtime.match(spec.routesOrEmpty(), req, state, hits, secrets, scope.env) { route, r ->
+            matchedRoute = route
+            val steps = MockCodec.effective(spec.codec, route.codec)?.request
+            if (steps.isNullOrEmpty()) r else {
+                val ctx = MockContext(pathParams = MockRuntime.matchPath(route.path, r.path) ?: emptyMap(), state = state, secrets = secrets, json = mapper, env = scope.env)
+                val out = MockCodec.applyRequest(steps, r, ctx, lookup, mapper)
+                decoded = out.bodyText
+                out
+            }
+        }
+        if (match.isEmpty) {
+            return Served(MockResponse.of(
+                404, "application/json; charset=UTF-8",
+                json.toJson(mapOf("error" to "매칭되는 mock 라우트가 없습니다: " + req.method + " " + req.path))
+                    .toByteArray(StandardCharsets.UTF_8)
+            ), null, decoded, masks)
+        }
+        val rule = match.get().rule
+        rule.id?.let { store.recordHit(server.id, it) } // repeat(순차 응답) 판정용
+        val seq = store.seqNext(server.id)
+        val respSteps = MockCodec.effective(spec.codec, matchedRoute?.codec)?.response
+        val matchedReq = match.get().req
+        val pathParams = match.get().pathParams
+        val responseCodec: MockRuntime.ResponseCodec? =
+            if (respSteps.isNullOrEmpty()) null else MockRuntime.ResponseCodec { body, headers, ct ->
+                val ctx = MockContext(req = matchedReq, pathParams = pathParams, seq = seq, state = state, secrets = secrets, json = mapper, env = scope.env)
+                MockCodec.applyResponse(respSteps, body, headers, ct, ctx, lookup, mapper)
+            }
+        val resp = runtime.render(rule, matchedReq, pathParams, seq, state, responseCodec, secrets, mapper, scope.env)
+        // 렌더가 반환한 setState 를 서버 상태에 반영(다음 호출의 조건/템플릿에 보임)
+        if (resp.setState.isNotEmpty()) state.putAll(resp.setState)
+        return Served(resp, rule.id, decoded, masks)
+    }
+
+    /** raw spec JSON 이 캐시된 것과 같으면 파싱 결과 재사용, 아니면 재파싱(저장 즉시 반영 유지). */
+    private fun cachedSpec(server: MockServer): MockSpec {
+        val raw = server.specJson ?: ""
+        val hit = specCache[server.id]
+        if (hit != null && hit.first == raw) {
+            return hit.second
+        }
+        val spec = service.parseSpec(raw)
+        specCache[server.id] = raw to spec
+        return spec
+    }
+
+    // ---------- 요청 파싱 ----------
+
+    /** context path(`/flowlink`) 를 뗀 앱 내부 경로 — requestURI 는 접두사를 포함하므로 slug 파싱 전에 벗긴다. */
+    private fun pathInApp(request: HttpServletRequest): String {
+        val uri = request.requestURI
+        val ctx = request.contextPath ?: ""
+        return if (ctx.isNotEmpty() && uri.startsWith(ctx)) uri.substring(ctx.length) else uri
+    }
+
+    private fun parse(prefix: String, request: HttpServletRequest): MockRequest {
+        val raw = pathInApp(request)
+        val rawPath = if (raw.length > prefix.length) raw.substring(prefix.length) else "/"
+        val path = MockHttp.decodePath(rawPath)
+
+        val query = MockHttp.parseUrlEncoded(request.queryString, StandardCharsets.UTF_8)
+
+        val headers = LinkedHashMap<String, String>()
+        val names = request.headerNames
+        while (names != null && names.hasMoreElements()) {
+            val n = names.nextElement()
+            headers.putIfAbsent(n.lowercase(Locale.ROOT), request.getHeader(n))
+        }
+
+        val bytes = request.inputStream.readAllBytes()
+        val ct = headers.getOrDefault("content-type", "")
+        val cs = MockHttp.charsetFromContentType(ct)
+        var bodyText = if (bytes.isEmpty()) "" else String(bytes, cs)
+        var bodyFields = MockHttp.parseBodyFields(bodyText, ct, cs, json.mapper())
+
+        // Spring FormContentFilter 는 PUT/PATCH/DELETE + urlencoded 본문을 미리 읽어 파라미터로 노출한다
+        // → getInputStream() 이 빈 값이 된다. 그 경우 파라미터 맵에서 쿼리 유래를 뺀 나머지를 본문 필드로 복원.
+        if (bytes.isEmpty() && ct.lowercase(Locale.ROOT).contains("urlencoded")) {
+            val recovered = recoverFormBody(request, query)
+            if (recovered.isNotEmpty()) {
+                bodyFields = recovered
+                bodyText = MockHttp.toUrlEncoded(ArrayList(recovered.entries))
+            }
+        }
+
+        return MockRequest(request.method.uppercase(Locale.ROOT), path, query, headers, bodyText, bodyFields)
+    }
+
+    /** FormContentFilter 가 소진한 urlencoded 본문을 파라미터 맵에서 복원(쿼리 유래 키/값은 제외). */
+    private fun recoverFormBody(request: HttpServletRequest, query: Map<String, String>): Map<String, String> {
+        val form = LinkedHashMap<String, String>()
+        val params = request.parameterMap ?: return form
+        for ((k, v) in params) {
+            val value = if (v != null && v.isNotEmpty()) v[0] else ""
+            // 쿼리스트링에 같은 값으로 이미 있으면 쿼리 유래로 보고 제외(본문 값만 남긴다)
+            if (query.containsKey(k) && query[k] == value) {
+                continue
+            }
+            form[k] = value
+        }
+        return form
+    }
+
+    private fun withCors(b: ResponseEntity.HeadersBuilder<*>): ResponseEntity.BodyBuilder =
+        (b as ResponseEntity.BodyBuilder)
+            .header("Access-Control-Allow-Origin", "*")
+            .header("Access-Control-Allow-Methods", "*")
+            .header("Access-Control-Allow-Headers", "*")
+
+    private fun jsonError(status: Int, message: String): ResponseEntity<ByteArray> =
+        withCors(ResponseEntity.status(status))
+            .header("Content-Type", "application/json; charset=UTF-8")
+            .body(json.toJson(mapOf("error" to message)).toByteArray(StandardCharsets.UTF_8))
+
+    companion object {
+        private val log = LoggerFactory.getLogger(MockGatewayController::class.java)
+    }
+}

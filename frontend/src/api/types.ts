@@ -52,6 +52,12 @@ export interface NodeOutput {
 }
 
 export interface GraphNode {
+  executionAgent?: 'local' | 'server'
+  agentEnvironment?: string // '' = 명시적으로 공통만 사용
+  tcpPortEnvKey?: string
+  agentMock?: string
+  agentWorkspaceId?: string
+  agentOutputs?: string[]
   id: string
   name?: string
   type: NodeType
@@ -304,7 +310,19 @@ export interface CreateTriggerRequest {
   enabled?: boolean
 }
 
+export interface AgentTargetDiagnostics {
+  resolvedTarget: string | null
+  source: 'destination-environment' | 'workflow-address' | 'destination-mock' | 'upstream-binding' | 'owner-environment'
+  requester: 'browser' | 'agent'
+  environment: string | null
+  configurationReady: boolean
+  warnings: string[]
+}
+export interface AgentInspection { runtime: 'local' | 'server'; ready: boolean; issues: string[]; dependencyHashes?: Record<string, string>; targetDiagnostics?: AgentTargetDiagnostics }
+
 export interface RunRequest {
+  agentEnvironments?: Record<string, string>
+  agentDependencies?: Record<string, Record<string, string>>
   input?: Record<string, unknown>
   env?: Record<string, unknown>
   envName?: string | null // 활성 환경 이름 — 시크릿 환경 스코프 선택(null/미전송=공통만)
@@ -382,6 +400,7 @@ export interface ExecutionSummary {
 }
 
 export interface NodeExecutionView {
+  executionAgent?: 'local' | 'server'
   id: string
   nodeId: string
   nodeName?: string
@@ -394,10 +413,12 @@ export interface NodeExecutionView {
   requestText?: string | null
   responseText?: string | null
   output?: unknown
+  outputJson?: string | null
 }
 
-// 단일 노드 독립 실행 결과 (POST /flows/{id}/nodes/{nodeId}/run)
+// 일반 실행에서 onlyNodeId로 실행한 노드 결과.
 export interface SingleNodeRunResult {
+  executionId?: string
   ok: boolean
   httpStatus: number | null
   output: unknown
@@ -407,6 +428,7 @@ export interface SingleNodeRunResult {
 }
 
 export interface ExecutionDetail {
+  pendingAgent?: { taskId: string; nodeId: string; nodeName?: string; agent: 'local' | 'server'; status: 'PENDING' | 'CLAIMED' | 'RUNNING' | 'SUCCEEDED' | 'FAILED' | 'UNKNOWN' | 'ACKED'; error?: string; deviceId?: string } | null
   id: string
   flowId: string
   flowVersionId: string
@@ -506,8 +528,11 @@ export interface MockServerSpec {
 
 // CUSTOM=레거시(HTTP·TCP 둘 다) · HTTP=경로/응답 · TCP=소켓 전문
 export type MockKind = 'CUSTOM' | 'HTTP' | 'TCP'
+export interface MockListener { agent: 'local' | 'server'; bindAddress: string; advertisedAddress: string; state: 'LISTENING' | 'FAILED' | 'OFF'; error?: string | null; checkedAt?: string }
 
 export interface MockServerSummary {
+  basePath?: string
+  listener?: MockListener
   id: string
   name: string
   slug: string
@@ -539,6 +564,8 @@ export interface MockFlowRef { id: string; name: string }
 export type WorkspaceRole = 'OWNER' | 'EDITOR' | 'VIEWER'
 export interface MockFleetWorkspace { id: string; name: string; kind: 'PUBLIC' | 'PERSONAL' | 'TEAM'; myRole: WorkspaceRole | null; mine: boolean; ownerUsername?: string | null }
 export interface MockFleetServer {
+  basePath?: string
+  listener?: MockListener
   id: string; name: string; slug: string; kind: MockKind; enabled: boolean
   workspaceId: string            // 'public' 또는 UUID
   readable: boolean              // false = 접근 권한 없는 워크스페이스(이름·포트·상태만)

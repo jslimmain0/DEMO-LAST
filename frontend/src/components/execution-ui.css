@@ -1,0 +1,34 @@
+/* 실행 위치는 상태색과 분리한다. 아이콘과 텍스트가 의미를 전달한다. */
+.fl-agent-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 7px;
+  border: 1px solid var(--fl-border);
+  border-radius: 5px;
+  background: var(--fl-surface-2);
+  font-size: 12px;
+  line-height: 1.3;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.fl-agent-badge--local { color: var(--fl-location-local); }
+.fl-agent-badge--server { color: var(--fl-location-server); }
+.fl-agent-settings { min-width: 0; }
+.fl-agent-settings details { margin-top: 8px; }
+.fl-agent-settings summary { cursor: pointer; padding: 6px 0; color: var(--fl-text-soft); }
+.fl-agent-target { border-top: 1px solid var(--fl-border); padding-top: 12px; }
+.fl-agent-target > strong { font-size: 14px; color: var(--fl-text); }
+.fl-agent-address { padding: 10px 12px; border: 1px solid var(--fl-border); border-radius: var(--fl-radius-sm); background: var(--fl-surface); }
+.fl-agent-address code { display: block; color: var(--fl-text); font-size: 13px; line-height: 1.6; white-space: normal; overflow-wrap: anywhere; }
+.fl-agent-settings select:focus-visible,
+.fl-agent-settings input:focus-visible { outline: 2px solid var(--fl-focus); outline-offset: 2px; }
+.fl-execution-plan-table { border: 1px solid var(--fl-border); border-radius: var(--fl-radius); background: var(--fl-surface); }
+.fl-execution-plan-table th { position: sticky; top: 0; background: var(--fl-surface-2); color: var(--fl-text-soft); z-index: 1; }
+.fl-execution-plan-table small { font-size: 12px; line-height: 1.5; }
+.fl-execution-plan-table td:first-child { min-width: 130px; overflow-wrap: anywhere; }
+.fl-execution-plan-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; padding-top: 12px; }
+@media (forced-colors: active) {
+  .fl-agent-badge { color: CanvasText; background: Canvas; border-color: CanvasText; }
+  .fl-agent-address { border-color: CanvasText; }
+}

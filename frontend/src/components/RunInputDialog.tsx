@@ -1,13 +1,15 @@
 import type { CSSProperties } from 'react'
 import { useState } from 'react'
-import { getRunInputVars, setRunInputVars } from '../lib/runInput'
+import { useRunInputActions } from '../lib/runInput'
 import { Modal } from './Modal'
 
 /**
  * 실행 입력(런타임 파라미터) 다이얼로그 — `{{ 키@input }}` 로 참조되는 값을 넣고 실행.
- * 같은 플로우를 다른 입력으로 반복 실행(파라미터화)하는 용도. 값은 플로우별 localStorage 에 저장돼 다음에 재사용된다.
+ * 같은 플로우를 다른 입력으로 반복 실행한다. 값은 플로우를 소유한 워크스페이스에 저장한다.
  */
 export function RunInputDialog({ onClose, onRun }: { onClose: () => void; onRun: () => void }) {
+ const { getRunInputVars, setRunInputVars } = useRunInputActions()
+
   const [rows, setRows] = useState<Array<{ k: string; v: string }>>(
     () => { const e = Object.entries(getRunInputVars()); return e.length ? e.map(([k, v]) => ({ k, v })) : [{ k: '', v: '' }] },
   )
@@ -56,5 +58,5 @@ const mono: CSSProperties = { padding: '7px 9px', border: '1px solid var(--fl-bo
 const xBtn: CSSProperties = { width: 28, height: 28, borderRadius: 8, border: 'none', background: 'var(--fl-surface-2)', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 15 }
 const delBtn: CSSProperties = { width: 30, flexShrink: 0, border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text-muted)', cursor: 'pointer' }
 const addBtn: CSSProperties = { marginTop: 2, padding: '6px 10px', border: '1px dashed var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'transparent', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 12.5 }
-const primaryBtn: CSSProperties = { padding: '8px 16px', border: 'none', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-primary)', color: '#fff', cursor: 'pointer', fontSize: 13, fontWeight: 600 }
+const primaryBtn: CSSProperties = { padding: '8px 16px', border: 'none', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-action-primary-bg)', color: 'var(--fl-action-primary-ink)', cursor: 'pointer', fontSize: 13, fontWeight: 600 }
 const ghostBtn: CSSProperties = { padding: '8px 12px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'transparent', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 13 }

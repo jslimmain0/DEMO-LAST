@@ -1,10 +1,13 @@
+import { PageHeader } from '../components/PageHeader'
+import { AppIcon } from '../components/AppIcon'
+import { useApi } from '../app/WorkspaceContext'
 // frontend/src/routes/Protocols.tsx — 프로토콜(고정길이 전문 규격) 목록 + 편집기.
 // 선택 상태는 URL(/protocols/:id) 이라 새로고침·딥링크가 유지된다(TCP 노드·Mock 의 "관리 →" 가 직행).
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { CSSProperties } from 'react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { protocolsApi } from '../api/client'
+
 import { AppShellTier1 } from '../app/AppShell'
 import { usePermissions } from '../auth/AuthContext'
 import { ProtocolEditor } from '../components/ProtocolEditor'
@@ -13,6 +16,8 @@ import { apiErrorMessage } from '../lib/apiError'
 import { newProtocolSpec } from '../lib/protocolSpec'
 
 export function Protocols() {
+  const { protocolsApi } = useApi()
+
   const { id } = useParams()
   const navigate = useNavigate()
   const qc = useQueryClient()
@@ -53,15 +58,12 @@ export function Protocols() {
     <AppShellTier1>
       <div style={{ display: 'grid', gridTemplateColumns: '280px 1fr', height: '100dvh', overflow: 'hidden' }}>
         <aside style={listPane}>
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, padding: '0 2px' }}>
-            <h1 style={{ fontFamily: 'var(--fl-font-head)', fontSize: 18, margin: 0 }}>프로토콜</h1>
-            <span style={{ fontSize: 11.5, color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)' }}>{list.data?.length ?? 0}</span>
-          </div>
+          <PageHeader title="프로토콜" count={list.data?.length ?? 0} />
           <input ref={searchRef} value={q} onChange={(e) => setQ(e.target.value)} placeholder="검색 ( / )" aria-label="프로토콜 검색"
             onKeyDown={(e) => { if (e.key === 'Escape' && q) { e.stopPropagation(); setQ('') } }} style={search} />
           {canEdit && (
             <button onClick={() => create.mutate()} disabled={create.isPending} style={primaryBtn}>
-              {create.isPending ? '만드는 중…' : '+ 새 프로토콜'}
+              <AppIcon name="plus" size={16} />{create.isPending ? '만드는 중…' : '새 프로토콜'}
             </button>
           )}
           <div style={{ overflowY: 'auto', display: 'grid', gap: 3, alignContent: 'start' }}>
@@ -100,7 +102,7 @@ export function Protocols() {
 
 const listPane: CSSProperties = { display: 'grid', gridTemplateRows: 'auto auto auto 1fr', gap: 8, padding: '18px 14px', borderRight: '1px solid var(--fl-border)', background: 'var(--fl-surface)', minHeight: 0 }
 const search: CSSProperties = { padding: '7px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', color: 'var(--fl-text)', fontSize: 12.5 }
-const primaryBtn: CSSProperties = { padding: '8px 12px', border: 'none', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-primary)', color: '#fff', fontWeight: 600, fontSize: 12.5, cursor: 'pointer' }
+const primaryBtn: CSSProperties = { padding: '8px 12px', border: 'none', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-action-primary-bg)', color: 'var(--fl-action-primary-ink)', fontWeight: 600, fontSize: 12.5, cursor: 'pointer' }
 const item: CSSProperties = { display: 'grid', gap: 2, textAlign: 'left', padding: '8px 10px', border: '1px solid transparent', borderRadius: 'var(--fl-radius-sm)', background: 'transparent', color: 'var(--fl-text)', cursor: 'pointer', minWidth: 0 }
 const itemOn: CSSProperties = { background: 'var(--fl-surface-2)', borderColor: 'var(--fl-border)' }
 const muted: CSSProperties = { fontSize: 12.5, color: 'var(--fl-text-muted)', padding: '6px 2px' }

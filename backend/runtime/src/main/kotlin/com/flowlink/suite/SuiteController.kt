@@ -1,0 +1,62 @@
+package com.flowlink.suite
+
+import com.flowlink.common.error.BadRequestException
+import com.flowlink.common.tenant.TenantContext
+import com.flowlink.core.repository.FlowRepository
+import com.flowlink.execution.ExecutionService
+import org.springframework.web.bind.annotation.PostMapping
+import org.springframework.web.bind.annotation.RequestBody
+import org.springframework.web.bind.annotation.RequestMapping
+import org.springframework.web.bind.annotation.RestController
+import java.util.UUID
+
+/**
+ * 테스트 스위트 일괄 실행 — 폴더(직속) 또는 지정 워크플로들을 한 번에 비동기 실행하고 실행 id 목록을 반환한다.
+ * 프론트가 각 executionId 를 폴링해 성공/실패 매트릭스를 만든다(개별 실행·이력은 기존 경로 재사용).
+ */
+@RestController
+@RequestMapping("/api/v1/suites")
+class SuiteController(
+    private val flowRepo: FlowRepository,
+    private val executionService: ExecutionService,
+    private val workspace: com.flowlink.workspace.WorkspaceService,
+) {
+
+    data class SuiteRunRequest(val flowIds: List<UUID>? = null, val folderId: UUID? = null,
+        val agentDeviceId: String? = null, val clientRunIds: Map<UUID, UUID> = emptyMap(), val envName: String? = null)
+    data class SuiteRunItem(val flowId: UUID, val flowName: String, val executionId: UUID?, val status: String, val error: String?)
+    data class SuiteFlow(val id: UUID, val name: String)
+
+    /** 폴더가 바뀌기 전에 앱에서 승인할 개별 실행 ID를 확정하기 위한 읽기 전용 조회. */
+    @PostMapping("/plan")
+    fun plan(@RequestBody req: SuiteRunRequest): List<SuiteFlow> = selected(req).map { SuiteFlow(it.id, it.name) }
+
+    @PostMapping("/run")
+    fun run(@RequestBody req: SuiteRunRequest): List<SuiteRunItem> {
+        if (req.clientRunIds.values.size != req.clientRunIds.values.toSet().size)
+            throw BadRequestException("각 워크플로에는 서로 다른 실행 ID가 필요합니다.")
+        return selected(req).map { flow ->
+            try {
+                val d = executionService.run(flow.id, com.flowlink.execution.dto.RunRequest(null, null, req.envName, null,
+                    agentDeviceId = req.agentDeviceId, clientExecutionId = req.clientRunIds[flow.id]))
+                SuiteRunItem(flow.id, flow.name, d.id, d.status.name, null)
+            } catch (e: Exception) {
+                SuiteRunItem(flow.id, flow.name, null, "REJECTED", e.message)
+            }
+        }
+    }
+
+    private fun selected(req: SuiteRunRequest): List<com.flowlink.core.domain.Flow> {
+        // flow 는 전역 공유 — 공유 테넌트로 조회. 실행(run)은 내부에서 실제 사용자 테넌트로 이력 기록.
+        val tenant = TenantContext.SHARED_FLOW_TENANT
+        val me = workspace.currentUsername()
+        // 읽기 권한 없는 flow 는 응답 이전에 제외 — REJECTED 항목으로 타 워크스페이스 flow 의 id·이름이
+        // 열거되던 유출(적대 리뷰 [M]) 봉인. 실행 권한(쓰기)은 개별 run() 이 강제.
+        val flows = when {
+            req.flowIds != null -> req.flowIds.distinct().mapNotNull { flowRepo.findByIdAndTenantId(it, tenant).orElse(null) }
+            req.folderId != null -> flowRepo.findByTenantIdAndFolderIdAndArchivedFalse(tenant, req.folderId)
+            else -> throw BadRequestException("flowIds 또는 folderId 가 필요합니다.")
+        }.filter { workspace.roleFor(me, it.workspaceId) != null }
+        return flows
+    }
+}

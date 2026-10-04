@@ -1,0 +1,78 @@
+package com.flowlink.core.repository
+
+import com.flowlink.core.domain.Execution
+import com.flowlink.core.domain.ExecutionStatus
+import org.springframework.data.domain.Pageable
+import org.springframework.data.jpa.repository.JpaRepository
+import org.springframework.data.jpa.repository.Query
+import org.springframework.data.repository.query.Param
+import java.time.Instant
+import java.util.Optional
+import java.util.UUID
+
+interface ExecutionRepository : JpaRepository<Execution, UUID> {
+
+    @Query("select count(e) from Execution e where e.status in :statuses and exists (select f from Flow f where f.id = e.flowId and f.workspaceId = :workspaceId)")
+    fun countActiveInWorkspace(@Param("workspaceId") workspaceId: UUID, @Param("statuses") statuses: Collection<ExecutionStatus>): Long
+
+    fun findByTenantIdOrderByStartedAtDesc(tenantId: String, pageable: Pageable): List<Execution>
+
+    fun findByFlowIdOrderByStartedAtDesc(flowId: UUID, pageable: Pageable): List<Execution>
+
+    /**
+     * 특정 flow 의 실행 이력을 **테넌트 스코프**로 — flow 는 전역 공유이므로(모두가 같은 flow 를 실행)
+     * GET /flows/{id}/runs 는 호출자 자신의 실행만 보여줘야 한다(타 팀 실행 유출 방지).
+     */
+    fun findByFlowIdAndTenantIdOrderByStartedAtDesc(flowId: UUID, tenantId: String, pageable: Pageable): List<Execution>
+
+    fun findByIdAndTenantId(id: UUID, tenantId: String): Optional<Execution>
+
+    /** 기동 복구용 — 진행 중(RUNNING/WAITING) 실행 전체(테넌트 무관, 서버 수준 reconcile). */
+    fun findByStatusIn(statuses: Collection<ExecutionStatus>): List<Execution>
+
+    /**
+     * 실행 이력 필터 조회(테넌트 스코프 + 선택 status/flowId/기간 + **워크스페이스 스코프**). null 파라미터는 무시(전체).
+     * 워크스페이스는 flow.workspaceId 로 판정 — ws=null 은 공용(레거시 포함). 삭제된 flow 의 실행은 어느 스코프에도
+     * 안 나오는 대신 flowId 직접 필터로는 여전히 조회 가능(flow 는 archive 라 실제 삭제는 없음).
+     * 페이지네이션은 Pageable(offset+limit)로 — 실행량 많은 팀의 과거 실패 추적용.
+     */
+    @Query(
+        "SELECT e FROM Execution e WHERE e.tenantId = :tenant " +
+            "AND (:status IS NULL OR e.status = :status) " +
+            "AND (:flowId IS NULL OR e.flowId = :flowId) " +
+            "AND (:from IS NULL OR e.startedAt >= :from) " +
+            "AND (:to IS NULL OR e.startedAt <= :to) " +
+            "AND EXISTS (SELECT 1 FROM Flow f WHERE f.id = e.flowId " +
+            "  AND ((:ws IS NULL AND f.workspaceId IS NULL) OR f.workspaceId = :ws)) " +
+            "ORDER BY e.startedAt DESC"
+    )
+    fun findFiltered(
+        @Param("tenant") tenant: String,
+        @Param("status") status: ExecutionStatus?,
+        @Param("flowId") flowId: UUID?,
+        @Param("from") from: Instant?,
+        @Param("to") to: Instant?,
+        @Param("ws") ws: UUID?,
+        pageable: Pageable,
+    ): List<Execution>
+
+    /** 이력 정리(purge) — 진행 중(RUNNING/WAITING)은 보호. 노드 기록을 먼저 지운 뒤 호출. */
+    @org.springframework.data.jpa.repository.Modifying
+    @Query(
+        "DELETE FROM Execution e WHERE e.tenantId = :tenant " +
+            "AND (:flowId IS NULL OR e.flowId = :flowId) " +
+            "AND (:before IS NULL OR e.startedAt < :before) " +
+            "AND e.status NOT IN :active"
+    )
+    fun purge(
+        @Param("tenant") tenant: String,
+        @Param("flowId") flowId: UUID?,
+        @Param("before") before: Instant?,
+        @Param("active") active: Collection<ExecutionStatus>,
+    ): Int
+
+    /** 보존 정책 스윕(서버 유지보수 — 테넌트 무관) — 기준 시각 이전의 끝난 실행 일괄 삭제. */
+    @org.springframework.data.jpa.repository.Modifying
+    @Query("DELETE FROM Execution e WHERE e.startedAt < :before AND e.status NOT IN :active")
+    fun purgeBefore(@Param("before") before: Instant, @Param("active") active: Collection<ExecutionStatus>): Int
+}

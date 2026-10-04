@@ -4,14 +4,17 @@ import { useEditorStore } from '../store/editorStore'
 import { asGraphNode } from './graphAdapter'
 import { NODE_W, catColor, typeIcon } from './nodeMeta'
 import { RunBadge } from './NodeCard'
+import { NodeAgentBadge } from '../components/AgentSettings'
 
 // IF 분기 노드 — true/false 두 source 핸들. fromPort='true'|'false' 라운드트립.
 export function BranchNode({ data, selected }: NodeProps) {
   const n = asGraphNode(data)
+  const waitingId = useEditorStore((s) => s.waitingNodeId)
   const runState = useEditorStore((s) => s.runView?.nodeStates[n.id])
+  const waiting = waitingId === n.id || runState === 'waiting'
   const running = runState === 'running'
   const accent = catColor('if')
-  const borderColor = running
+  const borderColor = waiting ? 'var(--fl-waiting)' : running
     ? 'var(--fl-running)'
     : runState === 'failed'
       ? 'var(--fl-fail)'
@@ -22,7 +25,7 @@ export function BranchNode({ data, selected }: NodeProps) {
           : 'var(--fl-border)'
   return (
     <div
-      className={running ? 'fl-node-running' : undefined}
+      className={`fl-editor-node${selected ? ' fl-editor-node--selected' : ''}${running ? ' fl-node-running' : ''}`}
       style={{
         width: NODE_W, // NodeCard 와 동일 고정 폭
         background: 'var(--fl-surface)',
@@ -40,12 +43,13 @@ export function BranchNode({ data, selected }: NodeProps) {
         <span aria-hidden style={{ color: accent, fontSize: 14, width: 16, textAlign: 'center' }}>{typeIcon('if')}</span>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 13.5, fontWeight: 600 }}>{n.name ?? 'IF 조건'}</div>
-          <div title={n.condition || '조건 없음'} style={{ fontSize: 10.5, color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {n.condition || '조건 없음'}
+          <div title={waiting ? '에이전트 작업 대기' : n.condition || '조건 없음'} style={{ fontSize: 10.5, color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {waiting ? '에이전트 작업 대기…' : n.condition || '조건 없음'}
           </div>
         </div>
-        <RunBadge state={runState} />
+        <RunBadge state={waiting ? 'waiting' : runState} waitingLabel="에이전트 작업 대기" />
       </div>
+      <div style={{ padding: '0 12px 8px' }}><NodeAgentBadge node={n} /></div>
 
       <div style={{ position: 'absolute', right: -6, top: '34%', fontSize: 9, fontWeight: 700, color: 'var(--fl-ok)' }}>T</div>
       <div style={{ position: 'absolute', right: -6, top: '64%', fontSize: 9, fontWeight: 700, color: 'var(--fl-fail)' }}>F</div>

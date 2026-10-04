@@ -1,4 +1,5 @@
-import { assistantApi } from '../api/client'
+import { useApi } from '../app/WorkspaceContext'
+
 import type { MockServerSpec } from '../api/types'
 import { validateMockSpecShape } from '../lib/mockSpecValidate'
 import { AssistantSidePanel } from './AssistantSidePanel'
@@ -10,6 +11,8 @@ export function MockAssistantPanel({ spec, mockId, onApply, onClose }: {
   onApply: (spec: MockServerSpec) => void
   onClose: () => void
 }) {
+  const { assistantApi } = useApi()
+
   return (
     <AssistantSidePanel<MockServerSpec>
       title="Mock AI"

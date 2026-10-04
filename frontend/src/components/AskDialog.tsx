@@ -45,5 +45,5 @@ export function AskDialog({ spec, onClose }: { spec: AskSpec; onClose: () => voi
 }
 
 const ghostBtn: CSSProperties = { padding: '8px 16px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', cursor: 'pointer', fontSize: 13, fontWeight: 500 }
-const primaryBtn: CSSProperties = { padding: '8px 16px', border: 'none', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-primary)', color: '#fff', cursor: 'pointer', fontSize: 13, fontWeight: 600 }
+const primaryBtn: CSSProperties = { padding: '8px 16px', border: 'none', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-action-primary-bg)', color: 'var(--fl-action-primary-ink)', cursor: 'pointer', fontSize: 13, fontWeight: 600 }
 const dangerBtn: CSSProperties = { ...primaryBtn, background: 'var(--fl-fail)' }

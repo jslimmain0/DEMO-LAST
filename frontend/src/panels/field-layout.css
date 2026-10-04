@@ -1,0 +1,13 @@
+.fl-field-editor { container-type: inline-size; min-width: 0; }
+.fl-field-entry { display: grid; gap: 7px; margin-bottom: 12px; padding-bottom: 10px; border-bottom: 1px solid var(--fl-border); }
+.fl-field-identity { display: flex; gap: 8px; min-width: 0; }
+.fl-field-identity > input { width: 100%; }
+.fl-field-value { display: flex; min-width: 0; }
+.fl-field-actions { display: flex; justify-content: flex-end; gap: 4px; }
+.fl-field-actions button:hover { color: var(--fl-text); background: var(--fl-surface-2) !important; }
+.fl-field-actions button:focus-visible { outline: 2px solid var(--fl-focus); outline-offset: 2px; }
+.fl-field-footer { display: flex; flex-wrap: wrap; gap: 6px; }
+@container (min-width: 560px) {
+  .fl-field-entry { grid-template-columns: minmax(180px, 1fr) minmax(230px, 1.5fr); align-items: start; }
+  .fl-field-actions { grid-column: 1 / -1; }
+}

@@ -1,4 +1,5 @@
-import { assistantApi } from '../api/client'
+import { useApi } from '../app/WorkspaceContext'
+
 import type { ProtocolSpec } from '../api/types'
 import { tableLen } from '../lib/protocolSpec'
 import { AssistantSidePanel } from './AssistantSidePanel'
@@ -15,6 +16,8 @@ export function validateProtocolSpecShape(spec: unknown): string | null {
 
 /** 프로토콜 AI — 명세서 표를 붙여넣거나 말로 설명하면 프로토콜(헤더·전문 표)을 만들고 고친다. 적용은 부모 onApply(spec)로. */
 export function ProtocolAssistantPanel({ spec, onApply, onClose }: { spec: ProtocolSpec; onApply: (spec: ProtocolSpec) => void; onClose: () => void }) {
+  const { assistantApi } = useApi()
+
   return (
     <AssistantSidePanel<ProtocolSpec>
       title="프로토콜 AI"

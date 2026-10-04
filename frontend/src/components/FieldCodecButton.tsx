@@ -1,9 +1,10 @@
+import { useApi } from '../app/WorkspaceContext'
 import { useQuery } from '@tanstack/react-query'
 import type { CSSProperties } from 'react'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { MockCodecInput, MockCodecSpec, MockCodecStep, TransformInfo } from '../api/types'
-import { transformsApi } from '../api/client'
+
 import { TokenInput } from '../binding/TokenInput'
 import type { BindableSource } from '../binding/upstream'
 import { appUrl } from '../lib/appBase'
@@ -25,6 +26,8 @@ export function FieldCodecButton({ field, codec, onChange, sources = [], default
   readOnly?: boolean
   compact?: boolean
 }) {
+  const { transformsApi } = useApi()
+
   const [open, setOpen] = useState(false)
   const [editing, setEditing] = useState<StepRef | null>(null)
   const rootRef = useRef<HTMLSpanElement>(null)
@@ -109,7 +112,7 @@ function StepPopover({ anchor, field, list, sources, sides, defaultSide, editing
       <div style={{ display: 'inline-flex', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', overflow: 'hidden', marginTop: 8 }}>
         {sides.map((s) => (
           <button key={s} onClick={() => { setSide(s); if (!editing) setPluginId('') }}
-            style={{ padding: '4px 12px', border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 600, background: side === s ? 'var(--fl-primary)' : 'transparent', color: side === s ? '#fff' : 'var(--fl-text-muted)' }}>
+            style={{ padding: '4px 12px', border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 600, background: side === s ? 'var(--fl-action-primary-bg)' : 'transparent', color: side === s ? 'var(--fl-action-primary-ink)' : 'var(--fl-text-muted)' }}>
             {s === 'request' ? '⬇ 요청 전 풀기' : '⬆ 응답 후 감싸기'}
           </button>
         ))}
@@ -238,14 +241,14 @@ export function CodecStepWizard({ list, sources, fieldHints, defaultSide, onCanc
         <span style={stepNo}>① 언제</span>
         <div style={{ display: 'inline-flex', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', overflow: 'hidden', width: 'fit-content' }}>
           {(['request', 'response'] as const).map((s) => (
-            <button key={s} onClick={() => setSide(s)} style={{ padding: '5px 12px', border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 600, background: side === s ? 'var(--fl-primary)' : 'transparent', color: side === s ? '#fff' : 'var(--fl-text-muted)' }}>{s === 'request' ? '⬇ 요청 전 (요청이 들어올 때)' : '⬆ 응답 후 (나가기 전)'}</button>
+            <button key={s} onClick={() => setSide(s)} style={{ padding: '5px 12px', border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 600, background: side === s ? 'var(--fl-action-primary-bg)' : 'transparent', color: side === s ? 'var(--fl-action-primary-ink)' : 'var(--fl-text-muted)' }}>{s === 'request' ? '⬇ 요청 전 (요청이 들어올 때)' : '⬆ 응답 후 (나가기 전)'}</button>
           ))}
         </div>
         <span style={stepNo}>② 무엇을</span>
         <div>
           <div style={{ display: 'inline-flex', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', overflow: 'hidden' }}>
             {(['body', 'fields', 'header'] as Array<'body' | 'fields' | 'header'>).map((tg) => (
-              <button key={tg} onClick={() => setTarget(tg)} style={{ padding: '5px 12px', border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 600, background: target === tg ? 'var(--fl-primary)' : 'transparent', color: target === tg ? '#fff' : 'var(--fl-text-muted)' }}>
+              <button key={tg} onClick={() => setTarget(tg)} style={{ padding: '5px 12px', border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 600, background: target === tg ? 'var(--fl-action-primary-bg)' : 'transparent', color: target === tg ? 'var(--fl-action-primary-ink)' : 'var(--fl-text-muted)' }}>
                 {tg === 'body' ? '본문 전체' : tg === 'fields' ? '특정 필드만' : '헤더'}
               </button>
             ))}
@@ -324,7 +327,7 @@ const pop: CSSProperties = { position: 'fixed', zIndex: 120, overflowY: 'auto', 
 const lbl: CSSProperties = { fontSize: 11, fontWeight: 700, color: 'var(--fl-text-muted)', marginBottom: 4 }
 const input: CSSProperties = { padding: '5px 8px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 12.5 }
 const miniBtn: CSSProperties = { padding: '5px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 12, cursor: 'pointer' }
-const primary: CSSProperties = { padding: '5px 12px', border: 'none', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-primary)', color: '#fff', fontWeight: 700, fontSize: 12, cursor: 'pointer' }
+const primary: CSSProperties = { padding: '5px 12px', border: 'none', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-action-primary-bg)', color: 'var(--fl-action-primary-ink)', fontWeight: 700, fontSize: 12, cursor: 'pointer' }
 const stepNo: CSSProperties = { fontSize: 12, fontWeight: 700, color: 'var(--fl-text-muted)', paddingTop: 5 }
 const chipLabel: CSSProperties = { fontSize: 12, fontFamily: 'var(--fl-font-mono)', padding: '3px 9px', border: '1px solid var(--fl-border)', borderRadius: 999, cursor: 'pointer', background: 'var(--fl-surface-2)', color: 'var(--fl-text)' }
 const chipOn: CSSProperties = { borderColor: 'var(--fl-primary)', background: 'color-mix(in srgb, var(--fl-primary) 12%, var(--fl-surface))', color: 'var(--fl-primary)', fontWeight: 700 }

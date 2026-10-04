@@ -118,4 +118,4 @@ export function InputPromptDialog({
 const label: CSSProperties = { display: 'block', fontSize: 11.5, fontWeight: 600, color: 'var(--fl-text-muted)', marginBottom: 5 }
 const field: CSSProperties = { width: '100%', padding: '8px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 13 }
 const ghostBtn: CSSProperties = { padding: '8px 14px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }
-const primaryBtn: CSSProperties = { ...ghostBtn, border: 'none', background: 'var(--fl-primary)', color: '#fff' }
+const primaryBtn: CSSProperties = { ...ghostBtn, border: 'none', background: 'var(--fl-action-primary-bg)', color: 'var(--fl-action-primary-ink)' }

@@ -14,5 +14,6 @@ export function appBase(): string {
 
 /** 오리진 + 접두사 + 경로 — 밖에 알려주는 절대 URL(`http://host/flowlink/mock/x`). */
 export function appUrl(path: string): string {
-  return `${window.location.origin}${appBase()}${path.startsWith('/') ? path : `/${path}`}`
+  const base = `${window.location.origin}${appBase()}`
+  return `${base}${path.startsWith('/') ? path : `/${path}`}`
 }

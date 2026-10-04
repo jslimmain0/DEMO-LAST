@@ -1,10 +1,14 @@
+import { PageHeader } from '../components/PageHeader'
+import { AppIcon } from '../components/AppIcon'
+import { useApi, useWorkspace } from '../app/WorkspaceContext'
+import { useUnsavedNavigation } from '../components/UnsavedNavigation'
 // 스크립트 플러그인 — 좌 목록 | 우 편집기(CodeMirror JS) + 실행 패널 + 상태 바. 초안 저장 → 승인 요청 → 관리자 승인 후 레지스트리.
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { CSSProperties } from 'react'
 import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { adminApi, pluginsApi } from '../api/client'
-import type { PluginKind, PluginScriptDetail, PluginScriptStatus, PluginScriptSummary, ScriptErrorBody } from '../api/types'
+
+import type { PluginKind, PluginScriptStatus, PluginScriptSummary, ScriptErrorBody } from '../api/types'
 import { AppShellTier1 } from '../app/AppShell'
 import { usePermissions } from '../auth/AuthContext'
 import { AskDialog } from '../components/AskDialog'
@@ -30,8 +34,12 @@ function scriptError(e: unknown): ScriptErrorBody | null {
 }
 
 export function Plugins() {
+  const { adminApi, pluginsApi } = useApi()
+  const scope = useWorkspace()
+  const spaceQuery = `?space=${encodeURIComponent(`${scope.current.origin}:${scope.current.id}`)}`
+
   const { id } = useParams()
-  const [sp, setSp] = useSearchParams()
+  const [sp] = useSearchParams()
   const navigate = useNavigate()
   const qc = useQueryClient()
   const { canEdit } = usePermissions()
@@ -50,6 +58,8 @@ export function Plugins() {
   const [showDiff, setShowDiff] = useState(false)
   const draftRef = useRef(draft); draftRef.current = draft
   const dirtyRef = useRef(dirty); dirtyRef.current = dirty
+  const activeRef = useRef(true)
+  useEffect(() => { activeRef.current = true; return () => { activeRef.current = false } }, [])
   const searchRef = useRef<HTMLInputElement>(null)
   const editorRef = useRef<CodeEditorHandle>(null)
   // 오른쪽 탭: 실행 | 레퍼런스 — 마지막 선택 기억(브라우저별)
@@ -81,22 +91,32 @@ export function Plugins() {
   const save = useMutation({
     mutationFn: async () => {
       const d = draftRef.current!
-      return d.id ? pluginsApi.update(d.id, { name: d.name || undefined, source: d.source }) : pluginsApi.create({ name: d.name || undefined, source: d.source })
+      const snapshot = structuredClone(d)
+      const saved = snapshot.id ? await pluginsApi.update(snapshot.id, { name: snapshot.name || undefined, source: snapshot.source }) : await pluginsApi.create({ name: snapshot.name || undefined, source: snapshot.source })
+      return { saved, snapshot }
     },
-    onSuccess: (saved: PluginScriptDetail) => {
-      setDirty(false); setDiag([]); invalidate(); toast('저장됨(초안)', 'ok')
-      if (!draftRef.current?.id) { setSp({}); navigate(`/plugins/${saved.id}`, { replace: true }) }
+    onSuccess: ({ saved, snapshot }) => {
+      const current = draftRef.current
+      if (!activeRef.current || !current || current.id !== snapshot.id) return
+      const unchanged = current.name === snapshot.name && current.source === snapshot.source
+      dirtyRef.current = !unchanged
+      setDirty(!unchanged); setDiag([]); invalidate(); toast(unchanged ? '저장됨(초안)' : '이전 변경은 저장됐습니다. 추가 편집을 저장하세요.', 'ok')
+      if (!snapshot.id) {
+        const next = { ...current, id: saved.id }; draftRef.current = next; setDraft(next)
+        navigateSaved(`/plugins/${saved.id}${spaceQuery}`, { replace: true })
+      }
       else void qc.invalidateQueries({ queryKey: ['plugins', 'scripts', saved.id] })
     },
     onError: onApiError,
   })
+  const { navigateSaved } = useUnsavedNavigation({ dirty, saving: save.isPending, label: '플러그인 소스' })
   const transition = useMutation({
     mutationFn: ({ op, note }: { op: 'submit' | 'withdraw' | 'approve' | 'reject' | 'remove'; note?: string }) =>
       op === 'submit' ? pluginsApi.submit(id!) : op === 'withdraw' ? pluginsApi.withdraw(id!) : op === 'approve' ? pluginsApi.approve(id!)
       : op === 'reject' ? pluginsApi.reject(id!, note ?? '') : pluginsApi.remove(id!).then(() => null),
     onSuccess: (_r, v) => {
       invalidate()
-      if (v.op === 'remove') { toast('삭제됨', 'ok'); navigate('/plugins') }
+      if (v.op === 'remove') { setDirty(false); toast('삭제됨', 'ok'); navigateSaved(`/plugins${spaceQuery}`) }
       else { toast({ submit: '승인 요청함', withdraw: '철회함', approve: '승인됨 — 즉시 서빙', reject: '반려함' }[v.op], 'ok'); void qc.invalidateQueries({ queryKey: ['plugins', 'scripts', id] }) }
     },
     onError: onApiError,
@@ -130,18 +150,15 @@ export function Plugins() {
   }, [list.data, q, statusFilter])
   const d = detail.data
   const status: PluginScriptStatus | null = d?.status ?? null
-  const openNew = (kind: string) => { if (dirty && !confirm('저장하지 않은 변경이 있습니다. 새로 만들까요?')) return; navigate(`/plugins?new=${kind}`) }
-  const select = (pid: string) => { if (dirty && !confirm('저장하지 않은 변경이 있습니다. 이동할까요?')) return; setSp({}); navigate(`/plugins/${pid}`) }
+  const openNew = (kind: string) => navigate(`/plugins${spaceQuery}&new=${encodeURIComponent(kind)}`)
+  const select = (pid: string) => navigate(`/plugins/${pid}${spaceQuery}`)
 
   return (
     <AppShellTier1>
       <div style={{ display: 'grid', gridTemplateColumns: '300px minmax(0, 1fr)', height: '100vh', minHeight: 0 }}>
         {/* ── 좌 목록 ── */}
         <aside style={listPane} aria-label="플러그인 목록">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <strong style={{ fontFamily: 'var(--fl-font-head)', fontSize: 16 }}>◇ 플러그인</strong>
-            <span style={muted}>{list.data?.length ?? 0}</span>
-          </div>
+          <PageHeader title="플러그인" count={list.data?.length ?? 0} />
           <input ref={searchRef} value={q} onChange={(e) => setQ(e.target.value)} placeholder="검색 — 이름·id ( / )" aria-label="플러그인 검색" style={search}
             onKeyDown={(e) => { if (e.key === 'Escape' && q) { e.stopPropagation(); setQ('') } }} />
           <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
@@ -188,7 +205,7 @@ export function Plugins() {
                 <span style={{ marginLeft: 'auto', display: 'inline-flex', gap: 6, alignItems: 'center' }}>
                   {d && <UsagesChip id={d.id} count={d.usages} />}
                   {d?.live && <button style={ghostBtn} onClick={() => setShowDiff((v) => !v)}>{showDiff ? '편집으로' : '승인본과 비교'}</button>}
-                  {canEdit && <button style={{ ...primaryBtn, opacity: dirty ? 1 : 0.55 }} disabled={!dirty || save.isPending} onClick={() => save.mutate()} title="Ctrl+S">💾 저장</button>}
+                  {canEdit && <button style={{ ...primaryBtn, opacity: dirty ? 1 : 0.55 }} disabled={!dirty || save.isPending} onClick={() => save.mutate()} title="Ctrl+S"><AppIcon name="save" size={16} /> 저장</button>}
                   {canEdit && d && (status === 'DRAFT' || status === 'REJECTED' || (status === 'APPROVED' && d.dirty)) && !dirty && (
                     <button style={okBtn} disabled={transition.isPending} onClick={() => transition.mutate({ op: 'submit' })}>승인 요청</button>
                   )}
@@ -266,6 +283,8 @@ function StatusPill({ status, live, dirtyLive, small }: { status: PluginScriptSt
 
 /** 사용처 N — 클릭하면 목록 팝오버(항목 클릭 = 해당 화면). */
 function UsagesChip({ id, count }: { id: string; count: number }) {
+  const { pluginsApi } = useApi()
+
   const [open, setOpen] = useState(false)
   const navigate = useNavigate()
   const refs = useQuery({ queryKey: ['plugins', 'scripts', id, 'usages'], queryFn: () => pluginsApi.usages(id), enabled: open })
@@ -303,7 +322,7 @@ const tabs: CSSProperties = { display: 'flex', borderBottom: '1px solid var(--fl
 const tab: CSSProperties = { flex: 1, padding: '8px 10px', border: 'none', borderBottom: '2px solid transparent', background: 'transparent', color: 'var(--fl-text-muted)', fontSize: 12.5, cursor: 'pointer' }
 const tabOn: CSSProperties = { color: 'var(--fl-text)', fontWeight: 700, borderBottomColor: 'var(--fl-primary)' }
 const statusBar: CSSProperties = { display: 'flex', gap: 8, padding: '4px 12px', borderTop: '1px solid var(--fl-border)', fontSize: 11, color: 'var(--fl-text-muted)', background: 'var(--fl-surface)' }
-const primaryBtn: CSSProperties = { padding: '7px 14px', border: 'none', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-primary)', color: '#fff', fontWeight: 700, fontSize: 12.5, cursor: 'pointer', whiteSpace: 'nowrap' }
+const primaryBtn: CSSProperties = { padding: '7px 14px', border: 'none', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-action-primary-bg)', color: 'var(--fl-action-primary-ink)', fontWeight: 700, fontSize: 12.5, cursor: 'pointer', whiteSpace: 'nowrap' }
 const okBtn: CSSProperties = { ...primaryBtn, background: 'var(--fl-ok)' }
 const dangerBtn: CSSProperties = { padding: '7px 12px', border: '1px solid color-mix(in srgb, var(--fl-fail) 45%, transparent)', borderRadius: 'var(--fl-radius-sm)', background: 'transparent', color: 'var(--fl-fail)', fontSize: 12.5, cursor: 'pointer', whiteSpace: 'nowrap' }
 const ghostBtn: CSSProperties = { padding: '7px 12px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 12.5, cursor: 'pointer', whiteSpace: 'nowrap' }

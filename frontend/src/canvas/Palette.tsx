@@ -1,11 +1,12 @@
 import { useReactFlow } from '@xyflow/react'
 import type { CSSProperties, DragEvent } from 'react'
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import type { GraphNode, NodeType } from '../api/types'
 import { MethodTag } from '../components/MethodTag'
 import { useEditorStore } from '../store/editorStore'
 import { PALETTE, PALETTE_GROUPS } from './nodeFactory'
-import { catColor, typeIcon } from './nodeMeta'
+import { NODE_W, catColor, typeIcon } from './nodeMeta'
+import { findNodePlacement } from './nodePlacement'
 
 export function Palette({ width = 200, onCollapse }: { width?: number; onCollapse?: () => void }) {
   const addNode = useEditorStore((s) => s.addNode)
@@ -13,14 +14,37 @@ export function Palette({ width = 200, onCollapse }: { width?: number; onCollaps
   const palette = useEditorStore((s) => s.palette)
   const removePaletteGroup = useEditorStore((s) => s.removePaletteGroup)
   const removePaletteItem = useEditorStore((s) => s.removePaletteItem)
-  const { screenToFlowPosition } = useReactFlow()
+  const { screenToFlowPosition, setCenter, getZoom, fitBounds } = useReactFlow()
+  const paneRef = useRef<HTMLElement>(null)
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
   const [q, setQ] = useState('')
   const shownPalette = useMemo(() => {
     const query = q.trim().toLowerCase()
     return PALETTE.filter((p) => !query || p.label.toLowerCase().includes(query) || p.type.includes(query))
   }, [q])
-  const addWithRecent = (type: NodeType) => addNode(type, center())
+  const sizeOf = (node: Pick<GraphNode, 'type' | 'groupW' | 'groupH' | 'switchPorts'>) => node.type === 'group'
+    ? { width: node.groupW ?? 396, height: node.groupH ?? 264 }
+    : { width: node.type === 'note' ? 220 : NODE_W, height: node.type === 'switch' ? 70 + (node.switchPorts?.length ?? 2) * 26 : 120 }
+  const placement = (node: Pick<GraphNode, 'type' | 'groupW' | 'groupH' | 'switchPorts'>) => {
+    const canvas = paneRef.current?.parentElement?.querySelector('.fl-canvas')
+    const rect = canvas?.getBoundingClientRect()
+    if (!rect) return screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 })
+    const top = screenToFlowPosition({ x: rect.left + 16, y: rect.top + 16 }, { snapToGrid: false })
+    const bottom = screenToFlowPosition({ x: rect.right - 16, y: rect.bottom - 16 }, { snapToGrid: false })
+    const view = { ...top, width: bottom.x - top.x, height: bottom.y - top.y }
+    const size = sizeOf(node)
+    const occupied = useEditorStore.getState().nodes.map(existing => ({ ...existing.position,
+      width: existing.measured?.width ?? sizeOf(existing.data as unknown as GraphNode).width,
+      height: existing.measured?.height ?? sizeOf(existing.data as unknown as GraphNode).height,
+    }))
+    const point = findNodePlacement(view, size, occupied)
+    if (!point.visible) {
+      if (size.width > view.width || size.height > view.height) void fitBounds({ ...point, ...size }, { padding: 0.15, duration: 0 })
+      else void setCenter(point.x + size.width / 2, point.y + size.height / 2, { zoom: getZoom(), duration: 0 })
+    }
+    return { x: point.x, y: point.y }
+  }
+  const addWithRecent = (type: NodeType) => addNode(type, placement({ type }))
   const toggleGroup = (id: string) =>
     setCollapsed((prev) => {
       const next = new Set(prev)
@@ -28,8 +52,6 @@ export function Palette({ width = 200, onCollapse }: { width?: number; onCollaps
       else next.add(id)
       return next
     })
-
-  const center = () => screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 })
 
   const onDragStart = (e: DragEvent<HTMLButtonElement>, type: NodeType) => {
     e.dataTransfer.setData('application/flowlink-node', type)
@@ -42,6 +64,9 @@ export function Palette({ width = 200, onCollapse }: { width?: number; onCollaps
 
   return (
     <aside
+      id="editor-palette"
+      className="fl-editor-palette"
+      ref={paneRef}
       aria-label="노드 팔레트"
       style={{
         width,
@@ -50,19 +75,19 @@ export function Palette({ width = 200, onCollapse }: { width?: number; onCollaps
         padding: 'var(--fl-sp-3)',
         display: 'flex',
         flexDirection: 'column',
-        gap: 6,
+        gap: 4,
         overflowY: 'auto',
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <div style={groupTitle}>노드</div>
+        <div style={{ ...groupTitle, fontSize: 13, color: 'var(--fl-text)' }}>노드 추가</div>
         {onCollapse && (
           <button onClick={onCollapse} aria-label="팔레트 접기" title="접기"
             style={{ width: 24, height: 24, border: '1px solid var(--fl-border)', borderRadius: 6, background: 'var(--fl-surface)', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 13 }}>«</button>
         )}
       </div>
-      <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="노드 검색…"
-        onKeyDown={(e) => { if (e.key === 'Escape' && q) { e.stopPropagation(); setQ('') } }}
+      <input aria-label="추가할 노드 검색" value={q} onChange={(e) => setQ(e.target.value)} placeholder="노드 검색…"
+        onKeyDown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); if (q) setQ(''); else onCollapse?.() } }}
         style={{ width: '100%', padding: '6px 9px', marginBottom: 4, border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', color: 'var(--fl-text)', fontSize: 12.5, outline: 'none' }} />
       {/* 검색 중엔 평면 목록, 아니면 카테고리 섹션으로(클러터 축소) */}
       {q.trim()
@@ -75,10 +100,10 @@ export function Palette({ width = 200, onCollapse }: { width?: number; onCollaps
             const items = shownPalette.filter((p) => p.group === g)
             if (items.length === 0) return null
             return (
-              <div key={g} style={{ marginBottom: 2 }}>
-                <div style={{ ...groupTitle, padding: '6px 2px 4px', fontSize: 10, opacity: 0.85 }}>{g}</div>
+              <div key={g}>
+                <div style={{ ...groupTitle, padding: '6px 10px 4px', fontSize: 11 }}>{g}</div>
                 {items.map((p) => (
-                  <button key={p.type} draggable onDragStart={(e) => onDragStart(e, p.type)} onClick={() => addWithRecent(p.type)} title={`${p.label} 추가 (클릭 또는 드래그)`} style={{ ...paletteBtn, marginBottom: 4 }}>
+                  <button key={p.type} draggable onDragStart={(e) => onDragStart(e, p.type)} onClick={() => addWithRecent(p.type)} title={`${p.label} 추가 (클릭 또는 드래그)`} style={{ ...paletteBtn, marginBottom: 2 }}>
                     <span aria-hidden style={{ color: catColor(p.cat), fontSize: 15, width: 18, textAlign: 'center' }}>{typeIcon(p.type)}</span>{p.label}
                   </button>
                 ))}
@@ -113,11 +138,11 @@ export function Palette({ width = 200, onCollapse }: { width?: number; onCollaps
               tabIndex={0}
               draggable
               onDragStart={(e) => onDragStartTemplate(e, item.node)}
-              onClick={() => addNodeFromTemplate(item.node, center())}
+              onClick={() => addNodeFromTemplate(item.node, placement(item.node))}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' || e.key === ' ') {
                   e.preventDefault()
-                  addNodeFromTemplate(item.node, center())
+                  addNodeFromTemplate(item.node, placement(item.node))
                 }
               }}
               title={`${item.label} 추가 (클릭 또는 드래그)`}

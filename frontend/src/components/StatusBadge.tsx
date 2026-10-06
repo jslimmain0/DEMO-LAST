@@ -19,6 +19,8 @@ export function StatusBadge({ status }: { status: AnyStatus }) {
     <span
       style={{
         display: 'inline-flex',
+        flexShrink: 0,
+        whiteSpace: 'nowrap',
         alignItems: 'center',
         gap: 5,
         fontSize: 11.5,

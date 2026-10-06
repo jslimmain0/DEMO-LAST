@@ -1,4 +1,10 @@
 .fl-page { min-width: 0; max-width: 1600px; margin: 0 auto; padding: 28px 32px 48px; }
+.fl-execution-catalog { container: fl-executions / inline-size; }
+.fl-execution-heading > .fl-page-header { flex: 1 1 220px; }
+.fl-execution-row { flex-wrap: wrap; min-width: 0; }
+.fl-execution-name { flex: 1; }
+.fl-execution-meta { flex-shrink: 0; flex-wrap: wrap; max-width: 100%; font-variant-numeric: tabular-nums; }
+@container fl-executions (max-width: 650px) { .fl-execution-meta { flex-basis: 100%; justify-content: flex-end; } }
 .fl-page-header { flex-shrink: 0; min-width: 0; margin-bottom: 24px; container: fl-page-header / inline-size; }
 .fl-page-heading { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 16px 24px; }
 .fl-page-intro { flex: 1 1 260px; min-width: 0; }

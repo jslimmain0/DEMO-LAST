@@ -40,11 +40,11 @@ response = [entry('failed-a', 'FAILED', 'failure-notification'), entry('failed-b
 render()
 states[3] = 'failure-notification'
 let tree = render()
-const heading = walk(tree, node => Array.isArray(node.props?.children) && node.props.children.some(child => child?.type === 'h1'))[0]
+const heading = walk(tree, node => node.props?.className === 'fl-execution-heading')[0]
 assert.match(text(heading), /2건/)
 assert.match(text(heading), /✕ 2/)
 assert.doesNotMatch(text(heading), /✓/)
-const rows = walk(tree, node => node.props?.className === 'fl-flow-card')
+const rows = walk(tree, node => node.props?.className?.split(' ').includes('fl-flow-card'))
 assert.equal(rows.length, 2)
 const detail = walk(rows[0], node => node.type === 'button' && node.props['aria-label']?.includes('실행 결과 상세 보기'))[0]
 assert.ok(detail, 'result-reading action is a native keyboard-operable button')

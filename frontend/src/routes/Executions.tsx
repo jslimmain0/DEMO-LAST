@@ -79,7 +79,7 @@ export function Executions() {
   return (
     <AppShellTier1>
       <div className="fl-page fl-execution-catalog">
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
+        <div className="fl-execution-heading" style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
           <PageHeader title="실행 이력" />
           {rows.length > 0 && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginLeft: 4 }}>
@@ -93,7 +93,7 @@ export function Executions() {
             aria-label="워크스페이스"
             value={wsId}
             onChange={(e) => setWsId(e.target.value)}
-            style={{ marginLeft: 'auto', padding: '7px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', color: 'var(--fl-text)', fontSize: 12.5, cursor: 'pointer' }}
+            style={{ marginLeft: 'auto', maxWidth: '100%', padding: '7px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', color: 'var(--fl-text)', fontSize: 12.5, cursor: 'pointer' }}
           >
             {(workspaces.data ?? [{ id: wsId, name: runtime?.kind === 'local' ? '개인 · 내 PC' : '공용', kind: runtime?.kind === 'local' ? 'PERSONAL' : 'PUBLIC' } as const]).map((w) => (
               <option key={w.id} value={w.id}>{w.kind === 'PERSONAL' ? '🔒' : w.kind === 'TEAM' ? '👥' : '🌐'} {w.name}</option>
@@ -103,15 +103,15 @@ export function Executions() {
 
         {!isLoading && !isError && (all.length > 0 || filter !== 'all' || range !== 'all' || q) && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 16, flexWrap: 'wrap' }}>
-            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="워크플로 이름 검색…"
+            <input aria-label="워크플로 이름 검색" value={q} onChange={(e) => setQ(e.target.value)} placeholder="워크플로 이름 검색…"
               onKeyDown={(e) => { if (e.key === 'Escape' && q) { e.stopPropagation(); setQ('') } }}
-              style={{ padding: '7px 11px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', color: 'var(--fl-text)', fontSize: 13, minWidth: 220 }} />
-            <div style={{ display: 'flex', gap: 3 }}>
+              style={{ padding: '7px 11px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', color: 'var(--fl-text)', fontSize: 13, width: 220, minWidth: 0, maxWidth: '100%', boxSizing: 'border-box' }} />
+            <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
               {([['all', '전체'], ['SUCCEEDED', '성공'], ['FAILED', '실패'], ['WAITING', '대기'], ['CANCELLED', '취소']] as const).map(([k, lbl]) => (
                 <button key={k} onClick={() => setFilter(k)} style={{ padding: '5px 11px', fontSize: 12, border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', cursor: 'pointer', background: filter === k ? 'var(--fl-action-primary-bg)' : 'transparent', color: filter === k ? 'var(--fl-action-primary-ink)' : 'var(--fl-text-muted)', fontWeight: 500 }}>{lbl}</button>
               ))}
             </div>
-            <div style={{ display: 'flex', gap: 3, marginLeft: 4 }} title="기간 필터">
+            <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap', marginLeft: 4 }} title="기간 필터">
               {RANGES.map(([k, lbl]) => (
                 <button key={k} onClick={() => setRange(k)} style={{ padding: '5px 10px', fontSize: 12, border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-pill)', cursor: 'pointer', background: range === k ? 'var(--fl-surface-2)' : 'transparent', color: range === k ? 'var(--fl-text)' : 'var(--fl-text-muted)', fontWeight: range === k ? 600 : 400 }}>{lbl}</button>
               ))}
@@ -148,16 +148,16 @@ export function Executions() {
             {rows.map((e) => {
               const el = elapsed(e)
               return (
-                <div key={e.id} className="fl-flow-card" onClick={() => setOpenExec(e.id)}
+                <div key={e.id} className="fl-flow-card fl-execution-row" onClick={() => setOpenExec(e.id)}
                   style={{ ...rowCard, borderLeft: `3px solid ${statusColor(e.status)}`, cursor: 'pointer' }}
                   title="클릭하면 노드별 결과를 봅니다">
                   <StatusBadge status={e.status} />
-                  <button type="button" aria-label={`${e.flowName ?? '삭제된 워크플로'} 실행 결과 상세 보기`} title="실행 결과 상세 보기"
+                  <button type="button" className="fl-execution-name" aria-label={`${e.flowName ?? '삭제된 워크플로'} 실행 결과 상세 보기`} title={e.flowName ?? '실행 결과 상세 보기'}
                     onClick={(event) => { event.stopPropagation(); setOpenExec(e.id) }}
                     style={{ fontFamily: 'var(--fl-font-head)', fontWeight: 600, fontSize: 14.5, color: 'var(--fl-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0, border: 0, background: 'transparent', padding: 0, textAlign: 'left', cursor: 'pointer' }}>
                     {e.flowName ?? `삭제된 워크플로 (${e.flowId.slice(0, 8)})`}
                   </button>
-                  <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 14, flexShrink: 0 }}>
+                  <div className="fl-execution-meta" style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 14 }}>
                     <span style={metaMono}>{TRIGGER_LABEL[e.trigger] ?? e.trigger}</span>
                     {el && <span style={metaMono}>{el}</span>}
                     <span style={{ ...metaMono, minWidth: 56, textAlign: 'right' }}>{relTime(e.startedAt)}</span>
@@ -206,10 +206,10 @@ function ExecutionDetailModal({ execId, onClose }: { execId: string; onClose: ()
   const prevByNode = new Map((prev.data?.nodes ?? []).map((n) => [n.nodeId, n]))
   return (
     <Modal onClose={onClose} ariaLabel="실행 상세" zIndex={300} width={720} maxWidth="100%" maxHeight="85vh">
-        <header style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 16px', borderBottom: '1px solid var(--fl-border)' }}>
+        <header style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 10, padding: '14px 16px', borderBottom: '1px solid var(--fl-border)' }}>
           <strong style={{ fontFamily: 'var(--fl-font-head)', fontSize: 15 }}>실행 상세</strong>
           {data && <StatusBadge status={data.status} />}
-          {data?.error && <span style={{ fontSize: 12, color: 'var(--fl-fail)' }}>{data.error}</span>}
+          {data?.error && <span style={{ fontSize: 12, color: 'var(--fl-fail)', overflowWrap: 'anywhere' }}>{data.error}</span>}
           <button
             onClick={() => setCompare((v) => !v)}
             title="같은 플로우의 직전 실행과 응답을 비교합니다"
@@ -247,7 +247,7 @@ function ExecutionDetailModal({ execId, onClose }: { execId: string; onClose: ()
               <div key={nd.id} style={{ borderBottom: '1px solid var(--fl-border)' }}>
                 <button onClick={() => setOpenNode(open ? null : nd.id)} style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '9px 14px', border: 'none', background: 'transparent', color: 'var(--fl-text)', cursor: 'pointer', textAlign: 'left' }}>
                   <span style={{ fontSize: 12, fontWeight: 700, color: nd.status === 'FAILED' ? 'var(--fl-fail)' : nd.status === 'SKIPPED' ? 'var(--fl-text-muted)' : 'var(--fl-ok)' }}>{nd.status === 'FAILED' ? '✕' : nd.status === 'SKIPPED' ? '⊘' : '✓'}</span>
-                  <span style={{ fontSize: 13.5, fontWeight: 600 }}>{nd.nodeName || nd.nodeId}</span>
+                  <span style={{ fontSize: 13.5, fontWeight: 600, minWidth: 0, overflowWrap: 'anywhere', flex: 1 }}>{nd.nodeName || nd.nodeId}</span>
                   {nd.executionAgent && <AgentBadge agent={nd.executionAgent} />}
                   {changed && <span style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--fl-put)', border: '1px solid var(--fl-put)', borderRadius: 8, padding: '0 6px' }}>변경</span>}
                   {compare && !changed && p && <span style={{ fontSize: 10.5, color: 'var(--fl-text-muted)' }}>동일</span>}

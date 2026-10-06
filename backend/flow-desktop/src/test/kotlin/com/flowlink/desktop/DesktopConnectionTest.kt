@@ -87,6 +87,22 @@ class DesktopConnectionTest {
                 assertThat(restored.view().connected).isFalse()
                 assertThat(requests).isEqualTo(3)
                 assertThat(Files.exists(directory.resolve("db/flowlink.mv.db"))).isFalse()
+                expire = false
+                metadata.set(200 to """{"mcpUrl":"$base/mcp"}""")
+                restored.start(); restored.poll()
+                val beforeDisconnect = restored.view()
+                server.stop(0)
+                for (call in listOf<() -> Any>(
+                    { restored.start() },
+                    { restored.forward(req) },
+                    { restored.authenticatedJson("GET", "/api/v1/workspaces", expectedServer = base, expectedLogin = "mock-user") },
+                )) {
+                    assertThatThrownBy { call() }
+                        .isInstanceOf(org.springframework.web.server.ResponseStatusException::class.java)
+                        .hasMessageContaining("503")
+                        .hasMessageContaining("개인 워크스페이스는 계속")
+                    assertThat(restored.view()).isEqualTo(beforeDisconnect)
+                }
             }
         } finally { server.stop(0) }
     }

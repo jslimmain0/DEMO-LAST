@@ -20,6 +20,10 @@ desktop은 server 소스나 서버 JAR에 의존하지 않는다. 두 호스트�
 
 DB 연결과 프로파일은 각 호스트의 `src/main/resources/application*.yml`에 있다. core의 `application-core.yml`은 기존 UUID CHAR(36) 매핑과 공통 웹/ORM 설정만 제공한다. 개인 H2는 현재 Hibernate `ddl-auto:update`와 기존 리소스/시크릿 이관 코드로 업그레이드한다. 별도 Flyway 적용으로 기존 개인 DB를 바꾸는 작업은 하지 않는다. Oracle 신규/업그레이드 SQL은 server에 남긴다. 두 호스트는 빌드 때 공통 `frontend/dist`를 각각 동봉하며, 설치된 앱은 Java와 화면·관리 API·H2를 포함해 서버 없이 개인 작업을 실행할 수 있다.
 
+개인 작업은 **Windows 앱의 ‘개인 워크스페이스 열기’**로 진입한다. 그 브라우저 화면의 개인 API는 PC의 `flow-desktop`에 요청하고, 공용·팀 작업만 중앙 서버에 요청한다. 중앙 서버 URL을 직접 여는 화면은 서버 작업용이며 개인 H2에 접근하지 않는다. 개인 API 보호 때문에 로컬 URL을 직접 입력하는 대신 앱에서 화면을 연다. 서버 연결 실패는 개인 앱 종료·중앙 로그인 강제·개인 자료 삭제 사유가 아니다. 서버 노드·원격 Vault 등 외부 의존이 있는 작업에는 해당 연결이 필요하다.
+
+서버가 없는 첫 시작과 로그인 실패 후 개인 생성·저장·조회·SET/ASSERT 실행은 `scripts/test/desktop-offline.ps1 -AgentFile <격리 개인 앱 agent.json>`으로 검증한다. 중앙 서버가 응답하지 않는 루프백 실험 설정에만 실행하며, 실험용 개인 흐름 하나를 남긴다. 서버 로그인·주소 조회·원격 API 전송의 연결 실패는 503 안내로 반환하고 저장된 로그인 정보는 유지한다.
+
 프론트엔드를 먼저 빌드한 뒤 `backend/`에서 실행한다.
 
 ```powershell

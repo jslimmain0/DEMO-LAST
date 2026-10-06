@@ -14,6 +14,9 @@ import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
+import java.io.IOException
+import org.springframework.http.HttpStatus
+import org.springframework.web.server.ResponseStatusException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
@@ -82,7 +85,7 @@ class DesktopConnection(private val session: DesktopSession, private val mapper:
         extraHeaders.forEach { (key, value) -> require(key in setOf("X-FlowLink-PC-Session", "X-FlowLink-PC-Key")); builder.header(key, value) }
         val request = builder.method(method, body?.let { HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(it)) }
                 ?: HttpRequest.BodyPublishers.noBody()).build()
-        val response = client.send(request, HttpResponse.BodyHandlers.ofInputStream())
+        val response = send(request, HttpResponse.BodyHandlers.ofInputStream())
         if (response.statusCode() == 401 && state.token == active.token) logout()
         val bytes = response.body().use { it.readNBytes(64 * 1024 * 1024 + 1) }
         if (bytes.size > 64 * 1024 * 1024) throw BadRequestException("에이전트 응답 크기가 64MB를 초과했습니다.")
@@ -141,7 +144,7 @@ class DesktopConnection(private val session: DesktopSession, private val mapper:
     private fun json(base: String, method: String, path: String, body: String? = null): com.fasterxml.jackson.databind.JsonNode {
         val request = HttpRequest.newBuilder(URI.create(base + path)).timeout(Duration.ofSeconds(25))
             .header("Content-Type", "application/json").method(method, body?.let { HttpRequest.BodyPublishers.ofString(it) } ?: HttpRequest.BodyPublishers.noBody()).build()
-        val res = client.send(request, HttpResponse.BodyHandlers.ofString())
+        val res = send(request, HttpResponse.BodyHandlers.ofString())
         if (res.statusCode() !in 200..299) throw BadRequestException("서버 연결 실패 (HTTP ${res.statusCode()})")
         return mapper.readTree(res.body())
     }
@@ -199,7 +202,7 @@ class DesktopConnection(private val session: DesktopSession, private val mapper:
             .header("X-FlowLink-Device", session.deviceId)
             .header("Accept", req.getHeader("Accept") ?: "application/json")
             .method(req.method, if (bytes.isEmpty()) HttpRequest.BodyPublishers.noBody() else HttpRequest.BodyPublishers.ofByteArray(bytes)).build()
-        val res = client.send(request, HttpResponse.BodyHandlers.ofInputStream())
+        val res = send(request, HttpResponse.BodyHandlers.ofInputStream())
         if (res.statusCode() == 401 && state.token == jwt) logout()
         val body = res.body().use { it.readNBytes(64 * 1024 * 1024 + 1) }
         if (body.size > 64 * 1024 * 1024) throw BadRequestException("원격 응답 크기가 64MB를 초과했습니다.")
@@ -212,6 +215,14 @@ class DesktopConnection(private val session: DesktopSession, private val mapper:
         listOf("Content-Type", "Content-Disposition", "ETag").forEach { name -> res.headers().firstValue(name).ifPresent { response.header(name, it) } }
         return response.body(body)
     }
+
+    private fun <T> send(request: HttpRequest, handler: HttpResponse.BodyHandler<T>): HttpResponse<T> =
+        try { client.send(request, handler) }
+        catch (_: IOException) { throw serverUnavailable() }
+        catch (_: InterruptedException) { Thread.currentThread().interrupt(); throw serverUnavailable() }
+
+    private fun serverUnavailable() = ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
+        "회사 서버에 연결할 수 없습니다. 개인 워크스페이스는 계속 사용할 수 있습니다. 전송한 서버 작업은 결과를 확인한 뒤 다시 실행하세요.")
 
     companion object {
         fun validateUrl(value: String): String {

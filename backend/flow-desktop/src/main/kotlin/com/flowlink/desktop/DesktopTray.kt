@@ -193,7 +193,7 @@ class DesktopTray(
             row(button("자동 설정 보기") { statusDialog() }, button("IDE · 서버 MCP") { connectDialog() }, button("앱 업데이트") { updateDialog() }),
             nextTime,
         ))
-        val start = button("워크스페이스 열기", true) { remember(); browse(session.browserUrl() + "&runtime=local"); dialog.dispose() }
+        val start = button("개인 워크스페이스 열기", true) { remember(); browse(session.browserUrl() + "&runtime=local"); dialog.dispose() }
         content.add(row(button("닫기") { remember(); dialog.dispose() }, start), BorderLayout.SOUTH)
         dialog.rootPane.defaultButton = start
         return dialog

@@ -106,7 +106,7 @@ powershell -ExecutionPolicy Bypass -File scripts/package-desktop.ps1 `
 
 Vault AppRole 배포는 FLOWLINK_VAULT_TRANSIT_ENABLED=true와 FLOWLINK_VAULT_ADDRESS, FLOWLINK_VAULT_APPROLE_ROLE_ID, FLOWLINK_VAULT_APPROLE_SECRET_ID를 서버 환경에 제공한다. 해당 값은 infra/server.compose.yml에서 컨테이너에 전달한다. 검증용 dev Vault를 운영 저장소로 재사용하지 않는다.
 
-현재 저장소는 Flyway를 사용하지 않는다. 새 Oracle 설치는 `backend/runtime/src/main/resources/db/init.sql`, 기존 Oracle에는 `upgrade-workspace-resources.sql`, `upgrade-agent-execution.sql`, `upgrade-agent-tasks.sql`을 DBA 절차에 따라 적용한다. 개인 H2는 앱이 기존 자원 범위를 이관한다. DB와 암호화 키를 함께 백업해야 한다.
+현재 저장소는 Flyway를 사용하지 않는다. 새 Oracle 설치는 `backend/flow-server/src/main/resources/db/init.sql`, 기존 Oracle에는 `upgrade-workspace-resources.sql`, `upgrade-agent-execution.sql`, `upgrade-agent-tasks.sql`을 DBA 절차에 따라 적용한다. 개인 H2는 앱이 기존 자원 범위를 이관한다. DB와 암호화 키를 함께 백업해야 한다.
 
 ## 검증 범위
 

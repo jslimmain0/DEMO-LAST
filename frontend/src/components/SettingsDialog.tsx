@@ -42,7 +42,7 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
   const saveNotify = useMutation({ mutationFn: settingsApi.saveNotify,
     onSuccess: data => { qc.setQueryData(['settings', 'notify'], data); setNotifyDraft(null); toast('알림 설정을 저장했습니다.', 'ok') } })
   const login = useMutation({ mutationFn: desktopApi.login })
-  const mcpUrl = connection.data?.mcpUrl || desktop?.mcpUrl || (cfg.data?.mcpPort ? window.location.protocol + '//' + window.location.hostname + ':' + cfg.data.mcpPort + '/mcp' : '')
+  const mcpUrl = connection.data?.mcpUrl || desktop?.mcpUrl || cfg.data?.mcpUrl || ''
   const [confirmClose, setConfirmClose] = useState(false)
   const saving = saveServer.isPending || saveRelay.isPending || saveNotify.isPending
   const close = () => { if (saving) return; if (serverDirty || relayDirty || notifyDirty) setConfirmClose(true); else onClose() }

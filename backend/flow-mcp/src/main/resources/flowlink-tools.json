@@ -1,0 +1,2091 @@
+[
+  {
+    "name": "flowlink_status",
+    "title": "FlowLink 상태",
+    "description": "연결된 FlowLink 주소·인증 모드·로그인 상태·승인 여부. 다른 툴이 403 이면 먼저 이걸로 확인.",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "target": {
+          "description": "저장 자원 위치: local=로그인한 온라인 Windows 앱의 개인 H2, server=공용·팀. 생략=server. 노드 실행 위치와 별개입니다.",
+          "type": "string",
+          "enum": [
+            "local",
+            "server"
+          ]
+        },
+        "workspace": {
+          "description": "선택 target의 워크스페이스 이름 또는 id. 생략=local 개인 공간 / server 공용",
+          "type": "string"
+        }
+      }
+    }
+  },
+  {
+    "name": "flowlink_update_status",
+    "title": "앱 업데이트 확인",
+    "description": "서버의 현재 버전과 검증된 Windows 배포 버전을 조회합니다. PC 설치 버전을 알 수 없으면 최신이라고 추정하지 않습니다. 설치는 Windows 앱의 업데이트 창에서 사용자가 시작합니다.",
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": false
+    },
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "target": {
+          "description": "저장 자원 위치: local=로그인한 온라인 Windows 앱의 개인 H2, server=공용·팀. 생략=server. 노드 실행 위치와 별개입니다.",
+          "type": "string",
+          "enum": [
+            "local",
+            "server"
+          ]
+        },
+        "workspace": {
+          "description": "선택 target의 워크스페이스 이름 또는 id. 생략=local 개인 공간 / server 공용",
+          "type": "string"
+        }
+      }
+    }
+  },
+  {
+    "name": "flowlink_guide",
+    "title": "규격 가이드",
+    "description": "워크플로 그래프(flow=노드 타입 전체 레퍼런스, 각 노드 JSON 예시 포함)·프로토콜(protocol)·HTTP Mock(mock) JSON 규격과 에이전트 규약(rules) 원문. nodes=flow 별칭(노드 설명). 무언가 만들기 전에 해당 topic 을 한 번 읽는다. TRANSFORM 노드/코덱을 쓰려면 먼저 plugin_list. plugin=스크립트 플러그인 작성 규격+fl 헬퍼.",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "target": {
+          "description": "저장 자원 위치: local=로그인한 온라인 Windows 앱의 개인 H2, server=공용·팀. 생략=server. 노드 실행 위치와 별개입니다.",
+          "type": "string",
+          "enum": [
+            "local",
+            "server"
+          ]
+        },
+        "workspace": {
+          "description": "선택 target의 워크스페이스 이름 또는 id. 생략=local 개인 공간 / server 공용",
+          "type": "string"
+        },
+        "topic": {
+          "type": "string",
+          "enum": [
+            "flow",
+            "nodes",
+            "protocol",
+            "mock",
+            "plugin",
+            "rules",
+            "all"
+          ]
+        }
+      },
+      "required": [
+        "topic"
+      ]
+    }
+  },
+  {
+    "name": "workspace_list",
+    "title": "워크스페이스 목록",
+    "description": "선택한 target의 워크스페이스와 내 권한. target 생략=서버, local은 로그인한 Windows 앱이 온라인이어야 합니다.",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "target": {
+          "description": "저장 자원 위치: local=로그인한 온라인 Windows 앱의 개인 H2, server=공용·팀. 생략=server. 노드 실행 위치와 별개입니다.",
+          "type": "string",
+          "enum": [
+            "local",
+            "server"
+          ]
+        },
+        "workspace": {
+          "description": "선택 target의 워크스페이스 이름 또는 id. 생략=local 개인 공간 / server 공용",
+          "type": "string"
+        }
+      }
+    }
+  },
+  {
+    "name": "workspace_get",
+    "title": "워크스페이스 한눈에",
+    "description": "워크스페이스 하나의 폴더 트리 + 각 폴더의 워크플로 + Mock 목록. \"어느 워크스페이스의 어느 폴더에서\" 작업하기 전에 구조를 본다.",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "target": {
+          "description": "저장 자원 위치: local=로그인한 온라인 Windows 앱의 개인 H2, server=공용·팀. 생략=server. 노드 실행 위치와 별개입니다.",
+          "type": "string",
+          "enum": [
+            "local",
+            "server"
+          ]
+        },
+        "workspace": {
+          "description": "선택 target의 워크스페이스 이름 또는 id. 생략=local 개인 공간 / server 공용",
+          "type": "string"
+        }
+      }
+    }
+  },
+  {
+    "name": "workspace_export",
+    "title": "워크스페이스 내보내기",
+    "description": "워크스페이스 통째(폴더+워크플로 그래프+Mock spec)를 JSON 번들로. workspace_import 로 다른 워크스페이스/서버에 복사.",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "target": {
+          "description": "저장 자원 위치: local=로그인한 온라인 Windows 앱의 개인 H2, server=공용·팀. 생략=server. 노드 실행 위치와 별개입니다.",
+          "type": "string",
+          "enum": [
+            "local",
+            "server"
+          ]
+        },
+        "workspace": {
+          "description": "선택 target의 워크스페이스 이름 또는 id. 생략=local 개인 공간 / server 공용",
+          "type": "string"
+        }
+      }
+    }
+  },
+  {
+    "name": "workspace_import",
+    "title": "워크스페이스 가져오기",
+    "description": "workspace_export 번들을 이 워크스페이스로 가져온다(전부 새 id, slug 충돌은 자동 개명, TCP Mock 은 꺼서).",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "target": {
+          "description": "저장 자원 위치: local=로그인한 온라인 Windows 앱의 개인 H2, server=공용·팀. 생략=server. 노드 실행 위치와 별개입니다.",
+          "type": "string",
+          "enum": [
+            "local",
+            "server"
+          ]
+        },
+        "workspace": {
+          "description": "선택 target의 워크스페이스 이름 또는 id. 생략=local 개인 공간 / server 공용",
+          "type": "string"
+        },
+        "bundle": {
+          "anyOf": [
+            {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {}
+            },
+            {
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "required": [
+        "bundle"
+      ]
+    }
+  },
+  {
+    "name": "folder_list",
+    "title": "폴더 목록",
+    "description": "워크스페이스의 폴더(경로·id·워크플로 수).",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "target": {
+          "description": "저장 자원 위치: local=로그인한 온라인 Windows 앱의 개인 H2, server=공용·팀. 생략=server. 노드 실행 위치와 별개입니다.",
+          "type": "string",
+          "enum": [
+            "local",
+            "server"
+          ]
+        },
+        "workspace": {
+          "description": "선택 target의 워크스페이스 이름 또는 id. 생략=local 개인 공간 / server 공용",
+          "type": "string"
+        }
+      }
+    }
+  },
+  {
+    "name": "folder_create",
+    "title": "폴더 생성",
+    "description": "워크스페이스에 폴더를 만든다(parent 로 하위 폴더).",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "target": {
+          "description": "저장 자원 위치: local=로그인한 온라인 Windows 앱의 개인 H2, server=공용·팀. 생략=server. 노드 실행 위치와 별개입니다.",
+          "type": "string",
+          "enum": [
+            "local",
+            "server"
+          ]
+        },
+        "workspace": {
+          "description": "선택 target의 워크스페이스 이름 또는 id. 생략=local 개인 공간 / server 공용",
+          "type": "string"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "parent": {
+          "description": "폴더 이름 또는 \"상위/하위\" 경로(folder_list). 생략 또는 \"/\"=루트",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ]
+    }
+  },
+  {
+    "name": "folder_update",
+    "title": "폴더 이름 변경/이동",
+    "description": "name 으로 이름 변경, parent 로 다른 폴더 밑으로 이동(\"/\"=루트).",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "target": {
+          "description": "저장 자원 위치: local=로그인한 온라인 Windows 앱의 개인 H2, server=공용·팀. 생략=server. 노드 실행 위치와 별개입니다.",
+          "type": "string",
+          "enum": [
+            "local",
+            "server"
+          ]
+        },
+        "workspace": {
+          "description": "선택 target의 워크스페이스 이름 또는 id. 생략=local 개인 공간 / server 공용",
+          "type": "string"
+        },
+        "folder": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "parent": {
+          "description": "폴더 이름 또는 \"상위/하위\" 경로(folder_list). 생략 또는 \"/\"=루트",
+          "type": "string"
+        }
+      },
+      "required": [
+        "folder"
+      ]
+    }
+  },
+  {
+    "name": "folder_delete",
+    "title": "폴더 삭제",
+    "description": "폴더 삭제(안의 워크플로는 서버 규칙대로 — 비어 있지 않으면 실패할 수 있음).",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "target": {
+          "description": "저장 자원 위치: local=로그인한 온라인 Windows 앱의 개인 H2, server=공용·팀. 생략=server. 노드 실행 위치와 별개입니다.",
+          "type": "string",
+          "enum": [
+            "local",
+            "server"
+          ]
+        },
+        "workspace": {
+          "description": "선택 target의 워크스페이스 이름 또는 id. 생략=local 개인 공간 / server 공용",
+          "type": "string"
+        },
+        "folder": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "folder"
+      ]
+    }
+  },
+  {
+    "name": "protocol_list",
+    "title": "프로토콜 목록",
+    "description": "저장된 고정길이 전문 프로토콜 목록(id·이름·인코딩·전문 수).",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "target": {
+          "description": "저장 자원 위치: local=로그인한 온라인 Windows 앱의 개인 H2, server=공용·팀. 생략=server. 노드 실행 위치와 별개입니다.",
+          "type": "string",
+          "enum": [
+            "local",
+            "server"
+          ]
+        },
+        "workspace": {
+          "description": "선택 target의 워크스페이스 이름 또는 id. 생략=local 개인 공간 / server 공용",
+          "type": "string"
+        }
+      }
+    }
+  },
+  {
+    "name": "protocol_get",
+    "title": "프로토콜 조회",
+    "description": "id 또는 name 으로 프로토콜 spec JSON 을 가져온다.",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "target": {
+          "description": "저장 자원 위치: local=로그인한 온라인 Windows 앱의 개인 H2, server=공용·팀. 생략=server. 노드 실행 위치와 별개입니다.",
+          "type": "string",
+          "enum": [
+            "local",
+            "server"
+          ]
+        },
+        "workspace": {
+          "description": "선택 target의 워크스페이스 이름 또는 id. 생략=local 개인 공간 / server 공용",
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  {
+    "name": "protocol_upsert",
+    "title": "프로토콜 생성/갱신",
+    "description": "이름이 있으면 갱신, 없으면 생성. spec 은 flowlink_guide(protocol) 규격(JSON 객체 또는 JSON 문자열). 검증 실패는 서버 메시지로 돌려준다.",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "target": {
+          "description": "저장 자원 위치: local=로그인한 온라인 Windows 앱의 개인 H2, server=공용·팀. 생략=server. 노드 실행 위치와 별개입니다.",
+          "type": "string",
+          "enum": [
+            "local",
+            "server"
+          ]
+        },
+        "workspace": {
+          "description": "선택 target의 워크스페이스 이름 또는 id. 생략=local 개인 공간 / server 공용",
+          "type": "string"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "spec": {
+          "anyOf": [
+            {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {}
+            },
+            {
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "required": [
+        "name",
+        "spec"
+      ]
+    }
+  },
+  {
+    "name": "protocol_preview",
+    "title": "전문 조립 미리보기",
+    "description": "프로토콜(id/name 또는 spec)과 전문 key·값으로 실제 바이트를 조립해 hex/텍스트/필드 오프셋을 보여준다(전송 없음). 값 검증 오류도 여기서 잡힌다.",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "target": {
+          "description": "저장 자원 위치: local=로그인한 온라인 Windows 앱의 개인 H2, server=공용·팀. 생략=server. 노드 실행 위치와 별개입니다.",
+          "type": "string",
+          "enum": [
+            "local",
+            "server"
+          ]
+        },
+        "workspace": {
+          "description": "선택 target의 워크스페이스 이름 또는 id. 생략=local 개인 공간 / server 공용",
+          "type": "string"
+        },
+        "protocolId": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "spec": {
+          "anyOf": [
+            {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {}
+            },
+            {
+              "type": "string"
+            }
+          ]
+        },
+        "key": {
+          "type": "string"
+        },
+        "values": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "environment": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "key"
+      ]
+    }
+  },
+  {
+    "name": "protocol_delete",
+    "title": "프로토콜 삭제",
+    "description": "id 로 삭제(참조하는 노드/Mock 은 실행 시 실패).",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "target": {
+          "description": "저장 자원 위치: local=로그인한 온라인 Windows 앱의 개인 H2, server=공용·팀. 생략=server. 노드 실행 위치와 별개입니다.",
+          "type": "string",
+          "enum": [
+            "local",
+            "server"
+          ]
+        },
+        "workspace": {
+          "description": "선택 target의 워크스페이스 이름 또는 id. 생략=local 개인 공간 / server 공용",
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ]
+    }
+  },
+  {
+    "name": "mock_list",
+    "title": "Mock 목록",
+    "description": "선택한 공간의 Mock 서버(종류·주소/포트·실제 리스너 상태·프로토콜·최근 요청). 개인 Mock은 PC, 공용·팀 Mock은 서버에서 리슨한다.",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "target": {
+          "description": "저장 자원 위치: local=로그인한 온라인 Windows 앱의 개인 H2, server=공용·팀. 생략=server. 노드 실행 위치와 별개입니다.",
+          "type": "string",
+          "enum": [
+            "local",
+            "server"
+          ]
+        },
+        "workspace": {
+          "description": "선택 target의 워크스페이스 이름 또는 id. 생략=local 개인 공간 / server 공용",
+          "type": "string"
+        }
+      }
+    }
+  },
+  {
+    "name": "mock_get",
+    "title": "Mock 조회",
+    "description": "slug 로 Mock spec JSON 을 가져온다.",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "target": {
+          "description": "저장 자원 위치: local=로그인한 온라인 Windows 앱의 개인 H2, server=공용·팀. 생략=server. 노드 실행 위치와 별개입니다.",
+          "type": "string",
+          "enum": [
+            "local",
+            "server"
+          ]
+        },
+        "workspace": {
+          "description": "선택 target의 워크스페이스 이름 또는 id. 생략=local 개인 공간 / server 공용",
+          "type": "string"
+        },
+        "slug": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "slug"
+      ]
+    }
+  },
+  {
+    "name": "mock_upsert",
+    "title": "Mock 생성/갱신",
+    "description": "slug 가 있으면 spec 갱신, 없으면 생성 후 spec 저장. HTTP spec 은 flowlink_guide(mock) 규격, TCP spec 은 {\"tcp\":{\"port\",\"protocolId\",\"upstream\",\"timeoutMs\",\"rules\":[{\"id\",\"when\":[{\"field\",\"op\",\"value\"}],\"then\":{\"mode\":\"mock|proxy\",\"fields\":{...}},\"fault\":{...}}]}}. 저장 즉시 서빙/리스너 반영.",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "target": {
+          "description": "저장 자원 위치: local=로그인한 온라인 Windows 앱의 개인 H2, server=공용·팀. 생략=server. 노드 실행 위치와 별개입니다.",
+          "type": "string",
+          "enum": [
+            "local",
+            "server"
+          ]
+        },
+        "workspace": {
+          "description": "선택 target의 워크스페이스 이름 또는 id. 생략=local 개인 공간 / server 공용",
+          "type": "string"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "slug": {
+          "type": "string",
+          "pattern": "^[a-z0-9-]{3,40}$"
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "HTTP",
+            "TCP"
+          ]
+        },
+        "spec": {
+          "anyOf": [
+            {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {}
+            },
+            {
+              "type": "string"
+            }
+          ]
+        },
+        "enabled": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "name",
+        "slug",
+        "type",
+        "spec"
+      ]
+    }
+  },
+  {
+    "name": "mock_send",
+    "title": "TCP Mock 에 전문 보내기",
+    "description": "TCP Mock 리스너로 전문을 실제 소켓으로 보내고 프로토콜로 디코딩한 응답을 돌려준다(key=요청 전문 키, values=필드 값).",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "target": {
+          "description": "저장 자원 위치: local=로그인한 온라인 Windows 앱의 개인 H2, server=공용·팀. 생략=server. 노드 실행 위치와 별개입니다.",
+          "type": "string",
+          "enum": [
+            "local",
+            "server"
+          ]
+        },
+        "workspace": {
+          "description": "선택 target의 워크스페이스 이름 또는 id. 생략=local 개인 공간 / server 공용",
+          "type": "string"
+        },
+        "slug": {
+          "type": "string"
+        },
+        "key": {
+          "type": "string"
+        },
+        "values": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "slug",
+        "key"
+      ]
+    }
+  },
+  {
+    "name": "mock_log",
+    "title": "Mock 트래픽 로그",
+    "description": "TCP Mock 은 전문 로그(→/← · [mock]/[proxy]/[none] · 필드 · 부분 수신 · 경고), HTTP Mock 은 요청 기록. 최신순 limit 개.",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "target": {
+          "description": "저장 자원 위치: local=로그인한 온라인 Windows 앱의 개인 H2, server=공용·팀. 생략=server. 노드 실행 위치와 별개입니다.",
+          "type": "string",
+          "enum": [
+            "local",
+            "server"
+          ]
+        },
+        "workspace": {
+          "description": "선택 target의 워크스페이스 이름 또는 id. 생략=local 개인 공간 / server 공용",
+          "type": "string"
+        },
+        "slug": {
+          "type": "string"
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 200
+        },
+        "hex": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "slug"
+      ]
+    }
+  },
+  {
+    "name": "mock_delete",
+    "title": "Mock 삭제",
+    "description": "slug 로 Mock 삭제(리스너 닫힘).",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "target": {
+          "description": "저장 자원 위치: local=로그인한 온라인 Windows 앱의 개인 H2, server=공용·팀. 생략=server. 노드 실행 위치와 별개입니다.",
+          "type": "string",
+          "enum": [
+            "local",
+            "server"
+          ]
+        },
+        "workspace": {
+          "description": "선택 target의 워크스페이스 이름 또는 id. 생략=local 개인 공간 / server 공용",
+          "type": "string"
+        },
+        "slug": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "slug"
+      ]
+    }
+  },
+  {
+    "name": "mock_versions",
+    "title": "Mock 버전 목록",
+    "description": "spec 저장 이력(버전 번호·시각·메모·고정).",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "target": {
+          "description": "저장 자원 위치: local=로그인한 온라인 Windows 앱의 개인 H2, server=공용·팀. 생략=server. 노드 실행 위치와 별개입니다.",
+          "type": "string",
+          "enum": [
+            "local",
+            "server"
+          ]
+        },
+        "workspace": {
+          "description": "선택 target의 워크스페이스 이름 또는 id. 생략=local 개인 공간 / server 공용",
+          "type": "string"
+        },
+        "slug": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "slug"
+      ]
+    }
+  },
+  {
+    "name": "mock_version",
+    "title": "Mock 특정 버전",
+    "description": "기본은 그 버전 spec JSON 조회. restore=true 면 그 버전을 새 현재 버전으로 복원(즉시 반영), pinned 를 주면 고정/해제.",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "target": {
+          "description": "저장 자원 위치: local=로그인한 온라인 Windows 앱의 개인 H2, server=공용·팀. 생략=server. 노드 실행 위치와 별개입니다.",
+          "type": "string",
+          "enum": [
+            "local",
+            "server"
+          ]
+        },
+        "workspace": {
+          "description": "선택 target의 워크스페이스 이름 또는 id. 생략=local 개인 공간 / server 공용",
+          "type": "string"
+        },
+        "slug": {
+          "type": "string"
+        },
+        "versionNo": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "restore": {
+          "type": "boolean"
+        },
+        "pinned": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "slug",
+        "versionNo"
+      ]
+    }
+  },
+  {
+    "name": "mock_state",
+    "title": "Mock 런타임 상태",
+    "description": "상태 변수(state)·규칙별 히트 수·seq·요청 수 — 시나리오형 Mock 디버깅.",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "target": {
+          "description": "저장 자원 위치: local=로그인한 온라인 Windows 앱의 개인 H2, server=공용·팀. 생략=server. 노드 실행 위치와 별개입니다.",
+          "type": "string",
+          "enum": [
+            "local",
+            "server"
+          ]
+        },
+        "workspace": {
+          "description": "선택 target의 워크스페이스 이름 또는 id. 생략=local 개인 공간 / server 공용",
+          "type": "string"
+        },
+        "slug": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "slug"
+      ]
+    }
+  },
+  {
+    "name": "mock_reset",
+    "title": "Mock 상태 초기화",
+    "description": "상태 변수·히트 카운터·seq 를 초기화(spec 은 그대로).",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "target": {
+          "description": "저장 자원 위치: local=로그인한 온라인 Windows 앱의 개인 H2, server=공용·팀. 생략=server. 노드 실행 위치와 별개입니다.",
+          "type": "string",
+          "enum": [
+            "local",
+            "server"
+          ]
+        },
+        "workspace": {
+          "description": "선택 target의 워크스페이스 이름 또는 id. 생략=local 개인 공간 / server 공용",
+          "type": "string"
+        },
+        "slug": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "slug"
+      ]
+    }
+  },
+  {
+    "name": "mock_clear_log",
+    "title": "Mock 로그 비우기",
+    "description": "요청 기록(HTTP)·전문 로그(TCP)를 비운다 — 테스트 전 깨끗한 상태로.",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "target": {
+          "description": "저장 자원 위치: local=로그인한 온라인 Windows 앱의 개인 H2, server=공용·팀. 생략=server. 노드 실행 위치와 별개입니다.",
+          "type": "string",
+          "enum": [
+            "local",
+            "server"
+          ]
+        },
+        "workspace": {
+          "description": "선택 target의 워크스페이스 이름 또는 id. 생략=local 개인 공간 / server 공용",
+          "type": "string"
+        },
+        "slug": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "slug"
+      ]
+    }
+  },
+  {
+    "name": "mock_usages",
+    "title": "Mock 을 쓰는 워크플로",
+    "description": "선택한 공간의 각 Mock 을 어느 워크플로가 참조하는지(삭제/변경 전 영향 확인).",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "target": {
+          "description": "저장 자원 위치: local=로그인한 온라인 Windows 앱의 개인 H2, server=공용·팀. 생략=server. 노드 실행 위치와 별개입니다.",
+          "type": "string",
+          "enum": [
+            "local",
+            "server"
+          ]
+        },
+        "workspace": {
+          "description": "선택 target의 워크스페이스 이름 또는 id. 생략=local 개인 공간 / server 공용",
+          "type": "string"
+        }
+      }
+    }
+  },
+  {
+    "name": "codec_try",
+    "title": "코덱 시험",
+    "description": "Mock 코덱(변환 단계 목록)을 샘플 전문에 적용해 단계별 입출력을 본다(저장 안 함). codec={\"request\":[step…],\"response\":[step…]} — flowlink_guide(mock) 규격, side=request|response.",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "target": {
+          "description": "저장 자원 위치: local=로그인한 온라인 Windows 앱의 개인 H2, server=공용·팀. 생략=server. 노드 실행 위치와 별개입니다.",
+          "type": "string",
+          "enum": [
+            "local",
+            "server"
+          ]
+        },
+        "workspace": {
+          "description": "선택 target의 워크스페이스 이름 또는 id. 생략=local 개인 공간 / server 공용",
+          "type": "string"
+        },
+        "slug": {
+          "type": "string"
+        },
+        "codec": {
+          "anyOf": [
+            {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {}
+            },
+            {
+              "type": "string"
+            }
+          ]
+        },
+        "side": {
+          "type": "string",
+          "enum": [
+            "request",
+            "response"
+          ]
+        },
+        "message": {
+          "type": "string"
+        },
+        "headers": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "contentType": {
+          "type": "string"
+        },
+        "environment": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "slug",
+        "codec"
+      ]
+    }
+  },
+  {
+    "name": "flow_list",
+    "title": "워크플로 목록",
+    "description": "선택한 공간의 워크플로 목록(폴더 경로/이름·id·노드 수·수정 시각). folder 로 그 폴더만.",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "target": {
+          "description": "저장 자원 위치: local=로그인한 온라인 Windows 앱의 개인 H2, server=공용·팀. 생략=server. 노드 실행 위치와 별개입니다.",
+          "type": "string",
+          "enum": [
+            "local",
+            "server"
+          ]
+        },
+        "workspace": {
+          "description": "선택 target의 워크스페이스 이름 또는 id. 생략=local 개인 공간 / server 공용",
+          "type": "string"
+        },
+        "folder": {
+          "description": "폴더 이름 또는 \"상위/하위\" 경로(folder_list). 생략 또는 \"/\"=루트",
+          "type": "string"
+        }
+      }
+    }
+  },
+  {
+    "name": "flow_get",
+    "title": "워크플로 조회",
+    "description": "id 로 현재 그래프 JSON(nodes/edges)을 가져온다.",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "target": {
+          "description": "저장 자원 위치: local=로그인한 온라인 Windows 앱의 개인 H2, server=공용·팀. 생략=server. 노드 실행 위치와 별개입니다.",
+          "type": "string",
+          "enum": [
+            "local",
+            "server"
+          ]
+        },
+        "workspace": {
+          "description": "선택 target의 워크스페이스 이름 또는 id. 생략=local 개인 공간 / server 공용",
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ]
+    }
+  },
+  {
+    "name": "flow_upsert",
+    "title": "워크플로 저장",
+    "description": "graph(flowlink_guide(flow) 규격: nodes/edges, START·END 필수)를 새 버전으로 저장. id 없으면 name 으로 새 워크플로 생성 — workspace·folder 로 어디에 만들지 지목(기존 워크플로 이동은 flow_update). 검증 실패는 서버 메시지.",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "target": {
+          "description": "저장 자원 위치: local=로그인한 온라인 Windows 앱의 개인 H2, server=공용·팀. 생략=server. 노드 실행 위치와 별개입니다.",
+          "type": "string",
+          "enum": [
+            "local",
+            "server"
+          ]
+        },
+        "workspace": {
+          "description": "선택 target의 워크스페이스 이름 또는 id. 생략=local 개인 공간 / server 공용",
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "graph": {
+          "anyOf": [
+            {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {}
+            },
+            {
+              "type": "string"
+            }
+          ]
+        },
+        "note": {
+          "type": "string"
+        },
+        "folder": {
+          "description": "폴더 이름 또는 \"상위/하위\" 경로(folder_list). 생략 또는 \"/\"=루트",
+          "type": "string"
+        }
+      },
+      "required": [
+        "graph"
+      ]
+    }
+  },
+  {
+    "name": "flow_update",
+    "title": "워크플로 이름/설명/폴더 변경",
+    "description": "name·description 변경, folder 로 같은 워크스페이스의 다른 폴더로 이동(\"/\"=루트).",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "target": {
+          "description": "저장 자원 위치: local=로그인한 온라인 Windows 앱의 개인 H2, server=공용·팀. 생략=server. 노드 실행 위치와 별개입니다.",
+          "type": "string",
+          "enum": [
+            "local",
+            "server"
+          ]
+        },
+        "workspace": {
+          "description": "선택 target의 워크스페이스 이름 또는 id. 생략=local 개인 공간 / server 공용",
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "folder": {
+          "description": "폴더 이름 또는 \"상위/하위\" 경로(folder_list). 생략 또는 \"/\"=루트",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ]
+    }
+  },
+  {
+    "name": "flow_delete",
+    "title": "워크플로 삭제",
+    "description": "id 로 워크플로 삭제.",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "target": {
+          "description": "저장 자원 위치: local=로그인한 온라인 Windows 앱의 개인 H2, server=공용·팀. 생략=server. 노드 실행 위치와 별개입니다.",
+          "type": "string",
+          "enum": [
+            "local",
+            "server"
+          ]
+        },
+        "workspace": {
+          "description": "선택 target의 워크스페이스 이름 또는 id. 생략=local 개인 공간 / server 공용",
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ]
+    }
+  },
+  {
+    "name": "flow_versions",
+    "title": "워크플로 버전 목록",
+    "description": "저장 이력(버전 번호·시각·작성자·메모·고정).",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "target": {
+          "description": "저장 자원 위치: local=로그인한 온라인 Windows 앱의 개인 H2, server=공용·팀. 생략=server. 노드 실행 위치와 별개입니다.",
+          "type": "string",
+          "enum": [
+            "local",
+            "server"
+          ]
+        },
+        "workspace": {
+          "description": "선택 target의 워크스페이스 이름 또는 id. 생략=local 개인 공간 / server 공용",
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ]
+    }
+  },
+  {
+    "name": "flow_version",
+    "title": "워크플로 특정 버전",
+    "description": "기본은 그 버전 그래프 JSON 조회(diff 용). restore=true 면 그 버전을 새 현재 버전으로 복원, pinned 를 주면 고정/해제.",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "target": {
+          "description": "저장 자원 위치: local=로그인한 온라인 Windows 앱의 개인 H2, server=공용·팀. 생략=server. 노드 실행 위치와 별개입니다.",
+          "type": "string",
+          "enum": [
+            "local",
+            "server"
+          ]
+        },
+        "workspace": {
+          "description": "선택 target의 워크스페이스 이름 또는 id. 생략=local 개인 공간 / server 공용",
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "versionNo": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "restore": {
+          "type": "boolean"
+        },
+        "pinned": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "versionNo"
+      ]
+    }
+  },
+  {
+    "name": "flow_run",
+    "title": "워크플로 실행",
+    "description": "실행을 시작하고 끝날 때까지(최대 timeoutSec, 기본 120초) 기다린 뒤 노드별 결과·출력·실패 사유를 돌려준다. input={{키@input}} 값, envName=활성 환경 이름.",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "target": {
+          "description": "저장 자원 위치: local=로그인한 온라인 Windows 앱의 개인 H2, server=공용·팀. 생략=server. 노드 실행 위치와 별개입니다.",
+          "type": "string",
+          "enum": [
+            "local",
+            "server"
+          ]
+        },
+        "workspace": {
+          "description": "선택 target의 워크스페이스 이름 또는 id. 생략=local 개인 공간 / server 공용",
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "input": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {}
+        },
+        "envName": {
+          "type": "string"
+        },
+        "timeoutSec": {
+          "type": "integer",
+          "minimum": 5,
+          "maximum": 600
+        }
+      },
+      "required": [
+        "id"
+      ]
+    }
+  },
+  {
+    "name": "execution_get",
+    "title": "실행 상세",
+    "description": "실행 id 의 노드별 요청/응답/출력(full=true 면 전문 전체).",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "target": {
+          "description": "저장 자원 위치: local=로그인한 온라인 Windows 앱의 개인 H2, server=공용·팀. 생략=server. 노드 실행 위치와 별개입니다.",
+          "type": "string",
+          "enum": [
+            "local",
+            "server"
+          ]
+        },
+        "workspace": {
+          "description": "선택 target의 워크스페이스 이름 또는 id. 생략=local 개인 공간 / server 공용",
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "full": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id"
+      ]
+    }
+  },
+  {
+    "name": "execution_list",
+    "title": "실행 이력",
+    "description": "최근 실행 목록. flowId·status(PENDING/RUNNING/WAITING/SUCCEEDED/FAILED…)·workspace 로 좁힌다.",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "target": {
+          "description": "저장 자원 위치: local=로그인한 온라인 Windows 앱의 개인 H2, server=공용·팀. 생략=server. 노드 실행 위치와 별개입니다.",
+          "type": "string",
+          "enum": [
+            "local",
+            "server"
+          ]
+        },
+        "workspace": {
+          "description": "선택 target의 워크스페이스 이름 또는 id. 생략=local 개인 공간 / server 공용",
+          "type": "string"
+        },
+        "flowId": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        }
+      }
+    }
+  },
+  {
+    "name": "execution_resume",
+    "title": "대기 중 실행 재개",
+    "description": "대기 중인 실행을 재개합니다. INPUT은 values, abort=true는 중단. client HTTP는 온라인 PC 에이전트가 실제 요청 후 재개합니다. FORM은 앱 화면에서 실제 제출이 필요하며 MCP가 팝업 성공을 가장하지 않습니다. WAIT·pendingAgent는 현재 상태를 반환하며 UNKNOWN은 재실행하지 마세요.",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "target": {
+          "description": "저장 자원 위치: local=로그인한 온라인 Windows 앱의 개인 H2, server=공용·팀. 생략=server. 노드 실행 위치와 별개입니다.",
+          "type": "string",
+          "enum": [
+            "local",
+            "server"
+          ]
+        },
+        "workspace": {
+          "description": "선택 target의 워크스페이스 이름 또는 id. 생략=local 개인 공간 / server 공용",
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "values": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {}
+        },
+        "abort": {
+          "type": "boolean"
+        },
+        "timeoutSec": {
+          "type": "integer",
+          "minimum": 5,
+          "maximum": 600
+        }
+      },
+      "required": [
+        "id"
+      ]
+    }
+  },
+  {
+    "name": "execution_rerun",
+    "title": "같은 조건으로 재실행",
+    "description": "실행 id 와 같은 버전·입력으로 다시 실행하고 끝까지 기다린다.",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "target": {
+          "description": "저장 자원 위치: local=로그인한 온라인 Windows 앱의 개인 H2, server=공용·팀. 생략=server. 노드 실행 위치와 별개입니다.",
+          "type": "string",
+          "enum": [
+            "local",
+            "server"
+          ]
+        },
+        "workspace": {
+          "description": "선택 target의 워크스페이스 이름 또는 id. 생략=local 개인 공간 / server 공용",
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "timeoutSec": {
+          "type": "integer",
+          "minimum": 5,
+          "maximum": 600
+        }
+      },
+      "required": [
+        "id"
+      ]
+    }
+  },
+  {
+    "name": "node_run",
+    "title": "노드 하나만 실행",
+    "description": "저장된 워크플로의 노드 하나를 지정 에이전트에서 실행하고 이력을 남긴다. input={{키@input}} 값, upstream={소스노드ID:{키:값}}로 상류 출력 대입. UNKNOWN이나 시간 초과 때 재호출하지 말고 execution_get으로 확인한다.",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "target": {
+          "description": "저장 자원 위치: local=로그인한 온라인 Windows 앱의 개인 H2, server=공용·팀. 생략=server. 노드 실행 위치와 별개입니다.",
+          "type": "string",
+          "enum": [
+            "local",
+            "server"
+          ]
+        },
+        "workspace": {
+          "description": "선택 target의 워크스페이스 이름 또는 id. 생략=local 개인 공간 / server 공용",
+          "type": "string"
+        },
+        "flowId": {
+          "type": "string"
+        },
+        "nodeId": {
+          "type": "string"
+        },
+        "input": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {}
+        },
+        "envName": {
+          "type": "string"
+        },
+        "upstream": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          }
+        }
+      },
+      "required": [
+        "flowId",
+        "nodeId"
+      ]
+    }
+  },
+  {
+    "name": "suite_run",
+    "title": "여러 워크플로 일괄 실행(스위트)",
+    "description": "폴더(workspace+folder) 안의 워크플로 전부, 또는 flowIds 를 한 번에 실행하고 끝날 때까지(최대 timeoutSec, 기본 180초) 기다려 성공/실패 표를 준다.",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "target": {
+          "description": "저장 자원 위치: local=로그인한 온라인 Windows 앱의 개인 H2, server=공용·팀. 생략=server. 노드 실행 위치와 별개입니다.",
+          "type": "string",
+          "enum": [
+            "local",
+            "server"
+          ]
+        },
+        "workspace": {
+          "description": "선택 target의 워크스페이스 이름 또는 id. 생략=local 개인 공간 / server 공용",
+          "type": "string"
+        },
+        "folder": {
+          "description": "폴더 이름 또는 \"상위/하위\" 경로(folder_list). 생략 또는 \"/\"=루트",
+          "type": "string"
+        },
+        "flowIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "timeoutSec": {
+          "type": "integer",
+          "minimum": 5,
+          "maximum": 900
+        }
+      }
+    }
+  },
+  {
+    "name": "env_list",
+    "title": "환경 목록",
+    "description": "실행 환경(dev/staging/prod)과 변수({{ 키@env }}).",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "target": {
+          "description": "저장 자원 위치: local=로그인한 온라인 Windows 앱의 개인 H2, server=공용·팀. 생략=server. 노드 실행 위치와 별개입니다.",
+          "type": "string",
+          "enum": [
+            "local",
+            "server"
+          ]
+        },
+        "workspace": {
+          "description": "선택 target의 워크스페이스 이름 또는 id. 생략=local 개인 공간 / server 공용",
+          "type": "string"
+        }
+      }
+    }
+  },
+  {
+    "name": "env_put",
+    "title": "환경 변수 저장",
+    "description": "환경 name 의 변수를 통째로 교체(없으면 생성). 비밀은 여기 말고 시크릿 볼트(화면)에 — secret_list 로 이름 확인.",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "target": {
+          "description": "저장 자원 위치: local=로그인한 온라인 Windows 앱의 개인 H2, server=공용·팀. 생략=server. 노드 실행 위치와 별개입니다.",
+          "type": "string",
+          "enum": [
+            "local",
+            "server"
+          ]
+        },
+        "workspace": {
+          "description": "선택 target의 워크스페이스 이름 또는 id. 생략=local 개인 공간 / server 공용",
+          "type": "string"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "vars": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "name",
+        "vars"
+      ]
+    }
+  },
+  {
+    "name": "env_rename",
+    "title": "환경 이름 변경",
+    "description": "환경 이름 변경",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "target": {
+          "description": "저장 자원 위치: local=로그인한 온라인 Windows 앱의 개인 H2, server=공용·팀. 생략=server. 노드 실행 위치와 별개입니다.",
+          "type": "string",
+          "enum": [
+            "local",
+            "server"
+          ]
+        },
+        "workspace": {
+          "description": "선택 target의 워크스페이스 이름 또는 id. 생략=local 개인 공간 / server 공용",
+          "type": "string"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "to": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "name",
+        "to"
+      ]
+    }
+  },
+  {
+    "name": "env_delete",
+    "title": "환경 삭제",
+    "description": "환경 삭제",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "target": {
+          "description": "저장 자원 위치: local=로그인한 온라인 Windows 앱의 개인 H2, server=공용·팀. 생략=server. 노드 실행 위치와 별개입니다.",
+          "type": "string",
+          "enum": [
+            "local",
+            "server"
+          ]
+        },
+        "workspace": {
+          "description": "선택 target의 워크스페이스 이름 또는 id. 생략=local 개인 공간 / server 공용",
+          "type": "string"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "name"
+      ]
+    }
+  },
+  {
+    "name": "flow_run_input",
+    "title": "워크플로 기본 실행 입력",
+    "description": "워크플로에 저장된 기본 실행 입력({{키@input}} 기본값) 조회, vars 를 주면 통째로 교체.",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "target": {
+          "description": "저장 자원 위치: local=로그인한 온라인 Windows 앱의 개인 H2, server=공용·팀. 생략=server. 노드 실행 위치와 별개입니다.",
+          "type": "string",
+          "enum": [
+            "local",
+            "server"
+          ]
+        },
+        "workspace": {
+          "description": "선택 target의 워크스페이스 이름 또는 id. 생략=local 개인 공간 / server 공용",
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "vars": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "id"
+      ]
+    }
+  },
+  {
+    "name": "secret_list",
+    "title": "시크릿 이름 목록",
+    "description": "시크릿 볼트의 이름(값은 안 보임)과 환경 스코프 — {{ 이름@secret }} 으로 참조. 값 저장은 화면에서.",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "target": {
+          "description": "저장 자원 위치: local=로그인한 온라인 Windows 앱의 개인 H2, server=공용·팀. 생략=server. 노드 실행 위치와 별개입니다.",
+          "type": "string",
+          "enum": [
+            "local",
+            "server"
+          ]
+        },
+        "workspace": {
+          "description": "선택 target의 워크스페이스 이름 또는 id. 생략=local 개인 공간 / server 공용",
+          "type": "string"
+        }
+      }
+    }
+  },
+  {
+    "name": "plugin_list",
+    "title": "플러그인 목록(변환·코덱)",
+    "description": "쓸 수 있는 플러그인 목록(승인본만) — 변환(transform: TRANSFORM 노드·Mock 코덱 단계)과 코덱(fieldCodec: 프로토콜 필드 / messageCodec: 전문 본문 전체). 암복호화·해시·서명·마스킹이 필요하면 값을 직접 만들지 말고 여기 있는 플러그인을 건다 — 필드 하나=프로토콜 Field.plugin, 전문 전체=messagePlugins, Mock=codec.request/response, 워크플로=TRANSFORM 노드. 없으면 plugin_script_upsert 로 만들어 승인 요청(flowlink_guide(plugin) 에 규격·부착 위치·물어볼 것 정리).",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "target": {
+          "description": "저장 자원 위치: local=로그인한 온라인 Windows 앱의 개인 H2, server=공용·팀. 생략=server. 노드 실행 위치와 별개입니다.",
+          "type": "string",
+          "enum": [
+            "local",
+            "server"
+          ]
+        },
+        "workspace": {
+          "description": "선택 target의 워크스페이스 이름 또는 id. 생략=local 개인 공간 / server 공용",
+          "type": "string"
+        }
+      }
+    }
+  },
+  {
+    "name": "transform_preview",
+    "title": "변환 미리보기",
+    "description": "변환 플러그인을 샘플 입력(inputs)·설정(config)으로 실행해 결과를 확인한다(순수 계산, 네트워크 없음). TRANSFORM 노드를 배선하기 전에 config 를 맞추는 용도.",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "target": {
+          "description": "저장 자원 위치: local=로그인한 온라인 Windows 앱의 개인 H2, server=공용·팀. 생략=server. 노드 실행 위치와 별개입니다.",
+          "type": "string",
+          "enum": [
+            "local",
+            "server"
+          ]
+        },
+        "workspace": {
+          "description": "선택 target의 워크스페이스 이름 또는 id. 생략=local 개인 공간 / server 공용",
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "inputs": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "config": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "environment": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ]
+    }
+  },
+  {
+    "name": "plugin_script_list",
+    "title": "스크립트 플러그인 목록(초안·승인 대기·승인·반려)",
+    "description": "화면 /plugins 의 JS 스크립트 플러그인 전부 — 상태·서빙 여부·사용처 수·id. 레지스트리(TRANSFORM 노드·코덱에서 쓸 수 있는 것)에는 승인본만 오른다 → 그건 plugin_list.",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "target": {
+          "description": "저장 자원 위치: local=로그인한 온라인 Windows 앱의 개인 H2, server=공용·팀. 생략=server. 노드 실행 위치와 별개입니다.",
+          "type": "string",
+          "enum": [
+            "local",
+            "server"
+          ]
+        },
+        "workspace": {
+          "description": "선택 target의 워크스페이스 이름 또는 id. 생략=local 개인 공간 / server 공용",
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "DRAFT",
+            "PENDING",
+            "APPROVED",
+            "REJECTED"
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "plugin_script_get",
+    "title": "스크립트 플러그인 조회(소스 포함)",
+    "description": "uuid·플러그인 id·이름으로 초안 소스·상태·컴파일 메타(입출력·파라미터)·반려 사유를 본다.",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "target": {
+          "description": "저장 자원 위치: local=로그인한 온라인 Windows 앱의 개인 H2, server=공용·팀. 생략=server. 노드 실행 위치와 별개입니다.",
+          "type": "string",
+          "enum": [
+            "local",
+            "server"
+          ]
+        },
+        "workspace": {
+          "description": "선택 target의 워크스페이스 이름 또는 id. 생략=local 개인 공간 / server 공용",
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ]
+    }
+  },
+  {
+    "name": "plugin_script_try",
+    "title": "스크립트 플러그인 시험 실행(저장 없음)",
+    "description": "소스를 샌드박스에서 1회 실행한다 — 저장하지 않으며 컴파일 검사를 겸한다(오류는 \"N행 M열: …\"). 입력을 안 주면 컴파일만(메타). transform: inputs·config · fieldCodec: value + fn(encode|decode) + direction(send|recv) (+message) · messageCodec: bytesB64 + fn. 입력·config 의 {{ 이름@secret }}·{{ 키@env }} 는 environment(환경 이름)로 서버가 푼다. 작성 규격과 fl.* 함수는 flowlink_guide(plugin).",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "target": {
+          "description": "저장 자원 위치: local=로그인한 온라인 Windows 앱의 개인 H2, server=공용·팀. 생략=server. 노드 실행 위치와 별개입니다.",
+          "type": "string",
+          "enum": [
+            "local",
+            "server"
+          ]
+        },
+        "workspace": {
+          "description": "선택 target의 워크스페이스 이름 또는 id. 생략=local 개인 공간 / server 공용",
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "inputs": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "config": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "value": {
+          "type": "string"
+        },
+        "fn": {
+          "type": "string",
+          "enum": [
+            "encode",
+            "decode"
+          ]
+        },
+        "direction": {
+          "type": "string",
+          "enum": [
+            "send",
+            "recv"
+          ]
+        },
+        "message": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "bytesB64": {
+          "type": "string"
+        },
+        "environment": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "source"
+      ]
+    }
+  },
+  {
+    "name": "plugin_script_upsert",
+    "title": "스크립트 플러그인 초안 저장(생성/갱신)",
+    "description": "서버가 컴파일해 통과하면 초안으로 저장한다(오류면 \"N행 M열: …\"). id(uuid·플러그인 id·이름)를 주면 갱신, 없으면 생성. 초안은 레지스트리에 오르지 않는다 → plugin_script_try 로 검증 → plugin_script_submit 으로 승인 요청 → 관리자가 화면(/admin)에서 승인해야 TRANSFORM 노드·코덱에서 쓸 수 있다. 승인본이 있는 플러그인은 새 초안이 승인될 때까지 승인본이 계속 서빙된다.",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "target": {
+          "description": "저장 자원 위치: local=로그인한 온라인 Windows 앱의 개인 H2, server=공용·팀. 생략=server. 노드 실행 위치와 별개입니다.",
+          "type": "string",
+          "enum": [
+            "local",
+            "server"
+          ]
+        },
+        "workspace": {
+          "description": "선택 target의 워크스페이스 이름 또는 id. 생략=local 개인 공간 / server 공용",
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "source"
+      ]
+    }
+  },
+  {
+    "name": "plugin_script_submit",
+    "title": "스크립트 플러그인 승인 요청 / 철회",
+    "description": "초안(DRAFT·REJECTED, 또는 승인본과 다른 초안)을 승인 요청(→PENDING)하거나 요청을 철회(→DRAFT). 승인·반려는 관리자만, 화면에서.",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "target": {
+          "description": "저장 자원 위치: local=로그인한 온라인 Windows 앱의 개인 H2, server=공용·팀. 생략=server. 노드 실행 위치와 별개입니다.",
+          "type": "string",
+          "enum": [
+            "local",
+            "server"
+          ]
+        },
+        "workspace": {
+          "description": "선택 target의 워크스페이스 이름 또는 id. 생략=local 개인 공간 / server 공용",
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "action": {
+          "type": "string",
+          "enum": [
+            "submit",
+            "withdraw"
+          ]
+        }
+      },
+      "required": [
+        "id"
+      ]
+    }
+  },
+  {
+    "name": "plugin_script_wait",
+    "title": "스크립트 플러그인 승인 결과 기다리기",
+    "description": "승인 요청한 플러그인의 상태가 바뀔 때까지 기다린다(3초 간격 폴링, 기본 45초·최대 120초 — 클라이언트 툴 타임아웃 안). 흐름: plugin_script_submit → 사용자에게 \"승인 대기 중(관리자 승인 필요)\" 알림 → plugin_script_wait → 승인되면 사용자에게 알리고 이어서 배선, 반려면 사유를 전하고 초안을 고친다. 시간 안에 안 바뀌면 \"아직 대기\" 로 돌아오니 다시 부르면 이어서 기다린다.",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "target": {
+          "description": "저장 자원 위치: local=로그인한 온라인 Windows 앱의 개인 H2, server=공용·팀. 생략=server. 노드 실행 위치와 별개입니다.",
+          "type": "string",
+          "enum": [
+            "local",
+            "server"
+          ]
+        },
+        "workspace": {
+          "description": "선택 target의 워크스페이스 이름 또는 id. 생략=local 개인 공간 / server 공용",
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "timeoutSec": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 120
+        }
+      },
+      "required": [
+        "id"
+      ]
+    }
+  },
+  {
+    "name": "http_request",
+    "title": "HTTP 요청 보내기(테스트)",
+    "description": "선택한 에이전트에서 Mock·콜백·외부 URL에 HTTP 요청을 보냅니다. executionAgent 생략=server, local=온라인 Windows 앱. target/workspace는 저장 공간이며 요청 출발지와 별개입니다. /로 시작한 URL은 선택 에이전트 주소 기준입니다. 관리 토큰은 대상에 자동 첨부하지 않습니다. MCP 프로세스는 대상 URL을 직접 호출하지 않습니다.",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "target": {
+          "description": "저장 자원 위치: local=로그인한 온라인 Windows 앱의 개인 H2, server=공용·팀. 생략=server. 노드 실행 위치와 별개입니다.",
+          "type": "string",
+          "enum": [
+            "local",
+            "server"
+          ]
+        },
+        "workspace": {
+          "description": "선택 target의 워크스페이스 이름 또는 id. 생략=local 개인 공간 / server 공용",
+          "type": "string"
+        },
+        "method": {
+          "type": "string",
+          "enum": [
+            "GET",
+            "POST",
+            "PUT",
+            "PATCH",
+            "DELETE",
+            "HEAD"
+          ]
+        },
+        "url": {
+          "type": "string"
+        },
+        "headers": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "body": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {}
+            }
+          ]
+        },
+        "timeoutSec": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 120
+        },
+        "executionAgent": {
+          "type": "string",
+          "enum": [
+            "local",
+            "server"
+          ],
+          "description": "요청을 보내는 에이전트. 생략=server. local은 로그인한 Windows 앱이 필요합니다."
+        }
+      },
+      "required": [
+        "url"
+      ]
+    }
+  }
+]

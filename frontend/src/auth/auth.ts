@@ -1,9 +1,10 @@
 import { http } from '../api/client'
 
-/** 백엔드 /auth/config — 인증 모드 발견. mode: "github"(GitHub 로그인) | "none"(dev, 로그인 없음). mcpPort: 옆에 뜬 MCP HTTP 서버 포트(없으면 null). */
+/** 백엔드 /auth/config — 인증 모드 발견. mode: "github"(GitHub 로그인) | "none"(dev, 로그인 없음). mcpUrl: 중앙 서버 MCP 주소(개인 호스트는 null). */
 export interface AuthConfig {
   enabled: boolean
   mode: string
+  mcpUrl?: string | null
   mcpPort?: number | null
   runtime?: { kind: 'local' | 'server'; name: string; deviceId?: string | null }
 }

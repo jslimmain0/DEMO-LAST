@@ -1,5 +1,0 @@
-{
-  "mcpServers": {
-    "flowlink": { "type": "http", "url": "http://localhost:18090/mcp" }
-  }
-}

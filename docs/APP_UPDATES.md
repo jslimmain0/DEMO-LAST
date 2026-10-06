@@ -14,7 +14,7 @@ Windows 앱·트레이·PC 실행 기능은 MSI 한 개로 함께 업데이트�
 
 ## 배포 준비
 
-루트 `VERSION`이 서버 JAR와 Windows MSI의 버전 기준이다. 같은 버전 번호로 내용이 다른 설치파일을 다시 배포하지 않는다. Maven/Gradle 개발 버전이나 파일명 추정으로 현재 버전을 표시하지 않는다. MCP 프로세스 버전은 `mcp/package.json`에서 별도로 표시한다.
+루트 `VERSION`이 서버 JAR·중앙 `flow-mcp` 라이브러리와 Windows MSI의 버전 기준이다. 같은 버전 번호로 내용이 다른 설치파일을 다시 배포하지 않는다. Maven/Gradle 개발 버전이나 파일명 추정으로 현재 버전을 표시하지 않는다. 설치 구현과 릴리스 게시 코드는 `backend/flow-desktop/installer/`에 있으며 루트 패키징·게시 명령은 호환 진입점으로 유지한다.
 
 ```powershell
 # VERSION을 새 번호로 올린 뒤 실제 공개 HTTPS 서버 주소를 주입해 빌드한다.
@@ -31,7 +31,7 @@ powershell -ExecutionPolicy Bypass -File scripts/Publish-DesktopRelease.ps1 `
 
 게시 스크립트는 MSI 내부 제품명·버전·고정 UpgradeCode를 확인하고, 불변 파일 `FlowLink-{version}-windows-x64.msi`를 먼저 놓은 다음 `release-manifest.json`을 원자적으로 교체한다. 기존 같은 버전의 해시가 다르면 거절한다. MSI에 서명한다면 **서명 후** manifest를 생성해야 한다. 운영 환경의 기존 서명 인증서·배포 절차를 사용하며, 이 기능 자체가 발행자 서명을 생성하지는 않는다.
 
-`FLOWLINK_DISTRIBUTION_DIR`은 두 파일이 있는 디렉터리다. `infra/server.compose.yml`은 `FLOWLINK_DOWNLOAD_DIR`을 그 디렉터리에 읽기 전용으로 마운트한다. `FLOWLINK_PUBLIC_URL`과 `FLOWLINK_PUBLIC_MCP_URL`을 실제 외부 주소로 설정한다. 서버 JAR/MCP 변경은 해당 릴리스의 서버 이미지로 배포한다.
+`FLOWLINK_DISTRIBUTION_DIR`은 두 파일이 있는 디렉터리다. `infra/server.compose.yml`은 `FLOWLINK_DOWNLOAD_DIR`을 그 디렉터리에 읽기 전용으로 마운트한다. `FLOWLINK_PUBLIC_URL`을 실제 외부 HTTPS 주소로 설정하면 중앙 MCP 주소는 같은 주소의 `/mcp`로 제공된다. 서버 JAR/MCP 변경은 해당 릴리스의 서버 이미지로 배포한다.
 
 설치파일의 서버 주소는 `-ServerUrl` 또는 빌드 환경의 `FLOWLINK_PUBLIC_URL`로 반드시 지정한다. 다운로드한 웹페이지 주소를 MSI가 추론하지 않는다. 주소를 생략하면 패키징 전에 중단하며, HTTP 루프백은 명시적으로 지정한 로컬 검증용으로만 허용한다. 신규 설치는 이 주소를 사용하고, 이미 설치된 앱은 암호화 파일에 저장된 서버·계정을 우선한다. 앱 시작 후 MCP 안내 주소를 비동기로 갱신하며, 서버가 오프라인이어도 개인 작업과 저장된 로그인은 유지한다.
 

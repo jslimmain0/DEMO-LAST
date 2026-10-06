@@ -8,12 +8,12 @@
 
 ## 재현
 
-Java 21, Node 24, Docker Desktop과 최신 `backend/server-app/build/libs/flowlink-server.jar`가 필요하다. 프론트 빌드 변경 없이 backend `:server-app:bootJar`만으로 API 검증할 수 있다.
+Java 21, Docker Desktop과 최신 `backend/flow-server/build/libs/flowlink-server.jar`가 필요하다. Node 24는 프론트엔드 재빌드에만 필요하다. 프론트 빌드 변경 없이 backend `:flow-server:bootJar`만으로 API 검증할 수 있다.
 
 ```powershell
 $env:JAVA_HOME='C:\Users\jslim\.jdks\corretto-21.0.10'
 Push-Location backend
-.\gradlew.bat :server-app:bootJar
+.\gradlew.bat :flow-server:bootJar
 Pop-Location
 powershell -ExecutionPolicy Bypass -File scripts/test/oracle-vault.ps1 -Initialize
 ```

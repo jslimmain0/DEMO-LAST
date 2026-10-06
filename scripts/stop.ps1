@@ -1,4 +1,4 @@
-# FlowLink main app + MCP HTTP server stop (Windows). ASCII-only (PowerShell 5.1 encoding safety).
+# FlowLink server and included Kotlin MCP stop together (Windows).
 $ErrorActionPreference = 'Stop'
 $Root = Split-Path -Parent $PSScriptRoot
 
@@ -12,6 +12,5 @@ function Stop-One([string]$Name, [string]$PidFile) {
   Remove-Item $PidFile -Force -ErrorAction SilentlyContinue
 }
 
-Stop-One 'MCP server' (Join-Path $Root '.run\flowlink-mcp.pid')
 Stop-One 'FlowLink' (Join-Path $Root '.run\flowlink.pid')
 Write-Host "OK: stopped."

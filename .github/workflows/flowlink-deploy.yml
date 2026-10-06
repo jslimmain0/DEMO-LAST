@@ -1,0 +1,169 @@
+name: FlowLink 빌드 및 EC2 배포
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 배포 환경
+        type: choice
+        options: [ec2-lab, production]
+        default: ec2-lab
+      server_url:
+        description: MSI에 넣을 서버 주소 (배포 서버 설정과 같아야 함)
+        required: true
+        default: http://127.0.0.1:18088
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: flowlink-deploy-${{ inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  server:
+    name: 서버 검증 및 Docker 이미지
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+      - name: 화면 검증 및 빌드
+        working-directory: frontend
+        run: |
+          npm ci --no-audit --no-fund
+          npm run lint
+          npm run build
+      - name: 백엔드 검증 및 빌드
+        working-directory: backend
+        run: |
+          chmod +x gradlew
+          ./gradlew test :flow-server:bootJar --no-daemon --console=plain
+      - name: 배포 이미지 저장
+        env:
+          COMMIT: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          version=$(tr -d '\r\n' < VERSION)
+          [[ "$version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+          mkdir -p bundle
+          image="flowlink/server:$version-$COMMIT"
+          docker build --file infra/server.Dockerfile --tag "$image" .
+          docker save "$image" | gzip > bundle/server-image.tar.gz
+          printf 'FLOWLINK_IMAGE=%s\n' "$image" > bundle/image.env
+          cp VERSION infra/ec2/app.compose.yml infra/ec2/Caddyfile infra/ec2/deploy.sh bundle/
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: flowlink-server
+          path: bundle/
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 14
+
+  desktop:
+    name: Windows MSI 제작
+    runs-on: windows-2022
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+      - name: WiX 3.14.1 준비 및 설치파일 제작
+        shell: pwsh
+        env:
+          FLOWLINK_PUBLIC_URL: ${{ inputs.server_url }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $archive = Join-Path $env:RUNNER_TEMP 'wix.zip'
+          $wix = Join-Path $env:RUNNER_TEMP 'wix'
+          Invoke-WebRequest -Uri 'https://github.com/wixtoolset/wix3/releases/download/wix3141rtm/wix314-binaries.zip' -OutFile $archive
+          if ((Get-FileHash $archive -Algorithm SHA256).Hash -ne '6AC824E1642D6F7277D0ED7EA09411A508F6116BA6FAE0AA5F2C7DAA2FF43D31') { throw 'WiX checksum mismatch.' }
+          Expand-Archive -LiteralPath $archive -DestinationPath $wix
+          & ./backend/flow-desktop/installer/package-desktop.ps1 -Type msi -ServerUrl $env:FLOWLINK_PUBLIC_URL -JdkPath $env:JAVA_HOME -WixPath $wix -OutputDir "$env:GITHUB_WORKSPACE/msi"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: flowlink-desktop
+          path: msi/distribution/
+          if-no-files-found: error
+          retention-days: 14
+
+  deploy:
+    name: EC2 SSH 배포
+    needs: [server, desktop]
+    runs-on: [self-hosted, linux, x64, flowlink-deploy]
+    environment: ${{ inputs.environment }}
+    timeout-minutes: 20
+    steps:
+      - name: 실행별 배포 폴더 준비
+        shell: bash
+        run: |
+          stage=$(mktemp -d "$RUNNER_TEMP/flowlink-release.XXXXXX")
+          printf 'FLOWLINK_BUNDLE=%s\n' "$stage" >> "$GITHUB_ENV"
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: flowlink-server
+          path: ${{ env.FLOWLINK_BUNDLE }}
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: flowlink-desktop
+          path: ${{ env.FLOWLINK_BUNDLE }}/downloads
+      - name: SSH 배포 및 다운로드 검증
+        shell: bash
+        env:
+          DEPLOY_HOST: ${{ vars.EC2_HOST }}
+          DEPLOY_PORT: ${{ vars.EC2_SSH_PORT || '22' }}
+          DEPLOY_USER: ${{ vars.EC2_SSH_USER || 'flowlink' }}
+          DEPLOY_KEY: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.EC2_SSH_KNOWN_HOSTS }}
+          RELEASE_ID: ${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          SERVER_URL: ${{ inputs.server_url }}
+        run: |
+          set -euo pipefail
+          [[ "$DEPLOY_HOST" =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]*$ ]]
+          [[ "$DEPLOY_USER" =~ ^[a-z_][a-z0-9_-]*$ ]]
+          [[ "$DEPLOY_PORT" =~ ^[0-9]{1,5}$ ]] && (( DEPLOY_PORT >= 1 && DEPLOY_PORT <= 65535 ))
+          [[ -n "$DEPLOY_KEY" && -n "$DEPLOY_KNOWN_HOSTS" ]]
+          sshdir=$(mktemp -d)
+          trap 'rm -rf "$sshdir"' EXIT
+          chmod 700 "$sshdir"
+          printf '%s\n' "$DEPLOY_KEY" > "$sshdir/key"
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$sshdir/known_hosts"
+          chmod 600 "$sshdir/key" "$sshdir/known_hosts"
+          options=(-i "$sshdir/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$sshdir/known_hosts")
+          remote="$DEPLOY_USER@$DEPLOY_HOST"
+          dest="/opt/flowlink/releases/$RELEASE_ID"
+          bundle="$FLOWLINK_BUNDLE"
+          printf '%s\n' "$SERVER_URL" > "$bundle/server-url.txt"
+          (cd "$bundle" && find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS)
+          ssh "${options[@]}" -p "$DEPLOY_PORT" "$remote" "mkdir -p '$dest'"
+          scp "${options[@]}" -P "$DEPLOY_PORT" -r "$bundle/." "$remote:$dest/"
+          ssh "${options[@]}" -p "$DEPLOY_PORT" "$remote" "bash '$dest/deploy.sh' '$dest'"
+      - name: 임시 배포 폴더 정리
+        if: always()
+        shell: bash
+        run: |
+          if [[ -n "${FLOWLINK_BUNDLE:-}" && "$FLOWLINK_BUNDLE" == "$RUNNER_TEMP/flowlink-release."* ]]; then
+            rm -rf -- "$FLOWLINK_BUNDLE"
+          fi

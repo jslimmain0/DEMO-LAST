@@ -1,4 +1,4 @@
-﻿# Actual native process / Docker restart checks. REST only; no MCP/IDE probes.
+# Actual native process / Docker restart checks. REST only; no MCP/IDE probes.
 param([Parameter(Mandatory=$true)][string]$AgentFile,
   [string]$JdkPath='C:\Users\jslim\.jdks\corretto-21.0.10')
 $ErrorActionPreference='Stop'
@@ -36,7 +36,7 @@ function Restart-Desktop {
   $Process=Get-Process -Id ([int](Get-Content (Join-Path $Data 'preview.pid'))) -ErrorAction Stop
   $null=Api '/desktop/shutdown' 'POST'
   if(-not $Process.WaitForExit(30000)){throw 'Native preview did not stop safely.'}
-  $Jar=(Resolve-Path (Join-Path $Repo 'backend/desktop-app/build/libs/flowlink-desktop.jar')).Path
+  $Jar=(Resolve-Path (Join-Path $Repo 'backend/flow-desktop/build/libs/flowlink-desktop.jar')).Path
   $Bundle=(Resolve-Path (Join-Path $Repo '.run/agent-lab/preview-bundle')).Path
   $Args=@('-Djavax.net.ssl.trustStoreType=WINDOWS-ROOT',"-Dflowlink.bundle.dir=$Bundle",'-jar',$Jar,'--spring.profiles.active=local,desktop',"--server.port=$(([uri]$Before.baseUrl).Port)","--flowlink.desktop.data-dir=$Data",'--flowlink.desktop.tray=false','--flowlink.desktop.open-browser=false')
   $P=Start-Process -FilePath (Join-Path $JdkPath 'bin/java.exe') -ArgumentList $Args -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $Data 'hybrid-restart.out.log') -RedirectStandardError (Join-Path $Data 'hybrid-restart.err.log')

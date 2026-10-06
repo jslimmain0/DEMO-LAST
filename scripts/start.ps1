@@ -1,10 +1,9 @@
-﻿# FlowLink main app start (Windows). Runs the single jar (UI+API) in background and waits for health.
+# FlowLink main app start (Windows). Runs the single jar (UI+API) in background and waits for health.
 #   powershell -ExecutionPolicy Bypass -File scripts\start.ps1          # run existing jar (default profile local = H2 file)
 #   powershell -ExecutionPolicy Bypass -File scripts\start.ps1 -Build   # rebuild frontend+backend then run
 # Inject DB/auth via env: $env:SPRING_PROFILES_ACTIVE (dev = Oracle), $env:FLOWLINK_DB_URL, ... Port: $env:FLOWLINK_PORT (default 18080).
 # Path prefix (context path): $env:FLOWLINK_CONTEXT_PATH='/flowlink' -> app served at http://host:port/flowlink/ (leading slash, no trailing slash).
-# MCP HTTP server (for agents, needs Node 20+): started next to the jar as `node mcp\src\index.js --http` at http://host:FLOWLINK_MCP_PORT/mcp (default 18090).
-#   $env:FLOWLINK_MCP_PORT='0' disables it; without node it is skipped with a warning. The Settings dialog shows the URL; login happens in the browser (GitHub OAuth) on first connect - no token config.
+# Kotlin MCP is included in the server JVM at /mcp on the same port. FLOWLINK_MCP_ENABLED=false disables it.
 # (ASCII-only on purpose: Windows PowerShell 5.1 mis-parses UTF-8 non-ASCII in .ps1 files.)
 param([switch]$Build)
 $ErrorActionPreference = 'Stop'
@@ -14,10 +13,7 @@ $RunDir = Join-Path $Root '.run'
 New-Item -ItemType Directory -Force -Path $RunDir | Out-Null
 $PidFile = Join-Path $RunDir 'flowlink.pid'
 $Log = Join-Path $RunDir 'flowlink.log'
-$McpPidFile = Join-Path $RunDir 'flowlink-mcp.pid'
-$McpLog = Join-Path $RunDir 'flowlink-mcp.log'
-$McpPort = if ($env:FLOWLINK_MCP_PORT) { $env:FLOWLINK_MCP_PORT } else { '18090' }
-$Jar = Join-Path $Root 'backend\server-app\build\libs\flowlink-server.jar'
+$Jar = Join-Path $Root 'backend\flow-server\build\libs\flowlink-server.jar'
 $Port = if ($env:FLOWLINK_PORT) { $env:FLOWLINK_PORT } else { '18080' }
 $Ctx = if ($env:FLOWLINK_CONTEXT_PATH) { '/' + $env:FLOWLINK_CONTEXT_PATH.Trim('/') } else { '' }
 if ($Ctx -eq '/') { $Ctx = '' }
@@ -49,21 +45,14 @@ if ($Build -or -not (Test-Path $Jar)) {
   Pop-Location
   Write-Host "> Building backend bootJar..."
   Push-Location (Join-Path $Root 'backend')
-  & (Join-Path (Get-Location) 'gradlew.bat') :server-app:bootJar -q
+  & (Join-Path (Get-Location) 'gradlew.bat') :flow-server:bootJar -q
   Pop-Location
 }
 if (-not (Test-Path $Jar)) { Write-Host "ERROR: jar missing: $Jar - run start.ps1 -Build"; exit 1 }
-# MCP HTTP server deps (pure JS, no build - node_modules only)
-$hasNode = [bool](Get-Command node -ErrorAction SilentlyContinue)
-if ($McpPort -ne '0' -and $hasNode -and -not (Test-Path (Join-Path $Root 'mcp\node_modules'))) {
-  Write-Host "> Installing MCP deps..."
-  Push-Location (Join-Path $Root 'mcp'); npm ci --no-audit --no-fund; Pop-Location
-}
-
 if (-not $env:SPRING_PROFILES_ACTIVE) { $env:SPRING_PROFILES_ACTIVE = 'local' } # default local (H2 file)
 $env:FLOWLINK_PORT = $Port
-# The jar gets FLOWLINK_MCP_PORT too so /auth/config can tell the Settings dialog where MCP is ('0' -> unset).
-$env:FLOWLINK_MCP_PORT = if ($McpPort -eq '0') { '' } else { $McpPort }
+# Preserve the old explicit disable switch without spawning a separate process.
+if ($env:FLOWLINK_MCP_PORT -eq '0' -and -not $env:FLOWLINK_MCP_ENABLED) { $env:FLOWLINK_MCP_ENABLED = 'false' }
 
 # JVM args. On Windows, trust the Windows certificate store so outbound TLS (AI/Copilot, etc.) works even
 # behind a corporate TLS-intercepting proxy/VPN (whose CA is in the Windows store but not Java cacerts).
@@ -76,24 +65,6 @@ $jvmArgs += @('-jar', $Jar)
 Write-Host "> Starting FlowLink (profile=$($env:SPRING_PROFILES_ACTIVE), port=$Port)..."
 $p = Start-Process -FilePath 'java' -ArgumentList $jvmArgs -RedirectStandardOutput $Log -RedirectStandardError "$Log.err" -WindowStyle Hidden -PassThru
 $p.Id | Out-File -Encoding ascii $PidFile
-
-# MCP HTTP server - started before the jar health wait (it only connects to REST per tool call).
-if ($McpPort -ne '0') {
-  if ($hasNode) {
-    $mcpRunning = $false
-    if (Test-Path $McpPidFile) { $mcpRunning = [bool](Get-Process -Id (Get-Content $McpPidFile) -ErrorAction SilentlyContinue) }
-    if ($mcpRunning) { Write-Host "MCP server already running (PID $(Get-Content $McpPidFile))" }
-    else {
-      $env:FLOWLINK_URL = "http://localhost:$Port$Ctx"
-      $env:FLOWLINK_MCP_PORT = $McpPort
-      $m = Start-Process -FilePath 'node' -ArgumentList @((Join-Path $Root 'mcp\src\index.js'), '--http') -RedirectStandardOutput $McpLog -RedirectStandardError "$McpLog.err" -WindowStyle Hidden -PassThru
-      $m.Id | Out-File -Encoding ascii $McpPidFile
-      Write-Host "> MCP HTTP server at http://localhost:$McpPort/mcp (PID $($m.Id), log $McpLog)"
-    }
-  } else {
-    Write-Host "WARN: node not found - MCP HTTP server not started (install Node 20+ or set FLOWLINK_MCP_PORT=0)."
-  }
-}
 
 for ($i = 0; $i -lt 60; $i++) {
   try { if ((Invoke-WebRequest -UseBasicParsing "http://localhost:$Port$Ctx/api/v1/auth/config" -TimeoutSec 2).StatusCode -eq 200) {

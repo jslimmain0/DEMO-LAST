@@ -1,6 +1,6 @@
 rootProject.name = "flowlink"
 
-include("runtime", "server-app", "desktop-app")
+include("flow-agent", "flow-server", "flow-desktop", "flow-mcp")
 
-// server-app/desktop-app → runtime. 공통 런타임은 두 실행 모듈에 의존하지 않는다.
-// 변환 플러그인은 리포 루트 plugins/의 독립 Gradle 빌드를 유지한다.
+// flow-server → flow-agent/flow-mcp, flow-desktop → flow-server(일반 관리 라이브러리)/flow-agent.
+// flow-agent에는 DB/관리 구현이 없고 중앙 flow-mcp와 SDK는 desktop에 포함하지 않는다.

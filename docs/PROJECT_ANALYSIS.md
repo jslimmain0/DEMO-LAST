@@ -1,5 +1,7 @@
 # FlowLink 프로젝트 분석
 
+> 현재 소스는 `backend/flow-agent`, `flow-server`, `flow-desktop`, `flow-mcp`로 분리했고 기존 `mcp/` Node 소스는 Kotlin으로 이관해 제거했다. 현재 연결·빌드는 [역할별 안내](../backend/README.md)를 따른다. 아래 파일 링크·수치·분석은 초기 분석 기록이다.
+
 > 이 문서는 초기 분석 시점의 스냅샷이다. 이후 에이전트 요구에 대한 최신 계획은 [노드별 혼합 실행 설계](HYBRID_AGENT_PLAN.md)에 정리했다.
 
 > 분석일: 2026-10-02 (한국 시간)  

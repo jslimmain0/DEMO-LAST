@@ -1,5 +1,7 @@
 # Windows 설치와 에이전트 시작 안내
 
+> 현재 설치 구현은 `backend/flow-desktop/installer/`가 소유한다. 아래 0.3.3의 설치·Node·로컬 MCP·IDE 등록 설명과 검증은 이전 릴리스 기록이다. 현재 네 모듈 구조와 중앙 Kotlin MCP는 [역할별 빌드 안내](../backend/README.md)를 따른다.
+
 FlowLink 0.3.3은 Windows 사용자 계정에 설치하는 네이티브 앱이다. Java와 Node 실행환경을 설치파일에 포함한다. PC에 Docker를 설치하거나 Docker 컨테이너를 시작하지 않는다. 개인 데이터와 키는 앱 설치 폴더와 분리된 `%LOCALAPPDATA%\FlowLink`에 보관한다.
 
 0.3.3은 실제 0.3.2 설치에서 업그레이드하고 기존 개인 자료·키·계정 보존과 새 화면 진입을 확인했다. 새 MSI의 버전·업그레이드 코드·한글 언어·설치 완료 후 실행 조건도 다시 검사했다. 아래 0.3.2의 UI 렌더 기록은 변경되지 않은 설치/트레이 UI의 이전 증거이며 실제 마법사 클릭 검증으로 확대하지 않는다. 이번 산출물과 실제 설치 결과는 [0.3.3 릴리스 결과](reviews/2026-10-03-release-0.3.3.md)에 기록했다.
@@ -45,7 +47,7 @@ FlowLink 0.3.3은 Windows 사용자 계정에 설치하는 네이티브 앱이�
 
 ## 패키징 구현
 
-`scripts/package-desktop.ps1`은 `scripts/desktop/New-DesktopResources.ps1`을 호출한다. 이 스크립트는 ICO/BMP를 생성하고 설치된 JDK 21의 `main.wxs`를 추출해 `FlowLinkSetup.wxi`의 브랜드·완료 화면 동작만 삽입한다. 구성요소 ID와 업그레이드 규칙은 JDK 템플릿을 재사용한다. 생성된 자료는 별도 staging의 `resources`에 두고 `--resource-dir`로 전달하며 앱 payload에는 포함하지 않는다.
+`scripts/package-desktop.ps1`은 호환 진입점이며 실제 구현과 설치 자료는 `backend/flow-desktop/installer/`에 있다. `New-DesktopResources.ps1`은 ICO/BMP를 생성하고 설치된 JDK 21의 `main.wxs`를 추출해 `FlowLinkSetup.wxi`의 브랜드·완료 화면 동작만 삽입한다. 구성요소 ID와 업그레이드 규칙은 JDK 템플릿을 재사용한다. 생성된 자료는 별도 staging의 `resources`에 두고 `--resource-dir`로 전달하며 앱 payload에는 포함하지 않는다.
 
 한글 표준 설치 문구는 빌드 머신의 WiX 3 `WixUIExtension.dll`에 포함된 한국어 번역을 재사용한다. FlowLink 안내만 덧붙이고 ProductLanguage는 1042, 코드 페이지는 949로 지정한다. 설치 마법사 표시를 위해 `--win-dir-chooser`와 `--win-shortcut-prompt`를 사용한다. 새로운 설치 프레임워크나 PC용 Docker 의존성은 없다.
 

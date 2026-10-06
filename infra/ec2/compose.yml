@@ -1,0 +1,50 @@
+name: flowlink-ec2-lab
+services:
+  ec2:
+    image: flowlink-ec2-lab:local
+    build:
+      context: ../..
+      dockerfile: infra/ec2/Dockerfile
+    # DinD needs its own kernel capabilities; this is exclusively the isolated lab.
+    privileged: true
+    ports:
+      - "127.0.0.1:${FLOWLINK_EC2_SSH_PORT:-2222}:22"
+      - "127.0.0.1:${FLOWLINK_EC2_APP_PORT:-18088}:80"
+    environment:
+      DOCKER_TLS_CERTDIR: ""
+      DOCKER_HOST: unix:///var/run/docker.sock
+    volumes:
+      - dockerdata:/var/lib/docker
+      - home:/home/flowlink
+      - sshhostkeys:/etc/ssh/keys
+      - type: bind
+        source: ${FLOWLINK_DEPLOY_PUBLIC_KEY:?Set FLOWLINK_DEPLOY_PUBLIC_KEY to an SSH public key file}
+        target: /bootstrap/authorized_keys
+        read_only: true
+        bind:
+          create_host_path: false
+    healthcheck:
+      test: ["CMD-SHELL", "docker info >/dev/null 2>&1 && nc -z 127.0.0.1 22"]
+      interval: 3s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+    stop_grace_period: 60s
+  runner:
+    profiles: [actions]
+    build:
+      context: ../..
+      dockerfile: infra/ec2/runner/Dockerfile
+    environment:
+      GITHUB_REPOSITORY: ${GITHUB_REPOSITORY:-}
+      RUNNER_TOKEN: ${RUNNER_TOKEN:-}
+      RUNNER_LABELS: flowlink-deploy
+    depends_on:
+      ec2:
+        condition: service_healthy
+    stop_grace_period: 30s
+
+volumes:
+  dockerdata:
+  home:
+  sshhostkeys:

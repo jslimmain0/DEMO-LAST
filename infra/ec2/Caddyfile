@@ -1,0 +1,3 @@
+{$FLOWLINK_SITE_ADDRESS} {
+    reverse_proxy server:18080
+}

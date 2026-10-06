@@ -13,16 +13,9 @@ if (Test-Path $PidFile) {
 }
 if (-not $running) { Write-Host "Process: stopped" }
 
-# MCP HTTP server (optional) - PID + /health
-$McpPidFile = Join-Path $Root '.run\flowlink-mcp.pid'
-$McpPort = if ($env:FLOWLINK_MCP_PORT) { $env:FLOWLINK_MCP_PORT } else { '18090' }
-$mcpAlive = (Test-Path $McpPidFile) -and [bool](Get-Process -Id (Get-Content $McpPidFile) -ErrorAction SilentlyContinue)
-if ($mcpAlive) {
-  $mcpUp = $false
-  try { $mcpUp = (Invoke-WebRequest -UseBasicParsing "http://localhost:$McpPort/health" -TimeoutSec 2).StatusCode -eq 200 } catch {}
-  if ($mcpUp) { Write-Host "MCP    : UP (http://localhost:$McpPort/mcp, PID $(Get-Content $McpPidFile))" }
-  else { Write-Host "MCP    : process alive but no response (log: $Root\.run\flowlink-mcp.log)" }
-} else { Write-Host "MCP    : stopped" }
+# Address discovery only; no MCP protocol request is sent.
+if ($env:FLOWLINK_MCP_ENABLED -eq 'false' -or $env:FLOWLINK_MCP_PORT -eq '0') { Write-Host 'MCP    : disabled' }
+else { Write-Host "MCP    : included in server JVM (http://localhost:$Port$Ctx/mcp)" }
 
 try {
   if ((Invoke-WebRequest -UseBasicParsing "http://localhost:$Port$Ctx/api/v1/auth/config" -TimeoutSec 2).StatusCode -eq 200) {

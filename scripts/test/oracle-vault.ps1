@@ -1,4 +1,4 @@
-﻿param([switch]$Initialize)
+param([switch]$Initialize)
 $ErrorActionPreference='Stop'
 Set-Location (Join-Path $PSScriptRoot '../..')
 $compose=@('compose','--env-file','.run/oracle-vault/infra.env','-f','infra/oracle-vault-test.compose.yml')
@@ -20,7 +20,7 @@ for($i=0;$i -lt 120;$i++){
 if($Initialize){node scripts/test/oracle-vault-setup.mjs --schema}else{node scripts/test/oracle-vault-setup.mjs}
 if($LASTEXITCODE){throw 'Schema/Vault 설정 실패'}
 & docker build -f infra/agent-test.Dockerfile -t flowlink-oracle-vault-test .
-if($LASTEXITCODE){throw '최신 :server-app:bootJar 기반 image 빌드 실패'}
+if($LASTEXITCODE){throw '최신 :flow-server:bootJar 기반 image 빌드 실패'}
 & docker @compose up -d --force-recreate server
 if($LASTEXITCODE){throw 'Oracle/Vault 앱 기동 실패'}
 node scripts/test/oracle-vault.mjs

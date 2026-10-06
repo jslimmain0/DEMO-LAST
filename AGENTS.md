@@ -1,5 +1,14 @@
 # FlowLink — 프로젝트 가이드 (유지보수용)
 
+> **현재 구조 (2026-10-06)**: `backend/flow-agent`, `backend/flow-server`, `backend/flow-desktop`, `backend/flow-mcp` 네 Gradle 모듈이다.
+> 아래 과거 `backend/src`·`runtime/server-app/desktop-app` 경로와 배포 설명보다 [backend/README.md](backend/README.md)를 우선한다.
+> `flow-agent`에는 호출·Mock·콜백 수신과 순수 실행 계약만 두고 JPA·관리 서비스 의존을 금지한다.
+> desktop은 개인 H2 관리를 위해 server의 일반 라이브러리를 재사용한다. 이 라이브러리에는 중앙 서버 진입점·로그인 발급·배포·협업 클래스가 없으며 desktop에는 Oracle 드라이버·중앙 MCP·MCP SDK가 없다.
+> `flow-mcp`는 서버 JVM에서 로드하는 중앙 Kotlin MCP 라이브러리이다. Windows 설치 구현·자료·업데이트 helper는 `backend/flow-desktop/installer/`에 둔다.
+> 중앙 서버 기능은 `ServerFeatures`, Windows 기능은 `DesktopConfiguration`에서 명시적으로 등록한다. 개인 DB 위치·암호화 키와 기존 실행 API는 유지한다.
+> 빌드: `backend/`에서 `./gradlew :flow-agent:jar :flow-mcp:jar :flow-server:bootJar :flow-desktop:bootJar`. 서버 Docker·MSI는 각각 server·desktop JAR를 사용한다.
+> MCP 프로토콜·도구 호출·IDE 등록 검증은 사용자의 명시적인 변경 지시 전까지 수행하지 않는다.
+
 REST API 워크플로 오케스트레이션 플랫폼. 클라이언트 전용 프로토타입을
 엔터프라이즈 플랫폼으로 고도화한 것. 백엔드/프론트 모두 **모듈러 모놀리스**(향후 워커 분리 대비
 패키지 경계). UI 텍스트는 전부 한국어.

@@ -24,7 +24,7 @@ function Free-Port {
     try { return $listener.LocalEndpoint.Port } finally { $listener.Stop() }
 }
 function Start-App([string]$Role, [string]$Name, [string[]]$Extra) {
-    $jar = Join-Path $repo "backend/$Role-app/build/libs/flowlink-$Role.jar"
+    $jar = Join-Path $repo "backend/flow-$Role/build/libs/flowlink-$Role.jar"
     Require (Test-Path -LiteralPath $jar) "$Role JAR이 없습니다."
     $port = Free-Port
     $data = Join-Path $work $Name
@@ -70,6 +70,7 @@ try {
     $server = Start-App 'server' 'server' @()
     $config = (Wait-Ready $server).Body | ConvertFrom-Json
     Require ($config.runtime.kind -eq 'server') '서버 launcher가 개인 runtime으로 기동했습니다.'
+    Require ((Request $server '/api/v1/auth/github/device/poll?session=module-boundary').Status -eq 200) '서버에 중앙 로그인 발급 API가 없습니다.'
     Require ((Request $server '/api/v1/distribution').Status -eq 200) '서버 distribution API가 없습니다.'
     $desktop = Start-App 'desktop' 'desktop' @()
     [void](Wait-Ready $desktop)
@@ -81,6 +82,7 @@ try {
     Require ($agent.baseUrl -eq $desktop.Base) '개인 session 포트가 launcher와 다릅니다.'
     $config = (Request $desktop '/api/v1/auth/config' $agent.token).Body | ConvertFrom-Json
     Require ($config.runtime.kind -eq 'local') 'desktop launcher가 개인 runtime이 아닙니다.'
+    Require ((Request $desktop '/api/v1/auth/github/device/poll?session=module-boundary' $agent.token).Status -eq 404) 'desktop에 중앙 로그인 발급 API가 등록됐습니다.'
     Require ((Request $desktop '/api/v1/flows').Status -eq 401) '개인 API 접근 보호가 없습니다.'
     $distribution = Request $desktop '/api/v1/distribution' $agent.token
     if ($distribution.Status -ne 404) {

@@ -1,0 +1,4 @@
+/infra/ec2/*.sh text eol=lf
+/infra/ec2/runner/*.sh text eol=lf
+/infra/ec2/*Dockerfile text eol=lf
+/infra/ec2/runner/Dockerfile text eol=lf

@@ -8,19 +8,18 @@ services:
       dockerfile: infra/agent-test.Dockerfile
     ports:
       - "127.0.0.1:18080:18080"
-      - "127.0.0.1:18090:18090"
       - "127.0.0.1:9091-9190:9091-9190"
     env_file: ../.run/agent-lab/secrets.env
     environment:
       SPRING_PROFILES_ACTIVE: local,agent-lab
       FLOWLINK_AUTH_GITHUB_ENABLED: "true"
       FLOWLINK_AUTH_GUEST_ENABLED: "false"
-      FLOWLINK_MCP_PORT: "18090"
+      FLOWLINK_MCP_ENABLED: "true"
       FLOWLINK_H2_FILE: /home/gradle/agent-lab/db/flowlink
       FLOWLINK_PLUGINS_DIR: /home/gradle/agent-lab/plugins
       SPRING_H2_CONSOLE_ENABLED: "false"
       FLOWLINK_PUBLIC_URL: http://127.0.0.1:18080
-      FLOWLINK_PUBLIC_MCP_URL: http://127.0.0.1:18090/mcp
+      FLOWLINK_PUBLIC_MCP_URL: http://127.0.0.1:18080/mcp
       FLOWLINK_DISTRIBUTION_DIR: /app/downloads
       FLOWLINK_MOCK_TCP_PORT_START: "9091"
       FLOWLINK_MOCK_TCP_PORT_END: "9190"
@@ -35,19 +34,6 @@ services:
       retries: 40
       start_period: 15s
     stop_grace_period: 30s
-
-  mcp:
-    image: flowlink-agent-test
-    entrypoint: ["node", "--use-system-ca", "/app/mcp/src/index.js"]
-    network_mode: service:server
-    environment:
-      FLOWLINK_URL: http://127.0.0.1:18080
-      FLOWLINK_MCP_PORT: "18090"
-    volumes:
-      - server-data:/home/gradle
-    depends_on:
-      server:
-        condition: service_healthy
 
 volumes:
   server-data:

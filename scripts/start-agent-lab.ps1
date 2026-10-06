@@ -1,4 +1,4 @@
-﻿param([switch]$Build)
+param([switch]$Build)
 $ErrorActionPreference = 'Stop'
 $Repo = Split-Path -Parent $PSScriptRoot
 $PrivateDir = Join-Path $Repo '.run/agent-lab'
@@ -22,13 +22,10 @@ if ($Build) {
         & npm ci; if ($LASTEXITCODE -ne 0) { throw 'Frontend dependency installation failed' }
         & npm run build; if ($LASTEXITCODE -ne 0) { throw 'Frontend build failed' }
     } finally { Pop-Location }
-    Push-Location (Join-Path $Repo 'mcp')
-    try { & npm ci --omit=dev; if ($LASTEXITCODE -ne 0) { throw 'MCP dependency installation failed' } } finally { Pop-Location }
     Push-Location (Join-Path $Repo 'backend')
-    try { & .\gradlew.bat :server-app:bootJar; if ($LASTEXITCODE -ne 0) { throw 'App build failed' } } finally { Pop-Location }
+    try { & .\gradlew.bat :flow-server:bootJar; if ($LASTEXITCODE -ne 0) { throw 'App build failed' } } finally { Pop-Location }
 }
-if (-not (Test-Path (Join-Path $Repo 'backend/server-app/build/libs/flowlink-server.jar')) -or
-    -not (Test-Path (Join-Path $Repo 'mcp/node_modules/@modelcontextprotocol/sdk/package.json'))) {
+if (-not (Test-Path (Join-Path $Repo 'backend/flow-server/build/libs/flowlink-server.jar'))) {
     throw 'Build artifacts are missing; run start-agent-lab.ps1 -Build with JDK 21 and Node 24+.'
 }
 & docker compose -f (Join-Path $Repo 'infra/agent-lab.compose.yml') up -d --build --wait --wait-timeout 150

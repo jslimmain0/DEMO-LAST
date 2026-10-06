@@ -1,6 +1,8 @@
-﻿param(
-    [string]$ServerJar = (Join-Path $PSScriptRoot '../../backend/server-app/build/libs/flowlink-server.jar'),
-    [string]$DesktopJar = (Join-Path $PSScriptRoot '../../backend/desktop-app/build/libs/flowlink-desktop.jar')
+param(
+    [string]$ServerJar = (Join-Path $PSScriptRoot '../../backend/flow-server/build/libs/flowlink-server.jar'),
+    [string]$DesktopJar = (Join-Path $PSScriptRoot '../../backend/flow-desktop/build/libs/flowlink-desktop.jar'),
+    [string]$AgentJar = (Join-Path $PSScriptRoot '../../backend/flow-agent/build/libs/flowlink-agent.jar'),
+    [string]$McpJar = (Join-Path $PSScriptRoot '../../backend/flow-mcp/build/libs/flowlink-mcp.jar')
 )
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.IO.Compression
@@ -12,6 +14,33 @@ function Require([bool]$Condition, [string]$Message) {
 function Read-Entry($Entry) {
     $reader = [System.IO.StreamReader]::new($Entry.Open())
     try { return $reader.ReadToEnd() } finally { $reader.Dispose() }
+}
+function Inspect-Agent([string]$Path) {
+    Require (Test-Path -LiteralPath $Path -PathType Leaf) "agent JAR이 없습니다: $Path"
+    $archive = [System.IO.Compression.ZipFile]::OpenRead((Resolve-Path -LiteralPath $Path).Path)
+    try {
+        $names = @($archive.Entries | ForEach-Object { $_.FullName })
+        Require (@($names | Where-Object { $_ -like 'BOOT-INF/*' }).Count -eq 0) 'agent는 plain JAR여야 합니다.'
+        Require (@($names | Where-Object { $_ -match '^com/flowlink/(core/repository|workspace|secret|vault|distribution|presence|desktop|server|mcp)/.+\.class$' }).Count -eq 0) 'agent에 DB·관리·호스트 클래스가 포함됐습니다.'
+        Require (@($names | Where-Object { $_ -match '^(jakarta/persistence|org/hibernate|oracle/jdbc|org/h2)/' }).Count -eq 0) 'agent에 DB 구현 클래스가 포함됐습니다.'
+        Require (@($names | Where-Object { $_ -match '^com/flowlink/.+\.class$' }).Count -gt 0) 'agent 구현 클래스가 없습니다.'
+        foreach ($name in @('execution/engine/HttpNodeExecutor', 'execution/engine/TcpNodeExecutor', 'mock/MockRuntime', 'agent/AgentNodeExecutor')) {
+            Require ($names -contains "com/flowlink/$name.class") "agent 실행 구현이 없습니다: $name"
+        }
+        foreach ($entry in $archive.Entries) {
+            if (-not $entry.FullName.EndsWith('.class')) { continue }
+            $constants = Read-Entry $entry
+            Require ($constants -notmatch 'jakarta/persistence/|org/hibernate/|org/springframework/data/jpa/|com/flowlink/core/repository/|com/flowlink/(workspace/WorkspaceService|secret/(SecretService|Vault))') "agent 클래스에 DB·관리 의존성이 있습니다: $($entry.FullName)"
+        }
+    } finally { $archive.Dispose() }
+}
+function Inspect-Mcp([string]$Path) {
+    Require (Test-Path -LiteralPath $Path -PathType Leaf) "flow-mcp JAR이 없습니다: $Path"
+    $archive = [System.IO.Compression.ZipFile]::OpenRead((Resolve-Path -LiteralPath $Path).Path)
+    try {
+        Require ($null -ne $archive.GetEntry('com/flowlink/mcp/McpConfiguration.class')) '중앙 MCP 구성 클래스가 없습니다.'
+        Require (@($archive.Entries | Where-Object { $_.FullName -like 'BOOT-INF/*' }).Count -eq 0) 'flow-mcp는 plain 라이브러리 JAR여야 합니다.'
+    } finally { $archive.Dispose() }
 }
 function Inspect-Jar([string]$Path, [string]$Role, [string]$MainClass) {
     Require (Test-Path -LiteralPath $Path -PathType Leaf) "$Role JAR이 없습니다: $Path"
@@ -45,7 +74,7 @@ function Inspect-Jar([string]$Path, [string]$Role, [string]$MainClass) {
                     if ($item.FullName -eq 'oracle/jdbc/OracleDriver.class') { $hasOracle = $true }
                     if ($item.FullName -eq 'flowlink-release.properties') {
                         $release = Read-Entry $item
-                        Require ($release -match '(?m)^version\s*=\s*(\d+\.\d+\.\d+)\s*$') "$Role 내부 runtime 버전이 잘못됐습니다."
+                        Require ($release -match '(?m)^version\s*=\s*(\d+\.\d+\.\d+)\s*$') "$Role 내부 모듈 버전이 잘못됐습니다."
                         [void]$versions.Add($Matches[1])
                     }
                 }
@@ -57,13 +86,29 @@ function Inspect-Jar([string]$Path, [string]$Role, [string]$MainClass) {
             Require ($present -eq ($Role -eq 'desktop')) "$Role 에 $name 역할 경계가 잘못됐습니다."
         }
         Require ($classes.Contains('com/flowlink/distribution/DistributionController.class') -eq ($Role -eq 'server')) "$Role DistributionController 경계가 잘못됐습니다."
+        Require ($classes.Contains('com/flowlink/mcp/McpConfiguration.class') -eq ($Role -eq 'server')) "$Role 중앙 MCP 구성 경계가 잘못됐습니다."
+        Require ($classes.Contains('io/modelcontextprotocol/server/McpServer.class') -eq ($Role -eq 'server')) "$Role MCP SDK 경계가 잘못됐습니다."
+        foreach ($name in @('PresenceConfig', 'PresenceHandler')) {
+            Require ($classes.Contains("com/flowlink/presence/$name.class") -eq ($Role -eq 'server')) "$Role 중앙 협업 $name 경계가 잘못됐습니다."
+        }
+        foreach ($name in @('AppJwt', 'AuthConfig', 'GithubAuthService', 'GithubLoginController')) {
+            Require ($classes.Contains("com/flowlink/security/$name.class") -eq ($Role -eq 'server')) "$Role 중앙 로그인 발급 $name 경계가 잘못됐습니다."
+        }
+        if ($Role -eq 'server') {
+            Require (@($classes | Where-Object { $_ -like 'com/flowlink/desktop/*' }).Count -eq 0) 'server에 Windows 전용 클래스가 포함됐습니다.'
+        } else {
+            Require (@($classes | Where-Object { $_ -like 'com/flowlink/server/*' -or $_ -like 'com/flowlink/distribution/*' -or $_ -like 'com/flowlink/presence/*' }).Count -eq 0) 'desktop에 서버 진입점·배포·중앙 협업 클래스가 포함됐습니다.'
+            Require (@($classes | Where-Object { $_ -like 'com/flowlink/mcp/*' -or $_ -like 'io/modelcontextprotocol/*' }).Count -eq 0) 'desktop에 중앙 MCP 또는 SDK 클래스가 포함됐습니다.'
+        }
         Require ($hasOracle -eq ($Role -eq 'server')) "$Role Oracle 드라이버 경계가 잘못됐습니다."
         if ($Role -eq 'desktop') { Require $hasH2 'desktop H2 드라이버가 없습니다.' }
         Require ($versions.Count -eq 1) "$Role 릴리스 버전이 없거나 내부 버전이 다릅니다."
         return @($versions)[0]
     } finally { $archive.Dispose() }
 }
+Inspect-Agent $AgentJar
+Inspect-Mcp $McpJar
 $serverVersion = Inspect-Jar $ServerJar 'server' 'com.flowlink.server.ServerApplicationKt'
 $desktopVersion = Inspect-Jar $DesktopJar 'desktop' 'com.flowlink.desktop.DesktopApplicationKt'
 Require ($serverVersion -eq $desktopVersion) '서버·Windows 앱 릴리스 버전이 다릅니다.'
-Write-Output "PASS: server/desktop 클래스·진입점·DB 드라이버·내부 runtime·릴리스 $serverVersion"
+Write-Output "PASS: agent/MCP plain JAR·DB/관리 분리·server/desktop 역할·SDK·진입점·드라이버·릴리스 $serverVersion"

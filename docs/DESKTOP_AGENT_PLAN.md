@@ -1,5 +1,7 @@
 # FlowLink 설치형 앱·로컬 에이전트 전환 계획
 
+> 2026-10-06 모듈 리팩토링: 현재 소스·빌드 경계는 `flow-agent / flow-server / flow-desktop / flow-mcp`이며 [역할별 빌드 안내](../backend/README.md)를 따른다. 아래의 이전 설계와 검증 기록은 당시 제안·상태를 보존한 것으로, 현재 모듈 구성이나 새 빌드의 검증 결과를 뜻하지 않는다.
+
 > 이 문서는 초기 설계 기록이다. 이후 [노드별 혼합 실행 계획](HYBRID_AGENT_PLAN.md)과 [UI 스토리보드](FLOWLINK_STORYBOARD.html)를 거쳤으며, 현재 재설계 제안은 [목표 아키텍처](FLOWLINK_TARGET_ARCHITECTURE.md)를 참고한다. 새 제안의 사용자 승인·구현 완료와 기존 기록은 구분한다.
 
 작성일: 2026-10-02 · 기준 브랜치: `codex/trim-config` · 상태: 설계 초안, 구현 전

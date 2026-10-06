@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# FlowLink 메인 앱 + MCP HTTP 서버 중지 (Linux/macOS/Git Bash).
+# FlowLink 서버와 JVM에 포함된 Kotlin MCP를 함께 중지한다.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -19,6 +19,5 @@ stop_one() {
   rm -f "$pid_file"
 }
 
-stop_one "MCP 서버" "$ROOT/.run/flowlink-mcp.pid"
 stop_one "FlowLink" "$ROOT/.run/flowlink.pid"
 echo "✅ 중지 완료."

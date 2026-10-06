@@ -55,7 +55,7 @@ val releaseProperties = tasks.register("releaseProperties") {
     }
 }
 
-configure(listOf(project(":server-app"), project(":desktop-app"))) {
+configure(listOf(project(":flow-server"), project(":flow-desktop"))) {
     apply(plugin = "org.springframework.boot")
     tasks.named<org.springframework.boot.gradle.tasks.run.BootRun>("bootRun") {
         workingDir = rootProject.projectDir

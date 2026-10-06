@@ -32,6 +32,10 @@ DB 연결과 프로파일은 각 호스트의 `src/main/resources/application*.y
 
 개발 기동은 `:flow-server:bootRun` 또는 `:flow-desktop:bootRun`을 지정한다. 상대 경로의 기준은 기존처럼 `backend/`이며 개인 앱은 로그인·DB·루프백 보호 설정을 자동 적용한다.
 
+Java 21 가상 스레드는 두 호스트의 웹 요청과 워크플로·에이전트·PC 전달 작업에 적용한다. 작업마다 새 가상 스레드를 만들며 실행 상한은 유지한다: 워크플로 기본 동시 8/대기 100(기존 worker 설정), 에이전트 동시 4/대기 100, PC 전달 동시 4. 대기 상한을 넘긴 에이전트 작업은 외부 호출 없이 429 실패 결과를 저장한다. 테넌트는 명시적으로 전달하고 상속 ThreadLocal은 사용하지 않는다. 타이머·취소 감시 스레드는 기존 방식을 유지한다.
+
+가상 스레드 변경 검증(2026-10-07): agent 144/core 160/server 53/desktop 31, 총 388개 테스트 통과. 실제 가상 스레드 실행·상속 컨텍스트 차단·대기 상한·종료 취소·거절 결과 커밋을 확인했고 두 JAR 빌드·모듈 경계·격리 launcher 기동도 통과했다. MCP 테스트와 MSI 재패키징·실행 중 앱 교체는 이번 변경에서 수행하지 않았다.
+
 - 에이전트 라이브러리: `flow-agent/build/libs/flowlink-agent.jar`.
 - 공통 관리 라이브러리: `flow-core/build/libs/flowlink-core.jar`.
 - 서버: `flow-server/build/libs/flowlink-server.jar`. 루트 `scripts/start.ps1`, `scripts/start.sh`, 서버 Docker가 사용한다.

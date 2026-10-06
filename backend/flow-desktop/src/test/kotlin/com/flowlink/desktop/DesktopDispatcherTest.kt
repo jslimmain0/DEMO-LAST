@@ -58,7 +58,10 @@ class DesktopDispatcherTest {
             val connection = DesktopConnection(session, mapper, ApplicationEventPublisher { _ -> })
             val journal = DesktopDispatchJournal(session, mapper)
             val executor = Mockito.mock(AgentNodeExecutor::class.java)
-            Mockito.`when`(executor.execute(request)).thenReturn(AgentNodeResult(NodeResult.ok(200, null, null, mapOf("amount" to 42)), 5))
+            Mockito.`when`(executor.execute(request)).thenAnswer {
+                assertThat(Thread.currentThread().isVirtual).isTrue()
+                AgentNodeResult(NodeResult.ok(200, null, null, mapOf("amount" to 42)), 5)
+            }
             val dispatcher = DesktopDispatcher(session, connection, journal, Mockito.mock(ExecutionService::class.java),
                 Mockito.mock(AgentTaskService::class.java), executor, mapper)
             try {

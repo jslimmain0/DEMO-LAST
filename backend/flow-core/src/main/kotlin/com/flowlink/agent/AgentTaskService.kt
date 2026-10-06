@@ -16,13 +16,15 @@ import org.springframework.context.ApplicationEventPublisher
 import org.springframework.context.event.EventListener
 import org.springframework.stereotype.Service
 import org.springframework.transaction.PlatformTransactionManager
+import org.springframework.transaction.TransactionDefinition
 import org.springframework.transaction.support.TransactionSynchronization
 import org.springframework.transaction.support.TransactionSynchronizationManager
 import org.springframework.transaction.support.TransactionTemplate
 import org.springframework.web.bind.annotation.*
 import java.time.Instant
 import java.util.UUID
-import java.util.concurrent.Executors
+import com.flowlink.execution.config.BoundedVirtualExecutor
+import java.util.concurrent.RejectedExecutionException
 
 /** 작업 ID 하나에 외부 호출 한 번. 응답 유실은 저장된 결과를 조회하며 재호출하지 않는다. */
 @Service
@@ -37,7 +39,10 @@ class AgentTaskService(
     private val updateGate: com.flowlink.common.lifecycle.RuntimeUpdateGate = com.flowlink.common.lifecycle.RuntimeUpdateGate(),
 ) {
     private val tx = TransactionTemplate(txManager)
-    private val workers = Executors.newFixedThreadPool(4) { Thread(it, "agent-executor").apply { isDaemon = true } }
+    private val rejectionTx = TransactionTemplate(txManager).apply {
+        propagationBehavior = TransactionDefinition.PROPAGATION_REQUIRES_NEW
+    }
+    private val workers = BoundedVirtualExecutor("agent-executor-", 4, 100)
 
     fun create(request: AgentNodeRequest, run: AgentRunOptions): AgentTaskView =
         updateGate.work { createAllowed(request, run) }
@@ -194,7 +199,7 @@ class AgentTaskService(
         }
         task.status = "RUNNING"; task.updatedAt = Instant.now()
         val id = task.id; val tenant = task.tenantId
-        afterCommit { workers.execute {
+        afterCommit { try { workers.execute {
             TenantContext.setTenantId(tenant)
             try {
                 val request = tx.execute { load(id).let { if (it.status == "RUNNING") decodeRequest(it) else null } } ?: return@execute
@@ -205,6 +210,11 @@ class AgentTaskService(
                     if (it.status == "RUNNING") { it.status = "UNKNOWN"; it.error = "에이전트 결과 저장을 확인할 수 없습니다. 자동 재실행하지 않습니다." }
                 } }
             } finally { TenantContext.clear() }
+        } } catch (_: RejectedExecutionException) {
+            // 외부 호출 전 거절이므로 UNKNOWN 대신 명시 실패. 완료 이벤트로 원본 실행도 종료한다.
+            rejectionTx.execute { load(id).let {
+                if (it.status == "RUNNING") finish(it, AgentNodeResult(NodeResult.fail(429, null, "에이전트 실행 대기가 가득 차 요청을 시작하지 않았습니다."), 0))
+            } }
         } }
     }
 

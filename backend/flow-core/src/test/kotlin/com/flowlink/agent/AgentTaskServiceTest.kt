@@ -86,6 +86,8 @@ class AgentTaskServiceTest {
         assertThat(tasks.get(request.taskId).claimToken).isNull()
         val entered = CountDownLatch(1); val release = CountDownLatch(1)
         Mockito.`when`(executor.execute(request)).thenAnswer {
+            assertThat(Thread.currentThread().isVirtual).isTrue()
+            assertThat(TenantContext.getTenantId()).isEqualTo(TenantContext.DEFAULT_TENANT)
             entered.countDown(); release.await(4, TimeUnit.SECONDS)
             AgentNodeResult(NodeResult.ok(200, null, null, mapOf("amount" to 42)), 1)
         }
@@ -123,6 +125,28 @@ class AgentTaskServiceTest {
         assertThat((tasks.result(request.taskId)!!.result.value as Map<*, *>)["amount"]).isEqualTo(42)
         Mockito.`when`(workspace.currentUsername()).thenReturn("another-user")
         assertThatThrownBy { tasks.get(request.taskId) }.isInstanceOf(ForbiddenException::class.java)
+    }
+
+    @Test fun `대기 상한 거절은 외부 호출 없이 실패 결과를 커밋한다`() {
+        val workers = org.springframework.test.util.ReflectionTestUtils.getField(tasks, "workers") as java.util.concurrent.Executor
+        val entered = CountDownLatch(4); val release = CountDownLatch(1); val drained = CountDownLatch(104)
+        try {
+            repeat(104) { workers.execute {
+                entered.countDown()
+                try { release.await() } finally { drained.countDown() }
+            } }
+            assertThat(entered.await(3, TimeUnit.SECONDS)).isTrue()
+            val request = request("server")
+            create(request)
+            val claim = tasks.claim(request.taskId, AgentClaim("device-1"))
+            tasks.execute(request.taskId, AgentLease("device-1", claim.claimToken!!))
+            assertThat(tasks.get(request.taskId).status).isEqualTo("FAILED")
+            assertThat(tasks.result(request.taskId)!!.result.httpStatus).isEqualTo(429)
+            Mockito.verify(executor, Mockito.never()).execute(request)
+        } finally {
+            release.countDown()
+            assertThat(drained.await(5, TimeUnit.SECONDS)).isTrue()
+        }
     }
 
     @Test fun `재시작 중 요청은 UNKNOWN으로 복구하고 ACK 뒤 위임 본문을 제거한다`() {

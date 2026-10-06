@@ -61,13 +61,11 @@ import org.springframework.transaction.support.TransactionSynchronization
 import org.springframework.transaction.support.TransactionSynchronizationManager
 import java.time.Instant
 import java.util.UUID
-import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.ScheduledFuture
-import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
 
 /**
@@ -125,10 +123,12 @@ class ExecutionService(
         }
 
     /** 실행/재개 연속 실행 전용 워커 풀 — 큐 초과 제출은 429(TooManyRequests) 거절. */
-    private val worker: ThreadPoolExecutor = ThreadPoolExecutor(
-        props.worker.poolSize, props.worker.poolSize, 60L, TimeUnit.SECONDS,
-        ArrayBlockingQueue(props.worker.queueCapacity)
-    ) { r -> Thread(r, "flowlink-exec-" + WORKER_SEQ.incrementAndGet()).apply { isDaemon = true } }
+    private val worker = com.flowlink.execution.config.BoundedVirtualExecutor(
+        "flowlink-exec-", props.worker.poolSize, props.worker.queueCapacity
+    )
+
+    @jakarta.annotation.PreDestroy
+    fun close() { worker.shutdownNow(); scheduler.shutdownNow() }
 
     /**
      * 중단된 실행의 재개 상태. [future] 는 wait 노드의 타임아웃 자동 재개 예약(콜백 수신/재개 시 취소).
@@ -1103,7 +1103,6 @@ class ExecutionService(
 
     companion object {
         private val log = LoggerFactory.getLogger(ExecutionService::class.java)
-        private val WORKER_SEQ = java.util.concurrent.atomic.AtomicInteger()
 
         private fun waitSecs(timeoutSec: Int): Long = if (timeoutSec <= 0) 120L else timeoutSec.toLong()
 

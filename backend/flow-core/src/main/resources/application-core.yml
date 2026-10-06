@@ -1,5 +1,10 @@
 # DB 연결·호스트 포트·인증 발급 설정은 server/desktop이 각각 소유한다.
 spring:
+  threads:
+    virtual:
+      enabled: true
+  main:
+    keep-alive: true
   jpa:
     hibernate:
       ddl-auto: none

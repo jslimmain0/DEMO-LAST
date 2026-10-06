@@ -19,6 +19,8 @@ import org.springframework.web.bind.annotation.RestController
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
+import java.util.concurrent.RejectedExecutionException
+import com.flowlink.execution.config.BoundedVirtualExecutor
 import java.util.concurrent.TimeUnit
 
 /** 브라우저가 아닌 설치 앱이 승인된 실행만 추적하고 에이전트 작업을 전달한다. */
@@ -35,7 +37,7 @@ class DesktopDispatcher(
     private val updateGate: com.flowlink.common.lifecycle.RuntimeUpdateGate = com.flowlink.common.lifecycle.RuntimeUpdateGate(),
 ) {
     private val clock = Executors.newSingleThreadScheduledExecutor { Thread(it, "desktop-dispatch-poll").apply { isDaemon = true } }
-    private val worker = Executors.newFixedThreadPool(4) { Thread(it, "desktop-dispatch-node").apply { isDaemon = true } }
+    private val worker = BoundedVirtualExecutor("desktop-dispatch-node-", 4, 0)
     private val active = ConcurrentHashMap.newKeySet<String>()
     private val log = LoggerFactory.getLogger(javaClass)
     private var pollOffset = 0
@@ -78,7 +80,7 @@ class DesktopDispatcher(
                 val entry = entries[(start + offset) % entries.size]
                 // 동시 외부 요청은 4개로 제한한다. 각 실행은 한 워커만 처리한다.
                 if (active.size >= 4) break
-                if (active.add(entry.key)) worker.execute {
+                if (active.add(entry.key)) try { worker.execute {
                     TenantContext.setTenantId(entry.tenant)
                     try { updateGate.work { journal.get(entry.key)?.let(::drive) } }
                     catch (_: Exception) {
@@ -90,6 +92,9 @@ class DesktopDispatcher(
                         }
                     }
                     finally { TenantContext.clear(); active.remove(entry.key) }
+                } } catch (_: RejectedExecutionException) {
+                    active.remove(entry.key)
+                    break // journal은 유지하고 다음 poll에서 같은 작업을 처리한다.
                 }
             }
         } catch (failure: Exception) { log.warn("에이전트 작업 조회를 계속할 수 없습니다: {}", failure.javaClass.simpleName) }

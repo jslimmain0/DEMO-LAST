@@ -64,3 +64,11 @@ GitHub가 실행할 동일한 `deploy.sh`를 SSH로 Docker 가상 EC2에서 실�
 격리 lab에서 잘못된 checksum의 배포가 컨테이너 변경 전에 거부되는 것, 서버 URL 불일치로 실패한 배포 뒤 이전 프록시·manifest가 복원되는 것, 같은 불변 release를 재배포할 수 있는 것을 확인했다. GitHub runner 이미지는 공식 다운로드 checksum·실행 파일을 확인했고 workflow는 actionlint를 통과했다. GitHub runner 등록·환경 secrets 설정 및 GitHub의 실제 workflow 실행은 아직 수행하지 않았다. EC2 lab만 테스트 H2를 사용하며 Oracle/Vault의 실제 연결은 위 production 설정으로 전환한다.
 
 근거: [GitHub deployment environments](https://docs.github.com/en/actions/how-tos/deploy/configure-and-manage-deployments/control-deployments), [공식 runner 및 checksum](https://github.com/actions/runner/releases/tag/v2.337.0), [Docker daemon 접근 보호](https://docs.docker.com/engine/security/protect-access/).
+
+## 0.3.9 확정 구조 배포 (2026-10-07)
+
+`flow-core` 분리와 Windows 앱의 MCP 전용 인증 자동 설정을 포함한 `0c1ddcdb86ac430e55638df738a81d5758756d0f` 이미지/MSI를 동일 SSH `deploy.sh`로 배포했다. 기존 서버 설정·DB·키와 다운로드 버전은 보존했다. server와 프록시 healthy, 화면/정적 자원·0.3.9 metadata·자동 업데이트 허용 및 실행 JAR의 동일 SHA-256을 확인했다. MSI 실제 다운로드는 149,395,173 bytes와 manifest SHA-256에 일치했다. 사용자 PC에 설치하는 작업은 하지 않았다.
+
+현재 서버: <http://127.0.0.1:18088>, [0.3.9 MSI 다운로드](http://127.0.0.1:18088/downloads/FlowLink-0.3.9-windows-x64.msi). Oracle/Vault와 H2↔Oracle 혼합 실행 및 인증 REST의 검증 범위는 [검증 기록](../../docs/reviews/2026-10-07-confirmed-architecture.md)에 있다. 실제 GitHub 로그인·MCP 프로토콜·IDE 등록 및 GitHub Actions 실행은 수행하지 않았다.
+
+현재 **격리 Docker lab만** 모의 로그인으로 전환했다. lab `.env`의 `SPRING_PROFILES_ACTIVE=local,agent-lab`, `FLOWLINK_AUTH_GITHUB_ENABLED=true`, `FLOWLINK_AUTH_GUEST_ENABLED=false`, `FLOWLINK_AUTH_MOCK_LOGIN=true`를 설정하고 동일 release를 재배포했다. 검토 앱에서 외부 GitHub 없이 `lab-admin` 로그인과 서버/MCP 주소 자동 조회 및 최신 0.3.9 업데이트 상태를 확인했다. production의 실제 GitHub 인증 설정은 유지한다.

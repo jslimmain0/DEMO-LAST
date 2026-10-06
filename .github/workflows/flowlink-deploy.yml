@@ -45,12 +45,16 @@ jobs:
         run: |
           npm ci --no-audit --no-fund
           npm run lint
+          npm test
           npm run build
       - name: 백엔드 검증 및 빌드
         working-directory: backend
         run: |
           chmod +x gradlew
-          ./gradlew test :flow-server:bootJar --no-daemon --console=plain
+          ./gradlew test :flow-server:bootJar :flow-desktop:bootJar --no-daemon --console=plain
+      - name: 역할별 배포 산출물 경계 검사
+        shell: pwsh
+        run: ./scripts/test/module-artifacts.ps1
       - name: 배포 이미지 저장
         env:
           COMMIT: ${{ github.sha }}

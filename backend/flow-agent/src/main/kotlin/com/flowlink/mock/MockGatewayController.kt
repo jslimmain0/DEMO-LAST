@@ -86,9 +86,13 @@ class MockGatewayController(
                 .header("Content-Type", res.contentType)
             res.headers.forEach { (k, v) -> b.header(k, v) }
             b.body(res.body)
+        } catch (e: org.springframework.web.server.ResponseStatusException) {
+            jsonError(e.statusCode.value(), e.reason ?: "Mock 자원을 불러오지 못했습니다.")
+        } catch (e: com.flowlink.common.error.BadRequestException) {
+            jsonError(400, e.message ?: "Mock 설정을 확인하세요.")
         } catch (e: Exception) {
-            log.warn("[mock:{}] 처리 오류: {}", first, if (e.message == null) e.toString() else e.message)
-            jsonError(500, "mock 처리 오류: " + (if (e.message == null) e.toString() else e.message))
+            log.warn("[mock:{}] 처리 오류 유형: {}", first, e.javaClass.simpleName)
+            jsonError(500, "Mock 처리에 실패했습니다. 응답 규칙과 플러그인 설정을 확인하세요.")
         }
     }
 

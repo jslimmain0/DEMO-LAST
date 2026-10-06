@@ -45,6 +45,7 @@ class ResourceBoundaryTest {
     @Autowired lateinit var gateway: MockGatewayController
     @Autowired lateinit var tcp: TcpMockRegistry
     @Autowired lateinit var json: JsonService
+    @Autowired lateinit var transformPreview: com.flowlink.transform.TransformController
 
     private val protocol = """{"encoding":"UTF-8","lengthField":"length","header":[{"name":"length","len":4,"type":"length"}],"messages":[{"key":"request","fields":[{"name":"answer","len":4,"type":"ascii"}]},{"key":"response","fields":[{"name":"answer","len":4,"type":"ascii"}]}]}"""
     private fun team() = ws.createTeam("격리-${UUID.randomUUID()}")
@@ -53,6 +54,35 @@ class ResourceBoundaryTest {
         SecurityContextHolder.getContext().authentication = JwtAuthenticationToken(jwt)
     }
     @AfterEach fun clear() { SecurityContextHolder.clearContext() }
+
+    @Test fun `중앙 변환 전문 미리보기와 Mock은 없는 환경으로 진행하지 않는다`() {
+        val a = team()
+        val script = scripts.create(PluginScriptDtos.SaveRequest("환경검증", "({id:'preview-env',label:'환경검증',apply(){return {result:'ok'}}})", a.id))
+        scripts.submit(script.id); scripts.approve(script.id)
+        assertThrows<BadRequestException> { transformPreview.preview("preview-env", com.flowlink.transform.TransformController.PreviewRequest(environment = "missing"), a.id) }
+        assertThrows<BadRequestException> { protocols.preview(com.flowlink.protocol.ProtocolDtos.PreviewRequest(json.readTree(protocol), "request", mapOf("answer" to "PING"), "send", "missing"), a.id) }
+        val mock = mocks.create(MockDtos.CreateMockServerRequest("환경검증", "missing-env", "HTTP", a.id))
+        try {
+            mocks.updateSpec(mock.id, json.readTree("""{"environment":"missing","routes":[{"method":"GET","path":"/origin","rules":[{"status":200,"contentType":"text","body":"ok"}]}]}"""))
+            val response = gateway.handle("ws", MockHttpServletRequest("GET", mock.basePath + "/origin"))
+            assertThat(response.statusCode.value()).isEqualTo(400)
+            assertThat(String(response.body!!)).contains("선택한 환경이 없습니다")
+        } finally { mocks.delete(mock.id) }
+    }
+
+    @Test fun `Mock 플러그인 오류 원문에 있는 시크릿을 외부 응답에 노출하지 않는다`() {
+        val a = team()
+        val script = scripts.create(PluginScriptDtos.SaveRequest("오류검증", "({id:'mock-error',label:'오류검증',apply(i){throw new Error(i.input)}})", a.id))
+        scripts.submit(script.id); scripts.approve(script.id)
+        secrets.put("token", "private-secret-value", null, a.id)
+        val mock = mocks.create(MockDtos.CreateMockServerRequest("오류검증", "safe-error", "HTTP", a.id))
+        try {
+            mocks.updateSpec(mock.id, json.readTree("""{"codec":{"response":[{"id":"mock-error"}]},"routes":[{"method":"GET","path":"/origin","rules":[{"status":200,"contentType":"text","body":"{{token@secret}}"}]}]}"""))
+            val response = gateway.handle("ws", MockHttpServletRequest("GET", mock.basePath + "/origin"))
+            assertThat(response.statusCode.value()).isEqualTo(500)
+            assertThat(String(response.body!!)).contains("플러그인 설정을 확인").doesNotContain("private-secret-value")
+        } finally { mocks.delete(mock.id) }
+    }
 
     @Test fun `같은 이름의 환경 시크릿 전문은 공간마다 다른 값이며 다른 팀 폴백이 없다`() {
         val a = team(); val b = team(); val aid = UUID.fromString(a.id); val bid = UUID.fromString(b.id)

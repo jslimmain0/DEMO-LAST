@@ -5,6 +5,8 @@
 > `flow-agent`에는 호출·Mock·콜백 수신과 순수 실행 계약만 두고 JPA·관리 서비스 의존을 금지한다.
 > desktop과 server는 공통 워크플로·환경·JPA 저장·관리·실행 조정을 소유한 `flow-core`에 의존한다. desktop은 server 모듈에 의존하지 않으며 Oracle 드라이버·중앙 MCP·MCP SDK가 없다.
 > DB 연결/프로파일은 각 호스트가 소유한다. 공통 UUID 매핑·웹 설정만 core의 `application-core.yml`에서 가져오며 개인 H2 파일과 기존 키는 유지한다.
+> 플러그인·Vault는 공용·팀 중앙 서버 전용이다. 변환 노드는 현재 흐름의 공간·환경으로 서버에서 실행하며 별도 실행 위치 선택이 없다.
+> 개인 환경·프로토콜·직접 입력 시크릿은 H2에 유지한다. HTTP/TCP 위임은 목적지 공간의 자원을 사용하며 없는 환경이나 조회 장애를 빈 값으로 대체하지 않는다.
 > `flow-mcp`는 서버 JVM에서 로드하는 중앙 Kotlin MCP 라이브러리이다. Windows 설치 구현·자료·업데이트 helper는 `backend/flow-desktop/installer/`에 둔다.
 > 중앙 서버 기능은 `ServerFeatures`, Windows 기능은 `DesktopConfiguration`에서 명시적으로 등록한다. 개인 DB 위치·암호화 키와 기존 실행 API는 유지한다.
 > 빌드: `backend/`에서 `./gradlew :flow-agent:jar :flow-core:jar :flow-mcp:jar :flow-server:bootJar :flow-desktop:bootJar`. 서버 Docker·MSI는 각각 server·desktop JAR를 사용한다.

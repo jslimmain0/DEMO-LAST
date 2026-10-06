@@ -1,13 +1,12 @@
 package com.flowlink.mock
 
-import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Component
 import java.util.concurrent.ConcurrentHashMap
 
 /**
  * 환경 스코프 공급자 — `{{ 이름@secret }}`·`{{ 키@env }}` 를 풀기 위한 시크릿·환경 변수 맵을 **테넌트 + 환경 이름** 단위로 10초 캐시한다
  * (Transit/Vault·DB 왕복을 요청마다 안 하게). Mock 서빙(게이트웨이/TCP 리스너)·코덱 시험·프로토콜 미리보기·플러그인 시험 실행이 같이 쓴다.
- * 서빙 스레드에서 테넌트를 직접 지정해 호출한다. 조회 실패(Vault 다운 등)는 빈 맵 + WARN(토큰만 빈 문자열, 처리는 계속).
+ * 서빙 스레드에서 테넌트를 직접 지정해 호출한다. 조회 실패는 전파하며 빈 환경·시크릿으로 대체하지 않는다.
  */
 @Component
 class MockSecretProvider(private val loader: MockScopeLoader) {
@@ -40,7 +39,6 @@ class MockSecretProvider(private val loader: MockScopeLoader) {
     private class Entry(val scope: Scope, val at: Long)
 
     private val cache = ConcurrentHashMap<String, Entry>()
-    private val log = LoggerFactory.getLogger(MockSecretProvider::class.java)
 
     /** [cached]=false 는 대화형(시험·미리보기) — 방금 저장한 값이 바로 보이게 캐시를 건너뛴다. */
     fun scope(tenantId: String, environment: String?, cached: Boolean = true, workspaceId: java.util.UUID? = null): Scope {

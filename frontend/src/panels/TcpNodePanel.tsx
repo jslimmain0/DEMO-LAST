@@ -3,6 +3,8 @@ import { useNodeResources } from '../components/AgentSettings'
 import { useQuery } from '@tanstack/react-query'
 import type { CSSProperties } from 'react'
 import { Link } from 'react-router-dom'
+import { useWorkspace } from '../app/WorkspaceContext'
+import { apiErrorMessage } from '../lib/apiError'
 import type { GraphNode, NodeOutput, ProtocolField, ProtocolPreview, ProtocolSpec } from '../api/types'
 
 import { TokenInput } from '../binding/TokenInput'
@@ -32,6 +34,9 @@ export function TcpRequestPanel({ node, update, sources, canEdit, preview, previ
 
   const protos = useQuery({ queryKey: [...resources.key, 'protocols'], queryFn: protocolsApi.list, staleTime: 15_000, enabled: resources.available })
   const proto = useProtocol(node.protocolId || undefined, node)
+  const scope = useWorkspace()
+  const space = scope.workspaces.find(w => w.origin === resources.agent && w.id === resources.workspaceId)
+  const missing = !!node.protocolId && protos.isSuccess && !protos.data?.some(p => p.id === node.protocolId)
   const spec = proto.data?.spec
   const values = node.tcpValues ?? {}
   const setValue = (name: string, v: string) => update({ tcpValues: { ...values, [name]: v } })
@@ -55,15 +60,22 @@ export function TcpRequestPanel({ node, update, sources, canEdit, preview, previ
         <div style={{ flex: 2, minWidth: 0 }}>
           <label style={label}>프로토콜</label>
           <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-            <select style={field} value={node.protocolId ?? ''} disabled={!canEdit} onChange={(e) => update({ protocolId: e.target.value, tcpMessage: '', tcpValues: {}, tcpResponseMessage: '', outputs: [] })}>
-              <option value="">— 선택 —</option>
+            <select aria-label="프로토콜" style={field} value={node.protocolId ?? ''} disabled={!canEdit || !resources.available || !protos.isSuccess} onChange={(e) => update({ protocolId: e.target.value, tcpMessage: '', tcpValues: {}, tcpResponseMessage: '', outputs: [] })}>
+              <option value="">{!resources.available ? '연결 필요' : protos.isPending ? '불러오는 중…' : protos.isError ? '목록 조회 실패' : '— 선택 —'}</option>
+              {node.protocolId && !protos.data?.some(p => p.id === node.protocolId) && <option value={node.protocolId}>기존 프로토콜 · 확인 필요</option>}
               {(protos.data ?? []).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
-            <Link to={`${node.protocolId ? `/protocols/${node.protocolId}` : '/protocols'}?space=${encodeURIComponent(`${resources.agent}:${resources.workspaceId}`)}`} target="_blank" rel="noreferrer" style={{ fontSize: 11.5, whiteSpace: 'nowrap', color: 'var(--fl-primary)' }}>관리 →</Link>
+            <Link to={`${node.protocolId && !missing ? `/protocols/${node.protocolId}` : '/protocols'}?space=${encodeURIComponent(`${resources.agent}:${resources.workspaceId}`)}`} target="_blank" rel="noreferrer" style={{ fontSize: 11.5, whiteSpace: 'nowrap', color: 'var(--fl-primary)' }}>관리 →</Link>
           </div>
         </div>
         <div style={{ flex: 1, minWidth: 0 }}><label style={label}>타임아웃(ms)</label><input style={field} type="number" value={node.tcpTimeoutMs ?? 5000} readOnly={!canEdit} onChange={(e) => update({ tcpTimeoutMs: Number(e.target.value) })} /></div>
       </div>
+      <p style={{ fontSize: 12, color: 'var(--fl-text-muted)', overflowWrap: 'anywhere' }}>프로토콜 저장소: {resources.agent === 'local' ? '내 PC' : '서버'} · {space?.name ?? (resources.workspaceId === 'public' ? '공용' : resources.workspaceId)}</p>
+      {!resources.available ? <p role="status">{resources.agent === 'local' ? 'PC 앱 연결을 확인하세요.' : '서버에 로그인한 뒤 프로토콜을 선택하세요.'}</p>
+        : protos.isError ? <p role="alert">프로토콜을 불러오지 못했습니다. {apiErrorMessage(protos.error)} <button type="button" style={singleBtn} onClick={() => { void protos.refetch(); if (node.protocolId) void proto.refetch() }}>다시 확인</button></p>
+        : missing ? <p role="alert">기존 프로토콜이 이 실행 위치의 공간에 없습니다. 이 공간의 프로토콜을 선택하세요. 기존 전문·필드 값은 유지됩니다.</p>
+        : proto.isError ? <p role="alert">선택한 프로토콜을 불러오지 못했습니다. {apiErrorMessage(proto.error)} <button type="button" style={singleBtn} onClick={() => { void protos.refetch(); void proto.refetch() }}>다시 확인</button></p>
+        : protos.isSuccess && !protos.data?.length ? <p role="status">이 실행 위치에는 프로토콜이 없습니다. 관리 화면에서 먼저 만드세요.</p> : null}
       {spec && (
         <>
           <label style={label}>전문 (송신)</label>

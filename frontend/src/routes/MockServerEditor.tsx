@@ -646,7 +646,7 @@ function TrafficPanel({ id, canEdit, base, spec, onSpec, journal, open, onToggle
   const stateKeys = Object.keys(st.data?.state ?? {})
   const tabs: Array<['log' | 'send', string]> = isTcp ? [['log', '전문 로그'], ['send', '보내보기']] : [['log', '요청 기록'], ['send', '보내보기']]
   return (
-    <section style={{ ...trafficWrap, height: open ? 300 : 36 }} aria-label="트래픽 패널">
+    <section style={{ ...trafficWrap, height: open ? 'min(300px, 32vh)' : 'auto' }} aria-label="트래픽 패널">
       <div style={trafficBar}>
         <button style={{ ...miniBtn, fontWeight: 700, border: 'none', background: 'transparent' }} onClick={onToggle} aria-expanded={open}>{open ? '▾' : '▸'} 트래픽</button>
         <span style={metaMono}>{isTcp ? '전문 로그' : `요청 기록 ${journal.length}${unmatched ? ` · 무매칭 ${unmatched}` : ''}${stateKeys.length ? ` · 상태 ${stateKeys.length}` : ''}${st.data ? ` · seq ${st.data.seq}` : ''}`}</span>
@@ -738,7 +738,7 @@ function SendBox({ base, ensureSaved, routeFilter, onSent }: { base: string; ens
 // ---------- 스타일 ----------
 
 const hdr: CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', borderBottom: '1px solid var(--fl-border)', background: 'var(--fl-surface)', flexWrap: 'wrap', flexShrink: 0 }
-const leftNav: CSSProperties = { width: 268, flexShrink: 0, borderRight: '1px solid var(--fl-border)', background: 'var(--fl-surface)', padding: 10, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }
+const leftNav: CSSProperties = { width: 'clamp(150px, 22vw, 268px)', flexShrink: 0, borderRight: '1px solid var(--fl-border)', background: 'var(--fl-surface)', padding: 10, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }
 const navHead: CSSProperties = { display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 12, fontWeight: 700, color: 'var(--fl-text)', padding: '4px 6px 6px' }
 const navItem: CSSProperties = { display: 'flex', alignItems: 'center', gap: 7, width: '100%', padding: '7px 8px', border: '1px solid transparent', borderRadius: 8, background: 'transparent', color: 'var(--fl-text)', cursor: 'pointer', textAlign: 'left', fontSize: 12.5 }
 const navActive: CSSProperties = { background: 'var(--fl-surface-2)', borderColor: 'var(--fl-border)', boxShadow: 'inset 3px 0 0 var(--fl-primary)' }

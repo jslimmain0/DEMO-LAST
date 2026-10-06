@@ -201,9 +201,9 @@ function ExpectEditor({ route, readOnly, onChange, codec, onCodec, sources }: {
           {!readOnly && <button style={{ ...miniBtn, padding: '2px 8px' }} onClick={() => set([...rows, { key: '', example: '' }])}>+ 키</button>}
         </div>
         {rows.map((f, i) => (
-          <div key={i} style={{ display: 'flex', gap: 6, marginBottom: 4, alignItems: 'center' }}>
-            <input style={{ ...input, flex: 1, fontFamily: 'var(--fl-font-mono)' }} value={f.key} placeholder={placeholder} disabled={readOnly} onChange={(e) => set(rows.map((x, xi) => (xi === i ? { ...x, key: e.target.value } : x)))} />
-            <input style={{ ...input, flex: 1.2, fontFamily: 'var(--fl-font-mono)' }} value={f.example ?? ''} placeholder="예시값(테스트 요청에 사용)" disabled={readOnly} onChange={(e) => set(rows.map((x, xi) => (xi === i ? { ...x, example: e.target.value } : x)))} />
+          <div key={i} style={fieldRow}>
+            <input aria-label={`예상 ${title} ${i + 1} 키`} style={{ ...input, flex: '1 1 120px', fontFamily: 'var(--fl-font-mono)' }} value={f.key} placeholder={placeholder} disabled={readOnly} onChange={(e) => set(rows.map((x, xi) => (xi === i ? { ...x, key: e.target.value } : x)))} />
+            <input aria-label={`예상 ${title} ${i + 1} 예시값`} style={{ ...input, flex: '1 1 160px', fontFamily: 'var(--fl-font-mono)' }} value={f.example ?? ''} placeholder="예시값(테스트 요청에 사용)" disabled={readOnly} onChange={(e) => set(rows.map((x, xi) => (xi === i ? { ...x, example: e.target.value } : x)))} />
             {withCodec && f.key.trim() && <FieldCodecButton field={f.key.trim()} codec={codec} onChange={(c) => onCodec?.(c)} sources={sources} defaultSide="request" readOnly={readOnly || !onCodec} />}
             {!readOnly && <button style={{ ...miniBtn, color: 'var(--fl-fail)' }} onClick={() => set(rows.filter((_, xi) => xi !== i))} aria-label="예상 필드 삭제">×</button>}
           </div>
@@ -271,19 +271,30 @@ function RuleCard({ rule, index, total, route, sources, readOnly, codec, onCodec
         <span style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--fl-text-muted)' }}>
           규칙 {index + 1}/{total} {conds.length === 0 && '(조건 없음 = 기본)'}
         </span>
-        <span style={{ fontSize: 12, marginLeft: 'auto' }}>status</span>
-        <input style={{ ...input, width: 72, fontFamily: 'var(--fl-font-mono)' }} value={rule.status ?? 200} disabled={readOnly} onChange={(e) => onChange({ ...rule, status: Number(e.target.value) || 200 })} />
-        <select style={{ ...input, minWidth: 100 }} value={rule.contentType ?? 'json'} disabled={readOnly} onChange={(e) => onChange({ ...rule, contentType: e.target.value })}>
+      </div>
+      <div style={{ ...fieldRow, marginTop: 8 }}>
+        <label style={fieldLabel}>응답 코드
+        <input aria-label={`규칙 ${index + 1} 응답 코드`} style={input} value={rule.status ?? 200} disabled={readOnly} onChange={(e) => onChange({ ...rule, status: Number(e.target.value) || 200 })} />
+        </label>
+        <label style={fieldLabel}>응답 형식
+        <select aria-label={`규칙 ${index + 1} 응답 형식`} style={input} value={rule.contentType ?? 'json'} disabled={readOnly} onChange={(e) => onChange({ ...rule, contentType: e.target.value })}>
           {CONTENT_TYPES.map((c) => <option key={c}>{c}</option>)}
         </select>
-        <select style={{ ...input, minWidth: 90 }} value={rule.charset ?? 'UTF-8'} disabled={readOnly} onChange={(e) => onChange({ ...rule, charset: e.target.value })}>
+        </label>
+        <label style={fieldLabel}>문자셋
+        <select aria-label={`규칙 ${index + 1} 문자셋`} style={input} value={rule.charset ?? 'UTF-8'} disabled={readOnly} onChange={(e) => onChange({ ...rule, charset: e.target.value })}>
           {CHARSETS.map((c) => <option key={c}>{c}</option>)}
         </select>
-        <span style={{ fontSize: 12 }}>지연(ms)</span>
-        <input style={{ ...input, width: 76, fontFamily: 'var(--fl-font-mono)' }} value={rule.delayMs ?? 0} disabled={readOnly} onChange={(e) => onChange({ ...rule, delayMs: Number(e.target.value) || 0 })} />
-        <span style={{ fontSize: 12 }} title="이 규칙을 처음 N회 매칭까지만 적용(순차 응답). 비우면 무제한">N회만</span>
-        <input style={{ ...input, width: 56, fontFamily: 'var(--fl-font-mono)' }} value={rule.repeat ?? ''} placeholder="∞" disabled={readOnly}
+        </label>
+        <label style={fieldLabel}>응답 지연(ms)
+        <input aria-label={`규칙 ${index + 1} 응답 지연(ms)`} style={input} value={rule.delayMs ?? 0} disabled={readOnly} onChange={(e) => onChange({ ...rule, delayMs: Number(e.target.value) || 0 })} />
+        </label>
+        <label style={fieldLabel} title="이 규칙을 처음 N회 매칭까지만 적용(순차 응답). 비우면 무제한">적용 횟수
+        <input aria-label={`규칙 ${index + 1} 적용 횟수`} style={input} value={rule.repeat ?? ''} placeholder="무제한" disabled={readOnly}
           onChange={(e) => { const n = Number(e.target.value); onChange({ ...rule, repeat: e.target.value.trim() && n > 0 ? n : undefined }) }} />
+        </label>
+      </div>
+      <div style={fieldRow}>
         <button style={{ ...miniBtn, color: 'var(--fl-primary)' }} onClick={onTest} disabled={testing} title="이 규칙의 조건(eq)값 + 예상 요청 예시로 요청을 보내 이 규칙이 매칭되는지 확인">▶ 규칙 테스트</button>
         {!readOnly && <>
           <button style={miniBtn} onClick={onDup} title="규칙 복제">복제</button>
@@ -294,19 +305,19 @@ function RuleCard({ rule, index, total, route, sources, readOnly, codec, onCodec
       {/* 조건 — 키는 예상 요청 필드에서 후보 제시(자유 입력 가능) */}
       <div style={{ marginTop: 8 }}>
         {conds.map((c, i) => (
-          <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 6 }}>
-            <select style={{ ...input, minWidth: 86 }} value={c.source} disabled={readOnly} onChange={(e) => setCond(i, { ...c, source: e.target.value as MockCond['source'] })}>
+          <div key={i} style={{ ...fieldRow, marginTop: 6 }}>
+            <select aria-label={`조건 ${i + 1} 값 출처`} style={{ ...input, width: 86 }} value={c.source} disabled={readOnly} onChange={(e) => setCond(i, { ...c, source: e.target.value as MockCond['source'] })}>
               {COND_SOURCES.map((s) => <option key={s}>{s}</option>)}
             </select>
-            <input list={condListId(i)} style={{ ...input, width: 150, fontFamily: 'var(--fl-font-mono)' }} value={c.key} placeholder="키" disabled={readOnly} onChange={(e) => setCond(i, { ...c, key: e.target.value })} />
+            <input aria-label={`조건 ${i + 1} 키`} list={condListId(i)} style={{ ...input, flex: '1 1 120px', fontFamily: 'var(--fl-font-mono)' }} value={c.key} placeholder="키" disabled={readOnly} onChange={(e) => setCond(i, { ...c, key: e.target.value })} />
             <datalist id={condListId(i)}>{(c.source === 'state' ? (sources.find((s) => s.id === 'state')?.items.map((it) => it.key) ?? []) : expectKeys(route, c.source as 'body' | 'query' | 'header' | 'path')).map((k) => <option key={k} value={k} />)}</datalist>
-            <select style={{ ...input, minWidth: 92 }} value={c.op} disabled={readOnly} onChange={(e) => setCond(i, { ...c, op: e.target.value as MockCond['op'] })}>
+            <select aria-label={`조건 ${i + 1} 비교 방식`} style={{ ...input, width: 92 }} value={c.op} disabled={readOnly} onChange={(e) => setCond(i, { ...c, op: e.target.value as MockCond['op'] })}>
               {COND_OPS.map((o) => <option key={o}>{o}</option>)}
             </select>
             {c.op !== 'exists' && (
-              <div style={{ flex: 1, minWidth: 120 }}><TokenInput ariaLabel={`조건 ${c.key} 값`} value={c.value ?? ''} sources={sources} placeholder="값 또는 { } 데이터 삽입" onChange={(v) => setCond(i, { ...c, value: v })} /></div>
+              <div style={{ flex: '1 1 180px', minWidth: 0, maxWidth: '100%' }}><TokenInput ariaLabel={`조건 ${i + 1} ${c.key} 값`} value={c.value ?? ''} sources={sources} placeholder="값 또는 { } 데이터 삽입" onChange={(v) => setCond(i, { ...c, value: v })} /></div>
             )}
-            {!readOnly && <button style={miniBtn} onClick={() => onChange({ ...rule, when: conds.filter((_, xi) => xi !== i) })}>×</button>}
+            {!readOnly && <button aria-label={`조건 ${i + 1} 삭제`} style={miniBtn} onClick={() => onChange({ ...rule, when: conds.filter((_, xi) => xi !== i) })}>×</button>}
           </div>
         ))}
         {!readOnly && <button
@@ -319,6 +330,7 @@ function RuleCard({ rule, index, total, route, sources, readOnly, codec, onCodec
       <div style={{ position: 'relative', marginTop: 8 }}>
         <textarea
           ref={bodyRef}
+          aria-label={`규칙 ${index + 1} 응답 본문`}
           style={{ ...input, width: '100%', minHeight: 74, fontFamily: 'var(--fl-font-mono)', fontSize: 12, resize: 'vertical', boxSizing: 'border-box', paddingRight: 64 }}
           value={rule.body ?? ''}
           disabled={readOnly}
@@ -345,10 +357,10 @@ function RuleCard({ rule, index, total, route, sources, readOnly, codec, onCodec
       {/* 응답 헤더 — 값은 템플릿(칩). 응답 후 코덱의 header 대상과 조합(서명 등) */}
       <div style={{ marginTop: 8 }}>
         {headers.map((h, i) => (
-          <div key={i} style={{ display: 'flex', gap: 6, marginBottom: 4, alignItems: 'center' }}>
-            <input style={{ ...input, width: 170, fontFamily: 'var(--fl-font-mono)' }} value={h.key} placeholder="헤더명 (예: X-Request-Id)" disabled={readOnly} onChange={(e) => onChange({ ...rule, headers: headers.map((x, xi) => (xi === i ? { ...x, key: e.target.value } : x)) })} />
-            <div style={{ flex: 1 }}><TokenInput ariaLabel={`응답 헤더 ${h.key}`} value={h.value} sources={sources} placeholder="값 또는 { } 데이터 삽입" onChange={(v) => onChange({ ...rule, headers: headers.map((x, xi) => (xi === i ? { ...x, value: v } : x)) })} /></div>
-            {!readOnly && <button style={miniBtn} onClick={() => onChange({ ...rule, headers: headers.filter((_, xi) => xi !== i) })}>×</button>}
+          <div key={i} style={fieldRow}>
+            <input aria-label={`응답 헤더 ${i + 1} 이름`} style={{ ...input, flex: '1 1 120px', fontFamily: 'var(--fl-font-mono)' }} value={h.key} placeholder="헤더명 (예: X-Request-Id)" disabled={readOnly} onChange={(e) => onChange({ ...rule, headers: headers.map((x, xi) => (xi === i ? { ...x, key: e.target.value } : x)) })} />
+            <div style={{ flex: '1 1 180px', minWidth: 0, maxWidth: '100%' }}><TokenInput ariaLabel={`응답 헤더 ${i + 1} ${h.key} 값`} value={h.value} sources={sources} placeholder="값 또는 { } 데이터 삽입" onChange={(v) => onChange({ ...rule, headers: headers.map((x, xi) => (xi === i ? { ...x, value: v } : x)) })} /></div>
+            {!readOnly && <button aria-label={`응답 헤더 ${i + 1} 삭제`} style={miniBtn} onClick={() => onChange({ ...rule, headers: headers.filter((_, xi) => xi !== i) })}>×</button>}
           </div>
         ))}
         {!readOnly && <button style={miniBtn} onClick={() => onChange({ ...rule, headers: [...headers, { key: '', value: '' }] })}>+ 응답 헤더</button>}
@@ -357,14 +369,14 @@ function RuleCard({ rule, index, total, route, sources, readOnly, codec, onCodec
       {/* 상태 설정(setState) — 상태 있는 목: 응답 후 서버 상태 갱신 → 다음 호출 조건(source=state)/템플릿({{state.x}}) */}
       <div style={{ marginTop: 8 }}>
         {(rule.setState ?? []).map((s, i) => (
-          <div key={i} style={{ display: 'flex', gap: 6, marginBottom: 4, alignItems: 'center' }}>
+          <div key={i} style={fieldRow}>
             <span style={{ fontSize: 11, color: 'var(--fl-text-muted)' }}>state.</span>
-            <input style={{ ...input, flex: 1 }} value={s.key} placeholder="키(예: status)" disabled={readOnly} onChange={(e) => onChange({ ...rule, setState: (rule.setState ?? []).map((x, xi) => xi === i ? { ...x, key: e.target.value } : x) })} />
-            <select style={{ ...input, width: 78 }} value={s.op ?? 'set'} title="대입/증가/감소(증감은 숫자 누산기)" disabled={readOnly} onChange={(e) => onChange({ ...rule, setState: (rule.setState ?? []).map((x, xi) => xi === i ? { ...x, op: e.target.value as 'set' | 'incr' | 'decr' } : x) })}>
+            <input aria-label={`상태 설정 ${i + 1} 키`} style={{ ...input, flex: '1 1 120px' }} value={s.key} placeholder="키(예: status)" disabled={readOnly} onChange={(e) => onChange({ ...rule, setState: (rule.setState ?? []).map((x, xi) => xi === i ? { ...x, key: e.target.value } : x) })} />
+            <select aria-label={`상태 설정 ${i + 1} 연산`} style={{ ...input, width: 78 }} value={s.op ?? 'set'} title="대입/증가/감소(증감은 숫자 누산기)" disabled={readOnly} onChange={(e) => onChange({ ...rule, setState: (rule.setState ?? []).map((x, xi) => xi === i ? { ...x, op: e.target.value as 'set' | 'incr' | 'decr' } : x) })}>
               <option value="set">대입</option><option value="incr">증가</option><option value="decr">감소</option>
             </select>
-            <div style={{ flex: 1.4 }}><TokenInput ariaLabel={`상태 ${s.key} 값`} value={s.value} sources={sources} placeholder={s.op === 'incr' || s.op === 'decr' ? '증감량(기본 1)' : '값(템플릿, 예: approved)'} onChange={(v) => onChange({ ...rule, setState: (rule.setState ?? []).map((x, xi) => xi === i ? { ...x, value: v } : x) })} /></div>
-            {!readOnly && <button style={miniBtn} onClick={() => onChange({ ...rule, setState: (rule.setState ?? []).filter((_, xi) => xi !== i) })}>×</button>}
+            <div style={{ flex: '1 1 180px', minWidth: 0, maxWidth: '100%' }}><TokenInput ariaLabel={`상태 설정 ${i + 1} ${s.key} 값`} value={s.value} sources={sources} placeholder={s.op === 'incr' || s.op === 'decr' ? '증감량(기본 1)' : '값(템플릿, 예: approved)'} onChange={(v) => onChange({ ...rule, setState: (rule.setState ?? []).map((x, xi) => xi === i ? { ...x, value: v } : x) })} /></div>
+            {!readOnly && <button aria-label={`상태 설정 ${i + 1} 삭제`} style={miniBtn} onClick={() => onChange({ ...rule, setState: (rule.setState ?? []).filter((_, xi) => xi !== i) })}>×</button>}
           </div>
         ))}
         {!readOnly && <button style={miniBtn} onClick={() => onChange({ ...rule, setState: [...(rule.setState ?? []), { key: '', value: '' }] })}>+ 상태 설정 (호출 후 저장 · 다음 호출에 {'{{ 키@state }}'}로 보임)</button>}
@@ -378,10 +390,10 @@ function RuleCard({ rule, index, total, route, sources, readOnly, codec, onCodec
         </label>
         {showCb && (
           <div style={{ display: 'grid', gap: 6, marginTop: 6, paddingLeft: 4 }}>
-            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            <div style={fieldRow}>
               <span style={{ fontSize: 12, flexShrink: 0 }}>지연(ms)</span>
-              <input style={{ ...input, width: 90, fontFamily: 'var(--fl-font-mono)' }} value={cb.afterMs ?? 500} disabled={readOnly} onChange={(e) => setCb({ afterMs: Number(e.target.value) || 0 })} />
-              <div style={{ flex: 1 }}><TokenInput ariaLabel="콜백 URL" value={cb.url ?? ''} sources={sources} placeholder="URL 템플릿 — 예: {{ notiUrl@body }}" onChange={(v) => setCb({ url: v })} /></div>
+              <input aria-label={`규칙 ${index + 1} 콜백 지연(ms)`} style={{ ...input, width: 90, fontFamily: 'var(--fl-font-mono)' }} value={cb.afterMs ?? 500} disabled={readOnly} onChange={(e) => setCb({ afterMs: Number(e.target.value) || 0 })} />
+              <div style={{ flex: '1 1 180px', minWidth: 0, maxWidth: '100%' }}><TokenInput ariaLabel="콜백 URL" value={cb.url ?? ''} sources={sources} placeholder="URL 템플릿 — 예: {{ notiUrl@body }}" onChange={(v) => setCb({ url: v })} /></div>
               <label style={{ fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                 <input type="checkbox" checked={cb.retryUntilOk ?? true} disabled={readOnly} onChange={(e) => setCb({ retryUntilOk: e.target.checked })} />
                 OK 재시도
@@ -390,6 +402,7 @@ function RuleCard({ rule, index, total, route, sources, readOnly, codec, onCodec
             <div style={{ position: 'relative' }}>
               <textarea
                 ref={cbRef}
+                aria-label={`규칙 ${index + 1} 콜백 본문`}
                 style={{ ...input, width: '100%', minHeight: 46, fontFamily: 'var(--fl-font-mono)', fontSize: 12, resize: 'vertical', boxSizing: 'border-box', paddingRight: 64 }}
                 value={cb.body ?? ''}
                 disabled={readOnly}
@@ -450,7 +463,9 @@ function RuleCard({ rule, index, total, route, sources, readOnly, codec, onCodec
 // ---------- 스타일 ----------
 
 const code: CSSProperties = { fontFamily: 'var(--fl-font-mono)', fontSize: 11, background: 'var(--fl-surface-2)', padding: '1px 5px', borderRadius: 4 }
-const input: CSSProperties = { padding: '7px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 13 }
+const fieldRow: CSSProperties = { display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 4, alignItems: 'center' }
+const fieldLabel: CSSProperties = { display: 'grid', gap: 4, flex: '1 1 110px', minWidth: 0, fontSize: 11.5, color: 'var(--fl-text-muted)' }
+const input: CSSProperties = { padding: '7px 10px', minWidth: 0, maxWidth: '100%', boxSizing: 'border-box', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 13 }
 const miniBtn: CSSProperties = { padding: '5px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 12, cursor: 'pointer' }
 const braceBtn: CSSProperties = { width: 26, height: 24, border: '1px solid var(--fl-border)', borderRadius: 6, background: 'var(--fl-surface)', color: 'var(--fl-primary)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: 0 }
 const badgeStyle: CSSProperties = { fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 999, border: '1px solid var(--fl-border)', color: 'var(--fl-text-muted)', background: 'var(--fl-surface-2)' }

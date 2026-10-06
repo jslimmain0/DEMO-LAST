@@ -43,7 +43,7 @@ Settings → Environments에 `ec2-lab` 생성:
 | Secret | `EC2_SSH_PRIVATE_KEY` | `.run/ec2/keys/id_ed25519` 파일 내용 |
 | Secret | `EC2_SSH_KNOWN_HOSTS` | `.run/ec2/keys/known_hosts` 파일 내용 |
 
-Actions → **FlowLink 빌드 및 EC2 배포** → Run workflow → `ec2-lab`, 서버 주소 `http://127.0.0.1:18088`. MSI에 이 주소가 포함되며 배포 대상의 설정과 다르면 배포를 실패시킨다. `VERSION`을 바꾸지 않고 다른 MSI를 같은 버전으로 덮어쓰는 것은 거부한다.
+워크플로 파일을 저장소의 기본 브랜치에 반영한 뒤 Actions → **FlowLink 빌드 및 EC2 배포** → Run workflow → `ec2-lab`, 서버 주소 `http://127.0.0.1:18088`. MSI에 이 주소가 포함되며 배포 대상의 설정과 다르면 배포를 실패시킨다. `VERSION`을 바꾸지 않고 다른 MSI를 같은 버전으로 덮어쓰는 것은 거부한다. self-hosted runner의 다운로드 폴더는 매번 새로 만들어 이전 실행의 MSI가 섞이지 않는다.
 
 MSI는 GitHub Windows runner에서 JDK21·Node24·WiX3.14.1을 준비해 만든다. 서버 이미지 및 MSI는 같은 커밋에서 만들어지고 SHA-256 검증 후 배포된다. Windows 코드는 서버 컨테이너에서 실행하지 않는다. GitHub Actions의 실제 실행은 파일을 push하고 runner·환경 secrets를 등록한 뒤 가능하다.
 
@@ -56,5 +56,11 @@ Ubuntu EC2에 Docker Engine + Compose v2, SSH, bash/curl/python3/flock를 준비
 공개 DNS와 80/443 접근이 있으면 Caddy가 HTTPS를 제공한다. 기존 사내 TLS 프록시를 사용할 때는 `FLOWLINK_SITE_ADDRESS=http://:80`으로 바꾸고 외부 HTTPS 주소를 `FLOWLINK_PUBLIC_URL`/`FLOWLINK_PUBLIC_MCP_URL`에 유지한다. Actions의 `server_url`도 같은 외부 주소로 지정한다. Mock TCP를 외부에 공개해야 하면 필요한 포트만 `app.compose.yml`과 EC2 Security Group에 추가한다(기본 배포는 HTTP 프록시만 공개).
 
 실패 시 이전 manifest와 이전 컨테이너 구성으로 복귀를 시도한다. DB schema/data는 되돌리지 않으며 기존 MSI 버전 파일·서버 영속 볼륨을 삭제하지 않는다. MCP 프로토콜·도구·IDE 테스트는 이 workflow에서 실행하지 않는다.
+
+## 0.3.8 실제 배포 확인 (2026-10-07)
+
+GitHub가 실행할 동일한 `deploy.sh`를 SSH로 Docker 가상 EC2에서 실행했다. server·Caddy가 healthy이며 `http://127.0.0.1:18088`의 SPA와 두 정적 자원, 인증 설정·배포 metadata가 응답한다. `/downloads/FlowLink-0.3.8-windows-x64.msi`를 실제 다운로드해 149,370,597 bytes와 manifest SHA-256 일치를 확인했다. metadata는 서버/앱 0.3.8, 중앙 `/mcp`, `AVAILABLE` 및 자동 업데이트 허용을 반환한다. 기존 설치 앱에서 MSI를 설치하는 작업은 하지 않았다.
+
+격리 lab에서 잘못된 checksum의 배포가 컨테이너 변경 전에 거부되는 것, 서버 URL 불일치로 실패한 배포 뒤 이전 프록시·manifest가 복원되는 것, 같은 불변 release를 재배포할 수 있는 것을 확인했다. GitHub runner 이미지는 공식 다운로드 checksum·실행 파일을 확인했고 workflow는 actionlint를 통과했다. GitHub runner 등록·환경 secrets 설정 및 GitHub의 실제 workflow 실행은 아직 수행하지 않았다. EC2 lab만 테스트 H2를 사용하며 Oracle/Vault의 실제 연결은 위 production 설정으로 전환한다.
 
 근거: [GitHub deployment environments](https://docs.github.com/en/actions/how-tos/deploy/configure-and-manage-deployments/control-deployments), [공식 runner 및 checksum](https://github.com/actions/runner/releases/tag/v2.337.0), [Docker daemon 접근 보호](https://docs.docker.com/engine/security/protect-access/).

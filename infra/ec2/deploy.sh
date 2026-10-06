@@ -21,6 +21,7 @@ assert re.fullmatch(r'FLOWLINK_IMAGE=flowlink/server:' + re.escape(v) + r'-[0-9a
 m = json.loads((p / 'downloads/release-manifest.json').read_text())
 assert m['version'] == v and v in m['compatibleServerVersions'], 'MSI/server version mismatch'
 name = f'FlowLink-{v}-windows-x64.msi'
+assert [f.name for f in (p / 'downloads').glob('*.msi') if f.is_file()] == [name], 'Exactly one versioned MSI is required'
 assert m['downloadPath'] == '/downloads/' + name and m['platform'] == 'windows' and m['arch'] == 'x64'
 f = p / 'downloads' / name
 digest = hashlib.sha256()
@@ -31,8 +32,7 @@ assert f.stat().st_size == m['size'] and digest.hexdigest() == m['sha256'], 'Inv
 PY
 docker load --input server-image.tar.gz > /dev/null
 mkdir -p "$root/downloads"
-installer=$(find downloads -maxdepth 1 -name '*.msi' -type f -printf '%f\n')
-[[ -n "$installer" && "$installer" != *$'\n'* ]] || { echo 'Exactly one MSI is required.' >&2; exit 1; }
+installer="FlowLink-$(cat VERSION)-windows-x64.msi"
 if [[ -f "$root/downloads/$installer" ]]; then
     cmp --silent "downloads/$installer" "$root/downloads/$installer" || { echo 'Published MSI versions are immutable. Increment VERSION.' >&2; exit 1; }
 else

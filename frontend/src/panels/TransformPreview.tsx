@@ -13,14 +13,14 @@ export function TransformPreview({ transform, config, node }: { transform: Trans
   const { activeEnvName, prepareForRun } = useEnvironment()
   const envStore = useEnvStore()
   const resources = useNodeResources(node)
-  const { api: { transformsApi, environmentsApi }, crossBoundary } = resources
+  const { api: { transformsApi } } = resources
 
   const [open, setOpen] = useState(false)
   const [inputs, setInputs] = useState<Record<string, string>>({})
   const [result, setResult] = useState<{ ok: boolean; outputs: Record<string, unknown>; error?: string } | null>(null)
   const [busy, setBusy] = useState(false)
 
-  const signature = JSON.stringify([resources.key, node.id, transform.id, node.agentEnvironment, config, inputs, envStore.active, envStore.envs[envStore.active ?? '']])
+  const signature = JSON.stringify([resources.key, node.id, transform.id, config, inputs, envStore.active, envStore.envs[envStore.active ?? '']])
   const target = useRef(signature)
   target.current = signature
   const mounted = useRef(false)
@@ -33,13 +33,9 @@ export function TransformPreview({ transform, config, node }: { transform: Trans
     setBusy(true)
     setResult(null)
     try {
-      if (!resources.available) throw new Error('실행 위치에 연결할 수 없습니다.')
-      if (!crossBoundary) await prepareForRun()
-      const environment = node.agentEnvironment ?? (crossBoundary ? null : activeEnvName())
-      if (crossBoundary || node.agentEnvironment) {
-        const environments = await environmentsApi.list()
-        if (environment && !environments.some(e => e.name === environment)) throw new Error('선택한 실행 환경을 찾을 수 없습니다.')
-      }
+      if (!resources.available) throw new Error('중앙 플러그인에 연결할 수 없습니다. 공용·팀 공간과 서버 로그인을 확인하세요.')
+      await prepareForRun()
+      const environment = activeEnvName()
       if (!current()) return
       const next = await transformsApi.preview(transform.id, { inputs, config, environment })
       if (current()) setResult(next)
@@ -59,11 +55,11 @@ export function TransformPreview({ transform, config, node }: { transform: Trans
       {transform.inputs.map((io) => (
         <div key={io.key} style={{ marginBottom: 6 }}>
           <label style={{ fontSize: 10.5, color: 'var(--fl-text-muted)' }}>{io.label}{io.example ? ` (예: ${io.example})` : ''}</label>
-          <input style={miniInput} value={inputs[io.key] ?? ''} placeholder="샘플 값"
+          <input aria-label={`${io.label} 미리보기 입력`} style={miniInput} value={inputs[io.key] ?? ''} placeholder="샘플 값"
             onChange={(e) => setInputs((s) => ({ ...s, [io.key]: e.target.value }))} />
         </div>
       ))}
-      <button style={runBtn} disabled={busy} onClick={run}>{busy ? '실행 중…' : '▶ 변환 실행'}</button>
+      <button style={runBtn} disabled={busy || !resources.available} onClick={run}>{busy ? '실행 중…' : '▶ 변환 실행'}</button>
       {result && (
         <div style={{ marginTop: 8, fontSize: 11.5 }}>
           {result.ok ? (

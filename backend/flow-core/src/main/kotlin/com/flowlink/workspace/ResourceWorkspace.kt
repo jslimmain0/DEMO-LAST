@@ -7,6 +7,7 @@ import java.util.UUID
 /** 같은 이름의 환경·시크릿·전문·플러그인도 공간이 다르면 별개다. 런타임 조회는 이미 승인된 작업의 공간을 받는다. */
 @Component
 class ResourceWorkspace(private val workspace: WorkspaceService) : com.flowlink.transform.TransformScope {
+    override val pluginsEnabled: Boolean get() = !workspace.localRuntime
     override fun key(id: UUID?): String {
         val actual = id ?: if (workspace.localRuntime) workspace.resolveId(null) else null
         if (!workspace.supportsWorkspace(actual)) throw ForbiddenException("이 에이전트에서 사용할 수 없는 워크스페이스입니다.")

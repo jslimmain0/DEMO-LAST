@@ -16,6 +16,18 @@ class AgentRequestBuilderTest {
     private fun node(raw: String) = mapper.readValue(raw, GraphNode::class.java)
     private val run = AgentRunOptions(UUID.randomUUID(), "pc-device", "server", "dev", "public", "development", agentEnvironments = mapOf("local" to "", "server:public" to ""))
 
+    @Test fun `plugin transform ignores old destinations and is forbidden in personal workflows`() {
+        val n = node("""{"id":"plugin","type":"transform","transformId":"test","executionAgent":"local","agentWorkspaceId":"other-team","agentEnvironment":"old-env"}""")
+        val request = builder.build(n, listOf(n), ExecutionContext(), run, 0)
+        assertEquals("server", request.node.executionAgent)
+        assertEquals("public", request.workspaceId)
+        assertEquals("development", request.envName)
+        assertFalse(request.crossBoundary)
+        assertThrows(BadRequestException::class.java) { builder.build(n, listOf(n), ExecutionContext(), run.copy(ownerAgent = "local"), 0) }
+        val http = node("""{"id":"request","type":"http","executionAgent":"server","baseUrl":"http://example.test","headersRaw":true,"rawHeaders":"Authorization: {{ token@secret }}"}""")
+        assertThrows(BadRequestException::class.java) { builder.build(http, listOf(http), ExecutionContext(), run.copy(ownerAgent = "local"), 0) }
+    }
+
     @Test fun `crossing request preserves typed required inputs and resolves environment at destination`() {
         val ctx = ExecutionContext().apply {
             putOutput("env", mapOf("marker" to "SERVER", "ignored" to "private"))

@@ -34,6 +34,12 @@ function scriptError(e: unknown): ScriptErrorBody | null {
 }
 
 export function Plugins() {
+  const scope = useWorkspace()
+  if (scope.current.origin === 'local') return <AppShellTier1><PageHeader title="플러그인 목록" description="플러그인은 공용·팀 워크스페이스에서만 사용할 수 있습니다." /></AppShellTier1>
+  return <CentralPlugins />
+}
+
+function CentralPlugins() {
   const { adminApi, pluginsApi } = useApi()
   const scope = useWorkspace()
   const spaceQuery = `?space=${encodeURIComponent(`${scope.current.origin}:${scope.current.id}`)}`

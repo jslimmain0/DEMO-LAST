@@ -40,6 +40,8 @@ class ProtocolService(
     fun parse(raw: String?): ProtocolSpec {
         if (raw.isNullOrBlank()) throw BadRequestException("spec 이 없습니다.")
         val spec = try { json.mapper().readValue(raw, ProtocolSpec::class.java) } catch (e: Exception) { throw BadRequestException("spec JSON 파싱 실패: ${e.message}") }
+        if (workspace.localRuntime && (!spec.messagePlugins.isNullOrEmpty() || (spec.headerOrEmpty() + spec.messagesOrEmpty().flatMap { it.fieldsOrEmpty() }).any { it.plugin != null }))
+            throw BadRequestException("개인 프로토콜에서는 플러그인을 사용할 수 없습니다. 기존 플러그인을 제거하세요.")
         val errs = spec.validate()
         if (errs.isNotEmpty()) throw BadRequestException(errs.joinToString(" · "))
         return spec

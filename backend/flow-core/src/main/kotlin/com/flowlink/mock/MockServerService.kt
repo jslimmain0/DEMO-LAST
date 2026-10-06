@@ -189,6 +189,7 @@ class MockServerService(
             m.name = req.name
         }
         if (req.enabled != null) {
+            if (req.enabled) validateTcp(parseSpec(m.specJson), m.workspaceId)
             m.isEnabled = req.enabled
         }
         if (req.workspaceId != null) {
@@ -270,7 +271,7 @@ class MockServerService(
     fun restoreVersion(id: UUID, versionNo: Int): MockDtos.MockVersionSummary {
         val m = find(id)
         val src = versionRepo.findByMockServerIdAndVersionNo(id, versionNo).orElseThrow { NotFoundException("버전이 없습니다: v$versionNo") }
-        parseSpec(src.specJson)
+        validateTcp(parseSpec(src.specJson), m.workspaceId)
         m.specJson = src.specJson
         val saved = repository.save(m)
         val v = snapshot(saved, "v$versionNo 복원", pinned = false)
@@ -299,6 +300,7 @@ class MockServerService(
      * 시크릿 값이 실제로 쓰이므로 승인 사용자만(시크릿 쓰기와 같은 게이트) + 대상 Mock 읽기 권한. 결과의 시크릿 값은 마스킹.
      */
     fun tryCodec(id: UUID, req: MockDtos.CodecTryRequest): MockDtos.CodecTryResult {
+        if (workspace.localRuntime) throw com.flowlink.common.error.ForbiddenException("플러그인은 공용·팀 워크스페이스에서만 사용할 수 있습니다.")
         val mock = findReadable(id)
         if (!workspace.isApproved(workspace.currentUsername())) throw com.flowlink.common.error.ForbiddenException("코덱 시험은 가입 승인 후 가능합니다(시크릿 값 사용).")
         val codec = req.codec ?: throw BadRequestException("codec 이 없습니다.")
@@ -583,6 +585,8 @@ class MockServerService(
      * 프로토콜을 아직 안 고른 spec 은 규칙 검사를 건너뛴다(편집 중 저장 허용 — 리스너도 안 열린다).
      */
     private fun validateTcp(spec: MockSpec, workspaceId: UUID?) {
+        if (workspace.localRuntime && (listOf(spec.codec) + spec.routesOrEmpty().map { it.codec }).any { !it?.request.isNullOrEmpty() || !it?.response.isNullOrEmpty() })
+            throw BadRequestException("개인 Mock에서는 플러그인 코덱을 사용할 수 없습니다. 기존 코덱을 제거하세요.")
         spec.tcp?.port?.let { tcpRegistry.validatePort(it) }
         val tcp = spec.tcp ?: return
         val pid = tcp.protocolId?.trim()

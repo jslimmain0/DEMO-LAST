@@ -1,5 +1,6 @@
 import { useApi } from '../app/WorkspaceContext'
-import { useQuery } from '@tanstack/react-query'
+import { PluginResourceNotice } from './PluginResources'
+import { useTransformCatalog } from '../lib/useTransformCatalog'
 import type { CSSProperties } from 'react'
 import { useMemo, useState } from 'react'
 import type { MockCodecInput, MockCodecSpec, MockCodecStep, MockCodecStepTrace, MockCodecTarget, TransformInfo } from '../api/types'
@@ -16,7 +17,7 @@ import { TransformPicker } from './TransformPicker'
  * Mock 코덱 편집(v2) — 요청이 매칭·템플릿에 들어가기 **전**(request) / 응답을 다 만든 뒤 나가기 **전**(response) 적용할 변환 플러그인 단계.
  * 단계 카드는 **한 줄 한국어 요약**으로 접혀 있고(예: "응답 후 · user.name 필드 → Base64 인코딩"), 펼치면 플러그인·범위·입력 포트·파라미터를 고친다.
  * 새 단계는 **위저드**(① 언제 ② 무엇을: 전체/필드 체크/헤더 ③ 플러그인 ④ 값)로 만든다. 필드 하나만 걸 때는 각 필드 옆 ◈ 가 더 빠르다.
- * 서버 전체(spec.codec)·라우트(route.codec)·TCP 모두 같은 컴포넌트. HTTP 는 [시험해보기]로 미저장 코덱을 서버에서 바로 돌려본다.
+ * Mock 전체(spec.codec)·라우트(route.codec)·TCP 모두 같은 컴포넌트. HTTP 는 [시험해보기]로 미저장 코덱을 해당 Mock의 실행 위치에서 바로 돌려본다.
  */
 export function MockCodecEditor({ codec, onChange, readOnly, compact, sources = [], fieldHints, mockId, environment }: {
   codec: MockCodecSpec | null | undefined
@@ -28,9 +29,9 @@ export function MockCodecEditor({ codec, onChange, readOnly, compact, sources = 
   mockId?: string                  // 있으면 [시험해보기](codec-try) 노출 — HTTP 만
   environment?: string | null      // 시크릿 스코프(시험 시 서버에 전달)
 }) {
-  const { transformsApi } = useApi()
+  const catalog = useTransformCatalog()
 
-  const transforms = useQuery({ queryKey: ['transforms'], queryFn: transformsApi.list, staleTime: 60_000 })
+  const transforms = catalog.query
   const list = transforms.data ?? []
   const c = codec ?? {}
   const [wizard, setWizard] = useState<Side | null>(null)
@@ -39,8 +40,12 @@ export function MockCodecEditor({ codec, onChange, readOnly, compact, sources = 
     onChange(next.request?.length || next.response?.length ? next : null)
   }
   const hints = fieldHints ?? { request: [], response: [] }
+  if (!catalog.allowed) return <div><PluginResourceNotice catalog={catalog} />
+    {(c.request?.length ?? 0) + (c.response?.length ?? 0) > 0 && <><p role="alert">기존 플러그인 코덱은 개인 Mock에서 실행되지 않습니다.</p><button type="button" disabled={readOnly} onClick={() => onChange(null)}>기존 플러그인 코덱 제거</button></>}
+  </div>
   return (
     <div style={{ display: 'grid', gap: 12 }}>
+      <PluginResourceNotice catalog={catalog} selected={[...(c.request ?? []), ...(c.response ?? [])].map(s => s.id)} />
       <CodecSideList title={compact ? '요청 전' : '요청 전 — 요청이 들어오면 매칭·템플릿 전에 적용'} side="request"
         steps={c.request ?? []} list={list} readOnly={readOnly} sources={sources} hints={hints.request} onChange={(s) => setSide('request', s)}
         empty={'요청 본문을 그대로 사용'} onAdd={() => setWizard('request')} adding={wizard === 'request'} />
@@ -95,6 +100,7 @@ function StepCard({ step: s, index: i, side, list, readOnly, sources, hints, onC
   sources: BindableSource[]; hints: string[]
   onChange: (patch: Partial<MockCodecStep>) => void; onMove: (d: -1 | 1) => void; onRemove: () => void
 }) {
+  const catalog = useTransformCatalog()
   const [open, setOpen] = useState(!s.id)
   const t = list.find((x) => x.id === s.id)
   const target: MockCodecTarget = s.target ?? 'body'
@@ -131,9 +137,9 @@ function StepCard({ step: s, index: i, side, list, readOnly, sources, hints, onC
           <div style={{ display: 'grid', gridTemplateColumns: '72px 1fr', gap: '6px 10px', alignItems: 'center' }}>
             <span style={stepLbl}>플러그인</span>
             <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-              <TransformPicker style={{ flex: 1, minWidth: 220, maxWidth: 420 }} list={list} value={s.id} disabled={readOnly}
+              <TransformPicker style={{ flex: 1, minWidth: 0, maxWidth: 420 }} list={list} value={s.id} loading={catalog.query.isPending} disabled={readOnly || !catalog.resources.available || catalog.query.isError}
                 onChange={(id) => { if (id !== s.id) onChange({ id, config: undefined, inputs: undefined, inputKey: undefined, outputKey: undefined }) }}
-                onCreateNew={() => window.open(appUrl('/plugins?new=transform'), '_blank')} />
+                onCreateNew={readOnly ? undefined : () => window.open(appUrl(catalog.newLocation), '_blank')} />
               {t && t.outputs.length > 1 && (
                 <label style={lbl}>출력
                   <select style={{ ...input, minWidth: 90 }} value={s.outputKey ?? t.outputs[0].key} disabled={readOnly} onChange={(e) => onChange({ outputKey: e.target.value })}>
@@ -241,9 +247,10 @@ function FieldsInput({ value, onChange, disabled, hasHints }: { value: string[];
   )
 }
 
-/** 코덱 시험 — 미저장 코덱을 샘플 전문에 서버에서 적용(실제 시크릿 사용, 결과는 마스킹) → 단계별 입력/출력. */
+/** 코덱 시험 — 미저장 코덱을 샘플 전문에 Mock 실행 위치에서 적용(실제 시크릿 사용, 결과는 마스킹) → 단계별 입력/출력. */
 function CodecTryPanel({ mockId, codec, environment }: { mockId: string; codec: MockCodecSpec; environment?: string | null }) {
   const { mocksApi } = useApi()
+  const catalog = useTransformCatalog()
 
   const [open, setOpen] = useState(false)
   const [side, setSide] = useState<Side>(codec.request?.length ? 'request' : 'response')
@@ -267,7 +274,7 @@ function CodecTryPanel({ mockId, codec, environment }: { mockId: string; codec: 
   return (
     <div style={{ border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', padding: 10 }}>
       <button style={{ ...miniBtn, fontWeight: 700 }} onClick={() => setOpen((v) => !v)}>{open ? '▾' : '▸'} 🧪 코덱 시험해보기</button>
-      <span style={{ fontSize: 11.5, color: 'var(--fl-text-muted)', marginLeft: 8 }}>샘플 전문을 넣으면 저장 없이 서버에서 단계별로 돌려 봅니다(시크릿은 실제 값, 결과에선 마스킹)</span>
+      <span style={{ fontSize: 11.5, color: 'var(--fl-text-muted)', marginLeft: 8 }}>샘플 전문을 {catalog.label}에서 저장 없이 돌려 봅니다(시크릿은 결과에서 마스킹)</span>
       {open && (
         <div style={{ display: 'grid', gap: 6, marginTop: 8 }}>
           <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -277,14 +284,14 @@ function CodecTryPanel({ mockId, codec, environment }: { mockId: string; codec: 
               ))}
             </div>
             <span style={lbl}>Content-Type</span>
-            <select style={{ ...input, minWidth: 150 }} value={contentType} onChange={(e) => setContentType(e.target.value)}>
+            <select aria-label="코덱 시험 Content-Type" style={{ ...input, minWidth: 150 }} value={contentType} onChange={(e) => setContentType(e.target.value)}>
               {['application/json', 'application/x-www-form-urlencoded', 'text/plain', 'application/xml', 'text/html'].map((c) => <option key={c}>{c}</option>)}
             </select>
             <button style={{ ...miniBtn, color: 'var(--fl-primary)', fontWeight: 700, marginLeft: 'auto' }} disabled={busy} onClick={() => { void run() }}>{busy ? '…' : '▶ 실행'}</button>
           </div>
-          <textarea style={{ ...input, width: '100%', minHeight: 56, fontFamily: 'var(--fl-font-mono)', fontSize: 12, resize: 'vertical', boxSizing: 'border-box' }} value={message} onChange={(e) => setMessage(e.target.value)}
+          <textarea aria-label="코덱 시험 본문" style={{ ...input, width: '100%', minHeight: 56, fontFamily: 'var(--fl-font-mono)', fontSize: 12, resize: 'vertical', boxSizing: 'border-box' }} value={message} onChange={(e) => setMessage(e.target.value)}
             placeholder={side === 'request' ? '샘플 요청 본문(전문) — 예: {"card":{"no":"…"}}' : '샘플 응답 본문(렌더된 전문) — 예: {"ok":true}'} />
-          <textarea style={{ ...input, width: '100%', minHeight: 34, fontFamily: 'var(--fl-font-mono)', fontSize: 12, resize: 'vertical', boxSizing: 'border-box' }} value={headersText} onChange={(e) => setHeadersText(e.target.value)}
+          <textarea aria-label="코덱 시험 헤더" style={{ ...input, width: '100%', minHeight: 34, fontFamily: 'var(--fl-font-mono)', fontSize: 12, resize: 'vertical', boxSizing: 'border-box' }} value={headersText} onChange={(e) => setHeadersText(e.target.value)}
             placeholder={'헤더(선택) — 줄마다 Key: Value. 요청 전 헤더 대상 단계 시험용'} />
           {err && <div style={{ fontSize: 12, color: 'var(--fl-fail)' }}>{err}</div>}
           {result && (

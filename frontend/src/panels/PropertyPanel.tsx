@@ -34,7 +34,9 @@ import { useEditorStore } from '../store/editorStore'
 import { KeyValueEditor } from './KeyValueEditor'
 import { TcpRequestPanel, TcpResponsePanel } from './TcpNodePanel'
 import { TransformPreview } from './TransformPreview'
-import { AgentSettings, useNodeResources, isBrowserRequest, usesOwnerResources } from '../components/AgentSettings'
+import { AgentSettings, isBrowserRequest, usesOwnerResources, useNodeResources } from '../components/AgentSettings'
+import { PluginResourceNotice } from '../components/PluginResources'
+import { useTransformCatalog } from '../lib/useTransformCatalog'
 import { useAgentEnvironmentBindings } from '../lib/useAgentEnvironmentBindings'
 import { resolveAgentEnvironment } from '../lib/agentEnvironments'
 
@@ -126,9 +128,10 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
     const n = nodes.find(x => x.id === selectedId)
     return n ? asGraphNode(n.data) : null
   }, [nodes, selectedId])
+  const catalog = useTransformCatalog(node)
   const resources = useNodeResources(node)
   const agentBindings = useAgentEnvironmentBindings()
-  const { transformsApi, secretsApi } = resources.api
+  const { secretsApi } = resources.api
   const edges = useEditorStore((s) => s.edges)
   const flowId = useEditorStore((s) => s.flowId)
   const update = useEditorStore((s) => s.updateNodeData)
@@ -154,7 +157,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
   const [secOverride, setSecOverride] = useState<Record<string, boolean>>({}) // HTTP 요청 섹션 접기 오버라이드
   const [previewOpen, setPreviewOpen] = useState(false) // 요청 미리보기 접기
   const focusNode = useEditorStore((s) => s.focusNode)
-  const transforms = useQuery({ queryKey: [...resources.key, 'transforms'], queryFn: transformsApi.list, enabled: resources.available })
+  const transforms = catalog.query
   const { canEdit: canEditGlobal } = usePermissions()
   // 워크스페이스 롤 합성 — Editor 가 flow 의 myRole 로 계산해 스토어에 주입(VIEWER 는 단일 실행 등 쓰기 액션 차단)
   const wsReadOnly = useEditorStore((s) => s.readOnly)
@@ -266,7 +269,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
 
   // 시크릿 이름을 바인딩 소스로 노출({{ 이름@secret }}) — 값은 서버에만(write-only).
   // 활성 환경에서 적용될 것만 보여준다: 공통 + 활성 환경(백엔드 activeSecrets 오버레이 규칙과 동일, 이름으로 dedupe).
-  const secretsQ = useQuery({ queryKey: [...resources.key, 'secrets'], queryFn: secretsApi.list, enabled: resources.available })
+  const secretsQ = useQuery({ queryKey: [...resources.key, 'secrets'], queryFn: secretsApi.list, enabled: resources.available && !(current.origin === 'local' && resources.agent === 'server') })
   const secretNames = useMemo(() => {
     const active = agentEnvName
     const seen = new Set<string>()
@@ -1262,15 +1265,18 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
           <VarsEditor vars={node.vars ?? []} onChange={(vars) => update(id, { vars })} sources={sources} sourceType={sourceType} />
         )}
 
-        {node.type === 'transform' && (
+        {node.type === 'transform' && !catalog.allowed && <PluginResourceNotice catalog={catalog} />}
+        {node.type === 'transform' && catalog.allowed && (
           <>
             <label style={label}>변환</label>
+            <PluginResourceNotice catalog={catalog} selected={node.transformId ? [node.transformId] : []} />
             <TransformPicker
               list={transforms.data ?? []}
               value={node.transformId ?? ''}
-              disabled={wsReadOnly}
+              disabled={wsReadOnly || !resources.available || transforms.isError}
+              loading={transforms.isPending}
               placeholder="선택… (검색 가능)"
-              onCreateNew={() => window.open(appUrl(`/plugins?new=transform&space=${encodeURIComponent(`${resources.agent}:${resources.workspaceId}`)}`), '_blank')}
+              onCreateNew={wsReadOnly || !catalog.allowed ? undefined : () => window.open(appUrl(catalog.newLocation), '_blank')}
               onChange={(picked) => {
                 if (picked === node.transformId) return // 같은 변환 재선택은 no-op(리셋 방지)
                 const tr = (transforms.data ?? []).find((t) => t.id === picked)

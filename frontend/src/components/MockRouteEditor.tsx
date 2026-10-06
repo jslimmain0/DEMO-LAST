@@ -1,4 +1,4 @@
-import { useApi } from '../app/WorkspaceContext'
+import { useApi, useWorkspace } from '../app/WorkspaceContext'
 import type { CSSProperties } from 'react'
 import { useMemo, useRef, useState } from 'react'
 import type { HttpMethod, MockCodecSpec, MockCond, MockExpect, MockExpectField, MockRouteSpec, MockRuleSpec, MockServerSpec } from '../api/types'
@@ -28,16 +28,17 @@ const COND_OPS = ['eq', 'ne', 'exists', 'contains', 'gt', 'gte', 'lt', 'lte', 'r
 
 /**
  * HTTP 라우트 상세 — 메서드·경로, 예상 요청(필드마다 ◈ 코덱), 규칙(조건·응답·헤더·상태·콜백, 응답 JSON 키마다 ◈ 코덱), 코덱 요약.
- * 코덱은 "필드에서 시작": 필드 옆 ◈ 가 **이 라우트에 실제 적용되는 코덱**(라우트 전용이면 route.codec, 아니면 서버 코덱)에 단계를 만든다.
+ * 코덱은 "필드에서 시작": 필드 옆 ◈ 가 **이 라우트에 실제 적용되는 코덱**(라우트 전용이면 route.codec, 아니면 Mock 공통 코덱)에 단계를 만든다.
  */
 export function RouteCard({ base, ensureSaved, mockId, spec, secrets, envs, route, readOnly, onChange, onRemove, onDup, onUp, onDown, onServerCodec, onGoCodec }: {
   base: string; ensureSaved: () => Promise<boolean>; mockId: string; spec: MockServerSpec; secrets: SecretView[]; envs?: EnvView[]
   route: MockRouteSpec; readOnly?: boolean
   onChange: (r: MockRouteSpec) => void; onRemove: () => void; onDup: () => void; onUp: () => void; onDown: () => void
-  onServerCodec?: (c: MockCodecSpec | null) => void // 서버 코덱(spec.codec) 갱신 — 라우트 전용 코덱이 없을 때 필드 ◈ 가 여기에 쓴다
+  onServerCodec?: (c: MockCodecSpec | null) => void // Mock 공통 코덱(spec.codec) 갱신 — 라우트 전용 코덱이 없을 때 필드 ◈ 가 여기에 쓴다
   onGoCodec?: () => void                             // 코덱 화면으로 이동
 }) {
   const { mocksApi } = useApi()
+  const pluginsAllowed = useWorkspace().current.origin === 'server'
 
   const setRule = (i: number, u: MockRuleSpec) => onChange({ ...route, rules: route.rules.map((x, xi) => (xi === i ? u : x)) })
   const dupRule = (i: number) => {
@@ -47,7 +48,7 @@ export function RouteCard({ base, ensureSaved, mockId, spec, secrets, envs, rout
   const sources = useMemo(() => mockSources({ spec, route, secrets, envs, environment: spec.environment }), [spec, route, secrets, envs])
   const [expectOpen, setExpectOpen] = useState(() => !!(route.expect && ((route.expect.body?.length ?? 0) + (route.expect.query?.length ?? 0) + (route.expect.header?.length ?? 0)) > 0))
   const [codecOpen, setCodecOpen] = useState(false) // 이 라우트만 코덱 편집 펼침
-  // 실제 적용 코덱 — 라우트 전용(route.codec 이 있으면 서버 코덱을 통째로 대체) 또는 서버 코덱
+  // 실제 적용 코덱 — 라우트 전용(route.codec 이 있으면 Mock 공통 코덱을 통째로 대체) 또는 Mock 공통 코덱
   const routeOwn = route.codec != null
   const effCodec = routeOwn ? route.codec : spec.codec
   const setEffCodec = (c: MockCodecSpec | null) => { if (routeOwn) onChange({ ...route, codec: c ?? {} }); else onServerCodec?.(c) }
@@ -111,12 +112,12 @@ export function RouteCard({ base, ensureSaved, mockId, spec, secrets, envs, rout
       )}
 
       {/* 코덱 요약 — 이 라우트에 실제 적용되는 코덱 한 줄. 필드 옆 ◈ 가 만드는 단계가 여기에 쌓인다. */}
-      <div style={codecLine} aria-label="코덱 요약">
+      {(pluginsAllowed || routeOwn || cnt.request + cnt.response > 0) && <div style={codecLine} aria-label="코덱 요약">
         <span style={{ color: 'var(--fl-primary)', fontWeight: 700 }}>◈</span>
         {routeOwn ? (
-          <span><b>이 라우트만 코덱</b> — 요청 전 {cnt.request}단계 · 응답 후 {cnt.response}단계 <span style={{ color: 'var(--fl-text-muted)' }}>(서버 코덱 대신)</span></span>
+          <span><b>이 라우트만 코덱</b> — 요청 전 {cnt.request}단계 · 응답 후 {cnt.response}단계 <span style={{ color: 'var(--fl-text-muted)' }}>(Mock 공통 코덱 대신)</span></span>
         ) : cnt.request + cnt.response > 0 ? (
-          <span><b>서버 코덱 적용</b> — 요청 전 {cnt.request}단계 · 응답 후 {cnt.response}단계</span>
+          <span><b>Mock 공통 코덱 적용</b> — 요청 전 {cnt.request}단계 · 응답 후 {cnt.response}단계</span>
         ) : (
           <span style={{ color: 'var(--fl-text-muted)' }}>코덱 없음 — 암호화/인코딩된 필드가 있으면 그 필드 옆 <b>◈</b> 로 겁니다</span>
         )}
@@ -124,17 +125,17 @@ export function RouteCard({ base, ensureSaved, mockId, spec, secrets, envs, rout
           {routeOwn
             ? <button style={{ ...miniBtn, padding: '2px 8px' }} onClick={() => setCodecOpen((v) => !v)}>{codecOpen ? '접기' : '편집'}</button>
             : onGoCodec && <button style={{ ...miniBtn, padding: '2px 8px' }} onClick={onGoCodec}>코덱 화면 →</button>}
-          {!readOnly && (
-            <label style={{ fontSize: 11.5, display: 'inline-flex', alignItems: 'center', gap: 4, cursor: 'pointer', color: routeOwn ? 'var(--fl-primary)' : 'var(--fl-text-muted)' }} title="서버 코덱 대신 이 라우트만 다른 플러그인 단계를 적용(통째로 대체)">
+          {!readOnly && pluginsAllowed && (
+            <label style={{ fontSize: 11.5, display: 'inline-flex', alignItems: 'center', gap: 4, cursor: 'pointer', color: routeOwn ? 'var(--fl-primary)' : 'var(--fl-text-muted)' }} title="Mock 공통 코덱 대신 이 라우트만 다른 플러그인 단계를 적용(통째로 대체)">
               <input type="checkbox" checked={routeOwn} onChange={(e) => { if (e.target.checked) { onChange({ ...route, codec: {} }); setCodecOpen(true) } else { onChange({ ...route, codec: null }); setCodecOpen(false) } }} />
               이 라우트만 코덱
             </label>
           )}
         </span>
-      </div>
+      </div>}
       {routeOwn && codecOpen && (
         <div style={{ marginTop: 6, padding: 10, border: '1px dashed var(--fl-primary)', borderRadius: 'var(--fl-radius-sm)' }}>
-          <div style={{ fontSize: 11.5, color: 'var(--fl-text-muted)', marginBottom: 6 }}>이 라우트에는 서버 코덱 대신 아래 단계만 적용됩니다(통째로 대체 — 비우면 코덱 없음).</div>
+          <div style={{ fontSize: 11.5, color: 'var(--fl-text-muted)', marginBottom: 6 }}>이 라우트에는 Mock 공통 코덱 대신 아래 단계만 적용됩니다(통째로 대체 — 비우면 코덱 없음).</div>
           <MockCodecEditor compact codec={route.codec} readOnly={readOnly} sources={sources} fieldHints={fieldHints} mockId={mockId} environment={spec.environment}
             onChange={(codec) => onChange({ ...route, codec: codec ?? {} })} />
         </div>

@@ -45,7 +45,7 @@ Node common keys: {"id","name","type","cat","x","y"}
   {{ name@secret }} (시크릿 볼트), {{ url@waitNodeId }} (wait 노드 콜백 수신 URL, wait 앞 노드에서도 사용 가능),
   {{ httpStatus@httpNodeId }} (HTTP 상태코드).
 - Mixed text ok: "https://api.x.com/{{ id@n1 }}/detail".
-- HTTP/TCP/SET/IF/ASSERT/TRANSFORM can set executionAgent="local" (installed PC) or "server" per node.
+- HTTP/TCP/SET/IF/ASSERT can set executionAgent="local" (installed PC) or "server" per node. TRANSFORM is available only in public/team workspaces and always runs on the central server using the workflow workspace and environment. Never set an execution destination on TRANSFORM.
   Omission follows the workflow workspace. Keep reqMode="server" for both native agent choices;
   reqMode="client" means legacy browser fetch and is not the PC agent.
   agentEnvironment names a destination environment, agentWorkspaceId selects the remote resource workspace,

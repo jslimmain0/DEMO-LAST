@@ -7,8 +7,10 @@ import { useEditorStore } from '../store/editorStore'
 import { PALETTE, PALETTE_GROUPS } from './nodeFactory'
 import { NODE_W, catColor, typeIcon } from './nodeMeta'
 import { findNodePlacement } from './nodePlacement'
+import { useWorkspace } from '../app/WorkspaceContext'
 
 export function Palette({ width = 200, onCollapse }: { width?: number; onCollapse?: () => void }) {
+  const pluginsAllowed = useWorkspace().current.origin === 'server'
   const addNode = useEditorStore((s) => s.addNode)
   const addNodeFromTemplate = useEditorStore((s) => s.addNodeFromTemplate)
   const palette = useEditorStore((s) => s.palette)
@@ -20,8 +22,8 @@ export function Palette({ width = 200, onCollapse }: { width?: number; onCollaps
   const [q, setQ] = useState('')
   const shownPalette = useMemo(() => {
     const query = q.trim().toLowerCase()
-    return PALETTE.filter((p) => !query || p.label.toLowerCase().includes(query) || p.type.includes(query))
-  }, [q])
+    return PALETTE.filter((p) => (pluginsAllowed || p.type !== 'transform') && (!query || p.label.toLowerCase().includes(query) || p.type.includes(query)))
+  }, [q, pluginsAllowed])
   const sizeOf = (node: Pick<GraphNode, 'type' | 'groupW' | 'groupH' | 'switchPorts'>) => node.type === 'group'
     ? { width: node.groupW ?? 396, height: node.groupH ?? 264 }
     : { width: node.type === 'note' ? 220 : NODE_W, height: node.type === 'switch' ? 70 + (node.switchPorts?.length ?? 2) * 26 : 120 }
@@ -131,7 +133,7 @@ export function Palette({ width = 200, onCollapse }: { width?: number; onCollaps
             </button>
             <button onClick={() => removePaletteGroup(group.id)} aria-label="그룹 제거" title="그룹 제거" style={xBtn}>×</button>
           </div>
-          {!isCollapsed && group.items.map((item) => (
+          {!isCollapsed && group.items.filter(item => pluginsAllowed || item.node.type !== 'transform').map((item) => (
             <div
               key={item.id}
               role="button"

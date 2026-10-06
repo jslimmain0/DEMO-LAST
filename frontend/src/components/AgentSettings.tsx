@@ -7,6 +7,7 @@ export const isBrowserRequest = (node: GraphNode) => node.type === 'http' && nod
 export const usesOwnerResources = (node: GraphNode) => isBrowserRequest(node) || ['form', 'input', 'wait', 'switch'].includes(node.type)
 
 export function nodeAgent(node: GraphNode, owner: WorkspaceOrigin): WorkspaceOrigin {
+  if (node.type === 'transform') return 'server'
   if (node.type === 'input' || node.type === 'form') return 'local'
   if (node.type === 'wait' || node.type === 'switch') return owner
   return node.executionAgent ?? owner
@@ -25,16 +26,16 @@ export function useNodeResources(node?: GraphNode | null) {
   const browser = !!node && isBrowserRequest(node)
   const ownerResources = !!node && usesOwnerResources(node)
   const agent = node && !ownerResources ? nodeAgent(node, scope.current.origin) : scope.current.origin
-  const workspaceId = ownerResources ? scope.current.id : agent === 'local' ? (scope.workspaces.find(w => w.origin === 'local')?.id ?? 'local') : node?.agentWorkspaceId ?? (scope.current.origin === 'server' ? scope.current.id : 'public')
+  const workspaceId = node?.type === 'transform' || ownerResources ? scope.current.id : agent === 'local' ? (scope.workspaces.find(w => w.origin === 'local')?.id ?? 'local') : node?.agentWorkspaceId ?? (scope.current.origin === 'server' ? scope.current.id : 'public')
   const { agentApi } = scope
   const api = useMemo(() => agentApi(agent, workspaceId), [agentApi, agent, workspaceId])
-  return { agent, workspaceId, api, crossBoundary: agent !== scope.current.origin || workspaceId !== scope.current.id, key: ['agent-resources', agent, agent === 'server' ? scope.remoteKey : 'pc', workspaceId] as const, available: browser || (agent === 'local' ? !!desktop : scope.connected) }
+  return { agent, workspaceId, api, crossBoundary: agent !== scope.current.origin || workspaceId !== scope.current.id, key: ['agent-resources', agent, agent === 'server' ? scope.remoteKey : 'pc', workspaceId] as const, available: node?.type === 'transform' && scope.current.origin === 'local' ? false : browser || (agent === 'local' ? !!desktop : scope.connected) }
 }
 
 export function AgentSettings({ node, update, disabled }: { node: GraphNode; update: (patch: Partial<GraphNode>) => void; disabled: boolean }) {
   const scope = useWorkspace()
   const { desktop } = useAuth()
-  const selectable = ['http', 'tcp', 'set', 'if', 'assert', 'transform'].includes(node.type)
+  const selectable = ['http', 'tcp', 'set', 'if', 'assert'].includes(node.type)
   const agent = nodeAgent(node, scope.current.origin)
   const browser = isBrowserRequest(node)
   const legacyMock = !!node.agentMock && !browser

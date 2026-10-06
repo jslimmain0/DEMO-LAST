@@ -62,14 +62,14 @@
 <rect x="85" y="515" width="640" height="450" rx="18" fill="white" stroke="#8bb0d8" stroke-width="1.7"/>
 <rect x="1015" y="515" width="635" height="450" rx="18" fill="white" stroke="#80b7a7" stroke-width="1.7"/>
 <text x="115" y="556" class="mono" style="fill:#2373c7">flow-desktop</text><text x="115" y="582" class="small">개인 API · H2 관리 · 작업 전달 · MCP 토큰 갱신</text>
-<text x="1045" y="556" class="mono" style="fill:#218574">flow-server</text><text x="1045" y="582" class="small">팀 API · PC 중계 · 배포 / 업데이트 정보</text>
+<text x="1045" y="556" class="mono" style="fill:#218574">flow-server</text><text x="1045" y="582" class="small">팀 API · 중앙 플러그인 · 시크릿 · PC 중계</text>
 <path class="route pc" d="M735 610H1003"/><text x="870" y="593" text-anchor="middle" font-size="17" style="fill:#2373c7">서버 API · 원격 작업</text>
 <path class="route sv" d="M1004 725H737" stroke-dasharray="7 6"/><text x="870" y="752" text-anchor="middle" font-size="17" style="fill:#218574">PC가 조회한 명령 / 결과</text><text x="870" y="775" text-anchor="middle" font-size="15" style="fill:#61758b">서버 → PC 직접 접속 없음</text>
 
 <rect class="core" x="135" y="625" width="540" height="75" rx="12"/>
 <text x="160" y="656" class="mono" style="fill:#75539e">flow-core</text><text x="160" y="682" class="small">워크플로 · 환경 · 실행 상태 · 저장 관리</text><text x="648" y="653" text-anchor="end" font-size="14" style="fill:#75539e">공통 코드</text>
 <rect class="core" x="1055" y="625" width="550" height="75" rx="12"/>
-<text x="1080" y="656" class="mono" style="fill:#75539e">flow-core</text><text x="1080" y="682" class="small">동일한 공통 코드 · 서버 저장소 사용</text><text x="1580" y="653" text-anchor="end" font-size="14" style="fill:#75539e">공통 코드</text>
+<text x="1080" y="656" class="mono" style="fill:#75539e">flow-core</text><text x="1080" y="682" class="small">공용·팀 플러그인 변환은 중앙 서버에서만 실행</text><text x="1580" y="653" text-anchor="end" font-size="14" style="fill:#75539e">공통 코드</text>
 
 <path class="route db" d="M250 700V780"/><text x="264" y="752" class="small">저장</text>
 <path class="route pc" d="M560 700V780"/><text x="575" y="752" class="small">실행</text>
@@ -79,9 +79,9 @@
 
 <!-- Database cylinders versus execution blocks. -->
 <path d="M165 805v88c0 26 170 26 170 0v-88" fill="#f6f9fc" stroke="#9aaec3" stroke-width="1.5"/><ellipse cx="250" cy="805" rx="85" ry="18" fill="#e8eff6" stroke="#9aaec3" stroke-width="1.5"/>
-<text x="250" y="857" text-anchor="middle" class="label">개인 H2</text><text x="250" y="883" text-anchor="middle" class="small">개인 데이터 원본</text><text x="250" y="938" text-anchor="middle" class="small">로그인 없이 사용</text>
+<text x="250" y="857" text-anchor="middle" class="label">개인 H2</text><text x="250" y="883" text-anchor="middle" class="small">개인 원본 · 자체 암호화</text><text x="250" y="938" text-anchor="middle" class="small">로그인 없이 사용</text>
 <rect x="445" y="792" width="230" height="123" rx="12" fill="#ecf4ff" stroke="#2373c7" stroke-width="1.5"/>
-<text x="560" y="824" text-anchor="middle" class="label" style="fill:#2373c7">로컬 에이전트</text><text x="560" y="853" text-anchor="middle" font-family="Consolas,monospace" font-size="19" font-weight="700">flow-agent</text><text x="560" y="883" text-anchor="middle" class="small">호출 · Mock · 콜백 수신</text><text x="560" y="938" text-anchor="middle" class="small">개인 Mock은 PC에서 리슨</text>
+<text x="560" y="824" text-anchor="middle" class="label" style="fill:#2373c7">로컬 에이전트</text><text x="560" y="853" text-anchor="middle" font-family="Consolas,monospace" font-size="19" font-weight="700">flow-agent</text><text x="560" y="883" text-anchor="middle" class="small">호출 · Mock · 콜백 수신</text><text x="560" y="938" text-anchor="middle" class="small">개인 Mock 리슨 · 플러그인 사용 없음</text>
 <rect x="1055" y="792" width="230" height="123" rx="12" fill="#e9f6f0" stroke="#218574" stroke-width="1.5"/>
 <text x="1170" y="824" text-anchor="middle" class="label" style="fill:#218574">서버 에이전트</text><text x="1170" y="853" text-anchor="middle" font-family="Consolas,monospace" font-size="19" font-weight="700">flow-agent</text><text x="1170" y="883" text-anchor="middle" class="small">호출 · Mock · 콜백 수신</text><text x="1170" y="938" text-anchor="middle" class="small">팀 Mock은 서버에서 리슨</text>
 <path d="M1325 805v88c0 24 130 24 130 0v-88" fill="#f6f9fc" stroke="#9aaec3" stroke-width="1.5"/><ellipse cx="1390" cy="805" rx="65" ry="18" fill="#e8eff6" stroke="#9aaec3" stroke-width="1.5"/>
@@ -93,7 +93,7 @@
 <path class="route pc" d="M445 850H405V1085H700"/><path class="route sv" d="M1285 850H1305V1085H1040"/>
 <rect x="517" y="1017" width="250" height="28" rx="5" class="label-bg"/><text x="642" y="1037" text-anchor="middle" font-size="17" style="fill:#2373c7">PC IP에서 HTTP / TCP 호출</text>
 <rect x="975" y="1017" width="296" height="28" rx="5" class="label-bg"/><text x="1123" y="1037" text-anchor="middle" font-size="17" style="fill:#218574">서버 IP에서 HTTP / TCP 호출</text>
-<rect x="710" y="1050" width="320" height="76" rx="16" fill="#203449"/><text x="870" y="1083" text-anchor="middle" font-size="21" font-weight="700" style="fill:white">대상 시스템 · API / TCP</text><text x="870" y="1110" text-anchor="middle" font-size="16" style="fill:#d2deeb">노드마다 실행 위치 선택</text>
+<rect x="710" y="1050" width="320" height="76" rx="16" fill="#203449"/><text x="870" y="1083" text-anchor="middle" font-size="21" font-weight="700" style="fill:white">대상 시스템 · API / TCP</text><text x="870" y="1110" text-anchor="middle" font-size="16" style="fill:#d2deeb">HTTP / TCP 노드의 실행 위치 선택</text>
 <text x="40" y="1165" class="small">실선 = API / 호출 흐름 · 점선 = PC가 조회하는 명령 중계 · 보라색 = 공통 라이브러리</text>
 <text x="1700" y="1165" text-anchor="end" font-size="15" style="fill:#75539e">확정 구조 · Windows 로그인 / MCP 자동 연결</text>
 </svg>

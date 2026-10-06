@@ -32,16 +32,20 @@ class AgentRequestBuilder(private val json: JsonService, private val tokens: Tok
     }
 
     fun build(node: GraphNode, allNodes: Collection<GraphNode>, ctx: ExecutionContext, run: AgentRunOptions, seq: Int): AgentNodeRequest {
-        val agent = node.executionAgent ?: run.ownerAgent
+        val transform = node.nodeType() == com.flowlink.core.graph.NodeType.TRANSFORM
+        if (transform && run.ownerAgent == "local") throw BadRequestException("플러그인은 공용·팀 워크스페이스에서만 사용할 수 있습니다.")
+        val agent = if (transform) "server" else node.executionAgent ?: run.ownerAgent
         if (agent !in setOf("local", "server")) throw BadRequestException("알 수 없는 실행 에이전트: $agent")
-        val targetSpace = if (agent == "local") null else node.agentWorkspaceId
+        val targetSpace = if (transform) run.workspaceId else if (agent == "local") null else node.agentWorkspaceId
             ?: if (run.ownerAgent == "server") run.workspaceId else "public"
         val cross = agent != run.ownerAgent || (agent == "server" &&
             (targetSpace ?: "public") != (run.workspaceId ?: "public"))
         val environmentKey = if (agent == "local") "local" else "server:${targetSpace ?: "public"}"
-        val envName = node.agentEnvironment ?: if (run.agentEnvironments.containsKey(environmentKey)) run.agentEnvironments.getValue(environmentKey)
+        val envName = if (transform) run.envName else node.agentEnvironment ?: if (run.agentEnvironments.containsKey(environmentKey)) run.agentEnvironments.getValue(environmentKey)
             else if (!cross) run.envName else throw BadRequestException("목적지 환경을 선택하세요: $environmentKey (공통 환경도 명시적으로 선택해야 합니다.)")
         val secrets = (ctx.raw("secret") as? Map<*, *>)?.values?.mapNotNull { it as? String }.orEmpty().toMutableList()
+        if (run.ownerAgent == "local" && agent == "server" && references(node).any { it.source == "secret" })
+            throw BadRequestException("중앙 시크릿은 공용·팀 워크스페이스에서만 사용할 수 있습니다.")
         for (source in allNodes) for (v in source.vars.orEmpty().filter { it.secret }) {
             v.key?.let { key -> tokens.resolveTokenObject(key, false, source.id, ctx)?.let { secrets.add(tokens.stringify(it)) } }
         }
@@ -83,7 +87,7 @@ class AgentRequestBuilder(private val json: JsonService, private val tokens: Tok
         }
         return AgentNodeRequest(
             UUID.nameUUIDFromBytes("${run.executionId}/${node.id}/$seq".toByteArray(Charsets.UTF_8)),
-            run.executionId, node.copy(executionAgent = agent), values, seeds, targetSpace,
+            run.executionId, node.copy(executionAgent = agent, agentWorkspaceId = targetSpace, agentEnvironment = if (transform) null else node.agentEnvironment), values, seeds, targetSpace,
             envName, cross, node.agentOutputs ?: outputs.toList(), requests.toList(),
             run.dependencyHashes[node.id].orEmpty(),
         )

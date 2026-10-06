@@ -140,7 +140,7 @@ export function MockServerEditor() {
     const current = draftRef.current
     if (!activeRef.current || current.id !== saved.id) return
     if (JSON.stringify(current.spec) !== JSON.stringify(snapshot)) {
-      setNote('버전은 서버에 반영됐습니다. 추가 편집은 유지됩니다.')
+      setNote('버전은 Mock 저장소에 반영됐습니다. 추가 편집은 유지됩니다.')
       return
     }
     const next = saved.spec ?? { routes: [] }

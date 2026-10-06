@@ -40,11 +40,12 @@ export function ParamsForm({ params, config, onChange, readOnly }: {
   )
 }
 
-export function FieldTable({ fields, onChange, baseOffset, codecs, readOnly, lengthField, reservedNames }: {
+export function FieldTable({ fields, onChange, baseOffset, codecs, readOnly, lengthField, reservedNames, pluginsAllowed = true }: {
   fields: ProtocolField[]
   onChange: (fields: ProtocolField[]) => void
   baseOffset: number
   codecs: CodecInfo[]
+  pluginsAllowed?: boolean
   readOnly: boolean
   /** 프레이밍 길이 필드 이름(해당 행에 표시만) */
   lengthField?: string
@@ -144,21 +145,21 @@ export function FieldTable({ fields, onChange, baseOffset, codecs, readOnly, len
                 {isLen && <span title="조립할 때 전체 길이로 자동 채워집니다" style={autoChip}>자동</span>}
               </div>
               <div style={{ ...td, ...rowBg }}>
-                <button aria-label={`필드 ${i + 1} 플러그인`} title={f.plugin ? `플러그인 ${f.plugin.id}` : '필드 플러그인(암호화·인코딩)'}
+                {(pluginsAllowed || f.plugin) && <button aria-label={`필드 ${i + 1} 플러그인`} title={f.plugin ? `플러그인 ${f.plugin.id}` : '필드 플러그인(암호화·인코딩)'}
                   onClick={() => setPluginRow(pluginRow === i ? null : i)}
-                  style={{ ...arrowBtn, width: 26, color: f.plugin ? 'var(--fl-primary)' : 'var(--fl-text-muted)', fontWeight: f.plugin ? 700 : 400 }}>◈</button>
+                  style={{ ...arrowBtn, width: 26, color: f.plugin ? 'var(--fl-primary)' : 'var(--fl-text-muted)', fontWeight: f.plugin ? 700 : 400 }}>◈</button>}
               </div>
               <div style={{ ...td, ...rowBg }}>
                 <button aria-label={`필드 ${i + 1} 삭제`} title="삭제" disabled={readOnly} onClick={() => remove(i)} style={{ ...arrowBtn, width: 24 }}>×</button>
               </div>
               {pluginRow === i && (
                 <div style={pluginPanel}>
-                  <select aria-label="필드 플러그인" value={f.plugin?.id ?? ''} disabled={readOnly}
+                  {pluginsAllowed ? <select aria-label="필드 플러그인" value={f.plugin?.id ?? ''} disabled={readOnly}
                     onChange={(e) => patch(i, { plugin: e.target.value ? { id: e.target.value, config: {} } : null })} style={{ ...sel, minWidth: 180 }}>
                     <option value="">(없음)</option>
                     {fieldCodecs.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
-                  </select>
-                  {f.plugin && (
+                  </select> : <span>개인 공간에서는 플러그인을 사용할 수 없습니다.</span>}
+                  {pluginsAllowed && f.plugin && (
                     <ParamsForm params={fieldCodecs.find((c) => c.id === f.plugin!.id)?.params ?? []} config={f.plugin.config} readOnly={readOnly}
                       onChange={(config) => patch(i, { plugin: { id: f.plugin!.id, config } })} />
                   )}

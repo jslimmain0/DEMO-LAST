@@ -8,6 +8,7 @@ export function destinationKey(agent: WorkspaceOrigin, workspaceId: string) {
 
 /** 같은 이름으로 다른 공간의 환경을 추정하지 않는다. 빈 문자열은 명시적인 공통 환경. */
 export function resolveAgentEnvironment(node: GraphNode, agent: WorkspaceOrigin, workspaceId: string, owner: { origin: WorkspaceOrigin; id: string }, stage: string | null, mapping: AgentEnvironmentMap) {
+  if (node.type === 'transform') return { name: stage ?? '', source: '중앙 플러그인 · 워크플로 환경' }
   if (node.agentEnvironment != null) return { name: node.agentEnvironment, source: '노드에서 지정' }
   const key = destinationKey(agent, workspaceId)
   if (Object.hasOwn(mapping, key)) return { name: mapping[key], source: '이 PC의 연결 설정' }

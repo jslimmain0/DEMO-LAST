@@ -344,7 +344,9 @@ class ExecutionService(
             if (only != null && only.effectiveType() !in setOf(NodeType.HTTP, NodeType.TCP, NodeType.SET, NodeType.IF, NodeType.ASSERT, NodeType.TRANSFORM))
                 throw BadRequestException("이 노드는 단독 실행을 지원하지 않습니다.")
             val selected = only?.let { listOf(it) } ?: graph.nodesOrEmpty()
-            if (device == "server" && selected.any { it.executionAgent == "local" })
+            if (workspace.localRuntime && selected.any { it.effectiveType() == NodeType.TRANSFORM })
+                throw BadRequestException("플러그인은 공용·팀 워크스페이스에서만 사용할 수 있습니다.")
+            if (device == "server" && selected.any { it.effectiveType() != NodeType.TRANSFORM && it.executionAgent == "local" })
                 throw BadRequestException("내 PC 노드가 있는 실행은 Windows 앱에서 시작하세요.")
             if (workspace.localRuntime && selected.any { it.executionAgent == "server" } && account?.connected != true)
                 throw BadRequestException("서버 노드를 실행하려면 Windows 앱에서 서버에 로그인하세요.")
@@ -817,7 +819,7 @@ class ExecutionService(
         return NodeRecorder { node, seq, result, status, durationMs ->
             val masks = SecretMasker.variants(secretValues + (state?.let(::secretValuesOf) ?: emptyList()))
             val ne = NodeExecution.of(execId, node.id!!, node.name, node.type, seq)
-            ne.executionAgent = node.executionAgent ?: if (workspace.localRuntime) "local" else "server"
+            ne.executionAgent = if (node.effectiveType() == NodeType.TRANSFORM) "server" else node.executionAgent ?: if (workspace.localRuntime) "local" else "server"
             val outputJson = if (result.storedValue != null) SecretMasker.mask(json.toJson(result.storedValue), masks) else null
             val requestText = SecretMasker.mask(result.requestText, masks)
             val responseText = SecretMasker.mask(result.responseText, masks)

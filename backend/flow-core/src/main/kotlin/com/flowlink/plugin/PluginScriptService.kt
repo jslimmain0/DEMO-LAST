@@ -47,7 +47,7 @@ class PluginScriptService(
     private fun find(id: UUID): PluginScript = repo.findByIdAndTenantId(id, tenant()).orElseThrow { NotFoundException("플러그인 스크립트가 없습니다: $id") }.also { resourceWorkspace.requireRead(it.workspaceKey) }
 
     // ---- 레지스트리 로더 ----
-    override fun loadApproved(): List<Any> = repo.findByLiveSourceIsNotNull().mapNotNull { row ->
+    override fun loadApproved(): List<Any> = if (!resourceWorkspace.pluginsEnabled) emptyList() else repo.findByLiveSourceIsNotNull().mapNotNull { row ->
         try { com.flowlink.transform.ScopedPlugin(row.tenantId, row.workspaceKey, rt.compile(row.liveSource!!, row.pluginId).toPlugin(rt), row.liveSource) }
         catch (e: Exception) { log.warn("승인된 스크립트 플러그인 컴파일 실패(건너뜀): {} — {}", row.pluginId, e.message); null }
     }
@@ -55,7 +55,7 @@ class PluginScriptService(
     // ---- 조회 ----
     @Transactional(readOnly = true) fun list(workspaceId: String? = null): List<PluginScriptDtos.Summary> = repo.findByTenantIdAndWorkspaceKeyOrderByUpdatedAtDesc(tenant(), resourceWorkspace.read(workspaceId)).map { summary(it) }
     @Transactional(readOnly = true) fun get(id: UUID): PluginScriptDtos.Detail = detail(find(id))
-    @Transactional(readOnly = true) fun pendingCount(): Long = repo.countByTenantIdAndStatus(tenant(), PluginScript.STATUS_PENDING)
+    @Transactional(readOnly = true) fun pendingCount(): Long = if (!resourceWorkspace.pluginsEnabled) 0 else repo.countByTenantIdAndStatus(tenant(), PluginScript.STATUS_PENDING)
 
     // ---- 초안 저장 ----
     @Transactional

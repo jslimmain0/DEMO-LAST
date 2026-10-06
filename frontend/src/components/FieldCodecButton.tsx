@@ -1,5 +1,5 @@
-import { useApi } from '../app/WorkspaceContext'
-import { useQuery } from '@tanstack/react-query'
+import { PluginResourceNotice } from './PluginResources'
+import { useTransformCatalog } from '../lib/useTransformCatalog'
 import type { CSSProperties } from 'react'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
@@ -26,12 +26,12 @@ export function FieldCodecButton({ field, codec, onChange, sources = [], default
   readOnly?: boolean
   compact?: boolean
 }) {
-  const { transformsApi } = useApi()
+  const catalog = useTransformCatalog()
 
   const [open, setOpen] = useState(false)
   const [editing, setEditing] = useState<StepRef | null>(null)
   const rootRef = useRef<HTMLSpanElement>(null)
-  const transforms = useQuery({ queryKey: ['transforms'], queryFn: transformsApi.list, staleTime: 60_000 })
+  const transforms = catalog.query
   const list = transforms.data ?? []
   const refs = field ? stepsForField(codec, field) : []
   useEffect(() => {
@@ -46,12 +46,12 @@ export function FieldCodecButton({ field, codec, onChange, sources = [], default
     document.addEventListener('mousedown', onDoc); document.addEventListener('keydown', onKey, true)
     return () => { document.removeEventListener('mousedown', onDoc); document.removeEventListener('keydown', onKey, true) }
   }, [open])
-  if (!field) return null
+  if (!field || !catalog.allowed) return null
   const label = (r: StepRef) => `${r.side === 'request' ? '⬇' : '⬆'} ${list.find((t) => t.id === r.step.id)?.label ?? r.step.id}`
   return (
     <span ref={rootRef} style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
       {refs.map((r) => (
-        <button key={`${r.side}-${r.index}`} onClick={() => { setEditing(r); setOpen(true) }}
+        <button key={`${r.side}-${r.index}`} disabled={readOnly} onClick={() => { setEditing(r); setOpen(true) }}
           title={`${r.side === 'request' ? '요청 전' : '응답 후'} 이 필드에 ${list.find((t) => t.id === r.step.id)?.label ?? r.step.id} 적용 — 클릭해 수정/제거`}
           style={{ ...badge, color: r.side === 'request' ? 'var(--fl-primary)' : 'var(--fl-ok)' }}>◈ {label(r)}</button>
       ))}
@@ -81,6 +81,7 @@ function StepPopover({ anchor, field, list, sources, sides, defaultSide, editing
   field: string; list: TransformInfo[]; sources: BindableSource[]; sides: CodecSide[]; defaultSide: CodecSide; editing: StepRef | null
   onClose: () => void; onSave: (side: CodecSide, step: MockCodecStep) => void; onRemove?: () => void
 }) {
+  const catalog = useTransformCatalog()
   const place = useAnchoredPlacement(anchor)
   const [side, setSide] = useState<CodecSide>(defaultSide)
   const [pluginId, setPluginId] = useState<string>(editing?.step.id ?? '')
@@ -98,7 +99,7 @@ function StepPopover({ anchor, field, list, sources, sides, defaultSide, editing
   const cfgVal = (k: string) => config.find((c) => c.key === k)?.value
   const setCfg = (k: string, v: string) => setConfig([...config.filter((c) => c.key !== k), { key: k, value: v }])
   const save = () => {
-    if (!pluginId) return
+    if (!t) return
     const existingFields = editing?.step.fields ?? []
     const fields = existingFields.includes(field) ? existingFields : [...existingFields, field]
     onSave(side, { ...(editing?.step ?? { id: pluginId }), id: pluginId, target: 'fields', fields, inputs: ports.length > 1 ? inputs.length ? inputs : undefined : undefined, config: config.length ? config : undefined, outputKey })
@@ -122,8 +123,9 @@ function StepPopover({ anchor, field, list, sources, sides, defaultSide, editing
       </div>
       <div style={{ marginTop: 8 }}>
         <div style={lbl}>플러그인</div>
-        <TransformPicker list={list} value={pluginId} onChange={(id) => { setPluginId(id); setInputs([]); setConfig([]); setOutputKey(undefined) }} placeholder="변환 플러그인 선택…"
-          onCreateNew={() => window.open(appUrl('/plugins?new=transform'), '_blank')} />
+        <PluginResourceNotice catalog={catalog} selected={pluginId ? [pluginId] : []} />
+        <TransformPicker list={list} value={pluginId} loading={catalog.query.isPending} disabled={!catalog.resources.available || catalog.query.isError} onChange={(id) => { setPluginId(id); setInputs([]); setConfig([]); setOutputKey(undefined) }} placeholder="변환 플러그인 선택…"
+          onCreateNew={() => window.open(appUrl(catalog.newLocation), '_blank')} />
         {t?.description && <div style={{ fontSize: 11, color: 'var(--fl-text-muted)', marginTop: 3 }}>{t.description}</div>}
       </div>
       {ports.length > 1 && (
@@ -168,7 +170,7 @@ function StepPopover({ anchor, field, list, sources, sides, defaultSide, editing
       <div style={{ display: 'flex', gap: 6, marginTop: 10, justifyContent: 'flex-end' }}>
         {onRemove && <button onClick={onRemove} style={{ ...miniBtn, color: 'var(--fl-fail)', marginRight: 'auto' }}>이 필드에서 제거</button>}
         <button onClick={onClose} style={miniBtn}>취소</button>
-        <button onClick={save} disabled={!pluginId} style={primary}>{editing ? '수정' : '단계 추가'}</button>
+        <button onClick={save} disabled={!t || !catalog.query.isSuccess} style={primary}>{editing ? '수정' : '단계 추가'}</button>
       </div>
       {!editing && list.length > 0 && !t && <div style={{ fontSize: 11, color: 'var(--fl-fail)', marginTop: 4 }}>플러그인을 고르세요.</div>}
       <div style={{ fontSize: 10.5, color: 'var(--fl-text-muted)', marginTop: 6 }}>여러 필드에 같은 단계를 걸면 코덱 화면에서 한 단계로 합쳐 보입니다. 전체/헤더 대상은 코덱 화면에서.</div>
@@ -211,6 +213,7 @@ export function CodecStepWizard({ list, sources, fieldHints, defaultSide, onCanc
   list: TransformInfo[]; sources: BindableSource[]; fieldHints: { request: string[]; response: string[] }
   defaultSide: CodecSide; onCancel: () => void; onAdd: (side: CodecSide, step: MockCodecStep) => void
 }) {
+  const catalog = useTransformCatalog()
   const [side, setSide] = useState<CodecSide>(defaultSide)
   const [target, setTarget] = useState<'body' | 'fields' | 'header'>('body')
   const [fields, setFields] = useState<string[]>([])
@@ -233,7 +236,7 @@ export function CodecStepWizard({ list, sources, fieldHints, defaultSide, onCanc
   const cfgVal = (k: string) => config.find((c) => c.key === k)?.value
   const setCfg = (k: string, v: string) => setConfig([...config.filter((c) => c.key !== k), { key: k, value: v }])
   const allFields = [...fields, ...custom.split(',').map((x) => x.trim()).filter((x) => x && !fields.includes(x))]
-  const valid = !!pluginId && (target === 'body' || (target === 'fields' && allFields.length > 0) || (target === 'header' && header.trim()))
+  const valid = !!t && catalog.query.isSuccess && (target === 'body' || (target === 'fields' && allFields.length > 0) || (target === 'header' && header.trim()))
   return (
     <div style={{ border: '1px solid var(--fl-primary)', borderRadius: 'var(--fl-radius-sm)', padding: 12, background: 'var(--fl-surface)', display: 'grid', gap: 10 }} role="dialog" aria-label="코덱 단계 추가">
       <div style={{ fontSize: 12.5, fontWeight: 700 }}>새 코덱 단계</div>
@@ -274,8 +277,9 @@ export function CodecStepWizard({ list, sources, fieldHints, defaultSide, onCanc
         </div>
         <span style={stepNo}>③ 플러그인</span>
         <div>
-          <TransformPicker list={list} value={pluginId} onChange={(id) => { setPluginId(id); setInputs([]); setConfig([]) }} style={{ maxWidth: 420 }}
-            onCreateNew={() => window.open(appUrl('/plugins?new=transform'), '_blank')} />
+          <PluginResourceNotice catalog={catalog} selected={pluginId ? [pluginId] : []} />
+          <TransformPicker list={list} value={pluginId} loading={catalog.query.isPending} disabled={!catalog.resources.available || catalog.query.isError} onChange={(id) => { setPluginId(id); setInputs([]); setConfig([]) }} style={{ maxWidth: 420 }}
+            onCreateNew={() => window.open(appUrl(catalog.newLocation), '_blank')} />
           {t?.description && <div style={{ fontSize: 11, color: 'var(--fl-text-muted)', marginTop: 3 }}>{t.description}</div>}
         </div>
         {(ports.length > 1 || (t?.params.length ?? 0) > 0) && <>

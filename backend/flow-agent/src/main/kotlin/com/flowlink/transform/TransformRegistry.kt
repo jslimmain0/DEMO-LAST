@@ -41,12 +41,13 @@ class TransformRegistry(
     @Synchronized
     fun reload() {
         // DB/컴파일 단계가 통째로 죽으면(예: DB 다운) 이전 등록·JAR 로더를 그대로 둔다 — 빈 레지스트리로 서빙하지 않게.
-        val approved = try { scripts.loadApproved() } catch (e: Exception) { log.error("스크립트 플러그인 로드 실패 — 이전 등록 유지", e); return }
+        val enabled = resourceWorkspace?.pluginsEnabled != false
+        val approved = try { if (enabled) scripts.loadApproved() else emptyList() } catch (e: Exception) { log.error("스크립트 플러그인 로드 실패 — 이전 등록 유지", e); return }
         closeLoaders()
         val next = LinkedHashMap<String, FlowTransform>()
         val nextCodecs = LinkedHashMap<String, CodecPlugin>()
         val nextHashes = LinkedHashMap<String, String>()
-        val jars = if (props.jarEnabled) loadJars(next, nextCodecs, nextHashes) else warnSkippedJars()
+        val jars = if (enabled && props.jarEnabled) loadJars(next, nextCodecs, nextHashes) else if (enabled) warnSkippedJars() else 0
         var scriptCount = 0
         for (entry in approved) {
             val p = if (entry is ScopedPlugin) entry.plugin else entry

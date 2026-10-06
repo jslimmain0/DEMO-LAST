@@ -10,7 +10,7 @@ import { applicableSecretNames, envKeys, srcItem } from './mockSources'
 export function vaultSources(secrets: SecretView[] | undefined, envs: EnvView[] | undefined, environment: string | null | undefined): BindableSource[] {
   const out: BindableSource[] = []
   const sec = applicableSecretNames(secrets, environment)
-  if (sec.length) out.push({ id: 'secret', name: '시크릿 볼트', type: 'mock', cat: 'secret', items: sec.map((k) => srcItem(k, '시크릿')) })
+  if (sec.length) out.push({ id: 'secret', name: '시크릿', type: 'mock', cat: 'secret', items: sec.map((k) => srcItem(k, '시크릿')) })
   const ek = envKeys(envs, environment, true)
   if (ek.length) out.push({ id: 'env', name: environment ? `환경 변수 (${environment})` : '환경 변수', type: 'mock', cat: 'env', items: ek.map((k) => srcItem(k, '환경')) })
   return out

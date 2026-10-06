@@ -59,6 +59,12 @@ class DesktopAccessFilter(private val session: DesktopSession) : OncePerRequestF
             res.writer.write("{\"message\":\"Windows 앱에서 워크스페이스를 다시 열어주세요.\"}")
             return
         }
+        if (listOf("/api/v1/plugins", "/api/v1/transforms", "/api/v1/codecs").any { path == it || path.startsWith("$it/") }) {
+            res.status = 403
+            res.contentType = "application/json;charset=UTF-8"
+            res.writer.write("{\"message\":\"플러그인은 공용·팀 워크스페이스에서만 사용할 수 있습니다.\"}")
+            return
+        }
         chain.doFilter(req, res)
     }
 }

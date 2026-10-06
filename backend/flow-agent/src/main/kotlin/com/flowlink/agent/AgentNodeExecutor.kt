@@ -20,7 +20,8 @@ class AgentNodeExecutor(
     private fun ownerResources(node: GraphNode) = node.reqMode == "client" || node.effectiveType() in setOf(NodeType.FORM, NodeType.INPUT, NodeType.WAIT, NodeType.SWITCH)
 
     fun inspect(node: GraphNode, workspaceId: String?, envName: String?): Map<String, String> {
-        if (!ownerResources(node) && (node.executionAgent ?: runtime) != runtime) throw BadRequestException("선택한 에이전트와 실제 실행 프로세스가 다릅니다.")
+        if (node.nodeType() == NodeType.TRANSFORM && runtime == "local") throw BadRequestException("플러그인은 중앙 서버에서만 실행합니다.")
+        if (node.nodeType() != NodeType.TRANSFORM && !ownerResources(node) && (node.executionAgent ?: runtime) != runtime) throw BadRequestException("선택한 에이전트와 실제 실행 프로세스가 다릅니다.")
         val scope = resources.workspaceScope(workspaceId)
         if (!resources.environmentExists(envName, scope)) throw BadRequestException("실행 에이전트에 선택한 환경이 없습니다: $envName")
         if (!ownerResources(node) && !node.agentMock.isNullOrBlank()) resources.mockTarget(node.agentMock, scope)
@@ -59,6 +60,7 @@ class AgentNodeExecutor(
         val started = System.nanoTime()
         val result = try {
             val node = request.node
+            if (node.nodeType() == NodeType.TRANSFORM && runtime == "local") throw BadRequestException("플러그인은 중앙 서버에서만 실행합니다.")
             if (node.executionAgent != runtime) throw BadRequestException("선택한 에이전트와 실제 실행 프로세스가 다릅니다.")
             if (node.effectiveType() !in setOf(NodeType.HTTP, NodeType.TCP, NodeType.SET, NodeType.IF, NodeType.ASSERT, NodeType.TRANSFORM))
                 throw BadRequestException("에이전트에서 독립 실행할 수 없는 노드입니다.")

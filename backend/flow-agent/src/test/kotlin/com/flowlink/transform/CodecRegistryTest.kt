@@ -11,6 +11,19 @@ import java.util.zip.ZipEntry
 
 class CodecRegistryTest {
     @Test
+    fun `개인 호스트에서는 기존 승인본과 JAR 설정으로도 플러그인을 로드하지 않는다`() {
+        val scope = object : TransformScope {
+            override val pluginsEnabled = false
+            override fun key(id: UUID?) = "personal"
+        }
+        val registry = TransformRegistry(PluginsProperties("build/tmp/none", true), ScriptPluginLoader { error("개인 승인본을 읽으면 안 됩니다.") }, scope)
+        registry.reload()
+        assertThat(registry.list()).isEmpty()
+        assertThat(registry.codecs()).isEmpty()
+        assertThat(registry.get("old")).isEmpty()
+        assertThat(registry.fingerprint("old")).isNull()
+    }
+    @Test
     fun `플러그인 디렉토리 없으면 코덱 0개 - 조회는 null`() {
         val dir = Files.createTempDirectory("no-plugins").resolve("none")
         val r = TransformRegistry(PluginsProperties(dir.toString(), true))

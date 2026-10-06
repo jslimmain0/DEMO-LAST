@@ -18,7 +18,7 @@ const NAV: Array<{to: string; label: string; icon: AppIconName}> = [
   { to: '/resources', label: '환경 · 시크릿', icon: 'key' },
   { to: '/mocks', label: 'Mock 서버', icon: 'server' },
   { to: '/protocols', label: '프로토콜', icon: 'sliders' },
-  { to: '/plugins', label: '플러그인', icon: 'code' },
+  { to: '/plugins', label: '플러그인 목록', icon: 'code' },
   { to: '/executions', label: '실행 이력', icon: 'clock' },
 ]
 // 관리 콘솔 — 관리자에게만 노출(백엔드 /admin/* 도 403 으로 이중 방어)
@@ -79,7 +79,7 @@ export function AppShellTier1({ children, sidebarExtra }: { children: ReactNode;
         <div className="fl-sidebar-body">
         {!library && <div style={sectionLabel}>작업</div>}
         <nav style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 2 }}>
-          {!library && NAV.map((n, index) => (<div key={n.to}>{index === 1 && <div style={sectionLabel}>연동 자원</div>}{index === 5 && <div style={sectionLabel}>실행</div>}
+          {!library && NAV.map((n, index) => n.to === '/plugins' && scope.current.origin === 'local' ? null : (<div key={n.to}>{index === 1 && <div style={sectionLabel}>연동 자원</div>}{index === 5 && <div style={sectionLabel}>실행</div>}
             <Link key={n.to} to={n.to} style={navItem(n.to)}>
               <AppIcon name={n.icon} size={18} />
               <span>{n.label}</span>

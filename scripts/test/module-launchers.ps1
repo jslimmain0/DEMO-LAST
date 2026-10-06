@@ -102,28 +102,55 @@ try {
         } catch { }
         throw "desktop distribution 부재 응답은404여야 합니다: HTTP $($distribution.Status), $classification (클래스 포함 여부는 artifact 검사로 별도 판정)"
     }
-    # Same plugin ID on both hosts must retain independent sources, approval and loaded implementation.
-    $plugins = @{}
+    # Plugin management and execution are central only; private H2 is not a plugin host.
+    $source = "({id:'central-only',label:'central',inputs:[],outputs:[{key:'host'}],apply(){return {host:'server'}}})"
+    $created = Request $server '/api/v1/plugins/scripts' '' 'POST' @{ source = $source }
+    Require ($created.Status -eq 201) '중앙 플러그인 저장 실패'
+    $plugin = $created.Body | ConvertFrom-Json
+    Require ((Request $server "/api/v1/plugins/scripts/$($plugin.id)/submit" '' 'POST').Status -eq 200) '중앙 플러그인 제출 실패'
+    Require ((Request $server "/api/v1/plugins/scripts/$($plugin.id)/approve" '' 'POST').Status -eq 200) '중앙 플러그인 승인 실패'
+    $preview = Request $server '/api/v1/transforms/central-only/preview' '' 'POST' @{ inputs = @{}; config = @{} }
+    Require ($preview.Status -eq 200 -and ($preview.Body | ConvertFrom-Json).outputs.host -eq 'server') '중앙 승인본 실행 실패'
+    foreach ($path in @('/api/v1/plugins', '/api/v1/plugins/api', '/api/v1/plugins/scripts', "/api/v1/plugins/scripts/$($plugin.id)", '/api/v1/transforms', '/api/v1/codecs')) {
+        Require ((Request $desktop $path $agent.token).Status -eq 403) '개인 플러그인 API가 허용됐습니다.'
+    }
+    Require ((Request $desktop '/api/v1/plugins/scripts' $agent.token 'POST' @{ source = $source }).Status -eq 403) '개인 플러그인 저장이 허용됐습니다.'
+    Require ((Request $desktop '/api/v1/transforms/central-only/preview' $agent.token 'POST' @{ inputs = @{} }).Status -eq 403) '개인 플러그인 미리보기가 허용됐습니다.'
+    Require ((Request $desktop '/api/v1/secrets' $agent.token).Status -eq 200) '직접 입력한 개인 시크릿 API가 차단됐습니다.'
+    $graph = @{ nodes = @(@{id='start';type='start'}, @{id='plugin';type='transform';transformId='central-only';executionAgent='local';agentWorkspaceId='obsolete';agentEnvironment='obsolete'}, @{id='end';type='end'}); edges = @(@{from='start';to='plugin'}, @{from='plugin';to='end'}) }
     foreach ($app in @($server, $desktop)) {
         $token = if ($app.Role -eq 'desktop') { $agent.token } else { '' }
-        $source = "({id:'host-isolation',label:'$($app.Role)',inputs:[],outputs:[{key:'host'}],apply(){return {host:'$($app.Role)'}}})"
-        $created = Request $app '/api/v1/plugins/scripts' $token 'POST' @{ source = $source }
-        Require ($created.Status -eq 201) "$($app.Role) 격리 플러그인 저장 실패"
-        $plugin = $created.Body | ConvertFrom-Json
-        $plugins[$app.Role] = $plugin
-        Require ((Request $app "/api/v1/plugins/scripts/$($plugin.id)/submit" $token 'POST').Status -eq 200) '격리 플러그인 제출 실패'
-        Require ((Request $app "/api/v1/plugins/scripts/$($plugin.id)/approve" $token 'POST').Status -eq 200) '격리 플러그인 승인 실패'
-        $preview = Request $app '/api/v1/transforms/host-isolation/preview' $token 'POST' @{ inputs = @{}; config = @{} }
-        Require ($preview.Status -eq 200) '격리 플러그인 로드 실패'
-        Require (($preview.Body | ConvertFrom-Json).outputs.host -eq $app.Role) '다른 호스트의 플러그인이 실행됐습니다.'
+        $flowResponse = Request $app '/api/v1/flows' $token 'POST' @{name='central-plugin-policy'}
+        Require ($flowResponse.Status -eq 201) '격리 흐름 생성 실패'
+        $flow = $flowResponse.Body | ConvertFrom-Json
+        Require ((Request $app "/api/v1/flows/$($flow.id)/versions" $token 'POST' @{graph=$graph}).Status -eq 201) '격리 그래프 저장 실패'
+        $started = Request $app "/api/v1/flows/$($flow.id)/runs" $token 'POST' @{}
+        if ($app.Role -eq 'desktop') {
+            Require ($started.Status -eq 400 -and $started.Body -match '공용·팀') '개인 흐름의 중앙 플러그인 우회 실행이 허용됐습니다.'
+        } else {
+            Require ($started.Status -eq 200) '중앙 변환 실행 시작 실패'
+            $execution = $started.Body | ConvertFrom-Json
+            $deadline = [DateTime]::UtcNow.AddSeconds(15)
+            while ($execution.status -in @('RUNNING','WAITING') -and [DateTime]::UtcNow -lt $deadline) {
+                Start-Sleep -Milliseconds 200
+                $execution = (Request $app "/api/v1/executions/$($execution.id)").Body | ConvertFrom-Json
+            }
+            $node = @($execution.nodes | Where-Object nodeId -eq 'plugin')[0]
+            Require ($execution.status -eq 'SUCCEEDED' -and $node.executionAgent -eq 'server' -and $node.output.host -eq 'server') '변환에 기존 PC/공간/환경 설정이 적용됐습니다.'
+        }
     }
-    Require ((Request $desktop "/api/v1/plugins/scripts/$($plugins.server.id)" $agent.token).Status -eq 404) '개인 DB에서 서버 플러그인이 조회됐습니다.'
-    Require ((Request $server "/api/v1/plugins/scripts/$($plugins.desktop.id)").Status -eq 404) '서버 DB에서 개인 플러그인이 조회됐습니다.'
+    $createdMock = Request $desktop '/api/v1/mock-servers' $agent.token 'POST' @{name='personal-plugin-policy';slug='personal-plugin-policy';type='HTTP'}
+    Require ($createdMock.Status -eq 201) '개인 Mock 생성 실패'
+    $mockId = ($createdMock.Body | ConvertFrom-Json).id
+    $codec = @{response=@(@{id='central-only'})}
+    $rejectedMock = Request $desktop "/api/v1/mock-servers/$mockId/spec" $agent.token 'PUT' @{spec=@{routes=@();codec=$codec}}
+    Require ($rejectedMock.Status -eq 400 -and $rejectedMock.Body -match '개인 Mock') '개인 Mock 플러그인 저장이 허용됐습니다.'
+    Require ((Request $desktop "/api/v1/mock-servers/$mockId/codec-try" $agent.token 'POST' @{codec=$codec;side='response';message='test'}).Status -eq 403) '개인 Mock 코덱 시험이 허용됐습니다.'
     $badServer = Start-App 'server' 'reject-server-desktop' @('--spring.profiles.active=local,desktop')
     Require-Rejection $badServer 'desktop'
     $badDesktop = Start-App 'desktop' 'reject-desktop-bind' @('--server.address=0.0.0.0')
     Require-Rejection $badDesktop '127\.0\.0\.1|루프백|loopback'
-    Write-Output 'PASS: server 작업 화면 없음·desktop SPA·플러그인 DB/승인본 실행 격리·개인 접근 보호·로그인/배포 API·잘못된 프로파일/bind 거부'
+    Write-Output 'PASS: server 작업 화면 없음·desktop SPA·중앙 플러그인 승인/실행·개인 플러그인 API 차단·개인 접근 보호·로그인/배포 API·잘못된 프로파일/bind 거부'
     Write-Output "격리 로그: $work (토큰은 출력하지 않음; headless 속성 자체 검사는 별도)"
 } finally {
     $client.Dispose()

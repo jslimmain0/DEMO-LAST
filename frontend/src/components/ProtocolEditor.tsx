@@ -53,7 +53,7 @@ export function ProtocolEditor({ detail, canEdit, onSaved }: { detail: ProtocolD
   const patchMsg = (p: Partial<{ key: string; label: string; fields: ProtocolField[] }>) =>
     patch({ messages: spec.messages.map((m) => (m.key === tab ? { ...m, ...p } : m)) })
 
-  const codecs = useQuery({ queryKey: ['codecs'], queryFn: codecsApi.list, staleTime: 300_000 })
+  const codecs = useQuery({ queryKey: ['codecs'], queryFn: codecsApi.list, enabled: scope.current.origin === 'server', staleTime: 300_000 })
   const codecList = useMemo(() => codecs.data ?? [], [codecs.data])
 
   const save = useMutation({
@@ -211,7 +211,7 @@ export function ProtocolEditor({ detail, canEdit, onSaved }: { detail: ProtocolD
         {/* ③ 헤더 */}
         <section style={section}>
           <div style={secTitle}>헤더 <span style={{ ...mono, color: 'var(--fl-text-muted)', fontWeight: 400 }}>{headerLen} bytes</span></div>
-          <FieldTable fields={spec.header} onChange={(header) => patch({ header })} baseOffset={0} codecs={codecList} readOnly={ro} lengthField={spec.lengthField} />
+          <FieldTable fields={spec.header} onChange={(header) => patch({ header })} baseOffset={0} codecs={codecList} pluginsAllowed={scope.current.origin === 'server'} readOnly={ro} lengthField={spec.lengthField} />
         </section>
 
         {/* ④ 전문 */}
@@ -267,7 +267,7 @@ export function ProtocolEditor({ detail, canEdit, onSaved }: { detail: ProtocolD
                   })}>삭제</button>
                 )}
               </div>
-              <FieldTable key={msg.key} fields={msg.fields} onChange={(fields) => patchMsg({ fields })} baseOffset={headerLen} codecs={codecList} readOnly={ro}
+              <FieldTable key={msg.key} fields={msg.fields} onChange={(fields) => patchMsg({ fields })} baseOffset={headerLen} codecs={codecList} pluginsAllowed={scope.current.origin === 'server'} readOnly={ro}
                 lengthField={spec.lengthField} reservedNames={spec.header.map((f) => f.name)} />
               <div style={{ ...mono, fontSize: 12, color: 'var(--fl-text-muted)', marginTop: 8 }}>본문 {bodyLen} / 전체 {headerLen + bodyLen} bytes</div>
             </>
@@ -275,7 +275,7 @@ export function ProtocolEditor({ detail, canEdit, onSaved }: { detail: ProtocolD
         </section>
 
         {/* ⑤ 메시지 플러그인 */}
-        <MessagePlugins spec={spec} patch={patch} codecs={codecList} readOnly={ro} />
+        {scope.current.origin === 'server' ? <MessagePlugins spec={spec} patch={patch} codecs={codecList} readOnly={ro} /> : (spec.messagePlugins?.length ?? 0) > 0 && <section style={section}><p>플러그인은 공용·팀 공간에서만 사용할 수 있습니다.</p><button disabled={ro} onClick={() => patch({ messagePlugins: [] })}>기존 메시지 플러그인 제거</button></section>}
 
         {/* ⑥ 미리보기 */}
         <PreviewSection spec={spec} tab={tab} />

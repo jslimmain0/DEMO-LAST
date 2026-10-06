@@ -21,11 +21,12 @@ export function filterTransforms(list: TransformInfo[], q: string): TransformInf
  * 변환 플러그인 선택기 — 검색 + 이름순 정렬 드롭다운(네이티브 select 대체).
  * TRANSFORM 노드·Mock 코덱 단계 공용. 현재 값이 목록에 없으면(플러그인 제거 등) "(없음)" 으로 표시.
  */
-export function TransformPicker({ list, value, onChange, disabled, placeholder = '플러그인 선택…', style, onCreateNew }: {
+export function TransformPicker({ list, value, onChange, disabled, loading, placeholder = '플러그인 선택…', style, onCreateNew }: {
   list: TransformInfo[]
   value: string
   onChange: (id: string) => void
   disabled?: boolean
+  loading?: boolean
   placeholder?: string
   style?: CSSProperties
   onCreateNew?: () => void
@@ -61,7 +62,7 @@ export function TransformPicker({ list, value, onChange, disabled, placeholder =
     <div ref={rootRef} style={{ position: 'relative', ...style }}>
       <button
         type="button"
-        disabled={disabled}
+        disabled={disabled || loading}
         onClick={() => setOpen((v) => !v)}
         aria-haspopup="listbox"
         aria-expanded={open}
@@ -70,7 +71,7 @@ export function TransformPicker({ list, value, onChange, disabled, placeholder =
       >
         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, textAlign: 'left' }}>
           {current ? <>{current.label} <span style={{ color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)', fontSize: 11 }}>{current.id}</span></>
-            : value ? <>{value} <span style={{ color: 'var(--fl-fail)' }}>(없음)</span></> : placeholder}
+            : loading ? `${value || '플러그인'} · 확인 중…` : value ? <>{value} <span style={{ color: 'var(--fl-fail)' }}>(이 공간에 없음)</span></> : placeholder}
         </span>
         <span aria-hidden style={{ fontSize: 10, color: 'var(--fl-text-muted)' }}>▾</span>
       </button>

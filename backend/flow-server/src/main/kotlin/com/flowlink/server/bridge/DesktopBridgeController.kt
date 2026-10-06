@@ -16,12 +16,13 @@ class DesktopBridgeController(private val service: DesktopBridgeService) {
         return "${jwt.getClaimAsString("tenant") ?: "default"}|${jwt.subject}"
     }
     @GetMapping("/status") fun status() = service.status(user())
+    private fun device(): String? = (SecurityContextHolder.getContext().authentication?.principal as? Jwt)?.getClaimAsString("mcp_device")
     private fun <T> input(action: () -> T): T = try { action() } catch (ex: IllegalArgumentException) {
         throw com.flowlink.common.error.BadRequestException(ex.message ?: "개인 작업 요청 형식이 올바르지 않습니다.")
     }
     @PostMapping("/connect") fun connect(@RequestBody body: DesktopBridgeRegistration) = input { service.connect(user(), body.deviceId) }
     @PostMapping("/poll") fun poll(@RequestHeader("X-FlowLink-PC-Session") id: String, @RequestHeader("X-FlowLink-PC-Key") secret: String) = service.poll(user(), id, secret)
     @PostMapping("/complete") fun complete(@RequestHeader("X-FlowLink-PC-Session") id: String, @RequestHeader("X-FlowLink-PC-Key") secret: String, @RequestBody result: DesktopCommandResult) = input { service.complete(user(), id, secret, result) }
-    @PostMapping("/requests") fun submit(@RequestBody command: DesktopCommand) = input { service.submit(user(), command) }
-    @GetMapping("/requests/{id}") fun result(@PathVariable id: UUID) = service.result(user(), id)
+    @PostMapping("/requests") fun submit(@RequestBody command: DesktopCommand) = input { service.submit(user(), command, device()) }
+    @GetMapping("/requests/{id}") fun result(@PathVariable id: UUID) = service.result(user(), id, device())
 }

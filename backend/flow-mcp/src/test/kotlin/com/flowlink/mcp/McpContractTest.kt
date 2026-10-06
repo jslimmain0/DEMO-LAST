@@ -43,7 +43,9 @@ class McpContractTest {
         val first = MockHttpServletRequest().apply { localPort = 18080; addHeader("Host", "attacker.invalid"); addHeader("X-Forwarded-Host", "attacker.invalid"); addHeader("Authorization", "Bearer first-user") }
         val second = MockHttpServletRequest().apply { localPort = 18080 }
         assertEquals("http://127.0.0.1:18080", McpConfiguration.invocation(first).origin)
-        assertEquals("Bearer first-user", McpConfiguration.invocation(first).authorization)
+        assertNull(McpConfiguration.invocation(first).authorization) // Raw app bearer is not forwarded.
+        first.setAttribute("flowlink.mcp.managementAuthorization", "Bearer verified-internal")
+        assertEquals("Bearer verified-internal", McpConfiguration.invocation(first).authorization)
         assertNull(McpConfiguration.invocation(second).authorization)
         second.contextPath = "/flowlink"
         assertEquals("http://127.0.0.1:18080/flowlink", McpConfiguration.invocation(second).origin)

@@ -18,6 +18,8 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
   const [tab, setTab] = useState<'connection' | 'runtime' | 'update'>(desktop ? 'connection' : 'runtime')
   const runtimeLabel = scope.current.origin === 'local' ? '내 PC 실행 설정' : '서버 공통 설정'
   const connection = useQuery({ queryKey: ['desktop', 'connection'], queryFn: desktopApi.connection, enabled: !!desktop, refetchInterval: desktop ? 3000 : false })
+  const mcp = useQuery({ queryKey: ['desktop', 'mcp'], queryFn: desktopApi.mcpStatus, enabled: !!desktop && tab === 'connection', refetchInterval: desktop && tab === 'connection' ? 3000 : false })
+  const configureMcp = useMutation({ mutationFn: desktopApi.configureMcp, onSuccess: data => qc.setQueryData(['desktop', 'mcp'], data) })
   const permission = useQuery({ queryKey: ['admin', 'me'], queryFn: adminApi.me, retry: false })
   const editable = permission.isSuccess && permission.data.admin
   const relay = useQuery({ queryKey: ['settings', 'relay'], queryFn: settingsApi.relay, enabled: tab === 'runtime', retry: false })
@@ -86,10 +88,15 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
           {saveServer.isError && error(saveServer.error)}
         </div>}
       </section>
-      <section style={section} aria-label="IDE 연결 안내"><h3 style={heading}>VS Code · IntelliJ 연결</h3>
-        <p style={hint}>회사 서버에서 제공하는 MCP 주소입니다. IDE에 등록한 뒤 도구 사용을 승인하세요.</p>
+      <section style={section} aria-label="IDE 자동 연결"><h3 style={heading}>VS Code · IntelliJ 자동 연결</h3>
+        <p style={hint}>Windows 앱에서 로그인하면 IDE 사용자 설정에 회사 MCP 주소와 전용 인증 정보를 자동 적용하고 갱신합니다.</p>
+        <p role="status" style={hint}>{mcp.data?.message ?? (mcp.isError ? '자동 설정 상태를 불러오지 못했습니다.' : '자동 설정 확인 중…')}</p>
+        {mcp.data?.clients.map(client => <div key={client.label} style={{ ...summary, padding: 12, marginBottom: 8 }}><b>{client.label} · {client.configured ? '설정 완료' : '확인 필요'}</b><p style={{ ...hint, marginBottom: 0 }}>{client.message}</p></div>)}
+        {!!mcp.data?.pendingRevocations && <p style={hint}>이전 로그인 연결 {mcp.data.pendingRevocations}개를 서버에서 해제하는 중입니다. 네트워크가 연결되면 다시 처리합니다.</p>}
+        <button style={button} disabled={configureMcp.isPending} onClick={() => configureMcp.mutate()}>{configureMcp.isPending ? '확인 요청 중…' : 'IDE 설정 다시 확인'}</button>
+        {configureMcp.isError && error(configureMcp.error)}
         {mcpUrl ? <div style={{ ...summary, padding: 12 }}><code style={code}>{mcpUrl}</code><div style={actions}><button style={button} onClick={() => void copyMcpUrl()}>MCP 주소 복사</button></div></div> : <p style={hint}>서버에서 MCP 주소를 아직 받지 못했습니다.</p>}
-        <p style={hint}>IDE의 로그인·도구 사용 승인은 별도로 진행합니다. 이 화면에서는 IDE 연결 상태를 확인하지 않습니다.</p>
+        <p style={hint}>설정 완료 후 IDE에서 도구 사용을 승인하세요. 기존의 다른 서버 설정은 유지됩니다. 이 화면은 설정 적용 상태를 표시합니다.</p>
       </section>
     </section>}
     {tab === 'update' && <section id="settings-update" role="tabpanel" aria-label="앱 업데이트"><DesktopUpdateCard /></section>}
@@ -137,7 +144,7 @@ const hint: CSSProperties = { fontSize: 12.5, color: 'var(--fl-text-muted)', lin
 const code: CSSProperties = { fontFamily: 'var(--fl-font-mono)', fontSize: 12, overflowWrap: 'anywhere' }
 const heading: CSSProperties = { margin: '0 0 8px', fontSize: 14 }
 const section: CSSProperties = { marginTop: 24, paddingTop: 18, borderTop: '1px solid var(--fl-border)' }
-const summary: CSSProperties = { padding: 18, background: 'var(--fl-surface-2)', border: '1px solid var(--fl-border)', borderRadius: 10, minWidth: 0 }
+const summary: CSSProperties = { padding: 18, background: 'var(--fl-surface-2)', border: '1px solid var(--fl-border)', borderRadius: 10, minWidth: 0, overflowWrap: 'anywhere' }
 const row: CSSProperties = { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }
 const actions: CSSProperties = { display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 12 }
 const button: CSSProperties = { padding: '8px 12px', border: '1px solid var(--fl-border)', borderRadius: 6, background: 'var(--fl-surface)', color: 'var(--fl-text)', font: 'inherit', fontSize: 12.5, cursor: 'pointer' }

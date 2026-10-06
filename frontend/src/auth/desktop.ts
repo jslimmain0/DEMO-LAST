@@ -13,6 +13,7 @@ export interface DesktopUpdateStatus {
   releaseNotes: string | null
 }
 export interface DesktopConnection { serverUrl: string; mcpUrl: string; login: string | null; connected: boolean }
+export interface DesktopMcpStatus { phase: string; message: string; clients: { label: string; configured: boolean; message: string }[]; pendingRevocations: number }
 export interface EnvironmentBindingsScope { origin: 'local' | 'server'; workspaceId: string; environment: string | null }
 export interface EnvironmentBindings { bindings: Record<string, string>; revision: string }
 const bindingHeaders = (connection: DesktopConnection) => ({ 'X-FlowLink-Server': connection.serverUrl, 'X-FlowLink-Account': connection.login ?? '' })
@@ -22,6 +23,8 @@ export const desktopApi = {
   downloadUpdate: () => local.post<DesktopUpdateStatus>('/update/download').then(r => r.data),
   openUpdateWindow: () => local.post<{ opened: true }>('/update/open-window').then(r => r.data),
   connection: () => local.get<DesktopConnection>('/connection').then(r => r.data),
+  mcpStatus: () => local.get<DesktopMcpStatus>('/mcp').then(r => r.data),
+  configureMcp: () => local.post<DesktopMcpStatus>('/mcp/reconcile').then(r => r.data),
   configure: (serverUrl: string) => local.put<DesktopConnection>('/connection', { serverUrl }).then(r => r.data),
   login: () => local.post('/login/native'),
   logout: () => local.post('/logout'),

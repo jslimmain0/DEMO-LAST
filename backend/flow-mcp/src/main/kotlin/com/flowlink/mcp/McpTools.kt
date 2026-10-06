@@ -41,7 +41,7 @@ class McpTools(private val mapper: ObjectMapper, private val rest: McpRestClient
                 McpSchema.CallToolResult(render(invoke(name, args, scoped)), false)
             } catch (ex: Exception) {
                 val hint = when ((ex as? McpApiException)?.status) {
-                    401 -> "\n→ MCP 클라이언트에서 FlowLink 서버에 로그인하세요. 만료된 연결은 다시 인증하세요."
+                    401 -> "\n→ Windows FlowLink 앱에서 로그인 상태를 확인하고 MCP 연결 설정을 갱신하세요. IDE에서 다시 로그인할 필요는 없습니다."
                     403 -> "\n→ 이 작업의 권한이나 관리자 승인을 확인하세요. flowlink_status로 상태를 확인할 수 있습니다."
                     else -> ""
                 }

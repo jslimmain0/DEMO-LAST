@@ -95,6 +95,7 @@ $PcNode = Http-Node 'pc-order' 'local'
 $ServerNode = Http-Node 'server-payment' 'server' $Team.id
 $ServerNode.fields.params = @(@{key='amount'; value='{{ amount@pc-order }}'})
 $Verify = @{ id='pc-check'; name='PC에서 검증'; type='assert'; x=750; y=100; executionAgent='local';
+  agentEnvironment=$Tag;
   condition="{{ origin@pc-order }} == 'PC' && {{ origin@server-payment }} == 'SERVER' && {{ amount@pc-order }} == 42 && {{ ok@server-payment }} == true" }
 $TeamFlow = New-Flow $Remote 'PC-server-PC' $Team.id @($PcNode,$ServerNode,$Verify)
 $Started = Api "$Remote/flows/$($TeamFlow.id)/runs" 'POST' @{}

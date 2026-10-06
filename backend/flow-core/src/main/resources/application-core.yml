@@ -1,0 +1,19 @@
+# DB 연결·호스트 포트·인증 발급 설정은 server/desktop이 각각 소유한다.
+spring:
+  jpa:
+    hibernate:
+      ddl-auto: none
+    open-in-view: false
+    properties:
+      hibernate.jdbc.time_zone: UTC
+      # 기존 Oracle/H2 파일의 UUID CHAR(36) 매핑을 유지한다.
+      hibernate.type.preferred_uuid_jdbc_type: CHAR
+  mvc:
+    servlet:
+      load-on-startup: 1
+  servlet:
+    multipart:
+      max-file-size: 20MB
+      max-request-size: 20MB
+server:
+  shutdown: graceful

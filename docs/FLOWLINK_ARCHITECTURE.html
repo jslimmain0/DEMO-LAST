@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>FlowLink · 아키텍처 그림</title>
+<style>
+:root{color-scheme:light;--ink:#203449;--muted:#61758b;--line:#d5e0eb;--bg:#f8fafc;--blue:#2373c7}*{box-sizing:border-box}body{margin:0;color:var(--ink);background:#eaf0f6;font:14px/1.6 "Malgun Gothic","맑은 고딕",system-ui,sans-serif}button,a{font:inherit}button{cursor:pointer}a{color:var(--blue);text-underline-offset:3px}button:focus-visible,a:focus-visible,summary:focus-visible,.canvas:focus-visible{outline:3px solid var(--blue);outline-offset:3px}.page{max-width:1800px;margin:auto;padding:20px 25px}header{display:flex;align-items:center;justify-content:space-between;gap:15px;margin-bottom:16px}h1{font-size:21px;margin:0;letter-spacing:-.6px}header p{margin:2px 0 0;color:var(--muted);font-size:13px}.brand{display:flex;gap:12px;align-items:center}.mark{background:var(--ink);color:white;width:36px;height:36px;border-radius:9px;display:grid;place-items:center;font:700 22px Consolas,monospace}.badge{font-size:12px;padding:4px 10px;border:1px dashed #ac95ce;border-radius:6px;color:#75539e;background:#f4effc;white-space:nowrap}.toolbar{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:10px;background:white;border:1px solid var(--line);border-bottom:0;border-radius:12px 12px 0 0;flex-wrap:wrap}.modes{display:flex;gap:4px}.modes button{border:0;border-radius:6px;background:transparent;color:var(--muted);padding:9px 17px;font-weight:700}.modes button[aria-pressed=true]{background:var(--ink);color:white}.zoom{display:flex;align-items:center;gap:5px}.zoom button{border:1px solid var(--line);border-radius:6px;background:white;min-width:34px;min-height:34px;padding:4px 9px}.zoom output{font:12px Consolas,monospace;width:44px;text-align:center;color:var(--muted)}.canvas{border:1px solid var(--line);background:var(--bg);border-radius:0 0 12px 12px;max-height:calc(100vh - 180px);min-height:340px;overflow:auto;overscroll-behavior:contain}.canvas img{display:block;width:100%;max-width:none;height:auto} .hint{display:flex;justify-content:space-between;gap:15px;flex-wrap:wrap;color:var(--muted);font-size:12px;margin-top:9px}.links{display:flex;gap:18px}details{margin-top:18px;border-top:1px solid var(--line);padding:12px 2px;color:var(--muted);font-size:13px}summary{cursor:pointer;color:var(--ink);font-weight:700}details p{max-width:1000px;margin:10px 0}.key{display:flex;gap:22px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-bottom:10px}.key i{display:inline-block;width:18px;height:3px;vertical-align:middle;margin-right:6px;background:var(--blue)}.key .green{background:#218574}.key .purple{height:10px;border:1px dashed #ac95ce;background:#f4effc}.status{font-size:12px;color:var(--muted);margin-top:4px}.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}@media(max-width:650px){.page{padding:14px 10px}header{align-items:start}.badge{display:none}header p{font-size:12px}.toolbar{gap:8px}.modes button{padding:8px 12px}.canvas{max-height:calc(100vh - 205px);min-height:270px}.hint{display:block}.links{margin-top:6px}}@media print{body{background:white}.page{padding:0}.toolbar,.hint,details{display:none}.canvas{max-height:none;border:0;overflow:visible}.canvas img{width:100%!important}header{margin-bottom:8px}}
+</style>
+</head>
+<body>
+<main class="page">
+<header><div class="brand"><span class="mark" aria-hidden="true">F</span><div><h1>FlowLink 아키텍처</h1><p>Windows 로그인 → MCP 토큰 발급 → IDE 자동 연결</p></div></div><span class="badge">확정 아키텍처</span></header>
+<div class="key"><span><i></i>PC / 로컬 호출</span><span><i class="green"></i>서버 / 중앙 연결</span><span><i class="purple"></i>공통 라이브러리</span></div>
+<div class="toolbar"><div class="modes" role="group" aria-label="그림 선택"><button id="runtime" aria-pressed="true">실행 구조</button><button id="modules" aria-pressed="false">소스 의존 관계</button></div><div class="zoom" role="group" aria-label="그림 확대"><button id="less" aria-label="축소">−</button><output id="scale" aria-live="polite">100%</output><button id="more" aria-label="확대">+</button><button id="fit">전체 맞춤</button></div></div>
+<div class="canvas" id="canvas" tabindex="0" role="region" aria-label="아키텍처 그림. 확대 시 가로와 세로로 스크롤할 수 있습니다."><img id="diagram" src="FLOWLINK_ARCHITECTURE.svg" alt="확정 실행 구조: Windows 앱에서 로그인하면 중앙 서버가 FlowLink MCP용 토큰을 발급합니다. desktop이 IDE 설정에 주소와 Bearer 토큰을 자동 반영하고 갱신합니다. IDE 별도 OAuth 로그인 없이 중앙 MCP에 연결합니다. 개인 H2와 팀 Oracle은 분리됩니다. core와 MCP 토큰 자동 연결을 포함한 확정 구조입니다."></div>
+<div class="hint"><span>작으면 +로 확대하세요. 확대 후 그림 영역을 스크롤해 이동할 수 있습니다.</span><div class="links"><a id="original" href="FLOWLINK_ARCHITECTURE.svg" target="_blank" rel="noopener">원본 그림 열기 ↗</a><a id="download" href="FLOWLINK_ARCHITECTURE.svg" download>SVG 저장</a></div></div>
+<div class="status" id="caption">Windows 로그인 → MCP 전용 토큰 발급 → IDE 설정 자동 반영·갱신. 구현과 검증 범위는 아래에서 확인하세요.</div>
+<details><summary>구현과 검증 범위</summary><p><b>구현:</b> flow-agent, flow-core, flow-server, flow-desktop, flow-mcp 다섯 모듈입니다. desktop과 server가 공통 core를 사용하며 desktop은 server 소스에 의존하지 않습니다.</p><p><b>확정 연결 방식:</b> Windows 앱에서 한 번 로그인하면 중앙 서버가 GitHub 인증을 처리하고 앱 로그인과 FlowLink MCP용 토큰을 발급합니다. desktop이 IDE 사용자 설정에 중앙 /mcp 주소와 Authorization: Bearer 토큰을 자동 반영합니다. IDE는 별도 OAuth 로그인 없이 연결하며 GitHub 토큰은 중앙 서버에 보관합니다.</p><p><b>토큰 관리:</b> MCP용 토큰의 만료·재발급·폐기는 서버가 담당하고 desktop이 설정 갱신을 관리합니다. 설정은 IDE 사용자 범위에 두고 기존 MCP 목록을 보존합니다. IDE가 설정 재적용을 요구하면 앱에서 안내합니다. IDE 자체의 서버 신뢰 확인은 남을 수 있습니다.</p><p><b>모듈:</b> 공통 관리·엔티티·저장 구현은 flow-core에 있습니다. desktop → server 소스 의존을 제거했습니다. 개인 데이터는 H2, 팀 데이터는 Oracle에 유지합니다. MCP 프로토콜·도구 호출·IDE 등록 검증은 수행하지 않았습니다.</p><p><a href="https://code.visualstudio.com/docs/agents/reference/mcp-configuration#http-and-server-sent-events-sse-servers" target="_blank" rel="noopener">VS Code · Authorization 헤더 설정</a></p></details>
+</main>
+<script>
+const diagram=document.getElementById('diagram'),canvas=document.getElementById('canvas');
+let zoom=100;
+function resize(){diagram.style.width=zoom+'%';document.getElementById('scale').textContent=zoom+'%';document.getElementById('less').disabled=zoom===100;document.getElementById('more').disabled=zoom===400;}
+document.getElementById('more').onclick=()=>{zoom=Math.min(400,zoom+50);resize();};
+document.getElementById('less').onclick=()=>{zoom=Math.max(100,zoom-50);resize();};
+document.getElementById('fit').onclick=()=>{zoom=100;resize();canvas.scrollTo(0,0);};
+for(const mode of ['runtime','modules'])document.getElementById(mode).onclick=()=>{
+  const runtime=mode==='runtime',src=runtime?'FLOWLINK_ARCHITECTURE.svg':'FLOWLINK_MODULES.svg';
+  diagram.src=src;
+  diagram.alt=runtime?'PC와 서버의 실행 구조. Windows 로그인 후 서버가 MCP용 토큰을 발급하고 desktop이 IDE 설정에 Bearer 토큰을 자동 반영·갱신합니다. IDE는 별도 OAuth 로그인 없이 중앙 MCP에 연결합니다. 개인 H2와 팀 Oracle은 분리됩니다. core와 MCP 토큰 자동 연결을 포함한 확정 구조입니다.':'확정 소스 의존 관계: desktop은 MCP 설정·토큰 관리를, server는 토큰 발급을, MCP는 토큰 검증을 담당합니다. desktop과 server가 core를 사용하고 core는 agent를 사용합니다.';
+  for(const id of ['original','download'])document.getElementById(id).href=src;
+  for(const id of ['runtime','modules'])document.getElementById(id).setAttribute('aria-pressed',String(id===mode));
+  zoom=100;resize();canvas.scrollTo(0,0);
+};
+resize();
+</script>
+</body>
+</html>

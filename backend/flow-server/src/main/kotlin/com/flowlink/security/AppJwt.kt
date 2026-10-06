@@ -12,6 +12,7 @@ import org.slf4j.LoggerFactory
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm
 import org.springframework.security.oauth2.jwt.JwtDecoder
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder
+import org.springframework.security.oauth2.jwt.BadJwtException
 import org.springframework.stereotype.Component
 import java.security.MessageDigest
 import java.security.SecureRandom
@@ -42,7 +43,8 @@ class AppJwt(props: AuthProperties, settings: SettingsService) {
     private val ttl = props.tokenTtlHours
 
     /** GitHub 로그인 사용자에게 앱 JWT 발급 — 전역 공유 워크플로 도구라 tenant=default·전권 롤. */
-    fun issue(login: String, tenant: String = "default", roles: List<String> = FULL_ROLES): String {
+    fun issue(login: String, tenant: String = "default", roles: List<String> = FULL_ROLES,
+              expiresAt: Instant = Instant.now().plusSeconds(ttl * 3600L), internalMcpDevice: String? = null): String {
         val now = Instant.now()
         val claims = JWTClaimsSet.Builder()
             .subject(login)
@@ -51,15 +53,33 @@ class AppJwt(props: AuthProperties, settings: SettingsService) {
             .claim("realm_access", mapOf("roles" to roles))
             .issuer("flowlink")
             .issueTime(Date.from(now))
-            .expirationTime(Date.from(now.plusSeconds(ttl * 3600L)))
+            .claim("purpose", "app")
+            .claim("mcp_device", internalMcpDevice)
+            .jwtID(java.util.UUID.randomUUID().toString())
+            .expirationTime(Date.from(expiresAt))
             .build()
+        return sign(claims)
+    }
+
+    fun sign(claims: JWTClaimsSet): String {
         val jws = SignedJWT(JWSHeader(JWSAlgorithm.HS256), claims)
         jws.sign(MACSigner(keyBytes))
         return jws.serialize()
     }
 
     /** 리소스 서버가 쓸 디코더(HS256, 같은 키). */
-    fun decoder(): JwtDecoder = NimbusJwtDecoder
+    fun decoder(): JwtDecoder {
+        val signed = rawDecoder()
+        return JwtDecoder { token ->
+            signed.decode(token).also { jwt ->
+                if (jwt.getClaimAsString("purpose") !in setOf(null, "app") || "flowlink-mcp" in jwt.audience.orEmpty()) {
+                    throw BadJwtException("MCP 토큰은 관리 API에 사용할 수 없습니다")
+                }
+            }
+        }
+    }
+
+    fun rawDecoder(): JwtDecoder = NimbusJwtDecoder
         .withSecretKey(SecretKeySpec(keyBytes, "HmacSHA256"))
         .macAlgorithm(MacAlgorithm.HS256)
         .build()

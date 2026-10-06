@@ -1,0 +1,99 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1740" height="1190" viewBox="0 0 1740 1190" role="img" aria-labelledby="title desc">
+<title id="title">FlowLink 확정 아키텍처: 개인 PC와 중앙 서버</title>
+<desc id="desc">Windows 앱에서 한 번 로그인하면 중앙 서버가 GitHub 인증 후 FlowLink MCP용 토큰을 발급한다. desktop이 IDE 사용자 설정의 MCP 주소와 Authorization Bearer 토큰을 자동 반영하고 만료·재발급을 관리한다. IDE는 별도 OAuth 로그인 없이 중앙 MCP에 연결한다. 개인 데이터는 H2, 팀 데이터는 Oracle에 저장하고 로컬·서버 에이전트가 각각 실행한다. core와 MCP 토큰 자동 연결을 포함한 확정 구조이다.</desc>
+<defs>
+  <pattern id="grid" width="24" height="24" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r=".8" fill="#dbe4ed"/></pattern>
+  <marker id="blue" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto-start-reverse"><path d="M1 1 8 5 1 9" fill="none" stroke="#2373c7" stroke-width="1.7" stroke-linejoin="round"/></marker>
+  <marker id="green" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto-start-reverse"><path d="M1 1 8 5 1 9" fill="none" stroke="#218574" stroke-width="1.7" stroke-linejoin="round"/></marker>
+  <marker id="gray" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M1 1 8 5 1 9" fill="none" stroke="#7c8fa3" stroke-width="1.7" stroke-linejoin="round"/></marker>
+  <style>
+    text{font-family:'Malgun Gothic','맑은 고딕',system-ui,sans-serif;fill:#203449} .title{font-size:30px;font-weight:800;letter-spacing:-1px}.subtitle{font-size:18px;fill:#61758b}.label{font-size:19px;font-weight:700}.body{font-size:18px;fill:#61758b}.small{font-size:16px;fill:#61758b}.mono{font-family:Consolas,monospace;font-size:25px;font-weight:700}.route{fill:none;stroke-width:2.5;stroke-linejoin:round;stroke-linecap:round}.pc{stroke:#2373c7;marker-end:url(#blue)}.sv{stroke:#218574;marker-end:url(#green)}.db{stroke:#7c8fa3;marker-end:url(#gray)}.label-bg{fill:#f8fafc}.core{fill:#f5f0ff;stroke:#ac95ce;stroke-width:1.5;stroke-dasharray:6 5}.icon{fill:none;stroke:currentColor;stroke-width:2;stroke-linejoin:round;stroke-linecap:round}
+  </style>
+</defs>
+<rect width="1740" height="1190" fill="#f8fafc"/>
+<rect width="1740" height="1190" fill="url(#grid)"/>
+<text x="70" y="65" font-size="26" font-weight="800">Windows 로그인 → MCP 자동 연결</text>
+<text x="70" y="101" class="body">서버가 MCP용 토큰 발급 · desktop이 설정과 갱신 관리</text>
+
+<!-- One identity provider, located outside both runtime hosts. -->
+<rect x="1225" y="28" width="370" height="76" rx="38" fill="#203449"/>
+<g transform="translate(1255 51)" stroke="white" fill="none" stroke-width="2"><circle cx="15" cy="11" r="9"/><path d="M0 34c0-16 30-16 30 0"/></g>
+<text x="1312" y="60" font-size="21" font-weight="700" style="fill:white">GitHub OAuth</text>
+<text x="1312" y="85" font-size="16" style="fill:#d2deeb">계정 확인 · 중앙 서버에서 처리</text>
+<path class="route sv" d="M1410 104V252"/>
+<rect x="1430" y="111" width="166" height="29" rx="5" fill="#f8fafc"/><text x="1440" y="132" class="small">인증 결과</text>
+
+<!-- Runtime boundaries: the two agents live inside their respective host. -->
+<rect x="40" y="158" width="730" height="854" rx="26" fill="#f1f7ff" stroke="#bdd2ea" stroke-width="1.5"/>
+<rect x="970" y="158" width="730" height="854" rx="26" fill="#f0f9f6" stroke="#b7d8d0" stroke-width="1.5"/>
+<g transform="translate(75 190)" style="color:#2373c7"><rect class="icon" width="38" height="25" rx="3"/><path class="icon" d="M12 31h14M19 25v6"/></g>
+<text x="130" y="212" class="title">사용자 PC</text><text x="130" y="242" class="subtitle">Windows 설치 · 개인 작업의 원본</text>
+<rect x="602" y="190" width="126" height="34" rx="17" fill="#e0edfd"/><text x="665" y="213" text-anchor="middle" font-size="16" font-weight="700" style="fill:#2373c7">MSI + Java</text>
+<g transform="translate(1005 186)" style="color:#218574"><rect class="icon" width="36" height="15" rx="3"/><rect class="icon" y="20" width="36" height="15" rx="3"/><path class="icon" d="M7 7h1M7 27h1M23 7h6M23 27h6"/></g>
+<text x="1060" y="212" class="title">회사 서버</text><text x="1060" y="242" class="subtitle">Docker / EC2 · 팀 작업과 중앙 연결</text>
+<rect x="1550" y="190" width="110" height="34" rx="17" fill="#ddf0e9"/><text x="1605" y="213" text-anchor="middle" font-size="16" font-weight="700" style="fill:#218574">Server JVM</text>
+
+<!-- Browser and native entry points. -->
+<rect x="90" y="280" width="320" height="90" rx="12" fill="white" stroke="#bbcee3"/>
+<path d="M90 306h320" stroke="#d4e0ed"/><circle cx="106" cy="293" r="3" fill="#91abc5"/><circle cx="117" cy="293" r="3" fill="#b9c9da"/><circle cx="128" cy="293" r="3" fill="#b9c9da"/>
+<text x="250" y="334" text-anchor="middle" class="label">브라우저 화면 · React</text><text x="250" y="357" text-anchor="middle" class="small">개인 공간 / 팀 공간</text>
+<rect x="470" y="280" width="250" height="90" rx="12" fill="white" stroke="#bbcee3"/>
+<text x="595" y="310" text-anchor="middle" class="label">Windows 창 · 트레이</text><text x="595" y="336" text-anchor="middle" class="small">로그인 · 설정 · 업데이트</text><text x="595" y="358" text-anchor="middle" font-size="14" style="fill:#2373c7">MCP 토큰 자동 설정 · 갱신</text>
+<path class="route pc" d="M470 325H423"/><text x="443" y="310" text-anchor="middle" font-size="13" style="fill:#2373c7">열기</text>
+<path class="route pc" d="M250 370V506"/><text x="265" y="457" class="small">로컬 API</text>
+
+<!-- Desktop login obtains a server-issued MCP token and configures the IDE. -->
+<rect x="1015" y="280" width="635" height="90" rx="12" fill="white" stroke="#b7d8d0"/>
+<g transform="translate(1040 305)" style="color:#218574"><rect class="icon" x="2" y="13" width="23" height="20" rx="3"/><path class="icon" d="M7 13V7a7 7 0 0 1 14 0v6"/></g>
+<text x="1080" y="316" class="label">중앙 로그인 · 계정 · 권한</text><text x="1080" y="346" class="small">GitHub 확인 → 앱 로그인 / FlowLink MCP용 토큰 발급</text>
+<path class="route pc" d="M720 303H1004"/><rect x="790" y="269" width="160" height="27" rx="5" class="label-bg"/><text x="870" y="289" text-anchor="middle" font-size="16" style="fill:#2373c7">① 로그인 요청</text>
+<path class="route sv" d="M1004 350H732"/><rect x="764" y="359" width="213" height="27" rx="5" class="label-bg"/><text x="870" y="379" text-anchor="middle" font-size="16" style="fill:#218574">② MCP용 토큰 발급</text>
+<path class="route pc" d="M595 370V396"/><text x="611" y="395" font-size="14" style="fill:#2373c7">③ 설정 자동 반영</text>
+<path class="route sv" d="M1630 370V506"/><text x="1615" y="498" text-anchor="end" class="small">인증된 API</text>
+<rect x="470" y="403" width="250" height="82" rx="12" fill="#203449"/>
+<text x="595" y="434" text-anchor="middle" font-size="19" font-weight="700" style="fill:white">IDE · Copilot</text><text x="595" y="461" text-anchor="middle" font-size="16" style="fill:#d2deeb">VS Code / IntelliJ</text>
+<rect x="1015" y="403" width="270" height="82" rx="12" fill="white" stroke="#218574" stroke-width="1.6"/>
+<text x="1150" y="435" text-anchor="middle" class="mono">flow-mcp</text><text x="1150" y="462" text-anchor="middle" class="small">중앙 /mcp · 토큰 검증</text>
+<path class="route pc" d="M720 444H1004"/><rect x="756" y="408" width="223" height="29" rx="5" class="label-bg"/><text x="867" y="430" text-anchor="middle" font-size="16" style="fill:#2373c7">④ HTTPS · Bearer 토큰</text>
+<path class="route sv" d="M1150 485V506"/>
+<text x="1310" y="425" class="small">IDE 별도 OAuth 로그인 없음</text><text x="1310" y="450" class="small">GitHub 토큰은 서버에 보관</text>
+
+<!-- Shared libraries run inside the two host applications. -->
+<rect x="85" y="515" width="640" height="450" rx="18" fill="white" stroke="#8bb0d8" stroke-width="1.7"/>
+<rect x="1015" y="515" width="635" height="450" rx="18" fill="white" stroke="#80b7a7" stroke-width="1.7"/>
+<text x="115" y="556" class="mono" style="fill:#2373c7">flow-desktop</text><text x="115" y="582" class="small">개인 API · H2 관리 · 작업 전달 · MCP 토큰 갱신</text>
+<text x="1045" y="556" class="mono" style="fill:#218574">flow-server</text><text x="1045" y="582" class="small">팀 API · PC 중계 · 배포 / 업데이트 정보</text>
+<path class="route pc" d="M735 610H1003"/><text x="870" y="593" text-anchor="middle" font-size="17" style="fill:#2373c7">서버 API · 원격 작업</text>
+<path class="route sv" d="M1004 725H737" stroke-dasharray="7 6"/><text x="870" y="752" text-anchor="middle" font-size="17" style="fill:#218574">PC가 조회한 명령 / 결과</text><text x="870" y="775" text-anchor="middle" font-size="15" style="fill:#61758b">서버 → PC 직접 접속 없음</text>
+
+<rect class="core" x="135" y="625" width="540" height="75" rx="12"/>
+<text x="160" y="656" class="mono" style="fill:#75539e">flow-core</text><text x="160" y="682" class="small">워크플로 · 환경 · 실행 상태 · 저장 관리</text><text x="648" y="653" text-anchor="end" font-size="14" style="fill:#75539e">공통 코드</text>
+<rect class="core" x="1055" y="625" width="550" height="75" rx="12"/>
+<text x="1080" y="656" class="mono" style="fill:#75539e">flow-core</text><text x="1080" y="682" class="small">동일한 공통 코드 · 서버 저장소 사용</text><text x="1580" y="653" text-anchor="end" font-size="14" style="fill:#75539e">공통 코드</text>
+
+<path class="route db" d="M250 700V780"/><text x="264" y="752" class="small">저장</text>
+<path class="route pc" d="M560 700V780"/><text x="575" y="752" class="small">실행</text>
+<path class="route sv" d="M1170 700V780"/><text x="1186" y="752" class="small">실행</text>
+<path class="route db" d="M1390 700V780"/><path class="route db" d="M1555 700V780"/>
+<text x="1472" y="751" text-anchor="middle" class="small">데이터 / 시크릿</text>
+
+<!-- Database cylinders versus execution blocks. -->
+<path d="M165 805v88c0 26 170 26 170 0v-88" fill="#f6f9fc" stroke="#9aaec3" stroke-width="1.5"/><ellipse cx="250" cy="805" rx="85" ry="18" fill="#e8eff6" stroke="#9aaec3" stroke-width="1.5"/>
+<text x="250" y="857" text-anchor="middle" class="label">개인 H2</text><text x="250" y="883" text-anchor="middle" class="small">개인 데이터 원본</text><text x="250" y="938" text-anchor="middle" class="small">로그인 없이 사용</text>
+<rect x="445" y="792" width="230" height="123" rx="12" fill="#ecf4ff" stroke="#2373c7" stroke-width="1.5"/>
+<text x="560" y="824" text-anchor="middle" class="label" style="fill:#2373c7">로컬 에이전트</text><text x="560" y="853" text-anchor="middle" font-family="Consolas,monospace" font-size="19" font-weight="700">flow-agent</text><text x="560" y="883" text-anchor="middle" class="small">호출 · Mock · 콜백 수신</text><text x="560" y="938" text-anchor="middle" class="small">개인 Mock은 PC에서 리슨</text>
+<rect x="1055" y="792" width="230" height="123" rx="12" fill="#e9f6f0" stroke="#218574" stroke-width="1.5"/>
+<text x="1170" y="824" text-anchor="middle" class="label" style="fill:#218574">서버 에이전트</text><text x="1170" y="853" text-anchor="middle" font-family="Consolas,monospace" font-size="19" font-weight="700">flow-agent</text><text x="1170" y="883" text-anchor="middle" class="small">호출 · Mock · 콜백 수신</text><text x="1170" y="938" text-anchor="middle" class="small">팀 Mock은 서버에서 리슨</text>
+<path d="M1325 805v88c0 24 130 24 130 0v-88" fill="#f6f9fc" stroke="#9aaec3" stroke-width="1.5"/><ellipse cx="1390" cy="805" rx="65" ry="18" fill="#e8eff6" stroke="#9aaec3" stroke-width="1.5"/>
+<text x="1390" y="857" text-anchor="middle" class="label">Oracle</text><text x="1390" y="883" text-anchor="middle" class="small">팀 데이터</text>
+<rect x="1490" y="792" width="130" height="115" rx="12" fill="#f6f9fc" stroke="#9aaec3" stroke-width="1.5"/><circle cx="1555" cy="819" r="10" fill="none" stroke="#839ab0" stroke-width="2"/><path d="M1555 814v10m-5-5h10" stroke="#839ab0" stroke-width="2"/>
+<text x="1555" y="857" text-anchor="middle" class="label">Vault</text><text x="1555" y="883" text-anchor="middle" class="small">중앙 시크릿</text>
+
+<!-- Same external system, different network origins. -->
+<path class="route pc" d="M445 850H405V1085H700"/><path class="route sv" d="M1285 850H1305V1085H1040"/>
+<rect x="517" y="1017" width="250" height="28" rx="5" class="label-bg"/><text x="642" y="1037" text-anchor="middle" font-size="17" style="fill:#2373c7">PC IP에서 HTTP / TCP 호출</text>
+<rect x="975" y="1017" width="296" height="28" rx="5" class="label-bg"/><text x="1123" y="1037" text-anchor="middle" font-size="17" style="fill:#218574">서버 IP에서 HTTP / TCP 호출</text>
+<rect x="710" y="1050" width="320" height="76" rx="16" fill="#203449"/><text x="870" y="1083" text-anchor="middle" font-size="21" font-weight="700" style="fill:white">대상 시스템 · API / TCP</text><text x="870" y="1110" text-anchor="middle" font-size="16" style="fill:#d2deeb">노드마다 실행 위치 선택</text>
+<text x="40" y="1165" class="small">실선 = API / 호출 흐름 · 점선 = PC가 조회하는 명령 중계 · 보라색 = 공통 라이브러리</text>
+<text x="1700" y="1165" text-anchor="end" font-size="15" style="fill:#75539e">확정 구조 · Windows 로그인 / MCP 자동 연결</text>
+</svg>

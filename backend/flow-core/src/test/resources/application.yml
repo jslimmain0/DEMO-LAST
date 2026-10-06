@@ -1,0 +1,4 @@
+# 공통 서비스 검증은 호스트/실사용 DB 설정을 가져오지 않는다.
+spring:
+  config:
+    import: classpath:application-core.yml

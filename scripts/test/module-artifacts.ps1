@@ -1,8 +1,9 @@
-param(
+﻿param(
     [string]$ServerJar = (Join-Path $PSScriptRoot '../../backend/flow-server/build/libs/flowlink-server.jar'),
     [string]$DesktopJar = (Join-Path $PSScriptRoot '../../backend/flow-desktop/build/libs/flowlink-desktop.jar'),
     [string]$AgentJar = (Join-Path $PSScriptRoot '../../backend/flow-agent/build/libs/flowlink-agent.jar'),
-    [string]$McpJar = (Join-Path $PSScriptRoot '../../backend/flow-mcp/build/libs/flowlink-mcp.jar')
+    [string]$McpJar = (Join-Path $PSScriptRoot '../../backend/flow-mcp/build/libs/flowlink-mcp.jar'),
+    [string]$CoreJar = (Join-Path $PSScriptRoot '../../backend/flow-core/build/libs/flowlink-core.jar')
 )
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.IO.Compression
@@ -34,6 +35,21 @@ function Inspect-Agent([string]$Path) {
         }
     } finally { $archive.Dispose() }
 }
+function Inspect-Core([string]$Path) {
+    Require (Test-Path -LiteralPath $Path -PathType Leaf) "core JAR이 없습니다: $Path"
+    $archive = [System.IO.Compression.ZipFile]::OpenRead((Resolve-Path -LiteralPath $Path).Path)
+    try {
+        $names = @($archive.Entries | ForEach-Object { $_.FullName })
+        Require (@($names | Where-Object { $_ -like 'BOOT-INF/*' }).Count -eq 0) 'core는 plain JAR여야 합니다.'
+        Require (@($names | Where-Object { $_ -match '^com/flowlink/(server|distribution|presence|desktop|mcp)/.+\.class$' }).Count -eq 0) 'core에 중앙 서버·Windows·MCP 구현이 포함됐습니다.'
+        Require (@($names | Where-Object { $_ -match '^com/flowlink/security/(AppJwt|AuthConfig|GithubAuthService|GithubLoginController|McpToken).+\.class$|^com/flowlink/security/(AppJwt|AuthConfig|GithubAuthService|GithubLoginController|McpToken)\.class$' }).Count -eq 0) 'core에 중앙 로그인·토큰 발급 구현이 포함됐습니다.'
+        Require (@($names | Where-Object { $_ -match '^(application\.yml|application-(local|desktop|dev|agent-lab|oracle)\.yml|static/|db/)' }).Count -eq 0) 'core에 호스트 DB/화면/SQL 설정이 포함됐습니다.'
+        foreach ($name in @('FlowlinkApplication', 'core/domain/Flow', 'execution/ExecutionService', 'workspace/WorkspaceService', 'security/SecurityConfig')) {
+            Require ($names -contains "com/flowlink/$name.class") "core 공통 구현이 없습니다: $name"
+        }
+        Require ($names -contains 'application-core.yml') 'core 공통 ORM/웹 설정이 없습니다.'
+    } finally { $archive.Dispose() }
+}
 function Inspect-Mcp([string]$Path) {
     Require (Test-Path -LiteralPath $Path -PathType Leaf) "flow-mcp JAR이 없습니다: $Path"
     $archive = [System.IO.Compression.ZipFile]::OpenRead((Resolve-Path -LiteralPath $Path).Path)
@@ -54,6 +70,10 @@ function Inspect-Jar([string]$Path, [string]$Role, [string]$MainClass) {
         Require ($null -ne $manifest) "$Role manifest가 없습니다."
         $manifestText = (Read-Entry $manifest) -replace "\r?\n ", ''
         Require ($manifestText -match "(?m)^Start-Class: $([regex]::Escape($MainClass))\r?$") "$Role Start-Class가 다릅니다."
+        Require ($null -ne $archive.GetEntry('BOOT-INF/lib/flowlink-core.jar')) "$Role 공통 core 라이브러리가 없습니다."
+        if ($Role -eq 'desktop') {
+            Require (@($archive.Entries | Where-Object { $_.FullName -match '^BOOT-INF/lib/flowlink-(server|mcp).*\.jar$' }).Count -eq 0) 'desktop은 중앙 server/MCP 모듈에 의존하면 안 됩니다.'
+        }
         foreach ($entry in $archive.Entries) {
             if ($entry.FullName.EndsWith('.class')) { [void]$classes.Add(($entry.FullName -replace '^BOOT-INF/classes/', '')) }
             if ($entry.FullName.EndsWith('flowlink-release.properties')) {
@@ -107,8 +127,9 @@ function Inspect-Jar([string]$Path, [string]$Role, [string]$MainClass) {
     } finally { $archive.Dispose() }
 }
 Inspect-Agent $AgentJar
+Inspect-Core $CoreJar
 Inspect-Mcp $McpJar
 $serverVersion = Inspect-Jar $ServerJar 'server' 'com.flowlink.server.ServerApplicationKt'
 $desktopVersion = Inspect-Jar $DesktopJar 'desktop' 'com.flowlink.desktop.DesktopApplicationKt'
 Require ($serverVersion -eq $desktopVersion) '서버·Windows 앱 릴리스 버전이 다릅니다.'
-Write-Output "PASS: agent/MCP plain JAR·DB/관리 분리·server/desktop 역할·SDK·진입점·드라이버·릴리스 $serverVersion"
+Write-Output "PASS: agent/core/MCP plain JAR·DB/관리/호스트 분리·server/desktop 역할·SDK·진입점·드라이버·릴리스 $serverVersion"

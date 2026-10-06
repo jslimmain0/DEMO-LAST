@@ -5,6 +5,16 @@ import org.junit.jupiter.api.Assertions.*
 import org.springframework.web.server.ResponseStatusException
 import java.util.UUID
 class DesktopBridgeServiceTest {
+    @Test fun `MCP device credentials cannot silently reach another PC of the same account`() {
+        val service = DesktopBridgeService()
+        val command = DesktopCommand(UUID.randomUUID(), "GET", "/api/v1/workspaces")
+        service.connect("u", "pc-B")
+        assertEquals(409, assertThrows(ResponseStatusException::class.java) { service.submit("u", command, "pc-A") }.statusCode.value())
+        assertEquals("PENDING", service.submit("u", command, "pc-B").status)
+        assertEquals(409, assertThrows(ResponseStatusException::class.java) { service.result("u", command.requestId, "pc-A") }.statusCode.value())
+        assertEquals("PENDING", service.result("u", command.requestId, "pc-B").status)
+        assertEquals("PENDING", service.result("u", command.requestId).status) // Ordinary app API remains compatible.
+    }
     @Test fun `offline and identity and delivery fencing`() {
         val service = DesktopBridgeService()
         val command = DesktopCommand(UUID.randomUUID(), "GET", "/api/v1/flows")

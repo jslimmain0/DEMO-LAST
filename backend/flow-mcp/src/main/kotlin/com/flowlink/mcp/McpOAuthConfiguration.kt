@@ -43,13 +43,14 @@ class McpOAuthConfiguration {
         return builder.build()
     }
 
-    @Bean fun mcpAccessTokens(mapper: ObjectMapper): OAuth2TokenGenerator<OAuth2Token> = OAuth2TokenGenerator { ctx ->
+    @Bean fun mcpAccessTokens(mapper: ObjectMapper, credentials: McpCredentials): OAuth2TokenGenerator<OAuth2Token> = OAuth2TokenGenerator { ctx ->
         if (ctx.tokenType != OAuth2TokenType.ACCESS_TOKEN) return@OAuth2TokenGenerator null
         val principal = ctx.getPrincipal<Authentication>() as? McpLoginAuthentication ?: return@OAuth2TokenGenerator null
-        val payload = mapper.readTree(Base64.getUrlDecoder().decode(principal.accessToken.split('.')[1]))
+        val accessToken = credentials.issueForOAuth(principal.accessToken, ctx.registeredClient.clientId)
+        val payload = mapper.readTree(Base64.getUrlDecoder().decode(accessToken.split('.')[1]))
         val expiry = Instant.ofEpochSecond(payload.path("exp").asLong())
         if (!expiry.isAfter(Instant.now())) return@OAuth2TokenGenerator null
-        OAuth2AccessToken(OAuth2AccessToken.TokenType.BEARER, principal.accessToken, Instant.now(), expiry, ctx.authorizedScopes)
+        OAuth2AccessToken(OAuth2AccessToken.TokenType.BEARER, accessToken, Instant.now(), expiry, ctx.authorizedScopes)
     }
 
     @Bean @Order(0)

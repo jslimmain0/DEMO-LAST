@@ -15,8 +15,20 @@
 }
 ```
 
-설치된 Windows 앱의 MCP 연결 화면은 서버에서 받은 중앙 URL로 설정을 생성한다. VS Code·IntelliJ의 기존 MCP 목록에 추가하며, 기존 다른 서버 설정을 덮어쓰지 않는다. 앱 로그인과 IDE의 OAuth 승인은 별도 절차다. 표준 OAuth 코드·PKCE는 Spring Authorization Server가 처리하고, 로그인 뒤 한국어 권한 승인 화면에서 연결할 앱을 확인한다. 등록된 앱 이름만으로 발행자 신원이 검증되는 것은 아니다.
+Windows 앱에서 회사 계정에 로그인하면 중앙 서버가 FlowLink MCP 전용 Bearer 토큰을 발급한다. desktop은 VS Code·IntelliJ Copilot 사용자 설정에 중앙 URL과 인증 헤더를 자동 반영한다. IDE에서 별도로 회사 계정 OAuth 로그인할 필요는 없으며 도구 사용 승인은 IDE에서 진행한다. GitHub 토큰과 일반 앱 로그인 토큰을 IDE 설정에 넣지 않는다.
+
+VS Code는 `%APPDATA%/Code/User/mcp.json`(Insiders·기존 사용자 프로필 포함)의 `headers.Authorization`, IntelliJ Copilot은 `%LOCALAPPDATA%/github-copilot/intellij/mcp.json`의 `requestInit.headers.Authorization`을 사용한다. 설치된 IDE의 사용자 설정 경로만 찾으며 다른 서버 항목은 보존한다. 사용자가 FlowLink 항목을 직접 변경했거나 JSON이 손상된 경우 자동 덮어쓰기를 중단하고 앱에서 확인을 안내한다. IDE를 처음 실행한 뒤 앱의 **IDE 자동 연결 → 설정 다시 확인**을 사용할 수 있다.
+
+PC에는 발급받은 자격과 설정 소유권을 기존 개인 키로 암호화해 저장한다. IDE 사용자 설정에 쓰는 Bearer 토큰은 해당 사용자만 읽도록 파일 권한을 제한하고 프로젝트 설정에 쓰지 않는다. 만료 전에 새 토큰을 받아 설정을 갱신한다. 로그아웃·서버/계정 변경 때 앱이 만든 항목만 정리하고 중앙 자격을 해제한다. 서버가 오프라인이면 암호화된 해제 요청을 보관해 다시 처리한다. 설정 상태는 앱의 연결 화면에서 보며 실제 프로토콜 연결 성공을 대신하지 않는다.
+
+중앙 `POST /api/v1/auth/mcp-tokens`, `POST /api/v1/auth/mcp-tokens/{id}/refresh`, `DELETE /api/v1/auth/mcp-tokens[/{id}]`는 일반 앱 로그인으로 보호한다. 전용 토큰은 `flowlink-mcp` audience·목적·scope와 앱 세션/장치/클라이언트에 묶이고 최대 7일 또는 원본 로그인 만료 중 빠른 시점에 만료된다. 일반 관리 API는 MCP 토큰을 거부한다. 서버는 토큰 원문 대신 해시를 영속 저장하며 `/mcp`에서는 만료·폐기·계정 승인·현재 DB 권한을 확인한다. 저장 경로는 `flowlink.mcp.tokens-file`(기본 서버 홈 `.flowlink/mcp-tokens.json`)이며 현재 단일 서버 JVM 구성이다.
+
+Windows 자동 설정의 개인 작업은 토큰을 발급한 PC에 고정한다. 동일 계정의 다른 PC가 연결되어 있어도 해당 PC로 조용히 전달하지 않고 409로 거부한다. 서버 작업의 권한은 계정·워크스페이스 권한으로 판정한다.
+
+Windows 자동 설정을 지원하지 않는 클라이언트의 표준 OAuth 코드·PKCE 호환 경로는 유지한다. Spring Authorization Server가 처리하며 발급하는 자격도 MCP 전용이다. 이 호환 경로는 Windows 장치 ID 없이 계정에 연결된 현재 PC를 사용한다. `flowlink.desktop.mcp-auto-configure=false`는 IDE 파일 변경을 끄며 트레이를 끈 격리 검증에서는 기본 비활성화한다.
 
 기존 58개 도구 이름과 인자 계약은 `src/main/resources/flowlink-tools.json`에 보존한다. `target`은 개인/서버 저장 공간을 선택하고 `executionAgent`는 호출할 PC/서버 실행 위치를 선택한다. 개인 저장 공간이나 PC 작업은 로그인한 Windows 앱이 온라인이어야 한다. 개인 H2 전체를 중앙 서버로 동기화하지 않고 계정·장치에 묶인 명령 채널을 사용한다.
 
-빌드·모듈 경계는 [backend 안내](../README.md)를 따른다. 현재 검증 범위는 컴파일·순수 메타데이터/URI 정책/HTML 렌더링 및 패키징 경계다. MCP 프로토콜·도구 호출·IDE 등록은 테스트하지 않았다. 역사적 Node MCP 검증 기록은 이 Kotlin 구현의 실연동 검증 결과가 아니다.
+빌드·모듈 경계는 [backend 안내](../README.md)를 따른다. 검증은 순수 계약/URI 정책/승인 화면, 전용 자격의 REST 발급·갱신·폐기, 임시 JSON 설정 병합과 암호화 수명주기, 패키징 경계를 대상으로 한다. MCP 프로토콜·도구 호출·실제 IDE 등록은 테스트하지 않는다. 역사적 Node MCP 검증 기록은 이 Kotlin 구현의 실연동 검증 결과가 아니다.
+
+설정 형식 근거: [VS Code HTTP 서버 인증 헤더](https://code.visualstudio.com/docs/agents/reference/mcp-configuration#http-and-server-sent-events-sse-servers), [GitHub Copilot MCP 설정](https://docs.github.com/en/copilot/how-tos/provide-context/use-mcp/extend-copilot-chat-with-mcp), [Microsoft APM의 IDE 설정 경로](https://microsoft.github.io/apm/integrations/ide-tool-integration/).

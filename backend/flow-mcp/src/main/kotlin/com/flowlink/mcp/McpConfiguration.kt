@@ -54,7 +54,7 @@ class McpConfiguration {
         setName("flowlinkMcp"); setAsyncSupported(true); setLoadOnStartup(1)
     }
 
-    @Bean fun mcpGate(rest: McpRestClient, mapper: ObjectMapper, environment: Environment): FilterRegistrationBean<OncePerRequestFilter> {
+    @Bean fun mcpGate(credentials: McpCredentials, mapper: ObjectMapper, environment: Environment): FilterRegistrationBean<OncePerRequestFilter> {
         val filter = object : OncePerRequestFilter() {
             override fun doFilterInternal(request: HttpServletRequest, response: HttpServletResponse, chain: FilterChain) {
                 val origin = request.getHeader("Origin")
@@ -79,16 +79,22 @@ class McpConfiguration {
                 if (request.contentLengthLong > maxBytes) { response.sendError(413, "요청 본문 크기 제한을 초과했습니다"); return }
                 if (registration) { chain.doFilter(limitedRequest(request, maxBytes), response); return }
                 try {
-                    // The ordinary server auth endpoint applies the current GitHub/guest policy.
-                    rest.direct(invocation(request, environment.getProperty("server.ssl.enabled", Boolean::class.java, false)), "GET", "/api/v1/auth/me")
-                } catch (ex: McpApiException) {
-                    response.status = if (ex.status in setOf(401, 403)) 401 else 503
+                    // Broad app/GitHub tokens and guest access never authorize MCP.
+                    // The host checks revocation/account status, then supplies an internal-only credential.
+                    request.setAttribute(MANAGEMENT_AUTHORIZATION, credentials.managementAuthorization(request.getHeader("Authorization")))
+                } catch (ex: org.springframework.security.oauth2.jwt.JwtException) {
+                    response.status = 401
                     if (response.status == 401) {
                         val resourceOrigin = publicUrl?.trim()?.trimEnd('/') ?: "${request.scheme}://${request.serverName}${if (request.serverPort in setOf(80, 443)) "" else ":${request.serverPort}"}${request.contextPath}"
                         response.setHeader("WWW-Authenticate", "Bearer resource_metadata=\"$resourceOrigin/.well-known/oauth-protected-resource\"")
                     }
                     response.contentType = "application/json;charset=UTF-8"
                     mapper.writeValue(response.outputStream, mapOf("error" to if (response.status == 401) "FlowLink 서버 로그인이 필요합니다" else "인증 상태를 확인하지 못했습니다"))
+                    return
+                } catch (ex: org.springframework.web.server.ResponseStatusException) {
+                    response.status = ex.statusCode.value()
+                    response.contentType = "application/json;charset=UTF-8"
+                    mapper.writeValue(response.outputStream, mapOf("error" to "MCP 연결 권한이 없습니다"))
                     return
                 } catch (ex: Exception) {
                     if (response.isCommitted) throw ex
@@ -105,6 +111,7 @@ class McpConfiguration {
     companion object {
         const val MAX_REQUEST_BYTES = 8L * 1024 * 1024
         const val MAX_REGISTRATION_BYTES = 64L * 1024
+        private const val MANAGEMENT_AUTHORIZATION = "flowlink.mcp.managementAuthorization"
 
         fun normalizedOrigin(raw: String): String? = runCatching {
             val uri = URI(raw)
@@ -129,7 +136,7 @@ class McpConfiguration {
         }
 
         fun invocation(request: HttpServletRequest, connectorSecure: Boolean = false): McpInvocation {
-            val authorization = request.getHeader("Authorization")?.takeIf { it.startsWith("Bearer ", true) && it.length > 7 }
+            val authorization = request.getAttribute(MANAGEMENT_AUTHORIZATION) as? String
             // ForwardedHeaderFilter may report HTTPS while the actual Tomcat connector is plain HTTP.
             // Only connector configuration decides the internal scheme; client headers never do.
             val scheme = if (connectorSecure) "https" else "http"

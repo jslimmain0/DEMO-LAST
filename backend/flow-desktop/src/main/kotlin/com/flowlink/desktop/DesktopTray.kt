@@ -49,7 +49,7 @@ class DesktopTray(
                 if (remote.view().connected) browse(session.browserUrl() + "&runtime=server") else loginDialog()
             }
             item("회사 계정 보기 · 변경") { loginDialog() }
-            item("IDE · 서버 MCP 안내…") { connectDialog() }
+            item("IDE · 자동 연결…") { connectDialog() }
             menu.addSeparator()
             item("앱 홈") { welcomeDialog() }
             item("연결 상태 · 자동 설정") { statusDialog() }
@@ -265,15 +265,25 @@ class DesktopTray(
     }
 
     private fun buildConnectDialog(): JDialog {
-        val (dialog, content) = window("IDE와 서버 도구", "Copilot의 도구 연결은 회사의 중앙 MCP 서버를 기준으로 구성합니다.", height = 460)
+        val (dialog, content) = window("IDE 자동 연결", "Windows 앱에 한 번 로그인하면 Copilot에서도 회사 서버 도구를 사용합니다.", height = 540)
+        val setup = context.getBeanProvider(DesktopMcpSetup::class.java).ifAvailable
         val mcp = remote.view().mcpUrl
+        val status = text(setup?.view()?.message ?: "자동 설정을 확인하지 못했습니다.")
+        val clients = text("")
         body(content, stack(
             card("회사 MCP 주소", if (mcp.isNotBlank()) mcp else "서버 MCP 주소를 아직 확인하지 못했습니다. 회사 연결 안내를 확인하세요.",
                 button("주소 복사") { copy(mcp) }.apply { isEnabled = mcp.isNotBlank() }),
-            card("IDE에서 연결하세요", "VS Code · IntelliJ에 회사 MCP 주소를 등록하세요. 도구 사용 승인은 IDE에서 진행합니다. 앱 로그인만으로 IDE 연결이 완료되지는 않습니다."),
-            text("주소 안내만 제공하며 앱은 IDE의 실제 연결 상태를 확인하지 않습니다. 기존 IDE 설정은 변경하지 않습니다."),
+            card("앱 로그인 공유", "로그인하면 VS Code · IntelliJ Copilot의 사용자 설정에 주소와 MCP 전용 토큰을 자동 적용합니다. 토큰은 자동 갱신하고 로그아웃하면 연결을 해제합니다."),
+            status, clients,
+            text("설정 완료 후 IDE에서 도구 사용을 승인하세요. 다른 MCP 서버 설정은 유지합니다. 여기서는 설정 적용 상태를 표시합니다."),
         ))
-        content.add(row(button("닫기") { dialog.dispose() }), BorderLayout.SOUTH)
+        content.add(row(button("회사 계정") { loginDialog() }, button("설정 다시 확인", true) { setup?.request() }, button("닫기") { dialog.dispose() }), BorderLayout.SOUTH)
+        val timer = Timer(1000) {
+            val view = setup?.view() ?: return@Timer
+            status.text = view.message + if (view.pendingRevocations > 0) "\n이전 연결 해제 대기: ${view.pendingRevocations}" else ""
+            clients.text = view.clients.joinToString("\n") { "${it.label} · ${it.message}" }
+        }.apply { initialDelay = 0; start() }
+        dialog.addWindowListener(object : java.awt.event.WindowAdapter() { override fun windowClosed(event: java.awt.event.WindowEvent) { timer.stop() } })
         return dialog
     }
     fun loginDialog() {

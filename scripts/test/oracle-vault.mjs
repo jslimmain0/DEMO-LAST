@@ -8,6 +8,7 @@ async function run(flow,envName){const start=await req(`/api/v1/flows/${flow}/ru
 for(let i=0;i<100;i++){try{await req('/api/v1/auth/config');break}catch{await new Promise(r=>setTimeout(r,500))}}
 await login();pass('Oracle JWT account/workspace persistence');
 const ws=await req('/api/v1/workspaces','POST',{name:tag},201);const other=await req('/api/v1/workspaces','POST',{name:`${tag}-other`},201);
+await req(`/api/v1/environments/prod?workspaceId=${ws.id}`,'PUT',{vars:{}});
 const secrets={common:crypto.randomUUID(),prod:crypto.randomUUID(),other:crypto.randomUUID()};
 for(const[scope,env,value]of[[ws.id,null,secrets.common],[ws.id,'prod',secrets.prod],[other.id,null,secrets.other]])await req(`/api/v1/secrets/key?workspaceId=${scope}`,'PUT',{value,environment:env});
 const names=await req(`/api/v1/secrets?workspaceId=${ws.id}`);assert.equal(names.length,2);assert.ok(!JSON.stringify(names).includes(secrets.common));pass('write-only secret names and workspace isolation');
@@ -17,7 +18,7 @@ const nodes=[node('start','start'),node('value','set',{vars:[{key:'actual',value
 await req(`/api/v1/flows/${flow.id}/versions`,'POST',{graph:{nodes,edges:nodes.slice(1).map((n,i)=>edge(nodes[i].id,n.id))}},201);
 async function execute(envName,expected){const start=await req(`/api/v1/flows/${flow.id}/runs`,'POST',{envName,env:{expected}});for(let i=0;i<100;i++){const x=await req(`/api/v1/executions/${start.id}`);if(x.status!=='RUNNING'){assert.equal(x.status,'SUCCEEDED',JSON.stringify(x));for(const s of Object.values(secrets))assert.ok(!JSON.stringify(x).includes(s),'secret leaked');return x;}await new Promise(r=>setTimeout(r,100));}throw Error('timeout');}
 await execute(null,secrets.common);pass('common Transit secret resolves and runtime logs mask');await execute('prod',secrets.prod);pass('environment secret overrides common');
-await execute('absent',secrets.common);pass('unknown environment falls back to common');
+await req(`/api/v1/flows/${flow.id}/runs`,'POST',{envName:'absent'},400);pass('unknown environment is rejected before secret resolution');
 const cfg=Object.fromEntries(readFileSync('.run/oracle-vault/infra.env','utf8').replace(/^\uFEFF/,'').trim().split(/\r?\n/).map(x=>x.split('=')));
 const sql=`set heading off\nset feedback off\nwhenever sqlerror exit sql.sqlcode\nconnect flowlink/"${cfg.LAB_ORACLE_PASSWORD}"@//localhost:1521/FREEPDB1\nSELECT CASE WHEN enc_value LIKE 'vault:v1:%' THEN 'TRANSIT' ELSE 'BAD' END FROM flowlink_secret WHERE name='key';\nexit\n`;
 const db=spawnSync('docker',['exec','-i','flowlink-oracle-vault-test-oracle-1','sqlplus','-s','/nolog'],{input:sql,encoding:'utf8'});assert.equal(db.status,0);assert.ok(db.stdout.includes('TRANSIT')&&!db.stdout.includes('BAD'));pass('Oracle rows contain actual vault:v1 ciphertext');

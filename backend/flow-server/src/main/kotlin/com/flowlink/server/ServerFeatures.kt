@@ -14,5 +14,7 @@ import org.springframework.context.annotation.Import
 @Configuration
 @Import(DistributionController::class, PresenceConfig::class, PresenceHandler::class,
     AppJwt::class, AuthConfig::class, GithubAuthService::class, GithubLoginController::class,
-    com.flowlink.server.bridge.DesktopBridgeService::class, com.flowlink.server.bridge.DesktopBridgeController::class)
+    com.flowlink.server.bridge.DesktopBridgeService::class, com.flowlink.server.bridge.DesktopBridgeController::class,
+    com.flowlink.server.security.McpTokenService::class, com.flowlink.server.security.McpTokenController::class,
+    com.flowlink.mcp.McpConfiguration::class)
 class ServerFeatures

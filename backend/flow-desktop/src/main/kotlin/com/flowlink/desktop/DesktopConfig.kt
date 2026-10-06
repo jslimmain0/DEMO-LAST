@@ -47,7 +47,7 @@ class DesktopAccessFilter(private val session: DesktopSession) : OncePerRequestF
         }
         val origin = req.getHeader("Origin")
         if (!host.startsWith("127.0.0.1:") || (origin != null && origin != "http://$host")) {
-            res.sendError(403, "관리 화면은 트레이에서 열어주세요."); return
+            res.sendError(403, "관리 화면은 Windows 앱에서 열어주세요."); return
         }
         if (path == "/desktop/open") {
             chain.doFilter(req, res); return
@@ -56,7 +56,7 @@ class DesktopAccessFilter(private val session: DesktopSession) : OncePerRequestF
         if (!session.accepts(credential)) {
             res.status = 401
             res.contentType = "application/json;charset=UTF-8"
-            res.writer.write("{\"message\":\"트레이의 화면 열기로 접속하거나 설치된 MCP를 사용해주세요.\"}")
+            res.writer.write("{\"message\":\"Windows 앱에서 워크스페이스를 다시 열어주세요.\"}")
             return
         }
         chain.doFilter(req, res)
@@ -73,7 +73,7 @@ class DesktopController(private val session: DesktopSession, private val context
 
     @GetMapping("/desktop/open")
     fun open(@RequestParam ticket: String, @RequestParam(required = false) runtime: String?, res: HttpServletResponse) {
-        if (!session.claimTicket(ticket)) { res.sendError(401, "연결이 만료되었습니다. 트레이에서 다시 열어주세요."); return }
+        if (!session.claimTicket(ticket)) { res.sendError(401, "연결이 만료되었습니다. Windows 앱에서 다시 열어주세요."); return }
         res.setHeader("Set-Cookie", ResponseCookie.from(session.cookieName, session.token)
             .httpOnly(true).sameSite("Strict").path("/").build().toString())
         res.setHeader("Cache-Control", "no-store")

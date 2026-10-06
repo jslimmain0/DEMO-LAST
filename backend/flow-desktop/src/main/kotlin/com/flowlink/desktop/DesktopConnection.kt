@@ -63,18 +63,20 @@ class DesktopConnection(private val session: DesktopSession, private val mapper:
     }
 
     fun view() = state.let { View(it.serverUrl, it.mcpUrl, it.login, it.token != null) }
+    internal fun snapshot() = state
     override fun connectionIdentity() = state.let { com.flowlink.common.host.LocalServerIdentity(it.serverUrl, it.login, it.token != null) }
     fun token(): String = state.token ?: throw BadRequestException("Windows 앱에서 서버에 로그인하세요.")
     fun serverUrl(): String = state.serverUrl.takeIf { it.isNotBlank() } ?: throw BadRequestException("서버 주소를 먼저 설정하세요.")
 
     /** 승인한 서버·계정과 일치하는 세션으로만 Dispatcher 작업을 요청한다. */
     fun authenticatedJson(method: String, path: String, body: com.fasterxml.jackson.databind.JsonNode? = null,
-        expectedServer: String, expectedLogin: String?, extraHeaders: Map<String, String> = emptyMap()): com.fasterxml.jackson.databind.JsonNode {
+        expectedServer: String, expectedLogin: String?, extraHeaders: Map<String, String> = emptyMap(),
+        timeout: Duration = Duration.ofMinutes(5)): com.fasterxml.jackson.databind.JsonNode {
         require(path.startsWith("/api/v1/") && !path.contains("..") && !path.contains('\\')) { "잘못된 에이전트 API 경로" }
         val active = state
         if (active.serverUrl != expectedServer || active.login != expectedLogin || active.token == null)
             throw BadRequestException("실행을 시작한 서버 계정으로 다시 로그인하세요.")
-        val builder = HttpRequest.newBuilder(URI.create(active.serverUrl + path)).timeout(Duration.ofMinutes(5))
+        val builder = HttpRequest.newBuilder(URI.create(active.serverUrl + path)).timeout(timeout)
             .header("Authorization", "Bearer ${active.token}").header("Content-Type", "application/json")
             .header("X-FlowLink-Device", session.deviceId)
         extraHeaders.forEach { (key, value) -> require(key in setOf("X-FlowLink-PC-Session", "X-FlowLink-PC-Key")); builder.header(key, value) }

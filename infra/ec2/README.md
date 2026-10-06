@@ -12,7 +12,7 @@ Docker Desktop Linux 엔진과 PowerShell 7에서 리포 루트 기준:
 pwsh -File scripts/start-ec2-lab.ps1
 ```
 
-SSH: `127.0.0.1:2222`. 앱 배포 후 화면: `http://127.0.0.1:18088`. 서버 정보 및 다운로드: `/api/v1/distribution`, `/downloads/FlowLink.msi`. 기본 브라우저 UI와 `/mcp`는 같은 공개 주소를 쓴다.
+SSH: `127.0.0.1:2222`. 앱 배포 후 중앙 서버: `http://127.0.0.1:18088` (작업 화면 없음). 서버 정보 및 다운로드: `/api/v1/distribution`, `/downloads/FlowLink.msi`. 작업 UI는 설치한 Windows 앱이 PC에서 제공하고, 인증·팀 API·`/mcp`·다운로드만 중앙 공개 주소를 쓴다.
 
 `.run/ec2/keys/id_ed25519`는 배포 private key, `id_ed25519.pub`는 서버 public key, `known_hosts`는 서버에서 직접 얻은 host key다. `.run/ec2/app.env`는 테스트 서버 전용 H2·인증·영속 암호화 키 설정이며 최초 한 번 생성된다. 서버 `/opt/flowlink/.env`는 이후 시작 시 덮어쓰지 않는다. 테스트 H2는 EC2 검증용이며 사용자 PC의 개인 H2와 별개다.
 

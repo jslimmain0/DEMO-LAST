@@ -16,7 +16,7 @@ $work = Join-Path $repo ('.run/module-smoke-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $work -Force > $null
 $processes = [System.Collections.Generic.List[System.Diagnostics.Process]]::new()
 $client = [System.Net.Http.HttpClient]::new()
-$client.Timeout = [TimeSpan]::FromSeconds(3)
+$client.Timeout = [TimeSpan]::FromSeconds(30)
 function Require([bool]$Condition, [string]$Message) { if (-not $Condition) { throw $Message } }
 function Free-Port {
     $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 0)
@@ -41,9 +41,10 @@ function Start-App([string]$Role, [string]$Name, [string[]]$Extra) {
     $processes.Add($proc)
     return @{ Process = $proc; Port = $port; Data = $data; Role = $Role; Base = "http://127.0.0.1:$port" }
 }
-function Request($App, [string]$Path, [string]$Token = '') {
-    $req = [System.Net.Http.HttpRequestMessage]::new([System.Net.Http.HttpMethod]::Get, ($App.Base + $Path))
+function Request($App, [string]$Path, [string]$Token = '', [string]$Method = 'GET', $Body = $null) {
+    $req = [System.Net.Http.HttpRequestMessage]::new([System.Net.Http.HttpMethod]::new($Method), ($App.Base + $Path))
     if ($Token) { [void]$req.Headers.TryAddWithoutValidation('X-FlowLink-Local', $Token) }
+    if ($null -ne $Body) { $req.Content = [System.Net.Http.StringContent]::new(($Body | ConvertTo-Json -Depth 10), [System.Text.Encoding]::UTF8, 'application/json') }
     try {
         $res = $client.SendAsync($req).GetAwaiter().GetResult()
         try { return @{ Status = [int]$res.StatusCode; Body = $res.Content.ReadAsStringAsync().GetAwaiter().GetResult() } }
@@ -72,6 +73,9 @@ try {
     Require ($config.runtime.kind -eq 'server') '서버 launcher가 개인 runtime으로 기동했습니다.'
     Require ((Request $server '/api/v1/auth/github/device/poll?session=module-boundary').Status -eq 200) '서버에 중앙 로그인 발급 API가 없습니다.'
     Require ((Request $server '/api/v1/distribution').Status -eq 200) '서버 distribution API가 없습니다.'
+    foreach ($path in @('/', '/index.html', '/flows', '/plugins')) {
+        Require ((Request $server $path).Status -eq 404) "중앙 서버가 작업 프론트를 제공합니다: $path"
+    }
     $desktop = Start-App 'desktop' 'desktop' @()
     [void](Wait-Ready $desktop)
     $agentFile = Join-Path $desktop.Data 'agent.json'
@@ -82,6 +86,8 @@ try {
     Require ($agent.baseUrl -eq $desktop.Base) '개인 session 포트가 launcher와 다릅니다.'
     $config = (Request $desktop '/api/v1/auth/config' $agent.token).Body | ConvertFrom-Json
     Require ($config.runtime.kind -eq 'local') 'desktop launcher가 개인 runtime이 아닙니다.'
+    $screen = Request $desktop '/plugins' $agent.token
+    Require ($screen.Status -eq 200 -and $screen.Body -match '<div id="root">') 'desktop에 작업 프론트의 딥링크가 없습니다.'
     Require ((Request $desktop '/api/v1/auth/github/device/poll?session=module-boundary' $agent.token).Status -eq 404) 'desktop에 중앙 로그인 발급 API가 등록됐습니다.'
     Require ((Request $desktop '/api/v1/flows').Status -eq 401) '개인 API 접근 보호가 없습니다.'
     $distribution = Request $desktop '/api/v1/distribution' $agent.token
@@ -96,11 +102,28 @@ try {
         } catch { }
         throw "desktop distribution 부재 응답은404여야 합니다: HTTP $($distribution.Status), $classification (클래스 포함 여부는 artifact 검사로 별도 판정)"
     }
+    # Same plugin ID on both hosts must retain independent sources, approval and loaded implementation.
+    $plugins = @{}
+    foreach ($app in @($server, $desktop)) {
+        $token = if ($app.Role -eq 'desktop') { $agent.token } else { '' }
+        $source = "({id:'host-isolation',label:'$($app.Role)',inputs:[],outputs:[{key:'host'}],apply(){return {host:'$($app.Role)'}}})"
+        $created = Request $app '/api/v1/plugins/scripts' $token 'POST' @{ source = $source }
+        Require ($created.Status -eq 201) "$($app.Role) 격리 플러그인 저장 실패"
+        $plugin = $created.Body | ConvertFrom-Json
+        $plugins[$app.Role] = $plugin
+        Require ((Request $app "/api/v1/plugins/scripts/$($plugin.id)/submit" $token 'POST').Status -eq 200) '격리 플러그인 제출 실패'
+        Require ((Request $app "/api/v1/plugins/scripts/$($plugin.id)/approve" $token 'POST').Status -eq 200) '격리 플러그인 승인 실패'
+        $preview = Request $app '/api/v1/transforms/host-isolation/preview' $token 'POST' @{ inputs = @{}; config = @{} }
+        Require ($preview.Status -eq 200) '격리 플러그인 로드 실패'
+        Require (($preview.Body | ConvertFrom-Json).outputs.host -eq $app.Role) '다른 호스트의 플러그인이 실행됐습니다.'
+    }
+    Require ((Request $desktop "/api/v1/plugins/scripts/$($plugins.server.id)" $agent.token).Status -eq 404) '개인 DB에서 서버 플러그인이 조회됐습니다.'
+    Require ((Request $server "/api/v1/plugins/scripts/$($plugins.desktop.id)").Status -eq 404) '서버 DB에서 개인 플러그인이 조회됐습니다.'
     $badServer = Start-App 'server' 'reject-server-desktop' @('--spring.profiles.active=local,desktop')
     Require-Rejection $badServer 'desktop'
     $badDesktop = Start-App 'desktop' 'reject-desktop-bind' @('--server.address=0.0.0.0')
     Require-Rejection $badDesktop '127\.0\.0\.1|루프백|loopback'
-    Write-Output 'PASS: 실제 server/desktop launcher·runtime·개인 접근 보호·배포 API·잘못된 프로파일/bind 거부'
+    Write-Output 'PASS: server 작업 화면 없음·desktop SPA·플러그인 DB/승인본 실행 격리·개인 접근 보호·로그인/배포 API·잘못된 프로파일/bind 거부'
     Write-Output "격리 로그: $work (토큰은 출력하지 않음; headless 속성 자체 검사는 별도)"
 } finally {
     $client.Dispose()

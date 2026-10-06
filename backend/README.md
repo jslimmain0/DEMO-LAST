@@ -18,9 +18,9 @@ desktop은 server 소스나 서버 JAR에 의존하지 않는다. 두 호스트�
 
 앱의 회사 계정 GitHub 로그인은 중앙 서버 전용이며, AI 어시스턴트에서 쓰는 개인 Copilot 구독 계정 연결은 별도의 기존 OAuth 기능이다.
 
-DB 연결과 프로파일은 각 호스트의 `src/main/resources/application*.yml`에 있다. core의 `application-core.yml`은 기존 UUID CHAR(36) 매핑과 공통 웹/ORM 설정만 제공한다. 개인 H2는 현재 Hibernate `ddl-auto:update`와 기존 리소스/시크릿 이관 코드로 업그레이드한다. 별도 Flyway 적용으로 기존 개인 DB를 바꾸는 작업은 하지 않는다. Oracle 신규/업그레이드 SQL은 server에 남긴다. 두 호스트는 빌드 때 공통 `frontend/dist`를 각각 동봉하며, 설치된 앱은 Java와 화면·관리 API·H2를 포함해 서버 없이 개인 작업을 실행할 수 있다.
+DB 연결과 프로파일은 각 호스트의 `src/main/resources/application*.yml`에 있다. core의 `application-core.yml`은 기존 UUID CHAR(36) 매핑과 공통 웹/ORM 설정만 제공한다. 개인 H2는 현재 Hibernate `ddl-auto:update`와 기존 리소스/시크릿 이관 코드로 업그레이드한다. 별도 Flyway 적용으로 기존 개인 DB를 바꾸는 작업은 하지 않는다. Oracle 신규/업그레이드 SQL은 server에 남긴다. 작업 프론트 `frontend/dist`와 SPA 라우팅은 desktop에만 동봉하며, 설치된 앱은 Java와 화면·관리 API·H2를 포함해 서버 없이 개인 작업을 실행할 수 있다.
 
-개인 작업은 **Windows 앱의 ‘개인 워크스페이스 열기’**로 진입한다. 그 브라우저 화면의 개인 API는 PC의 `flow-desktop`에 요청하고, 공용·팀 작업만 중앙 서버에 요청한다. 중앙 서버 URL을 직접 여는 화면은 서버 작업용이며 개인 H2에 접근하지 않는다. 개인 API 보호 때문에 로컬 URL을 직접 입력하는 대신 앱에서 화면을 연다. 서버 연결 실패는 개인 앱 종료·중앙 로그인 강제·개인 자료 삭제 사유가 아니다. 서버 노드·원격 Vault 등 외부 의존이 있는 작업에는 해당 연결이 필요하다.
+개인 작업은 **Windows 앱의 ‘개인 워크스페이스 열기’**로 진입한다. 그 브라우저 화면의 개인 API는 PC의 `flow-desktop`에 요청하고, 공용·팀 작업만 중앙 서버에 요청한다. 중앙 서버 URL은 인증·API·MCP·다운로드 전용이며 `/flows`, `/plugins` 등 작업 화면을 제공하지 않는다. 개인 API 보호 때문에 로컬 URL을 직접 입력하는 대신 앱에서 화면을 연다. 서버 연결 실패는 개인 앱 종료·중앙 로그인 강제·개인 자료 삭제 사유가 아니다. 서버 노드·원격 Vault 등 외부 의존이 있는 작업에는 해당 연결이 필요하다.
 
 서버가 없는 첫 시작과 로그인 실패 후 개인 생성·저장·조회·SET/ASSERT 실행은 `scripts/test/desktop-offline.ps1 -AgentFile <격리 개인 앱 agent.json>`으로 검증한다. 중앙 서버가 응답하지 않는 루프백 실험 설정에만 실행하며, 실험용 개인 흐름 하나를 남긴다. 서버 로그인·주소 조회·원격 API 전송의 연결 실패는 503 안내로 반환하고 저장된 로그인 정보는 유지한다.
 
@@ -70,3 +70,5 @@ DB 연결과 프로파일은 각 호스트의 `src/main/resources/application*.y
 Oracle/Vault 도커에서 Transit·AppRole·환경별 시크릿·DB/앱 재시작·마스킹 13개와 잘못된 AppRole 기동 거부, 기존 REST 기능 14개를 검증했다. 개인 H2와 Oracle 서버 사이의 실제 PC→서버→PC 실행, 개인 흐름의 서버 노드 위임, 로그아웃 후 개인 실행, 환경/Mock/허용 출력 격리는 23개 검증을 통과했다. 기존 테스트 자료에서 누락된 목적지 환경 선택을 현재 검증 규칙에 맞게 명시했다.
 
 Windows 앱 로그인은 중앙 계정과 MCP 자격을 공유하고 자동 설정 상태를 트레이와 브라우저 설정에서 보여준다. `flow-mcp`의 [인증/설정 안내](flow-mcp/README.md), [확정 아키텍처 그림](../docs/FLOWLINK_ARCHITECTURE.html), [Docker 배포 안내](../infra/ec2/README.md)를 참고한다. 실제 GitHub 인증, MCP 프로토콜·도구 호출·IDE 등록은 이번 검증 범위에 포함하지 않았다.
+
+플러그인 스크립트는 개인 H2와 중앙 DB에 각각 저장하고, 승인본 레지스트리도 각 JVM에서 별도로 로드한다. UI에서 개인 공간을 선택하면 PC API, 공용·팀 공간을 선택하면 PC의 인증 중계를 통해 서버 API를 사용한다. 동일 plugin ID도 자동 동기화되지 않는다. JAR 플러그인은 각 호스트의 전용 디렉터리(PC는 개인 data-dir/plugins, 서버는 서버 디렉터리)에서만 로드하며 기본 비활성이다. 공통 SPI·샌드박스 구현을 재사용하는 것과 사용자 플러그인 저장·승인을 공유하는 것은 다르다. 실행 위치를 바꾸면 해당 목적지 공간의 승인본을 사용하며 누락·내용 불일치는 기존 사전 검사로 차단한다.

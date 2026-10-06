@@ -63,6 +63,11 @@ configure(listOf(project(":flow-server"), project(":flow-desktop"))) {
     tasks.named<ProcessResources>("processResources") {
         dependsOn(releaseProperties)
         from(rootProject.layout.buildDirectory.dir("generated/release"))
+    }
+}
+
+project(":flow-desktop") {
+    tasks.named<ProcessResources>("processResources") {
         from(rootProject.file("../frontend/dist")) { into("static") }
     }
 }

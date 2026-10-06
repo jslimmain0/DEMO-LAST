@@ -1,4 +1,4 @@
-package com.flowlink.common.web
+package com.flowlink.desktop
 
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
@@ -11,9 +11,9 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer
 import org.springframework.web.servlet.resource.PathResourceResolver
 
 /**
- * 프론트엔드(dist) 동봉 서빙 — 단일 jar 배포용(내장 톰캣이 프론트+백엔드를 함께 서빙).
+ * Windows 앱 전용 프론트엔드(dist) 서빙. 중앙 서버에는 작업 화면·SPA fallback을 등록하지 않는다.
  *
- * 빌드 시 `frontend/dist` 가 classpath:/static/ 으로 복사되고(copyFrontend gradle 태스크),
+ * 빌드 시 `frontend/dist` 가 classpath:/static/ 으로 복사되고(desktop processResources),
  * BrowserRouter 딥링크(/flows/{id} 새로고침 등)는 index.html 로 fallback 한다.
  * - 컨트롤러(@RequestMapping)가 항상 우선이라 /api·/mock·/relay 동작은 영향 없음
  * - API 성 경로는 fallback 제외 — 없는 API 가 HTML 을 받지 않게

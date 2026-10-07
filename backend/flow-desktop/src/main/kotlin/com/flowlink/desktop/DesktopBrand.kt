@@ -106,6 +106,91 @@ internal object DesktopBrand {
         }
     }.apply { isOpaque = false; border = BorderFactory.createEmptyBorder(18, 20, 18, 20) }
 
+    val ink = Color(0x18, 0x18, 0x1b)
+    private val inkHover = Color(0x27, 0x27, 0x2a)
+    private val divider = Color(0xf4, 0xf4, 0xf5)
+
+    /** 시작 화면 왼쪽 보라 패널 — 배경에 연결선 마크를 옅게 깐다. 폭은 창 폭의 40%(200~290px). */
+    fun sidePanel() = object : JPanel() {
+        override fun getPreferredSize(): java.awt.Dimension {
+            val base = super.getPreferredSize()
+            val width = ((parent?.width?.takeIf { it > 0 } ?: 700) * 0.4).toInt().coerceIn(200, 290)
+            return java.awt.Dimension(width, base.height)
+        }
+        override fun paintComponent(graphics: java.awt.Graphics) {
+            val g = graphics.create() as java.awt.Graphics2D
+            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
+            g.color = primary; g.fillRect(0, 0, width, height)
+            // 제목·상태 글자와 겹치지 않게 오른쪽 가운데에 작게
+            g.color = Color(255, 255, 255, 30); g.stroke = BasicStroke(7f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND)
+            g.translate(width - 118, (height * 0.36).toInt()); g.scale(0.62, 0.62)
+            val x = 0; val y = 0
+            g.drawLine(x + 80, y + 40, x + 10, y + 170); g.drawLine(x + 160, y + 170, x + 90, y + 40); g.drawLine(x + 25, y + 205, x + 145, y + 205)
+            g.drawOval(x + 63, y + 8, 44, 44); g.drawOval(x - 22, y + 178, 44, 44); g.drawOval(x + 148, y + 178, 44, 44)
+            g.dispose()
+        }
+    }.apply { isOpaque = true; layout = javax.swing.BoxLayout(this, javax.swing.BoxLayout.Y_AXIS); border = BorderFactory.createEmptyBorder(26, 26, 22, 22) }
+
+    private fun html(title: String, detail: String, detailColor: String) =
+        "<html><b style='font-size:13pt'>$title</b><br><span style='color:$detailColor'>$detail</span></html>"
+
+    /** 큰 열기 버튼. dark=true 는 주 동작(짙은 바탕), false 는 흰 바탕 + 테두리. */
+    fun actionTile(title: String, detail: String, dark: Boolean, badge: String? = null): JButton = object : JButton(html(title, detail, if (dark) "#a1a1aa" else "#71717a")) {
+        override fun getMaximumSize() = java.awt.Dimension(Int.MAX_VALUE, preferredSize.height)
+        override fun paintComponent(graphics: java.awt.Graphics) {
+            val g = graphics.create() as java.awt.Graphics2D
+            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
+            g.color = when {
+                dark && model.isRollover -> inkHover
+                dark -> ink
+                model.isRollover -> DesktopBrand.hover
+                else -> Color.WHITE
+            }
+            g.fillRoundRect(1, 1, width - 2, height - 2, SURFACE_ARC, SURFACE_ARC)
+            g.color = if (hasFocus()) DesktopBrand.primary else if (dark) DesktopBrand.ink else DesktopBrand.border
+            g.stroke = BasicStroke(if (hasFocus()) 2f else 1f)
+            g.drawRoundRect(1, 1, width - 3, height - 3, SURFACE_ARC, SURFACE_ARC)
+            if (badge != null) {
+                g.font = DesktopBrand.small.deriveFont(11f); val fm = g.fontMetrics
+                val w = fm.stringWidth(badge) + 12; val h = fm.height + 2; val bx = width - w - 16; val by = (height - h) / 2
+                g.color = if (dark) Color(0x52, 0x52, 0x5b) else DesktopBrand.border; g.drawRoundRect(bx, by, w, h, 8, 8)
+                g.color = if (dark) Color(0xd4, 0xd4, 0xd8) else DesktopBrand.muted; g.drawString(badge, bx + 6, by + fm.ascent + 1)
+            }
+            g.dispose(); super.paintComponent(graphics)
+        }
+    }.apply {
+        setUI(BasicButtonUI()); font = DesktopBrand.body; foreground = if (dark) Color.WHITE else DesktopBrand.text
+        horizontalAlignment = javax.swing.SwingConstants.LEFT; iconTextGap = 12
+        border = BorderFactory.createEmptyBorder(12, 16, 12, if (badge != null) 72 else 16)
+        isContentAreaFilled = false; isOpaque = false; isFocusPainted = false; isRolloverEnabled = true
+        cursor = java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR)
+        alignmentX = java.awt.Component.LEFT_ALIGNMENT
+    }
+
+    /** 설정 목록 한 줄 — 왼쪽 이름, 오른쪽 보조 값(계정명·버전 등), 아래 옅은 구분선. */
+    fun listRow(title: String, value: String? = null, valueColor: Color = muted): JButton = object : JButton(title) {
+        override fun getMaximumSize() = java.awt.Dimension(Int.MAX_VALUE, preferredSize.height)
+        override fun paintComponent(graphics: java.awt.Graphics) {
+            val g = graphics.create() as java.awt.Graphics2D
+            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
+            g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON)
+            if (model.isRollover || hasFocus()) { g.color = DesktopBrand.hover; g.fillRoundRect(0, 0, width, height - 1, CONTROL_ARC, CONTROL_ARC) }
+            g.color = divider; g.drawLine(0, height - 1, width, height - 1)
+            if (!value.isNullOrBlank()) {
+                g.font = DesktopBrand.small; val fm = g.fontMetrics
+                g.color = valueColor; g.drawString(value, width - fm.stringWidth(value) - 8, (height + fm.ascent - fm.descent) / 2)
+            }
+            g.dispose(); super.paintComponent(graphics)
+        }
+    }.apply {
+        setUI(BasicButtonUI()); font = DesktopBrand.body.deriveFont(13f); foreground = DesktopBrand.text
+        horizontalAlignment = javax.swing.SwingConstants.LEFT
+        border = BorderFactory.createEmptyBorder(10, 8, 10, 8)
+        isContentAreaFilled = false; isOpaque = false; isFocusPainted = false; isRolloverEnabled = true
+        cursor = java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR)
+        alignmentX = java.awt.Component.LEFT_ALIGNMENT
+    }
+
     fun configure() {
         runCatching { UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName()) }
         UIManager.getDefaults().keys().toList().filter { it.toString().endsWith(".font") }

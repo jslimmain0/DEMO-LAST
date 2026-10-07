@@ -186,29 +186,92 @@ class DesktopTray(
         show(buildWelcomeDialog())
     }
 
+    /**
+     * 시작 화면 — 왼쪽 보라 패널(제목·상태), 오른쪽 명령 목록(열기·설정).
+     * 기존 동작(개인/회사 열기, 로그인·계정 변경, 자동 설정, IDE·MCP, 업데이트, 바로 열기, 닫기)과 상태 분기는 그대로다.
+     */
     private fun buildWelcomeDialog(): JDialog {
-        val (dialog, content) = window("작업을 이어가세요", "워크스페이스는 기본 브라우저에서 열립니다. 개인 작업은 로그인 없이 사용할 수 있습니다.", height = 520)
+        val dialog = JDialog(null as Frame?, "FlowLink · 작업을 이어가세요", false).apply {
+            defaultCloseOperation = WindowConstants.DISPOSE_ON_CLOSE; setIconImage(DesktopBrand.icon(64))
+            minimumSize = Dimension(520, 380)
+        }
+        dialog.rootPane.registerKeyboardAction({ dialog.dispose() }, KeyStroke.getKeyStroke("ESCAPE"), JComponent.WHEN_IN_FOCUSED_WINDOW)
         setupWindow = dialog
-        val nextTime = JCheckBox("다음 실행부터 개인 워크스페이스 바로 열기", true).apply { isOpaque = false }
+        val nextTime = JCheckBox("다음부터 바로 열기", true).apply { isOpaque = false; font = DesktopBrand.small; foreground = DesktopBrand.text; toolTipText = "다음 실행부터 개인 워크스페이스를 바로 엽니다." }
         fun remember() { if (nextTime.isSelected) Files.writeString(welcomeFile, "1") else Files.deleteIfExists(welcomeFile) }
         val state = remote.view()
-        body(content, stack(
-            DesktopBrand.surface().apply {
-                border = BorderFactory.createEmptyBorder(10, 16, 10, 16)
-                add(JLabel("내 PC 준비됨").apply { font = DesktopBrand.body.deriveFont(Font.BOLD); foreground = DesktopBrand.text }, BorderLayout.WEST)
-                add(text("개인 작업 · 로그인 없이 사용"), BorderLayout.CENTER)
-            },
-            card("회사 계정", if (state.connected) "로그인 정보 저장됨 · ${state.login}\n${state.serverUrl}" else if (state.serverUrl.isNotBlank()) "로그인 필요 · ${state.serverUrl}" else "회사 서버가 아직 설정되지 않았습니다. 개인 작업은 바로 사용할 수 있습니다.",
-                if (state.connected) row(
-                    button("회사 워크스페이스 열기") { remember(); browse(session.browserUrl("server")); dialog.dispose() },
-                    button("계정 보기 · 변경") { remember(); loginDialog() })
-                else button("회사 계정 로그인") { remember(); loginDialog() }),
-            text("PC 주소와 저장 위치는 자동 설정됩니다. 앱 버전 · ${com.flowlink.common.release.ReleaseVersion.version}"),
-            row(button("자동 설정 보기") { statusDialog() }, button("IDE · 서버 MCP") { connectDialog() }, button("앱 업데이트") { updateDialog() }),
-            nextTime,
-        ))
-        val start = button("개인 워크스페이스 열기", true) { remember(); browse(session.browserUrl("local")); dialog.dispose() }
-        content.add(row(button("닫기") { remember(); dialog.dispose() }, start), BorderLayout.SOUTH)
+        val version = com.flowlink.common.release.ReleaseVersion.version
+
+        // ── 왼쪽: 제목과 상태 ──
+        fun light(value: String, size: Float, bold: Boolean = false, alpha: Int = 255) = JLabel(value).apply {
+            font = DesktopBrand.body.deriveFont(if (bold) Font.BOLD else Font.PLAIN, size); foreground = Color(255, 255, 255, alpha)
+            alignmentX = java.awt.Component.LEFT_ALIGNMENT
+        }
+        fun status(name: String, detail: String, ok: Boolean) = JLabel("<html><b>$name</b>&nbsp;&nbsp;<span style='color:#d6d1f5'>$detail</span></html>").apply {
+            font = DesktopBrand.small; foreground = Color.WHITE; alignmentX = java.awt.Component.LEFT_ALIGNMENT
+            icon = object : Icon {
+                override fun getIconWidth() = 8
+                override fun getIconHeight() = 8
+                override fun paintIcon(c: java.awt.Component?, g: Graphics, x: Int, y: Int) {
+                    (g as Graphics2D).setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
+                    g.color = if (ok) Color(0x86, 0xef, 0xac) else Color(0xfd, 0xe6, 0x8a); g.fillOval(x, y, 8, 8)
+                }
+            }
+            iconTextGap = 8
+        }
+        val company = when {
+            state.connected -> status("회사 서버", state.login.orEmpty().ifBlank { "로그인됨" }, true)
+            state.serverUrl.isNotBlank() -> status("회사 서버", "로그인 필요", false)
+            else -> status("회사 서버", "설정 전", false)
+        }
+        val side = DesktopBrand.sidePanel().apply {
+            add(JLabel(ImageIcon(DesktopBrand.icon(40))).apply { alignmentX = java.awt.Component.LEFT_ALIGNMENT })
+            add(Box.createVerticalStrut(18))
+            add(light("작업을", 26f, bold = true)); add(light("이어가세요", 26f, bold = true))
+            add(Box.createVerticalStrut(10))
+            add(light("기본 브라우저에서 열립니다.", 12f, alpha = 210))
+            add(Box.createVerticalGlue())
+            add(status("내 PC", "준비됨", true)); add(Box.createVerticalStrut(10)); add(company)
+            if (state.serverUrl.isNotBlank()) { add(Box.createVerticalStrut(6)); add(light(state.serverUrl, 11f, alpha = 160).apply { toolTipText = state.serverUrl }) }
+            add(Box.createVerticalStrut(6)); add(light("앱 $version · 자동 설정됨", 11f, alpha = 160).apply { toolTipText = "PC 주소와 저장 위치는 자동 설정됩니다." })
+        }
+
+        // ── 오른쪽: 명령 목록 ──
+        fun heading(value: String) = JLabel(value).apply { font = DesktopBrand.small.deriveFont(Font.BOLD, 11f); foreground = DesktopBrand.muted; alignmentX = java.awt.Component.LEFT_ALIGNMENT }
+        fun Box.gap(height: Int) = apply { add(Box.createVerticalStrut(height)) }
+        val start = DesktopBrand.actionTile("개인 워크스페이스", "내 PC · 로그인 없이", dark = true, badge = "Enter").apply {
+            addActionListener { guarded { remember(); browse(session.browserUrl("local")); dialog.dispose() } }
+        }
+        val companyTile = if (state.connected) DesktopBrand.actionTile("회사 워크스페이스", "팀 공간 · 회사 서버", dark = false).apply {
+            addActionListener { guarded { remember(); browse(session.browserUrl("server")); dialog.dispose() } }
+        } else DesktopBrand.actionTile("회사 계정 로그인", if (state.serverUrl.isNotBlank()) "로그인하면 팀 공간을 엽니다" else "회사 서버를 연결합니다", dark = false).apply {
+            addActionListener { guarded { remember(); loginDialog() } }
+        }
+        val list = Box.createVerticalBox().apply {
+            add(heading("열기")); gap(8); add(start); gap(8); add(companyTile); gap(22)
+            add(heading("설정")); gap(4)
+            if (state.connected) add(DesktopBrand.listRow("계정 보기 · 변경", state.login).apply { addActionListener { guarded { remember(); loginDialog() } } })
+            add(DesktopBrand.listRow("자동 설정 보기").apply { addActionListener { guarded { statusDialog() } } })
+            add(DesktopBrand.listRow("IDE · 서버 MCP").apply { addActionListener { guarded { connectDialog() } } })
+            add(DesktopBrand.listRow("앱 업데이트", "현재 $version").apply { addActionListener { guarded { updateDialog() } } })
+        }
+        val footer = JPanel(BorderLayout(10, 0)).apply {
+            isOpaque = false
+            border = BorderFactory.createCompoundBorder(BorderFactory.createMatteBorder(1, 0, 0, 0, DesktopBrand.border), BorderFactory.createEmptyBorder(12, 0, 0, 0))
+            add(nextTime, BorderLayout.CENTER); add(button("닫기") { remember(); dialog.dispose() }, BorderLayout.EAST)
+        }
+        val main = JPanel(BorderLayout(0, 12)).apply {
+            background = Color.WHITE; border = BorderFactory.createEmptyBorder(22, 24, 16, 24)
+            add(JScrollPane(stack(list)).apply {
+                border = BorderFactory.createEmptyBorder(); horizontalScrollBarPolicy = JScrollPane.HORIZONTAL_SCROLLBAR_NEVER
+                background = Color.WHITE; viewport.background = Color.WHITE; verticalScrollBar.unitIncrement = 18
+            }, BorderLayout.CENTER)
+            add(footer, BorderLayout.SOUTH)
+        }
+        dialog.contentPane = JPanel(BorderLayout()).apply {
+            background = Color.WHITE; preferredSize = Dimension(700, 520)
+            add(side, BorderLayout.WEST); add(main, BorderLayout.CENTER)
+        }
         dialog.rootPane.defaultButton = start
         return dialog
     }

@@ -30,7 +30,7 @@ export function Resources() {
     setParams(previous => { const nextParams = new URLSearchParams(previous); nextParams.set('tab', next); return nextParams })
   }
   return <AppShellTier1><section className="fl-resources" aria-label="환경과 시크릿 관리">
-    <PageHeader title="환경 · 시크릿" description="환경별 설정과 안전하게 보관할 값을 관리합니다."><div className="fl-section-tabs" role="tablist" aria-label="자원 종류"><button role="tab" id="environment-tab" aria-controls="resource-content" aria-selected={tab === 'environments'} onClick={() => changeTab('environments')}><AppIcon name="sliders" size={16} />환경 변수</button><button role="tab" id="secrets-tab" aria-controls="resource-content" aria-selected={tab === 'secrets'} onClick={() => changeTab('secrets')}><AppIcon name="key" size={16} />시크릿</button></div></PageHeader>
+    <PageHeader title="환경 · 시크릿"><div className="fl-section-tabs" role="tablist" aria-label="자원 종류"><button role="tab" id="environment-tab" aria-controls="resource-content" aria-selected={tab === 'environments'} onClick={() => changeTab('environments')}><AppIcon name="sliders" size={16} />환경 변수</button><button role="tab" id="secrets-tab" aria-controls="resource-content" aria-selected={tab === 'secrets'} onClick={() => changeTab('secrets')}><AppIcon name="key" size={16} />시크릿</button></div></PageHeader>
     <div key={`${scopeKey}:${tab}`} id="resource-content" role="tabpanel" aria-labelledby={tab === 'environments' ? 'environment-tab' : 'secrets-tab'} className="fl-resource-content">{tab === 'environments' ? <EnvManagerPanel compact onDraftChange={setDirty} /> : <SecretsPanel compact onDraftChange={setDirty} />}</div>
   </section></AppShellTier1>
 }

@@ -18,6 +18,7 @@ import { toast } from '../components/toast'
 import { apiErrorMessage } from '../lib/apiError'
 import { matchesCatalog, type MockSort } from '../lib/catalog'
 import { useCatalogNavigation } from '../lib/useCatalogNavigation'
+import { ui } from '../design/ui'
 
 type Kind = 'HTTP' | 'TCP'
 
@@ -206,7 +207,7 @@ export function MockServers() {
 
         {creating && (
           <div style={createRow}>
-            <span style={{ ...kindPill, background: creating === 'TCP' ? 'var(--fl-cat-tcp, #7c5cff)' : 'var(--fl-primary)' }}>{creating === 'TCP' ? 'TCP' : 'HTTP'}</span>
+            <span style={{ ...kindPill, background: creating === 'TCP' ? 'var(--fl-cat-tcp)' : 'var(--fl-primary)' }}>{creating === 'TCP' ? 'TCP' : 'HTTP'}</span>
             <select aria-label="만들 워크스페이스" value={createWs} onChange={(e) => setCreateWs(e.target.value)} style={selectStyle} title="어느 워크스페이스에 만들지">
               {(wsWritable.length ? wsWritable : [{ id: createWs, name: runtime?.kind === 'local' ? '개인 · 내 PC' : '공용', kind: runtime?.kind === 'local' ? 'PERSONAL' : 'PUBLIC' }]).map((w) => (
                 <option key={w.id} value={w.id}>{w.kind === 'PERSONAL' ? '개인 ·' : w.kind === 'TEAM' ? '팀 ·' : '공용 ·'} {w.name}</option>
@@ -222,12 +223,12 @@ export function MockServers() {
             </span>
             <button style={{ ...primaryBtn, opacity: slugOk ? 1 : 0.5 }} disabled={!slugOk || create.isPending} onClick={createMock}>만들기</button>
             <button style={ghostBtn} onClick={() => { setCreating(null); setError(null) }}>취소</button>
-            <span style={{ flexBasis: '100%', fontSize: 11.5, color: 'var(--fl-text-muted)' }}>
+            <span style={{ flexBasis: '100%', fontSize: 12, color: 'var(--fl-text-muted)' }}>
               {creating === 'HTTP' ? 'slug는 이 워크스페이스 안에서 고유해야 합니다. 다른 공간에는 같은 slug를 사용할 수 있습니다. 경로·응답·조건·콜백은 만든 뒤 설정하세요.' : '만들면 빈 포트를 골라 고정길이 전문 리스너를 엽니다. 포트·레이아웃·규칙은 편집기에서 설정하세요.'}
             </span>
           </div>
         )}
-        {error && <p style={{ color: 'var(--fl-fail)', fontSize: 12.5, marginTop: 8 }}>{error}</p>}
+        {error && <p style={{ color: 'var(--fl-fail)', fontSize: 13, marginTop: 8 }}>{error}</p>}
         {fleet.isError && <p style={{ color: 'var(--fl-fail)', fontSize: 13, marginTop: 18 }}>서버 현황을 불러오지 못했습니다: {apiErrorMessage(fleet.error)}</p>}
 
         {/* 상태와 필터를 한 곳에서 조작한다. */}
@@ -261,7 +262,7 @@ export function MockServers() {
         )}
         {selectMode && (
           <div style={actionBar}>
-            <span role="status" style={{ fontSize: 12.5 }}>{selected.size}개 선택{selected.size > matched.filter(s => selected.has(s.id)).length ? ` · 필터 밖 ${selected.size - matched.filter(s => selected.has(s.id)).length}개 포함` : ''}{!selectedEditable && selected.size > 0 ? ' (읽기 전용 포함 — 작업 불가)' : ''}</span>
+            <span role="status" style={{ fontSize: 13 }}>{selected.size}개 선택{selected.size > matched.filter(s => selected.has(s.id)).length ? ` · 필터 밖 ${selected.size - matched.filter(s => selected.has(s.id)).length}개 포함` : ''}{!selectedEditable && selected.size > 0 ? ' (읽기 전용 포함 — 작업 불가)' : ''}</span>
             <button style={miniBtn} onClick={() => setSelected(previous => new Set([...previous, ...matched.filter((s) => s.readable && s.myRole !== 'VIEWER').map((s) => s.id)]))}>검색 결과 전체 선택 ({matched.filter(s => s.readable && s.myRole !== 'VIEWER').length})</button>
             {selected.size > 0 && <button style={miniBtn} onClick={() => setSelected(new Set())}>선택 비우기</button>}
             <button style={miniBtn} disabled={!selected.size || !selectedEditable || bulk.isPending} onClick={() => bulk.mutate({ kind: 'on' })}>● 켜기</button>
@@ -294,8 +295,8 @@ export function MockServers() {
 
         {f && servers.length === 0 && !creating && (
           <div style={emptyBox}>
-            <div style={{ fontFamily: 'var(--fl-font-head)', fontWeight: 700, fontSize: 17 }}>첫 Mock 서버를 만들어 보세요</div>
-            <div style={{ color: 'var(--fl-text-muted)', fontSize: 13.5, marginTop: 6, maxWidth: 520, marginInline: 'auto' }}>
+            <div style={{ fontFamily: 'var(--fl-font-head)', fontWeight: 700, fontSize: 18 }}>첫 Mock 서버를 만들어 보세요</div>
+            <div style={{ color: 'var(--fl-text-muted)', fontSize: 14, marginTop: 6, maxWidth: 520, marginInline: 'auto' }}>
               <b>HTTP</b>는 이 공간 전용 URL에서 요청을 받고, <b>TCP</b>는 지정한 포트에서 전문을 받습니다. 이름과 응답 규칙을 정해 테스트를 시작하세요.
             </div>
             <div style={{ display: 'flex', gap: 8, justifyContent: 'center', marginTop: 18, flexWrap: 'wrap' }}>
@@ -314,18 +315,18 @@ export function MockServers() {
 }
 
 // ---------- 스타일 ----------
-const metaMono: CSSProperties = { fontSize: 11.5, color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)' }
-const input: CSSProperties = { padding: '0 12px', height: 38, border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 13.5, minWidth: 200 }
-const selectStyle: CSSProperties = { padding: '8px 10px', height: 38, border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', color: 'var(--fl-text)', fontSize: 12.5, cursor: 'pointer' }
-const kindPill: CSSProperties = { display: 'inline-flex', alignItems: 'center', height: 38, padding: '0 14px', borderRadius: 'var(--fl-radius-sm)', color: '#fff', fontWeight: 700, fontSize: 12.5 }
+const metaMono: CSSProperties = { fontSize: 12, color: 'var(--fl-text-muted)', fontVariantNumeric: 'tabular-nums' }
+const input: CSSProperties = { padding: '0 12px', height: 38, border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 14, minWidth: 200 }
+const selectStyle: CSSProperties = { padding: '8px 10px', height: 38, border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', color: 'var(--fl-text)', fontSize: 13, cursor: 'pointer' }
+const kindPill: CSSProperties = { display: 'inline-flex', alignItems: 'center', height: 38, padding: '0 14px', borderRadius: 'var(--fl-radius-sm)', color: '#fff', fontWeight: 700, fontSize: 13 }
 const createRow: CSSProperties = { display: 'flex', gap: 8, alignItems: 'center', marginTop: 16, flexWrap: 'wrap', padding: 14, border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius)', background: 'var(--fl-surface)' }
 const statusFilters: CSSProperties = { display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 22, borderBottom: '1px solid var(--fl-border)' }
-const statusFilter: CSSProperties = { border: 'none', borderBottom: '2px solid transparent', padding: '11px 13px', background: 'transparent', color: 'var(--fl-text-muted)', fontSize: 12.5, fontWeight: 650, cursor: 'pointer' }
+const statusFilter: CSSProperties = { border: 'none', borderBottom: '2px solid transparent', padding: '11px 13px', background: 'transparent', color: 'var(--fl-text-muted)', fontSize: 13, fontWeight: 650, cursor: 'pointer' }
 const toolbar: CSSProperties = { display: 'flex', gap: 8, alignItems: 'center', marginTop: 14, flexWrap: 'wrap' }
 const actionBar: CSSProperties = { display: 'flex', gap: 8, alignItems: 'center', marginTop: 10, padding: '8px 12px', border: '1px solid color-mix(in srgb, var(--fl-primary) 40%, var(--fl-border))', borderRadius: 'var(--fl-radius-sm)', background: 'color-mix(in srgb, var(--fl-primary) 6%, var(--fl-surface))', flexWrap: 'wrap' }
 const sectionHead: CSSProperties = { display: 'flex', alignItems: 'baseline', gap: 4, marginBottom: 8, flexWrap: 'wrap' }
 const sectionLabel: CSSProperties = { fontSize: 12, fontWeight: 700, color: 'var(--fl-text)' }
-const primaryBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, height: 38, padding: '0 16px', border: 'none', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-action-primary-bg)', color: 'var(--fl-action-primary-ink)', fontWeight: 600, fontSize: 13.5, cursor: 'pointer' }
-const ghostBtn: CSSProperties = { height: 38, border: '1px solid var(--fl-border)', background: 'var(--fl-surface)', color: 'var(--fl-text)', padding: '0 14px', borderRadius: 'var(--fl-radius-sm)', fontSize: 13, cursor: 'pointer' }
-const miniBtn: CSSProperties = { padding: '5px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 12, cursor: 'pointer' }
+const primaryBtn: CSSProperties = { ...ui.primary }
+const ghostBtn: CSSProperties = { ...ui.secondary }
+const miniBtn: CSSProperties = { ...ui.mini }
 const emptyBox: CSSProperties = { border: '1.5px dashed var(--fl-border)', borderRadius: 16, padding: '48px 40px', textAlign: 'center', color: 'var(--fl-text-muted)', marginTop: 24 }

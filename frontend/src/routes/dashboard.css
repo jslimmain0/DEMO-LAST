@@ -62,3 +62,15 @@
 .fl-flow-toolbar { padding:0 0 12px; border-bottom:1px solid var(--fl-border); }
 .fl-library-header-actions { display:flex; align-items:center; gap:10px; min-width:0; }
 @media(max-width:700px) { .fl-library-header-actions { width:100%; } .fl-library-header-actions .fl-flow-search { flex:1; min-width:0; } .fl-library-header-actions input { width:100% !important; } }
+
+/* 카드 미리보기 — 노드 종류 순서를 캔버스와 같은 타일로 */
+.fl-flow-preview { display:flex; align-items:center; gap:0; margin-bottom:12px; min-width:0; }
+.fl-flow-preview-step { display:flex; align-items:center; flex-shrink:0; }
+.fl-flow-preview-line { width:10px; height:1px; background:var(--fl-control-border); opacity:.6; }
+.fl-flow-preview-more { margin-left:6px; font-size:11px; color:var(--fl-text-muted); font-variant-numeric:tabular-nums; }
+.fl-flow-preview-count { margin-left:auto; padding-left:8px; font-size:11.5px; color:var(--fl-text-muted); white-space:nowrap; font-variant-numeric:tabular-nums; }
+.fl-dashboard-list .fl-flow-preview { margin-bottom:8px; }
+.fl-dashboard-grid .fl-flow-card { min-height:0; padding:14px 16px 10px; }
+.fl-dashboard-grid .fl-flow-name { font-size:15px; }
+.fl-flow-card-top { min-height:0; margin-bottom:6px; }
+.fl-dashboard-grid .fl-flow-footer { padding-top:10px; margin-top:auto; border-top:1px solid var(--fl-border) !important; }

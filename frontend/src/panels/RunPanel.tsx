@@ -5,6 +5,7 @@ import { MethodTag } from '../components/MethodTag'
 import { LogBlock, methodOf } from '../components/NodeExecutionLog'
 import { duration } from '../lib/format'
 import { AgentBadge } from '../components/AgentSettings'
+import { AppIcon } from '../components/AppIcon'
 
 /** wait(콜백 대기) 진행 상태 — Editor 실행 루프가 채운다. */
 export interface WaitStatus {
@@ -86,9 +87,9 @@ export function RunPanel({
         {execution && execution.nodes.length > 0 && (
           <div style={{ marginLeft: running && onStop ? 12 : 'auto', display: 'flex', gap: 2 }}>
             {([['all', '전체'], ['ok', '성공'], ['fail', '실패'], ['skip', '건너뜀']] as const).map(([k, lbl]) => (
-              <button key={k} onClick={() => setFilter(k)} style={{ padding: '3px 8px', fontSize: 11.5, border: '1px solid var(--fl-border)', borderRadius: 6, cursor: 'pointer', background: filter === k ? 'var(--fl-action-primary-bg)' : 'transparent', color: filter === k ? 'var(--fl-action-primary-ink)' : 'var(--fl-text-muted)' }}>{lbl}</button>
+              <button key={k} onClick={() => setFilter(k)} style={{ padding: '3px 8px', fontSize: 12, border: '1px solid var(--fl-border)', borderRadius: 6, cursor: 'pointer', background: filter === k ? 'var(--fl-action-primary-bg)' : 'transparent', color: filter === k ? 'var(--fl-action-primary-ink)' : 'var(--fl-text-muted)' }}>{lbl}</button>
             ))}
-            <button onClick={exportLog} title="실행 로그 전체 내보내기(.txt)" style={{ padding: '3px 8px', fontSize: 11.5, border: '1px solid var(--fl-border)', borderRadius: 6, cursor: 'pointer', background: 'transparent', color: 'var(--fl-text-muted)' }}>⬇ 내보내기</button>
+            <button onClick={exportLog} title="실행 로그 전체 내보내기(.txt)" style={{ padding: '3px 8px', fontSize: 12, border: '1px solid var(--fl-border)', borderRadius: 6, cursor: 'pointer', background: 'transparent', color: 'var(--fl-text-muted)' }}>⬇ 내보내기</button>
           </div>
         )}
         <button onClick={onClose} aria-label="로그 닫기" style={{ marginLeft: execution && execution.nodes.length > 0 ? 8 : (running && onStop ? 0 : 'auto'), border: 'none', background: 'transparent', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 16 }}>×</button>
@@ -136,7 +137,7 @@ export function RunPanel({
                 <span style={{ marginLeft: 'auto', display: 'flex', gap: 12, color: 'var(--fl-text-muted)', fontSize: 12, fontFamily: 'var(--fl-font-mono)' }}>
                   {nd.httpStatus != null && <span>{nd.httpStatus}</span>}
                   {nd.durationMs != null && <span>{duration(nd.durationMs)}</span>}
-                  <span aria-hidden>{open ? '▾' : '▸'}</span>
+                  <span aria-hidden><AppIcon name={open ? 'chevronDown' : 'chevronRight'} size={13} style={{ color: 'var(--fl-text-muted)', verticalAlign: '-2px' }} /></span>
                 </span>
               </button>
               {open && (
@@ -193,12 +194,12 @@ function WaitBanner({ status }: { status: WaitStatus }) {
       {status.receiveUrl && (
         <>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ fontSize: 11.5, color: 'var(--fl-text-muted)', flexShrink: 0 }}>이 URL로 콜백을 보내면 진행됩니다:</span>
+            <span style={{ fontSize: 12, color: 'var(--fl-text-muted)', flexShrink: 0 }}>이 URL로 콜백을 보내면 진행됩니다:</span>
             <input
               readOnly
               value={status.receiveUrl}
               onFocus={(e) => e.currentTarget.select()}
-              style={{ flex: 1, minWidth: 0, padding: '5px 8px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', color: 'var(--fl-text)', fontFamily: 'var(--fl-font-mono)', fontSize: 11.5 }}
+              style={{ flex: 1, minWidth: 0, padding: '5px 8px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', color: 'var(--fl-text)', fontFamily: 'var(--fl-font-mono)', fontSize: 12 }}
             />
             <button
               onClick={() => { void navigator.clipboard?.writeText(status.receiveUrl ?? '').catch(() => {}) }}
@@ -208,18 +209,18 @@ function WaitBanner({ status }: { status: WaitStatus }) {
           </div>
           {/* 테스트 콜백 — 외부 게이트웨이 없이 이 대기를 진행시켜 흐름을 검증 */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span title="JSON 또는 a=1&b=2 형식. 콜백 본문의 키가 이 노드 출력이 됩니다." style={{ fontSize: 11.5, color: 'var(--fl-text-muted)', flexShrink: 0 }}>🧪 테스트 콜백:</span>
+            <span title="JSON 또는 a=1&b=2 형식. 콜백 본문의 키가 이 노드 출력이 됩니다." style={{ fontSize: 12, color: 'var(--fl-text-muted)', flexShrink: 0 }}>테스트 콜백:</span>
             <input
               value={testBody}
               onChange={(e) => setTestBody(e.target.value)}
               placeholder='{ "resultCode": "0000" } 또는 a=1&b=2'
-              style={{ flex: 1, minWidth: 0, padding: '5px 8px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontFamily: 'var(--fl-font-mono)', fontSize: 11.5 }}
+              style={{ flex: 1, minWidth: 0, padding: '5px 8px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontFamily: 'var(--fl-font-mono)', fontSize: 12 }}
             />
             <button
               onClick={sendTest}
               disabled={testState === 'sending'}
               title="이 대기 노드에 샘플 콜백을 보내 진행시킵니다(외부 시스템 불필요)."
-              style={{ flexShrink: 0, padding: '5px 10px', border: '1px solid var(--fl-primary)', borderRadius: 6, background: testState === 'ok' ? 'var(--fl-ok)' : 'transparent', color: testState === 'ok' ? '#fff' : 'var(--fl-primary)', cursor: 'pointer', fontSize: 11.5, fontWeight: 600, whiteSpace: 'nowrap' }}
+              style={{ flexShrink: 0, padding: '5px 10px', border: '1px solid var(--fl-primary)', borderRadius: 6, background: testState === 'ok' ? 'var(--fl-ok)' : 'transparent', color: testState === 'ok' ? '#fff' : 'var(--fl-primary)', cursor: 'pointer', fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap' }}
             >{testState === 'sending' ? '보내는 중…' : testState === 'ok' ? '✓ 전송' : testState === 'err' ? '✕ 실패' : '보내기'}</button>
           </div>
         </>

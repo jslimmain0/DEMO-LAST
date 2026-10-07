@@ -4,11 +4,12 @@ const fs = require('node:fs')
 const path = require('node:path')
 const vm = require('node:vm')
 const ts = require('typescript')
+const designUi = (() => { const out = {}; require('node:vm').runInNewContext(require('typescript').transpileModule(require('node:fs').readFileSync(require('node:path').join(__dirname, '../src/design/ui.ts'), 'utf8'), { compilerOptions: { module: require('typescript').ModuleKind.CommonJS, target: require('typescript').ScriptTarget.ES2022 } }).outputText, { exports: out }); return out })()
 const unloadHandlers = []
 function load(file, modules) {
   const exports = {}
   const code = ts.transpileModule(fs.readFileSync(path.join(__dirname, file), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText
-  vm.runInNewContext(code, { exports, window: { location: { origin: 'https://server-browser.test' }, addEventListener: (name, handler) => { if (name === 'beforeunload') unloadHandlers.push(handler) } }, require: name => modules[name] ?? {} })
+  vm.runInNewContext(code, { exports, window: { location: { origin: 'https://server-browser.test' }, addEventListener: (name, handler) => { if (name === 'beforeunload') unloadHandlers.push(handler) } }, require: name => modules[name] ?? (name.endsWith('/design/ui') ? designUi : {}) })
   return exports
 }
 const resolver = load('../src/lib/agentEnvironments.ts', {})

@@ -8,6 +8,8 @@ import { desktopApi } from '../auth/desktop'
 import { apiErrorMessage } from '../lib/apiError'
 import { toast } from './toast'
 import { DesktopUpdateCard } from './DesktopUpdateCard'
+import { ui } from '../design/ui'
+import { AppIcon } from './AppIcon'
 
 /** 개인 연결과 런타임 공통 설정은 저장 대상과 편집 권한이 다르다. */
 export function SettingsDialog({ onClose }: { onClose: () => void }) {
@@ -55,17 +57,17 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
   }
   return <Modal onClose={close} ariaLabel="설정" width={620} card={{ padding: 24, overflowY: 'auto' }}>
     <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-      <h2 style={{ margin: 0, fontSize: 20 }}>설정</h2><button aria-label="설정 닫기" onClick={close} disabled={saving} style={button}>닫기</button>
+      <h2 style={{ margin: 0, fontSize: 18 }}>설정</h2><button aria-label="설정 닫기" title="닫기" onClick={close} disabled={saving} style={ui.close}><AppIcon name="close" size={16} /></button>
     </header>
-    {<div role="tablist" aria-label="설정 범위" style={{ display: 'flex', flexWrap: 'wrap', gap: 8, margin: '20px 0' }}>
-      {([...(desktop ? [['connection', '계정 · 연결'] as const] : []), ['runtime', runtimeLabel] as const, ['update', '앱 업데이트'] as const]).map(([id, text]) => <button key={id} role="tab" aria-selected={tab === id} aria-controls={'settings-' + id} onClick={() => setTab(id)} style={{ ...button, borderColor: tab === id ? 'var(--fl-primary)' : 'var(--fl-border)', color: tab === id ? 'var(--fl-primary)' : 'var(--fl-text)' }}>{text}</button>)}
+    {<div role="tablist" aria-label="설정 범위" className="fl-seg" style={{ margin: '18px 0 20px' }}>
+      {([...(desktop ? [['connection', '계정 · 연결'] as const] : []), ['runtime', runtimeLabel] as const, ['update', '앱 업데이트'] as const]).map(([id, text]) => <button key={id} role="tab" aria-selected={tab === id} aria-controls={'settings-' + id} onClick={() => setTab(id)} className="fl-seg-btn" aria-pressed={tab === id}>{text}</button>)}
     </div>}
     {tab === 'connection' && desktop && <section id="settings-connection" role="tabpanel" aria-label="계정 · 연결">
       <div style={summary}>
         <div style={row}>
           <div style={{ minWidth: 0, flex: '1 1 180px' }}>
             <p style={{ ...hint, margin: '0 0 6px' }}>Windows 앱 계정</p>
-            <h3 role="status" style={{ margin: 0, fontSize: 19, overflowWrap: 'anywhere' }}>{connection.isPending ? '계정 확인 중…' : connection.isError ? '계정 정보를 불러오지 못했습니다' : connection.data?.connected ? connection.data.login || '로그인 정보 저장됨' : '회사 계정으로 로그인'}</h3>
+            <h3 role="status" style={{ margin: 0, fontSize: 20, overflowWrap: 'anywhere' }}>{connection.isPending ? '계정 확인 중…' : connection.isError ? '계정 정보를 불러오지 못했습니다' : connection.data?.connected ? connection.data.login || '로그인 정보 저장됨' : '회사 계정으로 로그인'}</h3>
           </div>
           <button style={connection.data?.connected ? button : primary} disabled={serverDirty || !connection.isSuccess || !savedServer || login.isPending} onClick={() => login.mutate()}>{login.isPending ? '로그인 창 여는 중…' : connection.data?.connected ? '계정 관리 열기' : 'Windows 앱에서 로그인'}</button>
         </div>
@@ -140,13 +142,13 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
 }
 const input: CSSProperties = { width: '100%', boxSizing: 'border-box', padding: '9px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', font: 'inherit', fontSize: 13 }
 const label: CSSProperties = { display: 'block', fontSize: 12, fontWeight: 600, margin: '12px 0 6px' }
-const hint: CSSProperties = { fontSize: 12.5, color: 'var(--fl-text-muted)', lineHeight: 1.65, overflowWrap: 'anywhere' }
+const hint: CSSProperties = { fontSize: 13, color: 'var(--fl-text-muted)', lineHeight: 1.65, overflowWrap: 'anywhere' }
 const code: CSSProperties = { fontFamily: 'var(--fl-font-mono)', fontSize: 12, overflowWrap: 'anywhere' }
 const heading: CSSProperties = { margin: '0 0 8px', fontSize: 14 }
 const section: CSSProperties = { marginTop: 24, paddingTop: 18, borderTop: '1px solid var(--fl-border)' }
-const summary: CSSProperties = { padding: 18, background: 'var(--fl-surface-2)', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius)', minWidth: 0, overflowWrap: 'anywhere' }
+const summary: CSSProperties = { padding: '2px 0 4px', minWidth: 0, overflowWrap: 'anywhere' }
 const row: CSSProperties = { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }
 const actions: CSSProperties = { display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 12 }
-const button: CSSProperties = { padding: '8px 12px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', font: 'inherit', fontSize: 12.5, cursor: 'pointer' }
-const primary: CSSProperties = { ...button, background: 'var(--fl-action-primary-bg)', borderColor: 'var(--fl-action-primary-bg)', color: 'var(--fl-action-primary-ink)' }
-const errorStyle: CSSProperties = { fontSize: 12.5, lineHeight: 1.6, color: 'var(--fl-fail)' }
+const button: CSSProperties = { ...ui.secondary }
+const primary: CSSProperties = { ...ui.primary }
+const errorStyle: CSSProperties = { fontSize: 13, lineHeight: 1.6, color: 'var(--fl-fail)' }

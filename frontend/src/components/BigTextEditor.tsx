@@ -6,6 +6,8 @@ import type { CodeEditorHandle, CodeLang, CodeStatus, EditorLang } from './CodeE
 import { JsonTree } from './JsonTree'
 import { Modal } from './Modal'
 import { toast } from './toast'
+import { ui } from '../design/ui'
+import { AppIcon } from './AppIcon'
 
 // CodeMirror(하이라이트·문법 체크·정렬·자동완성)는 무거워서 편집기를 열 때만 로드
 const CodeEditorLazy = lazy(() => import('./CodeEditor'))
@@ -24,7 +26,7 @@ function detectLang(v: string): CodeLang | 'text' {
  * 거의 전체화면 텍스트 편집 모달 — HTML 응답 템플릿·콜백 본문·raw 바디처럼 작은 textarea 로 쓰기 힘든 긴 본문을 크게 편집한다.
  * value/onChange 를 그대로 물려받아 원본 입력과 실시간 동기화(닫으면 그 상태가 남는다 — 별도 저장 없음).
  * HTML(내장 JS/CSS)·JSON·XML 은 코드 편집기: 하이라이트 + 문법 체크 + **⇥ 정렬**(Shift+Alt+F, `{{ 토큰 }}` 보호) + **`{{` 자동완성**(sources) +
- * 찾기/바꾸기(Ctrl+F) + 줄바꿈 토글 + 상태바. **👁 미리보기**(HTML=샌드박스 iframe 실시간 렌더 / JSON=트리)는 템플릿 토큰을
+ * 찾기/바꾸기(Ctrl+F) + 줄바꿈 토글 + 상태바. **미리보기**(HTML=샌드박스 iframe 실시간 렌더 / JSON=트리)는 템플릿 토큰을
  * **샘플 값**(호출처가 넘긴 예상 요청 예시값 + 미리보기 pane 에서 직접 입력)으로 치환해 보여준다. 텍스트 모드도 같은 편집기(하이라이트/체크만 없음)라
  * Tab 들여쓰기·Ctrl+Z 편집기 내부 undo·찾기·자동완성이 동일하다.
  */
@@ -68,7 +70,7 @@ export function BigTextEditor({
   return (
     <Modal onClose={onClose} ariaLabel={title} width="min(1500px, 96vw)" maxWidth="96vw" height="92vh" maxHeight="94vh" zIndex={320} card={{ padding: 0, display: 'flex', flexDirection: 'column' }}>
       <header style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', borderBottom: '1px solid var(--fl-border)', flexShrink: 0, flexWrap: 'wrap' }}>
-        <strong style={{ flex: 1, minWidth: 160, fontFamily: 'var(--fl-font-head)', fontSize: 14.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{title}</strong>
+        <strong style={{ flex: 1, minWidth: 160, fontFamily: 'var(--fl-font-head)', fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{title}</strong>
         <select
           value={lang}
           onChange={(e) => setLang(e.target.value as EditorLang)}
@@ -83,8 +85,8 @@ export function BigTextEditor({
         </select>
         <button onClick={format} disabled={!canFormat} title={canFormat ? '자동 정렬 (Shift+Alt+F) — {{ 토큰 }} 은 그대로 보호' : '텍스트 모드에는 정렬이 없습니다'} style={{ ...toolBtn, opacity: canFormat ? 1 : 0.45 }}>⇥ 정렬</button>
         <button onClick={toggleWrap} aria-pressed={wrap} title="긴 줄 줄바꿈" style={{ ...toolBtn, ...(wrap ? toolOn : null) }}>↩ 줄바꿈</button>
-        <button onClick={togglePreview} disabled={!canPreview} aria-pressed={preview && canPreview} title={canPreview ? (lang === 'html' ? '샘플 값으로 렌더한 페이지를 옆에 보여줍니다(실시간)' : 'JSON 트리로 보기') : 'HTML/JSON 만 미리보기'} style={{ ...toolBtn, ...(preview && canPreview ? toolOn : null), opacity: canPreview ? 1 : 0.45 }}>👁 미리보기</button>
-        <span style={{ fontSize: 11.5, color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)', flexShrink: 0 }}>{value.length.toLocaleString()}자</span>
+        <button onClick={togglePreview} disabled={!canPreview} aria-pressed={preview && canPreview} title={canPreview ? (lang === 'html' ? '샘플 값으로 렌더한 페이지를 옆에 보여줍니다(실시간)' : 'JSON 트리로 보기') : 'HTML/JSON 만 미리보기'} style={{ ...toolBtn, ...(preview && canPreview ? toolOn : null), opacity: canPreview ? 1 : 0.45 }}>미리보기</button>
+        <span style={{ fontSize: 12, color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)', flexShrink: 0 }}>{value.length.toLocaleString()}자</span>
         <button onClick={onClose} aria-label="닫기" title="닫기 (Esc)" style={xBtn}>×</button>
       </header>
       <div style={{ flex: 1, minHeight: 0, display: 'flex' }}>
@@ -95,7 +97,7 @@ export function BigTextEditor({
         </div>
         {preview && canPreview && <PreviewPane lang={lang} value={value} initialSamples={samples ?? {}} />}
       </div>
-      <footer style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '6px 16px', borderTop: '1px solid var(--fl-border)', fontSize: 11.5, color: 'var(--fl-text-muted)', flexShrink: 0, flexWrap: 'wrap' }}>
+      <footer style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '6px 16px', borderTop: '1px solid var(--fl-border)', fontSize: 12, color: 'var(--fl-text-muted)', flexShrink: 0, flexWrap: 'wrap' }}>
         <span style={{ flex: 1, minWidth: 200 }}>{hint}</span>
         <span style={{ display: 'inline-flex', gap: 10, fontFamily: 'var(--fl-font-mono)', flexShrink: 0 }} aria-label="편집기 상태">
           {status && <span>줄 {status.line}:{status.col}</span>}
@@ -131,15 +133,15 @@ function PreviewPane({ lang, value, initialSamples }: { lang: 'html' | 'json'; v
   return (
     <div style={paneWrap} aria-label="미리보기">
       <div style={paneBar}>
-        <strong style={{ fontSize: 12 }}>👁 미리보기</strong>
+        <strong style={{ fontSize: 12 }}>미리보기</strong>
         <span style={{ fontSize: 11, color: 'var(--fl-text-muted)' }}>{lang === 'html' ? '샌드박스 — 스크립트는 돌지만 앱 세션엔 접근 못 함' : 'JSON 트리(샘플 값 치환 후)'}</span>
         <span style={{ marginLeft: 'auto' }} />
-        <button onClick={() => setSamplesOpen((v) => !v)} aria-expanded={samplesOpen} style={{ ...toolBtn, padding: '2px 8px', fontSize: 11.5 }} title="템플릿 토큰에 넣을 샘플 값">{samplesOpen ? '▾' : '▸'} 샘플 값 {tokens.length}</button>
-        <button onClick={() => setTick((t) => t + 1)} style={{ ...toolBtn, padding: '2px 8px', fontSize: 11.5 }} title="다시 렌더">↻</button>
+        <button onClick={() => setSamplesOpen((v) => !v)} aria-expanded={samplesOpen} style={{ ...toolBtn, padding: '2px 8px', fontSize: 12 }} title="템플릿 토큰에 넣을 샘플 값"><AppIcon name={samplesOpen ? 'chevronDown' : 'chevronRight'} size={13} style={{ color: 'var(--fl-text-muted)', verticalAlign: '-2px' }} /> 샘플 값 {tokens.length}</button>
+        <button onClick={() => setTick((t) => t + 1)} style={{ ...toolBtn, padding: '2px 8px', fontSize: 12 }} title="다시 렌더">↻</button>
       </div>
       {samplesOpen && (
         <div style={sampleBox}>
-          {tokens.length === 0 && <span style={{ fontSize: 11.5, color: 'var(--fl-text-muted)' }}>템플릿 토큰이 없습니다 — 본문이 그대로 렌더됩니다.</span>}
+          {tokens.length === 0 && <span style={{ fontSize: 12, color: 'var(--fl-text-muted)' }}>템플릿 토큰이 없습니다 — 본문이 그대로 렌더됩니다.</span>}
           {tokens.map((t) => (
             <label key={t.id} style={sampleRow}>
               <code style={sampleKey} title={t.raw}>{t.id}</code>
@@ -174,9 +176,9 @@ export function ExpandCorner({ onClick, label = '크게 편집' }: { onClick: ()
   )
 }
 
-const xBtn: CSSProperties = { width: 28, height: 28, borderRadius: 8, border: 'none', background: 'var(--fl-surface-2)', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 15, flexShrink: 0 }
+const xBtn: CSSProperties = { ...ui.close, width: 28, height: 28, flexShrink: 0 }
 const langSel: CSSProperties = { flexShrink: 0, padding: '5px 8px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 12 }
-const toolBtn: CSSProperties = { flexShrink: 0, padding: '5px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap' }
+const toolBtn: CSSProperties = { ...ui.secondary, flexShrink: 0 }
 const toolOn: CSSProperties = { borderColor: 'var(--fl-primary)', color: 'var(--fl-primary)', background: 'color-mix(in srgb, var(--fl-primary) 10%, var(--fl-surface))' }
 const plainArea: CSSProperties = {
   flex: 1, minHeight: 0, width: '100%', boxSizing: 'border-box', resize: 'none',
@@ -188,7 +190,7 @@ const paneWrap: CSSProperties = { width: '46%', minWidth: 320, borderLeft: '1px 
 const paneBar: CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', borderBottom: '1px solid var(--fl-border)', flexShrink: 0, flexWrap: 'wrap' }
 const sampleBox: CSSProperties = { display: 'grid', gap: 4, padding: '6px 10px', borderBottom: '1px solid var(--fl-border)', maxHeight: 180, overflowY: 'auto', flexShrink: 0 }
 const sampleRow: CSSProperties = { display: 'flex', alignItems: 'center', gap: 8 }
-const sampleKey: CSSProperties = { fontFamily: 'var(--fl-font-mono)', fontSize: 11.5, minWidth: 140, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--fl-primary)' }
+const sampleKey: CSSProperties = { fontFamily: 'var(--fl-font-mono)', fontSize: 12, minWidth: 140, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--fl-primary)' }
 const sampleInput: CSSProperties = { flex: 1, minWidth: 0, padding: '3px 8px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 12, fontFamily: 'var(--fl-font-mono)' }
 const corner: CSSProperties = {
   position: 'absolute', top: 5, right: 7, width: 24, height: 24,

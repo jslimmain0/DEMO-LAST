@@ -73,7 +73,7 @@ export function TransformPicker({ list, value, onChange, disabled, loading, plac
           {current ? <>{current.label} <span style={{ color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)', fontSize: 11 }}>{current.id}</span></>
             : loading ? `${value || '플러그인'} · 확인 중…` : value ? <>{value} <span style={{ color: 'var(--fl-fail)' }}>(이 공간에 없음)</span></> : placeholder}
         </span>
-        <span aria-hidden style={{ fontSize: 10, color: 'var(--fl-text-muted)' }}>▾</span>
+        <span aria-hidden style={{ fontSize: 11, color: 'var(--fl-text-muted)' }}>▾</span>
       </button>
       {open && (
         <div role="listbox" style={pop} onKeyDown={(e) => {
@@ -103,7 +103,7 @@ export function TransformPicker({ list, value, onChange, disabled, loading, plac
               >
                 <div style={{ display: 'flex', gap: 8, alignItems: 'baseline' }}>
                   <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.id === value ? '✓ ' : ''}{t.label}</span>
-                  <span style={{ fontFamily: 'var(--fl-font-mono)', fontSize: 10.5, color: 'var(--fl-text-muted)' }}>{t.id}</span>
+                  <span style={{ fontFamily: 'var(--fl-font-mono)', fontSize: 11, color: 'var(--fl-text-muted)' }}>{t.id}</span>
                 </div>
                 {t.description && <div style={{ fontSize: 11, color: 'var(--fl-text-muted)', marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.description}</div>}
               </div>
@@ -121,7 +121,7 @@ export function TransformPicker({ list, value, onChange, disabled, loading, plac
   )
 }
 
-const btn: CSSProperties = { display: 'flex', alignItems: 'center', gap: 6, width: '100%', minWidth: 180, padding: '7px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', fontSize: 12.5, fontFamily: 'var(--fl-font-ui)', textAlign: 'left' }
+const btn: CSSProperties = { display: 'flex', alignItems: 'center', gap: 6, width: '100%', minWidth: 180, padding: '7px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', fontSize: 13, fontFamily: 'var(--fl-font-ui)', textAlign: 'left' }
 const pop: CSSProperties = { position: 'absolute', zIndex: 50, top: 'calc(100% + 4px)', left: 0, minWidth: '100%', width: 'max(100%, 360px)', maxWidth: '90vw', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', boxShadow: 'var(--fl-shadow-lg, 0 8px 24px rgba(0,0,0,.18))', overflow: 'hidden' }
-const search: CSSProperties = { width: '100%', boxSizing: 'border-box', padding: '8px 12px', border: 'none', borderBottom: '1px solid var(--fl-border)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 12.5, outline: 'none' }
-const item: CSSProperties = { padding: '7px 12px', fontSize: 12.5, cursor: 'pointer', color: 'var(--fl-text)', borderBottom: '1px solid color-mix(in srgb, var(--fl-border) 40%, transparent)' }
+const search: CSSProperties = { width: '100%', boxSizing: 'border-box', padding: '8px 12px', border: 'none', borderBottom: '1px solid var(--fl-border)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 13, outline: 'none' }
+const item: CSSProperties = { padding: '7px 12px', fontSize: 13, cursor: 'pointer', color: 'var(--fl-text)', borderBottom: '1px solid color-mix(in srgb, var(--fl-border) 40%, transparent)' }

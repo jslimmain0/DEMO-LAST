@@ -10,6 +10,7 @@ import type { GraphNode, NodeOutput, ProtocolField, ProtocolPreview, ProtocolSpe
 import { TokenInput } from '../binding/TokenInput'
 import type { BindableSource } from '../binding/upstream'
 import { byteLen, fieldsOf, messageKeys, padOf, requestKeys, tableLen, withOffsets } from '../lib/protocolSpec'
+import { ui } from '../design/ui'
 
 type Update = (patch: Partial<GraphNode>) => void
 
@@ -65,7 +66,7 @@ export function TcpRequestPanel({ node, update, sources, canEdit, preview, previ
               {node.protocolId && !protos.data?.some(p => p.id === node.protocolId) && <option value={node.protocolId}>기존 프로토콜 · 확인 필요</option>}
               {(protos.data ?? []).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
-            <Link to={`${node.protocolId && !missing ? `/protocols/${node.protocolId}` : '/protocols'}?space=${encodeURIComponent(`${resources.agent}:${resources.workspaceId}`)}`} target="_blank" rel="noreferrer" style={{ fontSize: 11.5, whiteSpace: 'nowrap', color: 'var(--fl-primary)' }}>관리 →</Link>
+            <Link to={`${node.protocolId && !missing ? `/protocols/${node.protocolId}` : '/protocols'}?space=${encodeURIComponent(`${resources.agent}:${resources.workspaceId}`)}`} target="_blank" rel="noreferrer" style={{ fontSize: 12, whiteSpace: 'nowrap', color: 'var(--fl-primary)' }}>관리 →</Link>
           </div>
         </div>
         <div style={{ flex: 1, minWidth: 0 }}><label style={label}>타임아웃(ms)</label><input style={field} type="number" value={node.tcpTimeoutMs ?? 5000} readOnly={!canEdit} onChange={(e) => update({ tcpTimeoutMs: Number(e.target.value) })} /></div>
@@ -98,8 +99,8 @@ export function TcpRequestPanel({ node, update, sources, canEdit, preview, previ
           )}
           {canEdit && (
             <div style={{ marginTop: 10, borderTop: '1px dashed var(--fl-border)', paddingTop: 10 }}>
-              <button onClick={onPreview} style={singleBtn} title="전송 없이 조립해 바이트를 확인합니다(상류 바인딩은 빈 값)">🔍 전문 미리보기</button>
-              {previewErr && <p style={{ fontSize: 11.5, color: 'var(--fl-fail)', marginTop: 6 }}>미리보기 실패: {previewErr}</p>}
+              <button onClick={onPreview} style={singleBtn} title="전송 없이 조립해 바이트를 확인합니다(상류 바인딩은 빈 값)">전문 미리보기</button>
+              {previewErr && <p style={{ fontSize: 12, color: 'var(--fl-fail)', marginTop: 6 }}>미리보기 실패: {previewErr}</p>}
               {preview && <PreviewBox p={preview} />}
             </div>
           )}
@@ -130,7 +131,7 @@ export function FieldRow({ f, offset, value, encoding, sources, canEdit, err, on
   const warn = err ?? (over ? `⚠ ${bytes}/${f.len} B 초과 — 전송 전 차단됩니다` : nonAscii ? '⚠ ascii 필드에 한글/비ASCII' : nonDigit ? '⚠ numeric 필드에 숫자 아닌 문자' : null)
   return (
     <div style={{ border: `1px solid ${warn ? 'var(--fl-fail)' : 'var(--fl-border)'}`, borderRadius: 'var(--fl-radius-sm)', padding: '6px 8px' }}>
-      <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 4, fontSize: 11.5 }}>
+      <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 4, fontSize: 12 }}>
         <span style={offBadge}>@{offset}</span>
         <span style={{ fontWeight: 600, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.name}{hint ? <span style={{ color: 'var(--fl-text-muted)', fontWeight: 400 }}> · {hint}</span> : null}</span>
         <span style={{ color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)' }}>{f.type} {padOf(f)}</span>
@@ -151,7 +152,7 @@ export function PreviewBox({ p }: { p: ProtocolPreview }) {
     <div style={{ marginTop: 8, border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', padding: 8 }}>
       {p.errors.length > 0 ? <div style={{ color: 'var(--fl-fail)', fontSize: 12 }}>{p.errors.map((e, i) => <div key={i}>{e.field ? `${e.field}: ` : ''}{e.message}</div>)}</div> : (
         <>
-          <div style={{ fontSize: 11.5, color: 'var(--fl-text-muted)', marginBottom: 6, fontFamily: 'var(--fl-font-mono)' }}><b style={{ color: 'var(--fl-text)' }}>총 {p.total}B</b></div>
+          <div style={{ fontSize: 12, color: 'var(--fl-text-muted)', marginBottom: 6, fontFamily: 'var(--fl-font-mono)' }}><b style={{ color: 'var(--fl-text)' }}>총 {p.total}B</b></div>
           <div style={{ display: 'grid', gap: 2, marginBottom: 6 }}>
             {p.fields.map((f, i) => (
               <div key={i} style={{ display: 'flex', gap: 6, fontSize: 11, fontFamily: 'var(--fl-font-mono)' }}>
@@ -159,9 +160,9 @@ export function PreviewBox({ p }: { p: ProtocolPreview }) {
               </div>
             ))}
           </div>
-          <div style={{ fontSize: 10.5, fontWeight: 600, color: 'var(--fl-text-muted)' }}>텍스트</div>
+          <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--fl-text-muted)' }}>텍스트</div>
           <pre style={pre}>{p.text}</pre>
-          <details><summary style={{ fontSize: 10.5, fontWeight: 600, color: 'var(--fl-text-muted)', cursor: 'pointer' }}>HEX</summary><pre style={pre}>{p.hex}</pre></details>
+          <details><summary style={{ fontSize: 11, fontWeight: 600, color: 'var(--fl-text-muted)', cursor: 'pointer' }}>HEX</summary><pre style={pre}>{p.hex}</pre></details>
         </>
       )}
     </div>
@@ -171,7 +172,7 @@ export function PreviewBox({ p }: { p: ProtocolPreview }) {
 export function TcpResponsePanel({ node, update, canEdit }: { node: GraphNode; update: Update; canEdit: boolean }) {
   const proto = useProtocol(node.protocolId || undefined, node)
   const spec = proto.data?.spec
-  if (!spec) return <p style={{ fontSize: 11.5, color: 'var(--fl-text-muted)' }}>프로토콜을 먼저 고르세요.</p>
+  if (!spec) return <p style={{ fontSize: 12, color: 'var(--fl-text-muted)' }}>프로토콜을 먼저 고르세요.</p>
   const outs = outputsFor(spec, node.tcpResponseMessage || undefined)
   return (
     <>
@@ -183,15 +184,15 @@ export function TcpResponsePanel({ node, update, canEdit }: { node: GraphNode; u
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 6 }}>
         {outs.map((o) => <span key={o.key} style={chip}>{o.key}</span>)}
       </div>
-      <p style={{ fontSize: 11.5, color: 'var(--fl-text-muted)', marginTop: 8 }}>실행 시 실제 응답의 {spec.discriminator || '방향'}으로 표를 고릅니다. 정의되지 않은 전문이면 헤더 + <code>body</code>(raw) 로 출력됩니다.</p>
+      <p style={{ fontSize: 12, color: 'var(--fl-text-muted)', marginTop: 8 }}>실행 시 실제 응답의 {spec.discriminator || '방향'}으로 표를 고릅니다. 정의되지 않은 전문이면 헤더 + <code>body</code>(raw) 로 출력됩니다.</p>
     </>
   )
 }
 
-const label: CSSProperties = { display: 'block', fontSize: 11.5, fontWeight: 600, color: 'var(--fl-text-muted)', margin: '10px 0 4px' }
-const field: CSSProperties = { width: '100%', padding: '8px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 12.5 }
+const label: CSSProperties = { display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--fl-text-muted)', margin: '10px 0 4px' }
+const field: CSSProperties = { width: '100%', padding: '8px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 13 }
 const mono: CSSProperties = { ...field, fontFamily: 'var(--fl-font-mono)' }
-const offBadge: CSSProperties = { flexShrink: 0, fontSize: 10, fontFamily: 'var(--fl-font-mono)', color: 'var(--fl-text-muted)', background: 'var(--fl-surface-2)', borderRadius: 4, padding: '2px 4px', minWidth: 26, textAlign: 'center' }
-const singleBtn: CSSProperties = { width: '100%', padding: '8px 10px', border: '1px solid var(--fl-primary)', borderRadius: 'var(--fl-radius-sm)', background: 'transparent', color: 'var(--fl-primary)', cursor: 'pointer', fontSize: 12.5, fontWeight: 600 }
-const pre: CSSProperties = { margin: 0, padding: '6px 8px', fontSize: 11.5, fontFamily: 'var(--fl-font-mono)', whiteSpace: 'pre-wrap', wordBreak: 'break-all', maxHeight: 120, overflow: 'auto', background: 'var(--fl-surface)' }
-const chip: CSSProperties = { padding: '2px 8px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-pill)', fontSize: 11.5, fontFamily: 'var(--fl-font-mono)' }
+const offBadge: CSSProperties = { flexShrink: 0, fontSize: 11, fontFamily: 'var(--fl-font-mono)', color: 'var(--fl-text-muted)', background: 'var(--fl-surface-2)', borderRadius: 6, padding: '2px 4px', minWidth: 26, textAlign: 'center' }
+const singleBtn: CSSProperties = { ...ui.secondary, width: '100%', color: 'var(--fl-primary)' }
+const pre: CSSProperties = { margin: 0, padding: '6px 8px', fontSize: 12, fontFamily: 'var(--fl-font-mono)', whiteSpace: 'pre-wrap', wordBreak: 'break-all', maxHeight: 120, overflow: 'auto', background: 'var(--fl-surface)' }
+const chip: CSSProperties = { padding: '2px 8px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-pill)', fontSize: 12, fontFamily: 'var(--fl-font-mono)' }

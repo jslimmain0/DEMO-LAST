@@ -6,6 +6,8 @@ import { useState } from 'react'
 import type { TriggerView } from '../api/types'
 import { toast } from './toast'
 import { Modal } from './Modal'
+import { AppIcon } from './AppIcon'
+import { ui } from '../design/ui'
 
 /**
  * 자동 실행 트리거 — 스케줄(cron) / 인바운드 웹훅. 야간 회귀·외부 이벤트 실행용.
@@ -52,7 +54,7 @@ export function TriggersDialog({ flowId, onClose }: { flowId: string; onClose: (
   return (
     <Modal onClose={onClose} ariaLabel="트리거" width={620} maxWidth="96vw" maxHeight="88vh">
         <header style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '14px 18px', borderBottom: '1px solid var(--fl-border)' }}>
-          <span aria-hidden>⏰</span>
+          <AppIcon name="clock" size={16} />
           <strong style={{ flex: 1, fontFamily: 'var(--fl-font-head)', fontSize: 16 }}>자동 실행 트리거</strong>
           <button onClick={onClose} aria-label="닫기" style={xBtn}>×</button>
         </header>
@@ -66,12 +68,12 @@ export function TriggersDialog({ flowId, onClose }: { flowId: string; onClose: (
           <div style={{ display: 'grid', gap: 8, margin: '10px 0' }}>
             {list.map((t) => (
               <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)' }}>
-                <span style={{ fontSize: 11, fontWeight: 700, color: t.type === 'SCHEDULE' ? 'var(--fl-primary)' : 'var(--fl-put)' }}>{t.type === 'SCHEDULE' ? '⏱ 스케줄' : '🪝 웹훅'}</span>
+                <span style={{ fontSize: 11, fontWeight: 700, color: t.type === 'SCHEDULE' ? 'var(--fl-primary)' : 'var(--fl-put)' }}>{t.type === 'SCHEDULE' ? '스케줄' : '웹훅'}</span>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   {t.type === 'SCHEDULE' ? (
                     <>
                       <code style={{ fontFamily: 'var(--fl-font-mono)', fontSize: 12 }}>{t.cron}</code>
-                      <div style={{ fontSize: 10.5, color: 'var(--fl-text-muted)', marginTop: 2 }}>다음 실행: {t.nextRunAt ? fmt(t.nextRunAt) : '—'}{t.lastRunAt ? ` · 최근 ${fmt(t.lastRunAt)}` : ''}</div>
+                      <div style={{ fontSize: 11, color: 'var(--fl-text-muted)', marginTop: 2 }}>다음 실행: {t.nextRunAt ? fmt(t.nextRunAt) : '—'}{t.lastRunAt ? ` · 최근 ${fmt(t.lastRunAt)}` : ''}</div>
                     </>
                   ) : (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -99,7 +101,7 @@ export function TriggersDialog({ flowId, onClose }: { flowId: string; onClose: (
               ))}
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 14 }}>
-              <button onClick={() => addWebhook.mutate()} disabled={addWebhook.isPending} style={ghost}>🪝 웹훅 URL 발급</button>
+              <button onClick={() => addWebhook.mutate()} disabled={addWebhook.isPending} style={ghost}>웹훅 URL 발급</button>
             </div>
           </div>
         </div>
@@ -116,11 +118,11 @@ function fmt(iso: string): string {
   try { const d = new Date(iso); return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}` } catch { return iso }
 }
 
-const hint: CSSProperties = { fontSize: 11.5, color: 'var(--fl-text-muted)', lineHeight: 1.6, margin: 0 }
-const label: CSSProperties = { display: 'block', fontSize: 11.5, fontWeight: 600, color: 'var(--fl-text-muted)', margin: '0 0 5px' }
-const mono: CSSProperties = { flex: 1, padding: '8px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 12.5, fontFamily: 'var(--fl-font-mono)' }
-const xBtn: CSSProperties = { width: 28, height: 28, borderRadius: 8, border: 'none', background: 'var(--fl-surface-2)', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 15 }
+const hint: CSSProperties = { fontSize: 12, color: 'var(--fl-text-muted)', lineHeight: 1.6, margin: 0 }
+const label: CSSProperties = { display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--fl-text-muted)', margin: '0 0 5px' }
+const mono: CSSProperties = { flex: 1, padding: '8px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 13, fontFamily: 'var(--fl-font-mono)' }
+const xBtn: CSSProperties = { ...ui.close, width: 28, height: 28 }
 const primary: CSSProperties = { padding: '8px 14px', border: 'none', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-action-primary-bg)', color: 'var(--fl-action-primary-ink)', cursor: 'pointer', fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap' }
 const ghost: CSSProperties = { padding: '8px 14px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'transparent', color: 'var(--fl-text)', cursor: 'pointer', fontSize: 13 }
-const chip: CSSProperties = { padding: '4px 9px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-pill)', background: 'transparent', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 11.5 }
-const miniBtn: CSSProperties = { padding: '4px 8px', border: '1px solid var(--fl-border)', borderRadius: 6, background: 'var(--fl-surface)', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 11.5, flexShrink: 0 }
+const chip: CSSProperties = { padding: '4px 9px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-pill)', background: 'transparent', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 12 }
+const miniBtn: CSSProperties = { ...ui.mini, flexShrink: 0 }

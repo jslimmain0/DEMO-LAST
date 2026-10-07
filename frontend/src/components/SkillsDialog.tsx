@@ -8,6 +8,8 @@ import { usePermissions } from '../auth/AuthContext'
 import { newId } from '../lib/ids'
 import { Modal } from './Modal'
 import { toast } from './toast'
+import { AppIcon } from './AppIcon'
+import { ui } from '../design/ui'
 
 /**
  * 어시스턴트 프롬프트 라이브러리(awesome-copilot 스타일) — 자주 쓰는 프롬프트를 저장해 두고 클릭 한 번으로 적용.
@@ -50,8 +52,8 @@ export function SkillsDialog({ onClose, onApplyPrompt }: { onClose: () => void; 
   return (
     <Modal onClose={onClose} ariaLabel="프롬프트 라이브러리" width={660} card={{ padding: 18, display: 'block', overflowY: 'auto', maxHeight: '86vh' }}>
       <header style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-        <span aria-hidden>💬</span>
-        <b style={{ flex: 1, fontSize: 15 }}>프롬프트 라이브러리</b>
+        <AppIcon name="list" size={16} />
+        <b style={{ flex: 1, fontSize: 16 }}>프롬프트 라이브러리</b>
         <button onClick={() => savePrompts.mutate(user)} disabled={savePrompts.isPending} style={primary}>저장</button>
         <button onClick={onClose} aria-label="닫기" style={xBtn}>×</button>
       </header>
@@ -99,12 +101,12 @@ function errMsg(e: unknown, fallback: string): string {
   return m || fallback
 }
 
-const hint: CSSProperties = { fontSize: 11.5, color: 'var(--fl-text-muted)', lineHeight: 1.6, margin: 0 }
+const hint: CSSProperties = { fontSize: 12, color: 'var(--fl-text-muted)', lineHeight: 1.6, margin: 0 }
 const secLabel: CSSProperties = { display: 'block', fontSize: 12, fontWeight: 700, color: 'var(--fl-text)', margin: '0 0 6px' }
-const mono: CSSProperties = { padding: '7px 9px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 12.5, fontFamily: 'var(--fl-font-mono)', boxSizing: 'border-box' }
+const mono: CSSProperties = { padding: '7px 9px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 13, fontFamily: 'var(--fl-font-mono)', boxSizing: 'border-box' }
 const card: CSSProperties = { border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', padding: 10 }
-const xBtn: CSSProperties = { width: 28, height: 28, borderRadius: 8, border: 'none', background: 'var(--fl-surface-2)', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 15 }
-const xBtnSm: CSSProperties = { width: 24, height: 24, flexShrink: 0, borderRadius: 6, border: '1px solid var(--fl-border)', background: 'var(--fl-surface)', color: 'var(--fl-text-muted)', cursor: 'pointer' }
-const primary: CSSProperties = { padding: '7px 12px', border: 'none', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-action-primary-bg)', color: 'var(--fl-action-primary-ink)', cursor: 'pointer', fontSize: 12.5, fontWeight: 600, whiteSpace: 'nowrap' }
-const applyBtn: CSSProperties = { flexShrink: 0, padding: '5px 11px', border: '1px solid var(--fl-primary)', borderRadius: 'var(--fl-radius-sm)', background: 'transparent', color: 'var(--fl-primary)', cursor: 'pointer', fontSize: 12, fontWeight: 600 }
+const xBtn: CSSProperties = { ...ui.close, width: 28, height: 28 }
+const xBtnSm: CSSProperties = { ...ui.icon, width: 24, height: 24, flexShrink: 0 }
+const primary: CSSProperties = { padding: '7px 12px', border: 'none', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-action-primary-bg)', color: 'var(--fl-action-primary-ink)', cursor: 'pointer', fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap' }
+const applyBtn: CSSProperties = { ...ui.secondary, flexShrink: 0, color: 'var(--fl-primary)' }
 const ghostMini: CSSProperties = { padding: '5px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 12 }

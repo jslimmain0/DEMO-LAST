@@ -84,7 +84,7 @@ function CurlImportBody({ onImport, onClose }: { onImport: (template: GraphNode)
 
   return (
     <div style={{ padding: 18, display: 'flex', flexDirection: 'column', minHeight: 0, flex: 1 }}>
-      <p style={{ fontSize: 12.5, color: 'var(--fl-text-muted)', margin: '0 0 10px' }}>
+      <p style={{ fontSize: 13, color: 'var(--fl-text-muted)', margin: '0 0 10px' }}>
         curl 명령을 붙여넣으면 <b>HTTP 노드 하나</b>를 캔버스에 추가합니다 (메서드·URL·헤더·본문 반영).
       </p>
       <textarea

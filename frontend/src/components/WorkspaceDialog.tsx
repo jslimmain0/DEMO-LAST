@@ -8,6 +8,7 @@ import type { WorkspaceImportResult, WorkspaceView } from '../api/client'
 import { Modal } from './Modal'
 import { toast } from './toast'
 import { matchesCatalog } from '../lib/catalog'
+import { ui } from '../design/ui'
 
 /**
  * 워크스페이스 관리 다이얼로그 — 현재 워크스페이스의 멤버·롤(OWNER 만 편집).
@@ -26,13 +27,13 @@ export function WorkspaceDialog({ current, onClose, onDeleted }: {
   return (
     <Modal onClose={onClose} ariaLabel="워크스페이스 관리" width={640} card={{ padding: 0 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '16px 20px 12px', borderBottom: '1px solid var(--fl-border)' }}>
-        <strong style={{ fontSize: 15 }}>워크스페이스 관리</strong>
-        <span title={current.name} style={{ fontSize: 12.5, color: 'var(--fl-text-muted)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {current.kind === 'PUBLIC' ? '🌐' : current.kind === 'PERSONAL' ? '🔒' : '👥'} {current.name}
+        <strong style={{ fontSize: 16 }}>워크스페이스 관리</strong>
+        <span title={current.name} style={{ fontSize: 13, color: 'var(--fl-text-muted)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {current.name}
         </span>
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 4, alignItems: 'center' }}>
           {me.data?.admin && (
-            <Link to="/admin" onClick={onClose} style={{ fontSize: 12, color: 'var(--fl-primary)', textDecoration: 'none', fontWeight: 600, marginLeft: 4 }} title="가입 승인·회원·팀·권한 전체 관리">🛡 관리 콘솔 →</Link>
+            <Link to="/admin" onClick={onClose} style={{ fontSize: 12, color: 'var(--fl-primary)', textDecoration: 'none', fontWeight: 600, marginLeft: 4 }} title="가입 승인·회원·팀·권한 전체 관리">관리 콘솔 →</Link>
           )}
         </div>
         <button onClick={onClose} aria-label="닫기" style={xBtn}>×</button>
@@ -98,8 +99,8 @@ function TransferSection({ ws }: { ws: WorkspaceView }) {
   return (
     <div style={{ marginTop: 18, paddingTop: 14, borderTop: '1px solid var(--fl-border)' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-        <b style={{ fontSize: 12.5 }}>워크스페이스 이동</b>
-        <span style={{ fontSize: 11.5, color: 'var(--fl-text-muted)' }}>폴더·워크플로·Mock 을 JSON 텍스트로 복붙</span>
+        <b style={{ fontSize: 13 }}>워크스페이스 이동</b>
+        <span style={{ fontSize: 12, color: 'var(--fl-text-muted)' }}>폴더·워크플로·Mock 을 JSON 텍스트로 복붙</span>
         <span style={{ marginLeft: 'auto', display: 'inline-flex', gap: 6 }}>
           <button onClick={() => (mode === 'export' ? setMode('none') : doExport.mutate())} disabled={doExport.isPending}
             style={transferBtn(mode === 'export')}>⬆ 내보내기</button>
@@ -117,7 +118,7 @@ function TransferSection({ ws }: { ws: WorkspaceView }) {
             <button onClick={() => void copy()} style={{ ...addBtn, background: copied ? 'var(--fl-ok)' : 'var(--fl-primary)' }}>
               {copied ? '✓ 복사됨' : '⧉ 전체 복사'}
             </button>
-            <span style={{ fontSize: 11.5, color: 'var(--fl-text-muted)' }}>
+            <span style={{ fontSize: 12, color: 'var(--fl-text-muted)' }}>
               {text.length.toLocaleString()}자 — 다른 워크스페이스의 이 다이얼로그에서 [⬇ 가져오기]에 붙여넣으세요
             </span>
           </div>
@@ -133,10 +134,10 @@ function TransferSection({ ws }: { ws: WorkspaceView }) {
             <button onClick={() => doImport.mutate(text)} disabled={!text.trim() || doImport.isPending} style={addBtn}>
               {doImport.isPending ? '가져오는 중…' : `"${ws.name}" 으로 가져오기`}
             </button>
-            <span style={{ fontSize: 11.5, color: 'var(--fl-text-muted)' }}>전부 새로 생성 — 기존 데이터는 건드리지 않습니다</span>
+            <span style={{ fontSize: 12, color: 'var(--fl-text-muted)' }}>전부 새로 생성 — 기존 데이터는 건드리지 않습니다</span>
           </div>
           {result && (
-            <div style={{ marginTop: 8, padding: '9px 12px', borderRadius: 'var(--fl-radius-sm)', background: 'color-mix(in srgb, var(--fl-ok) 9%, transparent)', fontSize: 12.5 }}>
+            <div style={{ marginTop: 8, padding: '9px 12px', borderRadius: 'var(--fl-radius-sm)', background: 'color-mix(in srgb, var(--fl-ok) 9%, transparent)', fontSize: 13 }}>
               ✓ 폴더 {result.folders} · 워크플로 {result.flows} · Mock {result.mocks} 가져옴
               {result.warnings.length > 0 && (
                 <ul style={{ margin: '6px 0 0', paddingLeft: 18, color: 'var(--fl-text-muted)', fontSize: 12 }}>
@@ -162,7 +163,7 @@ const transferArea: CSSProperties = {
   width: '100%', height: 180, resize: 'vertical', padding: 10,
   border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)',
   background: 'var(--fl-bg)', color: 'var(--fl-text)',
-  fontFamily: 'var(--fl-font-mono)', fontSize: 11.5, lineHeight: 1.5, boxSizing: 'border-box',
+  fontFamily: 'var(--fl-font-mono)', fontSize: 12, lineHeight: 1.5, boxSizing: 'border-box',
 }
 
 const ROLES = ['OWNER', 'EDITOR', 'VIEWER'] as const
@@ -214,7 +215,7 @@ function MembersTab({ ws, isTeam, onDeleted }: { ws: WorkspaceView; isTeam: bool
       <div style={{ maxHeight: 280, overflow: 'auto' }}>
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
         <thead style={{ position: 'sticky', top: 0, background: 'var(--fl-surface)' }}>
-          <tr style={{ textAlign: 'left', color: 'var(--fl-text-muted)', fontSize: 11.5 }}>
+          <tr style={{ textAlign: 'left', color: 'var(--fl-text-muted)', fontSize: 12 }}>
             <th style={th}>사용자</th><th style={th}>롤</th><th style={{ ...th, width: 60 }} />
           </tr>
         </thead>
@@ -283,12 +284,12 @@ function MembersTab({ ws, isTeam, onDeleted }: { ws: WorkspaceView; isTeam: bool
 }
 
 
-const xBtn: CSSProperties = { width: 28, height: 28, border: 'none', borderRadius: 14, background: 'transparent', color: 'var(--fl-text-muted)', fontSize: 18, cursor: 'pointer', lineHeight: 1 }
-const hint: CSSProperties = { fontSize: 12.5, color: 'var(--fl-text-muted)', lineHeight: 1.6, margin: 0 }
+const xBtn: CSSProperties = { ...ui.close, width: 28, height: 28 }
+const hint: CSSProperties = { fontSize: 13, color: 'var(--fl-text-muted)', lineHeight: 1.6, margin: 0 }
 const th: CSSProperties = { padding: '4px 8px', fontWeight: 600 }
 const td: CSSProperties = { padding: '8px' }
-const roleSel: CSSProperties = { maxWidth: '100%', padding: '5px 8px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 12.5, cursor: 'pointer' }
+const roleSel: CSSProperties = { maxWidth: '100%', padding: '5px 8px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 13, cursor: 'pointer' }
 const nameInput: CSSProperties = { flex: 1, minWidth: 0, padding: '7px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-bg)', color: 'var(--fl-text)', fontSize: 13 }
-const addBtn: CSSProperties = { padding: '7px 14px', border: 'none', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-action-primary-bg)', color: 'var(--fl-action-primary-ink)', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }
+const addBtn: CSSProperties = { ...ui.primary }
 const miniDanger: CSSProperties = { padding: '5px 10px', border: '1px solid color-mix(in srgb, var(--fl-fail) 45%, transparent)', borderRadius: 'var(--fl-radius-sm)', background: 'transparent', color: 'var(--fl-fail)', fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap' }
 const cancelMini: CSSProperties = { padding: '5px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'transparent', color: 'var(--fl-text-muted)', fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap' }

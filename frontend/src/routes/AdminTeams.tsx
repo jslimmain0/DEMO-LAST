@@ -59,7 +59,7 @@ function TeamEditor({ workspace, users, onClose, onRefresh }: { workspace: Admin
     setAsk({ title: '팀 권한 변경', message: `${workspace.name} · ${username}: ${roles[previous]} → ${roles[next]}. 이 팀에만 적용되며 전역 권한은 바뀌지 않습니다.`, danger: next === 'OWNER', confirmLabel: '권한 변경 적용', onConfirm: () => put.mutate({ username, role: next }) })
   }
   return <Modal onClose={onClose} ariaLabel={`${workspace.name} 멤버와 권한 관리`} width={900} card={{ padding: 20, overflowY: 'auto' }}><section className="fl-admin fl-admin-dialog">
-    <div style={{ display: 'flex', alignItems: 'start', justifyContent: 'space-between', gap: 16 }}><div><h2 style={{ fontSize: 17, margin: '0 0 6px' }}>{workspace.name} · 멤버와 권한</h2><p className="fl-admin-note">ID · {workspace.id}<br />팀 관리자 {owners}명 · 마지막 팀 관리자는 제외하거나 강등할 수 없습니다.</p></div><button onClick={onClose}>닫기</button></div>
+    <div style={{ display: 'flex', alignItems: 'start', justifyContent: 'space-between', gap: 16 }}><div><h2 style={{ fontSize: 18, margin: '0 0 6px' }}>{workspace.name} · 멤버와 권한</h2><p className="fl-admin-note">ID · {workspace.id}<br />팀 관리자 {owners}명 · 마지막 팀 관리자는 제외하거나 강등할 수 없습니다.</p></div><button onClick={onClose}>닫기</button></div>
     <div className="fl-admin-toolbar"><input type="search" aria-label="현재 팀 멤버 또는 권한 검색" placeholder="현재 멤버·권한 검색" value={search} onChange={event => { setSearch(event.target.value); setPage(1) }} /></div>
     <CatalogPagination total={filtered.length} page={range.page} size={10} onPage={setPage} label="팀 멤버" />
     <div className="fl-admin-table"><table><thead><tr><th>사용자</th><th>가입 상태</th><th>이 팀의 권한</th><th>작업</th></tr></thead><tbody>{filtered.slice(range.start, range.end).map(member => {

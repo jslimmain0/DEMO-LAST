@@ -2,6 +2,7 @@ import type { CSSProperties } from 'react'
 import { useState } from 'react'
 import type { PendingInputRequest } from '../api/types'
 import { Modal } from './Modal'
+import { ui } from '../design/ui'
 
 /**
  * input(사용자 입력) 노드 모달 — 실행이 이 노드에서 멈추면 뜬다.
@@ -58,18 +59,18 @@ export function InputPromptDialog({
     <Modal onClose={onCancel} ariaLabel="사용자 입력 대기" zIndex={220} closeOnBackdrop={false} width={420} maxWidth="100%" maxHeight="76vh"
       onKeyDown={(e) => { if (e.key === 'Enter' && !(e.target instanceof HTMLTextAreaElement)) { e.preventDefault(); confirm() } }}>
         <header style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '14px 16px', borderBottom: '1px solid var(--fl-border)' }}>
-          <span aria-hidden style={{ color: 'var(--fl-cat-input)', fontSize: 15 }}>⌨</span>
-          <strong style={{ fontFamily: 'var(--fl-font-head)', fontSize: 15 }}>입력 대기 · {input.nodeName || input.nodeId}</strong>
+          <span aria-hidden style={{ color: 'var(--fl-cat-input)', fontSize: 16 }}>⌨</span>
+          <strong style={{ fontFamily: 'var(--fl-font-head)', fontSize: 16 }}>입력 대기 · {input.nodeName || input.nodeId}</strong>
         </header>
         <div style={{ padding: 16, display: 'grid', gap: 10, overflowY: 'auto' }}>
-          {input.message && <p style={{ margin: 0, fontSize: 13.5, color: 'var(--fl-text)', lineHeight: 1.5 }}>{input.message}</p>}
+          {input.message && <p style={{ margin: 0, fontSize: 14, color: 'var(--fl-text)', lineHeight: 1.5 }}>{input.message}</p>}
           {fields.map((f, i) => {
             const t = f.type ?? 'string'
             return (
               <div key={f.key}>
                 <label style={label} htmlFor={`fl-input-${f.key}`}>
                   {f.label || f.key}
-                  {t !== 'string' && <span style={{ marginLeft: 6, fontFamily: 'var(--fl-font-mono)', fontSize: 10.5, opacity: 0.7 }}>{t}</span>}
+                  {t !== 'string' && <span style={{ marginLeft: 6, fontFamily: 'var(--fl-font-mono)', fontSize: 11, opacity: 0.7 }}>{t}</span>}
                 </label>
                 {t === 'json' ? (
                   <textarea
@@ -104,8 +105,8 @@ export function InputPromptDialog({
               </div>
             )
           })}
-          {error && <p style={{ margin: 0, fontSize: 12.5, color: 'var(--fl-fail)' }}>⚠ {error}</p>}
-          <p style={{ margin: 0, fontSize: 11.5, color: 'var(--fl-text-muted)' }}>확인(Enter)하면 이 값이 노드 출력이 되어 다음 노드에서 바인딩됩니다. 취소(Esc)는 실행을 중단합니다.</p>
+          {error && <p style={{ margin: 0, fontSize: 13, color: 'var(--fl-fail)' }}>⚠ {error}</p>}
+          <p style={{ margin: 0, fontSize: 12, color: 'var(--fl-text-muted)' }}>확인(Enter)하면 이 값이 노드 출력이 되어 다음 노드에서 바인딩됩니다. 취소(Esc)는 실행을 중단합니다.</p>
         </div>
         <footer style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, padding: '12px 16px', borderTop: '1px solid var(--fl-border)' }}>
           <button onClick={onCancel} style={ghostBtn}>취소</button>
@@ -115,7 +116,7 @@ export function InputPromptDialog({
   )
 }
 
-const label: CSSProperties = { display: 'block', fontSize: 11.5, fontWeight: 600, color: 'var(--fl-text-muted)', marginBottom: 5 }
+const label: CSSProperties = { display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--fl-text-muted)', marginBottom: 5 }
 const field: CSSProperties = { width: '100%', padding: '8px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 13 }
-const ghostBtn: CSSProperties = { padding: '8px 14px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }
+const ghostBtn: CSSProperties = { ...ui.secondary }
 const primaryBtn: CSSProperties = { ...ghostBtn, border: 'none', background: 'var(--fl-action-primary-bg)', color: 'var(--fl-action-primary-ink)' }

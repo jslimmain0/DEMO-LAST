@@ -4,10 +4,12 @@ const fs = require('node:fs')
 const path = require('node:path')
 const vm = require('node:vm')
 const ts = require('typescript')
+// 공용 컨트롤 스타일(design/ui)은 순수 상수 모듈이라 실제 구현을 그대로 쓴다.
+const designUi = (() => { const out = {}; require('node:vm').runInNewContext(require('typescript').transpileModule(require('node:fs').readFileSync(require('node:path').join(__dirname, '../src/design/ui.ts'), 'utf8'), { compilerOptions: { module: require('typescript').ModuleKind.CommonJS, target: require('typescript').ScriptTarget.ES2022 } }).outputText, { exports: out }); return out })()
 function load(file, modules) {
   const exports = {}
   const code = ts.transpileModule(fs.readFileSync(path.join(__dirname, file), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText
-  vm.runInNewContext(code, { exports, require: name => modules[name] ?? {} })
+  vm.runInNewContext(code, { exports, require: name => modules[name] ?? (name.endsWith('/design/ui') ? designUi : {}) })
   return exports
 }
 const values = []; let cursor = 0

@@ -10,68 +10,74 @@
 :root {
   color-scheme: light;
   --fl-action-primary-ink: #ffffff;
-  --fl-primary: #007f95;
-  --fl-primary-2: #009bad;
-  --fl-primary-hover: #006b7d;
-  --fl-action-primary-bg: #007f95;
-  --fl-action-primary-hover: #006b7d;
-  --fl-action-danger-bg: #bc3d43;
+  --fl-primary: #5b4bd0;
+  --fl-primary-2: #7b6de0;
+  --fl-primary-hover: #4b3cb8;
+  --fl-action-primary-bg: #5b4bd0;
+  --fl-action-primary-hover: #4b3cb8;
+  --fl-action-danger-bg: #b91c1c;
   --fl-action-danger-ink: #ffffff;
 
-  --fl-bg: #f4f7f8;
+  /* 뉴트럴(zinc) 바탕 + 바이올렛 강조 하나 */
+  --fl-bg: #fafafa;
   --fl-surface: #ffffff;
-  --fl-surface-2: #edf3f5;
-  --fl-surface-hover: #f0f7f8;
-  --fl-text: #142f3e;
-  --fl-text-soft: #3e596b;
-  --fl-text-muted: #607788;
-  --fl-border: #dce5ea;
-  --fl-control-border: #a8bac6;
-  --fl-focus: #007f95;
+  --fl-surface-2: #f4f4f5;
+  --fl-surface-hover: #f6f6f8;
+  --fl-text: #18181b;
+  --fl-text-soft: #3f3f46;
+  --fl-text-muted: #71717a;
+  --fl-border: #e4e4e7;
+  --fl-control-border: #a1a1aa;
+  --fl-control-border-soft: #d4d4d8;
+  --fl-hover-tint: rgba(24, 24, 27, .045);
+  --fl-press-tint: rgba(24, 24, 27, .08);
+  --fl-focus: #5b4bd0;
   --fl-focus-ring: color-mix(in srgb, var(--fl-focus) 18%, transparent);
-  --fl-disabled-bg: #edf1f4;
-  --fl-disabled-ink: #718493;
-  --fl-canvas-bg: #fbfdfe;
-  --fl-canvas-grid: #d6e2e8;
-  --fl-overlay: rgba(12, 30, 42, .36);
+  --fl-disabled-bg: #f4f4f5;
+  --fl-disabled-ink: #8a8a93;
+  --fl-canvas-bg: #f4f4f5;
+  --fl-canvas-grid: #d4d4d8;
+  --fl-overlay: rgba(9, 9, 11, .4);
   /* 원격 커서(협업) 외곽선 — 캔버스 배경과 대비되게(라이트=진한 후광 / 다크=흰 후광) */
-  --fl-cursor-halo: rgba(28, 28, 31, .5);
+  --fl-cursor-halo: rgba(24, 24, 27, .5);
 
-  /* HTTP 메서드 6종 */
-  --fl-get: #187a69;
-  --fl-post: #245cdd;
-  --fl-put: #905c00;
-  --fl-patch: #4b5e87;
-  --fl-delete: #bc3d43;
-  --fl-head: #5b697c;
+  /* HTTP 메서드 6종 — 강조색(바이올렛)과 겹치지 않게 */
+  --fl-get: #15803d;
+  --fl-post: #2563eb;
+  --fl-put: #b45309;
+  --fl-patch: #a21caf;
+  --fl-delete: #b91c1c;
+  --fl-head: #52525b;
 
-  /* 노드 카테고리 9종 */
-  --fl-cat-auth: #007f95;
-  --fl-cat-bank: #187a69;
-  --fl-cat-card: #4b5e87;
-  --fl-cat-generic: #5b697c;
-  --fl-cat-set: #905c00;
-  --fl-cat-if: #4b5e87;
-  --fl-cat-assert: #187a69;
-  --fl-cat-form: #4b5e87;
-  --fl-cat-input: #007f95;
-  --fl-cat-wait: #905c00;
-  --fl-cat-start: #187a69;
-  --fl-cat-end: #5b697c;
+  /* 노드 카테고리 */
+  --fl-cat-auth: #5b4bd0;
+  --fl-cat-bank: #15803d;
+  --fl-cat-card: #4f46e5;
+  --fl-cat-generic: #52525b;
+  --fl-cat-set: #b45309;
+  --fl-cat-if: #4f46e5;
+  --fl-cat-assert: #15803d;
+  --fl-cat-form: #4f46e5;
+  --fl-cat-input: #5b4bd0;
+  --fl-cat-wait: #b45309;
+  --fl-cat-start: #15803d;
+  --fl-cat-end: #52525b;
+  --fl-cat-http: #5b4bd0;
+  --fl-cat-tcp: #2563eb;
 
-  /* 실행 상태 */
-  --fl-ok: #187a69;
-  --fl-fail: #bc3d43;
-  --fl-running: #007f95;
-  --fl-waiting: #905c00;
-  --fl-pending: #5b697c;
-  --fl-location-local: #345d9b;
-  --fl-location-server: #346763;
+  /* 실행 상태 — 성공(초록)·실패(빨강)·대기(호박)는 강조색과 명확히 구분 */
+  --fl-ok: #15803d;
+  --fl-fail: #b91c1c;
+  --fl-running: #5b4bd0;
+  --fl-waiting: #b45309;
+  --fl-pending: #71717a;
+  --fl-location-local: #1d4ed8;
+  --fl-location-server: #6d28d9;
 
   /* 타입스케일 / 간격 / 반경 / 그림자 */
   --fl-fs-xs: 12px; --fl-fs-sm: 13px; --fl-fs-md: 14px; --fl-fs-lg: 16px; --fl-fs-xl: 20px; --fl-fs-2xl: 24px; --fl-fs-3xl: clamp(28px, 3vw, 34px);
   --fl-sp-1: 4px; --fl-sp-2: 8px; --fl-sp-3: 12px; --fl-sp-4: 16px; --fl-sp-5: 20px; --fl-sp-6: 24px; --fl-sp-7: 32px; --fl-sp-8: 48px;
-  --fl-radius-sm: 6px; --fl-radius: 10px; --fl-radius-lg: 14px; --fl-radius-pill: 9999px;
+  --fl-radius-sm: 6px; --fl-radius: 8px; --fl-radius-lg: 10px; --fl-radius-pill: 9999px;
   --fl-shadow: 0 2px 6px rgba(20, 47, 62, .04);
   --fl-shadow-lg: 0 12px 32px rgba(20, 47, 62, .14), 0 2px 8px rgba(20, 47, 62, .06);
 
@@ -86,37 +92,41 @@
 
 html[data-theme='dark'] {
   color-scheme: dark;
-  --fl-primary: #77d7d3;
-  --fl-primary-2: #a0e5e1;
-  --fl-primary-hover: #a0e5e1;
-  --fl-action-primary-bg: #77d7d3;
-  --fl-action-primary-hover: #a0e5e1;
-  --fl-action-primary-ink: #102c31;
-  --fl-action-danger-bg: #ad353f;
-  --fl-bg: #111a20;
-  --fl-surface: #19252d;
-  --fl-surface-2: #223039;
-  --fl-surface-hover: #283942;
-  --fl-text: #e8f1f5;
-  --fl-text-soft: #c2d3dd;
-  --fl-text-muted: #9db1bf;
-  --fl-border: #32454f;
-  --fl-control-border: #607985;
-  --fl-focus: #77d7d3;
-  --fl-disabled-bg: #25343d;
-  --fl-disabled-ink: #8ca1ae;
-  --fl-canvas-bg: #17232b;
-  --fl-canvas-grid: #344853;
-  --fl-overlay: rgba(5, 12, 16, .66);
+  --fl-primary: #a59cf0;
+  --fl-primary-2: #c3bcf5;
+  --fl-primary-hover: #c3bcf5;
+  --fl-action-primary-bg: #5b4bd0;
+  --fl-action-primary-hover: #6a5adb;
+  --fl-action-primary-ink: #ffffff;
+  --fl-action-danger-bg: #b91c1c;
+  --fl-bg: #0d0d10;
+  --fl-surface: #17171c;
+  --fl-surface-2: #212128;
+  --fl-surface-hover: #292931;
+  --fl-text: #f2f2f5;
+  --fl-text-soft: #d1d1d8;
+  --fl-text-muted: #a1a1ab;
+  --fl-border: #2c2c35;
+  --fl-control-border: #5a5a68;
+  --fl-control-border-soft: #3a3a45;
+  --fl-hover-tint: rgba(255, 255, 255, .06);
+  --fl-press-tint: rgba(255, 255, 255, .1);
+  --fl-focus: #a59cf0;
+  --fl-disabled-bg: #222229;
+  --fl-disabled-ink: #8c8799;
+  --fl-canvas-bg: #121216;
+  --fl-canvas-grid: #2c2c35;
+  --fl-overlay: rgba(5, 4, 10, .7);
   --fl-cursor-halo: rgba(255, 255, 255, .92);
-  --fl-get: #74d1b5; --fl-post: #85acff; --fl-put: #e9bd70; --fl-patch: #b8c6e2; --fl-delete: #ff9d9f; --fl-head: #aebed0;
-  --fl-cat-auth: #77d7d3; --fl-cat-bank: #74d1b5; --fl-cat-card: #b8c6e2; --fl-cat-generic: #aebed0;
-  --fl-cat-set: #e9bd70; --fl-cat-if: #b8c6e2; --fl-cat-assert: #74d1b5; --fl-cat-form: #b8c6e2; --fl-cat-input: #85acff; --fl-cat-wait: #e9bd70; --fl-cat-start: #74d1b5; --fl-cat-end: #aebed0;
-  --fl-ok: #74d1b5; --fl-fail: #ff9d9f; --fl-running: #85acff; --fl-waiting: #e9bd70; --fl-pending: #aebed0;
-  --fl-location-local: #a5c2eb;
-  --fl-location-server: #a0c8c2;
-  --fl-shadow: 0 2px 6px rgba(0, 0, 0, .16);
-  --fl-shadow-lg: 0 12px 32px rgba(0, 0, 0, .36), 0 2px 8px rgba(0, 0, 0, .22);
+  --fl-get: #4ade80; --fl-post: #60a5fa; --fl-put: #fbbf24; --fl-patch: #e879f9; --fl-delete: #f87171; --fl-head: #a1a1aa;
+  --fl-cat-auth: #a59cf0; --fl-cat-bank: #4ade80; --fl-cat-card: #a5b4fc; --fl-cat-generic: #a1a1aa;
+  --fl-cat-set: #fbbf24; --fl-cat-if: #a5b4fc; --fl-cat-assert: #4ade80; --fl-cat-form: #a5b4fc; --fl-cat-input: #a59cf0; --fl-cat-wait: #fbbf24; --fl-cat-start: #4ade80; --fl-cat-end: #a1a1aa;
+  --fl-cat-http: #a59cf0; --fl-cat-tcp: #60a5fa;
+  --fl-ok: #4ade80; --fl-fail: #f87171; --fl-running: #a59cf0; --fl-waiting: #fbbf24; --fl-pending: #a1a1aa;
+  --fl-location-local: #93c5fd;
+  --fl-location-server: #c4b5fd;
+  --fl-shadow: 0 2px 6px rgba(0, 0, 0, .3);
+  --fl-shadow-lg: 0 12px 32px rgba(0, 0, 0, .5), 0 2px 8px rgba(0, 0, 0, .3);
 }
 
 * { box-sizing: border-box; }
@@ -202,8 +212,10 @@ code, kbd, pre, samp { font-family: var(--fl-font-mono); letter-spacing: 0; }
 .fl-catalog-pagination__range { flex: 1 1 120px; min-width: 0; color: var(--fl-text-muted); }
 .fl-catalog-pagination__page { min-width: 52px; text-align: center; color: var(--fl-text-soft); }
 .fl-catalog-pagination .fl-action-button { padding: 7px 10px; }
-.fl-env-switcher { position: relative; display: grid; grid-template-columns: minmax(120px, 220px) max-content; align-items: center; gap: 6px; min-width: 0; max-width: 100%; }
-.fl-env-trigger { width: 100%; min-width: 0; max-width: 220px; justify-content: flex-start; }
+.fl-env-switcher { position: relative; display: inline-flex; align-items: stretch; gap: 0; min-width: 0; max-width: 100%; }
+.fl-env-switcher > .fl-action-button:last-of-type:not(.fl-env-trigger) { border-top-left-radius: 0; border-bottom-left-radius: 0; margin-left: -1px; color: var(--fl-text-muted); }
+.fl-env-switcher > .fl-env-trigger { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.fl-env-trigger { width: auto; min-width: 0; max-width: 220px; justify-content: flex-start; }
 .fl-env-trigger > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .fl-env-trigger[aria-expanded='true'], .fl-env-trigger--active { border-color: var(--fl-primary); background: var(--fl-surface-2); }
 .fl-env-menu { background: var(--fl-surface); border: 1px solid var(--fl-control-border); border-radius: var(--fl-radius); box-shadow: var(--fl-shadow-lg); padding: 8px; z-index: 91; display: flex; flex-direction: column; gap: 6px; }
@@ -385,7 +397,7 @@ button:disabled { cursor: not-allowed; opacity: .6; }
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--fl-focus) 16%, transparent);
 }
 
-/* wait(콜백 대기) 노드 — 대기 중 청록 펄스 점 + 유입 엣지 애니메이션 */
+/* wait(콜백 대기) 노드 — 대기 중 펄스 점 + 유입 엣지 애니메이션 */
 @keyframes fl-wait-pulse {
   0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--fl-waiting) 55%, transparent); }
   70% { box-shadow: 0 0 0 9px transparent; }
@@ -531,3 +543,94 @@ button:disabled { cursor: not-allowed; opacity: .6; }
   }
   .fl-action-button:not(:disabled):hover { background: Highlight; color: HighlightText; border-color: Highlight; }
 }
+
+/* 세그먼트 컨트롤 — 필터·보기 전환 공용 (한 덩어리로, 선택만 떠 보이게) */
+.fl-seg { display: inline-flex; flex-wrap: wrap; gap: 2px; padding: 2px; border: 1px solid var(--fl-border); border-radius: var(--fl-radius-sm); background: var(--fl-surface-2); }
+.fl-seg-btn { min-height: 28px; padding: 3px 11px; border: 0; border-radius: 4px; background: transparent; color: var(--fl-text-muted); font: inherit; font-size: 12.5px; font-weight: 500; cursor: pointer; white-space: nowrap; }
+.fl-seg-btn:hover { color: var(--fl-text); }
+.fl-seg-btn[aria-pressed='true'] { background: var(--fl-surface); color: var(--fl-text); font-weight: 650; box-shadow: 0 0 0 1px var(--fl-border), var(--fl-shadow); }
+
+/* 행 목록 — 낱장 카드 대신 한 묶음에 구분선 */
+.fl-row-list { display: grid; border: 1px solid var(--fl-border); border-radius: var(--fl-radius); background: var(--fl-surface); overflow: hidden; }
+.fl-row-list > * { border: 0 !important; border-radius: 0 !important; box-shadow: none !important; }
+.fl-row-list > * + * { border-top: 1px solid var(--fl-border) !important; }
+.fl-row-list > *:hover { background: var(--fl-surface-hover) !important; }
+
+/* ── 공용 상호작용 상태 ───────────────────────────────────────────────
+   버튼 스타일 대부분이 인라인(style)이라 호버를 표현할 수 없었다.
+   background-image 겹침으로 어떤 배경색 위에서도 같은 호버·눌림을 준다. */
+button:not(:disabled):hover, a.fl-action-button:hover { background-image: linear-gradient(var(--fl-hover-tint), var(--fl-hover-tint)) !important; }
+button:not(:disabled):active { background-image: linear-gradient(var(--fl-press-tint), var(--fl-press-tint)) !important; }
+button:disabled { cursor: not-allowed !important; opacity: .5; }
+button { transition: background-color var(--fl-dur-fast) var(--fl-ease), border-color var(--fl-dur-fast) var(--fl-ease), color var(--fl-dur-fast) var(--fl-ease); }
+
+/* 선택 상자 — 브라우저 기본 모양 대신 앱 컨트롤과 같은 높이·테두리·화살표 */
+select {
+  appearance: none; -webkit-appearance: none;
+  min-height: 32px; padding: 0 30px 0 10px !important;
+  border: 1px solid var(--fl-control-border-soft); border-radius: var(--fl-radius-sm);
+  background-color: var(--fl-surface); color: var(--fl-text); font: inherit; font-size: 13px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2371717a' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") !important;
+  background-repeat: no-repeat !important; background-position: right 10px center !important; background-size: 12px !important;
+  cursor: pointer;
+}
+select:hover { border-color: var(--fl-control-border); }
+select:disabled { opacity: .55; cursor: not-allowed; }
+
+/* 입력 — 테두리·포커스 통일 */
+input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]), textarea {
+  border-color: var(--fl-control-border-soft);
+}
+input:not([type=checkbox]):not([type=radio]):not([type=range]):focus-visible, textarea:focus-visible, select:focus-visible {
+  outline: none; border-color: var(--fl-focus) !important; box-shadow: 0 0 0 3px var(--fl-focus-ring);
+}
+input::placeholder, textarea::placeholder { color: var(--fl-text-muted); opacity: .8; }
+input[type=checkbox], input[type=radio] { accent-color: var(--fl-primary); }
+
+/* 캔버스 — 빈 곳은 일반 화살표(흰 손바닥 커서가 밝은 배경에서 안 보이던 문제), 끄는 중만 grabbing */
+.react-flow__pane { cursor: default !important; }
+.react-flow__pane.dragging { cursor: grabbing !important; }
+.react-flow__node { cursor: pointer; }
+
+/* 라이트 모드 포인터 — 밝은 배경에서 흰 시스템 포인터가 묻히지 않게 검정(흰 테두리)으로.
+   다크 모드는 시스템 포인터가 더 잘 보이므로 그대로 둔다. */
+html[data-theme='light'] { --fl-cursor-arrow: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20width%3D%2724%27%20height%3D%2724%27%20viewBox%3D%270%200%2024%2024%27%3E%3Cpath%20d%3D%27M3%202%20L3%2019%20L7.5%2014.8%20L10.5%2021.5%20L13.3%2020.3%20L10.4%2013.7%20L16.5%2013.7%20Z%27%20fill%3D%27%23111%27%20stroke%3D%27%23fff%27%20stroke-width%3D%271.5%27%20stroke-linejoin%3D%27round%27%2F%3E%3C%2Fsvg%3E") 3 2, default; --fl-cursor-hand: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20width%3D%2724%27%20height%3D%2724%27%20viewBox%3D%270%200%2024%2024%27%3E%3Cpath%20d%3D%27M9%202.5c-1%200-1.8.8-1.8%201.8v8.1l-1-1c-.8-.8-2-.8-2.7%200-.7.7-.7%201.8-.1%202.6l3.9%205.2c.9%201.2%202.3%201.8%203.8%201.8h3.1c2.6%200%204.6-2.1%204.6-4.6v-4.6c0-1-.8-1.8-1.8-1.8-.4%200-.8.1-1.1.4%200-1-.8-1.8-1.8-1.8-.5%200-.9.2-1.2.5-.2-.8-.9-1.4-1.8-1.4-.3%200-.6.1-.9.2V4.3C10.8%203.3%2010%202.5%209%202.5z%27%20fill%3D%27%23111%27%20stroke%3D%27%23fff%27%20stroke-width%3D%271.3%27%20stroke-linejoin%3D%27round%27%2F%3E%3C%2Fsvg%3E") 9 3, pointer; }
+html[data-theme='light'], html[data-theme='light'] body { cursor: var(--fl-cursor-arrow); }
+html[data-theme='light'] :is(a[href], button:not(:disabled), select:not(:disabled), summary, label[for], [role='button'], [role='tab'], [role='menuitem'], [style*='cursor: pointer'], [style*='cursor: grab'], [draggable='true'], .react-flow__node, .react-flow__handle, .react-flow__edge) { cursor: var(--fl-cursor-hand) !important; }
+html[data-theme='light'] .react-flow__pane:not(.dragging) { cursor: var(--fl-cursor-arrow) !important; }
+
+/* ── 글자 위계 ───────────────────────────────────────────────
+   제목 24 / 섹션 15 / 본문 14 / 보조 12. 굵기는 제목 700, 섹션·이름 650, 본문 400~500. */
+.fl-page-heading h1, .fl-workbench-title h1 { font: 700 24px/1.25 var(--fl-font-head) !important; letter-spacing: -.025em !important; }
+.fl-page-intro p, .fl-workbench-title p { margin: 6px 0 0; font-size: 14px; line-height: 1.55; color: var(--fl-text-soft); max-width: 72ch; }
+.fl-folder-heading h3, .fl-library-heading h2, .fl-personal-space h2, .fl-section-title { font-size: 15px !important; font-weight: 650 !important; letter-spacing: -.015em; color: var(--fl-text); }
+.fl-page-count { font-size: 13px; font-weight: 600; color: var(--fl-text-muted); background: var(--fl-surface-2); border-radius: var(--fl-radius-sm); padding: 1px 7px; }
+.fl-mock-table-heading, .fl-table-wrap th, table th { font-size: 12px !important; font-weight: 600 !important; color: var(--fl-text-muted) !important; letter-spacing: 0; }
+
+/* 행에 올렸을 때만 보이는 보조 동작(복사 등) — 평소 시선을 뺏지 않게 */
+.fl-hover-reveal { opacity: 0; transition: opacity var(--fl-dur-fast) var(--fl-ease); }
+:is(.fl-mock-row, .fl-row-list > *, tr):is(:hover, :focus-within) .fl-hover-reveal, .fl-hover-reveal:focus-visible { opacity: 1; }
+@media (hover: none) { .fl-hover-reveal { opacity: 1; } }
+
+/* 노드 카드 아래 정보 — 알약 배지 여러 개 대신 "내 PC · POST · JSON" 한 줄 글자 */
+.fl-task-footer { gap: 0 !important; font-size: 11px; color: var(--fl-text-muted); }
+.fl-task-footer > * { display: inline-flex; align-items: center; gap: 4px; background: transparent !important; border-color: transparent !important; box-shadow: none !important; padding: 0 !important; }
+.fl-task-footer > * + *::before { content: '·'; margin: 0 6px; color: var(--fl-control-border); font-weight: 400; }
+.fl-task-footer .fl-editor-method, .fl-task-footer .fl-editor-method * { background: transparent !important; border: 0 !important; box-shadow: none !important; outline: 0 !important; color: inherit; padding: 0 !important; font-weight: 700; }
+
+/* ── 대화상자 공통 ─────────────────────────────────────────── */
+.fl-modal-card { border-color: var(--fl-border) !important; }
+.fl-modal-overlay { backdrop-filter: blur(2px); }
+.fl-dialog-header h2 { font-size: 17px !important; font-weight: 650; }
+/* 파일 선택 — 브라우저 기본 버튼 대신 앱 버튼 모양 */
+input[type=file] { font: inherit; font-size: 13px; color: var(--fl-text-muted); }
+input[type=file]::file-selector-button { margin-right: 10px; min-height: 32px; padding: 0 12px; border: 1px solid var(--fl-control-border-soft); border-radius: var(--fl-radius-sm); background: var(--fl-surface); color: var(--fl-text); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+input[type=file]::file-selector-button:hover { background: var(--fl-surface-2); }
+/* 큰 입력칸(JSON 붙여넣기 등)은 회색 대신 표면색 */
+textarea { background-color: var(--fl-surface); }
+
+/* 펼침(details) 기호 통일 — ▶/▸ 섞임 대신 같은 꺾쇠 */
+details > summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 8px; }
+details > summary::-webkit-details-marker { display: none; }
+details > summary::before { content: ''; flex-shrink: 0; width: 5px; height: 5px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(-45deg); opacity: .6; transition: transform var(--fl-dur-fast) var(--fl-ease); }
+details[open] > summary::before { transform: rotate(45deg); }

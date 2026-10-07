@@ -2,90 +2,386 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><base href="/">
-  <meta name="description" content="FlowLink로 API를 연결하는 워크플로를 만들고 테스트하세요. 개인 작업은 내 PC에서, 팀 작업은 회사 서버와 함께합니다.">
+  <meta name="description" content="FlowLink로 API·TCP 호출과 콜백 대기, 응답 검증을 하나의 흐름으로 만들고 실행하세요. 개인 작업은 내 PC에서, 팀 작업은 회사 서버와 함께합니다.">
   <title>FlowLink · Windows 앱 다운로드</title>
   <link rel="preload" href="fonts/PretendardVariable.woff2" as="font" type="font/woff2" crossorigin>
   <style>
     @font-face { font-family: "Pretendard Variable"; src: url("fonts/PretendardVariable.woff2") format("woff2"); font-style: normal; font-weight: 100 900; font-display: swap; }
-    :root { color-scheme: light; font-family: "Pretendard Variable", "Segoe UI", "Malgun Gothic", sans-serif; font-synthesis: none; color: #102c43; background: #edf4f7; }
-    * { box-sizing: border-box; } body { margin: 0; } main { max-width: 1440px; margin: 28px auto; padding: 0 36px; line-height: 1.65; }
-    .page { background: white; border: 1px solid #dce8ee; border-radius: 14px; box-shadow: 0 8px 32px #15364b06; overflow: hidden; }
-    header { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 16px; padding: 24px 34px; }
-    .brand { display: flex; align-items: center; gap: 9px; font-size: 23px; font-weight: 700; letter-spacing: -.035em; }
-    .brand svg { width: 29px; height: 29px; } .muted { color: #617a8d; font-size: 13px; font-weight: 500; }
-    .hero { display: grid; grid-template-columns: minmax(0, .95fr) minmax(0, 1.25fr); gap: 32px; align-items: center; padding: 28px 34px 64px; }
-    .copy { padding: 6px 0 12px 6px; } h1 { font-size: clamp(34px, 4.2vw, 58px); line-height: 1.2; letter-spacing: -.035em; margin: 0 0 22px; font-weight: 750; word-break: keep-all; }
-    .intro { color: #536f88; font-size: 18px; line-height: 1.7; letter-spacing: -.015em; margin: 0; max-width: 510px; word-break: keep-all; }
-    .download-area { margin-top: 28px; }
-    .download { display: inline-flex; align-items: center; gap: 16px; min-height: 66px; padding: 12px 26px; border: 1px solid #007f91; border-radius: 7px; background: #007f91; box-shadow: inset 0 1px 0 #ffffff14, 0 1px 2px #12374d14; color: white; text-decoration: none; }
-    .download:hover { background: #006f7e; border-color: #006f7e; } .download:active { background: #005f6d; border-color: #005f6d; box-shadow: none; } .download svg { width: 27px; height: 27px; flex-shrink: 0; }
-    .download strong { display: block; font-size: 16px; font-weight: 650; line-height: 1.5; letter-spacing: -.015em; } .download small { display: block; margin-top: 2px; font-size: 12px; font-weight: 450; line-height: 1.6; }
-    #status { font-size: 13px; color: #617a8d; margin: 12px 0 0; } #version { margin-top: 8px; font-size: 12px; font-weight: 500; color: #617a8d; font-variant-numeric: tabular-nums; }
-    #compatibility { color: #835221; font-size: 13px; max-width: 400px; } .download-note { color: #617a8d; font-size: 12px; margin: 8px 0 0; }
-    a:focus-visible, button:focus-visible { outline: 3px solid #00798b; outline-offset: 4px; }
-    button { background: #eef7f8; border: 1px solid #c6dee2; color: #006b7a; padding: 10px 16px; margin-top: 12px; border-radius: 7px; min-height: 44px; cursor: pointer; font: inherit; }
-    button:hover { background: #e1f0f2; } [hidden] { display: none !important; }
-    .preview { min-width: 0; margin: 0; } .preview-frame { padding: 10px; border: 1px solid #d4e3eb; border-radius: 16px; background: #e8f1f5; box-shadow: 0 10px 28px #1d4c6b0a; }
-    .preview svg { display: block; width: 100%; height: auto; border: 1px solid #cddfe9; border-radius: 9px; background: #fff; }
-    figcaption { padding: 10px 4px 0; color: #617a8d; font-size: 12px; font-weight: 500; text-align: right; }
-    footer { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 20px; padding: 18px 34px; border-top: 1px solid #e8eff3; font-size: 12px; color: #617a8d; font-variant-numeric: tabular-nums; }
-    @media (max-width: 1000px) { main { padding: 0 20px; } header { padding: 22px 28px; } .hero { gap: 22px; padding: 26px 28px 46px; } .intro { font-size: 17px; } h1 { font-size: 40px; } }
-    @media (max-width: 760px) { main { margin: 16px auto; padding: 0 14px; } header { padding: 22px; } .hero { grid-template-columns: 1fr; gap: 30px; padding: 22px 22px 32px; } .copy { padding: 0; } h1 { font-size: clamp(32px, 6vw, 44px); } .intro { max-width: 500px; } .preview-frame { padding: 6px; border-radius: 11px; } footer { padding: 18px 22px; } }
-    @media (max-width: 380px) { header, footer { padding: 18px; } .hero { padding: 18px 18px 26px; } .download { width: 100%; justify-content: center; padding: 12px 14px; gap: 12px; } .download strong { font-size: 15px; } .intro { font-size: 16px; } }
+    /* 앱(index.css)과 같은 토큰 — 무채색 바탕 + 바이올렛 강조 하나 */
+    :root {
+      color-scheme: light;
+      --bg: #fafafa; --surface: #ffffff; --surface-2: #f4f4f5; --border: #e4e4e7; --control: #d4d4d8;
+      --text: #18181b; --soft: #3f3f46; --muted: #71717a;
+      --primary: #5b4bd0; --primary-hover: #4b3cb8; --primary-soft: #efedfb; --on-primary: #ffffff;
+      --ok: #15803d; --ok-soft: #dcfce7; --warn: #b45309; --warn-soft: #fef3c7; --fail: #b91c1c; --fail-soft: #fee2e2;
+      --mono: "Cascadia Code", Consolas, "D2Coding", monospace;
+      --radius-sm: 6px; --radius: 10px; --radius-lg: 14px;
+      font-family: "Pretendard Variable", "Segoe UI", "Malgun Gothic", sans-serif; font-synthesis: none;
+      color: var(--text); background: var(--bg);
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        color-scheme: dark;
+        --bg: #0d0d10; --surface: #17171c; --surface-2: #212128; --border: #2c2c35; --control: #3a3a45;
+        --text: #f2f2f5; --soft: #d1d1d8; --muted: #a1a1ab;
+        --primary: #a59cf0; --primary-hover: #c3bcf5; --primary-soft: #26233f; --on-primary: #ffffff;
+        --ok: #4ade80; --ok-soft: #14532d55; --warn: #fbbf24; --warn-soft: #78350f55; --fail: #f87171; --fail-soft: #7f1d1d55;
+      }
+      .btn-primary { background: #5b4bd0 !important; border-color: #5b4bd0 !important; }
+      .arch-frame img { filter: invert(.92) hue-rotate(180deg) contrast(.9); }
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; line-height: 1.6; word-break: keep-all; -webkit-font-smoothing: antialiased; }
+    a { color: var(--primary); text-underline-offset: 3px; }
+    a:focus-visible, button:focus-visible, summary:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--primary); outline-offset: 3px; border-radius: var(--radius-sm); }
+    code, .mono { font-family: var(--mono); letter-spacing: 0; }
+    .wrap { max-width: 1200px; margin: 0 auto; padding: 0 32px; }
+    [hidden] { display: none !important; }
+    .eyebrow { margin: 0 0 10px; font-size: 13px; font-weight: 700; color: var(--primary); letter-spacing: .02em; }
+    h2.section-title { margin: 0; font-size: 32px; line-height: 1.25; letter-spacing: -.03em; font-weight: 750; }
+    .section-lead { margin: 12px 0 0; max-width: 620px; color: var(--soft); font-size: 16px; }
+    section { scroll-margin-top: 72px; }
+
+    /* 버튼 */
+    .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 40px; padding: 0 16px; border-radius: var(--radius-sm); border: 1px solid var(--control); background: var(--surface); color: var(--text); font: inherit; font-size: 14px; font-weight: 650; text-decoration: none; cursor: pointer; white-space: nowrap; }
+    .btn:hover { background: var(--surface-2); }
+    .btn-primary { border-color: var(--primary); background: var(--primary); color: var(--on-primary); }
+    .btn-primary:hover { background: var(--primary-hover); border-color: var(--primary-hover); }
+    .btn-lg { min-height: 52px; padding: 0 22px; font-size: 15px; border-radius: var(--radius); }
+    .btn-icon { min-height: 30px; padding: 0 10px; font-size: 12px; font-weight: 600; }
+    .btn svg { flex-shrink: 0; }
+
+    /* 상단 */
+    .topbar { position: sticky; top: 0; z-index: 10; background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(8px); border-bottom: 1px solid var(--border); }
+    .topbar .wrap { display: flex; align-items: center; gap: 12px 28px; min-height: 60px; flex-wrap: wrap; }
+    .brand { display: flex; align-items: center; gap: 9px; font-size: 19px; font-weight: 800; letter-spacing: -.03em; color: var(--text); text-decoration: none; }
+    .brand-mark { width: 28px; height: 28px; border-radius: 7px; background: var(--primary); display: grid; place-items: center; }
+    @media (prefers-color-scheme: dark) { .brand-mark { background: #5b4bd0; } }
+    .topnav { display: flex; gap: 2px 20px; flex-wrap: wrap; font-size: 14px; font-weight: 550; margin-right: auto; }
+    .topnav a { color: var(--soft); text-decoration: none; padding: 8px 0; }
+    .topnav a:hover { color: var(--text); }
+    .server-pill { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; color: var(--soft); border: 1px solid var(--border); border-radius: 999px; padding: 4px 11px; font-variant-numeric: tabular-nums; background: var(--surface); }
+    .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); flex-shrink: 0; }
+    .dot.ok { background: var(--ok); } .dot.warn { background: var(--warn); } .dot.fail { background: var(--fail); }
+
+    /* 첫 화면 */
+    .hero { padding: 72px 0 64px; }
+    .hero .wrap { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); gap: 56px; align-items: center; }
+    .hero h1 { margin: 0 0 18px; font-size: clamp(36px, 4.6vw, 54px); line-height: 1.15; letter-spacing: -.04em; font-weight: 800; }
+    .hero h1 em { font-style: normal; color: var(--primary); }
+    .hero .lead { margin: 0 0 30px; color: var(--soft); font-size: 18px; line-height: 1.65; max-width: 470px; }
+    .cta { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+    .download-big small { display: block; font-size: 12px; font-weight: 500; opacity: .85; }
+    .download-big strong { display: block; line-height: 1.25; }
+    .facts { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 20px 0 0; padding: 0; list-style: none; font-size: 13px; color: var(--muted); }
+    .facts li { display: inline-flex; align-items: center; gap: 6px; }
+    #status { margin: 14px 0 0; font-size: 13px; color: var(--muted); }
+    #compatibility { margin: 10px 0 0; max-width: 460px; font-size: 13px; color: var(--warn); }
+
+    /* 편집 화면 예시 */
+    .mock { border-radius: var(--radius-lg); border: 1px solid var(--border); background: var(--surface); box-shadow: 0 1px 2px rgba(24,24,27,.04), 0 24px 56px -24px rgba(24,24,27,.22); overflow: hidden; }
+    .mock-top { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--border); font-size: 13px; }
+    .mock-top b { font-weight: 700; } .mock-top .sub { color: var(--muted); font-size: 12px; }
+    .mock-top .spacer { flex: 1; }
+    .chip { font-size: 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 2px 9px; color: var(--soft); white-space: nowrap; }
+    .chip-run { background: #5b4bd0; color: #fff; border-color: #5b4bd0; font-weight: 700; }
+    .mock-body { display: flex; min-height: 280px; }
+    .mock-side { width: 118px; flex-shrink: 0; border-right: 1px solid var(--border); padding: 12px 10px; display: grid; gap: 6px; align-content: start; font-size: 12px; color: var(--soft); }
+    .mock-side span { display: flex; align-items: center; gap: 7px; }
+    .tile { width: 20px; height: 20px; border-radius: 5px; display: inline-grid; place-items: center; font-size: 9px; font-weight: 800; flex-shrink: 0; }
+    .t-http { background: #efedfb; color: #5b4bd0; } .t-tcp { background: #dbeafe; color: #2563eb; } .t-if { background: #fef3c7; color: #b45309; } .t-ok { background: #dcfce7; color: #15803d; } .t-wait { background: #ffedd5; color: #c2410c; }
+    .mock-canvas { flex: 1; min-width: 0; overflow-x: auto; background-color: var(--surface-2); background-image: radial-gradient(var(--control) 1px, transparent 1px); background-size: 18px 18px; padding: 32px 20px; display: flex; flex-direction: column; justify-content: center; gap: 18px; }
+    .flow { display: flex; align-items: center; }
+    .node { background: var(--surface); border: 1px solid var(--border); border-radius: 9px; padding: 8px 10px; font-size: 12px; display: flex; gap: 8px; align-items: center; white-space: nowrap; box-shadow: 0 1px 2px rgba(24,24,27,.05); }
+    .node small { display: block; color: var(--muted); font-size: 11px; font-family: var(--mono); }
+    .node.active { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
+    .edge { flex: 1; min-width: 10px; height: 2px; background: var(--ok); }
+    .edge.pending { background: none; border-top: 2px dashed var(--control); }
+    .mock-log { display: flex; flex-wrap: wrap; gap: 4px 16px; padding: 10px 14px; border-top: 1px solid var(--border); font-size: 12px; color: var(--soft); }
+    .mock-log .ok { color: var(--ok); } .mock-log .wait { color: var(--warn); }
+    figcaption { margin-top: 10px; font-size: 12px; color: var(--muted); text-align: right; }
+
+    /* 개인·팀 */
+    .split { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; padding-bottom: 72px; }
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 26px 28px; }
+    .card h3 { display: flex; align-items: center; gap: 10px; margin: 0 0 8px; font-size: 18px; letter-spacing: -.02em; }
+    .card p { margin: 0 0 14px; color: var(--soft); font-size: 15px; }
+    .icon-box { width: 36px; height: 36px; border-radius: 9px; display: grid; place-items: center; background: var(--surface-2); color: var(--text); flex-shrink: 0; }
+    .list { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; font-size: 14px; color: var(--soft); }
+    .list li { display: flex; gap: 9px; align-items: flex-start; }
+    .list li::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--primary); margin-top: 8px; flex-shrink: 0; }
+
+    /* 기능 */
+    .band { background: var(--surface); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); padding: 80px 0; }
+    .features { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1px; margin-top: 40px; background: var(--border); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; }
+    .feature { background: var(--surface); padding: 26px 26px 28px; }
+    .feature h3 { margin: 14px 0 6px; font-size: 16px; letter-spacing: -.015em; }
+    .feature p { margin: 0; font-size: 14px; color: var(--soft); }
+
+    /* 아키텍처 */
+    .arch { padding: 80px 0; }
+    .arch-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 20px; }
+    .seg { display: inline-flex; gap: 2px; padding: 3px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); }
+    .seg button { min-height: 32px; padding: 0 14px; border: 0; border-radius: 4px; background: transparent; color: var(--muted); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+    .seg button[aria-selected="true"] { background: var(--surface); color: var(--text); box-shadow: 0 0 0 1px var(--border), 0 1px 2px rgba(24,24,27,.06); }
+    .arch-frame { margin-top: 24px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: #fff; overflow: auto; max-height: 76vh; overscroll-behavior: contain; }
+    .arch-frame img { display: block; width: 100%; min-width: 760px; height: auto; transition: width .2s ease; }
+    .arch-frame.zoomed img { width: 180%; }
+    .arch-tools { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; margin-top: 10px; font-size: 13px; color: var(--muted); }
+    .legend { display: flex; flex-wrap: wrap; gap: 6px 18px; }
+    .legend i { display: inline-block; width: 18px; height: 3px; border-radius: 2px; vertical-align: middle; margin-right: 6px; }
+    .arch-notes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin-top: 28px; }
+    .arch-notes .card { padding: 20px 22px; }
+    .arch-notes h3 { font-size: 15px; margin-bottom: 6px; }
+    .arch-notes p { font-size: 14px; margin: 0; }
+
+    /* 다운로드 */
+    .dl { padding: 0 0 88px; }
+    .dl-panel { display: grid; grid-template-columns: minmax(0, .8fr) minmax(0, 1.2fr); gap: 40px; padding: 40px; border-radius: 18px; background: #18181b; color: #f4f4f5; }
+    .dl-panel h2 { margin: 0 0 8px; font-size: 28px; letter-spacing: -.03em; }
+    .dl-panel p { margin: 0 0 24px; color: #a1a1aa; }
+    .dl-panel .btn-primary { background: #5b4bd0; border-color: #5b4bd0; }
+    .dl-panel .btn:not(.btn-primary) { background: #27272a; border-color: #3f3f46; color: #f4f4f5; }
+    .dl-panel .btn:not(.btn-primary):hover { background: #3f3f46; }
+    .info { margin: 0; display: grid; grid-template-columns: 110px minmax(0, 1fr); border-top: 1px solid #3f3f46; font-size: 14px; }
+    .info dt, .info dd { padding: 12px 0; border-bottom: 1px solid #3f3f46; }
+    .info dt { color: #a1a1aa; }
+    .info dd { margin: 0; display: flex; align-items: center; gap: 10px; min-width: 0; }
+    .info dd > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .notes { margin-top: 18px; font-size: 13px; color: #a1a1aa; white-space: pre-line; }
+    .state { display: flex; gap: 10px; align-items: flex-start; margin-top: 16px; padding: 12px 14px; border-radius: var(--radius); font-size: 13px; }
+    .state.warn { background: #422006; color: #fde68a; } .state.fail { background: #450a0a; color: #fecaca; }
+
+    footer { border-top: 1px solid var(--border); }
+    footer .wrap { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px 24px; padding: 24px 32px; font-size: 13px; color: var(--muted); }
+
+    @media (max-width: 960px) {
+      .hero .wrap, .dl-panel { grid-template-columns: minmax(0, 1fr); }
+      .features, .arch-notes { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+    @media (max-width: 680px) {
+      .wrap { padding: 0 16px; }
+      .hero { padding: 40px 0 48px; } .hero .wrap { gap: 36px; }
+      .split, .features, .arch-notes { grid-template-columns: minmax(0, 1fr); }
+      .mock-side { display: none; }
+      .flow { overflow-x: auto; }
+      h2.section-title { font-size: 26px; }
+      .band, .arch { padding: 56px 0; }
+      .dl-panel { padding: 24px; border-radius: 14px; }
+      .info { grid-template-columns: 88px minmax(0, 1fr); }
+      .topnav { display: none; }
+      .btn-lg { width: 100%; }
+      footer .wrap { padding: 20px 16px; }
+    }
+    @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
   </style>
 </head>
-<body><main><div class="page">
-  <header><div class="brand"><svg viewBox="0 0 24 24" fill="none" stroke="#007f95" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="m10.5 6.7-5 9.2m13 0-5-9.2M7 19h10"/><circle cx="12" cy="4.5" r="2.5"/><circle cx="4.5" cy="19" r="2.5"/><circle cx="19.5" cy="19" r="2.5"/></svg>FlowLink</div><span class="muted">API를 연결하는 더 간단한 방법</span></header>
-  <section class="hero" aria-labelledby="intro-title">
-    <div class="copy"><h1 id="intro-title">흐름을 연결하고,<br>함께 검증하세요.</h1><p class="intro">개인 작업은 내 PC에서,<br>팀 작업은 회사 서버와 함께.</p>
-      <div class="download-area"><a id="download" class="download" hidden><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M2 4.4 10.7 3v8H2zm10.2-1.6L22 1.3V11h-9.8zM2 12.5h8.7v8L2 19.1zm10.2 0H22v9.7l-9.8-1.5z"/></svg><span><strong>Windows 앱 다운로드</strong><small>Windows 64비트 · MSI 설치 파일</small></span></a><p id="status" role="status" aria-atomic="true">최신 버전을 확인하는 중…</p><div id="version"></div><button id="retry" type="button" hidden>다시 확인</button><p id="compatibility" hidden>현재 서버와의 호환이 확인되지 않아 자동 업데이트는 사용할 수 없습니다.</p><p class="download-note">로그인 없이 다운로드할 수 있습니다.</p><noscript><p class="download-note">설치 파일을 확인하려면 브라우저의 JavaScript를 켜고 새로고침하세요.</p></noscript></div>
+<body>
+<header class="topbar">
+  <div class="wrap">
+    <a class="brand" href="#top" aria-label="FlowLink 처음으로">
+      <span class="brand-mark" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round"><path d="m10.5 6.7-5 9.2m13 0-5-9.2M7 19h10"/><circle cx="12" cy="4.5" r="2.4"/><circle cx="4.5" cy="19" r="2.4"/><circle cx="19.5" cy="19" r="2.4"/></svg></span>
+      FlowLink
+    </a>
+    <nav class="topnav" aria-label="페이지 메뉴">
+      <a href="#features">기능</a><a href="#architecture">아키텍처</a><a href="#download-section">다운로드</a>
+    </nav>
+    <span class="server-pill" title="이 서버의 상태"><span class="dot" id="server-dot"></span><span id="server-version">서버 확인 중</span></span>
+  </div>
+</header>
+
+<main id="top">
+  <section class="hero" aria-labelledby="hero-title">
+    <div class="wrap">
+      <div>
+        <p class="eyebrow">REST · TCP 워크플로 오케스트레이션</p>
+        <h1 id="hero-title">API 흐름을 그리고,<br><em>바로 검증하세요.</em></h1>
+        <p class="lead">호출 · 분기 · 콜백 대기 · 응답 검증을 캔버스에서 잇고 한 번에 실행합니다. 아직 없는 시스템은 Mock 서버로 먼저 세워 두세요.</p>
+        <div class="cta">
+          <a id="download" class="btn btn-primary btn-lg download-big" hidden>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M2 4.4 10.7 3v8H2zm10.2-1.6L22 1.3V11h-9.8zM2 12.5h8.7v8L2 19.1zm10.2 0H22v9.7l-9.8-1.5z"/></svg>
+            <span><strong>Windows 앱 다운로드</strong><small id="version">확인 중</small></span>
+          </a>
+          <button id="retry" class="btn btn-lg" type="button" hidden>다시 확인</button>
+          <a class="btn btn-lg" href="#architecture">구조 보기</a>
+        </div>
+        <p id="status" role="status" aria-atomic="true">최신 버전을 확인하는 중…</p>
+        <p id="compatibility" hidden>현재 서버와의 호환이 확인되지 않아 자동 업데이트는 꺼집니다. 직접 설치는 가능합니다.</p>
+        <noscript><p class="facts">설치 파일을 확인하려면 브라우저의 JavaScript를 켜고 새로고침하세요.</p></noscript>
+        <ul class="facts" aria-label="설치 안내">
+          <li><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="m5 12 4 4 10-10"/></svg>로그인 없이 다운로드</li>
+          <li><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="m5 12 4 4 10-10"/></svg>Windows 64비트 · MSI</li>
+          <li><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="m5 12 4 4 10-10"/></svg>앱에서 새 버전 알림</li>
+        </ul>
+      </div>
+
+      <figure style="margin:0">
+        <div class="mock" role="img" aria-label="워크플로 편집 화면 예시: 시작, 결제 요청, 승인 콜백 대기, 응답 검증 노드가 이어져 있고 실행 로그가 아래에 표시됩니다.">
+          <div class="mock-top"><b>결제 승인 테스트</b><span class="sub">팀 워크스페이스</span><span class="spacer"></span><span class="chip">staging</span><span class="chip chip-run">▶ 실행</span></div>
+          <div class="mock-body">
+            <div class="mock-canvas" aria-hidden="true">
+              <div class="flow">
+                <div class="node"><i class="tile t-ok">▶</i><span>시작</span></div>
+                <div class="edge"></div>
+                <div class="node"><i class="tile t-http">API</i><span>결제 요청<small>POST /payments</small></span></div>
+                <div class="edge"></div>
+                <div class="node active"><i class="tile t-wait">◷</i><span>승인 콜백 대기<small>1:42 남음</small></span></div>
+                <div class="edge pending"></div>
+                <div class="node"><i class="tile t-ok">✓</i><span>응답 검증<small>code == '0000'</small></span></div>
+              </div>
+            </div>
+          </div>
+          <div class="mock-log" aria-hidden="true"><b>실행 로그</b><span class="ok">✓ 시작</span><span class="ok">✓ 결제 요청 · 200 · 84ms</span><span class="wait">◌ 콜백 대기 중</span></div>
+        </div>
+        <figcaption>워크플로 편집 화면 예시</figcaption>
+      </figure>
     </div>
-    <figure class="preview"><div class="preview-frame"><svg viewBox="0 0 760 420" role="img" aria-labelledby="preview-title preview-desc">
-      <title id="preview-title">FlowLink 워크플로 편집 화면 예시</title><desc id="preview-desc">점선 캔버스에서 시작, API 호출, 응답 검증, 끝 노드가 순서대로 연결된 편집 화면입니다.</desc>
-      <defs><pattern id="canvas-dots" width="13" height="13" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r=".65" fill="#cfdfeb"/></pattern><marker id="arrow" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><path d="m0 0 7 3.5-7 3.5z" fill="#3b8e9a"/></marker></defs>
-      <rect width="760" height="420" fill="#f9fcfe"/><rect x="119" y="46" width="641" height="332" fill="url(#canvas-dots)"/><rect width="119" height="420" fill="#fbfdfe"/>
-      <path d="M119 0v420M0 46h760M119 378h641" stroke="#dfebf1"/>
-      <g fill="#16374d" font-weight="500">
-        <g transform="translate(14 12)"><g transform="scale(.85)" fill="none" stroke="#007f95" stroke-width="1.7"><path d="m10.5 6.7-5 9.2m13 0-5-9.2M7 19h10"/><circle cx="12" cy="4.5" r="2.5"/><circle cx="4.5" cy="19" r="2.5"/><circle cx="19.5" cy="19" r="2.5"/></g><text x="28" y="15" font-size="14" font-weight="700">FlowLink</text></g>
-        <path d="m146 18-5 5 5 5m-5-5h10" stroke="#47647a" fill="none" stroke-width="1.4"/><text x="160" y="28" font-size="13" font-weight="650">결제 승인</text>
-        <rect x="533" y="10" width="57" height="27" rx="4" fill="#fff" stroke="#d5e3ec"/><text x="551" y="28" font-size="11">환경</text><path d="m574 21 3 3 3-3" fill="none" stroke="#537185"/>
-        <rect x="599" y="10" width="57" height="27" rx="4" fill="#fff" stroke="#d5e3ec"/><text x="617" y="28" font-size="11">저장</text>
-        <rect x="665" y="10" width="80" height="27" rx="4" fill="#008494"/><path d="m684 17 8 6-8 6z" fill="#fff"/><text x="703" y="28" font-size="11" fill="#fff">실행</text>
-        <rect x="9" y="57" width="101" height="32" rx="5" fill="#e2f3f6"/>
-        <g stroke="#557186" fill="none" stroke-width="1.3"><path d="m23 67 7 4-7 5m0-9v9m7-5h5"/><rect x="22" y="101" width="10" height="9" rx="2"/><path d="M24 101v-3a3 3 0 0 1 6 0v3"/><ellipse cx="27" cy="133" rx="5" ry="2"/><path d="M22 133v7c0 3 10 3 10 0v-7m-10 4c0 3 10 3 10 0"/><path d="m24 161 6-5m-7 1-3 3a3 3 0 0 0 4 4l3-3m0-1 3-3a3 3 0 0 1 4 4l-3 3"/><circle cx="27" cy="191" r="5"/><path d="M27 187v4l3 2"/></g>
-        <g font-size="12"><text x="43" y="78" fill="#007c8f" font-weight="650">워크플로</text><text x="43" y="109">환경 · 시크릿</text><text x="43" y="140">Mock 서버</text><text x="43" y="168">프로토콜</text><text x="43" y="196">실행 이력</text></g>
-        <g stroke="#3b8e9a" stroke-width="1.6" marker-end="url(#arrow)"><path d="M228 196h39"/><path d="M439 196h36"/><path d="M629 196h33"/></g>
-        <rect x="139" y="170" width="89" height="52" rx="8" fill="#fff" stroke="#a9d4dc"/><circle cx="162" cy="196" r="12" fill="#0da98e"/><path d="m159 189 9 7-9 7z" fill="#fff"/><text x="181" y="190" font-size="12" font-weight="650">시작</text><text x="181" y="207" font-size="10" fill="#668196">트리거</text>
-        <rect x="267" y="168" width="172" height="56" rx="8" fill="#f5fdff" stroke="#00a6c1" stroke-width="1.5"/><circle cx="293" cy="196" r="14" fill="#d7f4fa"/><rect x="284" y="188" width="18" height="16" rx="4" fill="#009cb5"/><text x="287" y="199" font-size="7" fill="#fff" font-weight="700">API</text><text x="316" y="190" font-size="12" font-weight="650">API 호출</text><text x="316" y="208" font-size="10" fill="#53748c">POST /payments/approve</text>
-        <rect x="475" y="170" width="154" height="52" rx="8" fill="#fff" stroke="#b3a4dc"/><circle cx="500" cy="196" r="13" fill="#eee7fa"/><rect x="492" y="188" width="16" height="16" rx="4" fill="#9271c9"/><path d="m496 196 3 3 6-7" fill="none" stroke="#fff" stroke-width="1.8"/><text x="524" y="190" font-size="12" font-weight="650">응답 검증</text><text x="524" y="207" font-size="10" fill="#668196">상태 코드 · 데이터 확인</text>
-        <rect x="662" y="170" width="82" height="52" rx="8" fill="#fff" stroke="#b9d5df"/><circle cx="683" cy="196" r="12" fill="#e1f0f4"/><rect x="678" y="191" width="10" height="10" rx="2" fill="#548695"/><text x="705" y="190" font-size="12" font-weight="650">끝</text><text x="705" y="207" font-size="10" fill="#668196">완료</text>
-        <rect x="132" y="338" width="98" height="26" rx="5" fill="#fff" stroke="#dbe7ee"/><text x="143" y="355" font-size="12">−</text><text x="167" y="355" font-size="11" fill="#617a8d">100%</text><text x="210" y="355" font-size="12">+</text>
-        <rect x="119" y="378" width="641" height="42" fill="#fff"/><circle cx="141" cy="399" r="8" fill="#0da98e"/><path d="m137 399 3 3 5-6" fill="none" stroke="#fff" stroke-width="1.5"/><text x="159" y="403" font-size="11" font-weight="650">실행 결과</text><text x="222" y="403" font-size="11" fill="#008c70">성공</text><text x="255" y="403" font-size="10" fill="#6b879d">532ms</text>
-      </g>
-    </svg></div><figcaption>워크플로 편집 화면 예시</figcaption></figure>
   </section>
-  <footer><span>FlowLink · 개인 작업은 내 PC에 저장됩니다.</span><span id="server-version"></span></footer>
-</div></main><script>
-  const element = id => document.getElementById(id);
+
+  <div class="wrap split">
+    <div class="card">
+      <h3><span class="icon-box" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg></span>개인 작업 · 내 PC</h3>
+      <p>설치하면 바로 씁니다. 워크플로·환경·직접 입력한 시크릿은 PC 안에만 저장됩니다.</p>
+      <ul class="list"><li>서버 연결 없이도 동작하는 로컬 DB</li><li>개인 환경 · 프로토콜 · 시크릿 보관</li><li>Mock 서버와 콜백 수신 내장</li></ul>
+    </div>
+    <div class="card">
+      <h3><span class="icon-box" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="9" cy="8" r="3"/><circle cx="17" cy="9" r="2.4"/><path d="M3 19c.6-3.4 3-5 6-5s5.4 1.6 6 5M15 14.4c2.6-.3 4.6 1.1 5.2 4.6"/></svg></span>팀 작업 · 회사 서버</h3>
+      <p>이 서버에 연결하면 팀 워크스페이스를 함께 편집하고, 공용 플러그인과 Vault 시크릿을 씁니다.</p>
+      <ul class="list"><li>GitHub 로그인 · 워크스페이스 권한</li><li>실시간 공동 편집과 커서 표시</li><li>IDE에서 쓰는 중앙 MCP</li></ul>
+    </div>
+  </div>
+
+  <section class="band" id="features" aria-labelledby="features-title">
+    <div class="wrap">
+      <p class="eyebrow">기능</p>
+      <h2 class="section-title" id="features-title">만들고, 모의하고, 검증까지 한 화면에서.</h2>
+      <div class="features">
+        <div class="feature"><span class="tile t-http" style="width:34px;height:34px;border-radius:8px;font-size:11px">API</span><h3>워크플로 캔버스</h3><p>HTTP · TCP 전문 · 폼 · 콜백 대기 · 분기 노드를 끌어다 잇고, 앞 노드의 응답 값을 다음 노드에 바로 연결합니다.</p></div>
+        <div class="feature"><span class="tile t-tcp" style="width:34px;height:34px;border-radius:8px;font-size:15px">⇄</span><h3>Mock 서버 (HTTP · TCP)</h3><p>미완성 대상 시스템을 규칙 · 응답 템플릿 · 콜백 발사로 바로 세우고, 들어온 요청을 기록으로 확인합니다.</p></div>
+        <div class="feature"><span class="tile t-if" style="width:34px;height:34px;border-radius:8px;font-size:15px">◇</span><h3>환경 · 시크릿</h3><p>dev / staging / prod를 바꿔 가며 실행하고, 토큰은 시크릿 볼트나 Vault에서 꺼내 씁니다. 로그에는 가려서 남습니다.</p></div>
+        <div class="feature"><span class="tile t-ok" style="width:34px;height:34px;border-radius:8px;font-size:15px">✓</span><h3>실행 이력 · 재실행</h3><p>노드별 요청과 응답을 다시 열어 보고, 이전 실행과 비교하고, 같은 입력으로 다시 돌립니다.</p></div>
+        <div class="feature"><span class="tile t-wait" style="width:34px;height:34px;border-radius:8px;font-size:15px">◷</span><h3>스케줄 · 웹훅 실행</h3><p>cron 일정이나 웹훅 주소로 브라우저 없이 자동 실행하고, 실패하면 팀 메신저로 알립니다.</p></div>
+        <div class="feature"><span class="tile t-http" style="width:34px;height:34px;border-radius:8px;font-size:15px">✦</span><h3>AI 어시스턴트</h3><p>만들고 싶은 흐름을 말로 설명하면 캔버스에 노드를 제안합니다. GitHub Copilot 계정으로 연결합니다.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="arch" id="architecture" aria-labelledby="arch-title">
+    <div class="wrap">
+      <div class="arch-head">
+        <div>
+          <p class="eyebrow">아키텍처</p>
+          <h2 class="section-title" id="arch-title">내 PC와 회사 서버가 나눠 맡습니다.</h2>
+          <p class="section-lead">Windows 앱에서 한 번 로그인하면 서버가 MCP용 토큰을 발급하고, 앱이 IDE 설정에 자동 반영합니다. 개인 데이터는 PC의 H2, 팀 데이터는 서버의 Oracle에 따로 저장됩니다.</p>
+        </div>
+        <div class="seg" role="tablist" aria-label="그림 선택">
+          <button type="button" role="tab" id="tab-runtime" aria-selected="true" aria-controls="arch-frame">실행 구조</button>
+          <button type="button" role="tab" id="tab-modules" aria-selected="false" aria-controls="arch-frame">소스 의존 관계</button>
+        </div>
+      </div>
+      <div class="arch-frame" id="arch-frame" role="tabpanel" tabindex="0" aria-labelledby="tab-runtime">
+        <img id="arch-img" src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNzQwIiBoZWlnaHQ9IjExOTAiIHZpZXdCb3g9IjAgMCAxNzQwIDExOTAiIHJvbGU9ImltZyIgYXJpYS1sYWJlbGxlZGJ5PSJ0aXRsZSBkZXNjIj4KPHRpdGxlIGlkPSJ0aXRsZSI+Rmxvd0xpbmsg7ZmV7KCVIOyVhO2CpO2FjeyymDog6rCc7J24IFBD7JmAIOykkeyVmSDshJzrsoQ8L3RpdGxlPgo8ZGVzYyBpZD0iZGVzYyI+V2luZG93cyDslbHsl5DshJwg7ZWcIOuyiCDroZzqt7jsnbjtlZjrqbQg7KSR7JWZIOyEnOuyhOqwgCBHaXRIdWIg7J247KadIO2bhCBGbG93TGluayBNQ1Dsmqkg7Yag7YGw7J2EIOuwnOq4ie2VnOuLpC4gZGVza3RvcOydtCBJREUg7IKs7Jqp7J6QIOyEpOygleydmCBNQ1Ag7KO87IaM7JmAIEF1dGhvcml6YXRpb24gQmVhcmVyIO2GoO2BsOydhCDsnpDrj5kg67CY7JiB7ZWY6rOgIOunjOujjMK37J6s67Cc6riJ7J2EIOq0gOumrO2VnOuLpC4gSURF64qUIOuzhOuPhCBPQXV0aCDroZzqt7jsnbgg7JeG7J20IOykkeyVmSBNQ1Dsl5Ag7Jew6rKw7ZWc64ukLiDqsJzsnbgg642w7J207YSw64qUIEgyLCDtjIAg642w7J207YSw64qUIE9yYWNsZeyXkCDsoIDsnqXtlZjqs6Ag66Gc7LuswrfshJzrsoQg7JeQ7J207KCE7Yq46rCAIOqwgeqwgSDsi6TtlontlZzri6QuIGNvcmXsmYAgTUNQIO2GoO2BsCDsnpDrj5kg7Jew6rKw7J2EIO2PrO2VqO2VnCDtmZXsoJUg6rWs7KGw7J2064ukLjwvZGVzYz4KPGRlZnM+CiAgPHBhdHRlcm4gaWQ9ImdyaWQiIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgcGF0dGVyblVuaXRzPSJ1c2VyU3BhY2VPblVzZSI+PGNpcmNsZSBjeD0iMSIgY3k9IjEiIHI9Ii44IiBmaWxsPSIjZGJlNGVkIi8+PC9wYXR0ZXJuPgogIDxtYXJrZXIgaWQ9ImJsdWUiIG1hcmtlcldpZHRoPSIxMCIgbWFya2VySGVpZ2h0PSIxMCIgcmVmWD0iOCIgcmVmWT0iNSIgb3JpZW50PSJhdXRvLXN0YXJ0LXJldmVyc2UiPjxwYXRoIGQ9Ik0xIDEgOCA1IDEgOSIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjMjM3M2M3IiBzdHJva2Utd2lkdGg9IjEuNyIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIvPjwvbWFya2VyPgogIDxtYXJrZXIgaWQ9ImdyZWVuIiBtYXJrZXJXaWR0aD0iMTAiIG1hcmtlckhlaWdodD0iMTAiIHJlZlg9IjgiIHJlZlk9IjUiIG9yaWVudD0iYXV0by1zdGFydC1yZXZlcnNlIj48cGF0aCBkPSJNMSAxIDggNSAxIDkiIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzIxODU3NCIgc3Ryb2tlLXdpZHRoPSIxLjciIHN0cm9rZS1saW5lam9pbj0icm91bmQiLz48L21hcmtlcj4KICA8bWFya2VyIGlkPSJncmF5IiBtYXJrZXJXaWR0aD0iMTAiIG1hcmtlckhlaWdodD0iMTAiIHJlZlg9IjgiIHJlZlk9IjUiIG9yaWVudD0iYXV0byI+PHBhdGggZD0iTTEgMSA4IDUgMSA5IiBmaWxsPSJub25lIiBzdHJva2U9IiM3YzhmYTMiIHN0cm9rZS13aWR0aD0iMS43IiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+PC9tYXJrZXI+CiAgPHN0eWxlPgogICAgdGV4dHtmb250LWZhbWlseTonTWFsZ3VuIEdvdGhpYycsJ+unkeydgCDqs6DrlJUnLHN5c3RlbS11aSxzYW5zLXNlcmlmO2ZpbGw6IzIwMzQ0OX0gLnRpdGxle2ZvbnQtc2l6ZTozMHB4O2ZvbnQtd2VpZ2h0OjgwMDtsZXR0ZXItc3BhY2luZzotMXB4fS5zdWJ0aXRsZXtmb250LXNpemU6MThweDtmaWxsOiM2MTc1OGJ9LmxhYmVse2ZvbnQtc2l6ZToxOXB4O2ZvbnQtd2VpZ2h0OjcwMH0uYm9keXtmb250LXNpemU6MThweDtmaWxsOiM2MTc1OGJ9LnNtYWxse2ZvbnQtc2l6ZToxNnB4O2ZpbGw6IzYxNzU4Yn0ubW9ub3tmb250LWZhbWlseTpDb25zb2xhcyxtb25vc3BhY2U7Zm9udC1zaXplOjI1cHg7Zm9udC13ZWlnaHQ6NzAwfS5yb3V0ZXtmaWxsOm5vbmU7c3Ryb2tlLXdpZHRoOjIuNTtzdHJva2UtbGluZWpvaW46cm91bmQ7c3Ryb2tlLWxpbmVjYXA6cm91bmR9LnBje3N0cm9rZTojMjM3M2M3O21hcmtlci1lbmQ6dXJsKCNibHVlKX0uc3Z7c3Ryb2tlOiMyMTg1NzQ7bWFya2VyLWVuZDp1cmwoI2dyZWVuKX0uZGJ7c3Ryb2tlOiM3YzhmYTM7bWFya2VyLWVuZDp1cmwoI2dyYXkpfS5sYWJlbC1iZ3tmaWxsOiNmOGZhZmN9LmNvcmV7ZmlsbDojZjVmMGZmO3N0cm9rZTojYWM5NWNlO3N0cm9rZS13aWR0aDoxLjU7c3Ryb2tlLWRhc2hhcnJheTo2IDV9Lmljb257ZmlsbDpub25lO3N0cm9rZTpjdXJyZW50Q29sb3I7c3Ryb2tlLXdpZHRoOjI7c3Ryb2tlLWxpbmVqb2luOnJvdW5kO3N0cm9rZS1saW5lY2FwOnJvdW5kfQogIDwvc3R5bGU+CjwvZGVmcz4KPHJlY3Qgd2lkdGg9IjE3NDAiIGhlaWdodD0iMTE5MCIgZmlsbD0iI2Y4ZmFmYyIvPgo8cmVjdCB3aWR0aD0iMTc0MCIgaGVpZ2h0PSIxMTkwIiBmaWxsPSJ1cmwoI2dyaWQpIi8+Cjx0ZXh0IHg9IjcwIiB5PSI2NSIgZm9udC1zaXplPSIyNiIgZm9udC13ZWlnaHQ9IjgwMCI+V2luZG93cyDroZzqt7jsnbgg4oaSIE1DUCDsnpDrj5kg7Jew6rKwPC90ZXh0Pgo8dGV4dCB4PSI3MCIgeT0iMTAxIiBjbGFzcz0iYm9keSI+7ISc67KE6rCAIE1DUOyaqSDthqDtgbAg67Cc6riJIMK3IGRlc2t0b3DsnbQg7ISk7KCV6rO8IOqwseyLoCDqtIDrpqw8L3RleHQ+Cgo8IS0tIE9uZSBpZGVudGl0eSBwcm92aWRlciwgbG9jYXRlZCBvdXRzaWRlIGJvdGggcnVudGltZSBob3N0cy4gLS0+CjxyZWN0IHg9IjEyMjUiIHk9IjI4IiB3aWR0aD0iMzcwIiBoZWlnaHQ9Ijc2IiByeD0iMzgiIGZpbGw9IiMyMDM0NDkiLz4KPGcgdHJhbnNmb3JtPSJ0cmFuc2xhdGUoMTI1NSA1MSkiIHN0cm9rZT0id2hpdGUiIGZpbGw9Im5vbmUiIHN0cm9rZS13aWR0aD0iMiI+PGNpcmNsZSBjeD0iMTUiIGN5PSIxMSIgcj0iOSIvPjxwYXRoIGQ9Ik0wIDM0YzAtMTYgMzAtMTYgMzAgMCIvPjwvZz4KPHRleHQgeD0iMTMxMiIgeT0iNjAiIGZvbnQtc2l6ZT0iMjEiIGZvbnQtd2VpZ2h0PSI3MDAiIHN0eWxlPSJmaWxsOndoaXRlIj5HaXRIdWIgT0F1dGg8L3RleHQ+Cjx0ZXh0IHg9IjEzMTIiIHk9Ijg1IiBmb250LXNpemU9IjE2IiBzdHlsZT0iZmlsbDojZDJkZWViIj7qs4TsoJUg7ZmV7J24IMK3IOykkeyVmSDshJzrsoTsl5DshJwg7LKY66asPC90ZXh0Pgo8cGF0aCBjbGFzcz0icm91dGUgc3YiIGQ9Ik0xNDEwIDEwNFYyNTIiLz4KPHJlY3QgeD0iMTQzMCIgeT0iMTExIiB3aWR0aD0iMTY2IiBoZWlnaHQ9IjI5IiByeD0iNSIgZmlsbD0iI2Y4ZmFmYyIvPjx0ZXh0IHg9IjE0NDAiIHk9IjEzMiIgY2xhc3M9InNtYWxsIj7snbjspp0g6rKw6rO8PC90ZXh0PgoKPCEtLSBSdW50aW1lIGJvdW5kYXJpZXM6IHRoZSB0d28gYWdlbnRzIGxpdmUgaW5zaWRlIHRoZWlyIHJlc3BlY3RpdmUgaG9zdC4gLS0+CjxyZWN0IHg9IjQwIiB5PSIxNTgiIHdpZHRoPSI3MzAiIGhlaWdodD0iODU0IiByeD0iMjYiIGZpbGw9IiNmMWY3ZmYiIHN0cm9rZT0iI2JkZDJlYSIgc3Ryb2tlLXdpZHRoPSIxLjUiLz4KPHJlY3QgeD0iOTcwIiB5PSIxNTgiIHdpZHRoPSI3MzAiIGhlaWdodD0iODU0IiByeD0iMjYiIGZpbGw9IiNmMGY5ZjYiIHN0cm9rZT0iI2I3ZDhkMCIgc3Ryb2tlLXdpZHRoPSIxLjUiLz4KPGcgdHJhbnNmb3JtPSJ0cmFuc2xhdGUoNzUgMTkwKSIgc3R5bGU9ImNvbG9yOiMyMzczYzciPjxyZWN0IGNsYXNzPSJpY29uIiB3aWR0aD0iMzgiIGhlaWdodD0iMjUiIHJ4PSIzIi8+PHBhdGggY2xhc3M9Imljb24iIGQ9Ik0xMiAzMWgxNE0xOSAyNXY2Ii8+PC9nPgo8dGV4dCB4PSIxMzAiIHk9IjIxMiIgY2xhc3M9InRpdGxlIj7sgqzsmqnsnpAgUEM8L3RleHQ+PHRleHQgeD0iMTMwIiB5PSIyNDIiIGNsYXNzPSJzdWJ0aXRsZSI+V2luZG93cyDshKTsuZggwrcg6rCc7J24IOyekeyXheydmCDsm5Drs7g8L3RleHQ+CjxyZWN0IHg9IjYwMiIgeT0iMTkwIiB3aWR0aD0iMTI2IiBoZWlnaHQ9IjM0IiByeD0iMTciIGZpbGw9IiNlMGVkZmQiLz48dGV4dCB4PSI2NjUiIHk9IjIxMyIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZm9udC1zaXplPSIxNiIgZm9udC13ZWlnaHQ9IjcwMCIgc3R5bGU9ImZpbGw6IzIzNzNjNyI+TVNJICsgSmF2YTwvdGV4dD4KPGcgdHJhbnNmb3JtPSJ0cmFuc2xhdGUoMTAwNSAxODYpIiBzdHlsZT0iY29sb3I6IzIxODU3NCI+PHJlY3QgY2xhc3M9Imljb24iIHdpZHRoPSIzNiIgaGVpZ2h0PSIxNSIgcng9IjMiLz48cmVjdCBjbGFzcz0iaWNvbiIgeT0iMjAiIHdpZHRoPSIzNiIgaGVpZ2h0PSIxNSIgcng9IjMiLz48cGF0aCBjbGFzcz0iaWNvbiIgZD0iTTcgN2gxTTcgMjdoMU0yMyA3aDZNMjMgMjdoNiIvPjwvZz4KPHRleHQgeD0iMTA2MCIgeT0iMjEyIiBjbGFzcz0idGl0bGUiPu2ajOyCrCDshJzrsoQ8L3RleHQ+PHRleHQgeD0iMTA2MCIgeT0iMjQyIiBjbGFzcz0ic3VidGl0bGUiPkRvY2tlciAvIEVDMiDCtyDtjIAg7J6R7JeF6rO8IOykkeyVmSDsl7DqsrA8L3RleHQ+CjxyZWN0IHg9IjE1NTAiIHk9IjE5MCIgd2lkdGg9IjExMCIgaGVpZ2h0PSIzNCIgcng9IjE3IiBmaWxsPSIjZGRmMGU5Ii8+PHRleHQgeD0iMTYwNSIgeT0iMjEzIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmb250LXNpemU9IjE2IiBmb250LXdlaWdodD0iNzAwIiBzdHlsZT0iZmlsbDojMjE4NTc0Ij5TZXJ2ZXIgSlZNPC90ZXh0PgoKPCEtLSBCcm93c2VyIGFuZCBuYXRpdmUgZW50cnkgcG9pbnRzLiAtLT4KPHJlY3QgeD0iOTAiIHk9IjI4MCIgd2lkdGg9IjMyMCIgaGVpZ2h0PSI5MCIgcng9IjEyIiBmaWxsPSJ3aGl0ZSIgc3Ryb2tlPSIjYmJjZWUzIi8+CjxwYXRoIGQ9Ik05MCAzMDZoMzIwIiBzdHJva2U9IiNkNGUwZWQiLz48Y2lyY2xlIGN4PSIxMDYiIGN5PSIyOTMiIHI9IjMiIGZpbGw9IiM5MWFiYzUiLz48Y2lyY2xlIGN4PSIxMTciIGN5PSIyOTMiIHI9IjMiIGZpbGw9IiNiOWM5ZGEiLz48Y2lyY2xlIGN4PSIxMjgiIGN5PSIyOTMiIHI9IjMiIGZpbGw9IiNiOWM5ZGEiLz4KPHRleHQgeD0iMjUwIiB5PSIzMzQiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGNsYXNzPSJsYWJlbCI+67iM65287Jqw7KCAIO2ZlOuptCDCtyBSZWFjdDwvdGV4dD48dGV4dCB4PSIyNTAiIHk9IjM1NyIgdGV4dC1hbmNob3I9Im1pZGRsZSIgY2xhc3M9InNtYWxsIj7qsJzsnbgg6rO16rCEIC8g7YyAIOqzteqwhDwvdGV4dD4KPHJlY3QgeD0iNDcwIiB5PSIyODAiIHdpZHRoPSIyNTAiIGhlaWdodD0iOTAiIHJ4PSIxMiIgZmlsbD0id2hpdGUiIHN0cm9rZT0iI2JiY2VlMyIvPgo8dGV4dCB4PSI1OTUiIHk9IjMxMCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgY2xhc3M9ImxhYmVsIj5XaW5kb3dzIOywvSDCtyDtirjroIjsnbQ8L3RleHQ+PHRleHQgeD0iNTk1IiB5PSIzMzYiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGNsYXNzPSJzbWFsbCI+66Gc6re47J24IMK3IOyEpOyglSDCtyDsl4XrjbDsnbTtirg8L3RleHQ+PHRleHQgeD0iNTk1IiB5PSIzNTgiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGZvbnQtc2l6ZT0iMTQiIHN0eWxlPSJmaWxsOiMyMzczYzciPk1DUCDthqDtgbAg7J6Q64+ZIOyEpOyglSDCtyDqsLHsi6A8L3RleHQ+CjxwYXRoIGNsYXNzPSJyb3V0ZSBwYyIgZD0iTTQ3MCAzMjVINDIzIi8+PHRleHQgeD0iNDQzIiB5PSIzMTAiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGZvbnQtc2l6ZT0iMTMiIHN0eWxlPSJmaWxsOiMyMzczYzciPuyXtOq4sDwvdGV4dD4KPHBhdGggY2xhc3M9InJvdXRlIHBjIiBkPSJNMjUwIDM3MFY1MDYiLz48dGV4dCB4PSIyNjUiIHk9IjQ1NyIgY2xhc3M9InNtYWxsIj7roZzsu6wgQVBJPC90ZXh0PgoKPCEtLSBEZXNrdG9wIGxvZ2luIG9idGFpbnMgYSBzZXJ2ZXItaXNzdWVkIE1DUCB0b2tlbiBhbmQgY29uZmlndXJlcyB0aGUgSURFLiAtLT4KPHJlY3QgeD0iMTAxNSIgeT0iMjgwIiB3aWR0aD0iNjM1IiBoZWlnaHQ9IjkwIiByeD0iMTIiIGZpbGw9IndoaXRlIiBzdHJva2U9IiNiN2Q4ZDAiLz4KPGcgdHJhbnNmb3JtPSJ0cmFuc2xhdGUoMTA0MCAzMDUpIiBzdHlsZT0iY29sb3I6IzIxODU3NCI+PHJlY3QgY2xhc3M9Imljb24iIHg9IjIiIHk9IjEzIiB3aWR0aD0iMjMiIGhlaWdodD0iMjAiIHJ4PSIzIi8+PHBhdGggY2xhc3M9Imljb24iIGQ9Ik03IDEzVjdhNyA3IDAgMCAxIDE0IDB2NiIvPjwvZz4KPHRleHQgeD0iMTA4MCIgeT0iMzE2IiBjbGFzcz0ibGFiZWwiPuykkeyVmSDroZzqt7jsnbggwrcg6rOE7KCVIMK3IOq2jO2VnDwvdGV4dD48dGV4dCB4PSIxMDgwIiB5PSIzNDYiIGNsYXNzPSJzbWFsbCI+R2l0SHViIO2ZleyduCDihpIg7JWxIOuhnOq3uOyduCAvIEZsb3dMaW5rIE1DUOyaqSDthqDtgbAg67Cc6riJPC90ZXh0Pgo8cGF0aCBjbGFzcz0icm91dGUgcGMiIGQ9Ik03MjAgMzAzSDEwMDQiLz48cmVjdCB4PSI3OTAiIHk9IjI2OSIgd2lkdGg9IjE2MCIgaGVpZ2h0PSIyNyIgcng9IjUiIGNsYXNzPSJsYWJlbC1iZyIvPjx0ZXh0IHg9Ijg3MCIgeT0iMjg5IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmb250LXNpemU9IjE2IiBzdHlsZT0iZmlsbDojMjM3M2M3Ij7ikaAg66Gc6re47J24IOyalOyyrTwvdGV4dD4KPHBhdGggY2xhc3M9InJvdXRlIHN2IiBkPSJNMTAwNCAzNTBINzMyIi8+PHJlY3QgeD0iNzY0IiB5PSIzNTkiIHdpZHRoPSIyMTMiIGhlaWdodD0iMjciIHJ4PSI1IiBjbGFzcz0ibGFiZWwtYmciLz48dGV4dCB4PSI4NzAiIHk9IjM3OSIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZm9udC1zaXplPSIxNiIgc3R5bGU9ImZpbGw6IzIxODU3NCI+4pGhIE1DUOyaqSDthqDtgbAg67Cc6riJPC90ZXh0Pgo8cGF0aCBjbGFzcz0icm91dGUgcGMiIGQ9Ik01OTUgMzcwVjM5NiIvPjx0ZXh0IHg9IjYxMSIgeT0iMzk1IiBmb250LXNpemU9IjE0IiBzdHlsZT0iZmlsbDojMjM3M2M3Ij7ikaIg7ISk7KCVIOyekOuPmSDrsJjsmIE8L3RleHQ+CjxwYXRoIGNsYXNzPSJyb3V0ZSBzdiIgZD0iTTE2MzAgMzcwVjUwNiIvPjx0ZXh0IHg9IjE2MTUiIHk9IjQ5OCIgdGV4dC1hbmNob3I9ImVuZCIgY2xhc3M9InNtYWxsIj7snbjspp3rkJwgQVBJPC90ZXh0Pgo8cmVjdCB4PSI0NzAiIHk9IjQwMyIgd2lkdGg9IjI1MCIgaGVpZ2h0PSI4MiIgcng9IjEyIiBmaWxsPSIjMjAzNDQ5Ii8+Cjx0ZXh0IHg9IjU5NSIgeT0iNDM0IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmb250LXNpemU9IjE5IiBmb250LXdlaWdodD0iNzAwIiBzdHlsZT0iZmlsbDp3aGl0ZSI+SURFIMK3IENvcGlsb3Q8L3RleHQ+PHRleHQgeD0iNTk1IiB5PSI0NjEiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGZvbnQtc2l6ZT0iMTYiIHN0eWxlPSJmaWxsOiNkMmRlZWIiPlZTIENvZGUgLyBJbnRlbGxpSjwvdGV4dD4KPHJlY3QgeD0iMTAxNSIgeT0iNDAzIiB3aWR0aD0iMjcwIiBoZWlnaHQ9IjgyIiByeD0iMTIiIGZpbGw9IndoaXRlIiBzdHJva2U9IiMyMTg1NzQiIHN0cm9rZS13aWR0aD0iMS42Ii8+Cjx0ZXh0IHg9IjExNTAiIHk9IjQzNSIgdGV4dC1hbmNob3I9Im1pZGRsZSIgY2xhc3M9Im1vbm8iPmZsb3ctbWNwPC90ZXh0Pjx0ZXh0IHg9IjExNTAiIHk9IjQ2MiIgdGV4dC1hbmNob3I9Im1pZGRsZSIgY2xhc3M9InNtYWxsIj7spJHslZkgL21jcCDCtyDthqDtgbAg6rKA7KadPC90ZXh0Pgo8cGF0aCBjbGFzcz0icm91dGUgcGMiIGQ9Ik03MjAgNDQ0SDEwMDQiLz48cmVjdCB4PSI3NTYiIHk9IjQwOCIgd2lkdGg9IjIyMyIgaGVpZ2h0PSIyOSIgcng9IjUiIGNsYXNzPSJsYWJlbC1iZyIvPjx0ZXh0IHg9Ijg2NyIgeT0iNDMwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmb250LXNpemU9IjE2IiBzdHlsZT0iZmlsbDojMjM3M2M3Ij7ikaMgSFRUUFMgwrcgQmVhcmVyIO2GoO2BsDwvdGV4dD4KPHBhdGggY2xhc3M9InJvdXRlIHN2IiBkPSJNMTE1MCA0ODVWNTA2Ii8+Cjx0ZXh0IHg9IjEzMTAiIHk9IjQyNSIgY2xhc3M9InNtYWxsIj5JREUg67OE64+EIE9BdXRoIOuhnOq3uOyduCDsl4bsnYw8L3RleHQ+PHRleHQgeD0iMTMxMCIgeT0iNDUwIiBjbGFzcz0ic21hbGwiPkdpdEh1YiDthqDtgbDsnYAg7ISc67KE7JeQIOuztOq0gDwvdGV4dD4KCjwhLS0gU2hhcmVkIGxpYnJhcmllcyBydW4gaW5zaWRlIHRoZSB0d28gaG9zdCBhcHBsaWNhdGlvbnMuIC0tPgo8cmVjdCB4PSI4NSIgeT0iNTE1IiB3aWR0aD0iNjQwIiBoZWlnaHQ9IjQ1MCIgcng9IjE4IiBmaWxsPSJ3aGl0ZSIgc3Ryb2tlPSIjOGJiMGQ4IiBzdHJva2Utd2lkdGg9IjEuNyIvPgo8cmVjdCB4PSIxMDE1IiB5PSI1MTUiIHdpZHRoPSI2MzUiIGhlaWdodD0iNDUwIiByeD0iMTgiIGZpbGw9IndoaXRlIiBzdHJva2U9IiM4MGI3YTciIHN0cm9rZS13aWR0aD0iMS43Ii8+Cjx0ZXh0IHg9IjExNSIgeT0iNTU2IiBjbGFzcz0ibW9ubyIgc3R5bGU9ImZpbGw6IzIzNzNjNyI+Zmxvdy1kZXNrdG9wPC90ZXh0Pjx0ZXh0IHg9IjExNSIgeT0iNTgyIiBjbGFzcz0ic21hbGwiPuqwnOyduCBBUEkgwrcgSDIg6rSA66asIMK3IOyekeyXhSDsoITri6wgwrcgTUNQIO2GoO2BsCDqsLHsi6A8L3RleHQ+Cjx0ZXh0IHg9IjEwNDUiIHk9IjU1NiIgY2xhc3M9Im1vbm8iIHN0eWxlPSJmaWxsOiMyMTg1NzQiPmZsb3ctc2VydmVyPC90ZXh0Pjx0ZXh0IHg9IjEwNDUiIHk9IjU4MiIgY2xhc3M9InNtYWxsIj7tjIAgQVBJIMK3IOykkeyVmSDtlIzrn6zqt7jsnbggwrcg7Iuc7YGs66a/IMK3IFBDIOykkeqzhDwvdGV4dD4KPHBhdGggY2xhc3M9InJvdXRlIHBjIiBkPSJNNzM1IDYxMEgxMDAzIi8+PHRleHQgeD0iODcwIiB5PSI1OTMiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGZvbnQtc2l6ZT0iMTciIHN0eWxlPSJmaWxsOiMyMzczYzciPuyEnOuyhCBBUEkgwrcg7JuQ6rKpIOyekeyXhTwvdGV4dD4KPHBhdGggY2xhc3M9InJvdXRlIHN2IiBkPSJNMTAwNCA3MjVINzM3IiBzdHJva2UtZGFzaGFycmF5PSI3IDYiLz48dGV4dCB4PSI4NzAiIHk9Ijc1MiIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZm9udC1zaXplPSIxNyIgc3R5bGU9ImZpbGw6IzIxODU3NCI+UEPqsIAg7KGw7ZqM7ZWcIOuqheuguSAvIOqysOqzvDwvdGV4dD48dGV4dCB4PSI4NzAiIHk9Ijc3NSIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZm9udC1zaXplPSIxNSIgc3R5bGU9ImZpbGw6IzYxNzU4YiI+7ISc67KEIOKGkiBQQyDsp4HsoJEg7KCR7IaNIOyXhuydjDwvdGV4dD4KCjxyZWN0IGNsYXNzPSJjb3JlIiB4PSIxMzUiIHk9IjYyNSIgd2lkdGg9IjU0MCIgaGVpZ2h0PSI3NSIgcng9IjEyIi8+Cjx0ZXh0IHg9IjE2MCIgeT0iNjU2IiBjbGFzcz0ibW9ubyIgc3R5bGU9ImZpbGw6Izc1NTM5ZSI+Zmxvdy1jb3JlPC90ZXh0Pjx0ZXh0IHg9IjE2MCIgeT0iNjgyIiBjbGFzcz0ic21hbGwiPuybjO2BrO2UjOuhnCDCtyDtmZjqsr0gwrcg7Iuk7ZaJIOyDge2DnCDCtyDsoIDsnqUg6rSA66asPC90ZXh0Pjx0ZXh0IHg9IjY0OCIgeT0iNjUzIiB0ZXh0LWFuY2hvcj0iZW5kIiBmb250LXNpemU9IjE0IiBzdHlsZT0iZmlsbDojNzU1MzllIj7qs7XthrUg7L2U65OcPC90ZXh0Pgo8cmVjdCBjbGFzcz0iY29yZSIgeD0iMTA1NSIgeT0iNjI1IiB3aWR0aD0iNTUwIiBoZWlnaHQ9Ijc1IiByeD0iMTIiLz4KPHRleHQgeD0iMTA4MCIgeT0iNjU2IiBjbGFzcz0ibW9ubyIgc3R5bGU9ImZpbGw6Izc1NTM5ZSI+Zmxvdy1jb3JlPC90ZXh0Pjx0ZXh0IHg9IjEwODAiIHk9IjY4MiIgY2xhc3M9InNtYWxsIj7qs7XsmqnCt+2MgCDtlIzrn6zqt7jsnbgg67OA7ZmY7J2AIOykkeyVmSDshJzrsoTsl5DshJzrp4wg7Iuk7ZaJPC90ZXh0Pjx0ZXh0IHg9IjE1ODAiIHk9IjY1MyIgdGV4dC1hbmNob3I9ImVuZCIgZm9udC1zaXplPSIxNCIgc3R5bGU9ImZpbGw6Izc1NTM5ZSI+6rO17Ya1IOy9lOuTnDwvdGV4dD4KCjxwYXRoIGNsYXNzPSJyb3V0ZSBkYiIgZD0iTTI1MCA3MDBWNzgwIi8+PHRleHQgeD0iMjY0IiB5PSI3NTIiIGNsYXNzPSJzbWFsbCI+7KCA7J6lPC90ZXh0Pgo8cGF0aCBjbGFzcz0icm91dGUgcGMiIGQ9Ik01NjAgNzAwVjc4MCIvPjx0ZXh0IHg9IjU3NSIgeT0iNzUyIiBjbGFzcz0ic21hbGwiPuyLpO2WiTwvdGV4dD4KPHBhdGggY2xhc3M9InJvdXRlIHN2IiBkPSJNMTE3MCA3MDBWNzgwIi8+PHRleHQgeD0iMTE4NiIgeT0iNzUyIiBjbGFzcz0ic21hbGwiPuyLpO2WiTwvdGV4dD4KPHBhdGggY2xhc3M9InJvdXRlIGRiIiBkPSJNMTM5MCA3MDBWNzgwIi8+PHBhdGggY2xhc3M9InJvdXRlIGRiIiBkPSJNMTU1NSA3MDBWNzgwIi8+Cjx0ZXh0IHg9IjE0NzIiIHk9Ijc1MSIgdGV4dC1hbmNob3I9Im1pZGRsZSIgY2xhc3M9InNtYWxsIj7rjbDsnbTthLAgLyDsi5ztgazrpr88L3RleHQ+Cgo8IS0tIERhdGFiYXNlIGN5bGluZGVycyB2ZXJzdXMgZXhlY3V0aW9uIGJsb2Nrcy4gLS0+CjxwYXRoIGQ9Ik0xNjUgODA1djg4YzAgMjYgMTcwIDI2IDE3MCAwdi04OCIgZmlsbD0iI2Y2ZjlmYyIgc3Ryb2tlPSIjOWFhZWMzIiBzdHJva2Utd2lkdGg9IjEuNSIvPjxlbGxpcHNlIGN4PSIyNTAiIGN5PSI4MDUiIHJ4PSI4NSIgcnk9IjE4IiBmaWxsPSIjZThlZmY2IiBzdHJva2U9IiM5YWFlYzMiIHN0cm9rZS13aWR0aD0iMS41Ii8+Cjx0ZXh0IHg9IjI1MCIgeT0iODU3IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBjbGFzcz0ibGFiZWwiPuqwnOyduCBIMjwvdGV4dD48dGV4dCB4PSIyNTAiIHk9Ijg4MyIgdGV4dC1hbmNob3I9Im1pZGRsZSIgY2xhc3M9InNtYWxsIj7qsJzsnbgg7JuQ67O4IMK3IOyekOyytCDslZTtmLjtmZQ8L3RleHQ+PHRleHQgeD0iMjUwIiB5PSI5MzgiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGNsYXNzPSJzbWFsbCI+66Gc6re47J24IOyXhuydtCDsgqzsmqk8L3RleHQ+CjxyZWN0IHg9IjQ0NSIgeT0iNzkyIiB3aWR0aD0iMjMwIiBoZWlnaHQ9IjEyMyIgcng9IjEyIiBmaWxsPSIjZWNmNGZmIiBzdHJva2U9IiMyMzczYzciIHN0cm9rZS13aWR0aD0iMS41Ii8+Cjx0ZXh0IHg9IjU2MCIgeT0iODI0IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBjbGFzcz0ibGFiZWwiIHN0eWxlPSJmaWxsOiMyMzczYzciPuuhnOy7rCDsl5DsnbTsoITtirg8L3RleHQ+PHRleHQgeD0iNTYwIiB5PSI4NTMiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGZvbnQtZmFtaWx5PSJDb25zb2xhcyxtb25vc3BhY2UiIGZvbnQtc2l6ZT0iMTkiIGZvbnQtd2VpZ2h0PSI3MDAiPmZsb3ctYWdlbnQ8L3RleHQ+PHRleHQgeD0iNTYwIiB5PSI4ODMiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGNsYXNzPSJzbWFsbCI+7Zi47LacIMK3IE1vY2sgwrcg7L2c67CxIOyImOyLoDwvdGV4dD48dGV4dCB4PSI1NjAiIHk9IjkzOCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgY2xhc3M9InNtYWxsIj7qsJzsnbggTW9jayDrpqzsiqggwrcg7ZSM65+s6re47J24IOyCrOyaqSDsl4bsnYw8L3RleHQ+CjxyZWN0IHg9IjEwNTUiIHk9Ijc5MiIgd2lkdGg9IjIzMCIgaGVpZ2h0PSIxMjMiIHJ4PSIxMiIgZmlsbD0iI2U5ZjZmMCIgc3Ryb2tlPSIjMjE4NTc0IiBzdHJva2Utd2lkdGg9IjEuNSIvPgo8dGV4dCB4PSIxMTcwIiB5PSI4MjQiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGNsYXNzPSJsYWJlbCIgc3R5bGU9ImZpbGw6IzIxODU3NCI+7ISc67KEIOyXkOydtOyghO2KuDwvdGV4dD48dGV4dCB4PSIxMTcwIiB5PSI4NTMiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGZvbnQtZmFtaWx5PSJDb25zb2xhcyxtb25vc3BhY2UiIGZvbnQtc2l6ZT0iMTkiIGZvbnQtd2VpZ2h0PSI3MDAiPmZsb3ctYWdlbnQ8L3RleHQ+PHRleHQgeD0iMTE3MCIgeT0iODgzIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBjbGFzcz0ic21hbGwiPu2YuOy2nCDCtyBNb2NrIMK3IOy9nOuwsSDsiJjsi6A8L3RleHQ+PHRleHQgeD0iMTE3MCIgeT0iOTM4IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBjbGFzcz0ic21hbGwiPu2MgCBNb2Nr7J2AIOyEnOuyhOyXkOyEnCDrpqzsiqg8L3RleHQ+CjxwYXRoIGQ9Ik0xMzI1IDgwNXY4OGMwIDI0IDEzMCAyNCAxMzAgMHYtODgiIGZpbGw9IiNmNmY5ZmMiIHN0cm9rZT0iIzlhYWVjMyIgc3Ryb2tlLXdpZHRoPSIxLjUiLz48ZWxsaXBzZSBjeD0iMTM5MCIgY3k9IjgwNSIgcng9IjY1IiByeT0iMTgiIGZpbGw9IiNlOGVmZjYiIHN0cm9rZT0iIzlhYWVjMyIgc3Ryb2tlLXdpZHRoPSIxLjUiLz4KPHRleHQgeD0iMTM5MCIgeT0iODU3IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBjbGFzcz0ibGFiZWwiPk9yYWNsZTwvdGV4dD48dGV4dCB4PSIxMzkwIiB5PSI4ODMiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGNsYXNzPSJzbWFsbCI+7YyAIOuNsOydtO2EsDwvdGV4dD4KPHJlY3QgeD0iMTQ5MCIgeT0iNzkyIiB3aWR0aD0iMTMwIiBoZWlnaHQ9IjExNSIgcng9IjEyIiBmaWxsPSIjZjZmOWZjIiBzdHJva2U9IiM5YWFlYzMiIHN0cm9rZS13aWR0aD0iMS41Ii8+PGNpcmNsZSBjeD0iMTU1NSIgY3k9IjgxOSIgcj0iMTAiIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzgzOWFiMCIgc3Ryb2tlLXdpZHRoPSIyIi8+PHBhdGggZD0iTTE1NTUgODE0djEwbS01LTVoMTAiIHN0cm9rZT0iIzgzOWFiMCIgc3Ryb2tlLXdpZHRoPSIyIi8+Cjx0ZXh0IHg9IjE1NTUiIHk9Ijg1NyIgdGV4dC1hbmNob3I9Im1pZGRsZSIgY2xhc3M9ImxhYmVsIj5WYXVsdDwvdGV4dD48dGV4dCB4PSIxNTU1IiB5PSI4ODMiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGNsYXNzPSJzbWFsbCI+7KSR7JWZIOyLnO2BrOumvzwvdGV4dD4KCjwhLS0gU2FtZSBleHRlcm5hbCBzeXN0ZW0sIGRpZmZlcmVudCBuZXR3b3JrIG9yaWdpbnMuIC0tPgo8cGF0aCBjbGFzcz0icm91dGUgcGMiIGQ9Ik00NDUgODUwSDQwNVYxMDg1SDcwMCIvPjxwYXRoIGNsYXNzPSJyb3V0ZSBzdiIgZD0iTTEyODUgODUwSDEzMDVWMTA4NUgxMDQwIi8+CjxyZWN0IHg9IjUxNyIgeT0iMTAxNyIgd2lkdGg9IjI1MCIgaGVpZ2h0PSIyOCIgcng9IjUiIGNsYXNzPSJsYWJlbC1iZyIvPjx0ZXh0IHg9IjY0MiIgeT0iMTAzNyIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZm9udC1zaXplPSIxNyIgc3R5bGU9ImZpbGw6IzIzNzNjNyI+UEMgSVDsl5DshJwgSFRUUCAvIFRDUCDtmLjstpw8L3RleHQ+CjxyZWN0IHg9Ijk3NSIgeT0iMTAxNyIgd2lkdGg9IjI5NiIgaGVpZ2h0PSIyOCIgcng9IjUiIGNsYXNzPSJsYWJlbC1iZyIvPjx0ZXh0IHg9IjExMjMiIHk9IjEwMzciIHRleHQtYW5jaG9yPSJtaWRkbGUiIGZvbnQtc2l6ZT0iMTciIHN0eWxlPSJmaWxsOiMyMTg1NzQiPuyEnOuyhCBJUOyXkOyEnCBIVFRQIC8gVENQIO2YuOy2nDwvdGV4dD4KPHJlY3QgeD0iNzEwIiB5PSIxMDUwIiB3aWR0aD0iMzIwIiBoZWlnaHQ9Ijc2IiByeD0iMTYiIGZpbGw9IiMyMDM0NDkiLz48dGV4dCB4PSI4NzAiIHk9IjEwODMiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGZvbnQtc2l6ZT0iMjEiIGZvbnQtd2VpZ2h0PSI3MDAiIHN0eWxlPSJmaWxsOndoaXRlIj7rjIDsg4Eg7Iuc7Iqk7YWcIMK3IEFQSSAvIFRDUDwvdGV4dD48dGV4dCB4PSI4NzAiIHk9IjExMTAiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGZvbnQtc2l6ZT0iMTYiIHN0eWxlPSJmaWxsOiNkMmRlZWIiPkhUVFAgLyBUQ1Ag64W465Oc7J2YIOyLpO2WiSDsnITsuZgg7ISg7YOdPC90ZXh0Pgo8dGV4dCB4PSI0MCIgeT0iMTE2NSIgY2xhc3M9InNtYWxsIj7si6TshKAgPSBBUEkgLyDtmLjstpwg7Z2Q66aEIMK3IOygkOyEoCA9IFBD6rCAIOyhsO2ajO2VmOuKlCDrqoXroLkg7KSR6rOEIMK3IOuztOudvOyDiSA9IOqzte2GtSDrnbzsnbTruIzrn6zrpqw8L3RleHQ+Cjx0ZXh0IHg9IjE3MDAiIHk9IjExNjUiIHRleHQtYW5jaG9yPSJlbmQiIGZvbnQtc2l6ZT0iMTUiIHN0eWxlPSJmaWxsOiM3NTUzOWUiPu2ZleyglSDqtazsobAgwrcgV2luZG93cyDroZzqt7jsnbggLyBNQ1Ag7J6Q64+ZIOyXsOqysDwvdGV4dD4KPC9zdmc+Cg==" alt="실행 구조: Windows 앱에서 로그인하면 중앙 서버가 FlowLink MCP용 토큰을 발급하고, 데스크톱 앱이 IDE 설정에 주소와 Bearer 토큰을 자동 반영·갱신합니다. 개인 데이터는 PC의 H2, 팀 데이터는 서버의 Oracle에 분리 저장됩니다.">
+      </div>
+      <div class="arch-tools">
+        <div class="legend" id="arch-legend"><span><i style="background:#2373c7"></i>PC · 로컬 호출</span><span><i style="background:#218574"></i>서버 · 중앙 연결</span><span><i style="background:#ac95ce"></i>공통 라이브러리</span></div>
+        <button type="button" class="btn btn-icon" id="arch-zoom" aria-pressed="false">크게 보기</button>
+      </div>
+      <div class="arch-notes">
+        <div class="card"><h3>다섯 모듈</h3><p><code>flow-agent</code>는 호출·Mock·콜백 수신, <code>flow-core</code>는 공통 저장·관리, <code>flow-server</code>·<code>flow-desktop</code>은 각 실행 호스트, <code>flow-mcp</code>는 중앙 MCP입니다.</p></div>
+        <div class="card"><h3>자원 경계</h3><p>개인 환경·프로토콜·시크릿은 PC에, 공용·팀 자원은 서버에 둡니다. 다른 위치로 호출을 넘기면 그 위치의 자원을 씁니다.</p></div>
+        <div class="card"><h3>IDE 연결</h3><p>IDE는 별도 OAuth 없이 서버의 <code>/mcp</code>에 연결합니다. 토큰 만료·재발급은 서버가, 설정 갱신은 앱이 맡습니다.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="dl" id="download-section" aria-labelledby="dl-title">
+    <div class="wrap">
+      <div class="dl-panel">
+        <div>
+          <h2 id="dl-title">지금 받아서 시작하세요.</h2>
+          <p>이 서버가 크기와 SHA-256을 확인한 설치 파일입니다.</p>
+          <a id="download-2" class="btn btn-primary btn-lg" hidden>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>
+            <span id="file-name">설치 파일 다운로드</span>
+          </a>
+          <div class="state warn" id="state-missing" hidden role="status">설치 파일이 아직 준비되지 않았습니다. 서버 관리자에게 배포를 요청하세요.</div>
+          <div class="state fail" id="state-error" hidden role="status">서버의 배포 정보를 확인하지 못했습니다. 잠시 뒤 다시 확인하거나 서버 관리자에게 문의하세요.</div>
+        </div>
+        <div>
+          <dl class="info">
+            <dt>버전</dt><dd><span id="info-version">—</span></dd>
+            <dt>파일 크기</dt><dd><span id="info-size">—</span></dd>
+            <dt>SHA-256</dt><dd><span class="mono" id="info-sha">—</span><button type="button" class="btn btn-icon" data-copy="info-sha" hidden>복사</button></dd>
+            <dt>서버 주소</dt><dd><span class="mono" id="info-server">—</span><button type="button" class="btn btn-icon" data-copy="info-server" hidden>복사</button></dd>
+            <dt>MCP 주소</dt><dd><span class="mono" id="info-mcp">—</span><button type="button" class="btn btn-icon" data-copy="info-mcp" hidden>복사</button></dd>
+          </dl>
+          <div class="notes" id="info-notes" hidden></div>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer><div class="wrap"><span>FlowLink · 개인 작업은 내 PC에 저장됩니다.</span><span id="footer-version"></span></div></footer>
+
+<script>
+  const $ = id => document.getElementById(id);
+  const ARCH = {
+    runtime: { src: 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNzQwIiBoZWlnaHQ9IjExOTAiIHZpZXdCb3g9IjAgMCAxNzQwIDExOTAiIHJvbGU9ImltZyIgYXJpYS1sYWJlbGxlZGJ5PSJ0aXRsZSBkZXNjIj4KPHRpdGxlIGlkPSJ0aXRsZSI+Rmxvd0xpbmsg7ZmV7KCVIOyVhO2CpO2FjeyymDog6rCc7J24IFBD7JmAIOykkeyVmSDshJzrsoQ8L3RpdGxlPgo8ZGVzYyBpZD0iZGVzYyI+V2luZG93cyDslbHsl5DshJwg7ZWcIOuyiCDroZzqt7jsnbjtlZjrqbQg7KSR7JWZIOyEnOuyhOqwgCBHaXRIdWIg7J247KadIO2bhCBGbG93TGluayBNQ1Dsmqkg7Yag7YGw7J2EIOuwnOq4ie2VnOuLpC4gZGVza3RvcOydtCBJREUg7IKs7Jqp7J6QIOyEpOygleydmCBNQ1Ag7KO87IaM7JmAIEF1dGhvcml6YXRpb24gQmVhcmVyIO2GoO2BsOydhCDsnpDrj5kg67CY7JiB7ZWY6rOgIOunjOujjMK37J6s67Cc6riJ7J2EIOq0gOumrO2VnOuLpC4gSURF64qUIOuzhOuPhCBPQXV0aCDroZzqt7jsnbgg7JeG7J20IOykkeyVmSBNQ1Dsl5Ag7Jew6rKw7ZWc64ukLiDqsJzsnbgg642w7J207YSw64qUIEgyLCDtjIAg642w7J207YSw64qUIE9yYWNsZeyXkCDsoIDsnqXtlZjqs6Ag66Gc7LuswrfshJzrsoQg7JeQ7J207KCE7Yq46rCAIOqwgeqwgSDsi6TtlontlZzri6QuIGNvcmXsmYAgTUNQIO2GoO2BsCDsnpDrj5kg7Jew6rKw7J2EIO2PrO2VqO2VnCDtmZXsoJUg6rWs7KGw7J2064ukLjwvZGVzYz4KPGRlZnM+CiAgPHBhdHRlcm4gaWQ9ImdyaWQiIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgcGF0dGVyblVuaXRzPSJ1c2VyU3BhY2VPblVzZSI+PGNpcmNsZSBjeD0iMSIgY3k9IjEiIHI9Ii44IiBmaWxsPSIjZGJlNGVkIi8+PC9wYXR0ZXJuPgogIDxtYXJrZXIgaWQ9ImJsdWUiIG1hcmtlcldpZHRoPSIxMCIgbWFya2VySGVpZ2h0PSIxMCIgcmVmWD0iOCIgcmVmWT0iNSIgb3JpZW50PSJhdXRvLXN0YXJ0LXJldmVyc2UiPjxwYXRoIGQ9Ik0xIDEgOCA1IDEgOSIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjMjM3M2M3IiBzdHJva2Utd2lkdGg9IjEuNyIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIvPjwvbWFya2VyPgogIDxtYXJrZXIgaWQ9ImdyZWVuIiBtYXJrZXJXaWR0aD0iMTAiIG1hcmtlckhlaWdodD0iMTAiIHJlZlg9IjgiIHJlZlk9IjUiIG9yaWVudD0iYXV0by1zdGFydC1yZXZlcnNlIj48cGF0aCBkPSJNMSAxIDggNSAxIDkiIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzIxODU3NCIgc3Ryb2tlLXdpZHRoPSIxLjciIHN0cm9rZS1saW5lam9pbj0icm91bmQiLz48L21hcmtlcj4KICA8bWFya2VyIGlkPSJncmF5IiBtYXJrZXJXaWR0aD0iMTAiIG1hcmtlckhlaWdodD0iMTAiIHJlZlg9IjgiIHJlZlk9IjUiIG9yaWVudD0iYXV0byI+PHBhdGggZD0iTTEgMSA4IDUgMSA5IiBmaWxsPSJub25lIiBzdHJva2U9IiM3YzhmYTMiIHN0cm9rZS13aWR0aD0iMS43IiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+PC9tYXJrZXI+CiAgPHN0eWxlPgogICAgdGV4dHtmb250LWZhbWlseTonTWFsZ3VuIEdvdGhpYycsJ+unkeydgCDqs6DrlJUnLHN5c3RlbS11aSxzYW5zLXNlcmlmO2ZpbGw6IzIwMzQ0OX0gLnRpdGxle2ZvbnQtc2l6ZTozMHB4O2ZvbnQtd2VpZ2h0OjgwMDtsZXR0ZXItc3BhY2luZzotMXB4fS5zdWJ0aXRsZXtmb250LXNpemU6MThweDtmaWxsOiM2MTc1OGJ9LmxhYmVse2ZvbnQtc2l6ZToxOXB4O2ZvbnQtd2VpZ2h0OjcwMH0uYm9keXtmb250LXNpemU6MThweDtmaWxsOiM2MTc1OGJ9LnNtYWxse2ZvbnQtc2l6ZToxNnB4O2ZpbGw6IzYxNzU4Yn0ubW9ub3tmb250LWZhbWlseTpDb25zb2xhcyxtb25vc3BhY2U7Zm9udC1zaXplOjI1cHg7Zm9udC13ZWlnaHQ6NzAwfS5yb3V0ZXtmaWxsOm5vbmU7c3Ryb2tlLXdpZHRoOjIuNTtzdHJva2UtbGluZWpvaW46cm91bmQ7c3Ryb2tlLWxpbmVjYXA6cm91bmR9LnBje3N0cm9rZTojMjM3M2M3O21hcmtlci1lbmQ6dXJsKCNibHVlKX0uc3Z7c3Ryb2tlOiMyMTg1NzQ7bWFya2VyLWVuZDp1cmwoI2dyZWVuKX0uZGJ7c3Ryb2tlOiM3YzhmYTM7bWFya2VyLWVuZDp1cmwoI2dyYXkpfS5sYWJlbC1iZ3tmaWxsOiNmOGZhZmN9LmNvcmV7ZmlsbDojZjVmMGZmO3N0cm9rZTojYWM5NWNlO3N0cm9rZS13aWR0aDoxLjU7c3Ryb2tlLWRhc2hhcnJheTo2IDV9Lmljb257ZmlsbDpub25lO3N0cm9rZTpjdXJyZW50Q29sb3I7c3Ryb2tlLXdpZHRoOjI7c3Ryb2tlLWxpbmVqb2luOnJvdW5kO3N0cm9rZS1saW5lY2FwOnJvdW5kfQogIDwvc3R5bGU+CjwvZGVmcz4KPHJlY3Qgd2lkdGg9IjE3NDAiIGhlaWdodD0iMTE5MCIgZmlsbD0iI2Y4ZmFmYyIvPgo8cmVjdCB3aWR0aD0iMTc0MCIgaGVpZ2h0PSIxMTkwIiBmaWxsPSJ1cmwoI2dyaWQpIi8+Cjx0ZXh0IHg9IjcwIiB5PSI2NSIgZm9udC1zaXplPSIyNiIgZm9udC13ZWlnaHQ9IjgwMCI+V2luZG93cyDroZzqt7jsnbgg4oaSIE1DUCDsnpDrj5kg7Jew6rKwPC90ZXh0Pgo8dGV4dCB4PSI3MCIgeT0iMTAxIiBjbGFzcz0iYm9keSI+7ISc67KE6rCAIE1DUOyaqSDthqDtgbAg67Cc6riJIMK3IGRlc2t0b3DsnbQg7ISk7KCV6rO8IOqwseyLoCDqtIDrpqw8L3RleHQ+Cgo8IS0tIE9uZSBpZGVudGl0eSBwcm92aWRlciwgbG9jYXRlZCBvdXRzaWRlIGJvdGggcnVudGltZSBob3N0cy4gLS0+CjxyZWN0IHg9IjEyMjUiIHk9IjI4IiB3aWR0aD0iMzcwIiBoZWlnaHQ9Ijc2IiByeD0iMzgiIGZpbGw9IiMyMDM0NDkiLz4KPGcgdHJhbnNmb3JtPSJ0cmFuc2xhdGUoMTI1NSA1MSkiIHN0cm9rZT0id2hpdGUiIGZpbGw9Im5vbmUiIHN0cm9rZS13aWR0aD0iMiI+PGNpcmNsZSBjeD0iMTUiIGN5PSIxMSIgcj0iOSIvPjxwYXRoIGQ9Ik0wIDM0YzAtMTYgMzAtMTYgMzAgMCIvPjwvZz4KPHRleHQgeD0iMTMxMiIgeT0iNjAiIGZvbnQtc2l6ZT0iMjEiIGZvbnQtd2VpZ2h0PSI3MDAiIHN0eWxlPSJmaWxsOndoaXRlIj5HaXRIdWIgT0F1dGg8L3RleHQ+Cjx0ZXh0IHg9IjEzMTIiIHk9Ijg1IiBmb250LXNpemU9IjE2IiBzdHlsZT0iZmlsbDojZDJkZWViIj7qs4TsoJUg7ZmV7J24IMK3IOykkeyVmSDshJzrsoTsl5DshJwg7LKY66asPC90ZXh0Pgo8cGF0aCBjbGFzcz0icm91dGUgc3YiIGQ9Ik0xNDEwIDEwNFYyNTIiLz4KPHJlY3QgeD0iMTQzMCIgeT0iMTExIiB3aWR0aD0iMTY2IiBoZWlnaHQ9IjI5IiByeD0iNSIgZmlsbD0iI2Y4ZmFmYyIvPjx0ZXh0IHg9IjE0NDAiIHk9IjEzMiIgY2xhc3M9InNtYWxsIj7snbjspp0g6rKw6rO8PC90ZXh0PgoKPCEtLSBSdW50aW1lIGJvdW5kYXJpZXM6IHRoZSB0d28gYWdlbnRzIGxpdmUgaW5zaWRlIHRoZWlyIHJlc3BlY3RpdmUgaG9zdC4gLS0+CjxyZWN0IHg9IjQwIiB5PSIxNTgiIHdpZHRoPSI3MzAiIGhlaWdodD0iODU0IiByeD0iMjYiIGZpbGw9IiNmMWY3ZmYiIHN0cm9rZT0iI2JkZDJlYSIgc3Ryb2tlLXdpZHRoPSIxLjUiLz4KPHJlY3QgeD0iOTcwIiB5PSIxNTgiIHdpZHRoPSI3MzAiIGhlaWdodD0iODU0IiByeD0iMjYiIGZpbGw9IiNmMGY5ZjYiIHN0cm9rZT0iI2I3ZDhkMCIgc3Ryb2tlLXdpZHRoPSIxLjUiLz4KPGcgdHJhbnNmb3JtPSJ0cmFuc2xhdGUoNzUgMTkwKSIgc3R5bGU9ImNvbG9yOiMyMzczYzciPjxyZWN0IGNsYXNzPSJpY29uIiB3aWR0aD0iMzgiIGhlaWdodD0iMjUiIHJ4PSIzIi8+PHBhdGggY2xhc3M9Imljb24iIGQ9Ik0xMiAzMWgxNE0xOSAyNXY2Ii8+PC9nPgo8dGV4dCB4PSIxMzAiIHk9IjIxMiIgY2xhc3M9InRpdGxlIj7sgqzsmqnsnpAgUEM8L3RleHQ+PHRleHQgeD0iMTMwIiB5PSIyNDIiIGNsYXNzPSJzdWJ0aXRsZSI+V2luZG93cyDshKTsuZggwrcg6rCc7J24IOyekeyXheydmCDsm5Drs7g8L3RleHQ+CjxyZWN0IHg9IjYwMiIgeT0iMTkwIiB3aWR0aD0iMTI2IiBoZWlnaHQ9IjM0IiByeD0iMTciIGZpbGw9IiNlMGVkZmQiLz48dGV4dCB4PSI2NjUiIHk9IjIxMyIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZm9udC1zaXplPSIxNiIgZm9udC13ZWlnaHQ9IjcwMCIgc3R5bGU9ImZpbGw6IzIzNzNjNyI+TVNJICsgSmF2YTwvdGV4dD4KPGcgdHJhbnNmb3JtPSJ0cmFuc2xhdGUoMTAwNSAxODYpIiBzdHlsZT0iY29sb3I6IzIxODU3NCI+PHJlY3QgY2xhc3M9Imljb24iIHdpZHRoPSIzNiIgaGVpZ2h0PSIxNSIgcng9IjMiLz48cmVjdCBjbGFzcz0iaWNvbiIgeT0iMjAiIHdpZHRoPSIzNiIgaGVpZ2h0PSIxNSIgcng9IjMiLz48cGF0aCBjbGFzcz0iaWNvbiIgZD0iTTcgN2gxTTcgMjdoMU0yMyA3aDZNMjMgMjdoNiIvPjwvZz4KPHRleHQgeD0iMTA2MCIgeT0iMjEyIiBjbGFzcz0idGl0bGUiPu2ajOyCrCDshJzrsoQ8L3RleHQ+PHRleHQgeD0iMTA2MCIgeT0iMjQyIiBjbGFzcz0ic3VidGl0bGUiPkRvY2tlciAvIEVDMiDCtyDtjIAg7J6R7JeF6rO8IOykkeyVmSDsl7DqsrA8L3RleHQ+CjxyZWN0IHg9IjE1NTAiIHk9IjE5MCIgd2lkdGg9IjExMCIgaGVpZ2h0PSIzNCIgcng9IjE3IiBmaWxsPSIjZGRmMGU5Ii8+PHRleHQgeD0iMTYwNSIgeT0iMjEzIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmb250LXNpemU9IjE2IiBmb250LXdlaWdodD0iNzAwIiBzdHlsZT0iZmlsbDojMjE4NTc0Ij5TZXJ2ZXIgSlZNPC90ZXh0PgoKPCEtLSBCcm93c2VyIGFuZCBuYXRpdmUgZW50cnkgcG9pbnRzLiAtLT4KPHJlY3QgeD0iOTAiIHk9IjI4MCIgd2lkdGg9IjMyMCIgaGVpZ2h0PSI5MCIgcng9IjEyIiBmaWxsPSJ3aGl0ZSIgc3Ryb2tlPSIjYmJjZWUzIi8+CjxwYXRoIGQ9Ik05MCAzMDZoMzIwIiBzdHJva2U9IiNkNGUwZWQiLz48Y2lyY2xlIGN4PSIxMDYiIGN5PSIyOTMiIHI9IjMiIGZpbGw9IiM5MWFiYzUiLz48Y2lyY2xlIGN4PSIxMTciIGN5PSIyOTMiIHI9IjMiIGZpbGw9IiNiOWM5ZGEiLz48Y2lyY2xlIGN4PSIxMjgiIGN5PSIyOTMiIHI9IjMiIGZpbGw9IiNiOWM5ZGEiLz4KPHRleHQgeD0iMjUwIiB5PSIzMzQiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGNsYXNzPSJsYWJlbCI+67iM65287Jqw7KCAIO2ZlOuptCDCtyBSZWFjdDwvdGV4dD48dGV4dCB4PSIyNTAiIHk9IjM1NyIgdGV4dC1hbmNob3I9Im1pZGRsZSIgY2xhc3M9InNtYWxsIj7qsJzsnbgg6rO16rCEIC8g7YyAIOqzteqwhDwvdGV4dD4KPHJlY3QgeD0iNDcwIiB5PSIyODAiIHdpZHRoPSIyNTAiIGhlaWdodD0iOTAiIHJ4PSIxMiIgZmlsbD0id2hpdGUiIHN0cm9rZT0iI2JiY2VlMyIvPgo8dGV4dCB4PSI1OTUiIHk9IjMxMCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgY2xhc3M9ImxhYmVsIj5XaW5kb3dzIOywvSDCtyDtirjroIjsnbQ8L3RleHQ+PHRleHQgeD0iNTk1IiB5PSIzMzYiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGNsYXNzPSJzbWFsbCI+66Gc6re47J24IMK3IOyEpOyglSDCtyDsl4XrjbDsnbTtirg8L3RleHQ+PHRleHQgeD0iNTk1IiB5PSIzNTgiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGZvbnQtc2l6ZT0iMTQiIHN0eWxlPSJmaWxsOiMyMzczYzciPk1DUCDthqDtgbAg7J6Q64+ZIOyEpOyglSDCtyDqsLHsi6A8L3RleHQ+CjxwYXRoIGNsYXNzPSJyb3V0ZSBwYyIgZD0iTTQ3MCAzMjVINDIzIi8+PHRleHQgeD0iNDQzIiB5PSIzMTAiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGZvbnQtc2l6ZT0iMTMiIHN0eWxlPSJmaWxsOiMyMzczYzciPuyXtOq4sDwvdGV4dD4KPHBhdGggY2xhc3M9InJvdXRlIHBjIiBkPSJNMjUwIDM3MFY1MDYiLz48dGV4dCB4PSIyNjUiIHk9IjQ1NyIgY2xhc3M9InNtYWxsIj7roZzsu6wgQVBJPC90ZXh0PgoKPCEtLSBEZXNrdG9wIGxvZ2luIG9idGFpbnMgYSBzZXJ2ZXItaXNzdWVkIE1DUCB0b2tlbiBhbmQgY29uZmlndXJlcyB0aGUgSURFLiAtLT4KPHJlY3QgeD0iMTAxNSIgeT0iMjgwIiB3aWR0aD0iNjM1IiBoZWlnaHQ9IjkwIiByeD0iMTIiIGZpbGw9IndoaXRlIiBzdHJva2U9IiNiN2Q4ZDAiLz4KPGcgdHJhbnNmb3JtPSJ0cmFuc2xhdGUoMTA0MCAzMDUpIiBzdHlsZT0iY29sb3I6IzIxODU3NCI+PHJlY3QgY2xhc3M9Imljb24iIHg9IjIiIHk9IjEzIiB3aWR0aD0iMjMiIGhlaWdodD0iMjAiIHJ4PSIzIi8+PHBhdGggY2xhc3M9Imljb24iIGQ9Ik03IDEzVjdhNyA3IDAgMCAxIDE0IDB2NiIvPjwvZz4KPHRleHQgeD0iMTA4MCIgeT0iMzE2IiBjbGFzcz0ibGFiZWwiPuykkeyVmSDroZzqt7jsnbggwrcg6rOE7KCVIMK3IOq2jO2VnDwvdGV4dD48dGV4dCB4PSIxMDgwIiB5PSIzNDYiIGNsYXNzPSJzbWFsbCI+R2l0SHViIO2ZleyduCDihpIg7JWxIOuhnOq3uOyduCAvIEZsb3dMaW5rIE1DUOyaqSDthqDtgbAg67Cc6riJPC90ZXh0Pgo8cGF0aCBjbGFzcz0icm91dGUgcGMiIGQ9Ik03MjAgMzAzSDEwMDQiLz48cmVjdCB4PSI3OTAiIHk9IjI2OSIgd2lkdGg9IjE2MCIgaGVpZ2h0PSIyNyIgcng9IjUiIGNsYXNzPSJsYWJlbC1iZyIvPjx0ZXh0IHg9Ijg3MCIgeT0iMjg5IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmb250LXNpemU9IjE2IiBzdHlsZT0iZmlsbDojMjM3M2M3Ij7ikaAg66Gc6re47J24IOyalOyyrTwvdGV4dD4KPHBhdGggY2xhc3M9InJvdXRlIHN2IiBkPSJNMTAwNCAzNTBINzMyIi8+PHJlY3QgeD0iNzY0IiB5PSIzNTkiIHdpZHRoPSIyMTMiIGhlaWdodD0iMjciIHJ4PSI1IiBjbGFzcz0ibGFiZWwtYmciLz48dGV4dCB4PSI4NzAiIHk9IjM3OSIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZm9udC1zaXplPSIxNiIgc3R5bGU9ImZpbGw6IzIxODU3NCI+4pGhIE1DUOyaqSDthqDtgbAg67Cc6riJPC90ZXh0Pgo8cGF0aCBjbGFzcz0icm91dGUgcGMiIGQ9Ik01OTUgMzcwVjM5NiIvPjx0ZXh0IHg9IjYxMSIgeT0iMzk1IiBmb250LXNpemU9IjE0IiBzdHlsZT0iZmlsbDojMjM3M2M3Ij7ikaIg7ISk7KCVIOyekOuPmSDrsJjsmIE8L3RleHQ+CjxwYXRoIGNsYXNzPSJyb3V0ZSBzdiIgZD0iTTE2MzAgMzcwVjUwNiIvPjx0ZXh0IHg9IjE2MTUiIHk9IjQ5OCIgdGV4dC1hbmNob3I9ImVuZCIgY2xhc3M9InNtYWxsIj7snbjspp3rkJwgQVBJPC90ZXh0Pgo8cmVjdCB4PSI0NzAiIHk9IjQwMyIgd2lkdGg9IjI1MCIgaGVpZ2h0PSI4MiIgcng9IjEyIiBmaWxsPSIjMjAzNDQ5Ii8+Cjx0ZXh0IHg9IjU5NSIgeT0iNDM0IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmb250LXNpemU9IjE5IiBmb250LXdlaWdodD0iNzAwIiBzdHlsZT0iZmlsbDp3aGl0ZSI+SURFIMK3IENvcGlsb3Q8L3RleHQ+PHRleHQgeD0iNTk1IiB5PSI0NjEiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGZvbnQtc2l6ZT0iMTYiIHN0eWxlPSJmaWxsOiNkMmRlZWIiPlZTIENvZGUgLyBJbnRlbGxpSjwvdGV4dD4KPHJlY3QgeD0iMTAxNSIgeT0iNDAzIiB3aWR0aD0iMjcwIiBoZWlnaHQ9IjgyIiByeD0iMTIiIGZpbGw9IndoaXRlIiBzdHJva2U9IiMyMTg1NzQiIHN0cm9rZS13aWR0aD0iMS42Ii8+Cjx0ZXh0IHg9IjExNTAiIHk9IjQzNSIgdGV4dC1hbmNob3I9Im1pZGRsZSIgY2xhc3M9Im1vbm8iPmZsb3ctbWNwPC90ZXh0Pjx0ZXh0IHg9IjExNTAiIHk9IjQ2MiIgdGV4dC1hbmNob3I9Im1pZGRsZSIgY2xhc3M9InNtYWxsIj7spJHslZkgL21jcCDCtyDthqDtgbAg6rKA7KadPC90ZXh0Pgo8cGF0aCBjbGFzcz0icm91dGUgcGMiIGQ9Ik03MjAgNDQ0SDEwMDQiLz48cmVjdCB4PSI3NTYiIHk9IjQwOCIgd2lkdGg9IjIyMyIgaGVpZ2h0PSIyOSIgcng9IjUiIGNsYXNzPSJsYWJlbC1iZyIvPjx0ZXh0IHg9Ijg2NyIgeT0iNDMwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmb250LXNpemU9IjE2IiBzdHlsZT0iZmlsbDojMjM3M2M3Ij7ikaMgSFRUUFMgwrcgQmVhcmVyIO2GoO2BsDwvdGV4dD4KPHBhdGggY2xhc3M9InJvdXRlIHN2IiBkPSJNMTE1MCA0ODVWNTA2Ii8+Cjx0ZXh0IHg9IjEzMTAiIHk9IjQyNSIgY2xhc3M9InNtYWxsIj5JREUg67OE64+EIE9BdXRoIOuhnOq3uOyduCDsl4bsnYw8L3RleHQ+PHRleHQgeD0iMTMxMCIgeT0iNDUwIiBjbGFzcz0ic21hbGwiPkdpdEh1YiDthqDtgbDsnYAg7ISc67KE7JeQIOuztOq0gDwvdGV4dD4KCjwhLS0gU2hhcmVkIGxpYnJhcmllcyBydW4gaW5zaWRlIHRoZSB0d28gaG9zdCBhcHBsaWNhdGlvbnMuIC0tPgo8cmVjdCB4PSI4NSIgeT0iNTE1IiB3aWR0aD0iNjQwIiBoZWlnaHQ9IjQ1MCIgcng9IjE4IiBmaWxsPSJ3aGl0ZSIgc3Ryb2tlPSIjOGJiMGQ4IiBzdHJva2Utd2lkdGg9IjEuNyIvPgo8cmVjdCB4PSIxMDE1IiB5PSI1MTUiIHdpZHRoPSI2MzUiIGhlaWdodD0iNDUwIiByeD0iMTgiIGZpbGw9IndoaXRlIiBzdHJva2U9IiM4MGI3YTciIHN0cm9rZS13aWR0aD0iMS43Ii8+Cjx0ZXh0IHg9IjExNSIgeT0iNTU2IiBjbGFzcz0ibW9ubyIgc3R5bGU9ImZpbGw6IzIzNzNjNyI+Zmxvdy1kZXNrdG9wPC90ZXh0Pjx0ZXh0IHg9IjExNSIgeT0iNTgyIiBjbGFzcz0ic21hbGwiPuqwnOyduCBBUEkgwrcgSDIg6rSA66asIMK3IOyekeyXhSDsoITri6wgwrcgTUNQIO2GoO2BsCDqsLHsi6A8L3RleHQ+Cjx0ZXh0IHg9IjEwNDUiIHk9IjU1NiIgY2xhc3M9Im1vbm8iIHN0eWxlPSJmaWxsOiMyMTg1NzQiPmZsb3ctc2VydmVyPC90ZXh0Pjx0ZXh0IHg9IjEwNDUiIHk9IjU4MiIgY2xhc3M9InNtYWxsIj7tjIAgQVBJIMK3IOykkeyVmSDtlIzrn6zqt7jsnbggwrcg7Iuc7YGs66a/IMK3IFBDIOykkeqzhDwvdGV4dD4KPHBhdGggY2xhc3M9InJvdXRlIHBjIiBkPSJNNzM1IDYxMEgxMDAzIi8+PHRleHQgeD0iODcwIiB5PSI1OTMiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGZvbnQtc2l6ZT0iMTciIHN0eWxlPSJmaWxsOiMyMzczYzciPuyEnOuyhCBBUEkgwrcg7JuQ6rKpIOyekeyXhTwvdGV4dD4KPHBhdGggY2xhc3M9InJvdXRlIHN2IiBkPSJNMTAwNCA3MjVINzM3IiBzdHJva2UtZGFzaGFycmF5PSI3IDYiLz48dGV4dCB4PSI4NzAiIHk9Ijc1MiIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZm9udC1zaXplPSIxNyIgc3R5bGU9ImZpbGw6IzIxODU3NCI+UEPqsIAg7KGw7ZqM7ZWcIOuqheuguSAvIOqysOqzvDwvdGV4dD48dGV4dCB4PSI4NzAiIHk9Ijc3NSIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZm9udC1zaXplPSIxNSIgc3R5bGU9ImZpbGw6IzYxNzU4YiI+7ISc67KEIOKGkiBQQyDsp4HsoJEg7KCR7IaNIOyXhuydjDwvdGV4dD4KCjxyZWN0IGNsYXNzPSJjb3JlIiB4PSIxMzUiIHk9IjYyNSIgd2lkdGg9IjU0MCIgaGVpZ2h0PSI3NSIgcng9IjEyIi8+Cjx0ZXh0IHg9IjE2MCIgeT0iNjU2IiBjbGFzcz0ibW9ubyIgc3R5bGU9ImZpbGw6Izc1NTM5ZSI+Zmxvdy1jb3JlPC90ZXh0Pjx0ZXh0IHg9IjE2MCIgeT0iNjgyIiBjbGFzcz0ic21hbGwiPuybjO2BrO2UjOuhnCDCtyDtmZjqsr0gwrcg7Iuk7ZaJIOyDge2DnCDCtyDsoIDsnqUg6rSA66asPC90ZXh0Pjx0ZXh0IHg9IjY0OCIgeT0iNjUzIiB0ZXh0LWFuY2hvcj0iZW5kIiBmb250LXNpemU9IjE0IiBzdHlsZT0iZmlsbDojNzU1MzllIj7qs7XthrUg7L2U65OcPC90ZXh0Pgo8cmVjdCBjbGFzcz0iY29yZSIgeD0iMTA1NSIgeT0iNjI1IiB3aWR0aD0iNTUwIiBoZWlnaHQ9Ijc1IiByeD0iMTIiLz4KPHRleHQgeD0iMTA4MCIgeT0iNjU2IiBjbGFzcz0ibW9ubyIgc3R5bGU9ImZpbGw6Izc1NTM5ZSI+Zmxvdy1jb3JlPC90ZXh0Pjx0ZXh0IHg9IjEwODAiIHk9IjY4MiIgY2xhc3M9InNtYWxsIj7qs7XsmqnCt+2MgCDtlIzrn6zqt7jsnbgg67OA7ZmY7J2AIOykkeyVmSDshJzrsoTsl5DshJzrp4wg7Iuk7ZaJPC90ZXh0Pjx0ZXh0IHg9IjE1ODAiIHk9IjY1MyIgdGV4dC1hbmNob3I9ImVuZCIgZm9udC1zaXplPSIxNCIgc3R5bGU9ImZpbGw6Izc1NTM5ZSI+6rO17Ya1IOy9lOuTnDwvdGV4dD4KCjxwYXRoIGNsYXNzPSJyb3V0ZSBkYiIgZD0iTTI1MCA3MDBWNzgwIi8+PHRleHQgeD0iMjY0IiB5PSI3NTIiIGNsYXNzPSJzbWFsbCI+7KCA7J6lPC90ZXh0Pgo8cGF0aCBjbGFzcz0icm91dGUgcGMiIGQ9Ik01NjAgNzAwVjc4MCIvPjx0ZXh0IHg9IjU3NSIgeT0iNzUyIiBjbGFzcz0ic21hbGwiPuyLpO2WiTwvdGV4dD4KPHBhdGggY2xhc3M9InJvdXRlIHN2IiBkPSJNMTE3MCA3MDBWNzgwIi8+PHRleHQgeD0iMTE4NiIgeT0iNzUyIiBjbGFzcz0ic21hbGwiPuyLpO2WiTwvdGV4dD4KPHBhdGggY2xhc3M9InJvdXRlIGRiIiBkPSJNMTM5MCA3MDBWNzgwIi8+PHBhdGggY2xhc3M9InJvdXRlIGRiIiBkPSJNMTU1NSA3MDBWNzgwIi8+Cjx0ZXh0IHg9IjE0NzIiIHk9Ijc1MSIgdGV4dC1hbmNob3I9Im1pZGRsZSIgY2xhc3M9InNtYWxsIj7rjbDsnbTthLAgLyDsi5ztgazrpr88L3RleHQ+Cgo8IS0tIERhdGFiYXNlIGN5bGluZGVycyB2ZXJzdXMgZXhlY3V0aW9uIGJsb2Nrcy4gLS0+CjxwYXRoIGQ9Ik0xNjUgODA1djg4YzAgMjYgMTcwIDI2IDE3MCAwdi04OCIgZmlsbD0iI2Y2ZjlmYyIgc3Ryb2tlPSIjOWFhZWMzIiBzdHJva2Utd2lkdGg9IjEuNSIvPjxlbGxpcHNlIGN4PSIyNTAiIGN5PSI4MDUiIHJ4PSI4NSIgcnk9IjE4IiBmaWxsPSIjZThlZmY2IiBzdHJva2U9IiM5YWFlYzMiIHN0cm9rZS13aWR0aD0iMS41Ii8+Cjx0ZXh0IHg9IjI1MCIgeT0iODU3IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBjbGFzcz0ibGFiZWwiPuqwnOyduCBIMjwvdGV4dD48dGV4dCB4PSIyNTAiIHk9Ijg4MyIgdGV4dC1hbmNob3I9Im1pZGRsZSIgY2xhc3M9InNtYWxsIj7qsJzsnbgg7JuQ67O4IMK3IOyekOyytCDslZTtmLjtmZQ8L3RleHQ+PHRleHQgeD0iMjUwIiB5PSI5MzgiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGNsYXNzPSJzbWFsbCI+66Gc6re47J24IOyXhuydtCDsgqzsmqk8L3RleHQ+CjxyZWN0IHg9IjQ0NSIgeT0iNzkyIiB3aWR0aD0iMjMwIiBoZWlnaHQ9IjEyMyIgcng9IjEyIiBmaWxsPSIjZWNmNGZmIiBzdHJva2U9IiMyMzczYzciIHN0cm9rZS13aWR0aD0iMS41Ii8+Cjx0ZXh0IHg9IjU2MCIgeT0iODI0IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBjbGFzcz0ibGFiZWwiIHN0eWxlPSJmaWxsOiMyMzczYzciPuuhnOy7rCDsl5DsnbTsoITtirg8L3RleHQ+PHRleHQgeD0iNTYwIiB5PSI4NTMiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGZvbnQtZmFtaWx5PSJDb25zb2xhcyxtb25vc3BhY2UiIGZvbnQtc2l6ZT0iMTkiIGZvbnQtd2VpZ2h0PSI3MDAiPmZsb3ctYWdlbnQ8L3RleHQ+PHRleHQgeD0iNTYwIiB5PSI4ODMiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGNsYXNzPSJzbWFsbCI+7Zi47LacIMK3IE1vY2sgwrcg7L2c67CxIOyImOyLoDwvdGV4dD48dGV4dCB4PSI1NjAiIHk9IjkzOCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgY2xhc3M9InNtYWxsIj7qsJzsnbggTW9jayDrpqzsiqggwrcg7ZSM65+s6re47J24IOyCrOyaqSDsl4bsnYw8L3RleHQ+CjxyZWN0IHg9IjEwNTUiIHk9Ijc5MiIgd2lkdGg9IjIzMCIgaGVpZ2h0PSIxMjMiIHJ4PSIxMiIgZmlsbD0iI2U5ZjZmMCIgc3Ryb2tlPSIjMjE4NTc0IiBzdHJva2Utd2lkdGg9IjEuNSIvPgo8dGV4dCB4PSIxMTcwIiB5PSI4MjQiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGNsYXNzPSJsYWJlbCIgc3R5bGU9ImZpbGw6IzIxODU3NCI+7ISc67KEIOyXkOydtOyghO2KuDwvdGV4dD48dGV4dCB4PSIxMTcwIiB5PSI4NTMiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGZvbnQtZmFtaWx5PSJDb25zb2xhcyxtb25vc3BhY2UiIGZvbnQtc2l6ZT0iMTkiIGZvbnQtd2VpZ2h0PSI3MDAiPmZsb3ctYWdlbnQ8L3RleHQ+PHRleHQgeD0iMTE3MCIgeT0iODgzIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBjbGFzcz0ic21hbGwiPu2YuOy2nCDCtyBNb2NrIMK3IOy9nOuwsSDsiJjsi6A8L3RleHQ+PHRleHQgeD0iMTE3MCIgeT0iOTM4IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBjbGFzcz0ic21hbGwiPu2MgCBNb2Nr7J2AIOyEnOuyhOyXkOyEnCDrpqzsiqg8L3RleHQ+CjxwYXRoIGQ9Ik0xMzI1IDgwNXY4OGMwIDI0IDEzMCAyNCAxMzAgMHYtODgiIGZpbGw9IiNmNmY5ZmMiIHN0cm9rZT0iIzlhYWVjMyIgc3Ryb2tlLXdpZHRoPSIxLjUiLz48ZWxsaXBzZSBjeD0iMTM5MCIgY3k9IjgwNSIgcng9IjY1IiByeT0iMTgiIGZpbGw9IiNlOGVmZjYiIHN0cm9rZT0iIzlhYWVjMyIgc3Ryb2tlLXdpZHRoPSIxLjUiLz4KPHRleHQgeD0iMTM5MCIgeT0iODU3IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBjbGFzcz0ibGFiZWwiPk9yYWNsZTwvdGV4dD48dGV4dCB4PSIxMzkwIiB5PSI4ODMiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGNsYXNzPSJzbWFsbCI+7YyAIOuNsOydtO2EsDwvdGV4dD4KPHJlY3QgeD0iMTQ5MCIgeT0iNzkyIiB3aWR0aD0iMTMwIiBoZWlnaHQ9IjExNSIgcng9IjEyIiBmaWxsPSIjZjZmOWZjIiBzdHJva2U9IiM5YWFlYzMiIHN0cm9rZS13aWR0aD0iMS41Ii8+PGNpcmNsZSBjeD0iMTU1NSIgY3k9IjgxOSIgcj0iMTAiIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzgzOWFiMCIgc3Ryb2tlLXdpZHRoPSIyIi8+PHBhdGggZD0iTTE1NTUgODE0djEwbS01LTVoMTAiIHN0cm9rZT0iIzgzOWFiMCIgc3Ryb2tlLXdpZHRoPSIyIi8+Cjx0ZXh0IHg9IjE1NTUiIHk9Ijg1NyIgdGV4dC1hbmNob3I9Im1pZGRsZSIgY2xhc3M9ImxhYmVsIj5WYXVsdDwvdGV4dD48dGV4dCB4PSIxNTU1IiB5PSI4ODMiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGNsYXNzPSJzbWFsbCI+7KSR7JWZIOyLnO2BrOumvzwvdGV4dD4KCjwhLS0gU2FtZSBleHRlcm5hbCBzeXN0ZW0sIGRpZmZlcmVudCBuZXR3b3JrIG9yaWdpbnMuIC0tPgo8cGF0aCBjbGFzcz0icm91dGUgcGMiIGQ9Ik00NDUgODUwSDQwNVYxMDg1SDcwMCIvPjxwYXRoIGNsYXNzPSJyb3V0ZSBzdiIgZD0iTTEyODUgODUwSDEzMDVWMTA4NUgxMDQwIi8+CjxyZWN0IHg9IjUxNyIgeT0iMTAxNyIgd2lkdGg9IjI1MCIgaGVpZ2h0PSIyOCIgcng9IjUiIGNsYXNzPSJsYWJlbC1iZyIvPjx0ZXh0IHg9IjY0MiIgeT0iMTAzNyIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZm9udC1zaXplPSIxNyIgc3R5bGU9ImZpbGw6IzIzNzNjNyI+UEMgSVDsl5DshJwgSFRUUCAvIFRDUCDtmLjstpw8L3RleHQ+CjxyZWN0IHg9Ijk3NSIgeT0iMTAxNyIgd2lkdGg9IjI5NiIgaGVpZ2h0PSIyOCIgcng9IjUiIGNsYXNzPSJsYWJlbC1iZyIvPjx0ZXh0IHg9IjExMjMiIHk9IjEwMzciIHRleHQtYW5jaG9yPSJtaWRkbGUiIGZvbnQtc2l6ZT0iMTciIHN0eWxlPSJmaWxsOiMyMTg1NzQiPuyEnOuyhCBJUOyXkOyEnCBIVFRQIC8gVENQIO2YuOy2nDwvdGV4dD4KPHJlY3QgeD0iNzEwIiB5PSIxMDUwIiB3aWR0aD0iMzIwIiBoZWlnaHQ9Ijc2IiByeD0iMTYiIGZpbGw9IiMyMDM0NDkiLz48dGV4dCB4PSI4NzAiIHk9IjEwODMiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGZvbnQtc2l6ZT0iMjEiIGZvbnQtd2VpZ2h0PSI3MDAiIHN0eWxlPSJmaWxsOndoaXRlIj7rjIDsg4Eg7Iuc7Iqk7YWcIMK3IEFQSSAvIFRDUDwvdGV4dD48dGV4dCB4PSI4NzAiIHk9IjExMTAiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGZvbnQtc2l6ZT0iMTYiIHN0eWxlPSJmaWxsOiNkMmRlZWIiPkhUVFAgLyBUQ1Ag64W465Oc7J2YIOyLpO2WiSDsnITsuZgg7ISg7YOdPC90ZXh0Pgo8dGV4dCB4PSI0MCIgeT0iMTE2NSIgY2xhc3M9InNtYWxsIj7si6TshKAgPSBBUEkgLyDtmLjstpwg7Z2Q66aEIMK3IOygkOyEoCA9IFBD6rCAIOyhsO2ajO2VmOuKlCDrqoXroLkg7KSR6rOEIMK3IOuztOudvOyDiSA9IOqzte2GtSDrnbzsnbTruIzrn6zrpqw8L3RleHQ+Cjx0ZXh0IHg9IjE3MDAiIHk9IjExNjUiIHRleHQtYW5jaG9yPSJlbmQiIGZvbnQtc2l6ZT0iMTUiIHN0eWxlPSJmaWxsOiM3NTUzOWUiPu2ZleyglSDqtazsobAgwrcgV2luZG93cyDroZzqt7jsnbggLyBNQ1Ag7J6Q64+ZIOyXsOqysDwvdGV4dD4KPC9zdmc+Cg==', alt: '실행 구조: Windows 앱에서 로그인하면 중앙 서버가 FlowLink MCP용 토큰을 발급하고, 데스크톱 앱이 IDE 설정에 주소와 Bearer 토큰을 자동 반영·갱신합니다. 개인 데이터는 PC의 H2, 팀 데이터는 서버의 Oracle에 분리 저장됩니다.' },
+    modules: { src: 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNzQwIiBoZWlnaHQ9IjEwNjAiIHZpZXdCb3g9IjAgMCAxNzQwIDEwNjAiIHJvbGU9ImltZyIgYXJpYS1sYWJlbGxlZGJ5PSJ0aXRsZSBkZXNjIj4KPHRpdGxlIGlkPSJ0aXRsZSI+Rmxvd0xpbmsg7ZmV7KCVIOyGjOyKpCDrqqjrk4gg7J2Y7KG0IOq0gOqzhDwvdGl0bGU+PGRlc2MgaWQ9ImRlc2MiPmRlc2t0b3Dqs7wgc2VydmVy6rCAIOqzte2GtSDqtIDrpqwg66Gc7KeB7J2EIOqwgOynhCBmbG93LWNvcmXsl5Ag7J2Y7KG07ZWY6rOgIGNvcmXripQgZmxvdy1hZ2VudOulvCDsgqzsmqntlZzri6QuIGZsb3ctbWNw64qUIHNlcnZlcuunjCDroZzrk5ztlZjrqbAgYWdlbnTsmYAgY29yZeuKlCDrj4Xrpr0g7Iuk7ZaJIO2UhOuhnOyEuOyKpOqwgCDslYTri4jri6QuIGRlc2t0b3DsnYAgc2VydmVyIOyGjOyKpOuCmCBKQVLsl5Ag7J2Y7KG07ZWY7KeAIOyViuuKlOuLpC48L2Rlc2M+CjxkZWZzPjxtYXJrZXIgaWQ9ImFycm93IiBtYXJrZXJXaWR0aD0iMTAiIG1hcmtlckhlaWdodD0iMTAiIHJlZlg9IjgiIHJlZlk9IjUiIG9yaWVudD0iYXV0byI+PHBhdGggZD0iTTEgMSA4IDUgMSA5IiBmaWxsPSJub25lIiBzdHJva2U9IiM4NDk4YWQiIHN0cm9rZS13aWR0aD0iMS43IiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+PC9tYXJrZXI+PHBhdHRlcm4gaWQ9ImdyaWQiIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgcGF0dGVyblVuaXRzPSJ1c2VyU3BhY2VPblVzZSI+PGNpcmNsZSBjeD0iMSIgY3k9IjEiIHI9Ii44IiBmaWxsPSIjZGJlNGVkIi8+PC9wYXR0ZXJuPjxzdHlsZT50ZXh0e2ZvbnQtZmFtaWx5OidNYWxndW4gR290aGljJywn66eR7J2AIOqzoOuUlScsc3lzdGVtLXVpLHNhbnMtc2VyaWY7ZmlsbDojMjAzNDQ5fS5tb25ve2ZvbnQtZmFtaWx5OkNvbnNvbGFzLG1vbm9zcGFjZTtmb250LXNpemU6MzJweDtmb250LXdlaWdodDo3MDB9LmJvZHl7Zm9udC1zaXplOjIwcHg7ZmlsbDojNjE3NThifS5zbWFsbHtmb250LXNpemU6MTdweDtmaWxsOiM2MTc1OGJ9LmFycm93e2ZpbGw6bm9uZTtzdHJva2U6Izg0OThhZDtzdHJva2Utd2lkdGg6MzttYXJrZXItZW5kOnVybCgjYXJyb3cpO3N0cm9rZS1saW5lam9pbjpyb3VuZH08L3N0eWxlPjwvZGVmcz4KPHJlY3Qgd2lkdGg9IjE3NDAiIGhlaWdodD0iMTA2MCIgZmlsbD0iI2Y4ZmFmYyIvPjxyZWN0IHdpZHRoPSIxNzQwIiBoZWlnaHQ9IjEwNjAiIGZpbGw9InVybCgjZ3JpZCkiLz4KPHRleHQgeD0iMTAwIiB5PSIxMDAiIGZvbnQtc2l6ZT0iMzIiIGZvbnQtd2VpZ2h0PSI4MDAiPuuRkCDsi6Ttlokg7JWx7J20IOqzte2GtSDsvZTrk5zrpbwg7IKs7Jqp7ZWc64ukLjwvdGV4dD48dGV4dCB4PSIxMDAiIHk9IjEzOCIgY2xhc3M9ImJvZHkiPjXqsJwg7IaM7IqkIOuqqOuTiCDCtyAy6rCcIOyLpO2WiSDtmLjsiqTtirggwrcg7J2Y7KG0IO2ZlOyCtO2RnOuKlCDsgqzsmqntlZjripQg7Kq97JeQ7IScIOy2nOuwnDwvdGV4dD4KPHJlY3QgeD0iMTAwIiB5PSIxOTAiIHdpZHRoPSIxNTQwIiBoZWlnaHQ9IjIzNSIgcng9IjIyIiBmaWxsPSJ3aGl0ZSIgc3Ryb2tlPSIjZDRlMGViIi8+PHRleHQgeD0iMTMwIiB5PSIyMjUiIGNsYXNzPSJzbWFsbCI+7Iuk7ZaJIO2YuOyKpO2KuDwvdGV4dD4KPHJlY3QgeD0iMjI1IiB5PSIyNTgiIHdpZHRoPSI0ODAiIGhlaWdodD0iMTMwIiByeD0iMTUiIGZpbGw9IiNlZGY1ZmYiIHN0cm9rZT0iIzhiYjBkOCIgc3Ryb2tlLXdpZHRoPSIxLjUiLz48dGV4dCB4PSIyNjAiIHk9IjMwNSIgY2xhc3M9Im1vbm8iIHN0eWxlPSJmaWxsOiMyMzczYzciPmZsb3ctZGVza3RvcDwvdGV4dD48dGV4dCB4PSIyNjAiIHk9IjM0MCIgY2xhc3M9ImJvZHkiPuqwnOyduCBIMiDCtyBXaW5kb3dzIMK3IE1DUCDshKTsoJU8L3RleHQ+PHRleHQgeD0iMjYwIiB5PSIzNjgiIGNsYXNzPSJzbWFsbCI+66Gc6re47J24IC8gTUNQIO2GoO2BsCDqtIDrpqwgLyDshKTsuZjCt+yXheuNsOydtO2KuDwvdGV4dD4KPHJlY3QgeD0iOTI1IiB5PSIyNTgiIHdpZHRoPSI0ODAiIGhlaWdodD0iMTMwIiByeD0iMTUiIGZpbGw9IiNlYWY2ZjAiIHN0cm9rZT0iIzgwYjdhNyIgc3Ryb2tlLXdpZHRoPSIxLjUiLz48dGV4dCB4PSI5NjAiIHk9IjMwNSIgY2xhc3M9Im1vbm8iIHN0eWxlPSJmaWxsOiMyMTg1NzQiPmZsb3ctc2VydmVyPC90ZXh0Pjx0ZXh0IHg9Ijk2MCIgeT0iMzQwIiBjbGFzcz0iYm9keSI+7YyAIE9yYWNsZSDCtyBWYXVsdCDCtyDspJHslZkg7J247KadPC90ZXh0Pjx0ZXh0IHg9Ijk2MCIgeT0iMzY4IiBjbGFzcz0ic21hbGwiPk1DUCDthqDtgbAg67Cc6riJIC8g7YyAIEFQSSAvIFBDIOykkeqzhDwvdGV4dD4KPHBhdGggY2xhc3M9ImFycm93IiBkPSJNNDY1IDM4OFY0NzBINjk1VjUyNCIvPjxwYXRoIGNsYXNzPSJhcnJvdyIgZD0iTTExNjUgMzg4VjQ3MEg5MzVWNTI0Ii8+Cjx0ZXh0IHg9IjQ3MyIgeT0iNTAxIiBjbGFzcz0ic21hbGwiPuqzte2GtSDqtIDrpqwg7L2U65OcIOyCrOyaqTwvdGV4dD48dGV4dCB4PSIxMDAwIiB5PSI1MDEiIGNsYXNzPSJzbWFsbCI+6rO17Ya1IOq0gOumrCDsvZTrk5wg7IKs7JqpPC90ZXh0Pgo8cmVjdCB4PSI1NTUiIHk9IjUzNSIgd2lkdGg9IjUyMCIgaGVpZ2h0PSIxNDgiIHJ4PSIxNyIgZmlsbD0iI2Y0ZWZmYyIgc3Ryb2tlPSIjYWM5NWNlIiBzdHJva2Utd2lkdGg9IjEuNyIgc3Ryb2tlLWRhc2hhcnJheT0iOCA2Ii8+PHRleHQgeD0iNTkwIiB5PSI1ODUiIGNsYXNzPSJtb25vIiBzdHlsZT0iZmlsbDojNzU1MzllIj5mbG93LWNvcmU8L3RleHQ+PHRleHQgeD0iNTkwIiB5PSI2MjAiIGNsYXNzPSJib2R5Ij7sm4ztgaztlIzroZwgwrcg7ZmY6rK9IMK3IOyLpO2WiSDCtyDsoIDsnqUg6rSA66asPC90ZXh0Pjx0ZXh0IHg9IjU5MCIgeT0iNjUxIiBjbGFzcz0ic21hbGwiPuqzte2GtSDsl5Tti7Dti7DCt0pQQcK37ISc67mE7IqkIOq1rO2YhOydmCDsi6TsoJwg7IaM7Jyg7J6QPC90ZXh0Pjx0ZXh0IHg9IjEwNDAiIHk9IjU3NCIgdGV4dC1hbmNob3I9ImVuZCIgZm9udC1zaXplPSIxNiIgc3R5bGU9ImZpbGw6Izc1NTM5ZSI+6rO17Ya1IOy9lOuTnDwvdGV4dD4KPHBhdGggY2xhc3M9ImFycm93IiBkPSJNODE1IDY4M1Y3OTIiLz48dGV4dCB4PSI4MzIiIHk9Ijc0NSIgY2xhc3M9InNtYWxsIj7si6Ttlokg6rOE7JW97Jy866GcIO2YuOy2nDwvdGV4dD4KPHJlY3QgeD0iNTU1IiB5PSI4MDUiIHdpZHRoPSI1MjAiIGhlaWdodD0iMTQ4IiByeD0iMTciIGZpbGw9IndoaXRlIiBzdHJva2U9IiNhZGJkY2YiIHN0cm9rZS13aWR0aD0iMS41Ii8+PHRleHQgeD0iNTkwIiB5PSI4NTYiIGNsYXNzPSJtb25vIj5mbG93LWFnZW50PC90ZXh0Pjx0ZXh0IHg9IjU5MCIgeT0iODkxIiBjbGFzcz0iYm9keSI+SFRUUCAvIFRDUCDCtyBNb2NrIMK3IOy9nOuwsSDsiJjsi6A8L3RleHQ+PHRleHQgeD0iNTkwIiB5PSI5MjQiIGNsYXNzPSJzbWFsbCI+REIg7JeG7J2MIMK3IFBDIC8g7ISc67KEIOuPmeydvCDqtaztmIQ8L3RleHQ+CjxwYXRoIGNsYXNzPSJhcnJvdyIgZD0iTTE0MDUgMzIzSDE1MjBWNzkyIi8+PHRleHQgeD0iMTUzOCIgeT0iNTUwIiBjbGFzcz0ic21hbGwiPuyEnOuyhOunjDwvdGV4dD48dGV4dCB4PSIxNTM4IiB5PSI1NzciIGNsYXNzPSJzbWFsbCI+66Gc65OcPC90ZXh0Pgo8cmVjdCB4PSIxMjIwIiB5PSI4MDUiIHdpZHRoPSI0MjAiIGhlaWdodD0iMTQ4IiByeD0iMTciIGZpbGw9IndoaXRlIiBzdHJva2U9IiM4MGI3YTciIHN0cm9rZS13aWR0aD0iMS41Ii8+PHRleHQgeD0iMTI1NSIgeT0iODU2IiBjbGFzcz0ibW9ubyIgc3R5bGU9ImZpbGw6IzIxODU3NCI+Zmxvdy1tY3A8L3RleHQ+PHRleHQgeD0iMTI1NSIgeT0iODkxIiBjbGFzcz0iYm9keSI+7KSR7JWZIC9tY3AgwrcgQmVhcmVyIO2GoO2BsCDqsoDspp08L3RleHQ+PHRleHQgeD0iMTI1NSIgeT0iOTI0IiBjbGFzcz0ic21hbGwiPuq0gOumrCBBUEnroZwg7Jew6rKwIMK3IOqwnOyduCBEQiDsp4HsoJEg7KCR6re8IOyXhuydjDwvdGV4dD4KPHRleHQgeD0iMTAwIiB5PSIxMDEwIiBjbGFzcz0ic21hbGwiPu2YuOyKpO2KuCDsnZjsobQ6IGRlc2t0b3Ag4oaSIGNvcmUg4oaQIHNlcnZlcjwvdGV4dD48dGV4dCB4PSIxMDAiIHk9IjEwMzgiIGNsYXNzPSJzbWFsbCI+6rO17Ya1IOq1rO2YhOydgCBjb3Jl7JeQIOyeiOycvOupsCBkZXNrdG9w7J2YIHNlcnZlciDshozsiqTCt0pBUiDsnZjsobTsnYAg7JeG7Iq164uI64ukLjwvdGV4dD48dGV4dCB4PSIxNjQwIiB5PSIxMDI1IiB0ZXh0LWFuY2hvcj0iZW5kIiBjbGFzcz0ic21hbGwiPmNvcmUgLyBhZ2VudCAvIG1jcOuKlCDrj4Xrpr0g7ZSE66Gc7IS47Iqk6rCAIOyVhOuLmeuLiOuLpC48L3RleHQ+Cjwvc3ZnPgo=', alt: '소스 의존 관계: desktop과 server가 core를 사용하고 core는 agent를 사용합니다. desktop은 MCP 설정·토큰 관리, server는 토큰 발급, MCP는 토큰 검증을 맡습니다.' },
+  };
+  for (const key of Object.keys(ARCH)) $('tab-' + key).addEventListener('click', () => {
+    $('arch-img').src = ARCH[key].src; $('arch-img').alt = ARCH[key].alt;
+    for (const other of Object.keys(ARCH)) $('tab-' + other).setAttribute('aria-selected', String(other === key));
+    $('arch-frame').setAttribute('aria-labelledby', 'tab-' + key);
+    $('arch-legend').hidden = key !== 'runtime';
+  });
+  $('arch-zoom').addEventListener('click', () => {
+    const on = $('arch-frame').classList.toggle('zoomed');
+    $('arch-zoom').setAttribute('aria-pressed', String(on)); $('arch-zoom').textContent = on ? '전체 맞춤' : '크게 보기';
+  });
+  for (const button of document.querySelectorAll('[data-copy]')) button.addEventListener('click', async () => {
+    const text = $(button.dataset.copy).textContent;
+    try { await navigator.clipboard.writeText(text); button.textContent = '복사됨'; } catch { button.textContent = '복사 실패'; }
+    setTimeout(() => { button.textContent = '복사'; }, 1600);
+  });
+
+  const setInfo = (id, value) => { $(id).textContent = value || '—'; const copy = document.querySelector('[data-copy="' + id + '"]'); if (copy) copy.hidden = !value; };
   async function load() {
-    element('download').hidden = true; element('download').removeAttribute('href'); element('retry').hidden = true;
-    element('compatibility').hidden = true; element('version').textContent = ''; element('server-version').textContent = '';
-    element('status').textContent = '최신 버전을 확인하는 중…';
+    for (const id of ['download', 'download-2', 'retry', 'compatibility', 'state-missing', 'state-error', 'info-notes']) $(id).hidden = true;
+    $('download').removeAttribute('href'); $('download-2').removeAttribute('href');
+    $('status').textContent = '최신 버전을 확인하는 중…'; $('server-dot').className = 'dot';
     try {
       const response = await fetch(new URL('api/v1/distribution', document.baseURI), { credentials: 'omit', cache: 'no-store', signal: AbortSignal.timeout(15000) });
       if (!response.ok) throw new Error('distribution');
       const info = await response.json();
-      element('server-version').textContent = info.serverVersion ? '서버 버전 ' + info.serverVersion : '';
+      $('server-version').textContent = info.serverVersion ? '서버 ' + info.serverVersion : '서버 연결됨';
+      $('footer-version').textContent = info.serverVersion ? '서버 버전 ' + info.serverVersion : '';
+      setInfo('info-server', info.serverUrl); setInfo('info-mcp', info.mcpUrl);
       const release = info.available && info.release;
       if (!release || !/^\d+\.\d+\.\d+$/.test(release.version)) {
-        element('status').textContent = '설치 파일이 아직 준비되지 않았습니다. 서버 관리자에게 배포를 요청하세요.';
-        element('retry').hidden = false; return;
+        $('server-dot').className = 'dot warn';
+        $('status').textContent = '설치 파일이 아직 준비되지 않았습니다. 서버 관리자에게 배포를 요청하세요.';
+        $('state-missing').hidden = false; $('retry').hidden = false; return;
       }
-      element('download').href = new URL('downloads/FlowLink-' + release.version + '-windows-x64.msi', document.baseURI).href;
-      element('download').hidden = false; element('status').textContent = '최신 버전이 준비되어 있습니다.';
-      element('version').textContent = '버전 ' + release.version + ' · ' + (release.size / 1024 / 1024).toFixed(1) + ' MB';
-      element('compatibility').hidden = info.releaseStatus !== 'INCOMPATIBLE';
-    } catch { element('status').textContent = '서버의 배포 정보를 확인하지 못했습니다. 다시 확인하거나 서버 관리자에게 문의하세요.'; element('retry').hidden = false; }
+      const file = 'FlowLink-' + release.version + '-windows-x64.msi';
+      const href = new URL('downloads/' + file, document.baseURI).href;
+      const size = typeof release.size === 'number' ? (release.size / 1024 / 1024).toFixed(1) + ' MB' : '';
+      for (const id of ['download', 'download-2']) { $(id).href = href; $(id).hidden = false; }
+      $('version').textContent = '버전 ' + release.version + (size ? ' · ' + size : '') + ' · 64비트 MSI';
+      $('file-name').textContent = file;
+      setInfo('info-version', release.version); setInfo('info-size', size); setInfo('info-sha', release.sha256);
+      if (release.releaseNotes) { $('info-notes').textContent = release.releaseNotes; $('info-notes').hidden = false; }
+      $('status').textContent = '최신 버전이 준비되어 있습니다.';
+      const incompatible = info.releaseStatus === 'INCOMPATIBLE';
+      $('compatibility').hidden = !incompatible; $('server-dot').className = incompatible ? 'dot warn' : 'dot ok';
+    } catch {
+      $('server-dot').className = 'dot fail'; $('server-version').textContent = '서버 확인 실패';
+      $('status').textContent = '서버의 배포 정보를 확인하지 못했습니다. 다시 확인하거나 서버 관리자에게 문의하세요.';
+      $('state-error').hidden = false; $('retry').hidden = false;
+    }
   }
-  element('retry').addEventListener('click', load); load();
-</script></body></html>
+  $('retry').addEventListener('click', load); load();
+</script>
+</body>
+</html>

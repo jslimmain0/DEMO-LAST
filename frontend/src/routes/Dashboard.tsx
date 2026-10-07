@@ -13,7 +13,7 @@ import { useAuth, usePermissions } from '../auth/AuthContext'
 import { AskDialog } from '../components/AskDialog'
 import type { AskSpec } from '../components/AskDialog'
 import { FlowGhost } from '../components/MiniFlow'
-import { AppIcon } from '../components/AppIcon'
+import { AppIcon, NodeTypeIcon } from '../components/AppIcon'
 import { useAnchoredPopover } from '../components/useAnchoredPopover'
 import { StatusBadge } from '../components/StatusBadge'
 import { SuiteRunDialog } from '../components/SuiteRunDialog'
@@ -25,6 +25,7 @@ import { CatalogPagination } from '../components/CatalogPagination'
 import { useCatalogNavigation } from '../lib/useCatalogNavigation'
 import type { CatalogLink } from '../lib/catalogNavigation'
 import './dashboard.css'
+import { ui } from '../design/ui'
 
 type Sel = 'all' | 'none' | string // 'all' | 'none' | folderId
 type Sort = 'recent' | 'name'
@@ -379,10 +380,10 @@ export function Dashboard() {
 
   const folderNav = (
     <>
-      {wsRole === 'VIEWER' && <div style={{ padding: '0 12px 6px', fontSize: 11.5, color: 'var(--fl-text-muted)' }}>읽기전용 — 조회만 가능합니다</div>}
+      {wsRole === 'VIEWER' && <div style={{ padding: '0 12px 6px', fontSize: 12, color: 'var(--fl-text-muted)' }}>읽기전용 — 조회만 가능합니다</div>}
       {adminMe.data?.myStatus === 'PENDING' && (
-        <div style={{ margin: '0 10px 6px', padding: '7px 10px', borderRadius: 'var(--fl-radius-sm)', background: 'color-mix(in srgb, var(--fl-waiting) 14%, transparent)', fontSize: 11.5, color: 'var(--fl-text)', lineHeight: 1.5 }}>
-          ⏳ 가입 승인 대기 중 — 승인되면 팀·AI 를 쓸 수 있어요
+        <div style={{ margin: '0 10px 6px', padding: '7px 10px', borderRadius: 'var(--fl-radius-sm)', background: 'color-mix(in srgb, var(--fl-waiting) 14%, transparent)', fontSize: 12, color: 'var(--fl-text)', lineHeight: 1.5 }}>
+          가입 승인 대기 중 — 승인되면 팀·AI 를 쓸 수 있어요
         </div>
       )}
       {/* 홈 = 탐색기 루트: 폴더 타일 + 미분류 워크플로. 여기로 드롭하면 폴더 밖(미분류)으로 꺼낸다. */}
@@ -397,7 +398,7 @@ export function Dashboard() {
     <AppShellTier1 sidebarExtra={folderNav}>
       <div className="fl-flow-workspace">
           <header className="fl-workbench-title">
-            <div><h1>워크플로</h1><span>API를 연결하는 워크플로를 만들고 관리합니다.</span></div>
+            <div><h1>워크플로</h1></div>
             <div className="fl-library-header-actions">
               <div className="fl-flow-search" style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
                 <AppIcon name="search" size={16} style={{ position: 'absolute', left: 11, color: 'var(--fl-text-muted)', pointerEvents: 'none' }} />
@@ -457,7 +458,7 @@ export function Dashboard() {
                 <input ref={selectAllRef} type="checkbox" checked={allSelected} onChange={toggleAll} style={{ width: 16, height: 16, accentColor: 'var(--fl-primary)', cursor: 'pointer' }} />
                 현재 범위 전체 선택 ({visible.length})
               </label>
-              <span style={{ fontSize: 12.5, color: 'var(--fl-text-muted)', fontVariantNumeric: 'tabular-nums' }}>{selectedIds.size}개 선택됨</span>
+              <span style={{ fontSize: 13, color: 'var(--fl-text-muted)', fontVariantNumeric: 'tabular-nums' }}>{selectedIds.size}개 선택됨</span>
               <span style={{ fontSize: 12, color: 'var(--fl-text-muted)' }}>카드 본문 또는 체크박스로 선택</span>
               {selectedOutsidePage > 0 && <span className="fl-selection-hidden" role="status" style={{ fontSize: 12, color: 'var(--fl-text-muted)' }}>이 페이지 밖 {selectedOutsidePage}개{selectedOutsideScope > 0 ? ` · 현재 범위 밖 ${selectedOutsideScope}개 포함` : ''}</span>}
               {selectedIds.size > 0 && <button onClick={() => setSelectedIds(new Set())} style={ghostBtn}>선택 해제</button>}
@@ -476,12 +477,12 @@ export function Dashboard() {
                 ))}
               </select>
               <button onClick={() => runSuite.mutate({ flowIds: [...selectedIds] })} disabled={selectedIds.size === 0 || runSuite.isPending} style={{ ...selectToggleBtn(false), marginLeft: 'auto' }}>▶ 선택 실행 ({selectedIds.size})</button>
-              <button onClick={bulkDelete} disabled={selectedIds.size === 0} style={dangerBtn(selectedIds.size === 0)}>🗑 선택 삭제 ({selectedIds.size})</button>
+              <button onClick={bulkDelete} disabled={selectedIds.size === 0} style={dangerBtn(selectedIds.size === 0)}>선택 삭제 ({selectedIds.size})</button>
             </div>
           )}
 
-          {/* 하위 폴더가 없어도 정리 동선은 작은 섹션으로 남긴다. */}
-          {sel !== 'none' && !search.trim() && (
+          {/* 하위 폴더가 없으면 섹션을 숨긴다 — 폴더 만들기는 사이드바의 '+ 새 폴더'. */}
+          {sel !== 'none' && !search.trim() && (folders.isLoading || folders.isError || scopeFolders.length > 0) && (
             <section className="fl-folder-section" aria-label="하위 폴더">
               <div className="fl-folder-heading">
                 <h3>폴더 <span>{scopeFolders.length}</span></h3>
@@ -514,10 +515,10 @@ export function Dashboard() {
           {flows.isLoading && <Grid layout={layout}>{[0, 1, 2, 3].map((i) => <CardSkeleton key={i} />)}</Grid>}
           {flows.isError && (
             <div style={errorBox}>
-              <div style={{ fontSize: 22 }}>⚠</div>
+              <div style={{ fontSize: 24 }}>⚠</div>
               <div>
                 <div style={{ fontWeight: 600 }}>이 공간의 워크플로를 불러오지 못했습니다.</div>
-                <div style={{ fontSize: 12.5, color: 'var(--fl-text-muted)', marginTop: 4 }}>{scope.current.origin === 'local' ? '트레이에서 FlowLink가 실행 중인지 확인한 뒤 다시 시도하세요.' : '회사 서버 연결과 이 공간의 접근 권한을 확인한 뒤 다시 시도하세요.'}</div>
+                <div style={{ fontSize: 13, color: 'var(--fl-text-muted)', marginTop: 4 }}>{scope.current.origin === 'local' ? '트레이에서 FlowLink가 실행 중인지 확인한 뒤 다시 시도하세요.' : '회사 서버 연결과 이 공간의 접근 권한을 확인한 뒤 다시 시도하세요.'}</div>
               </div>
               <button onClick={() => flows.refetch()} style={{ ...ghostBtn, marginLeft: 'auto' }}>다시 시도</button>
             </div>
@@ -532,7 +533,7 @@ export function Dashboard() {
             if (favFlows.length === 0) return null
             return (
               <div style={{ marginBottom: 22 }}>
-                <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--fl-text-muted)', letterSpacing: '.05em', textTransform: 'uppercase', marginBottom: 10 }}>★ 즐겨찾기</div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--fl-text-muted)', letterSpacing: '.05em', textTransform: 'uppercase', marginBottom: 10 }}>★ 즐겨찾기</div>
                 <Grid layout={layout}>
                   {favFlows.map((f) => (
                     <FlowCard key={'fav-' + f.id} flow={f} detailLink={catalog.detail(f.id)} lastRun={lastRunByFlow.get(f.id)} runState={runs.isError ? 'error' : runs.isPending ? 'loading' : 'ready'} folderOptions={flatFolders} folderLabel={flowFolderLabel(f)}
@@ -638,7 +639,14 @@ function FlowCard({ flow, detailLink, lastRun, runState, folderOptions, folderLa
   }, [menu, anchored.ready])
   useEffect(() => { if (selectMode || readOnly) setMenu(false) }, [selectMode, readOnly])
 
+  const types = flow.nodeTypes ?? []
+  const shownTypes = types.slice(0, 7)
   const cardContent = <>
+    {types.length > 0 && <span className="fl-flow-preview" aria-label={`노드 ${flow.nodeCount ?? types.length}개`}>
+      {shownTypes.map((t, i) => <span key={i} className="fl-flow-preview-step">{i > 0 && <span className="fl-flow-preview-line" />}<NodeTypeIcon type={t} size={22} /></span>)}
+      {types.length > shownTypes.length && <span className="fl-flow-preview-more">+{types.length - shownTypes.length}</span>}
+      <span className="fl-flow-preview-count">노드 {flow.nodeCount ?? types.length}</span>
+    </span>}
     <span className="fl-flow-identity">
       <span className="fl-flow-name" title={flow.name}>{flow.name}</span>
       {flow.description && <span className="fl-flow-description" title={flow.description}>{flow.description}</span>}
@@ -671,7 +679,7 @@ function FlowCard({ flow, detailLink, lastRun, runState, folderOptions, folderLa
           {lastRun ? <><StatusBadge status={lastRun.status} /><span title={lastRun.startedAt ? new Date(lastRun.startedAt).toLocaleString('ko-KR') : undefined}>{relTime(lastRun.startedAt)}</span></>
             : <span title={runState === 'ready' ? '이 공간의 최근 실행 50건 기준입니다.' : undefined}>{runState === 'loading' ? '최근 실행 확인 중…' : runState === 'error' ? '최근 실행을 확인하지 못했습니다' : '최근 실행 기록 없음'}</span>}
         </div>
-        <div className="fl-flow-version" title={`v${flow.currentVersion} · 마지막 저장 ${new Date(flow.updatedAt).toLocaleString('ko-KR')}`}><time dateTime={flow.updatedAt}>{new Date(flow.updatedAt).toLocaleDateString('ko-KR')}</time></div>
+        <div className="fl-flow-version" title={`v${flow.currentVersion} · 마지막 저장 ${new Date(flow.updatedAt).toLocaleString('ko-KR')}`}><time dateTime={flow.updatedAt}>{relTime(flow.updatedAt)} 저장</time></div>
         <div className="fl-flow-card-actions">
           <button onClick={onTogglePin} aria-label={flow.name + ' 즐겨찾기 ' + (pinned ? '해제' : '추가')} aria-pressed={!!pinned} title={pinned ? '즐겨찾기 해제' : '즐겨찾기 추가'} className="fl-flow-favorite" style={iconBtn}><AppIcon name="star" size={15} style={{ fill: pinned ? 'currentColor' : 'none' }} /></button>
           {!selectMode && !readOnly && <button ref={triggerRef} onClick={() => setMenu(value => !value)} aria-label={flow.name + ' 작업 메뉴'} aria-haspopup="dialog" aria-expanded={menu} title="작업" style={iconBtn}><AppIcon name="moreVertical" size={17} /></button>}
@@ -761,8 +769,8 @@ function FolderTile({ folder, subCount, onOpen, drop, onDragStartSelf, onDragEnd
 function CardSkeleton() {
   return (
     <div className="fl-flow-card" aria-hidden="true">
-      <div style={{ height: 15, width: '55%', background: 'var(--fl-surface-2)', borderRadius: 5 }} />
-      <div style={{ height: 9, width: 90, background: 'var(--fl-surface-2)', borderRadius: 5, marginTop: 12 }} />
+      <div style={{ height: 15, width: '55%', background: 'var(--fl-surface-2)', borderRadius: 6 }} />
+      <div style={{ height: 9, width: 90, background: 'var(--fl-surface-2)', borderRadius: 6, marginTop: 12 }} />
       <div style={{ height: 20, width: 120, background: 'var(--fl-surface-2)', borderRadius: 'var(--fl-radius-pill)', marginTop: 18 }} />
     </div>
   )
@@ -787,9 +795,9 @@ function EmptyState({ mode, canEdit, ready, creating, mockHref, onCreate, onClea
       <FlowGhost />
       <div style={{ textAlign: 'center' }}>
         <div style={{ fontFamily: 'var(--fl-font-head)', fontWeight: 700, fontSize: 18 }}>{canEdit ? '첫 워크플로를 만들어 보세요' : '아직 워크플로가 없습니다'}</div>
-        <div style={{ color: 'var(--fl-text-muted)', fontSize: 13.5, marginTop: 6 }}>{canEdit ? 'HTTP 노드를 추가해 API를 호출하고, 실행 결과를 확인하세요. 기존 API는 cURL·OpenAPI로 가져올 수 있습니다.' : '이 공간은 읽기 전용입니다. 팀 편집자에게 생성을 요청하거나 관리자에게 편집 권한을 요청하세요.'}</div>
+        <div style={{ color: 'var(--fl-text-muted)', fontSize: 14, marginTop: 6 }}>{canEdit ? 'HTTP 노드를 추가해 API를 호출하고, 실행 결과를 확인하세요. 기존 API는 cURL·OpenAPI로 가져올 수 있습니다.' : '이 공간은 읽기 전용입니다. 팀 편집자에게 생성을 요청하거나 관리자에게 편집 권한을 요청하세요.'}</div>
       </div>
-      {canEdit && <><button onClick={onCreate} disabled={creating || !ready} style={primaryBtn}>{creating ? '만드는 중…' : '+ 새 워크플로'}</button><Link to={mockHref} style={{ fontSize: 12.5, color: 'var(--fl-primary)' }}>대상 API가 아직 없나요? HTTP Mock 만들기 →</Link></>}
+      {canEdit && <><button onClick={onCreate} disabled={creating || !ready} style={primaryBtn}>{creating ? '만드는 중…' : '+ 새 워크플로'}</button><Link to={mockHref} style={{ fontSize: 13, color: 'var(--fl-primary)' }}>대상 API가 아직 없나요? HTTP Mock 만들기 →</Link></>}
     </div>
   )
 }
@@ -806,10 +814,9 @@ function SidebarItem({ label, count, active, onClick, glyph, title, indent = 0, 
       style={{
         display: 'flex', alignItems: 'center', minWidth: 0, borderRadius: 'var(--fl-radius-sm)',
         background: over ? 'color-mix(in srgb, var(--fl-primary) 14%, var(--fl-surface))' : active ? 'var(--fl-surface-2)' : 'transparent',
-        borderLeft: `2px solid ${over ? 'var(--fl-primary)' : active ? 'var(--fl-primary)' : 'transparent'}`,
         outline: over ? '1.5px dashed var(--fl-primary)' : 'none', outlineOffset: -1,
       }}>
-      <button onClick={onClick} title={title ?? label} aria-current={active ? 'page' : undefined} style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 6, padding: '8px 6px', paddingLeft: 8 + Math.min(indent, 3) * 8, border: 'none', background: 'transparent', cursor: 'pointer', color: active ? 'var(--fl-text)' : 'var(--fl-text-muted)', fontWeight: active ? 600 : 500, fontSize: 13.5, textAlign: 'left' }}>
+      <button onClick={onClick} title={title ?? label} aria-current={active ? 'page' : undefined} style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 6, padding: '8px 6px', paddingLeft: 8 + Math.min(indent, 3) * 8, border: 'none', background: 'transparent', cursor: 'pointer', color: active ? 'var(--fl-text)' : 'var(--fl-text-muted)', fontWeight: active ? 600 : 500, fontSize: 14, textAlign: 'left' }}>
         <span aria-hidden style={{ width: 16, flexShrink: 0, textAlign: 'center' }}>{glyph}</span>
         <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
         <span style={{ flexShrink: 0, fontSize: 12, color: 'var(--fl-text-muted)', fontVariantNumeric: 'tabular-nums' }}>{count}</span>
@@ -849,22 +856,22 @@ const crumbCurrent: CSSProperties = { fontFamily: 'var(--fl-font-head)', fontSiz
 // 드래그 중 드롭 가능한 폴더 힌트(연한 점선) / 드래그오버 중 활성(강조)
 const dropHint: CSSProperties = { border: '1px dashed color-mix(in srgb, var(--fl-primary) 45%, var(--fl-border))' }
 const dropActive: CSSProperties = { border: '1.5px dashed var(--fl-primary)', background: 'color-mix(in srgb, var(--fl-primary) 10%, var(--fl-surface))', boxShadow: 'var(--fl-shadow-lg)' }
-const bulkMoveSel: CSSProperties = { height: 32, padding: '0 8px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 12.5, cursor: 'pointer' }
-const newFolderBtn: CSSProperties = { width: '100%', marginTop: 8, padding: '8px', border: '1px dashed var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'transparent', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 13 }
-const primaryBtn: CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, background: 'var(--fl-action-primary-bg)', color: 'var(--fl-action-primary-ink)', border: 'none', padding: '9px 16px', borderRadius: 'var(--fl-radius)', fontWeight: 600, fontSize: 13.5, cursor: 'pointer', height: 38 }
-const ghostBtn: CSSProperties = { border: '1px solid var(--fl-border)', background: 'var(--fl-surface)', color: 'var(--fl-text)', padding: '8px 14px', borderRadius: 'var(--fl-radius-sm)', fontSize: 13, cursor: 'pointer' }
+const bulkMoveSel: CSSProperties = { height: 32, padding: '0 8px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 13, cursor: 'pointer' }
+const newFolderBtn: CSSProperties = { ...ui.dashed, width: '100%', marginTop: 8 }
+const primaryBtn: CSSProperties = { ...ui.primary }
+const ghostBtn: CSSProperties = { ...ui.secondary }
 const searchBox: CSSProperties = { padding: '0 12px 0 30px', height: 38, border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 13, width: 240 }
 const seg: CSSProperties = { display: 'flex', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', overflow: 'hidden', height: 38 }
-const segBtn = (on: boolean): CSSProperties => ({ padding: '0 12px', border: 'none', background: on ? 'var(--fl-surface-2)' : 'transparent', color: on ? 'var(--fl-text)' : 'var(--fl-text-muted)', fontSize: 12.5, fontWeight: on ? 600 : 500, cursor: 'pointer' })
+const segBtn = (on: boolean): CSSProperties => ({ padding: '0 12px', border: 'none', background: on ? 'var(--fl-surface-2)' : 'transparent', color: on ? 'var(--fl-text)' : 'var(--fl-text-muted)', fontSize: 13, fontWeight: on ? 600 : 500, cursor: 'pointer' })
 const cardCheckbox: CSSProperties = { width: 18, height: 18, marginTop: 2, cursor: 'pointer', accentColor: 'var(--fl-primary)', flexShrink: 0 }
 const selectToggleBtn = (on: boolean): CSSProperties => ({ display: 'flex', alignItems: 'center', gap: 6, height: 38, padding: '0 14px', borderRadius: 'var(--fl-radius-sm)', border: `1px solid ${on ? 'var(--fl-primary)' : 'var(--fl-border)'}`, background: on ? 'var(--fl-surface-2)' : 'var(--fl-surface)', color: on ? 'var(--fl-text)' : 'var(--fl-text-muted)', fontSize: 13, fontWeight: on ? 600 : 500, cursor: 'pointer' })
 const selectBar: CSSProperties = { display: 'flex', alignItems: 'center', gap: 14, padding: '10px 14px', borderRadius: 'var(--fl-radius-sm)', border: '1px solid var(--fl-border)', background: 'var(--fl-surface)' }
 const selectAllLabel: CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--fl-text)', cursor: 'pointer', userSelect: 'none' }
 const dangerBtn = (disabled: boolean): CSSProperties => ({ display: 'flex', alignItems: 'center', gap: 6, background: 'var(--fl-action-danger-bg)', color: 'var(--fl-action-danger-ink)', border: 'none', padding: '8px 14px', borderRadius: 'var(--fl-radius)', fontWeight: 600, fontSize: 13, cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.5 : 1, height: 36 })
-const iconBtn: CSSProperties = { width: 30, height: 30, borderRadius: 'var(--fl-radius-sm)', border: '1px solid var(--fl-border)', background: 'var(--fl-surface)', cursor: 'pointer', color: 'var(--fl-text-muted)', fontSize: 15 }
-const miniBtn: CSSProperties = { width: 24, height: 28, flexShrink: 0, border: 'none', background: 'transparent', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 12 }
+const iconBtn: CSSProperties = { ...ui.icon, width: 30, height: 30 }
+const miniBtn: CSSProperties = { ...ui.icon, width: 24, height: 28, flexShrink: 0 }
 const menuBox: CSSProperties = { background: 'var(--fl-surface)', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', boxShadow: 'var(--fl-shadow-lg)', padding: 5, zIndex: 100, display: 'grid', gap: 2 }
 const menuItem: CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '7px 10px', border: 'none', background: 'transparent', color: 'var(--fl-text)', fontSize: 13, cursor: 'pointer', textAlign: 'left', borderRadius: 'var(--fl-radius-sm)' }
-const menuSelect: CSSProperties = { width: '100%', padding: '6px 8px', margin: '0 0 2px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', color: 'var(--fl-text)', fontSize: 12.5 }
+const menuSelect: CSSProperties = { width: '100%', padding: '6px 8px', margin: '0 0 2px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', color: 'var(--fl-text)', fontSize: 13 }
 const emptyBox: CSSProperties = { border: '1.5px dashed var(--fl-border)', borderRadius: 'var(--fl-radius)', padding: 40, textAlign: 'center', color: 'var(--fl-text-muted)', fontSize: 14 }
 const errorBox: CSSProperties = { display: 'flex', alignItems: 'center', gap: 14, border: '1px solid var(--fl-fail)', borderRadius: 'var(--fl-radius)', padding: 18, color: 'var(--fl-text)' }

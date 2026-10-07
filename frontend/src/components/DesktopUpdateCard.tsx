@@ -28,7 +28,7 @@ export function DesktopUpdateCard() {
     <p style={{ color: 'var(--fl-text-muted)' }}>회사 서버에서 제공하는 새 버전을 확인하고 이 PC의 FlowLink 앱을 업데이트합니다.</p>
     {status.isPending && <p role="status">업데이트 상태를 불러오는 중…</p>}
     {status.isError && <p role="alert">상태를 확인하지 못했습니다. {apiErrorMessage(status.error)}</p>}
-    {info && <div style={{ padding: 14, border: '1px solid var(--fl-border)', borderRadius: 8, background: 'var(--fl-surface-2)', overflowWrap: 'anywhere' }}>
+    {info && <div style={{ padding: 14, border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius)', background: 'var(--fl-surface-2)', overflowWrap: 'anywhere' }}>
       <strong role="status">{labels[info.phase]}</strong>
       <p style={{ margin: '8px 0' }}>설치 버전 · {info.currentVersion}<br />배포 버전 · {info.availableVersion ?? '확인되지 않음'}</p>
       {info.message && <p style={{ margin: '8px 0' }}>{info.message}</p>}

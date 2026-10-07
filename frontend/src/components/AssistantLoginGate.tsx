@@ -1,5 +1,7 @@
 import type { CSSProperties } from 'react'
 import { useAuth } from '../auth/AuthContext'
+import { AppIcon } from './AppIcon'
+import { ui } from '../design/ui'
 
 /**
  * 게스트용 AI 게이트 — github 모드에서 로그인 없이 AI 패널을 열면 채팅 대신 이 카드가 뜬다.
@@ -21,20 +23,20 @@ export function AssistantLoginGate({ width, onClose, variant = 'editor', reason 
     <aside style={{ ...shell, borderLeft: '1px solid var(--fl-border)', background: 'var(--fl-surface)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       <header style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', borderBottom: '1px solid var(--fl-border)' }}>
         <span aria-hidden>✨</span>
-        <b style={{ flex: 1, fontSize: 13.5 }}>AI 어시스턴트</b>
+        <b style={{ flex: 1, fontSize: 14 }}>AI 어시스턴트</b>
         <button onClick={onClose} aria-label="닫기" style={xBtn}>×</button>
       </header>
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, padding: 24, textAlign: 'center' }}>
-        <span aria-hidden style={{ fontSize: 30 }}>{reason === 'pending' ? '⏳' : '🔒'}</span>
+        <AppIcon name={reason === 'pending' ? 'clock' : 'lock'} size={28} style={{ color: 'var(--fl-text-muted)' }} />
         <b style={{ fontSize: 14 }}>{reason === 'pending' ? '가입 승인 대기 중' : 'GitHub 로그인이 필요합니다'}</b>
-        <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.6, color: 'var(--fl-text-muted)' }}>
+        <p style={{ margin: 0, fontSize: 13, lineHeight: 1.6, color: 'var(--fl-text-muted)' }}>
           {reason === 'pending'
             ? '관리자가 가입 신청을 승인하면 AI 어시스턴트를 쓸 수 있습니다. 나머지 기능(공용 워크스페이스)은 지금도 쓸 수 있어요.'
             : 'AI 어시스턴트는 GitHub Copilot 을 사용합니다. 로그인하면 Copilot 이 자동으로 연결되고, 나머지 기능은 로그인 없이도 계속 쓸 수 있습니다.'}
         </p>
         {reason === 'guest' && (
           <button onClick={requestLogin} style={loginBtn}>
-            <span aria-hidden style={{ fontSize: 15 }}>🐙</span> GitHub 로 로그인
+            GitHub 로 로그인
           </button>
         )}
       </div>
@@ -42,5 +44,5 @@ export function AssistantLoginGate({ width, onClose, variant = 'editor', reason 
   )
 }
 
-const xBtn: CSSProperties = { width: 26, height: 26, borderRadius: 7, border: 'none', background: 'var(--fl-surface-2)', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 15 }
-const loginBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 8, padding: '9px 16px', border: 'none', borderRadius: 10, background: 'var(--fl-action-primary-bg)', color: 'var(--fl-action-primary-ink)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }
+const xBtn: CSSProperties = { ...ui.close, width: 26, height: 26 }
+const loginBtn: CSSProperties = { ...ui.primary }

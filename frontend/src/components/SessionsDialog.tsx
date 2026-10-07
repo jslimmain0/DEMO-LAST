@@ -4,6 +4,7 @@ import type { CSSProperties } from 'react'
 
 import { Modal } from './Modal'
 import { toast } from './toast'
+import { ui } from '../design/ui'
 
 /**
  * AI 어시스턴트 대화 세션 목록 — 이어하기/새 대화/삭제. 사용자별로 저장된 세션을 최근순으로 보여준다.
@@ -28,7 +29,7 @@ export function SessionsDialog({ currentId, onClose, onLoad, onNew }: {
   return (
     <Modal onClose={onClose} ariaLabel="대화 세션" width={440} card={{ padding: 0 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '14px 16px', borderBottom: '1px solid var(--fl-border)' }}>
-        <b style={{ flex: 1, fontSize: 14 }}>🕘 대화 기록</b>
+        <b style={{ flex: 1, fontSize: 14 }}>대화 기록</b>
         <button onClick={() => { onNew(); onClose() }} style={newBtn}>＋ 새 대화</button>
         <button onClick={onClose} aria-label="닫기" style={xBtn}>×</button>
       </div>
@@ -64,10 +65,10 @@ function rel(iso: string): string {
   return new Date(iso).toLocaleDateString('ko-KR')
 }
 
-const empty: CSSProperties = { padding: 24, textAlign: 'center', color: 'var(--fl-text-muted)', fontSize: 12.5, lineHeight: 1.6 }
+const empty: CSSProperties = { padding: 24, textAlign: 'center', color: 'var(--fl-text-muted)', fontSize: 13, lineHeight: 1.6 }
 const row: CSSProperties = { display: 'flex', alignItems: 'center', gap: 4, borderRadius: 'var(--fl-radius-sm)' }
-const rowSel: CSSProperties = { background: 'rgba(97,85,245,.08)' }
+const rowSel: CSSProperties = { background: 'color-mix(in srgb, var(--fl-primary) 8%, transparent)' }
 const rowMain: CSSProperties = { flex: 1, minWidth: 0, textAlign: 'left', padding: '9px 10px', border: 'none', background: 'transparent', color: 'var(--fl-text)', cursor: 'pointer', fontSize: 13 }
-const delBtn: CSSProperties = { flexShrink: 0, width: 28, height: 28, marginRight: 4, borderRadius: 6, border: 'none', background: 'transparent', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 16 }
-const newBtn: CSSProperties = { padding: '5px 10px', borderRadius: 999, border: '1px solid var(--fl-primary)', background: 'transparent', color: 'var(--fl-primary)', cursor: 'pointer', fontSize: 11.5, fontWeight: 600 }
-const xBtn: CSSProperties = { width: 28, height: 28, borderRadius: 7, border: 'none', background: 'var(--fl-surface-2)', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 16 }
+const delBtn: CSSProperties = { ...ui.icon, flexShrink: 0, width: 28, height: 28, marginRight: 4 }
+const newBtn: CSSProperties = { ...ui.secondary, color: 'var(--fl-primary)' }
+const xBtn: CSSProperties = { ...ui.close, width: 28, height: 28 }

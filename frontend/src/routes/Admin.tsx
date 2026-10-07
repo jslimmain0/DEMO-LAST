@@ -19,6 +19,7 @@ import { CatalogPagination } from '../components/CatalogPagination'
 import './admin.css'
 import { AdminUsers as UsersTab } from './AdminUsers'
 import { AdminTeams as TeamsTab } from './AdminTeams'
+import { ui } from '../design/ui'
 
 
 /**
@@ -52,7 +53,7 @@ export function Admin() {
     return (
       <AppShellTier1>
         <div style={{ maxWidth: 1080, margin: '0 auto', padding: '36px 40px' }}>
-          <div style={{ height: 34, width: 240, borderRadius: 8, background: 'var(--fl-surface-2)', opacity: 0.6 }} />
+          <div style={{ height: 34, width: 240, borderRadius: 'var(--fl-radius)', background: 'var(--fl-surface-2)', opacity: 0.6 }} />
           <div style={{ display: 'flex', gap: 12, marginTop: 22 }}>
             {[0, 1, 2, 3].map((i) => <div key={i} style={{ flex: 1, height: 86, borderRadius: 14, background: 'var(--fl-surface-2)', opacity: 0.4 }} />)}
           </div>
@@ -66,9 +67,9 @@ export function Admin() {
     return (
       <AppShellTier1>
         <div style={{ maxWidth: 700, margin: '80px auto', textAlign: 'center', padding: '0 20px' }}>
-          <div style={{ fontSize: 34 }}>🛡</div>
+          <AppIcon name="shield" size={32} style={{ color: 'var(--fl-text-muted)' }} />
           <h2 style={{ fontFamily: 'var(--fl-font-head)', margin: '12px 0 8px' }}>관리자만 접근할 수 있습니다</h2>
-          <p style={{ color: 'var(--fl-text-muted)', fontSize: 13.5, lineHeight: 1.7 }}>
+          <p style={{ color: 'var(--fl-text-muted)', fontSize: 14, lineHeight: 1.7 }}>
             관리 콘솔은 전역 ADMIN 권한이 필요합니다.<br />
             운영자(전역 ADMIN)에게 권한을 요청하세요.
           </p>
@@ -183,8 +184,8 @@ function PendingPluginRow({ p, first, onDone }: { p: PluginScriptSummary; first:
       <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 12, padding: '12px 18px' }}>
         <Avatar name={p.submittedBy ?? p.createdBy} />
         <span style={{ minWidth: 0, flex: 1 }}>
-          <span style={{ display: 'block', fontWeight: 700, fontSize: 13.5 }}>{p.name} <span style={{ fontFamily: 'var(--fl-font-mono)', fontWeight: 400, fontSize: 11.5, color: 'var(--fl-text-muted)' }}>#{p.pluginId} · {kindLabel(p.kind)}</span></span>
-          <span style={{ display: 'block', fontSize: 11.5, color: 'var(--fl-text-muted)', marginTop: 1 }}>
+          <span style={{ display: 'block', fontWeight: 700, fontSize: 14 }}>{p.name} <span style={{ fontFamily: 'var(--fl-font-mono)', fontWeight: 400, fontSize: 12, color: 'var(--fl-text-muted)' }}>#{p.pluginId} · {kindLabel(p.kind)}</span></span>
+          <span style={{ display: 'block', fontSize: 12, color: 'var(--fl-text-muted)', marginTop: 1 }}>
             {p.submittedBy} · 요청 {relTime(p.updatedAt)}{p.live ? ' · 승인본 교체' : ' · 신규'}{p.usages > 0 ? ` · ⚠ 사용처 ${p.usages}곳에 즉시 반영` : ''}
           </span>
         </span>
@@ -195,9 +196,9 @@ function PendingPluginRow({ p, first, onDone }: { p: PluginScriptSummary; first:
       </div>
       {open && (
         <div style={{ padding: '0 18px 14px', display: 'grid', gap: 10 }}>
-          <input aria-label={`${p.name} 반려 사유`} value={note} onChange={(e) => setNote(e.target.value)} placeholder="반려 사유(반려 시 제출자에게 보임)" style={{ padding: '6px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', color: 'var(--fl-text)', fontSize: 12.5 }} />
-          <div style={{ border: '1px solid var(--fl-border)', borderRadius: 8, maxHeight: 420, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-            {detail.isError ? <div role="alert" style={{ padding: 12 }}>코드를 불러오지 못했습니다. <button style={ghostBtn} onClick={() => void detail.refetch()}>다시 확인</button></div> : detail.data ? <PluginDiffView before={detail.data.liveSource ?? ''} after={detail.data.source} /> : <div style={{ padding: 12, fontSize: 12.5, color: 'var(--fl-text-muted)' }}>불러오는 중…</div>}
+          <input aria-label={`${p.name} 반려 사유`} value={note} onChange={(e) => setNote(e.target.value)} placeholder="반려 사유(반려 시 제출자에게 보임)" style={{ padding: '6px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', color: 'var(--fl-text)', fontSize: 13 }} />
+          <div style={{ border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius)', maxHeight: 420, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            {detail.isError ? <div role="alert" style={{ padding: 12 }}>코드를 불러오지 못했습니다. <button style={ghostBtn} onClick={() => void detail.refetch()}>다시 확인</button></div> : detail.data ? <PluginDiffView before={detail.data.liveSource ?? ''} after={detail.data.source} /> : <div style={{ padding: 12, fontSize: 13, color: 'var(--fl-text-muted)' }}>불러오는 중…</div>}
           </div>
           <div style={{ fontSize: 12, color: 'var(--fl-text-muted)' }}>
             {sample ? <>제출자 샘플 — 입력 <code style={{ fontFamily: 'var(--fl-font-mono)' }}>{JSON.stringify(sample.request)}</code> → 결과 <code style={{ fontFamily: 'var(--fl-font-mono)' }}>{JSON.stringify(sample.result?.outputs ?? sample.result?.result ?? sample.result)}</code></> : '제출자가 돌린 샘플이 없습니다 — 편집기에서 열어 직접 실행해 보세요.'}
@@ -216,14 +217,14 @@ function PendingPluginRow({ p, first, onDone }: { p: PluginScriptSummary; first:
 
 
 const panel: CSSProperties = { border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-lg)', background: 'var(--fl-surface)' }
-const ghostBtn: CSSProperties = { padding: '7px 13px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'transparent', color: 'var(--fl-text)', fontSize: 12.5, cursor: 'pointer', whiteSpace: 'nowrap' }
-const chipBtn: CSSProperties = { padding: '5px 11px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-pill)', background: 'transparent', fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap' }
+const ghostBtn: CSSProperties = { ...ui.secondary }
+const chipBtn: CSSProperties = { ...ui.mini }
 const segTab = (on: boolean): CSSProperties => ({
   padding: '8px 16px', border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 600, fontFamily: 'inherit',
   background: on ? 'var(--fl-action-primary-bg)' : 'transparent', color: on ? 'var(--fl-action-primary-ink)' : 'var(--fl-text-muted)',
   display: 'inline-flex', alignItems: 'center', gap: 7,
 })
 const segCount = (on: boolean): CSSProperties => ({
-  minWidth: 19, height: 19, padding: '0 5px', borderRadius: 10, display: 'inline-grid', placeItems: 'center',
+  minWidth: 19, height: 19, padding: '0 5px', borderRadius: 'var(--fl-radius)', display: 'inline-grid', placeItems: 'center',
   fontSize: 11, background: on ? 'rgba(255,255,255,.22)' : 'var(--fl-surface-2)', color: on ? '#fff' : 'var(--fl-text-muted)',
 })

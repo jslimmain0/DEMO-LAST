@@ -6,6 +6,8 @@ import { useMemo, useState } from 'react'
 import type { CopilotModel, CopilotQuota } from '../api/types'
 import { Modal } from './Modal'
 import { toast } from './toast'
+import { AppIcon } from './AppIcon'
+import { ui } from '../design/ui'
 
 /**
  * GitHub Copilot 상태 다이얼로그 — VS Code 확장 수준의 종합 화면.
@@ -57,13 +59,13 @@ export function CopilotStatusDialog({ onClose, canEdit }: { onClose: () => void;
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '16px 18px', borderBottom: '1px solid var(--fl-border)' }}>
         {info?.avatarUrl
           ? <img src={info.avatarUrl} alt="" width={40} height={40} style={{ borderRadius: '50%', border: '1px solid var(--fl-border)' }} />
-          : <div style={{ width: 40, height: 40, borderRadius: '50%', background: 'var(--fl-surface-2)', display: 'grid', placeItems: 'center', fontSize: 18 }}>🐙</div>}
+          : <div style={{ width: 40, height: 40, borderRadius: '50%', background: 'var(--fl-surface-2)', display: 'grid', placeItems: 'center', fontSize: 18 }}><AppIcon name="user" size={20} /></div>}
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <b style={{ fontSize: 15 }}>{info?.login ?? (infoQ.isLoading ? '불러오는 중…' : 'GitHub Copilot')}</b>
+            <b style={{ fontSize: 16 }}>{info?.login ?? (infoQ.isLoading ? '불러오는 중…' : 'GitHub Copilot')}</b>
             {info?.plan && <span style={planBadge}>{planLabel(info.plan)}</span>}
           </div>
-          <div style={{ fontSize: 11.5, color: 'var(--fl-text-muted)', marginTop: 2 }}>
+          <div style={{ fontSize: 12, color: 'var(--fl-text-muted)', marginTop: 2 }}>
             GitHub Copilot 연결됨{info?.agentEnabled ? ' · 에이전트' : ''}{info?.chatEnabled ? ' · 채팅' : ''}
           </div>
         </div>
@@ -80,7 +82,7 @@ export function CopilotStatusDialog({ onClose, canEdit }: { onClose: () => void;
             {(info?.quotas ?? []).map((qt) => <QuotaBar key={qt.id} q={qt} />)}
           </div>
           {(info?.quotas?.length ?? 0) > 0 && (
-            <div style={{ fontSize: 10.5, color: 'var(--fl-text-muted)', marginTop: 6, lineHeight: 1.5 }}>
+            <div style={{ fontSize: 11, color: 'var(--fl-text-muted)', marginTop: 6, lineHeight: 1.5 }}>
               ※ ‘무제한’은 <b>포함(무료) 모델</b>(gpt-4.1·gpt-4o) 기준입니다. <b>프리미엄 모델</b>(Claude·GPT-5 등)은 채팅·자동완성과 무관하게 매 요청이 위 <b>프리미엄 요청</b> 쿼터에서 차감됩니다.
             </div>
           )}
@@ -99,7 +101,7 @@ export function CopilotStatusDialog({ onClose, canEdit }: { onClose: () => void;
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder="모델 검색(이름·벤더)…"
-            style={{ width: '100%', boxSizing: 'border-box', padding: '7px 10px', marginBottom: 8, border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', color: 'var(--fl-text)', fontSize: 12.5 }}
+            style={{ width: '100%', boxSizing: 'border-box', padding: '7px 10px', marginBottom: 8, border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', color: 'var(--fl-text)', fontSize: 13 }}
           />
           {modelsQ.isLoading && <div style={{ color: 'var(--fl-text-muted)', fontSize: 12 }}>모델 목록 불러오는 중…</div>}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 320, overflow: 'auto' }}>
@@ -136,7 +138,7 @@ function QuotaBar({ q }: { q: CopilotQuota }) {
   }
   const usedFrac = q.entitlement > 0 ? Math.min(1, q.used / q.entitlement) : (q.remaining <= 0 ? 1 : 0)
   const over = q.remaining < 0
-  const color = usedFrac >= 1 ? 'var(--fl-fail)' : usedFrac >= 0.8 ? '#d08700' : 'var(--fl-primary)'
+  const color = usedFrac >= 1 ? 'var(--fl-fail)' : usedFrac >= 0.8 ? 'var(--fl-waiting)' : 'var(--fl-primary)'
   return (
     <div>
       <div style={quotaHead}>
@@ -146,7 +148,7 @@ function QuotaBar({ q }: { q: CopilotQuota }) {
         </span>
       </div>
       <div style={track}><div style={{ ...fill, width: `${usedFrac * 100}%`, background: color }} /></div>
-      <div style={{ fontSize: 10.5, color: 'var(--fl-text-muted)', marginTop: 2 }}>{Math.max(0, Math.round(q.percentRemaining))}% 남음</div>
+      <div style={{ fontSize: 11, color: 'var(--fl-text-muted)', marginTop: 2 }}>{Math.max(0, Math.round(q.percentRemaining))}% 남음</div>
     </div>
   )
 }
@@ -165,10 +167,10 @@ function ModelRow({ m, current, disabled, exhausted, onPick }: { m: CopilotModel
         <span style={{ fontWeight: 600 }}>{m.name}</span>
         <span style={{ color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)', fontSize: 11 }}>  {m.id}</span>
       </span>
-      {m.vision && <span title="이미지 입력 지원" style={tag}>👁</span>}
+      {m.vision && <span title="이미지 입력 지원" style={tag}>이미지</span>}
       {m.contextTokens ? <span style={tag}>{Math.round(m.contextTokens / 1000)}K</span> : null}
       {m.premium
-        ? <span style={{ ...tag, color: exhausted ? 'var(--fl-fail)' : '#d08700', borderColor: exhausted ? 'var(--fl-fail)' : '#d08700' }}>⭐ 프리미엄</span>
+        ? <span style={{ ...tag, color: exhausted ? 'var(--fl-fail)' : 'var(--fl-waiting)', borderColor: exhausted ? 'var(--fl-fail)' : 'var(--fl-waiting)' }}>프리미엄</span>
         : <span style={{ ...tag, color: 'var(--fl-ok)', borderColor: 'var(--fl-ok)' }}>포함</span>}
     </button>
   )
@@ -183,16 +185,16 @@ function planLabel(plan: string): string {
   return plan
 }
 
-const h4: CSSProperties = { margin: '0 0 8px', fontSize: 12.5, fontWeight: 700 }
+const h4: CSSProperties = { margin: '0 0 8px', fontSize: 13, fontWeight: 700 }
 const quotaHead: CSSProperties = { display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 4 }
 const track: CSSProperties = { height: 7, borderRadius: 999, background: 'var(--fl-surface-2)', overflow: 'hidden' }
 const fill: CSSProperties = { height: '100%', borderRadius: 999, transition: 'width .3s' }
-const groupLbl: CSSProperties = { fontSize: 10.5, fontWeight: 700, color: 'var(--fl-text-muted)', textTransform: 'uppercase', letterSpacing: 0.4, margin: '8px 0 2px' }
-const modelRow: CSSProperties = { display: 'flex', alignItems: 'center', gap: 6, width: '100%', textAlign: 'left', padding: '7px 9px', border: '1px solid transparent', borderRadius: 'var(--fl-radius-sm)', background: 'transparent', color: 'var(--fl-text)', fontSize: 12.5 }
-const modelRowSel: CSSProperties = { background: 'rgba(97,85,245,.10)', border: '1px solid var(--fl-primary)' }
-const moreBtn: CSSProperties = { alignSelf: 'flex-start', marginTop: 4, padding: '5px 10px', border: '1px dashed var(--fl-border)', borderRadius: 999, background: 'transparent', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 11.5 }
-const tag: CSSProperties = { flexShrink: 0, fontSize: 9.5, fontWeight: 700, padding: '1px 5px', borderRadius: 999, border: '1px solid var(--fl-border)', color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)' }
-const planBadge: CSSProperties = { fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 999, background: 'rgba(97,85,245,.12)', color: 'var(--fl-primary)', border: '1px solid var(--fl-primary)' }
-const noteBox: CSSProperties = { marginTop: 10, padding: '8px 10px', fontSize: 11.5, lineHeight: 1.5, borderRadius: 'var(--fl-radius-sm)', background: 'rgba(217,48,37,.08)', border: '1px solid rgba(217,48,37,.3)', color: 'var(--fl-text)' }
-const xBtn: CSSProperties = { width: 28, height: 28, borderRadius: 7, border: 'none', background: 'var(--fl-surface-2)', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 16, flexShrink: 0 }
-const disconnectBtn: CSSProperties = { padding: '6px 12px', border: '1px solid var(--fl-fail)', borderRadius: 'var(--fl-radius-sm)', background: 'transparent', color: 'var(--fl-fail)', cursor: 'pointer', fontSize: 12, fontWeight: 600 }
+const groupLbl: CSSProperties = { fontSize: 11, fontWeight: 700, color: 'var(--fl-text-muted)', textTransform: 'uppercase', letterSpacing: 0.4, margin: '8px 0 2px' }
+const modelRow: CSSProperties = { display: 'flex', alignItems: 'center', gap: 6, width: '100%', textAlign: 'left', padding: '7px 9px', border: '1px solid transparent', borderRadius: 'var(--fl-radius-sm)', background: 'transparent', color: 'var(--fl-text)', fontSize: 13 }
+const modelRowSel: CSSProperties = { background: 'color-mix(in srgb, var(--fl-primary) 10%, transparent)', border: '1px solid var(--fl-primary)' }
+const moreBtn: CSSProperties = { ...ui.dashed, alignSelf: 'flex-start', marginTop: 4 }
+const tag: CSSProperties = { flexShrink: 0, fontSize: 11, fontWeight: 700, padding: '1px 5px', borderRadius: 999, border: '1px solid var(--fl-border)', color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)' }
+const planBadge: CSSProperties = { fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 999, background: 'color-mix(in srgb, var(--fl-primary) 12%, transparent)', color: 'var(--fl-primary)', border: '1px solid var(--fl-primary)' }
+const noteBox: CSSProperties = { marginTop: 10, padding: '8px 10px', fontSize: 12, lineHeight: 1.5, borderRadius: 'var(--fl-radius-sm)', background: 'rgba(217,48,37,.08)', border: '1px solid rgba(217,48,37,.3)', color: 'var(--fl-text)' }
+const xBtn: CSSProperties = { ...ui.close, width: 28, height: 28, flexShrink: 0 }
+const disconnectBtn: CSSProperties = { ...ui.danger }

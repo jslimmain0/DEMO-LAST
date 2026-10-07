@@ -8,6 +8,8 @@ import { AskDialog, type AskSpec } from './AskDialog'
 import { toast } from './toast'
 import { ResourceScopeNote } from './ResourceScopeNote'
 import { useUnsavedNavigation } from './UnsavedNavigation'
+import { AppIcon } from './AppIcon'
+import { ui } from '../design/ui'
 
 /**
  * 환경(dev/staging/prod) 관리 다이얼로그.
@@ -107,8 +109,8 @@ export function EnvManagerPanel({ onClose, onDraftChange, compact = false }: { o
   return (
     <div className="fl-resource-panel" style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
         {!compact && <header style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-          <span aria-hidden style={{ fontSize: 15 }}>🌐</span>
-          <b style={{ flex: 1, fontSize: 15 }}>환경 관리</b>
+          <AppIcon name="globe" size={16} />
+          <b style={{ flex: 1, fontSize: 16 }}>환경 관리</b>
           {onClose && <button onClick={onClose} aria-label="닫기" style={xBtn}>×</button>}
         </header>}
         {!compact && <ResourceScopeNote />}
@@ -151,7 +153,7 @@ export function EnvManagerPanel({ onClose, onDraftChange, compact = false }: { o
                     title="활성 환경으로 설정"
                     style={{ cursor: 'pointer' }}
                   />
-                  <button aria-pressed={selected === name} onClick={() => leaveDraft(() => setSelected(name))} style={{ flex: 1, minWidth: 0, border: 0, background: 'transparent', color: 'inherit', cursor: 'pointer', textAlign: 'left', overflow: 'hidden', overflowWrap: 'anywhere', whiteSpace: 'normal', fontSize: 12.5, padding: '4px 0' }} title={name}>{name}</button>
+                  <button aria-pressed={selected === name} onClick={() => leaveDraft(() => setSelected(name))} style={{ flex: 1, minWidth: 0, border: 0, background: 'transparent', color: 'inherit', cursor: 'pointer', textAlign: 'left', overflow: 'hidden', overflowWrap: 'anywhere', whiteSpace: 'normal', fontSize: 13, padding: '4px 0' }} title={name}>{name}</button>
                   <span style={countBadge}>{Object.keys(store.envs[name]).length}</span>
                 </div>
               ))}
@@ -308,7 +310,7 @@ function VarEditor({ initial, onChange, missingKeys, onDraftChange, readOnly = f
       {visible.length > 0 && <div className="fl-variable-column-head" aria-hidden="true"><span>변수 키</span><span>값</span><span /></div>}
       {visible.map(({ r, i }) => (
         <div key={i} className="fl-variable-row">
-          {r.k.length > 34 && <code style={{ display: 'block', overflowWrap: 'anywhere', fontSize: 11.5, color: 'var(--fl-text-muted)', marginBottom: 5 }}>{r.k}</code>}
+          {r.k.length > 34 && <code style={{ display: 'block', overflowWrap: 'anywhere', fontSize: 12, color: 'var(--fl-text-muted)', marginBottom: 5 }}>{r.k}</code>}
           <div className="fl-variable-fields">
           <input
             style={{ ...mono, flex: 1, fontFamily: 'var(--fl-font-mono)', ...(r.k.trim() && dup.has(r.k.trim()) ? dupWarn : null) }}
@@ -334,7 +336,7 @@ function VarEditor({ initial, onChange, missingKeys, onDraftChange, readOnly = f
       ))}
       <div style={{ display: 'flex', gap: 6 }}>
         <button disabled={readOnly} onClick={addRow} style={addBtn}>+ 변수</button>
-        <button disabled={readOnly} onClick={() => setPasteOpen((v) => !v)} style={addBtn} title="KEY=value 여러 줄(.env 형식)을 한 번에 붙여넣어 추가">📋 .env 붙여넣기</button>
+        <button disabled={readOnly} onClick={() => setPasteOpen((v) => !v)} style={addBtn} title="KEY=value 여러 줄(.env 형식)을 한 번에 붙여넣어 추가">.env 붙여넣기</button>
       </div>
       {/* 환경 간 키 누락 감지 — 다른 환경에는 있는데 여기 없는 키를 빈 값으로 한 번에 추가 */}
       {(() => {
@@ -342,10 +344,10 @@ function VarEditor({ initial, onChange, missingKeys, onDraftChange, readOnly = f
         if (missing.length === 0) return null
         return (
           <p style={{ ...hint, marginTop: 8 }}>
-            💡 다른 환경에는 있는데 여기 없는 키 <b>{missing.length}개</b>:{' '}
+            다른 환경에는 있는데 여기 없는 키 <b>{missing.length}개</b>:{' '}
             <code style={code}>{missing.slice(0, 8).join(', ')}{missing.length > 8 ? ' …' : ''}</code>{' '}
             <button disabled={readOnly} onClick={() => commit([...rows, ...missing.map((k) => ({ k, v: '' }))])}
-              style={{ ...addBtn, marginTop: 0, padding: '2px 8px', fontSize: 11.5 }} title="누락 키를 빈 값 행으로 추가 — 값만 채우면 됩니다">
+              style={{ ...addBtn, marginTop: 0, padding: '2px 8px', fontSize: 12 }} title="누락 키를 빈 값 행으로 추가 — 값만 채우면 됩니다">
               + 빈 값으로 추가
             </button>
           </p>
@@ -375,16 +377,16 @@ function VarEditor({ initial, onChange, missingKeys, onDraftChange, readOnly = f
 }
 
 const hint: CSSProperties = { fontSize: 12, color: 'var(--fl-text-muted)', marginTop: 6, lineHeight: 1.6 }
-const code: CSSProperties = { fontFamily: 'var(--fl-font-mono)', fontSize: 11, background: 'var(--fl-surface-2)', padding: '1px 5px', borderRadius: 4 }
-const mono: CSSProperties = { padding: '8px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 12.5, minWidth: 0 }
-const xBtn: CSSProperties = { width: 28, height: 28, borderRadius: 8, border: 'none', background: 'var(--fl-surface-2)', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 15 }
-const primaryBtn: CSSProperties = { padding: '8px 16px', border: 'none', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-action-primary-bg)', color: 'var(--fl-action-primary-ink)', cursor: 'pointer', fontSize: 13, fontWeight: 600 }
-const ghostBtn: CSSProperties = { padding: '7px 12px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'transparent', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 12.5 }
-const addBtn: CSSProperties = { marginTop: 2, padding: '6px 10px', border: '1px dashed var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'transparent', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 12.5 }
-const delBtn: CSSProperties = { width: 30, flexShrink: 0, border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text-muted)', cursor: 'pointer' }
+const code: CSSProperties = { fontFamily: 'var(--fl-font-mono)', fontSize: 11, background: 'var(--fl-surface-2)', padding: '1px 5px', borderRadius: 6 }
+const mono: CSSProperties = { padding: '8px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 13, minWidth: 0 }
+const xBtn: CSSProperties = { ...ui.close, width: 28, height: 28 }
+const primaryBtn: CSSProperties = { ...ui.primary }
+const ghostBtn: CSSProperties = { ...ui.secondary }
+const addBtn: CSSProperties = { ...ui.dashed, marginTop: 2 }
+const delBtn: CSSProperties = { ...ui.icon, width: 30, flexShrink: 0 }
 const dupWarn: CSSProperties = { borderColor: 'var(--fl-put)', boxShadow: '0 0 0 1px var(--fl-put) inset' }
 const seg: CSSProperties = { display: 'inline-flex', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', overflow: 'hidden' }
 const segBtn: CSSProperties = { padding: '4px 12px', border: 'none', background: 'transparent', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 12 }
 const segOn: CSSProperties = { background: 'var(--fl-surface-2)', color: 'var(--fl-text)', fontWeight: 600 }
-const countBadge: CSSProperties = { flexShrink: 0, fontSize: 10.5, color: 'var(--fl-text-muted)', background: 'var(--fl-surface-2)', borderRadius: 8, padding: '1px 6px' }
-const empty: CSSProperties = { display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--fl-text-muted)', fontSize: 12.5, padding: 24 }
+const countBadge: CSSProperties = { flexShrink: 0, fontSize: 11, color: 'var(--fl-text-muted)', background: 'var(--fl-surface-2)', borderRadius: 'var(--fl-radius)', padding: '1px 6px' }
+const empty: CSSProperties = { display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--fl-text-muted)', fontSize: 13, padding: 24 }

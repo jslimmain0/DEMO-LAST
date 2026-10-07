@@ -1,5 +1,6 @@
 import type { CSSProperties, ReactNode } from 'react'
 import { useState } from 'react'
+import { AppIcon } from './AppIcon'
 
 /**
  * 클릭 가능한 JSON 트리 — 워크벤치 응답 패널에서 중첩 JSON 을 펼쳐 보고,
@@ -53,7 +54,7 @@ function TreeRow({ label, value, path, depth, onPick, defaultOpenDepth }: {
     <div>
       <div className="fl-jt-row" style={row}>
         {isObj ? (
-          <button aria-label={open ? '접기' : '펼치기'} onClick={() => setOpen((v) => !v)} style={caret}>{open ? '▾' : '▸'}</button>
+          <button aria-label={open ? '접기' : '펼치기'} onClick={() => setOpen((v) => !v)} style={caret}><AppIcon name={open ? 'chevronDown' : 'chevronRight'} size={13} style={{ color: 'var(--fl-text-muted)', verticalAlign: '-2px' }} /></button>
         ) : (
           <span style={{ ...caret, visibility: 'hidden' }}>·</span>
         )}
@@ -88,7 +89,7 @@ function Leaf({ v }: { v: unknown }): ReactNode {
 }
 
 const row: CSSProperties = { display: 'flex', alignItems: 'baseline', gap: 5, padding: '1.5px 0', minWidth: 0 }
-const caret: CSSProperties = { flexShrink: 0, width: 14, border: 'none', background: 'transparent', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 9, padding: 0, lineHeight: 1.4 }
-const keyBtn: CSSProperties = { flexShrink: 0, border: 'none', background: 'transparent', padding: '0 2px', margin: 0, fontFamily: 'var(--fl-font-mono)', fontSize: 12, fontWeight: 600, color: 'var(--fl-primary)', cursor: 'pointer', borderRadius: 4 }
-const muted: CSSProperties = { color: 'var(--fl-text-muted)', fontSize: 11.5, fontFamily: 'var(--fl-font-mono)' }
+const caret: CSSProperties = { flexShrink: 0, width: 14, border: 'none', background: 'transparent', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 11, padding: 0, lineHeight: 1.4 }
+const keyBtn: CSSProperties = { flexShrink: 0, border: 'none', background: 'transparent', padding: '0 2px', margin: 0, fontFamily: 'var(--fl-font-mono)', fontSize: 12, fontWeight: 600, color: 'var(--fl-primary)', cursor: 'pointer', borderRadius: 6 }
+const muted: CSSProperties = { color: 'var(--fl-text-muted)', fontSize: 12, fontFamily: 'var(--fl-font-mono)' }
 const leaf: CSSProperties = { fontFamily: 'var(--fl-font-mono)', fontSize: 12, overflowWrap: 'anywhere', minWidth: 0 }

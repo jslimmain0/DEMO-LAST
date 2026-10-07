@@ -22,11 +22,12 @@ import { revealNodeTranslation } from './revealNode'
 import { canChangeExecutionAgent, type ExecutionAgent } from '../lib/executionAgentSelection'
 import { asGraphNode } from './graphAdapter'
 import './node-visuals.css'
+import { ui } from '../design/ui'
 
 const nodeTypes = { flnode: NodeCard, branch: BranchNode, switch: SwitchNode, note: NoteNode, annogroup: GroupNode }
 const edgeTypes = { deletable: DeletableEdge }
 const connectionLineStyle: CSSProperties = { stroke: 'var(--fl-primary)', strokeWidth: 2 }
-const alignBtn: CSSProperties = { width: 26, height: 26, border: 'none', borderRadius: 6, background: 'transparent', color: 'var(--fl-text)', cursor: 'pointer', fontSize: 14, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }
+const alignBtn: CSSProperties = { ...ui.icon, width: 26, height: 26, justifyContent: 'center' }
 // 배경 도트(gap 22)와 같은 간격으로 스냅 — 노드가 그리드에 딱딱 맞게 배치된다
 const GRID = 22
 const snap = (v: number) => Math.round(v / GRID) * GRID

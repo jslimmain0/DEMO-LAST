@@ -4,6 +4,7 @@ import { useTransformCatalog } from '../lib/useTransformCatalog'
 import type { CSSProperties } from 'react'
 import { useMemo, useState } from 'react'
 import type { MockCodecInput, MockCodecSpec, MockCodecStep, MockCodecStepTrace, MockCodecTarget, TransformInfo } from '../api/types'
+import { AppIcon } from './AppIcon'
 
 import { TokenInput } from '../binding/TokenInput'
 import type { BindableSource } from '../binding/upstream'
@@ -12,6 +13,7 @@ import { appUrl } from '../lib/appBase'
 import { summarizeStep, type CodecSide as Side } from '../lib/mockCodecOps'
 import { CodecStepWizard } from './FieldCodecButton'
 import { TransformPicker } from './TransformPicker'
+import { ui } from '../design/ui'
 
 /**
  * Mock 코덱 편집(v2) — 요청이 매칭·템플릿에 들어가기 **전**(request) / 응답을 다 만든 뒤 나가기 **전**(response) 적용할 변환 플러그인 단계.
@@ -77,8 +79,8 @@ function CodecSideList({ title, side, steps, list, readOnly, sources, hints, onC
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <span style={{ fontSize: 12.5, fontWeight: 700, color: side === 'request' ? 'var(--fl-primary)' : 'var(--fl-ok)' }}>{side === 'request' ? '⬇' : '⬆'} {title}</span>
-        {steps.length === 0 && <span style={{ fontSize: 11.5, color: 'var(--fl-text-muted)' }}>— {empty}</span>}
+        <span style={{ fontSize: 13, fontWeight: 700, color: side === 'request' ? 'var(--fl-primary)' : 'var(--fl-ok)' }}>{side === 'request' ? '⬇' : '⬆'} {title}</span>
+        {steps.length === 0 && <span style={{ fontSize: 12, color: 'var(--fl-text-muted)' }}>— {empty}</span>}
         {steps.length > 0 && <span style={{ fontSize: 11, color: 'var(--fl-text-muted)' }}>{steps.length}단계 · 위에서부터 순서대로</span>}
         {!readOnly && <button style={{ ...miniBtn, marginLeft: 'auto', ...(adding ? { borderColor: 'var(--fl-primary)', color: 'var(--fl-primary)' } : null) }} onClick={onAdd} title="단계 추가 — 언제 · 무엇을 · 어떤 플러그인 · 값">+ 단계</button>}
       </div>
@@ -122,8 +124,8 @@ function StepCard({ step: s, index: i, side, list, readOnly, sources, hints, onC
   return (
     <div style={{ border: `1px solid ${missing ? 'var(--fl-fail)' : 'var(--fl-border)'}`, borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', overflow: 'hidden' }}>
       <div style={{ display: 'flex', gap: 6, alignItems: 'center', padding: '6px 10px' }}>
-        <button onClick={() => setOpen((v) => !v)} aria-expanded={open} aria-label={`단계 ${i + 1} ${open ? '접기' : '펼치기'}`} style={{ ...miniBtn, border: 'none', background: 'transparent', padding: '2px 4px', fontFamily: 'var(--fl-font-mono)', fontWeight: 700, color: 'var(--fl-text-muted)' }}>{open ? '▾' : '▸'} {i + 1}</button>
-        <button onClick={() => setOpen((v) => !v)} style={{ flex: 1, minWidth: 0, textAlign: 'left', border: 'none', background: 'transparent', cursor: 'pointer', fontSize: 12.5, color: missing ? 'var(--fl-fail)' : 'var(--fl-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', padding: 0 }} title={summary}>
+        <button onClick={() => setOpen((v) => !v)} aria-expanded={open} aria-label={`단계 ${i + 1} ${open ? '접기' : '펼치기'}`} style={{ ...miniBtn, border: 'none', background: 'transparent', padding: '2px 4px', fontFamily: 'var(--fl-font-mono)', fontWeight: 700, color: 'var(--fl-text-muted)' }}><AppIcon name={open ? 'chevronDown' : 'chevronRight'} size={13} style={{ color: 'var(--fl-text-muted)', verticalAlign: '-2px' }} /> {i + 1}</button>
+        <button onClick={() => setOpen((v) => !v)} style={{ flex: 1, minWidth: 0, textAlign: 'left', border: 'none', background: 'transparent', cursor: 'pointer', fontSize: 13, color: missing ? 'var(--fl-fail)' : 'var(--fl-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', padding: 0 }} title={summary}>
           {summary}{missing ? ' — 설정이 비어 있습니다' : ''}
         </button>
         {!readOnly && <>
@@ -155,7 +157,7 @@ function StepCard({ step: s, index: i, side, list, readOnly, sources, hints, onC
               <div style={{ display: 'inline-flex', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', overflow: 'hidden' }} title="적용 범위 — 전체 / 특정 필드만 / 헤더">
                 {(['body', 'fields', 'header'] as MockCodecTarget[]).map((tg) => (
                   <button key={tg} disabled={readOnly} onClick={() => onChange({ target: tg })}
-                    style={{ padding: '3px 10px', border: 'none', cursor: 'pointer', fontSize: 11.5, fontWeight: 600, background: target === tg ? 'var(--fl-action-primary-bg)' : 'transparent', color: target === tg ? 'var(--fl-action-primary-ink)' : 'var(--fl-text-muted)' }}>
+                    style={{ padding: '3px 10px', border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 600, background: target === tg ? 'var(--fl-action-primary-bg)' : 'transparent', color: target === tg ? 'var(--fl-action-primary-ink)' : 'var(--fl-text-muted)' }}>
                     {tg === 'body' ? '본문 전체' : tg === 'fields' ? '특정 필드만' : '헤더'}
                   </button>
                 ))}
@@ -186,7 +188,7 @@ function StepCard({ step: s, index: i, side, list, readOnly, sources, hints, onC
             {(ports.length > 1 || (t?.params.length ?? 0) > 0) && <span style={{ ...stepLbl, alignSelf: 'start', paddingTop: 4 }}>값</span>}
             {(ports.length > 1 || (t?.params.length ?? 0) > 0) && (
               <div style={{ display: 'grid', gap: 4 }}>
-                {ports.length > 1 && <div style={{ fontSize: 10.5, color: 'var(--fl-text-muted)' }}>입력 포트 — 하나는 {target === 'fields' ? '필드 값' : target === 'header' && side === 'request' ? '헤더 값' : '본문'}, 나머지는 값(키·IV 는 {'{ }'} 시크릿)</div>}
+                {ports.length > 1 && <div style={{ fontSize: 11, color: 'var(--fl-text-muted)' }}>입력 포트 — 하나는 {target === 'fields' ? '필드 값' : target === 'header' && side === 'request' ? '헤더 값' : '본문'}, 나머지는 값(키·IV 는 {'{ }'} 시크릿)</div>}
                 {ports.length > 1 && ports.map((p) => {
                   const inp = inputOf(p.key)
                   const isMsg = inp.mode === 'message'
@@ -223,7 +225,7 @@ function StepCard({ step: s, index: i, side, list, readOnly, sources, hints, onC
                 })}
               </div>
             )}
-            {ports.length === 1 && (t?.params.length ?? 0) === 0 && <><span /><div style={{ fontSize: 10.5, color: 'var(--fl-text-muted)' }}>입력 <code style={{ fontFamily: 'var(--fl-font-mono)' }}>{ports[0].key}</code> = {target === 'fields' ? '필드 값' : target === 'header' && side === 'request' ? '헤더 값' : '본문'} · 추가 값 없음</div></>}
+            {ports.length === 1 && (t?.params.length ?? 0) === 0 && <><span /><div style={{ fontSize: 11, color: 'var(--fl-text-muted)' }}>입력 <code style={{ fontFamily: 'var(--fl-font-mono)' }}>{ports[0].key}</code> = {target === 'fields' ? '필드 값' : target === 'header' && side === 'request' ? '헤더 값' : '본문'} · 추가 값 없음</div></>}
           </div>
         </div>
       )}
@@ -273,14 +275,14 @@ function CodecTryPanel({ mockId, codec, environment }: { mockId: string; codec: 
   }
   return (
     <div style={{ border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', padding: 10 }}>
-      <button style={{ ...miniBtn, fontWeight: 700 }} onClick={() => setOpen((v) => !v)}>{open ? '▾' : '▸'} 🧪 코덱 시험해보기</button>
-      <span style={{ fontSize: 11.5, color: 'var(--fl-text-muted)', marginLeft: 8 }}>샘플 전문을 {catalog.label}에서 저장 없이 돌려 봅니다(시크릿은 결과에서 마스킹)</span>
+      <button style={{ ...miniBtn, fontWeight: 700 }} onClick={() => setOpen((v) => !v)}><AppIcon name={open ? 'chevronDown' : 'chevronRight'} size={13} style={{ color: 'var(--fl-text-muted)', verticalAlign: '-2px' }} /> 코덱 시험해보기</button>
+      <span style={{ fontSize: 12, color: 'var(--fl-text-muted)', marginLeft: 8 }}>샘플 전문을 {catalog.label}에서 저장 없이 돌려 봅니다(시크릿은 결과에서 마스킹)</span>
       {open && (
         <div style={{ display: 'grid', gap: 6, marginTop: 8 }}>
           <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
             <div style={{ display: 'inline-flex', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', overflow: 'hidden' }}>
               {(['request', 'response'] as const).map((sd) => (
-                <button key={sd} onClick={() => setSide(sd)} disabled={!(codec[sd]?.length)} style={{ padding: '3px 10px', border: 'none', cursor: 'pointer', fontSize: 11.5, fontWeight: 600, background: side === sd ? 'var(--fl-action-primary-bg)' : 'transparent', color: side === sd ? 'var(--fl-action-primary-ink)' : 'var(--fl-text-muted)', opacity: codec[sd]?.length ? 1 : 0.4 }}>{sd === 'request' ? '요청 전' : '응답 후'}</button>
+                <button key={sd} onClick={() => setSide(sd)} disabled={!(codec[sd]?.length)} style={{ padding: '3px 10px', border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 600, background: side === sd ? 'var(--fl-action-primary-bg)' : 'transparent', color: side === sd ? 'var(--fl-action-primary-ink)' : 'var(--fl-text-muted)', opacity: codec[sd]?.length ? 1 : 0.4 }}>{sd === 'request' ? '요청 전' : '응답 후'}</button>
               ))}
             </div>
             <span style={lbl}>Content-Type</span>
@@ -297,14 +299,14 @@ function CodecTryPanel({ mockId, codec, environment }: { mockId: string; codec: 
           {result && (
             <div style={{ display: 'grid', gap: 4 }}>
               {result.steps.map((st, k) => (
-                <div key={k} style={{ fontSize: 11.5, fontFamily: 'var(--fl-font-mono)', display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '2px 8px', padding: '4px 8px', border: '1px solid var(--fl-border)', borderRadius: 5, background: 'var(--fl-surface)' }}>
+                <div key={k} style={{ fontSize: 12, fontFamily: 'var(--fl-font-mono)', display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '2px 8px', padding: '4px 8px', border: '1px solid var(--fl-border)', borderRadius: 6, background: 'var(--fl-surface)' }}>
                   <span style={{ color: 'var(--fl-text-muted)' }}>{st.index + 1}. {st.id} · {st.target === 'body' ? '전체' : st.target === 'fields' ? `필드 ${st.field}` : `헤더 ${st.field}`}</span><span />
                   <span style={{ color: 'var(--fl-text-muted)' }}>in</span><span style={{ wordBreak: 'break-all' }}>{st.input || '(빈 값)'}</span>
                   <span style={{ color: 'var(--fl-primary)' }}>out</span><span style={{ wordBreak: 'break-all' }}>{st.output || '(빈 값)'}</span>
                 </div>
               ))}
               {result.steps.length === 0 && <div style={{ fontSize: 12, color: 'var(--fl-text-muted)' }}>적용된 단계가 없습니다(대상 필드/헤더가 샘플에 없거나 단계가 비어 있음).</div>}
-              <div style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--fl-text-muted)', marginTop: 2 }}>결과 {side === 'request' ? '요청' : '응답'} 본문</div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--fl-text-muted)', marginTop: 2 }}>결과 {side === 'request' ? '요청' : '응답'} 본문</div>
               <pre style={pre}>{result.result || '(빈 값)'}</pre>
               {Object.keys(result.headers).length > 0 && <pre style={pre}>{Object.entries(result.headers).map(([k, v]) => `${k}: ${v}`).join('\n')}</pre>}
               {Object.keys(result.fields).length > 0 && <div style={{ fontSize: 11, color: 'var(--fl-text-muted)' }}>본문 필드: {Object.entries(result.fields).map(([k, v]) => `${k}=${v}`).join(' · ')}</div>}
@@ -316,10 +318,10 @@ function CodecTryPanel({ mockId, codec, environment }: { mockId: string; codec: 
   )
 }
 
-const lbl: CSSProperties = { fontSize: 11.5, display: 'inline-flex', alignItems: 'center', gap: 5, color: 'var(--fl-text-muted)' }
-const stepLbl: CSSProperties = { fontSize: 11.5, fontWeight: 700, color: 'var(--fl-text-muted)' }
-const input: CSSProperties = { padding: '5px 8px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 12.5 }
-const miniBtn: CSSProperties = { padding: '4px 9px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 12, cursor: 'pointer' }
-const pre: CSSProperties = { margin: 0, padding: '6px 8px', fontSize: 11, fontFamily: 'var(--fl-font-mono)', color: 'var(--fl-text)', background: 'var(--fl-surface)', border: '1px solid var(--fl-border)', borderRadius: 5, whiteSpace: 'pre-wrap', wordBreak: 'break-all', maxHeight: 140, overflow: 'auto' }
-const chipLabel: CSSProperties = { fontSize: 11.5, fontFamily: 'var(--fl-font-mono)', padding: '2px 8px', border: '1px solid var(--fl-border)', borderRadius: 999, cursor: 'pointer', background: 'var(--fl-surface)', color: 'var(--fl-text)' }
+const lbl: CSSProperties = { fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 5, color: 'var(--fl-text-muted)' }
+const stepLbl: CSSProperties = { fontSize: 12, fontWeight: 700, color: 'var(--fl-text-muted)' }
+const input: CSSProperties = { padding: '5px 8px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 13 }
+const miniBtn: CSSProperties = { ...ui.mini }
+const pre: CSSProperties = { margin: 0, padding: '6px 8px', fontSize: 11, fontFamily: 'var(--fl-font-mono)', color: 'var(--fl-text)', background: 'var(--fl-surface)', border: '1px solid var(--fl-border)', borderRadius: 6, whiteSpace: 'pre-wrap', wordBreak: 'break-all', maxHeight: 140, overflow: 'auto' }
+const chipLabel: CSSProperties = { fontSize: 12, fontFamily: 'var(--fl-font-mono)', padding: '2px 8px', border: '1px solid var(--fl-border)', borderRadius: 999, cursor: 'pointer', background: 'var(--fl-surface)', color: 'var(--fl-text)' }
 const chipOn: CSSProperties = { borderColor: 'var(--fl-primary)', background: 'color-mix(in srgb, var(--fl-primary) 12%, var(--fl-surface))', color: 'var(--fl-primary)', fontWeight: 700 }

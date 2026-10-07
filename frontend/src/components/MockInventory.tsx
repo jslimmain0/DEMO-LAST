@@ -10,6 +10,7 @@ import { relTime } from '../lib/format'
 import { toast } from './toast'
 import { CatalogPagination } from './CatalogPagination'
 import { catalogPage, compareMocks, type MockSort } from '../lib/catalog'
+import { ui } from '../design/ui'
 
 export type ServerAction = 'toggle' | 'rename' | 'duplicate' | 'export' | 'delete' | 'fav' | 'copyUrl' | 'move' | 'goFlow'
 export type FleetFilter = 'all' | 'on' | 'off' | 'fail' | 'live' | 'unmatched' | 'fav'
@@ -18,7 +19,7 @@ export function serverState(s: MockFleetServer): ServerState {
   if (s.listener) return s.listener.state === 'LISTENING' ? 'on' : s.listener.state === 'FAILED' ? 'fail' : 'off'
   return s.kind === 'TCP' ? (s.listening ? 'on' : s.listenError ? 'fail' : 'off') : (s.enabled ? 'on' : 'off')
 }
-const kindColorOf = (isTcp: boolean) => (isTcp ? 'var(--fl-cat-tcp, #7c5cff)' : 'var(--fl-cat-http, var(--fl-primary))')
+const kindColorOf = (isTcp: boolean) => (isTcp ? 'var(--fl-cat-tcp)' : 'var(--fl-cat-http)')
 
 /**
  * Mock 서버 인벤토리 — Mock 화면의 유일한 보기. Docker Desktop/Mockoon 식 **행 목록**을 워크스페이스로 묶는다(에이전트 토론 결론: 그래프 폐기).
@@ -104,7 +105,7 @@ export function MockInventory({ fleet, host, tenant, match, sort = 'name', pageN
         {ports.filter(p => p.kind === 'HTTP' || p.state !== 'OFF').length > 8 && <button onClick={() => setShowPorts(v => !v)} aria-expanded={showPorts} style={portChip}>{showPorts ? '포트 접기' : `포트 ${ports.filter(p => p.kind === 'HTTP' || p.state !== 'OFF').length - 8}개 더 보기`}</button>}
         {offPorts.length > 0 && (
           <button onClick={() => setShowOff((v) => !v)} aria-expanded={showOff} style={{ ...portChip, borderStyle: 'dashed', opacity: 0.8, cursor: 'pointer' }} title="꺼진 TCP Mock 의 포트(리스너 닫힘)">
-            {showOff ? '▾' : '▸'} 꺼짐 {offPorts.length}
+            <AppIcon name={showOff ? 'chevronDown' : 'chevronRight'} size={13} style={{ color: 'var(--fl-text-muted)', verticalAlign: '-2px' }} /> 꺼짐 {offPorts.length}
           </button>
         )}
         {showOff && offPorts.map((p, i) => <PortChip key={`off-${p.port}-${i}`} p={p} host={host} contextPath={fleet.contextPath} tenant={tenant} onOpen={() => { if (p.mockId) focusRow(p.mockId) }} />)}
@@ -124,12 +125,12 @@ export function MockInventory({ fleet, host, tenant, match, sort = 'name', pageN
         const roleLabel = !readable ? '접근 없음' : w.myRole === 'VIEWER' ? '읽기 전용' : w.myRole === 'OWNER' ? (w.mine ? '소유' : '관리자') : '편집'
         const roleColor = !readable ? 'var(--fl-fail)' : w.myRole === 'VIEWER' ? 'var(--fl-put, #f5a623)' : 'var(--fl-ok)'
         return (
-          <section key={w.id} aria-label={`워크스페이스 ${w.name}`} data-mine={w.mine} style={{ ...groupBox, borderStyle: w.mine ? 'solid' : 'dashed' }}>
+          <section key={w.id} aria-label={`워크스페이스 ${w.name}`} data-mine={w.mine} style={groups.length === 1 ? groupBoxSolo : { ...groupBox, borderStyle: w.mine ? 'solid' : 'dashed' }}>
             <div style={{ ...groupHead, ...(groups.length === 1 ? { display: 'none' } : {}) }}>
-              <button onClick={() => toggleGroup(w.id, w.mine)} aria-expanded={!isCollapsed} style={chev} title={isCollapsed ? '펼치기' : '접기'}>{isCollapsed ? '▸' : '▾'}</button>
+              <button onClick={() => toggleGroup(w.id, w.mine)} aria-expanded={!isCollapsed} style={chev} title={isCollapsed ? '펼치기' : '접기'}><AppIcon name={isCollapsed ? 'chevronRight' : 'chevronDown'} size={13} style={{ color: 'var(--fl-text-muted)', verticalAlign: '-2px' }} /></button>
               <AppIcon name={icon} size={16} />
-              <span style={{ fontFamily: 'var(--fl-font-head)', fontWeight: 800, fontSize: 14.5, color: 'var(--fl-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{w.name}</span>
-              <span style={{ ...roleChip, color: roleColor, borderColor: `color-mix(in srgb, ${roleColor} 40%, var(--fl-border))` }}>{(!readable || w.myRole === 'VIEWER') && '🔒 '}{roleLabel}</span>
+              <span style={{ fontFamily: 'var(--fl-font-head)', fontWeight: 800, fontSize: 14, color: 'var(--fl-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{w.name}</span>
+              <span style={{ ...roleChip, color: roleColor, borderColor: `color-mix(in srgb, ${roleColor} 40%, var(--fl-border))` }}>{(!readable || w.myRole === 'VIEWER') && ''}{roleLabel}</span>
               <span style={meta}>서버 {searching ? `${shown.length}/${all.length}` : all.length} · 서빙 {on}{live ? ` · 요청 중 ${live}` : ''}</span>
               {tcpPorts.length > 0 && <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>{tcpPorts.slice(0, 6).map((s) => <span key={s.id} style={{ ...portMini, color: serverState(s) === 'on' ? 'var(--fl-ok)' : serverState(s) === 'fail' ? 'var(--fl-fail)' : 'var(--fl-text-muted)' }}>:{s.tcpPort}</span>)}{tcpPorts.length > 6 && <span style={portMini}>+{tcpPorts.length - 6}</span>}</span>}
               {writable && <button onClick={() => onCreateIn(w.id)} style={{ ...ghostMini, marginLeft: 'auto' }} title="이 워크스페이스에 새 Mock 만들기">+ Mock</button>}
@@ -210,33 +211,32 @@ function InventoryRow({ s, host, tenant, httpPort, contextPath, selected, select
       data-select-mode={selectMode} data-state={st} data-kind={isTcp ? 'TCP' : 'HTTP'} data-readable={s.readable} data-selected={selected ? 'true' : undefined}
       onClick={click} onKeyDown={(e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target === e.currentTarget) { e.preventDefault(); if (selectMode) onToggleSelect(s); else if (s.readable) onOpen(s) } }}
       title={!s.readable ? '접근 권한이 없는 워크스페이스 — 이름·포트·상태만 보입니다' : undefined}
-      style={{ ...rowGrid, gridTemplateColumns: `${selectMode ? '18px ' : ''}${rowGrid.gridTemplateColumns}`, ...row, borderLeft: `3px solid ${st === 'on' ? kindColor : st === 'fail' ? 'var(--fl-fail)' : 'transparent'}`, cursor: s.readable || selectMode ? 'pointer' : 'not-allowed', boxShadow: selected ? 'inset 0 0 0 2px var(--fl-primary)' : undefined, background: selected ? 'color-mix(in srgb, var(--fl-primary) 7%, var(--fl-surface))' : undefined }}>
+      style={{ ...rowGrid, gridTemplateColumns: `${selectMode ? '18px ' : ''}${rowGrid.gridTemplateColumns}`, ...row, cursor: s.readable || selectMode ? 'pointer' : 'not-allowed', boxShadow: selected ? 'inset 0 0 0 2px var(--fl-primary)' : undefined, background: selected ? 'color-mix(in srgb, var(--fl-primary) 7%, var(--fl-surface))' : undefined }}>
       {selectMode && <input type="checkbox" checked={selected} readOnly tabIndex={-1} aria-label={`${s.name} 선택`} style={{ width: 14, height: 14, accentColor: 'var(--fl-primary)', margin: 0, pointerEvents: 'none' }} />}
       <span className={live ? 'fl-led-live' : undefined} style={{ ...led, background: ledColor }} aria-label={`상태 ${stateLabel}${live ? ' · 요청 중' : ''}`} />
       <span className="fl-mock-identity" style={{ display: 'grid', gap: 5, minWidth: 0 }}>
-        <span style={{ fontWeight: 650, fontSize: 13, color: 'var(--fl-text)', overflowWrap: 'anywhere', lineHeight: 1.5 }}>
+        <span style={{ fontWeight: 650, fontSize: 14, color: 'var(--fl-text)', overflowWrap: 'anywhere', lineHeight: 1.45 }} title={s.currentVersion > 0 ? `v${s.currentVersion}${s.updatedAt ? ` · 수정 ${new Date(s.updatedAt).toLocaleString()}` : ''}` : undefined}>
           {fav && <span aria-label="즐겨찾기" style={{ color: 'var(--fl-put, #f5a623)', marginRight: 5 }}>★</span>}{s.name}
         </span>
         <span style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0 }}>
           <span style={{ ...mono, fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={isTcp ? `${host}${port}` : mockBaseUrl(s.slug, tenant, s.basePath)}>{isTcp ? `${tail}${tail.endsWith(port) ? '' : port}` : `:${httpPort} /${s.slug}`}</span>
-          {!isTcp && s.readable && <button style={{ ...ghostMini, height: 23, padding: '0 6px', flexShrink: 0, fontSize: 10.5 }} aria-label={`${s.name} 주소 복사`} onClick={e => { e.stopPropagation(); onAction(s, 'copyUrl') }}>복사</button>}
-          <span style={{ ...meta, marginLeft: 'auto', flexShrink: 0 }} title={s.updatedAt ? `수정 ${new Date(s.updatedAt).toLocaleString()}` : undefined}>{s.currentVersion > 0 ? `v${s.currentVersion}` : ''}</span>
+          {!isTcp && s.readable && <button className="fl-hover-reveal" style={{ ...ui.icon, width: 22, height: 22, flexShrink: 0 }} aria-label={`${s.name} 주소 복사`} title="주소 복사" onClick={e => { e.stopPropagation(); onAction(s, 'copyUrl') }}><AppIcon name="copy" size={13} /></button>}
         </span>
       </span>
       <span className="fl-mock-state" style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 5 }}>
         <span style={{ ...kindTag, color: kindColor }}>{isTcp ? 'TCP' : 'HTTP'}</span>
-        <span style={{ fontSize: 11.5, fontWeight: 700, color: st === 'off' ? 'var(--fl-text-muted)' : ledColor }} title={s.listenError ?? undefined}>{stateLabel}</span>
+        <span style={{ fontSize: 12, fontWeight: 700, color: st === 'off' ? 'var(--fl-text-muted)' : ledColor }} title={s.listenError ?? undefined}>{stateLabel}</span>
         {st === 'fail' && <span style={{ ...badge, background: 'var(--fl-fail)' }} title={s.listenError ?? '바인딩 실패'}>!</span>}
-        {readOnly && <span style={{ fontSize: 11 }} title={!s.readable ? '접근 권한 없음' : '읽기 전용'}>🔒</span>}
+        {readOnly && <span style={{ fontSize: 11 }} title={!s.readable ? '접근 권한 없음' : '읽기 전용'}><AppIcon name="lock" size={12} /></span>}
       </span>
       <span className="fl-mock-response" style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 4, minWidth: 0, overflow: 'hidden' }} aria-label={!isTcp && s.readable ? '라우트' : undefined}>
         {!s.readable ? <span style={meta}>{isTcp ? `규칙 ${s.tcpRuleCount}` : `라우트 ${s.routeCount}`} · 정의 비공개</span>
           : isTcp ? <span style={{ ...meta, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={`프로토콜 ${s.protocolName ?? '없음'} · 규칙 ${s.tcpRuleCount}${s.upstream ? ` · proxy→${s.upstream}` : ''}${s.environment ? ` · 시크릿 환경 ${s.environment}` : ''}`}>{s.protocolName ?? '프로토콜 없음'} · 규칙 {s.tcpRuleCount}{s.upstream ? ` · proxy→${s.upstream}` : ''}{s.environment ? ` · 🔑${s.environment}` : ''}</span>
           : labels.length > 0 ? <>
-              {labels.slice(0, 3).map((l, i) => { const sp = l.indexOf(' '); const m = sp > 0 ? l.slice(0, sp) : 'ANY'; const p = sp > 0 ? l.slice(sp + 1) : l; return <span key={i} style={routePill} title={l}><b style={{ color: METHOD_COLOR[m as HttpMethod] ?? 'var(--fl-text-muted)', fontSize: 9.5 }}>{m}</b><span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 110 }}>{p}</span></span> })}
+              {labels.slice(0, 3).map((l, i) => { const sp = l.indexOf(' '); const m = sp > 0 ? l.slice(0, sp) : 'ANY'; const p = sp > 0 ? l.slice(sp + 1) : l; return <span key={i} style={routePill} title={l}><b style={{ color: METHOD_COLOR[m as HttpMethod] ?? 'var(--fl-text-muted)', fontSize: 11 }}>{m}</b><span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 110 }}>{p}</span></span> })}
               {s.routeCount > 3 && <span style={{ ...routePill, color: 'var(--fl-text-muted)' }}>+{s.routeCount - 3}</span>}
               {s.hasCodec && <span style={{ ...routePill, color: 'var(--fl-text-muted)' }} title="코덱">◈</span>}
-              {s.environment && <span style={{ ...routePill, color: 'var(--fl-text-muted)' }} title="시크릿 환경">🔑{s.environment}</span>}
+              {s.environment && <span style={{ ...routePill, color: 'var(--fl-text-muted)' }} title="시크릿 환경">{s.environment}</span>}
             </>
           : <span style={meta}>라우트 없음</span>}
         {usedBy.length > 0 && <span style={{ ...meta, flexBasis: '100%' }} title={usedBy.map(f => f.name).join(', ')}>워크플로 {usedBy.length}개에서 사용</span>}
@@ -301,37 +301,39 @@ function PortChip({ p, host, contextPath, tenant, onOpen }: { p: MockFleetPort; 
     <Tag onClick={isHttp ? undefined : onOpen} title={title} aria-label={`포트 ${p.port} ${p.kind} ${p.state}`} data-state={p.state}
       style={{ ...portChip, borderStyle: p.state === 'OFF' ? 'dashed' : 'solid', cursor: isHttp ? 'default' : 'pointer', opacity: p.state === 'OFF' ? 0.75 : 1, borderColor: p.state === 'FAILED' ? 'color-mix(in srgb, var(--fl-fail) 50%, var(--fl-border))' : undefined }}>
       <span style={{ ...led, width: 8, height: 8, background: color, boxShadow: p.state === 'LISTENING' ? `0 0 0 3px color-mix(in srgb, ${color} 22%, transparent)` : undefined }} />
-      <b style={{ fontFamily: 'var(--fl-font-mono)', fontSize: 12.5, color: 'var(--fl-text)' }}>:{p.port}</b>
-      <span style={{ ...kindTag, color: isHttp ? 'var(--fl-cat-http, var(--fl-primary))' : 'var(--fl-cat-tcp, #7c5cff)' }}>{p.kind}</span>
-      <span style={{ fontSize: 11.5, color: 'var(--fl-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 160 }}>
+      <b style={{ fontFamily: 'var(--fl-font-mono)', fontSize: 13, color: 'var(--fl-text)' }}>:{p.port}</b>
+      <span style={{ ...kindTag, color: isHttp ? 'var(--fl-cat-http)' : 'var(--fl-cat-tcp)' }}>{p.kind}</span>
+      <span style={{ fontSize: 12, color: 'var(--fl-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 160 }}>
         {isHttp ? `게이트웨이 ×${p.count}` : p.mockName}
       </span>
-      {!isHttp && !p.readable && <span aria-label="접근 없음" style={{ fontSize: 10.5 }}>🔒</span>}
-      {p.state === 'FAILED' && <span style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--fl-fail)' }}>바인딩 실패</span>}
-      {isHttp && tenant && tenant !== 'default' && <span style={{ ...meta, fontSize: 10.5 }}>/{tenant}</span>}
+      {!isHttp && !p.readable && <span aria-label="접근 없음" style={{ fontSize: 11 }}><AppIcon name="lock" size={11} /></span>}
+      {p.state === 'FAILED' && <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--fl-fail)' }}>바인딩 실패</span>}
+      {isHttp && tenant && tenant !== 'default' && <span style={{ ...meta, fontSize: 11 }}>/{tenant}</span>}
     </Tag>
   )
 }
 
 // ---------- 스타일 ----------
 const mono: CSSProperties = { fontFamily: 'var(--fl-font-mono)', color: 'var(--fl-text-muted)' }
-const meta: CSSProperties = { fontSize: 11.5, color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)' }
+const meta: CSSProperties = { fontSize: 12, color: 'var(--fl-text-muted)', fontVariantNumeric: 'tabular-nums' }
 const led: CSSProperties = { display: 'inline-block', width: 9, height: 9, borderRadius: 999, flexShrink: 0 }
-const kindTag: CSSProperties = { fontSize: 9.5, fontWeight: 800, letterSpacing: '.05em', padding: '1px 6px', borderRadius: 999, border: '1px solid currentColor', lineHeight: 1.5, flexShrink: 0 }
+const kindTag: CSSProperties = { fontSize: 11, fontWeight: 700, letterSpacing: '.03em', lineHeight: 1.5, flexShrink: 0 }
 const portRow: CSSProperties = { display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', padding: '8px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius)', background: 'var(--fl-surface-2)', maxHeight: 160, overflowY: 'auto' }
 const portChip: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 9px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-pill)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 12, maxWidth: '100%' }
-const groupBox: CSSProperties = { border: '1px solid color-mix(in srgb, var(--fl-primary) 30%, var(--fl-border))', borderRadius: 'var(--fl-radius)', background: 'var(--fl-surface)', padding: '6px 8px 8px', boxShadow: 'var(--fl-shadow)' }
+const groupBox: CSSProperties = { border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius)', background: 'var(--fl-surface)', padding: '6px 8px 8px', boxShadow: 'var(--fl-shadow)' }
+// 워크스페이스가 하나뿐이면 묶음 상자 없이 표만 — 상자 안의 상자 방지
+const groupBoxSolo: CSSProperties = { border: 0, padding: 0, background: 'transparent' }
 const groupHead: CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, flexWrap: 'wrap', padding: '4px 6px 6px' }
 const chev: CSSProperties = { width: 22, height: 22, border: 'none', background: 'transparent', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 13, padding: 0 }
-const roleChip: CSSProperties = { fontSize: 10.5, fontWeight: 700, padding: '1px 8px', borderRadius: 999, border: '1px solid var(--fl-border)', background: 'var(--fl-surface-2)', whiteSpace: 'nowrap' }
-const portMini: CSSProperties = { fontSize: 10.5, padding: '1px 6px', borderRadius: 999, border: '1px solid var(--fl-border)', background: 'var(--fl-surface-2)', fontFamily: 'var(--fl-font-mono)', fontWeight: 700 }
+const roleChip: CSSProperties = { fontSize: 11, fontWeight: 650, padding: '1px 7px', borderRadius: 4, border: '1px solid var(--fl-border)', whiteSpace: 'nowrap' }
+const portMini: CSSProperties = { fontSize: 11, padding: '1px 6px', borderRadius: 999, border: '1px solid var(--fl-border)', background: 'var(--fl-surface-2)', fontFamily: 'var(--fl-font-mono)', fontWeight: 700 }
 const ghostMini: CSSProperties = { height: 26, border: '1px solid var(--fl-border)', background: 'var(--fl-surface)', color: 'var(--fl-text)', padding: '0 10px', borderRadius: 'var(--fl-radius-sm)', fontSize: 12, cursor: 'pointer' }
 const rowGrid: CSSProperties = { display: 'grid', gridTemplateColumns: '12px minmax(260px, 1fr) 112px minmax(150px, .55fr) 95px 60px', alignItems: 'center', gap: 12 }
-const headRow: CSSProperties = { padding: '2px 10px 4px', fontSize: 10.5, color: 'var(--fl-text-muted)', fontWeight: 600, borderBottom: '1px solid var(--fl-border)' }
+const headRow: CSSProperties = { padding: '2px 10px 4px', fontSize: 11, color: 'var(--fl-text-muted)', fontWeight: 600, borderBottom: '1px solid var(--fl-border)' }
 const row: CSSProperties = { padding: '7px 10px', borderBottom: '1px solid color-mix(in srgb, var(--fl-border) 60%, transparent)', borderRadius: 6, minHeight: 40, transition: 'background .12s, opacity .15s' }
-const routePill: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10.5, fontFamily: 'var(--fl-font-mono)', padding: '1px 7px', borderRadius: 999, border: '1px solid var(--fl-border)', background: 'var(--fl-surface-2)', color: 'var(--fl-text)', maxWidth: '100%' }
-const badge: CSSProperties = { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 15, height: 15, borderRadius: 999, background: 'var(--fl-put, #f5a623)', color: '#fff', fontSize: 9.5, fontWeight: 900, flexShrink: 0 }
-const toolBtn: CSSProperties = { width: 28, height: 26, border: '1px solid var(--fl-border)', background: 'var(--fl-surface)', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 13, borderRadius: 6, padding: 0 }
+const routePill: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontFamily: 'var(--fl-font-mono)', padding: '2px 7px', borderRadius: 4, background: 'var(--fl-surface-2)', color: 'var(--fl-text-soft)', maxWidth: '100%' }
+const badge: CSSProperties = { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 15, height: 15, borderRadius: 999, background: 'var(--fl-put, #f5a623)', color: '#fff', fontSize: 11, fontWeight: 900, flexShrink: 0 }
+const toolBtn: CSSProperties = { ...ui.icon, width: 28, height: 26 }
 const menuBox: CSSProperties = { position: 'fixed', width: 240, maxWidth: 'calc(100vw - 16px)', maxHeight: 'min(340px, calc(100dvh - 24px))', overflowY: 'auto', boxSizing: 'border-box', background: 'var(--fl-surface)', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', boxShadow: 'var(--fl-shadow-lg)', padding: 5, zIndex: 180, display: 'grid', gap: 2, textAlign: 'left' }
-const menuItem: CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '6px 10px', border: 'none', background: 'transparent', color: 'var(--fl-text)', fontSize: 12.5, cursor: 'pointer', textAlign: 'left', borderRadius: 6, overflowWrap: 'anywhere' }
+const menuItem: CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '6px 10px', border: 'none', background: 'transparent', color: 'var(--fl-text)', fontSize: 13, cursor: 'pointer', textAlign: 'left', borderRadius: 6, overflowWrap: 'anywhere' }
 const menuSelect: CSSProperties = { width: '100%', padding: '5px 8px', margin: '0 0 2px', border: '1px solid var(--fl-border)', borderRadius: 6, background: 'var(--fl-surface-2)', color: 'var(--fl-text)', fontSize: 12 }

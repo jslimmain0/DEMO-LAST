@@ -1,11 +1,13 @@
 // Actual TCP panel: storage identity, disconnected/loading/error/missing states. No network/MCP.
 const assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path'), vm = require('node:vm'), ts = require('typescript')
+// 공용 컨트롤 스타일(design/ui)은 순수 상수 모듈이라 실제 구현을 그대로 쓴다.
+const designUi = (() => { const out = {}; require('node:vm').runInNewContext(require('typescript').transpileModule(require('node:fs').readFileSync(require('node:path').join(__dirname, '../src/design/ui.ts'), 'utf8'), { compilerOptions: { module: require('typescript').ModuleKind.CommonJS, target: require('typescript').ScriptTarget.ES2022 } }).outputText, { exports: out }); return out })()
 const jsx = (type, props) => ({type, props})
 const scope = {current:{origin:'server',id:'team'},connected:true,workspaces:[{origin:'local',id:'pc',name:'개인 공간'},{origin:'server',id:'team',name:'개발팀'}],agentApi:(origin,space)=>({protocolsApi:{list:()=>`${origin}:${space}`,get:id=>id}})}
 const base = {react:{useMemo:f=>f()},'react/jsx-runtime':{jsx,jsxs:jsx},'react-router-dom':{Link:'link'},'../app/WorkspaceContext':{useWorkspace:()=>scope},'../auth/AuthContext':{useAuth:()=>({desktop:{}})},'../lib/apiError':{apiErrorMessage:()=> '접근 권한 없음'}}
 function load(file, modules) {
   const exports = {}
-  vm.runInNewContext(ts.transpileModule(fs.readFileSync(path.join(__dirname,'../src',file),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX}}).outputText,{exports,require:name=>modules[name]??{}})
+  vm.runInNewContext(ts.transpileModule(fs.readFileSync(path.join(__dirname,'../src',file),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX}}).outputText,{exports,require:name=>modules[name]??(name.endsWith('/design/ui')?designUi:{})})
   return exports
 }
 const agents = load('components/AgentSettings.tsx',{...base,'../lib/executionAgentSelection':load('lib/executionAgentSelection.ts',{})})

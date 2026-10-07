@@ -21,6 +21,7 @@ import { useEnvironment, useEnvStore } from '../lib/environments'
 import { toast } from './toast'
 import { ResourceScopeNote } from './ResourceScopeNote'
 import { useUnsavedNavigation } from './UnsavedNavigation'
+import { ui } from '../design/ui'
 
 const ENCODINGS = ['EUC-KR', 'MS949', 'UTF-8', 'US-ASCII']
 
@@ -186,7 +187,7 @@ export function ProtocolEditor({ detail, canEdit, onSaved }: { detail: ProtocolD
           <div style={{ ...row, alignItems: 'flex-start' }}>
             <span style={lbl}>길이 값</span>
             <div style={{ display: 'grid', gap: 4 }}>
-              <div style={{ fontSize: 11.5, color: 'var(--fl-text-muted)' }}>전문길이 필드에 들어갈 값 (기준: 현재 탭 전문 {tab || '—'})</div>
+              <div style={{ fontSize: 12, color: 'var(--fl-text-muted)' }}>전문길이 필드에 들어갈 값 (기준: 현재 탭 전문 {tab || '—'})</div>
               <label style={radioRow}>
                 <input type="radio" name="includesSelf" checked={!spec.includesSelf} disabled={ro} onChange={() => patch({ includesSelf: false })} />
                 <b style={mono}>{nums.bodyOnly}</b> <span style={hint}>(전문길이 필드 제외)</span>
@@ -247,7 +248,7 @@ export function ProtocolEditor({ detail, canEdit, onSaved }: { detail: ProtocolD
                 <input aria-label="전문 이름" value={msg.label ?? ''} disabled={ro} placeholder="이름 (예: 잔액조회 요청)"
                   onChange={(e) => patchMsg({ label: e.target.value })} style={{ ...input, width: 200 }} />
                 <span style={{ flex: 1 }} />
-                {canEdit && <button style={miniBtn} onClick={() => setPasting(true)}>📋 표 붙여넣기</button>}
+                {canEdit && <button style={miniBtn} onClick={() => setPasting(true)}>표 붙여넣기</button>}
                 {canEdit && (
                   <button style={miniBtn} onClick={() => {
                     let key = `${msg.key}-복사`
@@ -311,7 +312,7 @@ function MessagePlugins({ spec, patch, codecs, readOnly }: { spec: ProtocolSpec;
           <div key={i} style={pluginRow}>
             <button aria-label="위로" disabled={readOnly || i === 0} onClick={() => move(i, -1)} style={arrowBtn}>▲</button>
             <button aria-label="아래로" disabled={readOnly || i === list.length - 1} onClick={() => move(i, 1)} style={arrowBtn}>▼</button>
-            <b style={{ ...mono, fontSize: 12.5 }}>{avail.find((c) => c.id === p.id)?.label ?? p.id}</b>
+            <b style={{ ...mono, fontSize: 13 }}>{avail.find((c) => c.id === p.id)?.label ?? p.id}</b>
             <ParamsForm params={avail.find((c) => c.id === p.id)?.params ?? []} config={p.config} readOnly={readOnly}
               onChange={(config) => set(list.map((x, j) => (j === i ? { ...x, config } : x)))} />
             <span style={{ flex: 1 }} />
@@ -375,7 +376,7 @@ function PreviewSection({ spec, tab }: { spec: ProtocolSpec; tab: string }) {
         <select aria-label="미리보기 전문" value={key} onChange={(e) => setKey(e.target.value)} style={sel}>
           {spec.messages.map((m) => <option key={m.key} value={m.key}>{m.key}{m.label ? ` · ${m.label}` : ''}</option>)}
         </select>
-        <button onClick={() => preview.mutate()} disabled={preview.isPending} style={primaryBtn}>{preview.isPending ? '조립 중…' : '🔍 조립'}</button>
+        <button onClick={() => preview.mutate()} disabled={preview.isPending} style={primaryBtn}>{preview.isPending ? '조립 중…' : '조립'}</button>
         {preview.isError && <span style={{ fontSize: 12, color: 'var(--fl-fail)' }}>⚠ {apiErrorMessage(preview.error)}</span>}
       </div>
       {(fields.length > 5 || fieldSearch) && <input type="search" aria-label="미리보기 필드 검색" value={fieldSearch} onChange={e => setFieldSearch(e.target.value)} placeholder={`필드 이름 검색 · ${fields.length}개`} style={{ ...input, width: 'min(420px, 100%)', marginBottom: 8, boxSizing: 'border-box' }} />}
@@ -388,7 +389,7 @@ function PreviewSection({ spec, tab }: { spec: ProtocolSpec; tab: string }) {
               <span title={f.name} style={{ ...lbl, width: '35%', minWidth: 0, overflowWrap: 'anywhere', fontFamily: 'var(--fl-font-mono)', fontSize: 12 }}>{f.name}</span>
               <input aria-label={`${f.name} 값`} value={auto ? '' : values[f.name] ?? ''} disabled={auto} placeholder={auto ? '자동' : `${f.len}B`}
                 onChange={(ev) => setValues({ ...values, [f.name]: ev.target.value })} style={{ ...input, flex: 1, minWidth: 0 }} />
-              {e && <span style={{ fontSize: 11.5, color: 'var(--fl-fail)' }}>⚠ {e}</span>}
+              {e && <span style={{ fontSize: 12, color: 'var(--fl-fail)' }}>⚠ {e}</span>}
             </label>
           )
         })}
@@ -396,12 +397,12 @@ function PreviewSection({ spec, tab }: { spec: ProtocolSpec; tab: string }) {
       </div>
       {result && (
         <div style={{ marginTop: 12, display: 'grid', gap: 8 }}>
-          <div style={{ ...mono, fontSize: 12.5, fontWeight: 700 }}>총 {result.total}B</div>
+          <div style={{ ...mono, fontSize: 13, fontWeight: 700 }}>총 {result.total}B</div>
           {general.map((e, i) => <div key={i} style={{ fontSize: 12, color: 'var(--fl-fail)' }}>⚠ {e.message}</div>)}
           {(result.warnings ?? []).map((w, i) => <div key={i} style={{ fontSize: 12, color: 'var(--fl-warn, #b8860b)' }}>⚠ {w}</div>)}
           <div style={{ display: 'grid', gap: 2, maxHeight: 230, overflowY: 'auto' }}>
             {result.fields.map((f, i) => (
-              <div key={i} style={{ ...mono, fontSize: 11.5, color: 'var(--fl-text-muted)' }}>
+              <div key={i} style={{ ...mono, fontSize: 12, color: 'var(--fl-text-muted)' }}>
                 @{f.offset} · <span style={{ color: 'var(--fl-text)' }}>{f.name}</span> · {f.actualBytes}/{f.len} B
                 {f.warn && <span style={{ color: 'var(--fl-warn, #b8860b)' }}> ⚠ {f.warn}</span>}
               </div>
@@ -427,13 +428,13 @@ function PasteDialog({ header, onClose, onApply }: {
 
   return (
     <Modal onClose={onClose} ariaLabel="표 붙여넣기" width={720} card={{ padding: 18, gap: 12 }} closeOnBackdrop={false}>
-      <div style={{ fontFamily: 'var(--fl-font-head)', fontWeight: 600, fontSize: 16 }}>📋 표 붙여넣기</div>
+      <div style={{ fontFamily: 'var(--fl-font-head)', fontWeight: 600, fontSize: 16 }}>표 붙여넣기</div>
       <div style={hint}>명세서 표를 그대로 붙여넣으세요 — 줄마다 <code style={mono}>이름 길이 [타입] [패딩]</code>. 앞 {header.length}개는 헤더로 봅니다.</div>
       <textarea aria-label="전문 필드 표 붙여넣기" value={text} onChange={(e) => setText(e.target.value)} autoFocus rows={8} placeholder={'전문길이\t4\tlength\tleft/zero\n거래코드\t4\tascii\tright/space\n계좌번호\t13\tascii'}
         style={{ ...input, width: '100%', fontFamily: 'var(--fl-font-mono)', fontSize: 12, resize: 'vertical' }} />
       <div style={{ maxHeight: 200, overflowY: 'auto', display: 'grid', gap: 2 }}>
         {parsed.fields.map((f, i) => (
-          <div key={i} style={{ ...mono, fontSize: 11.5, color: i < header.length ? 'var(--fl-text-muted)' : 'var(--fl-text)' }}>
+          <div key={i} style={{ ...mono, fontSize: 12, color: i < header.length ? 'var(--fl-text-muted)' : 'var(--fl-text)' }}>
             {i < header.length ? '헤더' : '본문'} · {f.name} · {f.len}B · {f.type} · {f.pad}
           </div>
         ))}
@@ -452,23 +453,23 @@ function PasteDialog({ header, onClose, onApply }: {
 
 // ---------- 스타일 ----------
 const topBar: CSSProperties = { position: 'sticky', top: 0, zIndex: 2, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, padding: '12px 20px', borderBottom: '1px solid var(--fl-border)', background: 'var(--fl-surface)' }
-const nameInput: CSSProperties = { padding: '6px 10px', border: '1px solid transparent', borderRadius: 'var(--fl-radius-sm)', background: 'transparent', color: 'var(--fl-text)', fontSize: 17, fontWeight: 700, fontFamily: 'var(--fl-font-head)', minWidth: 150, flex: '1 1 240px' }
-const dirtyBadge: CSSProperties = { fontSize: 11.5, fontWeight: 700, color: 'var(--fl-warn, #b8860b)' }
-const banner: CSSProperties = { margin: '10px 20px 0', padding: '8px 12px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', fontSize: 12.5, display: 'grid', gap: 3 }
+const nameInput: CSSProperties = { padding: '6px 10px', border: '1px solid transparent', borderRadius: 'var(--fl-radius-sm)', background: 'transparent', color: 'var(--fl-text)', fontSize: 18, fontWeight: 700, fontFamily: 'var(--fl-font-head)', minWidth: 150, flex: '1 1 240px' }
+const dirtyBadge: CSSProperties = { fontSize: 12, fontWeight: 700, color: 'var(--fl-warn, #b8860b)' }
+const banner: CSSProperties = { margin: '10px 20px 0', padding: '8px 12px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', fontSize: 13, display: 'grid', gap: 3 }
 const section: CSSProperties = { padding: 14, border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius)', background: 'var(--fl-surface)' }
-const secTitle: CSSProperties = { fontSize: 12.5, fontWeight: 700, marginBottom: 10, display: 'flex', alignItems: 'baseline', gap: 8 }
+const secTitle: CSSProperties = { fontSize: 13, fontWeight: 700, marginBottom: 10, display: 'flex', alignItems: 'baseline', gap: 8 }
 const row: CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }
-const radioRow: CSSProperties = { display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5 }
+const radioRow: CSSProperties = { display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }
 const lbl: CSSProperties = { fontSize: 12, color: 'var(--fl-text-muted)', minWidth: 72 }
-const hint: CSSProperties = { fontSize: 11.5, color: 'var(--fl-text-muted)' }
+const hint: CSSProperties = { fontSize: 12, color: 'var(--fl-text-muted)' }
 const mono: CSSProperties = { fontFamily: 'var(--fl-font-mono)' }
-const input: CSSProperties = { padding: '6px 9px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', color: 'var(--fl-text)', fontSize: 12.5 }
-const sel: CSSProperties = { padding: '6px 8px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', color: 'var(--fl-text)', fontSize: 12.5, cursor: 'pointer' }
-const tabBtn: CSSProperties = { padding: '6px 11px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', color: 'var(--fl-text-muted)', fontSize: 12.5, cursor: 'pointer' }
+const input: CSSProperties = { padding: '6px 9px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', color: 'var(--fl-text)', fontSize: 13 }
+const sel: CSSProperties = { padding: '6px 8px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', color: 'var(--fl-text)', fontSize: 13, cursor: 'pointer' }
+const tabBtn: CSSProperties = { ...ui.secondary }
 const tabOn: CSSProperties = { background: 'var(--fl-action-primary-bg)', color: 'var(--fl-action-primary-ink)', borderColor: 'var(--fl-primary)' }
-const primaryBtn: CSSProperties = { padding: '7px 14px', border: 'none', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-action-primary-bg)', color: 'var(--fl-action-primary-ink)', fontWeight: 600, fontSize: 12.5, cursor: 'pointer' }
-const ghostBtn: CSSProperties = { padding: '7px 12px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 12.5, cursor: 'pointer' }
-const miniBtn: CSSProperties = { padding: '5px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 12, cursor: 'pointer' }
-const arrowBtn: CSSProperties = { width: 21, height: 24, padding: 0, border: '1px solid var(--fl-border)', borderRadius: 4, background: 'var(--fl-surface)', color: 'var(--fl-text-muted)', fontSize: 10, cursor: 'pointer' }
+const primaryBtn: CSSProperties = { ...ui.primary }
+const ghostBtn: CSSProperties = { ...ui.secondary }
+const miniBtn: CSSProperties = { ...ui.mini }
+const arrowBtn: CSSProperties = { ...ui.icon, width: 21, height: 24 }
 const pluginRow: CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', padding: '8px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)' }
-const pre: CSSProperties = { margin: 0, padding: 10, maxHeight: 280, overflow: 'auto', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', fontFamily: 'var(--fl-font-mono)', fontSize: 11.5, whiteSpace: 'pre-wrap', wordBreak: 'break-all', color: 'var(--fl-text)' }
+const pre: CSSProperties = { margin: 0, padding: 10, maxHeight: 280, overflow: 'auto', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', fontFamily: 'var(--fl-font-mono)', fontSize: 12, whiteSpace: 'pre-wrap', wordBreak: 'break-all', color: 'var(--fl-text)' }

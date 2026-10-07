@@ -15,6 +15,7 @@ import { byteLen, lintTcpRules, requestKeys, withOffsets } from '../lib/protocol
 import { tcpMockSources } from '../lib/mockSources'
 import { useVaultSources } from '../lib/vaultSources'
 import { FieldRow, PreviewBox } from '../panels/TcpNodePanel'
+import { ui } from '../design/ui'
 
 const COND_OPS: NonNullable<MockTcpCond['op']>[] = ['eq', 'ne', 'contains', 'startswith', 'endswith', 'regex', 'exists']
 const OP_LABEL: Record<string, string> = { eq: '=', ne: '≠', contains: '⊃', startswith: '^', endswith: '$', regex: '~', exists: '있음' }
@@ -51,7 +52,7 @@ export function tcpRuleSummary(rule: MockTcpRuleSpec, spec: ProtocolSpec | undef
   const then = rule.then?.mode === 'proxy' ? '→ proxy' : `→ mock ${responseKeyOf(rule, spec) || 'response'}`
   const f = rule.fault
   const fault = f ? [f.delayMs ? `delay ${f.delayMs}` : '', f.splitAt ? `split ${f.splitAt}` : '', f.drop ? 'drop' : '', f.reset ? 'reset' : '', f.corruptLength ? 'length 깨기' : ''].filter(Boolean).join(' ') : ''
-  return `${when} ${then}${fault ? ` ⚡${fault}` : ''}`
+  return `${when} ${then}${fault ? ` · 장애 ${fault}` : ''}`
 }
 
 // ---------- 연결 ----------
@@ -164,7 +165,7 @@ export function TcpRuleDetail({ rule, index, total, spec, secrets, envKeys, read
               {COND_OPS.map((o) => <option key={o} value={o}>{o}</option>)}
             </select>
             {c.op === 'exists'
-              ? <span style={{ flex: 1, minWidth: 100, fontSize: 11.5, color: 'var(--fl-text-muted)' }}>(값 없음)</span>
+              ? <span style={{ flex: 1, minWidth: 100, fontSize: 12, color: 'var(--fl-text-muted)' }}>(값 없음)</span>
               : <div style={{ flex: 1, minWidth: 100 }}><TokenInput ariaLabel={`조건 ${i + 1} 값`} value={c.value ?? ''} sources={sources} placeholder="값 또는 { } 데이터 삽입"
                   onChange={(v) => setCond(i, { value: v })} /></div>}
             {!readOnly && <button style={{ ...miniBtn, color: 'var(--fl-fail)' }} onClick={() => onChange({ when: conds.filter((_, ci) => ci !== i) })} aria-label={`조건 ${i + 1} 삭제`}>×</button>}
@@ -209,7 +210,7 @@ export function TcpRuleDetail({ rule, index, total, spec, secrets, envKeys, read
                 {(msg?.fields ?? []).map((f) => <FieldValueRow key={f.name} f={f} kind="body" spec={spec} value={fields[f.name] ?? ''} readOnly={readOnly} sources={sources} warn={warnFor(f.name)} onChange={(v) => setField(f.name, v)} />)}
                 {orphans.map((k) => (
                   <div key={k} style={{ ...row, border: '1px solid var(--fl-fail)', borderRadius: 'var(--fl-radius-sm)', padding: '4px 8px' }}>
-                    <span style={{ fontSize: 11.5, color: 'var(--fl-fail)', flex: 1 }}>⚠ <code style={code}>{k}</code> — 이 응답 전문에 없는 필드(다른 전문으로 바꾼 흔적)</span>
+                    <span style={{ fontSize: 12, color: 'var(--fl-fail)', flex: 1 }}>⚠ <code style={code}>{k}</code> — 이 응답 전문에 없는 필드(다른 전문으로 바꾼 흔적)</span>
                     {!readOnly && <button style={{ ...miniBtn, color: 'var(--fl-fail)' }} onClick={() => { const next = { ...fields }; delete next[k]; onChange({ then: { ...(rule.then ?? { mode: 'mock' }), mode, fields: next } }) }}>제거</button>}
                   </div>
                 ))}
@@ -222,7 +223,7 @@ export function TcpRuleDetail({ rule, index, total, spec, secrets, envKeys, read
 
       {/* 장애 주입 */}
       <details style={{ ...box, marginTop: 10 }} open={faultOn}>
-        <summary style={{ ...boxTitle, cursor: 'pointer' }}>⚡ 장애 주입 {faultOn && <span style={{ color: 'var(--fl-put, #f5a623)' }}>· 켜짐</span>}</summary>
+        <summary style={{ ...boxTitle, cursor: 'pointer' }}>장애 주입 {faultOn && <span style={{ color: 'var(--fl-put, #f5a623)' }}>· 켜짐</span>}</summary>
         <p style={{ ...hint, marginTop: 6 }}>실제 버그는 대부분 여기서 난다 — 느린 응답·전문 쪼개짐·무응답·연결 끊김·길이 필드 불일치를 일부러 만들어 클라이언트를 시험합니다.</p>
         <div style={{ ...row, marginTop: 6 }}>
           <span style={{ ...lbl, minWidth: 70 }}>지연(ms)</span>
@@ -262,7 +263,7 @@ function FieldValueRow({ f, kind, spec, value, disc, readOnly, sources, warn, on
   const bytes = value.includes('{{') ? null : byteLen(value, spec.encoding)
   return (
     <div style={{ ...row, border: `1px solid ${warn ? 'var(--fl-fail)' : 'var(--fl-border)'}`, borderRadius: 'var(--fl-radius-sm)', padding: '5px 8px', alignItems: 'center' }}>
-      <span style={{ fontSize: 11.5, fontWeight: 600, width: 130, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={f.name}>{f.name}</span>
+      <span style={{ fontSize: 12, fontWeight: 600, width: 130, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={f.name}>{f.name}</span>
       <span style={{ ...meta, width: 92 }}>{f.type} {f.len}B{bytes != null ? ` · ${bytes}` : ''}</span>
       {disc ? (
         <code style={{ ...code, flex: 1 }}>{value || '(응답 전문 미선택)'}</code>
@@ -346,7 +347,7 @@ function LogRow({ e, open, protocolId, onToggle, onMakeRule }: { e: TcpLogEntry;
       {open && (
         <div style={{ padding: '0 10px 8px', display: 'grid', gap: 5 }}>
           <pre style={pre}>{e.text}</pre>
-          <details><summary style={{ fontSize: 10.5, fontWeight: 600, color: 'var(--fl-text-muted)', cursor: 'pointer' }}>HEX</summary><pre style={pre}>{e.hex}</pre></details>
+          <details><summary style={{ fontSize: 11, fontWeight: 600, color: 'var(--fl-text-muted)', cursor: 'pointer' }}>HEX</summary><pre style={pre}>{e.hex}</pre></details>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
             {e.dir === 'in' && onMakeRule && <button style={{ ...miniBtn, padding: '3px 8px' }} onClick={() => onMakeRule(e)} title="이 전문에 맞는 규칙 초안(전문 코드 eq 조건)">규칙 초안</button>}
             {undefinedMsg && protocolId && <Link to={`/protocols/${protocolId}?add=${encodeURIComponent(e.key ?? '')}`} style={linkStyle}>→ 이 코드로 본문 정의 만들기</Link>}
@@ -411,12 +412,12 @@ export function TcpSendPanel({ mockId, spec, ensureSaved }: { mockId: string; sp
         </div>
         {!result ? <div style={{ ...meta, border: '1px dashed var(--fl-border)', borderRadius: 6, padding: 12 }}>전문을 보내면 요청 조립 결과와 응답이 여기에 표시됩니다.</div> : (
           <>
-            {result.response.warnings.map((w, i) => <div key={i} style={{ fontSize: 11.5, color: 'var(--fl-put, #f5a623)' }}>⚠ {w}</div>)}
+            {result.response.warnings.map((w, i) => <div key={i} style={{ fontSize: 12, color: 'var(--fl-put, #f5a623)' }}>⚠ {w}</div>)}
             <FieldTableView title="헤더" rows={result.response.header} />
             {result.response.body ? <FieldTableView title="본문" rows={result.response.body} /> : <div style={meta}>본문 스키마 없음 — 아래 원문으로 확인하세요.</div>}
             <pre style={pre}>{result.response.text}</pre>
-            <details><summary style={{ fontSize: 10.5, fontWeight: 600, color: 'var(--fl-text-muted)', cursor: 'pointer' }}>HEX</summary><pre style={pre}>{result.response.hex}</pre></details>
-            <details><summary style={{ fontSize: 10.5, fontWeight: 600, color: 'var(--fl-text-muted)', cursor: 'pointer' }}>보낸 요청</summary><PreviewBox p={result.request} /></details>
+            <details><summary style={{ fontSize: 11, fontWeight: 600, color: 'var(--fl-text-muted)', cursor: 'pointer' }}>HEX</summary><pre style={pre}>{result.response.hex}</pre></details>
+            <details><summary style={{ fontSize: 11, fontWeight: 600, color: 'var(--fl-text-muted)', cursor: 'pointer' }}>보낸 요청</summary><PreviewBox p={result.request} /></details>
           </>
         )}
       </div>
@@ -429,10 +430,10 @@ function FieldTableView({ title, rows }: { title: string; rows: Record<string, s
   if (!entries.length) return null
   return (
     <div>
-      <div style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--fl-text-muted)', marginBottom: 2 }}>{title}</div>
+      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--fl-text-muted)', marginBottom: 2 }}>{title}</div>
       <div style={{ display: 'grid', gap: 1 }}>
         {entries.map(([k, v]) => (
-          <div key={k} style={{ display: 'flex', gap: 8, fontSize: 11.5, fontFamily: 'var(--fl-font-mono)' }}>
+          <div key={k} style={{ display: 'flex', gap: 8, fontSize: 12, fontFamily: 'var(--fl-font-mono)' }}>
             <span style={{ width: 130, color: 'var(--fl-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{k}</span>
             <span style={{ flex: 1, minWidth: 0, wordBreak: 'break-all' }}>{v}</span>
           </div>
@@ -447,18 +448,18 @@ function FieldTableView({ title, rows }: { title: string; rows: Record<string, s
 const panel: CSSProperties = { padding: 18, border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius)', background: 'var(--fl-surface)' }
 const h2: CSSProperties = { fontFamily: 'var(--fl-font-head)', fontSize: 16, margin: 0 }
 const hint: CSSProperties = { fontSize: 12, color: 'var(--fl-text-muted)', marginTop: 6, lineHeight: 1.6 }
-const meta: CSSProperties = { fontSize: 11.5, color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)' }
-const code: CSSProperties = { fontFamily: 'var(--fl-font-mono)', fontSize: 11, background: 'var(--fl-surface-2)', padding: '1px 5px', borderRadius: 4 }
-const input: CSSProperties = { padding: '6px 9px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 12.5 }
-const miniBtn: CSSProperties = { padding: '5px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 12, cursor: 'pointer' }
-const primaryBtn: CSSProperties = { padding: '6px 14px', border: 'none', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-action-primary-bg)', color: 'var(--fl-action-primary-ink)', fontWeight: 700, fontSize: 12.5, cursor: 'pointer', whiteSpace: 'nowrap' }
+const meta: CSSProperties = { fontSize: 12, color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)' }
+const code: CSSProperties = { fontFamily: 'var(--fl-font-mono)', fontSize: 11, background: 'var(--fl-surface-2)', padding: '1px 5px', borderRadius: 6 }
+const input: CSSProperties = { padding: '6px 9px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 13 }
+const miniBtn: CSSProperties = { ...ui.mini }
+const primaryBtn: CSSProperties = { ...ui.primary }
 const lbl: CSSProperties = { fontSize: 12, fontWeight: 700 }
 const box: CSSProperties = { border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', padding: 12, background: 'var(--fl-surface-2)' }
-const boxTitle: CSSProperties = { fontSize: 12.5, fontWeight: 700 }
+const boxTitle: CSSProperties = { fontSize: 13, fontWeight: 700 }
 const row: CSSProperties = { display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }
 const seg: CSSProperties = { display: 'inline-flex', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', overflow: 'hidden' }
-const segBtn: CSSProperties = { padding: '3px 10px', border: 'none', cursor: 'pointer', fontSize: 11.5, fontWeight: 600 }
-const tag: CSSProperties = { fontSize: 10, fontWeight: 700, fontFamily: 'var(--fl-font-mono)', border: '1px solid', borderRadius: 4, padding: '0 4px' }
-const pre: CSSProperties = { margin: 0, padding: '6px 8px', fontSize: 11, fontFamily: 'var(--fl-font-mono)', color: 'var(--fl-text)', background: 'var(--fl-surface-2)', border: '1px solid var(--fl-border)', borderRadius: 5, whiteSpace: 'pre-wrap', wordBreak: 'break-all', maxHeight: 140, overflow: 'auto' }
-const linkStyle: CSSProperties = { fontSize: 11.5, whiteSpace: 'nowrap', color: 'var(--fl-primary)' }
-const warnBanner: CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', marginTop: 10, border: '1px solid color-mix(in srgb, var(--fl-put, #f5a623) 60%, var(--fl-border))', background: 'color-mix(in srgb, var(--fl-put, #f5a623) 10%, var(--fl-surface))', borderRadius: 'var(--fl-radius-sm)', fontSize: 12.5 }
+const segBtn: CSSProperties = { padding: '3px 10px', border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 600 }
+const tag: CSSProperties = { fontSize: 11, fontWeight: 700, fontFamily: 'var(--fl-font-mono)', border: '1px solid', borderRadius: 6, padding: '0 4px' }
+const pre: CSSProperties = { margin: 0, padding: '6px 8px', fontSize: 11, fontFamily: 'var(--fl-font-mono)', color: 'var(--fl-text)', background: 'var(--fl-surface-2)', border: '1px solid var(--fl-border)', borderRadius: 6, whiteSpace: 'pre-wrap', wordBreak: 'break-all', maxHeight: 140, overflow: 'auto' }
+const linkStyle: CSSProperties = { fontSize: 12, whiteSpace: 'nowrap', color: 'var(--fl-primary)' }
+const warnBanner: CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', marginTop: 10, border: '1px solid color-mix(in srgb, var(--fl-put, #f5a623) 60%, var(--fl-border))', background: 'color-mix(in srgb, var(--fl-put, #f5a623) 10%, var(--fl-surface))', borderRadius: 'var(--fl-radius-sm)', fontSize: 13 }

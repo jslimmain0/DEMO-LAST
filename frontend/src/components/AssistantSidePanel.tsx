@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { AssistantMessage } from '../api/types'
 import { usePermissions } from '../auth/AuthContext'
 import { toast } from './toast'
+import { ui } from '../design/ui'
 
 interface Turn<T> extends AssistantMessage {
   spec?: T | null
@@ -92,9 +93,9 @@ export function AssistantSidePanel<T>({ title, intro, placeholder, request, summ
     <aside style={{ position: 'fixed', top: 0, right: 0, height: '100vh', width: 340, zIndex: 60, borderLeft: '1px solid var(--fl-border)', background: 'var(--fl-surface)', boxShadow: 'var(--fl-shadow-lg)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       <header style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', borderBottom: '1px solid var(--fl-border)' }}>
         <span aria-hidden>✨</span>
-        <b style={{ flex: 1, fontSize: 13.5 }}>{title}</b>
+        <b style={{ flex: 1, fontSize: 14 }}>{title}</b>
         {connected ? (
-          <span style={{ ...badge(true), border: '1px solid var(--fl-ok)', color: 'var(--fl-ok)' }}>🔗 Copilot</span>
+          <span style={{ ...badge(true), border: '1px solid var(--fl-ok)', color: 'var(--fl-ok)' }}>Copilot</span>
         ) : device ? (
           <span style={badge(false)}>인증 대기…</span>
         ) : canEdit ? (
@@ -117,7 +118,7 @@ export function AssistantSidePanel<T>({ title, intro, placeholder, request, summ
       )}
 
       {device && (
-        <div style={{ margin: 12, padding: 12, border: '1px solid var(--fl-primary)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', fontSize: 12.5, lineHeight: 1.6 }}>
+        <div style={{ margin: 12, padding: 12, border: '1px solid var(--fl-primary)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', fontSize: 13, lineHeight: 1.6 }}>
           <b>GitHub Copilot 연결</b> — 열린 페이지에 코드 입력(복사됨):
           <div style={{ margin: '8px 0' }}><code style={{ fontSize: 18, fontWeight: 700, letterSpacing: 2, fontFamily: 'var(--fl-font-mono)', background: 'var(--fl-surface)', padding: '4px 10px', borderRadius: 'var(--fl-radius-sm)' }}>{device.userCode}</code></div>
           <button onClick={() => setDevice(null)} style={{ ...connectBtn, background: 'transparent', color: 'var(--fl-text-muted)', border: '1px solid var(--fl-border)' }}>취소</button>
@@ -126,7 +127,7 @@ export function AssistantSidePanel<T>({ title, intro, placeholder, request, summ
 
       <div ref={listRef} style={{ flex: 1, overflow: 'auto', padding: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
         {turns.length === 0 && (
-          <div style={{ color: 'var(--fl-text-muted)', fontSize: 12.5, lineHeight: 1.6 }}>
+          <div style={{ color: 'var(--fl-text-muted)', fontSize: 13, lineHeight: 1.6 }}>
             <p style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{intro}</p>
           </div>
         )}
@@ -135,7 +136,7 @@ export function AssistantSidePanel<T>({ title, intro, placeholder, request, summ
             <div style={bubble(t.role)}>{t.content}</div>
             {t.role === 'assistant' && t.spec != null && (
               <div style={{ marginTop: 6, border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', padding: 10 }}>
-                <div style={{ fontSize: 11.5, color: 'var(--fl-text-muted)', marginBottom: 8 }}>
+                <div style={{ fontSize: 12, color: 'var(--fl-text-muted)', marginBottom: 8 }}>
                   <b style={{ color: 'var(--fl-text)' }}>제안</b><br />{summarize(t.spec)}
                 </div>
                 <button onClick={() => apply(i, t.spec as T)} disabled={!canEdit || t.applied} style={{ ...applyBtn, ...(t.applied ? { opacity: 0.6, cursor: 'default' } : {}) }}>
@@ -152,7 +153,7 @@ export function AssistantSidePanel<T>({ title, intro, placeholder, request, summ
         <textarea value={input} onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); void send(input) } }}
           placeholder={canEdit ? placeholder : '보기 전용'} disabled={!canEdit || pending} rows={3}
-          style={{ flex: 1, resize: 'none', padding: '8px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', color: 'var(--fl-text)', fontSize: 12.5, minWidth: 0 }} />
+          style={{ flex: 1, resize: 'none', padding: '8px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', color: 'var(--fl-text)', fontSize: 13, minWidth: 0 }} />
         <button onClick={() => void send(input)} disabled={!canEdit || pending || !input.trim()} style={sendBtn}>보내기</button>
       </div>
     </aside>
@@ -160,12 +161,12 @@ export function AssistantSidePanel<T>({ title, intro, placeholder, request, summ
 }
 
 function badge(real?: boolean): CSSProperties {
-  return { fontSize: 10, fontWeight: 700, fontFamily: 'var(--fl-font-mono)', padding: '2px 7px', borderRadius: 999, border: '1px solid var(--fl-border)', color: real ? 'var(--fl-primary)' : 'var(--fl-text-muted)', background: real ? 'rgba(97,85,245,.12)' : 'var(--fl-surface-2)' }
+  return { fontSize: 11, fontWeight: 700, fontFamily: 'var(--fl-font-mono)', padding: '2px 7px', borderRadius: 999, border: '1px solid var(--fl-border)', color: real ? 'var(--fl-primary)' : 'var(--fl-text-muted)', background: real ? 'color-mix(in srgb, var(--fl-primary) 12%, transparent)' : 'var(--fl-surface-2)' }
 }
 function bubble(role: string): CSSProperties {
-  return { padding: '8px 11px', borderRadius: 'var(--fl-radius)', fontSize: 12.5, lineHeight: 1.55, whiteSpace: 'pre-wrap', wordBreak: 'break-word', background: role === 'user' ? 'var(--fl-action-primary-bg)' : 'var(--fl-surface-2)', color: role === 'user' ? 'var(--fl-action-primary-ink)' : 'var(--fl-text)', border: role === 'user' ? 'none' : '1px solid var(--fl-border)' }
+  return { padding: '8px 11px', borderRadius: 'var(--fl-radius)', fontSize: 13, lineHeight: 1.55, whiteSpace: 'pre-wrap', wordBreak: 'break-word', background: role === 'user' ? 'var(--fl-action-primary-bg)' : 'var(--fl-surface-2)', color: role === 'user' ? 'var(--fl-action-primary-ink)' : 'var(--fl-text)', border: role === 'user' ? 'none' : '1px solid var(--fl-border)' }
 }
-const xBtn: CSSProperties = { width: 26, height: 26, borderRadius: 'var(--fl-radius-sm)', border: 'none', background: 'var(--fl-surface-2)', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 15 }
-const connectBtn: CSSProperties = { padding: '4px 10px', borderRadius: 999, border: 'none', background: 'var(--fl-action-primary-bg)', color: 'var(--fl-action-primary-ink)', cursor: 'pointer', fontSize: 11, fontWeight: 700 }
-const sendBtn: CSSProperties = { flexShrink: 0, padding: '8px 12px', border: 'none', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-action-primary-bg)', color: 'var(--fl-action-primary-ink)', cursor: 'pointer', fontSize: 12.5, fontWeight: 600 }
-const applyBtn: CSSProperties = { padding: '6px 12px', border: '1px solid var(--fl-primary)', borderRadius: 'var(--fl-radius-sm)', background: 'transparent', color: 'var(--fl-primary)', cursor: 'pointer', fontSize: 12, fontWeight: 600 }
+const xBtn: CSSProperties = { ...ui.close, width: 26, height: 26 }
+const connectBtn: CSSProperties = { ...ui.primary }
+const sendBtn: CSSProperties = { ...ui.primary, flexShrink: 0 }
+const applyBtn: CSSProperties = { ...ui.secondary, color: 'var(--fl-primary)' }

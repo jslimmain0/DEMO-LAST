@@ -62,14 +62,14 @@ export function PluginReference({ manifest, source, onInsert }: { manifest: FlAp
       <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="fl 함수 검색 — des, base64, 패딩…" aria-label="레퍼런스 검색" style={search} />
       {!q && (
         <section style={{ display: 'grid', gap: 6 }}>
-          <strong style={{ fontSize: 12.5 }}>{shape.title}</strong>
+          <strong style={{ fontSize: 13 }}>{shape.title}</strong>
           <pre style={code}>{shape.code}</pre>
           <div style={note}>{shape.note}</div>
           {COMMON.map(([k, v]) => <div key={k} style={note}><b style={{ color: 'var(--fl-text)' }}>{k}</b> · {v}</div>)}
         </section>
       )}
       <section style={{ display: 'grid', gap: 4 }}>
-        <strong style={{ fontSize: 12.5 }}>fl.* 함수 <span style={{ fontWeight: 400, color: 'var(--fl-text-muted)' }}>— 클릭하면 예제를 커서에 삽입</span></strong>
+        <strong style={{ fontSize: 13 }}>fl.* 함수 <span style={{ fontWeight: 400, color: 'var(--fl-text-muted)' }}>— 클릭하면 예제를 커서에 삽입</span></strong>
         {!groups.length && <div style={note}>일치하는 함수가 없습니다.</div>}
         {groups.map(([ns, es]) => (
           <div key={ns} style={{ display: 'grid', gap: 2 }}>
@@ -77,7 +77,7 @@ export function PluginReference({ manifest, source, onInsert }: { manifest: FlAp
             {es.map((e) => (
               <button key={e.path} onClick={() => onInsert(e.example)} title={e.signature} style={row}>
                 <span style={{ fontFamily: 'var(--fl-font-mono)', fontSize: 12, fontWeight: 700, color: 'var(--fl-primary)' }}>{e.path.slice(3)}</span>
-                <span style={{ fontSize: 11.5, color: 'var(--fl-text)' }}>{e.doc}</span>
+                <span style={{ fontSize: 12, color: 'var(--fl-text)' }}>{e.doc}</span>
                 <code style={{ fontSize: 11, color: 'var(--fl-text-muted)', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{e.signature}</code>
               </button>
             ))}
@@ -89,7 +89,7 @@ export function PluginReference({ manifest, source, onInsert }: { manifest: FlAp
 }
 
 const panel: CSSProperties = { display: 'flex', flexDirection: 'column', gap: 12, padding: 14, overflowY: 'auto', background: 'var(--fl-surface)', minHeight: 0 }
-const search: CSSProperties = { padding: '7px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', color: 'var(--fl-text)', fontSize: 12.5, flexShrink: 0 }
-const code: CSSProperties = { margin: 0, padding: 10, fontSize: 11.5, lineHeight: 1.45, fontFamily: 'var(--fl-font-mono)', background: 'var(--fl-surface-2)', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', overflowX: 'auto', whiteSpace: 'pre' }
-const note: CSSProperties = { fontSize: 11.5, lineHeight: 1.5, color: 'var(--fl-text-muted)' }
+const search: CSSProperties = { padding: '7px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', color: 'var(--fl-text)', fontSize: 13, flexShrink: 0 }
+const code: CSSProperties = { margin: 0, padding: 10, fontSize: 12, lineHeight: 1.45, fontFamily: 'var(--fl-font-mono)', background: 'var(--fl-surface-2)', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', overflowX: 'auto', whiteSpace: 'pre' }
+const note: CSSProperties = { fontSize: 12, lineHeight: 1.5, color: 'var(--fl-text-muted)' }
 const row: CSSProperties = { display: 'grid', gap: 2, textAlign: 'left', padding: '6px 8px', border: '1px solid transparent', borderRadius: 'var(--fl-radius-sm)', background: 'transparent', cursor: 'pointer', minWidth: 0 }

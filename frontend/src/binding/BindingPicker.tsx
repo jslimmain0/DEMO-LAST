@@ -5,6 +5,7 @@ import { catColor, typeIcon, typeLabel } from '../canvas/nodeMeta'
 import { Modal } from '../components/Modal'
 import { getRecentBindings, pushRecentBinding } from './recentBindings'
 import type { BindableItem, BindableSource } from './upstream'
+import { AppIcon } from '../components/AppIcon'
 
 // 한 소스가 이보다 많은 항목을 가지면 접어서 보여준다(+N개 더) — 칩 수십 개가 화면을 덮는 것 방지.
 const TRUNC = 12
@@ -58,7 +59,7 @@ export function BindingPicker({
   const sections = useMemo<Section[]>(() => {
     const list: Section[] = []
     if (recent.length) {
-      list.push({ id: '__recent', label: '최근 사용', icon: '🕘', entries: recent, total: recent.length, hiddenCount: 0, collapsible: false, isRecent: true })
+      list.push({ id: '__recent', label: '최근 사용', icon: '↺', entries: recent, total: recent.length, hiddenCount: 0, collapsible: false, isRecent: true })
     }
     for (const s of sources) {
       let items = s.items.filter(it => group === 'all' || it.group === group)
@@ -123,7 +124,7 @@ export function BindingPicker({
     return (
       <>
         {key.slice(0, i)}
-        <span style={{ background: 'color-mix(in srgb, var(--fl-primary) 28%, transparent)', borderRadius: 3 }}>{key.slice(i, i + query.length)}</span>
+        <span style={{ background: 'color-mix(in srgb, var(--fl-primary) 28%, transparent)', borderRadius: 6 }}>{key.slice(i, i + query.length)}</span>
         {key.slice(i + query.length)}
       </>
     )
@@ -133,11 +134,11 @@ export function BindingPicker({
   return (
     <Modal onClose={onClose} ariaLabel="데이터 삽입" width={760} maxHeight="80vh">
         <header style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 16px', borderBottom: '1px solid var(--fl-border)' }}>
-          <strong style={{ fontFamily: 'var(--fl-font-head)', fontSize: 15 }}>데이터 삽입</strong>
+          <strong style={{ fontFamily: 'var(--fl-font-head)', fontSize: 16 }}>데이터 삽입</strong>
           <input type="search" aria-label="바인딩 키 또는 노드 검색" autoFocus value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={onKey} placeholder="키·노드 검색… (↑↓ 이동, Enter 삽입)" style={{ ...search, minWidth: 0 }} />
           {!query && group === 'all' && sources.length > 0 && (
             <button onClick={toggleAll} title={anyCollapsed ? '모든 섹션 펼치기' : '모든 섹션 접기'}
-              style={{ flexShrink: 0, padding: '5px 9px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text-muted)', fontSize: 11.5, whiteSpace: 'nowrap' }}>
+              style={{ flexShrink: 0, padding: '5px 9px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text-muted)', fontSize: 12, whiteSpace: 'nowrap' }}>
               {anyCollapsed ? '▾ 모두 펼치기' : '▸ 모두 접기'}
             </button>
           )}
@@ -170,11 +171,11 @@ export function BindingPicker({
                 title={sec.collapsible && !sec.isRecent ? (isCollapsed ? '펼치기' : '접기') : undefined}
                 style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '6px 8px', fontSize: 12, fontWeight: 700, color: 'var(--fl-text-muted)', cursor: sec.collapsible && !sec.isRecent ? 'pointer' : 'default', userSelect: 'none' }}
               >
-                {sec.collapsible && !sec.isRecent && <span aria-hidden style={{ fontSize: 9, width: 10, flexShrink: 0 }}>{isCollapsed ? '▸' : '▾'}</span>}
+                {sec.collapsible && !sec.isRecent && <span aria-hidden style={{ fontSize: 11, width: 10, flexShrink: 0 }}><AppIcon name={isCollapsed ? 'chevronRight' : 'chevronDown'} size={13} style={{ color: 'var(--fl-text-muted)', verticalAlign: '-2px' }} /></span>}
                 <span aria-hidden style={{ color: sec.iconColor }}>{sec.icon}</span>
                 <span title={sec.label} style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sec.label}</span>
                 <span style={countBadge}>{sec.total}</span>
-                {sec.sub && <span style={{ fontWeight: 400, fontFamily: 'var(--fl-font-mono)', fontSize: 10.5, opacity: 0.7, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sec.sub}</span>}
+                {sec.sub && <span style={{ fontWeight: 400, fontFamily: 'var(--fl-font-mono)', fontSize: 11, opacity: 0.7, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sec.sub}</span>}
               </div>
               {/* 파라미터는 세로 목록 대신 블럭(칩)으로 나열 — 한눈에 훑고 바로 집는다 */}
               {sec.entries.length > 0 && (
@@ -195,7 +196,7 @@ export function BindingPicker({
                     style={{ ...chipBtn(isResp), ...(isActive ? { outline: '2px solid var(--fl-primary)', outlineOffset: 1 } : {}) }}
                   >
                     {/* 색 단독 금지(1.4.1) — 응답/요청 구분은 텍스트 태그로 */}
-                    <span style={{ fontSize: 9.5, fontWeight: 700, flexShrink: 0, color: isResp ? 'var(--fl-ok)' : 'var(--fl-running)' }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, flexShrink: 0, color: isResp ? 'var(--fl-ok)' : 'var(--fl-running)' }}>
                       {e.it.tag ?? (isResp ? '응답' : '요청')}
                     </span>
                     <span style={{ fontFamily: 'var(--fl-font-mono)', fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 180 }}>{hi(e.it.key)}</span>
@@ -206,7 +207,7 @@ export function BindingPicker({
                 {sec.hiddenCount > 0 && (
                   <button
                     onClick={() => setShowAll((p) => new Set(p).add(sec.id))}
-                    style={{ ...chipBtn(false), borderStyle: 'dashed', color: 'var(--fl-text-muted)', fontSize: 11.5 }}
+                    style={{ ...chipBtn(false), borderStyle: 'dashed', color: 'var(--fl-text-muted)', fontSize: 12 }}
                     title="이 노드의 나머지 항목 펼치기"
                   >+{sec.hiddenCount}개 더</button>
                 )}
@@ -234,5 +235,5 @@ function chipBtn(isResponse: boolean): CSSProperties {
     maxWidth: '100%',
   }
 }
-const typeBadge: CSSProperties = { fontSize: 10, color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)', background: 'var(--fl-surface-2)', padding: '1px 5px', borderRadius: 5, flexShrink: 0 }
-const countBadge: CSSProperties = { flexShrink: 0, fontSize: 10, fontWeight: 600, color: 'var(--fl-text-muted)', background: 'var(--fl-surface-2)', borderRadius: 8, padding: '1px 6px' }
+const typeBadge: CSSProperties = { fontSize: 11, color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)', background: 'var(--fl-surface-2)', padding: '1px 5px', borderRadius: 6, flexShrink: 0 }
+const countBadge: CSSProperties = { flexShrink: 0, fontSize: 11, fontWeight: 600, color: 'var(--fl-text-muted)', background: 'var(--fl-surface-2)', borderRadius: 'var(--fl-radius)', padding: '1px 6px' }

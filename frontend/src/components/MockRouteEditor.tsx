@@ -3,6 +3,7 @@ import type { CSSProperties } from 'react'
 import { useMemo, useRef, useState } from 'react'
 import type { HttpMethod, MockCodecSpec, MockCond, MockExpect, MockExpectField, MockRouteSpec, MockRuleSpec, MockServerSpec } from '../api/types'
 import type { SecretView, EnvView } from '../api/client'
+import { AppIcon } from './AppIcon'
 
 import { BindingPicker } from '../binding/BindingPicker'
 import { TokenInput } from '../binding/TokenInput'
@@ -16,6 +17,7 @@ import { BigTextEditor, ExpandCorner } from './BigTextEditor'
 import { FieldCodecButton } from './FieldCodecButton'
 import { DataInsertIcon } from './icons'
 import { MockCodecEditor } from './MockCodecEditor'
+import { ui } from '../design/ui'
 
 const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'ANY']
 const methodColor = (m: string): string => METHOD_COLOR[m as HttpMethod] ?? 'var(--fl-cat-generic)'
@@ -84,7 +86,7 @@ export function RouteCard({ base, ensureSaved, mockId, spec, secrets, envs, rout
   if (route.rules.some((r) => r.repeat)) badges.push('N회')
   const fieldHints = { request: expectKeys(route, 'body'), response: [...new Set(route.rules.flatMap(responseBodyKeys))] }
   return (
-    <div style={{ border: '1px solid var(--fl-border)', borderLeft: `3px solid ${methodColor(route.method)}`, borderRadius: 'var(--fl-radius)', padding: 14, background: 'var(--fl-surface)' }}>
+    <div style={{ border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius)', padding: 14, background: 'var(--fl-surface)' }}>
       <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
         <select style={{ ...input, minWidth: 90, fontWeight: 700, color: methodColor(route.method) }} value={route.method} disabled={readOnly} aria-label="메서드" onChange={(e) => onChange({ ...route, method: e.target.value })}>
           {METHODS.map((m) => <option key={m}>{m}</option>)}
@@ -107,7 +109,7 @@ export function RouteCard({ base, ensureSaved, mockId, spec, secrets, envs, rout
                   <span>HTTP {test.status}</span>
                   {test.rule !== undefined && <span style={{ color: 'var(--fl-text-muted)', fontWeight: 500 }}>매칭 규칙: {test.rule ? `규칙 ${route.rules.findIndex((r) => r.id === test.rule) + 1}` : '없음'}</span>}
                 </div>
-                <pre style={{ margin: 0, padding: '8px 10px', fontSize: 11.5, fontFamily: 'var(--fl-font-mono)', whiteSpace: 'pre-wrap', wordBreak: 'break-all', maxHeight: 180, overflow: 'auto', color: 'var(--fl-text)' }}>{test.body}</pre></>}
+                <pre style={{ margin: 0, padding: '8px 10px', fontSize: 12, fontFamily: 'var(--fl-font-mono)', whiteSpace: 'pre-wrap', wordBreak: 'break-all', maxHeight: 180, overflow: 'auto', color: 'var(--fl-text)' }}>{test.body}</pre></>}
         </div>
       )}
 
@@ -126,7 +128,7 @@ export function RouteCard({ base, ensureSaved, mockId, spec, secrets, envs, rout
             ? <button style={{ ...miniBtn, padding: '2px 8px' }} onClick={() => setCodecOpen((v) => !v)}>{codecOpen ? '접기' : '편집'}</button>
             : onGoCodec && <button style={{ ...miniBtn, padding: '2px 8px' }} onClick={onGoCodec}>코덱 화면 →</button>}
           {!readOnly && pluginsAllowed && (
-            <label style={{ fontSize: 11.5, display: 'inline-flex', alignItems: 'center', gap: 4, cursor: 'pointer', color: routeOwn ? 'var(--fl-primary)' : 'var(--fl-text-muted)' }} title="Mock 공통 코덱 대신 이 라우트만 다른 플러그인 단계를 적용(통째로 대체)">
+            <label style={{ fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 4, cursor: 'pointer', color: routeOwn ? 'var(--fl-primary)' : 'var(--fl-text-muted)' }} title="Mock 공통 코덱 대신 이 라우트만 다른 플러그인 단계를 적용(통째로 대체)">
               <input type="checkbox" checked={routeOwn} onChange={(e) => { if (e.target.checked) { onChange({ ...route, codec: {} }); setCodecOpen(true) } else { onChange({ ...route, codec: null }); setCodecOpen(false) } }} />
               이 라우트만 코덱
             </label>
@@ -135,7 +137,7 @@ export function RouteCard({ base, ensureSaved, mockId, spec, secrets, envs, rout
       </div>}
       {routeOwn && codecOpen && (
         <div style={{ marginTop: 6, padding: 10, border: '1px dashed var(--fl-primary)', borderRadius: 'var(--fl-radius-sm)' }}>
-          <div style={{ fontSize: 11.5, color: 'var(--fl-text-muted)', marginBottom: 6 }}>이 라우트에는 Mock 공통 코덱 대신 아래 단계만 적용됩니다(통째로 대체 — 비우면 코덱 없음).</div>
+          <div style={{ fontSize: 12, color: 'var(--fl-text-muted)', marginBottom: 6 }}>이 라우트에는 Mock 공통 코덱 대신 아래 단계만 적용됩니다(통째로 대체 — 비우면 코덱 없음).</div>
           <MockCodecEditor compact codec={route.codec} readOnly={readOnly} sources={sources} fieldHints={fieldHints} mockId={mockId} environment={spec.environment}
             onChange={(codec) => onChange({ ...route, codec: codec ?? {} })} />
         </div>
@@ -143,7 +145,7 @@ export function RouteCard({ base, ensureSaved, mockId, spec, secrets, envs, rout
 
       {/* 예상 요청 — 어떤 요청이 올지 미리 정의(피커 소스·조건 키·테스트 샘플·◈ 코덱 대상). 요청 기록에서 자동 채움. */}
       <div style={{ marginTop: 10 }}>
-        <button style={{ ...miniBtn, fontWeight: 700 }} onClick={() => setExpectOpen((v) => !v)} aria-expanded={expectOpen}>{expectOpen ? '▾' : '▸'} 예상 요청 <span style={{ fontWeight: 400, color: 'var(--fl-text-muted)' }}>{expectSummary(route)}</span></button>
+        <button style={{ ...miniBtn, fontWeight: 700 }} onClick={() => setExpectOpen((v) => !v)} aria-expanded={expectOpen}><AppIcon name={expectOpen ? 'chevronDown' : 'chevronRight'} size={13} style={{ color: 'var(--fl-text-muted)', verticalAlign: '-2px' }} /> 예상 요청 <span style={{ fontWeight: 400, color: 'var(--fl-text-muted)' }}>{expectSummary(route)}</span></button>
         {expectOpen && <ExpectEditor route={route} readOnly={readOnly} onChange={(expect) => onChange({ ...route, expect })}
           codec={effCodec} onCodec={canFieldCodec ? setEffCodec : undefined} sources={sources} />}
       </div>
@@ -171,7 +173,7 @@ export function RouteCard({ base, ensureSaved, mockId, spec, secrets, envs, rout
       {!readOnly && (
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 10, flexWrap: 'wrap' }}>
           <button style={miniBtn} onClick={() => onChange({ ...route, rules: [...route.rules, { id: newId(), status: 200, contentType: 'json', body: '{"ok":true}' }] })}>+ 규칙 추가</button>
-          <span style={{ fontSize: 11.5, color: 'var(--fl-text-muted)' }}>규칙은 위에서부터 첫 매칭 — 조건 있는 규칙을 위에, 기본 규칙을 아래에</span>
+          <span style={{ fontSize: 12, color: 'var(--fl-text-muted)' }}>규칙은 위에서부터 첫 매칭 — 조건 있는 규칙을 위에, 기본 규칙을 아래에</span>
         </div>
       )}
     </div>
@@ -197,7 +199,7 @@ function ExpectEditor({ route, readOnly, onChange, codec, onCodec, sources }: {
     return (
       <div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-          <span style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--fl-text-muted)' }}>{title}</span>
+          <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--fl-text-muted)' }}>{title}</span>
           {!readOnly && <button style={{ ...miniBtn, padding: '2px 8px' }} onClick={() => set([...rows, { key: '', example: '' }])}>+ 키</button>}
         </div>
         {rows.map((f, i) => (
@@ -208,14 +210,14 @@ function ExpectEditor({ route, readOnly, onChange, codec, onCodec, sources }: {
             {!readOnly && <button style={{ ...miniBtn, color: 'var(--fl-fail)' }} onClick={() => set(rows.filter((_, xi) => xi !== i))} aria-label="예상 필드 삭제">×</button>}
           </div>
         ))}
-        {rows.length === 0 && <div style={{ fontSize: 11.5, color: 'var(--fl-text-muted)', marginBottom: 4 }}>없음</div>}
+        {rows.length === 0 && <div style={{ fontSize: 12, color: 'var(--fl-text-muted)', marginBottom: 4 }}>없음</div>}
       </div>
     )
   }
   const pp = pathParamNames(route.path)
   return (
     <div style={{ marginTop: 6, padding: 10, border: '1px dashed var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', display: 'grid', gap: 8, background: 'var(--fl-surface-2)' }}>
-      <div style={{ fontSize: 11.5, color: 'var(--fl-text-muted)' }}>이 라우트로 올 요청의 필드를 적어 두면 값 칸의 <code style={code}>{'{ }'}</code> 피커·조건 키 후보·▶ 테스트 샘플에 쓰입니다. 본문 필드 옆 <b>◈</b> 는 그 필드에 코덱(복호화 등)을 겁니다. 실제 요청이 오면 <b>요청 기록 → 예상 필드로</b>가 자동으로 채웁니다.{pp.length ? ` 경로 파라미터: ${pp.join(', ')}` : ''}</div>
+      <div style={{ fontSize: 12, color: 'var(--fl-text-muted)' }}>이 라우트로 올 요청의 필드를 적어 두면 값 칸의 <code style={code}>{'{ }'}</code> 피커·조건 키 후보·▶ 테스트 샘플에 쓰입니다. 본문 필드 옆 <b>◈</b> 는 그 필드에 코덱(복호화 등)을 겁니다. 실제 요청이 오면 <b>요청 기록 → 예상 필드로</b>가 자동으로 채웁니다.{pp.length ? ` 경로 파라미터: ${pp.join(', ')}` : ''}</div>
       {section('본문 필드 (JSON 점 경로 / urlencoded 키)', 'body', '예: orderId 또는 card.no', true)}
       {section('쿼리', 'query', '예: page', false)}
       {section('헤더', 'header', '예: Authorization', false)}
@@ -268,7 +270,7 @@ function RuleCard({ rule, index, total, route, sources, readOnly, codec, onCodec
   return (
     <div style={{ border: '1px dashed var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', padding: 12 }}>
       <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-        <span style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--fl-text-muted)' }}>
+        <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--fl-text-muted)' }}>
           규칙 {index + 1}/{total} {conds.length === 0 && '(조건 없음 = 기본)'}
         </span>
       </div>
@@ -347,7 +349,7 @@ function RuleCard({ rule, index, total, route, sources, readOnly, codec, onCodec
         <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', marginTop: 4 }} aria-label="응답 필드 코덱">
           <span style={{ fontSize: 11, color: 'var(--fl-text-muted)' }}>응답 필드</span>
           {respKeys.map((k) => (
-            <span key={k} style={{ display: 'inline-flex', alignItems: 'center', gap: 2, fontSize: 11.5, fontFamily: 'var(--fl-font-mono)', padding: '1px 2px 1px 7px', border: '1px solid var(--fl-border)', borderRadius: 999, background: 'var(--fl-surface-2)' }}>
+            <span key={k} style={{ display: 'inline-flex', alignItems: 'center', gap: 2, fontSize: 12, fontFamily: 'var(--fl-font-mono)', padding: '1px 2px 1px 7px', border: '1px solid var(--fl-border)', borderRadius: 999, background: 'var(--fl-surface-2)' }}>
               {k}<FieldCodecButton compact field={k} codec={codec} onChange={(c) => onCodec?.(c)} sources={sources} defaultSide="response" readOnly={readOnly || !onCodec} />
             </span>
           ))}
@@ -462,11 +464,11 @@ function RuleCard({ rule, index, total, route, sources, readOnly, codec, onCodec
 
 // ---------- 스타일 ----------
 
-const code: CSSProperties = { fontFamily: 'var(--fl-font-mono)', fontSize: 11, background: 'var(--fl-surface-2)', padding: '1px 5px', borderRadius: 4 }
+const code: CSSProperties = { fontFamily: 'var(--fl-font-mono)', fontSize: 11, background: 'var(--fl-surface-2)', padding: '1px 5px', borderRadius: 6 }
 const fieldRow: CSSProperties = { display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 4, alignItems: 'center' }
-const fieldLabel: CSSProperties = { display: 'grid', gap: 4, flex: '1 1 110px', minWidth: 0, fontSize: 11.5, color: 'var(--fl-text-muted)' }
+const fieldLabel: CSSProperties = { display: 'grid', gap: 4, flex: '1 1 110px', minWidth: 0, fontSize: 12, color: 'var(--fl-text-muted)' }
 const input: CSSProperties = { padding: '7px 10px', minWidth: 0, maxWidth: '100%', boxSizing: 'border-box', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 13 }
-const miniBtn: CSSProperties = { padding: '5px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 12, cursor: 'pointer' }
-const braceBtn: CSSProperties = { width: 26, height: 24, border: '1px solid var(--fl-border)', borderRadius: 6, background: 'var(--fl-surface)', color: 'var(--fl-primary)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: 0 }
-const badgeStyle: CSSProperties = { fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 999, border: '1px solid var(--fl-border)', color: 'var(--fl-text-muted)', background: 'var(--fl-surface-2)' }
+const miniBtn: CSSProperties = { ...ui.mini }
+const braceBtn: CSSProperties = { ...ui.icon, width: 26, height: 24, justifyContent: 'center', color: 'var(--fl-primary)' }
+const badgeStyle: CSSProperties = { fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 999, border: '1px solid var(--fl-border)', color: 'var(--fl-text-muted)', background: 'var(--fl-surface-2)' }
 const codecLine: CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, padding: '6px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', fontSize: 12, flexWrap: 'wrap' }

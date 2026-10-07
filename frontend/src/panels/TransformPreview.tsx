@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 
 import { useEnvironment, useEnvStore } from '../lib/environments'
 import type { GraphNode, TransformInfo } from '../api/types'
+import { ui } from '../design/ui'
 
 /**
  * 변환 인라인 미리보기 — 샘플 입력/현재 config 로 결과를 즉시 확인(순수 계산, 상위 바인딩 불필요).
@@ -44,24 +45,24 @@ export function TransformPreview({ transform, config, node }: { transform: Trans
     } finally { if (mounted.current) setBusy(false) }
   }
   if (!open) {
-    return <button style={toggleBtn} onClick={() => setOpen(true)}>🔍 변환 미리보기</button>
+    return <button style={toggleBtn} onClick={() => setOpen(true)}>변환 미리보기</button>
   }
   return (
     <div style={box}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
-        <b style={{ fontSize: 11.5 }}>미리보기</b>
+        <b style={{ fontSize: 12 }}>미리보기</b>
         <button style={{ ...toggleBtn, marginLeft: 'auto', padding: '2px 8px' }} onClick={() => setOpen(false)}>닫기</button>
       </div>
       {transform.inputs.map((io) => (
         <div key={io.key} style={{ marginBottom: 6 }}>
-          <label style={{ fontSize: 10.5, color: 'var(--fl-text-muted)' }}>{io.label}{io.example ? ` (예: ${io.example})` : ''}</label>
+          <label style={{ fontSize: 11, color: 'var(--fl-text-muted)' }}>{io.label}{io.example ? ` (예: ${io.example})` : ''}</label>
           <input aria-label={`${io.label} 미리보기 입력`} style={miniInput} value={inputs[io.key] ?? ''} placeholder="샘플 값"
             onChange={(e) => setInputs((s) => ({ ...s, [io.key]: e.target.value }))} />
         </div>
       ))}
       <button style={runBtn} disabled={busy || !resources.available} onClick={run}>{busy ? '실행 중…' : '▶ 변환 실행'}</button>
       {result && (
-        <div style={{ marginTop: 8, fontSize: 11.5 }}>
+        <div style={{ marginTop: 8, fontSize: 12 }}>
           {result.ok ? (
             <div>
               {Object.entries(result.outputs).map(([k, v]) => (
@@ -79,7 +80,7 @@ export function TransformPreview({ transform, config, node }: { transform: Trans
   )
 }
 
-const toggleBtn: CSSProperties = { marginTop: 10, padding: '5px 10px', fontSize: 11.5, border: '1px dashed var(--fl-border)', borderRadius: 999, background: 'transparent', color: 'var(--fl-text-muted)', cursor: 'pointer' }
+const toggleBtn: CSSProperties = { ...ui.dashed, marginTop: 10 }
 const box: CSSProperties = { marginTop: 10, padding: 10, border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)' }
 const miniInput: CSSProperties = { width: '100%', boxSizing: 'border-box', padding: '5px 8px', fontSize: 12, border: '1px solid var(--fl-border)', borderRadius: 6, background: 'var(--fl-surface)', color: 'var(--fl-text)' }
-const runBtn: CSSProperties = { padding: '5px 12px', fontSize: 12, border: 'none', borderRadius: 6, background: 'var(--fl-action-primary-bg)', color: 'var(--fl-action-primary-ink)', cursor: 'pointer', fontWeight: 600 }
+const runBtn: CSSProperties = { ...ui.primary }

@@ -66,3 +66,31 @@
 .fl-http-tabs { display:flex; gap:16px; margin-top:18px; border-bottom:1px solid var(--fl-border); }
 .fl-http-tabs button { padding:9px 0; border:0; border-bottom:2px solid transparent; color:var(--fl-text-muted); background:none; font:inherit; font-size:13px; font-weight:550; cursor:pointer; }
 .fl-http-tabs button[aria-pressed=true] { color:var(--fl-primary); border-bottom-color:var(--fl-primary); font-weight:700; }
+
+/* 상단바 보조 동작은 테두리 없이 — 저장·실행만 무게를 갖는다 */
+.fl-editor-toolbar > button, .fl-editor-tools > button { border-color:transparent !important; background:transparent !important; box-shadow:none !important; }
+.fl-editor-toolbar > button:hover:not(:disabled), .fl-editor-tools > button:hover:not(:disabled) { background:var(--fl-surface-2) !important; }
+.fl-editor-toolbar > button[aria-expanded=true] { background:var(--fl-surface-2) !important; }
+.fl-editor-header { gap:8px 12px; }
+
+/* 상단바 정리 — 보조 동작은 아이콘으로, 묶음은 얇은 구분선으로 */
+.fl-editor-tools .fl-editor-tool-label { display: none; }
+.fl-editor-tools > button { padding: 0 9px !important; min-height: 32px; }
+.fl-editor-tools > button[aria-label='되돌리기'] { margin-left: 4px; border-left: 1px solid var(--fl-border) !important; border-radius: 0 !important; padding-left: 12px !important; }
+.fl-editor-tools > button[aria-label='다시 실행'] { margin-left: -4px; }
+.fl-editor-toolbar { gap: 6px; }
+.fl-editor-primary-actions { padding-left: 12px; border-left: 1px solid var(--fl-border); }
+.fl-editor-tools > button[aria-label='AI 어시스턴트'] .fl-editor-tool-label { display: inline; }
+
+/* 속성 패널 목록 행 — 좁은 패널에서도 한 줄: [키][타입][보조 동작]. 보조 동작은 행에 올렸을 때만 */
+.fl-editor-field-row { flex-direction: row !important; align-items: center; gap: 4px; margin-bottom: 6px; }
+.fl-editor-field-main { flex: 1; }
+.fl-editor-field-actions { flex-wrap: nowrap !important; gap: 0 !important; min-height: 0 !important; flex-shrink: 0; }
+.fl-editor-field-actions > *, .fl-editor-field-actions > span > button { opacity: 0; transition: opacity var(--fl-dur-fast) var(--fl-ease); }
+.fl-editor-field-row:is(:hover, :focus-within) .fl-editor-field-actions > *,
+.fl-editor-field-row:is(:hover, :focus-within) .fl-editor-field-actions > span > button { opacity: 1; }
+.fl-editor-field-actions > span:not(.fl-row-move):has(> button:not(:disabled)), .fl-editor-field-actions > span:not(.fl-row-move):has(> button:not(:disabled)) > button { opacity: 1; }
+.fl-editor-field-actions > span:not(.fl-row-move) > button:disabled { display: none; }
+.fl-row-move > button:disabled { visibility: hidden; }
+.fl-editor-field-actions > button { min-height: 26px !important; }
+@media (hover: none) { .fl-editor-field-actions > *, .fl-editor-field-actions > span > button { opacity: 1; } }

@@ -56,7 +56,7 @@ export function SecretsPanel({ onClose, onDraftChange, compact = false }: { onCl
   useEffect(() => { onDraftChange?.(!!value); return () => onDraftChange?.(false) }, [value, onDraftChange])
   useEffect(() => { if (!value) return; const leave = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = '' }; window.addEventListener('beforeunload', leave); return () => window.removeEventListener('beforeunload', leave) }, [value])
   return <div className="fl-resource-panel" style={{ minHeight: 0, flex: 1, display: 'flex', flexDirection: 'column' }}>
-    {!compact && <header style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 12 }}><b style={{ fontSize: 15 }}>시크릿 관리</b><span style={hint}>{list.length}개</span>{onClose && <button onClick={onClose} style={{ ...button, marginLeft: 'auto' }}>닫기</button>}</header>}
+    {!compact && <header style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 12 }}><b style={{ fontSize: 16 }}>시크릿 관리</b><span style={hint}>{list.length}개</span>{onClose && <button onClick={onClose} style={{ ...button, marginLeft: 'auto' }}>닫기</button>}</header>}
     {!compact && <ResourceScopeNote />}
     {readOnly && <p role="status" style={hint}>읽기 전용 공간입니다. 이름과 적용 범위 확인, 바인딩 토큰 복사가 가능합니다.</p>}
     {!compact && <p style={hint}>{current.origin === 'local' ? '내 PC 데이터베이스에 암호화해 저장합니다.' : '서버 데이터베이스에 암호문을 저장합니다. 서버 정책에 따라 Vault Transit 또는 서버 키로 암호화합니다.'} 저장된 값은 다시 조회할 수 없습니다. 로그에는 마스킹합니다.</p>}
@@ -78,7 +78,7 @@ export function SecretsPanel({ onClose, onDraftChange, compact = false }: { onCl
         </div>
       </section>
       <section className="fl-secret-editor" aria-label="시크릿 값 편집">
-        <h3 style={{ margin: '0 0 8px', fontSize: 17 }}>{selected ? '선택한 시크릿 값 교체' : '새 시크릿 추가'}</h3>
+        <h3 style={{ margin: '0 0 8px', fontSize: 18 }}>{selected ? '선택한 시크릿 값 교체' : '새 시크릿 추가'}</h3>
         <p style={hint}>{selected ? '이름과 환경은 유지하고 새 값으로 교체합니다.' : '환경별 값이 공통값보다 먼저 적용됩니다.'}</p>
         <label style={label}>환경<select disabled={readOnly || !!selected || save.isPending} value={environment} onChange={event => setEnvironment(event.target.value)} aria-label="시크릿 환경" style={{ ...input, width: '100%' }}><option value="">공통</option>{names.map(item => <option key={item}>{item}</option>)}</select></label>
         <label style={label}>이름<input disabled={!!selected || save.isPending} aria-label="시크릿 이름" value={name} onChange={event => setName(event.target.value)} autoComplete="off" placeholder="API_TOKEN" style={{ ...input, width: '100%' }} /></label>

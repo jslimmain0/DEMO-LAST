@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { authApi, setToken, type DeviceStart } from './auth'
 import { useEscapeClose } from '../components/useEscapeClose'
 import { ServerInstallCard } from '../components/ServerInstallCard'
+import { ui } from '../design/ui'
 
 /**
  * GitHub 로그인 화면 — Copilot 과 동일한 디바이스 플로우. 코드를 표시하고 github.com/login/device 를 열어
@@ -50,20 +51,20 @@ export function GitHubLogin({ onSuccess, onCancel }: { onSuccess: () => void; on
         {onCancel && (
           <button onClick={onCancel} aria-label="닫기" style={closeBtn}>×</button>
         )}
-        <div style={{ fontFamily: 'var(--fl-font-head, sans-serif)', fontSize: 26, fontWeight: 800, letterSpacing: '-.02em', marginBottom: 4 }}>FlowLink</div>
-        <div style={{ color: 'var(--fl-text-muted)', fontSize: 13.5, marginBottom: 22 }}>GitHub 계정으로 로그인</div>
+        <div style={{ fontFamily: 'var(--fl-font-head, sans-serif)', fontSize: 24, fontWeight: 800, letterSpacing: '-.02em', marginBottom: 4 }}>FlowLink</div>
+        <div style={{ color: 'var(--fl-text-muted)', fontSize: 14, marginBottom: 22 }}>GitHub 계정으로 로그인</div>
 
         {!device && (
           <>
             <button onClick={start} disabled={busy} style={ghBtn}>
-              <span aria-hidden style={{ fontSize: 16 }}>🐙</span> {busy ? '준비 중…' : 'GitHub 로 로그인'}
+              {busy ? '준비 중…' : 'GitHub 로 로그인'}
             </button>
-            {error && <p style={{ color: 'var(--fl-fail)', fontSize: 12.5, marginTop: 12 }}>{error}</p>}
+            {error && <p style={{ color: 'var(--fl-fail)', fontSize: 13, marginTop: 12 }}>{error}</p>}
           </>
         )}
 
         {device && (
-          <div style={{ fontSize: 13.5, lineHeight: 1.6 }}>
+          <div style={{ fontSize: 14, lineHeight: 1.6 }}>
             <p style={{ margin: '0 0 10px' }}>{device.verificationUri ? '열린 GitHub 페이지에 아래 코드를 입력하세요(복사됨):' : '개발용 로그인 모킹입니다. 테스트 계정으로 자동 로그인합니다.'}</p>
             <code style={codeBox}>{device.userCode}</code>
             <p style={{ margin: '12px 0 0', color: 'var(--fl-text-muted)' }}>
@@ -81,6 +82,6 @@ export function GitHubLogin({ onSuccess, onCancel }: { onSuccess: () => void; on
 
 const overlay: CSSProperties = { position: 'fixed', inset: 0, display: 'grid', placeItems: 'center', background: 'var(--fl-bg, #0f1115)' }
 const card: CSSProperties = { width: 360, maxWidth: '90vw', padding: 32, borderRadius: 14, background: 'var(--fl-surface, #1a1d27)', border: '1px solid var(--fl-border, #2a2e3a)', boxShadow: '0 20px 60px rgba(0,0,0,.4)', textAlign: 'center' }
-const ghBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 18px', border: 'none', borderRadius: 10, background: 'var(--fl-action-primary-bg)', color: 'var(--fl-action-primary-ink)', fontSize: 14, fontWeight: 700, cursor: 'pointer' }
-const codeBox: CSSProperties = { display: 'inline-block', fontSize: 24, fontWeight: 700, letterSpacing: 3, fontFamily: 'var(--fl-font-mono, monospace)', background: 'var(--fl-surface-2, #22262f)', padding: '8px 16px', borderRadius: 8 }
-const closeBtn: CSSProperties = { position: 'absolute', top: 10, right: 10, width: 28, height: 28, borderRadius: 8, border: 'none', background: 'var(--fl-surface-2)', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 16 }
+const ghBtn: CSSProperties = { ...ui.primary }
+const codeBox: CSSProperties = { display: 'inline-block', fontSize: 24, fontWeight: 700, letterSpacing: 3, fontFamily: 'var(--fl-font-mono, monospace)', background: 'var(--fl-surface-2, #22262f)', padding: '8px 16px', borderRadius: 'var(--fl-radius)' }
+const closeBtn: CSSProperties = { ...ui.close, position: 'absolute', top: 10, right: 10, width: 28, height: 28 }

@@ -32,6 +32,8 @@ import { useProtocol } from '../panels/TcpNodePanel'
 import { relTime } from '../lib/format'
 import { useCatalogReturn } from '../lib/useCatalogNavigation'
 import { useUnsavedNavigation } from '../components/UnsavedNavigation'
+import { AppIcon } from '../components/AppIcon'
+import { ui } from '../design/ui'
 
 const methodColor = (m: string): string => METHOD_COLOR[m as HttpMethod] ?? 'var(--fl-cat-generic)'
 const EMPTY_TCP: MockTcpSpec = { port: 9091, protocolId: null, upstream: null, timeoutMs: 5000, rules: [] }
@@ -48,7 +50,7 @@ type NavSel =
  * - HTTP: 좌 라우트 목록(메서드·경로·히트) · 본문·헤더 코덱 · 설정 · 개요. 우 = 라우트 상세(예상 요청·규칙·필드 ◈ 코덱).
  * - TCP: 좌 연결(포트·프로토콜·upstream) · 규칙 목록(조건 요약·히트) · 설정. 우 = 규칙 상세(조건·mock/proxy·응답 필드·장애 주입). 전문 규격은 프로토콜(/protocols)이 소유.
  * - CUSTOM(레거시, HTTP+TCP 혼합): HTTP 편집기로 열리고 상단 안내 + [TCP Mock 으로 분리].
- * 헤더: 이름 인라인·미저장 표시·자동 저장·Ctrl+S·🕘 버전·⋯ 도구·✨ AI.
+ * 헤더: 이름 인라인·미저장 표시·자동 저장·Ctrl+S·버전·⋯ 도구·✨ AI.
  */
 export function MockServerEditor() {
   const { adminApi, mocksApi, workspacesApi, secretsApi, environmentsApi, mockBaseUrl } = useApi()
@@ -299,20 +301,20 @@ export function MockServerEditor() {
             <button onClick={leave} title="Mock 목록으로" aria-label="목록으로" style={{ ...ghostBtn, padding: '6px 10px' }}>←</button>
             <input value={name} onChange={(e) => { setName(e.target.value); setDirty(true) }} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === 'Escape') (e.target as HTMLInputElement).blur() }}
               disabled={!canEdit} aria-label="이름" style={{ ...input, fontSize: 16, fontWeight: 700, minWidth: 200, maxWidth: 360, background: 'transparent', border: '1px solid transparent' }} />
-            <span style={{ ...badge, background: isTcp ? 'var(--fl-cat-tcp, #7c5cff)' : 'var(--fl-cat-generic)', color: badgeInk }}>{legacyMixed ? 'HTTP Mock · 레거시(TCP 혼합)' : isTcp ? 'TCP Mock' : 'HTTP Mock'}</span>
+            <span style={{ ...badge, background: isTcp ? 'var(--fl-cat-tcp)' : 'var(--fl-cat-generic)', color: badgeInk }}>{legacyMixed ? 'HTTP Mock · 레거시(TCP 혼합)' : isTcp ? 'TCP Mock' : 'HTTP Mock'}</span>
             <button style={{ ...miniBtn, color: d.enabled ? 'var(--fl-ok)' : 'var(--fl-text-muted)', opacity: canEdit ? 1 : 0.5 }} disabled={!canEdit} onClick={() => toggle.mutate()} title={d.enabled ? (isTcp ? '리스너 열림 — 클릭하면 닫음' : '서빙 중 — 클릭하면 끔') : '꺼짐 — 클릭하면 켬'}>{d.enabled ? (isTcp ? '● 리스너 열림' : '● 서빙 중') : '○ 꺼짐'}</button>
             {isHttp && (
-              <button onClick={() => { void navigator.clipboard?.writeText(base).then(() => toast('base URL 복사됨', 'ok')).catch(() => {}) }} title={`base URL 복사 — ${base}`} style={{ ...miniBtn, fontFamily: 'var(--fl-font-mono)', fontSize: 11.5, maxWidth: 320, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{base} ⧉</button>
+              <button onClick={() => { void navigator.clipboard?.writeText(base).then(() => toast('base URL 복사됨', 'ok')).catch(() => {}) }} title={`base URL 복사 — ${base}`} style={{ ...miniBtn, fontFamily: 'var(--fl-font-mono)', fontSize: 12, maxWidth: 320, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{base} ⧉</button>
             )}
             {isTcp && (
-              <button onClick={() => { const addr = `${window.location.hostname || 'localhost'}:${tcp.port ?? 9091}`; void navigator.clipboard?.writeText(addr).then(() => toast('주소 복사됨', 'ok')).catch(() => {}) }} title="host:port 복사 — 워크플로 TCP 노드 대상" style={{ ...miniBtn, fontFamily: 'var(--fl-font-mono)', fontSize: 11.5 }}>{window.location.hostname || 'localhost'}:{tcp.port ?? 9091} ⧉</button>
+              <button onClick={() => { const addr = `${window.location.hostname || 'localhost'}:${tcp.port ?? 9091}`; void navigator.clipboard?.writeText(addr).then(() => toast('주소 복사됨', 'ok')).catch(() => {}) }} title="host:port 복사 — 워크플로 TCP 노드 대상" style={{ ...miniBtn, fontFamily: 'var(--fl-font-mono)', fontSize: 12 }}>{window.location.hostname || 'localhost'}:{tcp.port ?? 9091} ⧉</button>
             )}
-            <span style={{ fontSize: 11.5, color: dirty ? 'var(--fl-put, #f5a623)' : note?.startsWith('저장됨') ? 'var(--fl-ok)' : 'var(--fl-text-muted)', fontWeight: dirty || note?.startsWith('저장됨') ? 700 : 500 }} role="status">
+            <span style={{ fontSize: 12, color: dirty ? 'var(--fl-put, #f5a623)' : note?.startsWith('저장됨') ? 'var(--fl-ok)' : 'var(--fl-text-muted)', fontWeight: dirty || note?.startsWith('저장됨') ? 700 : 500 }} role="status">
               {save.isPending ? '저장 중…' : dirty ? (autosave ? '● 미저장 (자동 저장 대기)' : '● 미저장') : note?.startsWith('저장됨') ? '✓ 저장됨' : `v${d.currentVersion ?? 0} · ${relTime(d.updatedAt ?? '') || '방금'}`}
             </span>
-            {note && !note.startsWith('저장됨') && <span style={{ fontSize: 11.5, color: 'var(--fl-fail)' }}>{note}</span>}
+            {note && !note.startsWith('저장됨') && <span style={{ fontSize: 12, color: 'var(--fl-fail)' }}>{note}</span>}
             <div style={{ marginLeft: 'auto', display: 'flex', gap: 6, position: 'relative', alignItems: 'center' }}>
-              <button onClick={() => setVersionsOpen(true)} style={ghostBtn} title="버전 기록 — 저장마다 쌓인 정의 스냅샷 열람·비교·복원">🕘 버전</button>
+              <button onClick={() => setVersionsOpen(true)} style={ghostBtn} title="버전 기록 — 저장마다 쌓인 정의 스냅샷 열람·비교·복원">버전</button>
               <button onClick={() => setToolsOpen((v) => !v)} style={ghostBtn} aria-label="도구 메뉴" aria-expanded={toolsOpen}>⋯ 도구</button>
               {toolsOpen && (
                 <>
@@ -324,13 +326,13 @@ export function MockServerEditor() {
                     {canEdit && <button style={toolItem} onClick={() => { setTransfer('import'); setToolsOpen(false) }}>⬇ 가져오기(덮어쓰기)</button>}
                     {canEdit && <button style={toolItem} onClick={() => { reset.mutate(); setToolsOpen(false) }}>↺ 상태·요청 기록 초기화</button>}
                     {canEdit && <button style={toolItem} onClick={() => { setAutosave((v) => { try { localStorage.setItem('fl:mock:autosave', v ? '0' : '1') } catch { /* */ } return !v }); setToolsOpen(false) }}>{autosave ? '☑ 자동 저장 켜짐' : '☐ 자동 저장'}</button>}
-                    <button style={toolItem} onClick={() => { setNav({ kind: 'settings' }); setToolsOpen(false) }}>⚙ 설정(slug · 시크릿 환경 · 삭제)</button>
+                    <button style={toolItem} onClick={() => { setNav({ kind: 'settings' }); setToolsOpen(false) }}>설정(slug · 시크릿 환경 · 삭제)</button>
                     <button style={toolItem} onClick={() => { setShortcutsOpen(true); setToolsOpen(false) }}>⌨ 단축키 도움말</button>
                   </div>
                 </>
               )}
               {canEdit && isHttp && <button style={{ ...ghostBtn, border: '1px solid var(--fl-primary)', color: 'var(--fl-primary)' }} title="AI 로 mock 만들기/고치기 (TCP 전문 규격은 프로토콜 화면의 AI 로)" onClick={() => setAiOpen((v) => !v)}>✨ AI</button>}
-              <button style={{ ...primaryBtn, opacity: dirty && canEdit ? 1 : 0.55 }} disabled={!dirty || save.isPending || !canEdit} title={canEdit ? '저장 (Ctrl+S)' : 'viewer 역할은 저장할 수 없습니다'} onClick={() => save.mutate()}>💾 저장</button>
+              <button style={{ ...primaryBtn, opacity: dirty && canEdit ? 1 : 0.55 }} disabled={!dirty || save.isPending || !canEdit} title={canEdit ? '저장 (Ctrl+S)' : 'viewer 역할은 저장할 수 없습니다'} onClick={() => save.mutate()}>저장</button>
             </div>
           </header>
 
@@ -353,7 +355,7 @@ export function MockServerEditor() {
                           style={{ ...navItem, ...(active ? navActive : null) }} title={`${r.method} ${r.path}${hits ? ` · 요청 ${hits}` : ''}`}>
                           <span style={{ ...mchip, color: methodColor(r.method) }}>{r.method}</span>
                           <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: 'var(--fl-font-mono)', fontSize: 12 }}>{r.path}</span>
-                          {r.codec && <span title="이 라우트만 코덱" style={{ fontSize: 9.5, color: 'var(--fl-primary)' }}>◈</span>}
+                          {r.codec && <span title="이 라우트만 코덱" style={{ fontSize: 11, color: 'var(--fl-primary)' }}>◈</span>}
                           {hits > 0 && <span style={hitBadge} title={`요청 기록 ${hits}건`}>{hits}</span>}
                         </button>
                       )
@@ -369,7 +371,7 @@ export function MockServerEditor() {
               {isTcp && (
                 <>
                   <button onClick={() => setNav({ kind: 'conn' })} style={{ ...navItem, ...(nav.kind === 'conn' ? navActive : null) }}>
-                    <span aria-hidden>🔌</span><span style={{ flex: 1 }}>연결</span><span style={metaMono}>:{tcp.port ?? '?'} · {proto.data?.name ?? (tcp.protocolId ? '…' : '프로토콜 없음')}</span>
+                    <AppIcon name="link" size={14} /><span style={{ flex: 1 }}>연결</span><span style={metaMono}>:{tcp.port ?? '?'} · {proto.data?.name ?? (tcp.protocolId ? '…' : '프로토콜 없음')}</span>
                   </button>
                   <div style={divider} />
                   <div style={navHead}>
@@ -384,7 +386,7 @@ export function MockServerEditor() {
                       return (
                         <button key={r.id} onClick={() => setNav({ kind: 'rule', id: r.id })} draggable={canEdit} onDragStart={() => { dragId.current = r.id }} onDragOver={(e) => e.preventDefault()} onDrop={() => dropOn(r.id)}
                           style={{ ...navItem, ...(active ? navActive : null), alignItems: 'flex-start' }} title={`규칙 ${i + 1} — ${summary}${hits ? ` · 요청 ${hits}` : ''}`}>
-                          <span style={{ ...mchip, color: 'var(--fl-cat-tcp, #7c5cff)', minWidth: 28 }}>#{i + 1}</span>
+                          <span style={{ ...mchip, color: 'var(--fl-cat-tcp)', minWidth: 28 }}>#{i + 1}</span>
                           <span style={{ flex: 1, minWidth: 0, display: 'grid', gap: 1 }}>
                             <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 12 }}>{summary}</span>
                           </span>
@@ -397,7 +399,7 @@ export function MockServerEditor() {
                 </>
               )}
               <button onClick={() => setNav({ kind: 'settings' })} style={{ ...navItem, ...(nav.kind === 'settings' ? navActive : null) }}>
-                <span aria-hidden>⚙</span><span style={{ flex: 1 }}>설정</span>{spec.environment && <span style={metaMono}>🔑 {spec.environment}</span>}
+                <AppIcon name="settings" size={14} /><span style={{ flex: 1 }}>설정</span>{spec.environment && <span style={metaMono}>{spec.environment}</span>}
               </button>
               {isHttp && <button onClick={() => setNav({ kind: 'overview' })} style={{ ...navItem, ...(nav.kind === 'overview' ? navActive : null) }}><span aria-hidden>☰</span><span style={{ flex: 1 }}>개요 · 시작하기</span></button>}
             </nav>
@@ -406,7 +408,7 @@ export function MockServerEditor() {
               {legacyMixed && (
                 <div style={legacyBanner} role="note">
                   <span style={{ fontSize: 16 }}>⚠</span>
-                  <span style={{ flex: 1, fontSize: 12.5, lineHeight: 1.5 }}>
+                  <span style={{ flex: 1, fontSize: 13, lineHeight: 1.5 }}>
                     <b>HTTP 라우트와 TCP 전문이 함께 있는 예전 형식</b>입니다(포트 {spec.tcp?.port ?? '?'} · 규칙 {spec.tcp?.rules?.length ?? 0}). 이제 HTTP 와 TCP 는 따로 관리합니다 — TCP 는 [+ TCP Mock] 으로 새로 만들고 프로토콜을 골라 주세요.
                   </span>
                 </div>
@@ -418,9 +420,9 @@ export function MockServerEditor() {
               )}
               {isTcp && tcpLints.length > 0 && (
                 <div style={{ ...legacyBanner, display: 'block' }} role="note">
-                  <b style={{ fontSize: 12.5 }}>⚠ 규칙 경고 {tcpLints.length}건</b>
+                  <b style={{ fontSize: 13 }}>⚠ 규칙 경고 {tcpLints.length}건</b>
                   <ul style={{ margin: '4px 0 0', paddingLeft: 18, fontSize: 12, lineHeight: 1.6 }}>{tcpLints.slice(0, 8).map((m, i) => <li key={i}>{m}</li>)}</ul>
-                  <div style={{ fontSize: 11.5, color: 'var(--fl-text-muted)', marginTop: 4 }}>저장은 막지 않습니다 — 응답이 비거나 잘릴 수 있습니다.</div>
+                  <div style={{ fontSize: 12, color: 'var(--fl-text-muted)', marginTop: 4 }}>저장은 막지 않습니다 — 응답이 비거나 잘릴 수 있습니다.</div>
                 </div>
               )}
               {nav.kind === 'conn' && (
@@ -428,7 +430,7 @@ export function MockServerEditor() {
                   {!d.enabled && (
                     <div style={{ ...legacyBanner, marginBottom: 12 }} role="note">
                       <span style={{ fontSize: 16 }}>○</span>
-                      <span style={{ flex: 1, fontSize: 12.5 }}><b>리스너가 꺼져 있습니다</b>(복제본은 포트 충돌을 막으려 꺼서 만듭니다). 포트를 확인하고 켜세요.</span>
+                      <span style={{ flex: 1, fontSize: 13 }}><b>리스너가 꺼져 있습니다</b>(복제본은 포트 충돌을 막으려 꺼서 만듭니다). 포트를 확인하고 켜세요.</span>
                       {canEdit && <button style={{ ...primaryBtn, padding: '6px 12px', fontSize: 12 }} onClick={() => toggle.mutate()}>리스너 켜기</button>}
                     </div>
                   )}
@@ -466,17 +468,17 @@ export function MockServerEditor() {
                       <div style={lbl}>{isTcp ? '리스너 주소' : '서빙 주소'}</div>
                       {isHttp && <div style={{ display: 'flex', gap: 6 }}><input readOnly value={base} onFocus={(e) => e.currentTarget.select()} style={{ ...input, flex: 1, fontFamily: 'var(--fl-font-mono)', fontSize: 12 }} /><button style={miniBtn} onClick={() => { void navigator.clipboard?.writeText(base).then(() => toast('복사됨', 'ok')).catch(() => {}) }}>⧉ 복사</button></div>}
                       {isTcp && <div style={{ display: 'flex', gap: 6 }}><input readOnly value={`${window.location.hostname || 'localhost'}:${tcp.port ?? 9091}`} onFocus={(e) => e.currentTarget.select()} style={{ ...input, flex: 1, fontFamily: 'var(--fl-font-mono)', fontSize: 12 }} /><button style={miniBtn} onClick={() => setNav({ kind: 'conn' })}>포트 바꾸기 →</button></div>}
-                      <div style={{ fontSize: 11.5, color: 'var(--fl-text-muted)', marginTop: 4 }}>slug <code style={code}>{d.slug}</code> 는 {isHttp ? '서빙 주소라' : '식별자라'} 바꿀 수 없습니다(전역 유일). 다른 {isHttp ? '주소' : 'slug'}가 필요하면 [⋯ 도구 → 복제]로 새 slug 를 만드세요. {isHttp ? '서빙은 무인증(외부 시스템이 호출하는 대상).' : '리스너는 무인증(사내망 전제).'}</div>
+                      <div style={{ fontSize: 12, color: 'var(--fl-text-muted)', marginTop: 4 }}>slug <code style={code}>{d.slug}</code> 는 {isHttp ? '서빙 주소라' : '식별자라'} 바꿀 수 없습니다(전역 유일). 다른 {isHttp ? '주소' : 'slug'}가 필요하면 [⋯ 도구 → 복제]로 새 slug 를 만드세요. {isHttp ? '서빙은 무인증(외부 시스템이 호출하는 대상).' : '리스너는 무인증(사내망 전제).'}</div>
                     </div>
                     <div>
-                      <div style={lbl}>🔑 시크릿 환경</div>
+                      <div style={lbl}>시크릿 환경</div>
                       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                         <select style={{ ...input, minWidth: 160 }} value={spec.environment ?? ''} disabled={!canEdit} onChange={(e) => mutate((s) => ({ ...s, environment: e.target.value || null }))} title="{{ 이름@secret }} 해석 스코프 — 공통 시크릿에 이 환경의 시크릿을 덮어씀">
                           <option value="">공통만</option>
                           {secretEnvs.map((e) => <option key={e} value={e}>{e}</option>)}
                           {spec.environment && !secretEnvs.includes(spec.environment) && <option value={spec.environment}>{spec.environment}</option>}
                         </select>
-                        <span style={{ fontSize: 11.5, color: 'var(--fl-text-muted)' }}>{secrets.length ? `적용 가능한 시크릿 ${secrets.filter((x) => !x.environment || x.environment === (spec.environment ?? null)).length}개 — 값 칸에서 { } 로 삽입` : '시크릿 없음 — 워크플로 편집기 도구 → 시크릿 볼트에서 추가'}</span>
+                        <span style={{ fontSize: 12, color: 'var(--fl-text-muted)' }}>{secrets.length ? `적용 가능한 시크릿 ${secrets.filter((x) => !x.environment || x.environment === (spec.environment ?? null)).length}개 — 값 칸에서 { } 로 삽입` : '시크릿 없음 — 워크플로 편집기 도구 → 시크릿 볼트에서 추가'}</span>
                       </div>
                     </div>
                     {isHttp && canEdit && (
@@ -490,7 +492,7 @@ export function MockServerEditor() {
                       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                         <button style={miniBtn} onClick={() => setTransfer('export')}>⬆ 내보내기(복사)</button>
                         {canEdit && <button style={miniBtn} onClick={() => setTransfer('import')}>⬇ 가져오기(덮어쓰기)</button>}
-                        <button style={miniBtn} onClick={() => setVersionsOpen(true)}>🕘 버전 기록</button>
+                        <button style={miniBtn} onClick={() => setVersionsOpen(true)}>버전 기록</button>
                       </div>
                     </div>
                     {canEdit && (
@@ -498,7 +500,7 @@ export function MockServerEditor() {
                         <div style={{ ...lbl, color: 'var(--fl-fail)' }}>위험 구역</div>
                         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                           <button style={miniBtn} onClick={() => reset.mutate()} title="state·seq·hits·요청 기록 초기화">↺ 상태·요청 기록 초기화</button>
-                          <button style={{ ...miniBtn, color: 'var(--fl-fail)' }} onClick={() => setAsk({ title: 'Mock 서버 삭제', danger: true, confirmLabel: '삭제', message: `'${d.name}' 을 삭제할까요? 이 Mock 을 호출하는 워크플로는 실패하게 됩니다. 되돌릴 수 없습니다.`, onConfirm: () => { void mocksApi.remove(id).then(() => { toast('삭제했습니다.', 'ok'); qc.invalidateQueries({ queryKey: ['mock-servers'] }); navigate('/mocks') }).catch((e) => toast(apiErrorMessage(e, '삭제 실패'), 'error')) } })}>🗑 이 Mock 삭제</button>
+                          <button style={{ ...miniBtn, color: 'var(--fl-fail)' }} onClick={() => setAsk({ title: 'Mock 서버 삭제', danger: true, confirmLabel: '삭제', message: `'${d.name}' 을 삭제할까요? 이 Mock 을 호출하는 워크플로는 실패하게 됩니다. 되돌릴 수 없습니다.`, onConfirm: () => { void mocksApi.remove(id).then(() => { toast('삭제했습니다.', 'ok'); qc.invalidateQueries({ queryKey: ['mock-servers'] }); navigate('/mocks') }).catch((e) => toast(apiErrorMessage(e, '삭제 실패'), 'error')) } })}>이 Mock 삭제</button>
                         </div>
                       </div>
                     )}
@@ -548,7 +550,7 @@ export function MockServerEditor() {
             <Modal onClose={() => setJsonOpen(false)} ariaLabel="정의 JSON" width={720}>
               <div style={{ padding: 18, display: 'grid', gap: 8 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><strong style={{ flex: 1 }}>정의 JSON (현재 편집 중)</strong><button style={miniBtn} onClick={() => { void navigator.clipboard?.writeText(JSON.stringify(spec, null, 2)).then(() => toast('복사됨', 'ok')) }}>⧉ 복사</button><button style={miniBtn} onClick={() => setJsonOpen(false)}>닫기</button></div>
-                <pre style={{ margin: 0, padding: 12, fontSize: 11.5, fontFamily: 'var(--fl-font-mono)', background: 'var(--fl-surface-2)', border: '1px solid var(--fl-border)', borderRadius: 6, maxHeight: '60vh', overflow: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{JSON.stringify(spec, null, 2)}</pre>
+                <pre style={{ margin: 0, padding: 12, fontSize: 12, fontFamily: 'var(--fl-font-mono)', background: 'var(--fl-surface-2)', border: '1px solid var(--fl-border)', borderRadius: 6, maxHeight: '60vh', overflow: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{JSON.stringify(spec, null, 2)}</pre>
               </div>
             </Modal>
           )}
@@ -648,16 +650,16 @@ function TrafficPanel({ id, canEdit, base, spec, onSpec, journal, open, onToggle
   return (
     <section style={{ ...trafficWrap, height: open ? 'min(300px, 32vh)' : 'auto' }} aria-label="트래픽 패널">
       <div style={trafficBar}>
-        <button style={{ ...miniBtn, fontWeight: 700, border: 'none', background: 'transparent' }} onClick={onToggle} aria-expanded={open}>{open ? '▾' : '▸'} 트래픽</button>
+        <button style={{ ...miniBtn, fontWeight: 700, border: 'none', background: 'transparent' }} onClick={onToggle} aria-expanded={open}><AppIcon name={open ? 'chevronDown' : 'chevronRight'} size={13} style={{ color: 'var(--fl-text-muted)', verticalAlign: '-2px' }} /> 트래픽</button>
         <span style={metaMono}>{isTcp ? '전문 로그' : `요청 기록 ${journal.length}${unmatched ? ` · 무매칭 ${unmatched}` : ''}${stateKeys.length ? ` · 상태 ${stateKeys.length}` : ''}${st.data ? ` · seq ${st.data.seq}` : ''}`}</span>
         {open && (
           <div style={{ display: 'inline-flex', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', overflow: 'hidden', marginLeft: 8 }}>
             {tabs.map(([t, label]) => (
-              <button key={t} onClick={() => onTab(t)} style={{ padding: '3px 10px', border: 'none', cursor: 'pointer', fontSize: 11.5, fontWeight: 600, background: tab === t ? 'var(--fl-action-primary-bg)' : 'transparent', color: tab === t ? 'var(--fl-action-primary-ink)' : 'var(--fl-text-muted)' }}>{label}</button>
+              <button key={t} onClick={() => onTab(t)} style={{ padding: '3px 10px', border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 600, background: tab === t ? 'var(--fl-action-primary-bg)' : 'transparent', color: tab === t ? 'var(--fl-action-primary-ink)' : 'var(--fl-text-muted)' }}>{label}</button>
             ))}
           </div>
         )}
-        {open && tab === 'log' && !isTcp && routeFilter && <label style={{ fontSize: 11.5, display: 'inline-flex', alignItems: 'center', gap: 4, marginLeft: 8 }}><input type="checkbox" checked={onlyRoute} onChange={(e) => setOnlyRoute(e.target.checked)} />선택한 라우트만</label>}
+        {open && tab === 'log' && !isTcp && routeFilter && <label style={{ fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 4, marginLeft: 8 }}><input type="checkbox" checked={onlyRoute} onChange={(e) => setOnlyRoute(e.target.checked)} />선택한 라우트만</label>}
         <span style={{ marginLeft: 'auto' }} />
         {open && stateKeys.length > 0 && <span style={{ ...metaMono, maxWidth: 360, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={stateKeys.map((k) => `${k}=${st.data!.state[k]}`).join(' · ')}>{stateKeys.map((k) => `${k}=${st.data!.state[k]}`).join(' · ')}</span>}
         {open && canEdit && !isTcp && journal.length > 0 && <button style={{ ...miniBtn, padding: '3px 8px' }} onClick={() => clear.mutate()}>기록 비우기</button>}
@@ -670,22 +672,22 @@ function TrafficPanel({ id, canEdit, base, spec, onSpec, journal, open, onToggle
             : <div style={{ display: 'grid', gap: 3 }}>{shown.map((r, i) => {
                 const ri = findRouteIndex(routes, r.method, r.path)
                 return (
-                  <div key={`${r.at}-${i}`} style={{ border: '1px solid var(--fl-border)', borderRadius: 6, overflow: 'hidden', borderLeft: `3px solid ${r.matchedRuleId == null ? 'var(--fl-fail)' : 'var(--fl-border)'}` }}>
+                  <div key={`${r.at}-${i}`} style={{ border: `1px solid ${r.matchedRuleId == null ? 'color-mix(in srgb, var(--fl-fail) 45%, var(--fl-border))' : 'var(--fl-border)'}`, borderRadius: 6, overflow: 'hidden' }}>
                     <button style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '5px 10px', background: 'transparent', border: 'none', cursor: 'pointer', textAlign: 'left', color: 'var(--fl-text)' }} onClick={() => setOpenReq(openReq === i ? null : i)}>
-                      <span style={{ fontSize: 10.5, fontWeight: 700, color: methodColor(r.method), minWidth: 44 }}>{r.method}</span>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: methodColor(r.method), minWidth: 44 }}>{r.method}</span>
                       <code style={{ fontFamily: 'var(--fl-font-mono)', fontSize: 12, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.path}{Object.keys(r.query).length ? '?' + Object.entries(r.query).map(([k, v]) => `${k}=${v}`).join('&') : ''}</code>
                       {ri >= 0 && <span style={{ ...metaMono, cursor: 'pointer' }} onClick={(e) => { e.stopPropagation(); onSelectRoute(routes[ri].id) }} title="이 라우트 열기">{routes[ri].path}</span>}
                       <span style={{ fontSize: 11, color: r.status >= 400 ? 'var(--fl-fail)' : 'var(--fl-ok)', fontFamily: 'var(--fl-font-mono)' }}>{r.status}</span>
-                      {r.matchedRuleId == null && <span style={{ fontSize: 10, color: 'var(--fl-fail)', fontWeight: 700 }}>무매칭</span>}
+                      {r.matchedRuleId == null && <span style={{ fontSize: 11, color: 'var(--fl-fail)', fontWeight: 700 }}>무매칭</span>}
                       <span style={metaMono}>{relTime(r.at)}</span>
                     </button>
                     {openReq === i && (
                       <div style={{ padding: '0 10px 8px', display: 'grid', gap: 5 }}>
                         {Object.keys(r.headers).length > 0 && <pre style={reqPre}>{Object.entries(interestingHeaders(r.headers)).map(([k, v]) => `${k}: ${v}`).join('\n') || '(표준 헤더만)'}</pre>}
                         {r.bodyText && <pre style={reqPre}>body: {r.bodyText}</pre>}
-                        {r.decodedBody != null && <pre style={{ ...reqPre, borderLeft: '3px solid var(--fl-primary)' }}>코덱 적용 후: {r.decodedBody}</pre>}
+                        {r.decodedBody != null && <pre style={{ ...reqPre, background: 'color-mix(in srgb, var(--fl-primary) 6%, var(--fl-surface-2))' }}>코덱 적용 후: {r.decodedBody}</pre>}
                         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-                          <span style={{ fontSize: 10.5, color: 'var(--fl-text-muted)' }}>{r.matchedRuleId ? `규칙 ${r.matchedRuleId}` : '매칭 규칙 없음(404)'}{r.callbackFired ? ' · 콜백 발사' : ''}{r.delayMs ? ` · 지연 ${r.delayMs}ms` : ''}</span>
+                          <span style={{ fontSize: 11, color: 'var(--fl-text-muted)' }}>{r.matchedRuleId ? `규칙 ${r.matchedRuleId}` : '매칭 규칙 없음(404)'}{r.callbackFired ? ' · 콜백 발사' : ''}{r.delayMs ? ` · 지연 ${r.delayMs}ms` : ''}</span>
                           {canEdit && <button style={{ ...miniBtn, padding: '3px 8px' }} onClick={() => expectFrom(r)} title="이 요청의 본문/쿼리/헤더 키를 라우트의 예상 요청 필드로">예상 필드로</button>}
                           {canEdit && <button style={{ ...miniBtn, padding: '3px 8px' }} onClick={() => draftRule(r)} title="이 요청에 맞는 라우트/규칙 초안(요청 값 eq 조건)">규칙 초안</button>}
                           <button style={{ ...miniBtn, padding: '3px 8px' }} onClick={() => { void replay(r) }} title="같은 요청을 다시 보냅니다">재전송</button>
@@ -740,28 +742,28 @@ function SendBox({ base, ensureSaved, routeFilter, onSent }: { base: string; ens
 const hdr: CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', borderBottom: '1px solid var(--fl-border)', background: 'var(--fl-surface)', flexWrap: 'wrap', flexShrink: 0 }
 const leftNav: CSSProperties = { width: 'clamp(150px, 22vw, 268px)', flexShrink: 0, borderRight: '1px solid var(--fl-border)', background: 'var(--fl-surface)', padding: 10, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }
 const navHead: CSSProperties = { display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 12, fontWeight: 700, color: 'var(--fl-text)', padding: '4px 6px 6px' }
-const navItem: CSSProperties = { display: 'flex', alignItems: 'center', gap: 7, width: '100%', padding: '7px 8px', border: '1px solid transparent', borderRadius: 8, background: 'transparent', color: 'var(--fl-text)', cursor: 'pointer', textAlign: 'left', fontSize: 12.5 }
-const navActive: CSSProperties = { background: 'var(--fl-surface-2)', borderColor: 'var(--fl-border)', boxShadow: 'inset 3px 0 0 var(--fl-primary)' }
-const mchip: CSSProperties = { fontSize: 9.5, fontWeight: 800, fontFamily: 'var(--fl-font-mono)', minWidth: 40 }
-const hitBadge: CSSProperties = { fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 999, background: 'var(--fl-surface-2)', border: '1px solid var(--fl-border)', color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)' }
+const navItem: CSSProperties = { display: 'flex', alignItems: 'center', gap: 7, width: '100%', padding: '7px 8px', border: '1px solid transparent', borderRadius: 'var(--fl-radius)', background: 'transparent', color: 'var(--fl-text)', cursor: 'pointer', textAlign: 'left', fontSize: 13 }
+const navActive: CSSProperties = { background: 'var(--fl-surface-2)', borderColor: 'var(--fl-border)', color: 'var(--fl-text)', fontWeight: 650 }
+const mchip: CSSProperties = { fontSize: 11, fontWeight: 800, fontFamily: 'var(--fl-font-mono)', minWidth: 40 }
+const hitBadge: CSSProperties = { fontSize: 11, fontWeight: 700, padding: '1px 6px', borderRadius: 999, background: 'var(--fl-surface-2)', border: '1px solid var(--fl-border)', color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)' }
 const divider: CSSProperties = { height: 1, background: 'var(--fl-border)', margin: '6px 0' }
 const rightPane: CSSProperties = { flex: 1, minWidth: 0, overflowY: 'auto', padding: '14px 18px 24px', background: 'var(--fl-bg)' }
 const trafficWrap: CSSProperties = { flexShrink: 0, borderTop: '1px solid var(--fl-border)', background: 'var(--fl-surface)', display: 'flex', flexDirection: 'column', minHeight: 0, transition: 'height .15s' }
 const trafficBar: CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, padding: '4px 10px', borderBottom: '1px solid var(--fl-border)', minHeight: 36, flexWrap: 'wrap' }
 const toolsMenu: CSSProperties = { position: 'absolute', top: 40, right: 120, width: 240, background: 'var(--fl-surface)', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', boxShadow: 'var(--fl-shadow-lg)', padding: 5, zIndex: 100, display: 'grid', gap: 2 }
 const toolItem: CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '7px 10px', border: 'none', background: 'transparent', color: 'var(--fl-text)', fontSize: 13, cursor: 'pointer', textAlign: 'left', borderRadius: 6 }
-const tile: CSSProperties = { display: 'grid', gap: 4, textAlign: 'left', padding: 14, border: '1px dashed var(--fl-border)', borderRadius: 'var(--fl-radius)', background: 'var(--fl-surface)', color: 'var(--fl-text)', cursor: 'pointer', fontSize: 12.5 }
-const kbd: CSSProperties = { fontFamily: 'var(--fl-font-mono)', fontSize: 11.5, padding: '1px 6px', border: '1px solid var(--fl-border)', borderRadius: 4, background: 'var(--fl-surface-2)', marginRight: 6 }
+const tile: CSSProperties = { display: 'grid', gap: 4, textAlign: 'left', padding: 14, border: '1px dashed var(--fl-border)', borderRadius: 'var(--fl-radius)', background: 'var(--fl-surface)', color: 'var(--fl-text)', cursor: 'pointer', fontSize: 13 }
+const kbd: CSSProperties = { fontFamily: 'var(--fl-font-mono)', fontSize: 12, padding: '1px 6px', border: '1px solid var(--fl-border)', borderRadius: 6, background: 'var(--fl-surface-2)', marginRight: 6 }
 const lbl: CSSProperties = { fontSize: 12, fontWeight: 700, marginBottom: 6 }
 const metaMono: CSSProperties = { fontSize: 11, color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)' }
-const reqPre: CSSProperties = { margin: 0, padding: '6px 8px', fontSize: 11, fontFamily: 'var(--fl-font-mono)', color: 'var(--fl-text)', background: 'var(--fl-surface-2)', borderRadius: 5, whiteSpace: 'pre-wrap', wordBreak: 'break-all', maxHeight: 140, overflow: 'auto' }
+const reqPre: CSSProperties = { margin: 0, padding: '6px 8px', fontSize: 11, fontFamily: 'var(--fl-font-mono)', color: 'var(--fl-text)', background: 'var(--fl-surface-2)', borderRadius: 6, whiteSpace: 'pre-wrap', wordBreak: 'break-all', maxHeight: 140, overflow: 'auto' }
 const panel: CSSProperties = { padding: 18, border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius)', background: 'var(--fl-surface)' }
 const h2: CSSProperties = { fontFamily: 'var(--fl-font-head)', fontSize: 16, margin: 0 }
 const hint: CSSProperties = { fontSize: 12, color: 'var(--fl-text-muted)', marginTop: 6, lineHeight: 1.6 }
-const code: CSSProperties = { fontFamily: 'var(--fl-font-mono)', fontSize: 11, background: 'var(--fl-surface-2)', padding: '1px 5px', borderRadius: 4 }
+const code: CSSProperties = { fontFamily: 'var(--fl-font-mono)', fontSize: 11, background: 'var(--fl-surface-2)', padding: '1px 5px', borderRadius: 6 }
 const input: CSSProperties = { padding: '7px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 13 }
-const primaryBtn: CSSProperties = { padding: '8px 16px', border: 'none', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-action-primary-bg)', color: 'var(--fl-action-primary-ink)', fontWeight: 700, fontSize: 13, cursor: 'pointer', whiteSpace: 'nowrap' }
-const ghostBtn: CSSProperties = { padding: '8px 12px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 12.5, cursor: 'pointer', whiteSpace: 'nowrap' }
-const miniBtn: CSSProperties = { padding: '5px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 12, cursor: 'pointer' }
+const primaryBtn: CSSProperties = { ...ui.primary }
+const ghostBtn: CSSProperties = { ...ui.secondary }
+const miniBtn: CSSProperties = { ...ui.mini }
 const badge: CSSProperties = { padding: '3px 9px', borderRadius: 'var(--fl-radius-pill)', color: '#fff', fontSize: 11, fontWeight: 700 }
 const legacyBanner: CSSProperties = { display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', marginBottom: 12, border: '1px solid color-mix(in srgb, var(--fl-put, #f5a623) 60%, var(--fl-border))', background: 'color-mix(in srgb, var(--fl-put, #f5a623) 10%, var(--fl-surface))', borderRadius: 'var(--fl-radius-sm)', color: 'var(--fl-text)' }

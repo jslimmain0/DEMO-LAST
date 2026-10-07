@@ -9,6 +9,8 @@ import { toast } from './toast'
 import { Modal } from './Modal'
 import { useEditorStore } from '../store/editorStore'
 import { useUnsavedNavigation } from './UnsavedNavigation'
+import { AppIcon } from './AppIcon'
+import { ui } from '../design/ui'
 
 /**
  * 버전 기록 — 저장 때마다 쌓인 불변 스냅샷(FlowVersion)을 열람·비교·복원.
@@ -55,7 +57,7 @@ export function VersionHistoryDialog({
     onError: () => toast('복원에 실패했습니다.', 'error'),
   })
 
-  // 📌 커밋 — 현재 캔버스를 메시지 달아 보존 버전으로 저장(자동 정리에서 영구 제외).
+  // 커밋 — 현재 캔버스를 메시지 달아 보존 버전으로 저장(자동 정리에서 영구 제외).
   // 미저장 편집도 이 스냅샷에 포함되므로 사실상 "메시지 있는 저장 + 영구 보존".
   const commit = useMutation({
     mutationFn: async () => {
@@ -64,7 +66,7 @@ export function VersionHistoryDialog({
       return { version, snapshot }
     },
     onSuccess: ({ version: v, snapshot }) => {
-      toast(`📌 v${v.versionNo} 보존 버전으로 저장했습니다${commitMsg.trim() ? ` — "${commitMsg.trim()}"` : ''}.`, 'ok')
+      toast(`v${v.versionNo} 보존 버전으로 저장했습니다${commitMsg.trim() ? ` — "${commitMsg.trim()}"` : ''}.`, 'ok')
       setCommitMsg('')
       qc.invalidateQueries({ queryKey: ['flow-versions', flowId] })
       onRestored(snapshot) // 요청 이후 추가한 편집은 에디터가 보존한다.
@@ -77,7 +79,7 @@ export function VersionHistoryDialog({
   const pin = useMutation({
     mutationFn: (v: { no: number; pinned: boolean }) => flowsApi.pinVersion(flowId, v.no, v.pinned),
     onSuccess: (v) => {
-      toast(v.pinned ? `📌 v${v.versionNo} 보존됨 — 자동 정리에서 제외됩니다` : `v${v.versionNo} 보존 해제됨`, 'ok')
+      toast(v.pinned ? `v${v.versionNo} 보존됨 — 자동 정리에서 제외됩니다` : `v${v.versionNo} 보존 해제됨`, 'ok')
       qc.invalidateQueries({ queryKey: ['flow-versions', flowId] })
     },
     onError: () => toast('보존 상태 변경에 실패했습니다.', 'error'),
@@ -90,12 +92,12 @@ export function VersionHistoryDialog({
   return (
     <Modal onClose={onClose} ariaLabel="버전 기록" width={760} maxWidth="94vw" height="min(560px, 86vh)">
         <header style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '14px 18px', borderBottom: '1px solid var(--fl-border)' }}>
-          <span aria-hidden>🕘</span>
+          <AppIcon name="clock" size={16} />
           <strong style={{ flex: 1, fontFamily: 'var(--fl-font-head)', fontSize: 16 }}>버전 기록</strong>
           <button onClick={onClose} aria-label="닫기" style={xBtn}>×</button>
         </header>
 
-        {/* 📌 커밋 바 — 현재 캔버스를 메시지 달아 보존 버전으로(자동 정리에서 영구 제외) */}
+        {/* 커밋 바 — 현재 캔버스를 메시지 달아 보존 버전으로(자동 정리에서 영구 제외) */}
         {!readOnly && (
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '10px 18px', borderBottom: '1px solid var(--fl-border)', background: 'var(--fl-surface-2)' }}>
             <input
@@ -104,12 +106,12 @@ export function VersionHistoryDialog({
               onKeyDown={(e) => { if (e.key === 'Enter' && !commit.isPending) commit.mutate() }}
               placeholder="보존 메시지 (예: v1.2 배포 직전 상태)"
               aria-label="보존 버전 메시지"
-              style={{ flex: 1, padding: '7px 11px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-bg)', color: 'var(--fl-text)', fontSize: 12.5 }}
+              style={{ flex: 1, padding: '7px 11px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-bg)', color: 'var(--fl-text)', fontSize: 13 }}
             />
             <button onClick={() => commit.mutate()} disabled={commit.isPending}
-              title="현재 캔버스(미저장 편집 포함)를 새 버전으로 저장하고 📌 보존 — 자동 정리에서 절대 삭제되지 않습니다"
+              title="현재 캔버스(미저장 편집 포함)를 새 버전으로 저장하고 보존 — 자동 정리에서 절대 삭제되지 않습니다"
               style={{ ...primary, padding: '8px 14px', whiteSpace: 'nowrap' }}>
-              {commit.isPending ? '저장 중…' : '📌 보존 버전으로 저장'}
+              {commit.isPending ? '저장 중…' : '보존 버전으로 저장'}
             </button>
           </div>
         )}
@@ -129,12 +131,12 @@ export function VersionHistoryDialog({
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                   <b style={{ fontSize: 13 }}>v{v.versionNo}</b>
                   {v.versionNo === current && <span style={badge}>현재</span>}
-                  {v.pinned && <span title="보존 버전 — 자동 정리에서 제외" style={pinBadge}>📌 보존</span>}
+                  {v.pinned && <span title="보존 버전 — 자동 정리에서 제외" style={pinBadge}>보존</span>}
                 </div>
-                <div style={{ fontSize: 11.5, color: 'var(--fl-text-muted)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <div style={{ fontSize: 12, color: 'var(--fl-text-muted)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {v.note || '—'}
                 </div>
-                <div style={{ fontSize: 10.5, color: 'var(--fl-text-muted)', marginTop: 2 }}>
+                <div style={{ fontSize: 11, color: 'var(--fl-text-muted)', marginTop: 2 }}>
                   {v.createdBy ? `${v.createdBy} · ` : ''}{fmt(v.createdAt)}
                 </div>
               </button>
@@ -150,11 +152,11 @@ export function VersionHistoryDialog({
             ) : (
               <>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-                  <strong style={{ fontSize: 15 }}>v{selected}</strong>
+                  <strong style={{ fontSize: 16 }}>v{selected}</strong>
                   {selected === current && <span style={badge}>현재 버전</span>}
                 </div>
                 <div style={diffBox}>
-                  <div style={{ fontSize: 11.5, color: 'var(--fl-text-muted)', marginBottom: 6 }}>이 버전 → 현재 캔버스 차이</div>
+                  <div style={{ fontSize: 12, color: 'var(--fl-text-muted)', marginBottom: 6 }}>이 버전 → 현재 캔버스 차이</div>
                   {diff && (
                     <div style={{ fontSize: 13, fontWeight: 600, color: diff.same ? 'var(--fl-text-muted)' : 'var(--fl-text)' }}>
                       {diffSummary(diff)}
@@ -168,7 +170,7 @@ export function VersionHistoryDialog({
                     </ul>
                   )}
                 </div>
-                <div style={{ fontSize: 11.5, color: 'var(--fl-text-muted)', marginTop: 12 }}>
+                <div style={{ fontSize: 12, color: 'var(--fl-text-muted)', marginTop: 12 }}>
                   노드 {preview.data?.nodes?.length ?? 0}개 · 연결 {preview.data?.edges?.length ?? 0}개
                 </div>
                 {!readOnly && selected !== current && <p style={{ fontSize: 12, lineHeight: 1.6, color: 'var(--fl-text-muted)' }}>복원하면 선택한 내용이 새 버전으로 저장되고 현재 캔버스를 교체합니다. 현재 미저장 변경을 남기려면 먼저 보존 버전으로 저장하세요.</p>}
@@ -192,12 +194,12 @@ export function VersionHistoryDialog({
                         title={sel?.pinned ? '보존 해제 — 오래되면 자동 정리 대상으로 돌아갑니다' : '보존 — 자동 정리에서 영구 제외'}
                         style={{ ...primary, background: 'transparent', border: '1px solid var(--fl-border)', color: sel?.pinned ? 'var(--fl-waiting)' : 'var(--fl-text)' }}
                       >
-                        {sel?.pinned ? '📌 보존 해제' : '📌 이 버전 보존'}
+                        {sel?.pinned ? '보존 해제' : '이 버전 보존'}
                       </button>
                     )
                   })()}
                 </div>
-                {selected === current && <p style={{ fontSize: 11.5, color: 'var(--fl-text-muted)', marginTop: 8 }}>현재 버전은 복원할 필요가 없습니다.</p>}
+                {selected === current && <p style={{ fontSize: 12, color: 'var(--fl-text-muted)', marginTop: 8 }}>현재 버전은 복원할 필요가 없습니다.</p>}
               </>
             )}
           </div>
@@ -213,11 +215,11 @@ function fmt(iso: string): string {
   } catch { return iso }
 }
 
-const xBtn: CSSProperties = { width: 28, height: 28, borderRadius: 8, border: 'none', background: 'var(--fl-surface-2)', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 15 }
-const pad: CSSProperties = { padding: 16, fontSize: 12.5, color: 'var(--fl-text-muted)' }
+const xBtn: CSSProperties = { ...ui.close, width: 28, height: 28 }
+const pad: CSSProperties = { padding: 16, fontSize: 13, color: 'var(--fl-text-muted)' }
 const row: CSSProperties = { display: 'block', width: '100%', textAlign: 'left', padding: '10px 14px', border: 'none', borderBottom: '1px solid var(--fl-border)', background: 'transparent', color: 'var(--fl-text)', cursor: 'pointer' }
 const rowSel: CSSProperties = { background: 'var(--fl-surface-2)' }
-const pinBadge: CSSProperties = { fontSize: 10, fontWeight: 700, color: 'var(--fl-waiting)', border: '1px solid var(--fl-waiting)', borderRadius: 8, padding: '0 6px', whiteSpace: 'nowrap' }
-const badge: CSSProperties = { fontSize: 10, fontWeight: 700, color: 'var(--fl-primary)', border: '1px solid var(--fl-primary)', borderRadius: 8, padding: '0 6px' }
+const pinBadge: CSSProperties = { fontSize: 11, fontWeight: 700, color: 'var(--fl-waiting)', border: '1px solid var(--fl-waiting)', borderRadius: 'var(--fl-radius)', padding: '0 6px', whiteSpace: 'nowrap' }
+const badge: CSSProperties = { fontSize: 11, fontWeight: 700, color: 'var(--fl-primary)', border: '1px solid var(--fl-primary)', borderRadius: 'var(--fl-radius)', padding: '0 6px' }
 const diffBox: CSSProperties = { border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', padding: 12, background: 'var(--fl-surface-2)' }
 const primary: CSSProperties = { padding: '9px 16px', border: 'none', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-action-primary-bg)', color: 'var(--fl-action-primary-ink)', fontWeight: 600, fontSize: 13, cursor: 'pointer' }

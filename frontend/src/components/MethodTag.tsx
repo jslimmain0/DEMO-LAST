@@ -8,7 +8,7 @@ export function MethodTag({ method }: { method: HttpMethod }) {
     <span
       style={{
         fontFamily: 'var(--fl-font-mono)',
-        fontSize: 10.5,
+        fontSize: 11,
         fontWeight: 600,
         color: ink,
         background: METHOD_COLOR[method],

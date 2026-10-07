@@ -15,15 +15,21 @@ import javax.swing.plaf.basic.BasicTextFieldUI
 import javax.swing.border.AbstractBorder
 import javax.swing.plaf.FontUIResource
 
-/** 설치 아이콘과 같은 두 실행 지점의 연결 표시. 웹 화면의 브랜드 토큰을 따른다. */
+/** 설치 아이콘과 같은 두 실행 지점의 연결 표시. 웹 화면의 브랜드 토큰(index.css --fl-*)과 같은 값을 쓴다. */
 internal object DesktopBrand {
-    val primary = Color(0x76, 0x60, 0xd9)
-    val text = Color(0x28, 0x23, 0x38)
-    val muted = Color(0x75, 0x6c, 0x85)
-    val background = Color(0xf6, 0xf4, 0xfc)
-    val border = Color(0xe7, 0xe2, 0xf3)
+    val primary = Color(0x5b, 0x4b, 0xd0)
+    val text = Color(0x18, 0x18, 0x1b)
+    val muted = Color(0x71, 0x71, 0x7a)
+    val background = Color(0xfa, 0xfa, 0xfa)
+    val border = Color(0xe4, 0xe4, 0xe7)
+    val controlBorder = Color(0xd4, 0xd4, 0xd8)
+    val hover = Color(0xf4, 0xf4, 0xf5)
     val success = Color(0x15, 0x80, 0x3d)
-    val attention = Color(0xa1, 0x62, 0x07)
+    val attention = Color(0xb4, 0x53, 0x09)
+
+    // 모서리 반경(지름 기준 arc). 버튼·입력 6px, 카드 10px — 웹 --fl-radius-sm / --fl-radius-lg
+    private const val CONTROL_ARC = 12
+    private const val SURFACE_ARC = 20
     val body = Font("맑은 고딕", Font.PLAIN, 14)
     val small = body.deriveFont(12f)
 
@@ -35,20 +41,21 @@ internal object DesktopBrand {
                 !isEnabled -> background
                 prominent && model.isPressed -> primary.darker()
                 prominent -> primary
-                model.isRollover -> Color(0xf0, 0xed, 0xfa)
+                prominent && model.isRollover -> primary.darker()
+                model.isRollover -> hover
                 else -> Color.WHITE
             }
-            g.fillRoundRect(1, 1, width - 2, height - 2, 28, 28)
-            g.color = if (hasFocus()) primary else if (prominent && isEnabled) primary else DesktopBrand.border
+            g.fillRoundRect(1, 1, width - 2, height - 2, CONTROL_ARC, CONTROL_ARC)
+            g.color = if (hasFocus()) primary else if (prominent && isEnabled) primary else controlBorder
             g.stroke = BasicStroke(if (hasFocus()) 2f else 1f)
-            g.drawRoundRect(1, 1, width - 3, height - 3, 28, 28)
+            g.drawRoundRect(1, 1, width - 3, height - 3, CONTROL_ARC, CONTROL_ARC)
             g.dispose(); super.paintComponent(graphics)
         }
     }.apply {
         setUI(BasicButtonUI()); font = body.deriveFont(Font.BOLD, 13f)
         foreground = if (prominent) Color.WHITE else DesktopBrand.text
         background = DesktopBrand.background
-        border = BorderFactory.createEmptyBorder(10, 16, 10, 16)
+        border = BorderFactory.createEmptyBorder(8, 14, 8, 14)
         isContentAreaFilled = false; isOpaque = false; isFocusPainted = false; isRolloverEnabled = true
         cursor = java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR)
     }
@@ -60,7 +67,7 @@ internal object DesktopBrand {
                 val g = graphics.create() as java.awt.Graphics2D
                 g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
                 g.color = if (field.isEnabled) Color.WHITE else DesktopBrand.background
-                g.fillRoundRect(1, 1, field.width - 2, field.height - 2, 28, 28)
+                g.fillRoundRect(1, 1, field.width - 2, field.height - 2, CONTROL_ARC, CONTROL_ARC)
                 g.dispose()
                 super.paintSafely(graphics)
             }
@@ -75,9 +82,9 @@ internal object DesktopBrand {
             override fun paintBorder(component: java.awt.Component, graphics: java.awt.Graphics, x: Int, y: Int, width: Int, height: Int) {
                 val g = graphics.create() as java.awt.Graphics2D
                 g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
-                g.color = if (field.hasFocus()) primary else DesktopBrand.border
+                g.color = if (field.hasFocus()) primary else controlBorder
                 g.stroke = BasicStroke(if (field.hasFocus()) 2f else 1f)
-                g.drawRoundRect(x + 1, y + 1, width - 3, height - 3, 28, 28)
+                g.drawRoundRect(x + 1, y + 1, width - 3, height - 3, CONTROL_ARC, CONTROL_ARC)
                 g.dispose()
             }
         }
@@ -93,8 +100,8 @@ internal object DesktopBrand {
         override fun paintComponent(graphics: java.awt.Graphics) {
             val g = graphics.create() as java.awt.Graphics2D
             g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
-            g.color = Color.WHITE; g.fillRoundRect(0, 0, width - 1, height - 1, 48, 48)
-            g.color = DesktopBrand.border; g.drawRoundRect(0, 0, width - 1, height - 1, 48, 48)
+            g.color = Color.WHITE; g.fillRoundRect(0, 0, width - 1, height - 1, SURFACE_ARC, SURFACE_ARC)
+            g.color = DesktopBrand.border; g.drawRoundRect(0, 0, width - 1, height - 1, SURFACE_ARC, SURFACE_ARC)
             g.dispose(); super.paintComponent(graphics)
         }
     }.apply { isOpaque = false; border = BorderFactory.createEmptyBorder(18, 20, 18, 20) }
@@ -115,7 +122,7 @@ internal object DesktopBrand {
             image.createGraphics().apply {
                 setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
                 scale(size / 64.0, size / 64.0)
-                color = primary; fillRoundRect(2, 2, 60, 60, 18, 18)
+                color = primary; fillRoundRect(2, 2, 60, 60, 16, 16)
                 color = Color.WHITE; stroke = BasicStroke(7f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND)
                 drawLine(20, 43, 20, 24); drawLine(20, 24, 44, 24); drawLine(20, 36, 39, 36)
                 fillOval(13, 36, 14, 14); fillOval(37, 17, 14, 14)

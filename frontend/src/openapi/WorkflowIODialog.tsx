@@ -69,10 +69,10 @@ function ExportTab({ json, flowName }: { json: string; flowName: string }) {
 
   return (
     <div style={{ padding: 18, display: 'flex', flexDirection: 'column', minHeight: 0, flex: 1 }}>
-      <p style={{ fontSize: 12.5, color: 'var(--fl-text-muted)', margin: '0 0 10px' }}>현재 캔버스의 워크플로를 JSON 으로 내보냅니다.</p>
+      <p style={{ fontSize: 13, color: 'var(--fl-text-muted)', margin: '0 0 10px' }}>현재 캔버스의 워크플로를 JSON 으로 내보냅니다.</p>
       <textarea readOnly value={json} style={{ ...area, flex: 1 }} onFocus={(e) => e.currentTarget.select()} />
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 14 }}>
-        {copyError && <span style={{ fontSize: 11.5, color: 'var(--fl-fail)' }}>클립보드를 쓸 수 없어요. 텍스트를 직접 선택해 복사하세요.</span>}
+        {copyError && <span style={{ fontSize: 12, color: 'var(--fl-fail)' }}>클립보드를 쓸 수 없어요. 텍스트를 직접 선택해 복사하세요.</span>}
         <button onClick={copy} style={{ ...ghost, marginLeft: 'auto' }}>{copied ? '복사됨 ✓' : '복사'}</button>
         <button onClick={download} style={primary}>파일 다운로드</button>
       </div>
@@ -146,7 +146,7 @@ export function WorkflowImportBody({ onImport, onClose }: { onImport: (graph: Fl
       />
       {error && <div style={{ color: 'var(--fl-fail)', fontSize: 13, marginTop: 8 }}>{error}</div>}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 14 }}>
-        <span style={{ fontSize: 11.5, color: 'var(--fl-put)' }}>⚠ 현재 캔버스를 대체합니다. (저장 전까지 되돌릴 수 있음)</span>
+        <span style={{ fontSize: 12, color: 'var(--fl-put)' }}>⚠ 현재 캔버스를 대체합니다. (저장 전까지 되돌릴 수 있음)</span>
         <button onClick={load} disabled={!text.trim()} style={primary}>불러오기</button>
       </div>
     </div>

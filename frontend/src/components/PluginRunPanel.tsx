@@ -9,6 +9,7 @@ import { JsonTree } from './JsonTree'
 import { TokenInput } from '../binding/TokenInput'
 import { useEnvStore } from '../lib/environments'
 import { useVaultSources } from '../lib/vaultSources'
+import { ui } from '../design/ui'
 
 type Sample = { inputs: Record<string, string>; config: Record<string, string>; value: string; fn: 'encode' | 'decode'; direction: 'send' | 'recv'; message: string; bytesText: string; bytesMode: 'text' | 'hex' }
 const EMPTY: Sample = { inputs: {}, config: {}, value: '', fn: 'encode', direction: 'send', message: '{}', bytesText: '', bytesMode: 'text' }
@@ -145,10 +146,10 @@ export function PluginRunPanel({ source, scriptId, canRun, onDiagnostics }: { so
 }
 
 const panel: CSSProperties = { display: 'flex', flexDirection: 'column', gap: 10, padding: 14, overflowY: 'auto', background: 'var(--fl-surface)', minHeight: 0 }
-const row: CSSProperties = { display: 'grid', gridTemplateColumns: '96px minmax(0, 1fr)', gap: 8, alignItems: 'center', fontSize: 12.5 }
+const row: CSSProperties = { display: 'grid', gridTemplateColumns: '96px minmax(0, 1fr)', gap: 8, alignItems: 'center', fontSize: 13 }
 const lbl: CSSProperties = { color: 'var(--fl-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }
-const input: CSSProperties = { padding: '6px 8px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 12.5, width: '100%', boxSizing: 'border-box' }
-const runBtn: CSSProperties = { padding: '6px 14px', border: 'none', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-action-primary-bg)', color: 'var(--fl-action-primary-ink)', fontWeight: 700, fontSize: 12.5, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }
-const hint: CSSProperties = { fontSize: 11.5, color: 'var(--fl-text-muted)', lineHeight: 1.5 }
+const input: CSSProperties = { padding: '6px 8px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 13, width: '100%', boxSizing: 'border-box' }
+const runBtn: CSSProperties = { ...ui.primary, flexShrink: 0 }
+const hint: CSSProperties = { fontSize: 12, color: 'var(--fl-text-muted)', lineHeight: 1.5 }
 const mono: CSSProperties = { fontSize: 11, color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)', minWidth: 0, overflowWrap: 'anywhere' }
 const box: CSSProperties = { margin: 0, padding: '8px 10px', fontSize: 12, fontFamily: 'var(--fl-font-mono)', background: 'var(--fl-surface-2)', border: '1px solid var(--fl-border)', borderRadius: 6, whiteSpace: 'pre-wrap', wordBreak: 'break-all', maxHeight: 220, overflow: 'auto' }

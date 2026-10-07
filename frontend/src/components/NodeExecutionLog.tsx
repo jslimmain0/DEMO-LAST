@@ -11,9 +11,9 @@ export function LogBlock({ title, text }: { title: string; text: string | null |
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
         <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--fl-text-muted)' }}>{title}</div>
         <button onClick={() => { void navigator.clipboard?.writeText(text).catch(() => {}) }} title={`${title} 복사`}
-          style={{ fontSize: 10.5, padding: '1px 7px', border: '1px solid var(--fl-border)', borderRadius: 5, background: 'transparent', color: 'var(--fl-text-muted)', cursor: 'pointer' }}>복사</button>
+          style={{ fontSize: 11, padding: '1px 7px', border: '1px solid var(--fl-border)', borderRadius: 6, background: 'transparent', color: 'var(--fl-text-muted)', cursor: 'pointer' }}>복사</button>
       </div>
-      <pre style={{ margin: 0, padding: 10, background: 'var(--fl-surface-2)', color: 'var(--fl-text)', borderRadius: 'var(--fl-radius-sm)', fontFamily: 'var(--fl-font-mono)', fontSize: 11.5, whiteSpace: 'pre-wrap', wordBreak: 'break-all', maxHeight: 200, overflow: 'auto' }}>{text}</pre>
+      <pre style={{ margin: 0, padding: 10, background: 'var(--fl-surface-2)', color: 'var(--fl-text)', borderRadius: 'var(--fl-radius-sm)', fontFamily: 'var(--fl-font-mono)', fontSize: 12, whiteSpace: 'pre-wrap', wordBreak: 'break-all', maxHeight: 200, overflow: 'auto' }}>{text}</pre>
     </div>
   )
 }

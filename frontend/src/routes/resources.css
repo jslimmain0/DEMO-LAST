@@ -15,7 +15,7 @@
 .fl-env-list-heading button { padding: 5px 8px; }
 .fl-env-entry { display: flex; align-items: center; gap: 8px; padding: 9px 10px; border: 1px solid transparent; border-radius: 6px; background: transparent; }
 .fl-env-entry:hover { background: var(--fl-surface-2); }
-.fl-env-entry[data-selected=true] { border-color: var(--fl-border); background: var(--fl-surface); box-shadow: inset 3px 0 var(--fl-primary); }
+.fl-env-entry[data-selected=true] { border-color: var(--fl-control-border); background: var(--fl-surface); font-weight: 600; }
 .fl-env-entry input { accent-color: var(--fl-primary); flex-shrink: 0; }
 .fl-env-editor { container-type: inline-size; display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; padding: 16px; background: var(--fl-surface); border: 1px solid var(--fl-border); border-radius: 10px; }
 .fl-env-editor-heading { display: flex; align-items: center; gap: 8px; flex-shrink: 0; padding-bottom: 12px; margin-bottom: 10px; border-bottom: 1px solid var(--fl-border); }
@@ -30,10 +30,10 @@
 .fl-secret-workbench > section:last-child { box-shadow: var(--fl-shadow); }
 .fl-secret-workbench h3 { font-size: 17px; }
 .fl-secret-list { border: 1px solid var(--fl-border); border-radius: 8px; background: var(--fl-surface); }
-.fl-secret-entry { display: block; width: 100%; text-align: left; padding: 10px 12px; cursor: pointer; background: transparent; border: 0; border-left: 3px solid transparent; border-bottom: 1px solid var(--fl-border); color: var(--fl-text); }
+.fl-secret-entry { display: block; width: 100%; text-align: left; padding: 10px 12px; cursor: pointer; background: transparent; border: 0; border-bottom: 1px solid var(--fl-border); color: var(--fl-text); }
 .fl-secret-entry:last-child { border-bottom: 0; }
 .fl-secret-entry:hover, .fl-secret-entry[aria-pressed=true] { background: var(--fl-surface-2); }
-.fl-secret-entry[aria-pressed=true] { border-left-color: var(--fl-primary); }
+.fl-secret-entry[aria-pressed=true] { box-shadow: inset 0 0 0 1px var(--fl-border); font-weight: 600; }
 .fl-secret-entry span { overflow-wrap: anywhere; }
 .fl-secret-collection select { min-width: 0; max-width: 100%; }
 .fl-secret-editor { padding: 16px; background: var(--fl-surface); border: 1px solid var(--fl-border); border-radius: 10px; align-self: stretch; min-width: 0; overflow-y: auto; min-height: 0; }

@@ -48,7 +48,7 @@ export function AgentSettings({ node, update, disabled }: { node: GraphNode; upd
     node.agentOutputs != null ? `위치 간 출력 ${node.agentOutputs.length ? node.agentOutputs.join(', ') : '전달 안 함'}` : null,
   ].filter(Boolean)
   if (!selectable && !['wait', 'form', 'input'].includes(node.type)) return null
-  return <section className="fl-agent-settings" aria-label="노드 실행 위치" style={{ border: '1px solid var(--fl-border)', borderRadius: 8, padding: 12, marginBottom: 16, background: 'var(--fl-surface-2)' }}>
+  return <section className="fl-agent-settings" aria-label="노드 실행 위치" style={{ border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius)', padding: 12, marginBottom: 16, background: 'var(--fl-surface-2)' }}>
     {!selectable && <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center' }}><strong style={{ fontSize: 14 }}>{node.type === 'wait' ? '콜백을 받는 위치' : '실행 위치'}</strong><NodeAgentBadge node={node} /></div>}
     {!selectable ? <p style={hint}>{node.type === 'wait' ? `현재 공간의 ${agent === 'local' ? '내 PC' : '서버'} 에이전트가 콜백을 받습니다.` : '사용자의 PC 화면에서 입력하거나 폼을 엽니다.'}</p> : <>
       <label style={label}>실행 위치<select aria-label="실행 위치" value={browser ? 'browser' : agent} disabled={disabled || scope.loading || legacyMock} onChange={e => update({ executionAgent: e.target.value as GraphNode['executionAgent'], reqMode: 'server', agentEnvironment: undefined, agentWorkspaceId: undefined, ...(browser ? { agentMock: undefined } : {}) })} style={field}>
@@ -65,5 +65,5 @@ export function AgentSettings({ node, update, disabled }: { node: GraphNode; upd
   </section>
 }
 const label: CSSProperties = { display: 'block', fontSize: 14, fontWeight: 600 }
-const field: CSSProperties = { display: 'block', width: '100%', boxSizing: 'border-box', marginTop: 5, minHeight: 36, padding: '8px 10px', background: 'var(--fl-surface)', color: 'var(--fl-text)', border: '1px solid var(--fl-border)', borderRadius: 5, font: 'inherit', fontSize: 13 }
+const field: CSSProperties = { display: 'block', width: '100%', boxSizing: 'border-box', marginTop: 5, minHeight: 36, padding: '8px 10px', background: 'var(--fl-surface)', color: 'var(--fl-text)', border: '1px solid var(--fl-border)', borderRadius: 6, font: 'inherit', fontSize: 13 }
 const hint: CSSProperties = { fontSize: 12, lineHeight: 1.55, color: 'var(--fl-text-muted)', margin: '7px 0 0' }

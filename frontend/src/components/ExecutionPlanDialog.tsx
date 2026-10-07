@@ -16,6 +16,8 @@ import { destinationKey, resolveAgentEnvironment } from '../lib/agentEnvironment
 import { useAgentEnvironmentBindings } from '../lib/useAgentEnvironmentBindings'
 import { Modal } from './Modal'
 import { ActionButton } from './ActionButton'
+import { ui } from '../design/ui'
+import { AppIcon } from './AppIcon'
 
 export function ExecutionPlanDialog({ onClose, onRun }: { onClose: () => void; onRun: (dependencies: RunRequest['agentDependencies'], environments: Record<string, string>) => void }) {
   const scope = useWorkspace()
@@ -60,8 +62,8 @@ export function ExecutionPlanDialog({ onClose, onRun }: { onClose: () => void; o
   const missing = plan.some(n => !isBrowserRequest(n) && ['http', 'tcp', 'set', 'if', 'assert', 'transform'].includes(n.type) && environmentName(n) === undefined)
   const blocked = !bindings.ready || missing || saving || plan.some(n => !isAvailable(n)) || checking || invalid
   return <Modal onClose={onClose} ariaLabel="실행 계획" width={1100} card={{ padding: 22, overflowY: 'auto' }}>
-    <header style={{ display: 'flex', gap: 12, alignItems: 'center' }}><strong style={{ fontSize: 18 }}>실행 계획</strong><button aria-label="실행 계획 닫기" onClick={onClose} style={{ ...button, marginLeft: 'auto' }}>닫기</button></header>
-    <p style={{ fontSize: 12.5, lineHeight: 1.65, color: 'var(--fl-text-muted)' }}>저장 공간: <b style={{ color: 'var(--fl-text)' }}>{scope.current.name} · {scope.current.origin === 'local' ? '개인 PC H2' : '서버 DB'}</b><br />HTTP·TCP는 선택한 위치에서 호출합니다. 변수·조건·검증은 워크플로의 환경과 앞 노드의 결과로 계산합니다.</p>
+    <header style={{ display: 'flex', gap: 12, alignItems: 'center' }}><strong style={{ fontSize: 18 }}>실행 계획</strong><button aria-label="실행 계획 닫기" title="닫기" onClick={onClose} style={{ ...ui.close, marginLeft: 'auto' }}><AppIcon name="close" size={16} /></button></header>
+    <p style={{ fontSize: 13, lineHeight: 1.65, color: 'var(--fl-text-muted)' }}>저장 공간: <b style={{ color: 'var(--fl-text)' }}>{scope.current.name} · {scope.current.origin === 'local' ? '개인 PC H2' : '서버 DB'}</b><br />HTTP·TCP는 선택한 위치에서 호출합니다. 변수·조건·검증은 워크플로의 환경과 앞 노드의 결과로 계산합니다.</p>
     {destinations.length > 0 && <section aria-label="이 PC의 연결 설정" style={{ display: 'flex', flexWrap: 'wrap', gap: 12, padding: '12px 0' }}><b style={{ width: '100%', fontSize: 12 }}>이 PC의 연결 설정 · {environment.active || '공통 환경'} 단계 {bindings.persistent ? '· PC에 저장' : '· 현재 세션에서 사용'}</b>
       {destinations.map(([key, target]) => <DestinationEnvironment key={key} destination={key} target={target} bindings={bindings} />)}
       <button style={button} disabled={!bindings.ready || !bindings.dirty || saving} onClick={async () => { setSaving(true); setSaveError(''); try { await bindings.save() } catch (error) { setSaveError(isAxiosError(error) ? error.response?.data?.message ?? error.message : error instanceof Error ? error.message : '연결 설정 저장 실패') } finally { setSaving(false) } }}>{saving ? '저장 중…' : bindings.dirty ? '연결 설정 저장' : '연결 설정 저장됨'}</button>

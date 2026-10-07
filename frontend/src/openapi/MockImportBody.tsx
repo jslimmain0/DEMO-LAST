@@ -58,9 +58,9 @@ export function MockImportBody({ onImport, onClose }: { onImport: (g: PaletteGro
       <div style={{ maxHeight: 360, overflow: 'auto', display: 'grid', gap: 4 }}>
         {servers.map((s) => (
           <button key={s.id} disabled={busy != null} onClick={() => void pick(s.id)} style={{ display: 'flex', gap: 8, alignItems: 'center', textAlign: 'left', padding: '8px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', cursor: 'pointer' }}>
-            <span style={{ fontSize: 10.5, fontWeight: 700, fontFamily: 'var(--fl-font-mono)', color: s.kind === 'TCP' ? 'var(--fl-cat-tcp, #7c5cff)' : 'var(--fl-primary)' }}>{s.kind === 'TCP' ? 'TCP' : 'HTTP'}</span>
+            <span style={{ fontSize: 11, fontWeight: 700, fontFamily: 'var(--fl-font-mono)', color: s.kind === 'TCP' ? 'var(--fl-cat-tcp)' : 'var(--fl-primary)' }}>{s.kind === 'TCP' ? 'TCP' : 'HTTP'}</span>
             <span style={{ flex: 1, fontWeight: 600 }}>{s.name}</span>
-            <span style={{ fontSize: 11.5, color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)' }}>{s.kind === 'TCP' ? `:${s.tcpPort ?? '?'} · ${s.protocolName ?? '프로토콜 없음'}` : `${s.slug} · 라우트 ${s.routeCount}`}</span>
+            <span style={{ fontSize: 12, color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)' }}>{s.kind === 'TCP' ? `:${s.tcpPort ?? '?'} · ${s.protocolName ?? '프로토콜 없음'}` : `${s.slug} · 라우트 ${s.routeCount}`}</span>
             {busy === s.id && <span style={{ fontSize: 11 }}>…</span>}
           </button>
         ))}

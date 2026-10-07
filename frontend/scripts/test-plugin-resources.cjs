@@ -1,6 +1,8 @@
 // Run: node frontend/scripts/test-plugin-resources.cjs. Real hooks and picker callbacks, no network/MCP.
 const assert = require('node:assert/strict')
 const fs = require('node:fs'), path = require('node:path'), vm = require('node:vm'), ts = require('typescript')
+// 공용 컨트롤 스타일(design/ui)은 순수 상수 모듈이라 실제 구현을 그대로 쓴다.
+const designUi = (() => { const out = {}; require('node:vm').runInNewContext(require('typescript').transpileModule(require('node:fs').readFileSync(require('node:path').join(__dirname, '../src/design/ui.ts'), 'utf8'), { compilerOptions: { module: require('typescript').ModuleKind.CommonJS, target: require('typescript').ScriptTarget.ES2022 } }).outputText, { exports: out }); return out })()
 const jsx = (type, props) => ({ type, props })
 const react = { useMemo: f => f(), useState: initial => [initial, () => {}], useEffect() {}, useLayoutEffect() {}, useRef: () => ({ current: null }) }
 let connected = true, refreshes = 0, opened, options
@@ -9,7 +11,7 @@ let query = { isSuccess: true, isPending: false, isError: false, data: [{id:'sam
 function load(file, modules, extra = '') {
   const exported = {}
   const code = ts.transpileModule(fs.readFileSync(path.join(__dirname, '../src', file), 'utf8') + extra, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText
-  vm.runInNewContext(code, { exports: exported, require: name => modules[name] ?? {}, window: {open: url => {opened = url}}, document: {body:{}}, setTimeout: () => {} })
+  vm.runInNewContext(code, { exports: exported, require: name => modules[name] ?? (name.endsWith('/design/ui') ? designUi : {}), window: {open: url => {opened = url}}, document: {body:{}}, setTimeout: () => {} })
   return exported
 }
 const base = { react, 'react/jsx-runtime': {jsx,jsxs:jsx}, 'react-router-dom': {Link:'link'}, '../app/WorkspaceContext': {useWorkspace: () => ({...scope, connected})}, '../auth/AuthContext': {useAuth: () => ({desktop:{}})}, 'react-dom': {createPortal: value => value}, '../lib/appBase': {appUrl: value => value} }

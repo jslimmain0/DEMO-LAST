@@ -11,6 +11,8 @@ import { CopilotStatusDialog } from './CopilotStatusDialog'
 import { SessionsDialog } from './SessionsDialog'
 import { SkillsDialog } from './SkillsDialog'
 import { toast } from './toast'
+import { AppIcon } from './AppIcon'
+import { ui } from '../design/ui'
 
 /** 대화에 붙은 제안 그래프(적용 가능) — assistant 메시지에만. */
 interface Turn extends AssistantMessage {
@@ -140,9 +142,9 @@ export function AssistantPanel({ width, onClose }: { width: number; onClose: () 
     <aside style={{ width, flexShrink: 0, borderLeft: '1px solid var(--fl-border)', background: 'var(--fl-surface)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       <header style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', borderBottom: '1px solid var(--fl-border)' }}>
         <span aria-hidden>✨</span>
-        <b style={{ flex: 1, fontSize: 13.5 }}>AI 어시스턴트</b>
+        <b style={{ flex: 1, fontSize: 14 }}>AI 어시스턴트</b>
         {connected ? (
-          <button onClick={() => setStatusOpen(true)} title="GitHub Copilot 연결됨 — 클릭해 사용량·모델·연결 상태 보기" style={{ ...badge(true), cursor: 'pointer', border: '1px solid var(--fl-ok)', color: 'var(--fl-ok)' }}>🔗 Copilot</button>
+          <button onClick={() => setStatusOpen(true)} title="GitHub Copilot 연결됨 — 클릭해 사용량·모델·연결 상태 보기" style={{ ...badge(true), cursor: 'pointer', border: '1px solid var(--fl-ok)', color: 'var(--fl-ok)' }}>Copilot</button>
         ) : device ? (
           <span style={badge(false)} title="인증 대기 중">인증 대기…</span>
         ) : canConnect && canEdit ? (
@@ -153,8 +155,8 @@ export function AssistantPanel({ width, onClose }: { width: number; onClose: () 
           </span>
         )}
         {canEdit && turns.length > 0 && <button onClick={newChat} aria-label="새 대화" title="새 대화 시작(현재 대화는 기록에 저장됨)" style={xBtn}>＋</button>}
-        {canEdit && <button onClick={() => setSessionsOpen(true)} aria-label="대화 기록" title="저장된 대화 목록 · 이어하기" style={xBtn}>🕘</button>}
-        {canEdit && <button onClick={() => setSkillsOpen(true)} aria-label="프롬프트·지침" title="프롬프트 라이브러리 · 팀 지침" style={xBtn}>💬</button>}
+        {canEdit && <button onClick={() => setSessionsOpen(true)} aria-label="대화 기록" title="저장된 대화 목록 · 이어하기" style={xBtn}><AppIcon name="clock" size={15} /></button>}
+        {canEdit && <button onClick={() => setSkillsOpen(true)} aria-label="프롬프트·지침" title="프롬프트 라이브러리 · 팀 지침" style={xBtn}><AppIcon name="list" size={15} /></button>}
         <button onClick={onClose} aria-label="닫기" style={xBtn}>×</button>
       </header>
 
@@ -171,7 +173,7 @@ export function AssistantPanel({ width, onClose }: { width: number; onClose: () 
           >
             {!modelsQ.data?.models?.length && <option value={model}>{model || '불러오는 중…'}</option>}
             {(() => {
-              // 헤더 드롭다운은 권장 모델만(+현재 선택) — 레거시/스냅샷은 🔗 Copilot 상태창 '더보기'에서.
+              // 헤더 드롭다운은 권장 모델만(+현재 선택) — 레거시/스냅샷은 Copilot 상태창 '더보기'에서.
               const ms = (modelsQ.data?.models ?? []).filter((m) => m.recommended !== false || m.id === model)
               const base = ms.filter((m) => !m.premium)
               const prem = ms.filter((m) => m.premium)
@@ -192,7 +194,7 @@ export function AssistantPanel({ width, onClose }: { width: number; onClose: () 
             })()}
           </select>
           {modelsQ.data?.models?.find((m) => m.id === model)?.premium && (
-            <span title="이 모델은 Copilot 프리미엄 요청 쿼터가 필요합니다. 없으면 429가 납니다." style={{ fontSize: 10, color: 'var(--fl-warn, #b8860b)', whiteSpace: 'nowrap' }}>⚠ 프리미엄</span>
+            <span title="이 모델은 Copilot 프리미엄 요청 쿼터가 필요합니다. 없으면 429가 납니다." style={{ fontSize: 11, color: 'var(--fl-warn, #b8860b)', whiteSpace: 'nowrap' }}>⚠ 프리미엄</span>
           )}
         </div>
       )}
@@ -203,7 +205,7 @@ export function AssistantPanel({ width, onClose }: { width: number; onClose: () 
 
       {/* 디바이스 인증 안내 카드 */}
       {device && (
-        <div style={{ margin: 12, padding: 12, border: '1px solid var(--fl-primary)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', fontSize: 12.5, lineHeight: 1.6 }}>
+        <div style={{ margin: 12, padding: 12, border: '1px solid var(--fl-primary)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', fontSize: 13, lineHeight: 1.6 }}>
           <b>GitHub Copilot 연결</b> — 열린 GitHub 페이지에 아래 코드를 입력하세요(복사됨):
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '8px 0' }}>
             <code style={{ fontSize: 18, fontWeight: 700, letterSpacing: 2, fontFamily: 'var(--fl-font-mono)', background: 'var(--fl-surface)', padding: '4px 10px', borderRadius: 'var(--fl-radius-sm)' }}>{device.userCode}</code>
@@ -215,8 +217,8 @@ export function AssistantPanel({ width, onClose }: { width: number; onClose: () 
 
       <div ref={listRef} style={{ flex: 1, overflow: 'auto', padding: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
         {turns.length === 0 && (
-          <div style={{ color: 'var(--fl-text-muted)', fontSize: 12.5, lineHeight: 1.6 }}>
-            <p style={{ margin: 0 }}>만들고 싶은 플로우를 한국어로 말해 보세요. 현재 캔버스를 이어서 고칠 수도 있습니다. 자주 쓰는 프롬프트는 💬 에서 저장·적용하세요.</p>
+          <div style={{ color: 'var(--fl-text-muted)', fontSize: 13, lineHeight: 1.6 }}>
+            <p style={{ margin: 0 }}>만들고 싶은 플로우를 한국어로 말해 보세요. 현재 캔버스를 이어서 고칠 수도 있습니다. 자주 쓰는 프롬프트는 상단 프롬프트·지침 버튼에서 저장·적용하세요.</p>
             {!canEdit && <p style={{ marginTop: 10, color: 'var(--fl-put)' }}>보기 전용 권한이라 플로우를 만들 수 없습니다(editor 이상 필요).</p>}
           </div>
         )}
@@ -237,7 +239,7 @@ export function AssistantPanel({ width, onClose }: { width: number; onClose: () 
           placeholder={canEdit ? '예: 로그인하고 주문 생성하는 플로우 만들어줘 (Enter 전송)' : '보기 전용'}
           disabled={!canEdit || pending}
           rows={2}
-          style={{ flex: 1, resize: 'none', padding: '8px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', color: 'var(--fl-text)', fontSize: 12.5, fontFamily: 'var(--fl-font-ui)', minWidth: 0 }}
+          style={{ flex: 1, resize: 'none', padding: '8px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', color: 'var(--fl-text)', fontSize: 13, fontFamily: 'var(--fl-font-ui)', minWidth: 0 }}
         />
         <button onClick={() => void send(input)} disabled={!canEdit || pending || !input.trim()} style={sendBtn}>보내기</button>
       </div>
@@ -252,7 +254,7 @@ function GraphCard({ graph, applied, onApply, canEdit }: { graph: FlowGraph; app
   const types = Array.from(new Set(exec.map((n) => n.type))).join(', ')
   return (
     <div style={{ marginTop: 6, border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', padding: 10 }}>
-      <div style={{ fontSize: 11.5, color: 'var(--fl-text-muted)', marginBottom: 8 }}>
+      <div style={{ fontSize: 12, color: 'var(--fl-text-muted)', marginBottom: 8 }}>
         <b style={{ color: 'var(--fl-text)' }}>제안 플로우</b>{graph.name ? ` — ${graph.name}` : ''}
         <br />노드 {exec.length}개 · {(graph.edges ?? []).length}개 연결
         <br /><span style={{ fontFamily: 'var(--fl-font-mono)' }}>{types}</span>
@@ -265,12 +267,12 @@ function GraphCard({ graph, applied, onApply, canEdit }: { graph: FlowGraph; app
 }
 
 function badge(real?: boolean): CSSProperties {
-  return { fontSize: 10, fontWeight: 700, fontFamily: 'var(--fl-font-mono)', padding: '2px 7px', borderRadius: 999, border: '1px solid var(--fl-border)', color: real ? 'var(--fl-primary)' : 'var(--fl-text-muted)', background: real ? 'rgba(97,85,245,.12)' : 'var(--fl-surface-2)' }
+  return { fontSize: 11, fontWeight: 700, fontFamily: 'var(--fl-font-mono)', padding: '2px 7px', borderRadius: 999, border: '1px solid var(--fl-border)', color: real ? 'var(--fl-primary)' : 'var(--fl-text-muted)', background: real ? 'color-mix(in srgb, var(--fl-primary) 12%, transparent)' : 'var(--fl-surface-2)' }
 }
 function bubble(role: string): CSSProperties {
-  return { padding: '8px 11px', borderRadius: 'var(--fl-radius)', fontSize: 12.5, lineHeight: 1.55, whiteSpace: 'pre-wrap', wordBreak: 'break-word', background: role === 'user' ? 'var(--fl-action-primary-bg)' : 'var(--fl-surface-2)', color: role === 'user' ? 'var(--fl-action-primary-ink)' : 'var(--fl-text)', border: role === 'user' ? 'none' : '1px solid var(--fl-border)' }
+  return { padding: '8px 11px', borderRadius: 'var(--fl-radius)', fontSize: 13, lineHeight: 1.55, whiteSpace: 'pre-wrap', wordBreak: 'break-word', background: role === 'user' ? 'var(--fl-action-primary-bg)' : 'var(--fl-surface-2)', color: role === 'user' ? 'var(--fl-action-primary-ink)' : 'var(--fl-text)', border: role === 'user' ? 'none' : '1px solid var(--fl-border)' }
 }
-const xBtn: CSSProperties = { width: 26, height: 26, borderRadius: 'var(--fl-radius-sm)', border: 'none', background: 'var(--fl-surface-2)', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 15 }
-const connectBtn: CSSProperties = { padding: '4px 10px', borderRadius: 999, border: 'none', background: 'var(--fl-action-primary-bg)', color: 'var(--fl-action-primary-ink)', cursor: 'pointer', fontSize: 11, fontWeight: 700 }
-const sendBtn: CSSProperties = { flexShrink: 0, padding: '8px 12px', border: 'none', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-action-primary-bg)', color: 'var(--fl-action-primary-ink)', cursor: 'pointer', fontSize: 12.5, fontWeight: 600 }
-const applyBtn: CSSProperties = { padding: '6px 12px', border: '1px solid var(--fl-primary)', borderRadius: 'var(--fl-radius-sm)', background: 'transparent', color: 'var(--fl-primary)', cursor: 'pointer', fontSize: 12, fontWeight: 600 }
+const xBtn: CSSProperties = { ...ui.close, width: 26, height: 26 }
+const connectBtn: CSSProperties = { ...ui.primary }
+const sendBtn: CSSProperties = { ...ui.primary, flexShrink: 0 }
+const applyBtn: CSSProperties = { ...ui.secondary, color: 'var(--fl-primary)' }

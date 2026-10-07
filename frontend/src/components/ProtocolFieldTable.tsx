@@ -6,6 +6,7 @@ import type { CodecInfo, FieldPad, FieldType, ProtocolField, TransformParam } fr
 import { FIELD_PADS, FIELD_TYPES, defaultPad, padOf } from '../lib/protocolSpec'
 import { TokenInput } from '../binding/TokenInput'
 import { useVaultSources } from '../lib/vaultSources'
+import { ui } from '../design/ui'
 
 /** 플러그인/코덱 파라미터 폼 — type 별 input/number/select. 텍스트는 TokenInput — `{{ 이름@secret }}`·`{{ 키@env }}` 를 넣으면 실행 환경(워크플로 실행·Mock 환경·미리보기 환경)에서 풀린다. */
 export function ParamsForm({ params, config, onChange, readOnly }: {
@@ -22,7 +23,7 @@ export function ParamsForm({ params, config, onChange, readOnly }: {
         const set = (v: string) => onChange({ ...config, [p.key]: v })
         return (
           <label key={p.key} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ fontSize: 11.5, color: 'var(--fl-text-muted)' }}>{p.label}</span>
+            <span style={{ fontSize: 12, color: 'var(--fl-text-muted)' }}>{p.label}</span>
             {p.type === 'select' && (p.options?.length ?? 0) > 0 ? (
               <select value={val} disabled={readOnly} onChange={(e) => set(e.target.value)} style={{ ...sel, minWidth: 100 }}>
                 {p.options!.map((o) => <option key={o} value={o}>{o}</option>)}
@@ -140,7 +141,7 @@ export function FieldTable({ fields, onChange, baseOffset, codecs, readOnly, len
                   {FIELD_PADS.map((p) => <option key={p} value={p}>{p}</option>)}
                 </select>
               </div>
-              <div style={{ ...td, ...rowBg, fontFamily: 'var(--fl-font-mono)', fontSize: 11.5, color: 'var(--fl-text-muted)', display: 'flex', gap: 5, alignItems: 'center' }}>
+              <div style={{ ...td, ...rowBg, fontFamily: 'var(--fl-font-mono)', fontSize: 12, color: 'var(--fl-text-muted)', display: 'flex', gap: 5, alignItems: 'center' }}>
                 <span>@{offsets[i]}</span>
                 {isLen && <span title="조립할 때 전체 길이로 자동 채워집니다" style={autoChip}>자동</span>}
               </div>
@@ -172,7 +173,7 @@ export function FieldTable({ fields, onChange, baseOffset, codecs, readOnly, len
         })}
       </div>
       </div>
-      {!fields.length && <div style={{ fontSize: 12.5, color: 'var(--fl-text-muted)', padding: '10px 2px' }}>필드가 없습니다.</div>}
+      {!fields.length && <div style={{ fontSize: 13, color: 'var(--fl-text-muted)', padding: '10px 2px' }}>필드가 없습니다.</div>}
       {fields.length > 0 && shown.length === 0 && <div style={{ fontSize: 12, color: 'var(--fl-text-muted)', padding: 10 }}>일치하는 필드가 없습니다. <button style={miniBtn} onClick={() => { setQuery(''); setOnlyIssues(false) }}>필터 초기화</button></div>}
       {!readOnly && (
         <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
@@ -186,10 +187,10 @@ export function FieldTable({ fields, onChange, baseOffset, codecs, readOnly, len
 
 const grid: CSSProperties = { display: 'grid', minWidth: 790, gridTemplateColumns: '48px minmax(200px,1fr) 78px 104px 118px 88px 32px 30px', gap: 4, alignItems: 'center' }
 const th: CSSProperties = { fontSize: 11, fontWeight: 700, color: 'var(--fl-text-muted)', padding: '6px 2px', position: 'sticky', top: 0, zIndex: 1, background: 'var(--fl-surface)' }
-const td: CSSProperties = { padding: '2px', borderRadius: 4, minWidth: 0 }
-const input: CSSProperties = { padding: '5px 8px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', color: 'var(--fl-text)', fontSize: 12.5 }
+const td: CSSProperties = { padding: '2px', borderRadius: 6, minWidth: 0 }
+const input: CSSProperties = { padding: '5px 8px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', color: 'var(--fl-text)', fontSize: 13 }
 const sel: CSSProperties = { padding: '5px 6px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', color: 'var(--fl-text)', fontSize: 12, cursor: 'pointer' }
-const arrowBtn: CSSProperties = { width: 21, height: 24, padding: 0, border: '1px solid var(--fl-border)', borderRadius: 4, background: 'var(--fl-surface)', color: 'var(--fl-text-muted)', fontSize: 10, cursor: 'pointer' }
-const miniBtn: CSSProperties = { padding: '5px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 12, cursor: 'pointer' }
-const autoChip: CSSProperties = { fontSize: 10, padding: '0 4px', borderRadius: 4, background: 'var(--fl-surface-2)', color: 'var(--fl-text-muted)' }
+const arrowBtn: CSSProperties = { ...ui.icon, width: 21, height: 24 }
+const miniBtn: CSSProperties = { ...ui.mini }
+const autoChip: CSSProperties = { fontSize: 11, padding: '0 4px', borderRadius: 6, background: 'var(--fl-surface-2)', color: 'var(--fl-text-muted)' }
 const pluginPanel: CSSProperties = { gridColumn: '1 / -1', display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', margin: '2px 0 6px', padding: '8px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)' }

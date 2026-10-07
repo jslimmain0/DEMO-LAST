@@ -302,7 +302,7 @@ function ExpandDialog({ label, onClose, children }: { label: string; onClose: ()
     <div role="dialog" aria-modal="true" aria-label={`${label} 자세히 보기`} style={dlgOverlay} onClick={onClose}>
       <div style={dlgCard} onClick={(e) => e.stopPropagation()}>
         <header style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '13px 16px', borderBottom: '1px solid var(--fl-border)' }}>
-          <strong style={{ fontFamily: 'var(--fl-font-head)', fontSize: 14.5, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label} — 자세히 보기</strong>
+          <strong style={{ fontFamily: 'var(--fl-font-head)', fontSize: 14, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label} — 자세히 보기</strong>
           <button onClick={onClose} aria-label="닫기" style={{ border: 'none', background: 'transparent', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 18 }}>×</button>
         </header>
         <div style={{ padding: 16, display: 'flex' }}>{children}</div>

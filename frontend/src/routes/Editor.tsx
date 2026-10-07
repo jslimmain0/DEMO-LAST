@@ -43,6 +43,7 @@ import { isAxiosError } from 'axios'
 import { ExecutionPlanDialog } from '../components/ExecutionPlanDialog'
 import { useCatalogReturn } from '../lib/useCatalogNavigation'
 import { useUnsavedNavigation } from '../components/UnsavedNavigation'
+import { ui } from '../design/ui'
 
 export function Editor() {
   const scope = useWorkspace()
@@ -118,7 +119,7 @@ export function Editor() {
   }
 
   // 패널 크기(좌 팔레트 / 우 속성 / 하 로그) — 드래그로 조절하고 localStorage 에 유지
-  const [paletteW, setPaletteW] = useState(() => loadSize('paletteW', 200, 160, 420))
+  const [paletteW, setPaletteW] = useState(() => loadSize('paletteW', 200, 160, 600))
   const [propertyW, setPropertyW] = useState(() => loadSize('propertyW', 400, 360, 460))
   const [runH, setRunH] = useState(() => loadSize('runH', 260, 120, 600))
   // AI 어시스턴트 패널(오른쪽 채팅) — 너비 + 열림 상태 지속
@@ -179,7 +180,7 @@ export function Editor() {
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
   }, [])
-  const maxPaletteW = Math.max(160, Math.min(420, Math.round(vp.w * 0.35)))
+  const maxPaletteW = Math.max(160, Math.min(600, Math.round(vp.w * 0.45)))
   const maxPropertyW = Math.max(360, Math.min(400, Math.round(vp.w * 0.4)))
   const narrowEditor = vp.w < 1100
   const paletteVisible = !paletteCollapsed && (!narrowEditor || floatingPaletteOpen)
@@ -556,7 +557,7 @@ export function Editor() {
           onChange={(e) => setName(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter' || e.key === 'Escape') (e.target as HTMLInputElement).blur() }}
           title={`워크플로 이름 — 눌러서 편집 · ${scope.current.origin === 'local' ? '내 PC' : '서버'} 저장 · 노드 ${nodeCount}개`}
-          style={{ fontFamily: 'var(--fl-font-head)', fontWeight: 600, fontSize: 15, border: '1px solid transparent', borderRadius: 'var(--fl-radius-sm)', padding: '6px 8px', background: 'transparent', color: 'var(--fl-text)', flex: '1 1 140px', minWidth: 120, maxWidth: 280 }}
+          style={{ fontFamily: 'var(--fl-font-head)', fontWeight: 600, fontSize: 16, border: '1px solid transparent', borderRadius: 'var(--fl-radius-sm)', padding: '6px 8px', background: 'transparent', color: 'var(--fl-text)', flex: '1 1 140px', minWidth: 120, maxWidth: 280 }}
         />
         <span role="status" style={{ fontSize: 12, color: dirty ? 'var(--fl-put)' : 'var(--fl-text-muted)' }}>{save.isPending ? '저장 중…' : dirty ? '● 미저장' : '✓ 저장됨'}</span>
         {isViewer && (
@@ -591,22 +592,27 @@ export function Editor() {
               <div style={{ position: 'fixed', inset: 0, zIndex: 90 }} onClick={() => setToolsOpen(false)} />
               <div style={toolsMenu}>
                 <div style={{ ...toolItem, color: 'var(--fl-text-muted)' }}>노드 {nodeCount}개 · {scope.current.origin === 'local' ? '내 PC' : '서버'}에 저장</div>
-                <button style={toolItem} onClick={() => { autoLayout(); setToolsOpen(false) }}>⇥ 자동 정렬</button>
+                <button style={toolItem} onClick={() => { autoLayout(); setToolsOpen(false) }}>자동 정렬</button>
+                <div role="separator" style={toolSep} />
                 <button style={toolItem} disabled={!canEdit} onClick={() => { setImportTab('workflow'); setToolsOpen(false) }}>가져오기 · 워크플로 / API / cURL</button>
                 <button style={toolItem} onClick={() => { setWorkflowIO('export'); setToolsOpen(false) }}>내보내기</button>
-                <button style={toolItem} onClick={() => { setAllCollapsed(true); setToolsOpen(false) }}>▸ 모두 접기</button>
-                <button style={toolItem} onClick={() => { setAllCollapsed(false); setToolsOpen(false) }}>▾ 모두 펴기</button>
-                <button style={{ ...toolItem, opacity: canEdit && !running ? 1 : 0.4 }} disabled={!canEdit || running} onClick={() => { onRun(); setToolsOpen(false) }}>▶ 재실행</button>
-                <button style={{ ...toolItem, opacity: canEdit && !running ? 1 : 0.4 }} disabled={!canEdit || running} onClick={() => { setRunInputOpen(true); setToolsOpen(false) }}>▶ 입력값과 실행</button>
-                <button style={toolItem} onClick={() => { toggleZen(); setToolsOpen(false) }}>{zen ? '◱ 집중 모드 끄기' : '⛶ 집중 모드'}</button>
-                <button style={toolItem} onClick={() => { setSearchOpen(true); setToolsOpen(false) }}>🔍 노드 검색 (Ctrl+F)</button>
-                <button style={toolItem} onClick={() => { setVersionsOpen(true); setToolsOpen(false) }}>🕘 버전 기록</button>
-                {canEdit && <button style={toolItem} onClick={() => { setTriggersOpen(true); setToolsOpen(false) }}>⏰ 자동 실행 트리거</button>}
-                <button style={toolItem} onClick={() => { setSecretsOpen(true); setToolsOpen(false) }}>🔑 시크릿 볼트</button>
-                <button style={toolItem} onClick={() => { setJsonOpen(true); setToolsOpen(false) }}>{'{ } 그래프 JSON 보기'}</button>
-                <button style={toolItem} onClick={() => { setAutosave((v) => { persistUI('fl:editor:autosave', v ? '0' : '1'); return !v }); setToolsOpen(false) }}>{autosave ? '☑ 자동 저장 켜짐' : '☐ 자동 저장'}</button>
-                <button style={toolItem} onClick={() => { resetPanels(); setToolsOpen(false) }}>↺ 패널 크기 리셋</button>
-                <button style={toolItem} onClick={() => { setShortcutsOpen(true); setToolsOpen(false) }}>⌨ 단축키 도움말</button>
+                <div role="separator" style={toolSep} />
+                <button style={toolItem} onClick={() => { setAllCollapsed(true); setToolsOpen(false) }}>모두 접기</button>
+                <button style={toolItem} onClick={() => { setAllCollapsed(false); setToolsOpen(false) }}>모두 펴기</button>
+                <div role="separator" style={toolSep} />
+                <button style={{ ...toolItem, opacity: canEdit && !running ? 1 : 0.4 }} disabled={!canEdit || running} onClick={() => { onRun(); setToolsOpen(false) }}>다시 실행</button>
+                <button style={{ ...toolItem, opacity: canEdit && !running ? 1 : 0.4 }} disabled={!canEdit || running} onClick={() => { setRunInputOpen(true); setToolsOpen(false) }}>입력값과 함께 실행</button>
+                <button style={toolItem} onClick={() => { toggleZen(); setToolsOpen(false) }}>{zen ? '집중 모드 끄기' : '집중 모드'}</button>
+                <button style={toolItem} onClick={() => { setSearchOpen(true); setToolsOpen(false) }}>노드 검색 (Ctrl+F)</button>
+                <div role="separator" style={toolSep} />
+                <button style={toolItem} onClick={() => { setVersionsOpen(true); setToolsOpen(false) }}>버전 기록</button>
+                {canEdit && <button style={toolItem} onClick={() => { setTriggersOpen(true); setToolsOpen(false) }}>자동 실행 트리거</button>}
+                <button style={toolItem} onClick={() => { setSecretsOpen(true); setToolsOpen(false) }}>시크릿 볼트</button>
+                <button style={toolItem} onClick={() => { setJsonOpen(true); setToolsOpen(false) }}>그래프 JSON 보기</button>
+                <div role="separator" style={toolSep} />
+                <button style={toolItem} onClick={() => { setAutosave((v) => { persistUI('fl:editor:autosave', v ? '0' : '1'); return !v }); setToolsOpen(false) }}>{autosave ? '자동 저장 끄기' : '자동 저장 켜기'}</button>
+                <button style={toolItem} onClick={() => { resetPanels(); setToolsOpen(false) }}>패널 크기 초기화</button>
+                <button style={toolItem} onClick={() => { setShortcutsOpen(true); setToolsOpen(false) }}>단축키 도움말</button>
               </div>
             </>
           )}
@@ -615,7 +621,7 @@ export function Editor() {
         </div>
         </div>
         <div className="fl-editor-primary-actions">
-          {running && <button onClick={onStop} style={stopBtn} title="실행 중단 — 대기 중이면 즉시 해제됩니다">⏹ 중단</button>}
+          {running && <button onClick={onStop} style={stopBtn} title="실행 중단 — 대기 중이면 즉시 해제됩니다"><AppIcon name="stop" size={14} /> 중단</button>}
           <button onClick={() => save.mutate()} disabled={save.isPending || !dirty || !canEdit} title={canEdit ? undefined : 'viewer 역할은 저장할 수 없습니다'} style={saveBtn}>저장</button>
           <button onClick={() => onRun()} disabled={running || !canEdit} title={canEdit ? '노드별 PC·서버 실행 위치와 자원을 확인한 뒤 실행합니다' : 'viewer 역할은 실행할 수 없습니다'} style={runBtn}><AppIcon name={running ? 'pause' : 'play'} size={16} />{running ? '실행 중…' : '실행 계획'}</button>
         </div>
@@ -786,7 +792,7 @@ async function callClientRequest(p: PendingClientRequest): Promise<ResumeRequest
   }
 }
 
-const ghostBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', padding: '8px 14px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 13, fontWeight: 600, textDecoration: 'none', cursor: 'pointer' }
+const ghostBtn: CSSProperties = { ...ui.secondary }
 const runBtn: CSSProperties = { ...ghostBtn, border: 'none', background: 'var(--fl-action-primary-bg)', color: 'var(--fl-action-primary-ink)' }
 const stopBtn: CSSProperties = { ...ghostBtn, border: 'none', background: 'var(--fl-action-danger-bg)', color: 'var(--fl-action-danger-ink)' }
 const saveBtn: CSSProperties = { ...ghostBtn, background: 'var(--fl-surface)', color: 'var(--fl-text)' }
@@ -798,7 +804,8 @@ const modalBackdrop: CSSProperties = { position: 'fixed', inset: 0, background: 
 const modalCard: CSSProperties = { width: 'min(1500px, 96vw)', height: '92vh', display: 'flex', flexDirection: 'column', background: 'var(--fl-surface)', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius)', boxShadow: 'var(--fl-shadow-lg)', overflow: 'hidden' }
 // 도구 드롭다운 메뉴
 const toolsMenu: CSSProperties = { position: 'absolute', top: '110%', right: 0, zIndex: 91, background: 'var(--fl-surface)', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', boxShadow: 'var(--fl-shadow-lg)', minWidth: 200, padding: 4 }
-const toolItem: CSSProperties = { display: 'block', width: '100%', textAlign: 'left', padding: '8px 10px', border: 'none', background: 'transparent', color: 'var(--fl-text)', cursor: 'pointer', fontSize: 12.5, borderRadius: 'var(--fl-radius-sm)' }
+const toolSep: CSSProperties = { height: 1, margin: '4px 6px', background: 'var(--fl-border)' }
+const toolItem: CSSProperties = { display: 'block', width: '100%', textAlign: 'left', padding: '8px 10px', border: 'none', background: 'transparent', color: 'var(--fl-text)', cursor: 'pointer', fontSize: 13, borderRadius: 'var(--fl-radius-sm)' }
 const mHeader: CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, padding: '12px 16px', borderBottom: '1px solid var(--fl-border)' }
 const mTitle: CSSProperties = { flex: 1, fontFamily: 'var(--fl-font-head)', fontWeight: 600, fontSize: 14 }
 
@@ -826,7 +833,7 @@ function IssueBadge() {
           <div style={{ position: 'absolute', top: '110%', left: 0, zIndex: 41, width: 300, maxHeight: 320, overflow: 'auto', background: 'var(--fl-surface)', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', boxShadow: 'var(--fl-shadow-lg)', padding: 6 }}>
             {issues.map((iss, i) => (
               <button key={i} onClick={() => { if (iss.nodeId) focusNode(iss.nodeId); setOpen(false) }}
-                style={{ display: 'block', width: '100%', textAlign: 'left', padding: '7px 9px', border: 'none', background: 'transparent', color: 'var(--fl-text)', cursor: iss.nodeId ? 'pointer' : 'default', borderRadius: 'var(--fl-radius-sm)', fontSize: 12.5 }}>
+                style={{ display: 'block', width: '100%', textAlign: 'left', padding: '7px 9px', border: 'none', background: 'transparent', color: 'var(--fl-text)', cursor: iss.nodeId ? 'pointer' : 'default', borderRadius: 'var(--fl-radius-sm)', fontSize: 13 }}>
                 <span style={{ color: iss.severity === 'error' ? 'var(--fl-fail)' : 'var(--fl-put)', fontWeight: 700 }}>{iss.severity === 'error' ? '✕' : '⚠'}</span>{' '}
                 <b>{iss.label}</b> — <span style={{ color: 'var(--fl-text-muted)' }}>{iss.detail}</span>
               </button>
@@ -884,7 +891,7 @@ function ShortcutsModal({ onClose }: { onClose: () => void }) {
           {rows.map(([k, d]) => (
             <div key={k} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '6px 0', borderBottom: '1px solid var(--fl-border)' }}>
               <kbd style={{ fontFamily: 'var(--fl-font-mono)', fontSize: 12, color: 'var(--fl-primary)' }}>{k}</kbd>
-              <span style={{ fontSize: 12.5, color: 'var(--fl-text-muted)' }}>{d}</span>
+              <span style={{ fontSize: 13, color: 'var(--fl-text-muted)' }}>{d}</span>
             </div>
           ))}
         </div>
@@ -921,7 +928,7 @@ function NodeSearch({ onClose }: { onClose: () => void }) {
           placeholder="노드 이름·타입으로 검색 (Enter=첫 결과)"
           style={{ width: '100%', padding: '12px 14px', border: 'none', borderBottom: '1px solid var(--fl-border)', background: 'transparent', color: 'var(--fl-text)', fontSize: 14, outline: 'none' }} />
         <div style={{ maxHeight: 300, overflow: 'auto' }}>
-          {results.length === 0 && <div style={{ padding: 14, fontSize: 12.5, color: 'var(--fl-text-muted)' }}>일치하는 노드 없음</div>}
+          {results.length === 0 && <div style={{ padding: 14, fontSize: 13, color: 'var(--fl-text-muted)' }}>일치하는 노드 없음</div>}
           {results.map((n) => {
             const d = n.data as { name?: string; type?: string; cat?: string }
             return (

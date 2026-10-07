@@ -22,6 +22,7 @@ import { apiErrorMessage } from '../lib/apiError'
 import { relTime } from '../lib/format'
 import { declaredKeysSource, flCompletionSource } from '../lib/pluginCompletions'
 import { PLUGIN_EXAMPLES, PLUGIN_TEMPLATES, kindLabel } from '../lib/pluginTemplates'
+import { ui } from '../design/ui'
 
 const CodeEditorLazy = lazy(() => import('../components/CodeEditor'))
 
@@ -57,6 +58,15 @@ function CentralPlugins() {
 
   const [q, setQ] = useState('')
   const [statusFilter, setStatusFilter] = useState<'all' | PluginScriptStatus>('all')
+  const [sort, setSort] = useState<PluginSort>(() => { try { const v = localStorage.getItem('fl.plugins.sort'); return v === 'name' || v === 'status' ? v : 'recent' } catch { return 'recent' } })
+  const [wrap, setWrap] = useState(() => { try { return localStorage.getItem('fl.plugins.wrap') === '1' } catch { return false } })
+  const changeSort = (v: PluginSort) => { setSort(v); try { localStorage.setItem('fl.plugins.sort', v) } catch { /* 저장 불가 */ } }
+  const toggleWrap = () => setWrap((v) => { try { localStorage.setItem('fl.plugins.wrap', v ? '0' : '1') } catch { /* 저장 불가 */ } return !v })
+  const formatSource = () => {
+    const r = editorRef.current?.format()
+    if (r === 'fail') toast('코드를 정렬하지 못했습니다 — 문법 오류를 먼저 고쳐 주세요.', 'error')
+    else if (r === 'noop') toast('이미 정렬된 코드입니다.', 'ok')
+  }
   const [draft, setDraft] = useState<Draft | null>(null)
   const [dirty, setDirty] = useState(false)
   const [diag, setDiag] = useState<EditorDiagnostic[]>([])
@@ -152,8 +162,11 @@ function CentralPlugins() {
   const completions = useMemo(() => [flCompletionSource(manifest.data ?? []), declaredKeysSource(() => draftRef.current?.source ?? '')], [manifest.data])
   const items = useMemo(() => {
     const t = q.trim().toLowerCase()
-    return (list.data ?? []).filter((p) => (statusFilter === 'all' || p.status === statusFilter) && (!t || `${p.name} ${p.pluginId} ${p.kind}`.toLowerCase().includes(t)))
-  }, [list.data, q, statusFilter])
+    const rows = (list.data ?? []).filter((p) => (statusFilter === 'all' || p.status === statusFilter) && (!t || `${p.name} ${p.pluginId} ${p.kind}`.toLowerCase().includes(t)))
+    return [...rows].sort(sort === 'name' ? (a, b) => a.name.localeCompare(b.name, 'ko')
+      : sort === 'status' ? (a, b) => STATUS_ORDER.indexOf(a.status) - STATUS_ORDER.indexOf(b.status) || a.name.localeCompare(b.name, 'ko')
+      : (a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? ''))
+  }, [list.data, q, statusFilter, sort])
   const d = detail.data
   const status: PluginScriptStatus | null = d?.status ?? null
   const openNew = (kind: string) => navigate(`/plugins${spaceQuery}&new=${encodeURIComponent(kind)}`)
@@ -167,11 +180,19 @@ function CentralPlugins() {
           <PageHeader title="플러그인" count={list.data?.length ?? 0} />
           <input ref={searchRef} value={q} onChange={(e) => setQ(e.target.value)} placeholder="검색 — 이름·id ( / )" aria-label="플러그인 검색" style={search}
             onKeyDown={(e) => { if (e.key === 'Escape' && q) { e.stopPropagation(); setQ('') } }} />
-          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+          <div role="group" aria-label="상태" className="fl-seg" style={{ width: '100%' }}>
             {(['all', 'DRAFT', 'PENDING', 'APPROVED', 'REJECTED'] as const).map((s) => (
-              <button key={s} onClick={() => setStatusFilter(s)} style={{ ...chip, ...(statusFilter === s ? chipOn : null) }}>{s === 'all' ? '전체' : STATUS_LABEL[s]}</button>
+              <button key={s} aria-pressed={statusFilter === s} onClick={() => setStatusFilter(s)} className="fl-seg-btn" style={{ flex: '1 0 auto', padding: '3px 8px' }}>{s === 'all' ? '전체' : STATUS_LABEL[s]}</button>
             ))}
           </div>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--fl-text-muted)' }}>
+            정렬
+            <select value={sort} onChange={(e) => changeSort(e.target.value as PluginSort)} aria-label="목록 정렬" style={{ flex: 1, minWidth: 0 }}>
+              <option value="recent">최근 수정순</option>
+              <option value="name">이름순</option>
+              <option value="status">상태순</option>
+            </select>
+          </label>
           {canEdit && (
             <div style={{ display: 'grid', gap: 4 }}>
               {(Object.keys(PLUGIN_TEMPLATES) as PluginKind[]).map((k) => (
@@ -194,8 +215,8 @@ function CentralPlugins() {
         <div className="fl-plugin-detail">
           {!draft ? (
             <div style={empty}>
-              <div style={{ fontFamily: 'var(--fl-font-head)', fontWeight: 700, fontSize: 17 }}>스크립트 플러그인</div>
-              <p style={{ maxWidth: 520, margin: '8px auto 0', fontSize: 13.5, lineHeight: 1.6 }}>
+              <div style={{ fontFamily: 'var(--fl-font-head)', fontWeight: 700, fontSize: 18 }}>스크립트 플러그인</div>
+              <p style={{ maxWidth: 560, margin: '8px 0 0', fontSize: 14, lineHeight: 1.65 }}>
                 JS 로 변환·코덱을 적고 → 오른쪽에서 돌려 보고 → 승인 요청하면 관리자가 코드와 샘플 결과를 보고 승인합니다. 승인된 플러그인은 TRANSFORM 노드·Mock 코덱·프로토콜에서 바로 고를 수 있습니다.
               </p>
             </div>
@@ -207,7 +228,7 @@ function CentralPlugins() {
                 {d && <span style={metaMono}>#{d.pluginId} · {kindLabel(d.kind)}</span>}
                 {status && <StatusPill status={status} live={!!d?.live} dirtyLive={!!d?.dirty} />}
                 {d?.reviewNote && status === 'REJECTED' && <span style={{ fontSize: 12, color: 'var(--fl-fail)' }} title={d.reviewNote}>반려 사유: {d.reviewNote}</span>}
-                {dirty && <span style={{ fontSize: 11.5, color: 'var(--fl-waiting)' }}>● 저장 안 됨</span>}
+                {dirty && <span style={{ fontSize: 12, color: 'var(--fl-waiting)' }}>● 저장 안 됨</span>}
                 <span style={{ marginLeft: 'auto', display: 'inline-flex', gap: 6, alignItems: 'center' }}>
                   {d && <UsagesChip id={d.id} count={d.usages} />}
                   {d?.live && <button style={ghostBtn} onClick={() => setShowDiff((v) => !v)}>{showDiff ? '편집으로' : '승인본과 비교'}</button>}
@@ -232,19 +253,21 @@ function CentralPlugins() {
                     <PluginDiffView before={d.liveSource} after={draft.source} />
                   ) : (
                     <Suspense fallback={<textarea value={draft.source} readOnly style={{ flex: 1, fontFamily: 'var(--fl-font-mono)', fontSize: 13, padding: 14, border: 'none' }} />}>
-                      <CodeEditorLazy ref={editorRef} value={draft.source} language="javascript" completions={completions} diagnostics={diag} wrap={false}
+                      <CodeEditorLazy ref={editorRef} value={draft.source} language="javascript" completions={completions} diagnostics={diag} wrap={wrap}
                         onChange={(v) => { if (!canEdit) return; setDraft((x) => (x ? { ...x, source: v } : x)); setDirty(true) }} />
                     </Suspense>
                   )}
                   <div style={statusBar}>
-                    <span>Ctrl+S 저장 · Ctrl+Enter 실행 · Shift+Alt+F 정렬 · <code>fl.</code> 자동완성 · 📖 레퍼런스 탭</span>
+                    <button type="button" onClick={formatSource} disabled={!canEdit || showDiff} style={barBtn} title="코드 정렬 (Shift+Alt+F)">정렬</button>
+                    <button type="button" onClick={toggleWrap} aria-pressed={wrap} style={{ ...barBtn, ...(wrap ? barBtnOn : null) }} title="긴 줄을 화면 폭에서 접어 보기">줄바꿈 {wrap ? '켜짐' : '꺼짐'}</button>
+                    <span style={{ alignSelf: 'center' }}>Ctrl+S 저장 · Ctrl+Enter 실행 · <code>fl.</code> 자동완성</span>
                     {d?.updatedAt && <span style={{ marginLeft: 'auto' }}>수정 {relTime(d.updatedAt)} · {d.createdBy}</span>}
                   </div>
                 </div>
                 <div style={{ display: 'grid', gridTemplateRows: 'auto minmax(0, 1fr)', minHeight: 0, minWidth: 0 }}>
                   <div role="tablist" style={tabs}>
                     <button role="tab" aria-selected={panel === 'run'} style={{ ...tab, ...(panel === 'run' ? tabOn : null) }} onClick={() => setPanel('run')}>▶ 실행</button>
-                    <button role="tab" aria-selected={panel === 'ref'} style={{ ...tab, ...(panel === 'ref' ? tabOn : null) }} onClick={() => setPanel('ref')}>📖 레퍼런스</button>
+                    <button role="tab" aria-selected={panel === 'ref'} style={{ ...tab, ...(panel === 'ref' ? tabOn : null) }} onClick={() => setPanel('ref')}>레퍼런스</button>
                   </div>
                   {/* 둘 다 마운트 유지(실행 패널의 입력값·결과가 탭 전환에 안 날아가게) — 보이는 쪽만 grid */}
                   <div style={{ display: panel === 'run' ? 'grid' : 'none', gridTemplateRows: 'minmax(0, 1fr)', minHeight: 0 }}>
@@ -267,11 +290,11 @@ function CentralPlugins() {
 function ListItem({ p, on, onClick }: { p: PluginScriptSummary; on: boolean; onClick: () => void }) {
   return (
     <button onClick={onClick} style={{ ...item, ...(on ? itemOn : null) }}>
-      <span style={{ display: 'flex', gap: 6, alignItems: 'center', minWidth: 0 }}>
-        <span style={{ fontSize: 13, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{p.name}</span>
+      <span style={{ display: 'flex', gap: 6, alignItems: 'flex-start', minWidth: 0 }}>
+        <span style={{ fontSize: 13, fontWeight: 600, flex: 1, minWidth: 0, overflowWrap: 'anywhere', lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }} title={p.name}>{p.name}</span>
         <StatusPill status={p.status} live={p.live} dirtyLive={p.dirty} small />
       </span>
-      <span style={{ fontSize: 11, color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)' }}>{p.pluginId} · {kindLabel(p.kind)}{p.usages ? ` · ${p.usages}곳` : ''}</span>
+      <span style={{ fontSize: 11, color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)', overflowWrap: 'anywhere' }}>{p.pluginId} · {kindLabel(p.kind)}{p.usages ? ` · ${p.usages}곳` : ''}</span>
     </button>
   )
 }
@@ -303,7 +326,7 @@ function UsagesChip({ id, count }: { id: string; count: number }) {
           {refs.data?.length === 0 && <div style={muted}>사용처 없음</div>}
           {refs.data?.map((r) => (
             <button key={`${r.kind}-${r.id}`} style={item} onClick={() => navigate(r.kind === 'flow' ? `/flows/${r.id}` : r.kind === 'mock' ? `/mocks/${r.id}` : `/protocols/${r.id}`)}>
-              <span style={{ fontSize: 12.5 }}>{r.kind === 'flow' ? '▤' : r.kind === 'mock' ? '◈' : '⫶'} {r.name}</span>
+              <span style={{ fontSize: 13 }}>{r.kind === 'flow' ? '▤' : r.kind === 'mock' ? '◈' : '⫶'} {r.name}</span>
             </button>
           ))}
         </div>
@@ -312,24 +335,26 @@ function UsagesChip({ id, count }: { id: string; count: number }) {
   )
 }
 
-const listPane: CSSProperties = { display: 'grid', gridTemplateRows: 'auto auto auto auto 1fr', gap: 8, padding: '18px 14px', borderRight: '1px solid var(--fl-border)', background: 'var(--fl-surface)', minHeight: 0 }
-const search: CSSProperties = { padding: '7px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', color: 'var(--fl-text)', fontSize: 12.5 }
-const chip: CSSProperties = { padding: '3px 9px', border: '1px solid var(--fl-border)', borderRadius: 999, background: 'transparent', color: 'var(--fl-text-muted)', fontSize: 11.5, cursor: 'pointer' }
-const chipOn: CSSProperties = { background: 'var(--fl-surface-2)', color: 'var(--fl-text)', fontWeight: 700 }
-const newBtn: CSSProperties = { padding: '7px 10px', border: '1px dashed var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'transparent', color: 'var(--fl-primary)', fontSize: 12.5, cursor: 'pointer', textAlign: 'left' }
+const listPane: CSSProperties = { display: 'grid', gridTemplateRows: 'auto auto auto auto auto 1fr', gap: 8, padding: '18px 14px', borderRight: '1px solid var(--fl-border)', background: 'var(--fl-surface)', minHeight: 0 }
+const search: CSSProperties = { padding: '7px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', color: 'var(--fl-text)', fontSize: 13 }
+const newBtn: CSSProperties = { ...ui.secondary, textAlign: 'left', color: 'var(--fl-primary)' }
 const item: CSSProperties = { display: 'grid', gap: 2, textAlign: 'left', padding: '8px 10px', border: '1px solid transparent', borderRadius: 'var(--fl-radius-sm)', background: 'transparent', color: 'var(--fl-text)', cursor: 'pointer', minWidth: 0, width: '100%' }
 const itemOn: CSSProperties = { background: 'var(--fl-surface-2)', borderColor: 'var(--fl-border)' }
-const muted: CSSProperties = { fontSize: 12.5, color: 'var(--fl-text-muted)', padding: '6px 2px' }
-const empty: CSSProperties = { height: '100%', display: 'grid', alignContent: 'center', justifyItems: 'center', textAlign: 'center', color: 'var(--fl-text-muted)', padding: 40 }
+const muted: CSSProperties = { fontSize: 13, color: 'var(--fl-text-muted)', padding: '6px 2px' }
+const empty: CSSProperties = { display: 'grid', alignContent: 'start', justifyItems: 'start', textAlign: 'left', color: 'var(--fl-text-soft)', padding: '48px 56px', maxWidth: 680 }
 const hdr: CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', borderBottom: '1px solid var(--fl-border)', background: 'var(--fl-surface)', flexWrap: 'wrap', flexShrink: 0 }
 const nameInput: CSSProperties = { fontFamily: 'var(--fl-font-head)', fontWeight: 700, fontSize: 16, border: '1px solid transparent', background: 'transparent', color: 'var(--fl-text)', padding: '4px 6px', borderRadius: 6, minWidth: 180 }
 const metaMono: CSSProperties = { fontSize: 11, color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)' }
 const tabs: CSSProperties = { display: 'flex', borderBottom: '1px solid var(--fl-border)', background: 'var(--fl-surface)' }
-const tab: CSSProperties = { flex: 1, padding: '8px 10px', border: 'none', borderBottom: '2px solid transparent', background: 'transparent', color: 'var(--fl-text-muted)', fontSize: 12.5, cursor: 'pointer' }
+const tab: CSSProperties = { flex: 1, padding: '8px 10px', border: 'none', borderBottom: '2px solid transparent', background: 'transparent', color: 'var(--fl-text-muted)', fontSize: 13, cursor: 'pointer' }
 const tabOn: CSSProperties = { color: 'var(--fl-text)', fontWeight: 700, borderBottomColor: 'var(--fl-primary)' }
-const statusBar: CSSProperties = { display: 'flex', gap: 8, padding: '4px 12px', borderTop: '1px solid var(--fl-border)', fontSize: 11, color: 'var(--fl-text-muted)', background: 'var(--fl-surface)' }
-const primaryBtn: CSSProperties = { padding: '7px 14px', border: 'none', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-action-primary-bg)', color: 'var(--fl-action-primary-ink)', fontWeight: 700, fontSize: 12.5, cursor: 'pointer', whiteSpace: 'nowrap' }
+const statusBar: CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, padding: '4px 8px', borderTop: '1px solid var(--fl-border)', fontSize: 11, color: 'var(--fl-text-muted)', background: 'var(--fl-surface)' }
+const primaryBtn: CSSProperties = { ...ui.primary }
+const barBtn: CSSProperties = { ...ui.ghost, minHeight: 24, padding: '0 8px', fontSize: 11, fontWeight: 600, color: 'var(--fl-text-soft)' }
+const barBtnOn: CSSProperties = { background: 'var(--fl-surface-2)', color: 'var(--fl-text)' }
+type PluginSort = 'recent' | 'name' | 'status'
+const STATUS_ORDER: PluginScriptStatus[] = ['PENDING', 'DRAFT', 'REJECTED', 'APPROVED']
 const okBtn: CSSProperties = { ...primaryBtn, background: 'var(--fl-ok)' }
-const dangerBtn: CSSProperties = { padding: '7px 12px', border: '1px solid color-mix(in srgb, var(--fl-fail) 45%, transparent)', borderRadius: 'var(--fl-radius-sm)', background: 'transparent', color: 'var(--fl-fail)', fontSize: 12.5, cursor: 'pointer', whiteSpace: 'nowrap' }
-const ghostBtn: CSSProperties = { padding: '7px 12px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 12.5, cursor: 'pointer', whiteSpace: 'nowrap' }
+const dangerBtn: CSSProperties = { ...ui.danger }
+const ghostBtn: CSSProperties = { ...ui.secondary }
 const pop: CSSProperties = { position: 'absolute', top: 'calc(100% + 4px)', right: 0, zIndex: 60, minWidth: 240, padding: 6, border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', boxShadow: 'var(--fl-shadow-lg)', display: 'grid', gap: 2 }

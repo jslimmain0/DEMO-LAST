@@ -2,6 +2,7 @@ import type { CSSProperties } from 'react'
 import { useState } from 'react'
 import { useRunInputActions } from '../lib/runInput'
 import { Modal } from './Modal'
+import { ui } from '../design/ui'
 
 /**
  * 실행 입력(런타임 파라미터) 다이얼로그 — `{{ 키@input }}` 로 참조되는 값을 넣고 실행.
@@ -27,7 +28,7 @@ export function RunInputDialog({ onClose, onRun }: { onClose: () => void; onRun:
     <Modal onClose={onClose} ariaLabel="입력값과 실행" width={520} card={{ padding: 18, display: 'block' }}>
         <header style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
           <span aria-hidden>▶</span>
-          <b style={{ flex: 1, fontSize: 15 }}>입력값과 실행</b>
+          <b style={{ flex: 1, fontSize: 16 }}>입력값과 실행</b>
           <button onClick={onClose} aria-label="닫기" style={xBtn}>×</button>
         </header>
         <p style={hint}>
@@ -52,11 +53,11 @@ export function RunInputDialog({ onClose, onRun }: { onClose: () => void; onRun:
   )
 }
 
-const hint: CSSProperties = { fontSize: 11.5, color: 'var(--fl-text-muted)', lineHeight: 1.6, margin: 0 }
-const code: CSSProperties = { fontFamily: 'var(--fl-font-mono)', fontSize: 11, background: 'var(--fl-surface-2)', padding: '1px 5px', borderRadius: 4 }
+const hint: CSSProperties = { fontSize: 12, color: 'var(--fl-text-muted)', lineHeight: 1.6, margin: 0 }
+const code: CSSProperties = { fontFamily: 'var(--fl-font-mono)', fontSize: 11, background: 'var(--fl-surface-2)', padding: '1px 5px', borderRadius: 6 }
 const mono: CSSProperties = { padding: '7px 9px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 12, fontFamily: 'var(--fl-font-mono)', minWidth: 0 }
-const xBtn: CSSProperties = { width: 28, height: 28, borderRadius: 8, border: 'none', background: 'var(--fl-surface-2)', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 15 }
-const delBtn: CSSProperties = { width: 30, flexShrink: 0, border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text-muted)', cursor: 'pointer' }
-const addBtn: CSSProperties = { marginTop: 2, padding: '6px 10px', border: '1px dashed var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'transparent', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 12.5 }
-const primaryBtn: CSSProperties = { padding: '8px 16px', border: 'none', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-action-primary-bg)', color: 'var(--fl-action-primary-ink)', cursor: 'pointer', fontSize: 13, fontWeight: 600 }
-const ghostBtn: CSSProperties = { padding: '8px 12px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'transparent', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 13 }
+const xBtn: CSSProperties = { ...ui.close, width: 28, height: 28 }
+const delBtn: CSSProperties = { ...ui.icon, width: 30, flexShrink: 0 }
+const addBtn: CSSProperties = { ...ui.dashed, marginTop: 2 }
+const primaryBtn: CSSProperties = { ...ui.primary }
+const ghostBtn: CSSProperties = { ...ui.secondary }

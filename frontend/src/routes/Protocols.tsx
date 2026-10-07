@@ -15,6 +15,7 @@ import { ProtocolEditor } from '../components/ProtocolEditor'
 import { toast } from '../components/toast'
 import { apiErrorMessage } from '../lib/apiError'
 import { newProtocolSpec } from '../lib/protocolSpec'
+import { ui } from '../design/ui'
 
 export function Protocols() {
   const { protocolsApi } = useApi()
@@ -83,8 +84,8 @@ export function Protocols() {
         <div style={{ minWidth: 0, overflow: 'hidden' }}>
           {!id ? (
             <div style={empty}>
-              <div style={{ fontFamily: 'var(--fl-font-head)', fontWeight: 700, fontSize: 17 }}>프로토콜</div>
-              <p style={{ maxWidth: 460, margin: '8px auto 0', fontSize: 13.5, lineHeight: 1.6 }}>
+              <div style={{ fontFamily: 'var(--fl-font-head)', fontWeight: 700, fontSize: 18 }}>프로토콜</div>
+              <p style={{ maxWidth: 460, margin: '8px auto 0', fontSize: 14, lineHeight: 1.6 }}>
                 목록에서 프로토콜을 고르거나 새로 만드세요. 한 번 정의하면 TCP 노드·TCP Mock 이 같이 씁니다.
               </p>
             </div>
@@ -102,9 +103,9 @@ export function Protocols() {
 }
 
 const listPane: CSSProperties = { display: 'grid', gridTemplateRows: 'auto auto auto 1fr', gap: 8, padding: '18px 14px', borderRight: '1px solid var(--fl-border)', background: 'var(--fl-surface)', minHeight: 0 }
-const search: CSSProperties = { padding: '7px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', color: 'var(--fl-text)', fontSize: 12.5 }
-const primaryBtn: CSSProperties = { padding: '8px 12px', border: 'none', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-action-primary-bg)', color: 'var(--fl-action-primary-ink)', fontWeight: 600, fontSize: 12.5, cursor: 'pointer' }
+const search: CSSProperties = { padding: '7px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', color: 'var(--fl-text)', fontSize: 13 }
+const primaryBtn: CSSProperties = { ...ui.primary }
 const item: CSSProperties = { display: 'grid', gap: 2, textAlign: 'left', padding: '8px 10px', border: '1px solid transparent', borderRadius: 'var(--fl-radius-sm)', background: 'transparent', color: 'var(--fl-text)', cursor: 'pointer', minWidth: 0 }
 const itemOn: CSSProperties = { background: 'var(--fl-surface-2)', borderColor: 'var(--fl-border)' }
-const muted: CSSProperties = { fontSize: 12.5, color: 'var(--fl-text-muted)', padding: '6px 2px' }
+const muted: CSSProperties = { fontSize: 13, color: 'var(--fl-text-muted)', padding: '6px 2px' }
 const empty: CSSProperties = { height: '100%', display: 'grid', alignContent: 'center', justifyItems: 'center', textAlign: 'center', color: 'var(--fl-text-muted)', padding: 40 }

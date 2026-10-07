@@ -10,6 +10,7 @@ import { NODE_W, TERMINAL_W } from './nodeMeta'
 import { findNodePlacement } from './nodePlacement'
 import { useWorkspace } from '../app/WorkspaceContext'
 import './node-visuals.css'
+import { AppIcon } from '../components/AppIcon'
 
 export function Palette({ width = 200, onCollapse }: { width?: number; onCollapse?: () => void }) {
   const pluginsAllowed = useWorkspace().current.origin === 'server'
@@ -112,7 +113,7 @@ export function Palette({ width = 200, onCollapse }: { width?: number; onCollaps
               title={isCollapsed ? '펼치기' : '접기'}
               style={groupToggle}
             >
-              <span aria-hidden style={{ width: 12, flexShrink: 0, fontSize: 10 }}>{isCollapsed ? '▸' : '▾'}</span>
+              <span aria-hidden style={{ width: 12, flexShrink: 0, fontSize: 10 }}><AppIcon name={isCollapsed ? 'chevronRight' : 'chevronDown'} size={13} style={{ color: 'var(--fl-text-muted)', verticalAlign: '-2px' }} /></span>
               <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'left' }} title={group.title}>
                 {group.title}
               </span>

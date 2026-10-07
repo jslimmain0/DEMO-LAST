@@ -36,7 +36,7 @@ export function FlowStrip({ nodes, max = 8 }: { nodes: MiniNode[]; max?: number 
         </div>
       ))}
       {extra > 0 && (
-        <span style={{ marginLeft: 10, fontSize: 12.5, color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)', flexShrink: 0 }}>
+        <span style={{ marginLeft: 10, fontSize: 13, color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)', flexShrink: 0 }}>
           +{extra}
         </span>
       )}
@@ -56,7 +56,7 @@ export function FlowMini({ cats, max = 6 }: { cats: string[]; max?: number }) {
           <span style={{ width: 9, height: 9, borderRadius: '50%', background: catColor(c) }} />
         </div>
       ))}
-      {extra > 0 && <span style={{ fontSize: 10.5, color: 'var(--fl-text-muted)', marginLeft: 4, fontFamily: 'var(--fl-font-mono)' }}>+{extra}</span>}
+      {extra > 0 && <span style={{ fontSize: 11, color: 'var(--fl-text-muted)', marginLeft: 4, fontFamily: 'var(--fl-font-mono)' }}>+{extra}</span>}
     </div>
   )
 }

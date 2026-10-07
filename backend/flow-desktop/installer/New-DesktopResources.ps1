@@ -9,7 +9,7 @@ $ErrorActionPreference = 'Stop'
 $ResourceDir = [IO.Path]::GetFullPath($OutputDir)
 New-Item -ItemType Directory -Path $ResourceDir -Force | Out-Null
 Add-Type -AssemblyName System.Drawing
-$Primary = [Drawing.ColorTranslator]::FromHtml('#7660d9')
+$Primary = [Drawing.ColorTranslator]::FromHtml('#5b4bd0')
 
 function Draw-Mark([Drawing.Graphics]$Canvas, [single]$X, [single]$Y, [single]$Size) {
   $saved = $Canvas.Save()
@@ -56,7 +56,7 @@ foreach ($kind in @('banner', 'dialog')) {
   $graphics = [Drawing.Graphics]::FromImage($bitmap); $graphics.Clear([Drawing.Color]::White)
   if ($kind -eq 'banner') { Draw-Mark $graphics 438 8 42 }
   else {
-    $brush = [Drawing.SolidBrush]::new([Drawing.ColorTranslator]::FromHtml('#f0edfa'))
+    $brush = [Drawing.SolidBrush]::new([Drawing.ColorTranslator]::FromHtml('#f4f4f5'))
     $graphics.FillRectangle($brush, 0, 0, 164, 312); $brush.Dispose(); Draw-Mark $graphics 34 34 78
     $font = [Drawing.Font]::new('Segoe UI', 19, [Drawing.FontStyle]::Bold)
     $graphics.DrawString('FlowLink', $font, [Drawing.Brushes]::Black, 24, 128); $font.Dispose()

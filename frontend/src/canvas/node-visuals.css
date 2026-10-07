@@ -1,16 +1,17 @@
 /* 종류 타일은 장식용이며 항상 노드 이름과 함께 사용한다. */
-.fl-type-tile { --fl-tile: #007f95; display:inline-flex; align-items:center; justify-content:center; flex-shrink:0; border-radius:7px; color:#fff; background:var(--fl-tile); box-shadow:inset 0 0 0 1px #ffffff24; }
-.fl-type-tile[data-node-type=tcp], .fl-type-tile[data-node-type=wait] { --fl-tile:#9564d6; }
-.fl-type-tile[data-node-type=if], .fl-type-tile[data-node-type=switch] { --fl-tile:#ba760d; }
-.fl-type-tile[data-node-type=assert] { --fl-tile:#249c58; }
-.fl-type-tile[data-node-type=set] { --fl-tile:#3e72ed; }
-.fl-type-tile[data-node-type=transform] { --fl-tile:#7163c9; }
-.fl-type-tile[data-node-type=start] { --fl-tile:#159772; }
-.fl-type-tile[data-node-type=end], .fl-type-tile[data-node-type=group] { --fl-tile:#657f91; }
-.fl-type-tile[data-node-type=form], .fl-type-tile[data-node-type=input] { --fl-tile:#517cab; }
-.fl-type-tile[data-node-type=note] { --fl-tile:#b78419; }
+.fl-type-tile { --fl-tile: #5b4bd0; display:inline-flex; align-items:center; justify-content:center; flex-shrink:0; border-radius:6px; color:var(--fl-tile); background:color-mix(in srgb,var(--fl-tile) 11%,var(--fl-surface)); box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--fl-tile) 22%,transparent); }
+.fl-type-tile[data-node-type=tcp] { --fl-tile:#2563eb; }
+.fl-type-tile[data-node-type=wait] { --fl-tile:#c2410c; }
+.fl-type-tile[data-node-type=if], .fl-type-tile[data-node-type=switch] { --fl-tile:#b45309; }
+.fl-type-tile[data-node-type=assert] { --fl-tile:#15803d; }
+.fl-type-tile[data-node-type=set] { --fl-tile:#4f46e5; }
+.fl-type-tile[data-node-type=transform] { --fl-tile:#a21caf; }
+.fl-type-tile[data-node-type=start] { --fl-tile:#16a34a; }
+.fl-type-tile[data-node-type=end], .fl-type-tile[data-node-type=group] { --fl-tile:#71717a; }
+.fl-type-tile[data-node-type=form], .fl-type-tile[data-node-type=input] { --fl-tile:#be185d; }
+.fl-type-tile[data-node-type=note] { --fl-tile:#ca8a04; }
 .fl-type-http { font:700 7px/1 var(--fl-font-ui); letter-spacing:-.4px; }
-html[data-theme=dark] .fl-type-tile { background:color-mix(in srgb,var(--fl-tile) 46%,var(--fl-surface)); color:color-mix(in srgb,var(--fl-tile) 45%,#fff); box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--fl-tile) 50%,transparent); }
+html[data-theme=dark] .fl-type-tile { background:color-mix(in srgb,var(--fl-tile) 20%,var(--fl-surface)); color:color-mix(in srgb,var(--fl-tile) 55%,#fff); box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--fl-tile) 34%,transparent); }
 .fl-task-header { display:flex; align-items:center; gap:10px; padding:12px; }
 .fl-task-title { min-width:0; font-size:14px; font-weight:650; letter-spacing:-.015em; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .fl-task-subtitle { min-width:0; margin-top:4px; font-size:12px; line-height:1.4; color:var(--fl-text-muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }

@@ -140,8 +140,8 @@ export function OpenApiImportBody({
                 <label key={o.key} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 'var(--fl-radius-sm)', cursor: 'pointer' }}>
                   <input type="checkbox" checked={selected.has(o.key)} onChange={() => toggle(o.key)} />
                   <MethodTag method={o.method} />
-                  <code style={{ fontFamily: 'var(--fl-font-mono)', fontSize: 12.5 }}>{o.path}</code>
-                  <span style={{ fontSize: 12.5, color: 'var(--fl-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o.summary}</span>
+                  <code style={{ fontFamily: 'var(--fl-font-mono)', fontSize: 13 }}>{o.path}</code>
+                  <span style={{ fontSize: 13, color: 'var(--fl-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o.summary}</span>
                 </label>
               ))}
             </div>
@@ -156,4 +156,4 @@ export function OpenApiImportBody({
 }
 
 const primary: CSSProperties = { padding: '9px 18px', border: 'none', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-action-primary-bg)', color: 'var(--fl-action-primary-ink)', fontWeight: 600, fontSize: 13, cursor: 'pointer' }
-const ghost: CSSProperties = { padding: '7px 12px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 12.5, cursor: 'pointer' }
+const ghost: CSSProperties = { padding: '7px 12px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 13, cursor: 'pointer' }

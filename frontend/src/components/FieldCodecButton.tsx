@@ -10,6 +10,7 @@ import type { BindableSource } from '../binding/upstream'
 import { appUrl } from '../lib/appBase'
 import { addStep, detachField, replaceStep, stepsForField, type CodecSide, type StepRef } from '../lib/mockCodecOps'
 import { TransformPicker, sortTransforms } from './TransformPicker'
+import { ui } from '../design/ui'
 
 /**
  * "필드에서 시작하는 코덱" — 필드 행 옆 ◈ 버튼. 이 필드에 걸린 코덱 단계를 배지로 보여주고, 팝오버에서 그 자리에서
@@ -107,7 +108,7 @@ function StepPopover({ anchor, field, list, sources, sides, defaultSide, editing
   return createPortal(
     <div role="dialog" data-fl-codec-pop aria-label={`${field} 코덱`} style={{ ...pop, ...place }} onClick={(e) => e.stopPropagation()}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <strong style={{ fontSize: 12.5, flex: 1 }}>◈ <code style={{ fontFamily: 'var(--fl-font-mono)' }}>{field}</code> {editing ? '코덱 수정' : '에 코덱 걸기'}</strong>
+        <strong style={{ fontSize: 13, flex: 1 }}>◈ <code style={{ fontFamily: 'var(--fl-font-mono)' }}>{field}</code> {editing ? '코덱 수정' : '에 코덱 걸기'}</strong>
         <button onClick={onClose} aria-label="닫기" style={{ ...iconBtn, border: 'none' }}>×</button>
       </div>
       <div style={{ display: 'inline-flex', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', overflow: 'hidden', marginTop: 8 }}>
@@ -132,18 +133,18 @@ function StepPopover({ anchor, field, list, sources, sides, defaultSide, editing
         <div style={{ marginTop: 8, display: 'grid', gap: 4 }}>
           <div style={lbl}>입력 — 이 플러그인은 입력이 {ports.length}개입니다</div>
           <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-            <span style={{ fontSize: 11.5, minWidth: 80 }}>필드 값 →</span>
+            <span style={{ fontSize: 12, minWidth: 80 }}>필드 값 →</span>
             <select style={input} value={messagePort} aria-label={`${field} 필드 값을 받을 입력`} onChange={(e) => setMessagePort(e.target.value)}>
               {ports.map((p) => <option key={p.key} value={p.key}>{p.label}</option>)}
             </select>
           </div>
           {ports.filter((p) => p.key !== messagePort).map((p) => (
             <div key={p.key} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-              <span style={{ fontSize: 11.5, minWidth: 80, fontFamily: 'var(--fl-font-mono)' }}>{p.label}</span>
+              <span style={{ fontSize: 12, minWidth: 80, fontFamily: 'var(--fl-font-mono)' }}>{p.label}</span>
               <div style={{ flex: 1, minWidth: 160 }}><TokenInput ariaLabel={`${field} ${p.key} 값`} value={inputOf(p.key).value ?? ''} sources={sources} placeholder={`{{ ${p.key === 'key' ? 'aesKey' : p.key === 'iv' ? 'aesIv' : p.key}@secret }}`} onChange={(v) => setPortValue(p.key, v)} /></div>
             </div>
           ))}
-          <div style={{ fontSize: 10.5, color: 'var(--fl-text-muted)' }}>변환할 필드 값은 위에서 고른 입력으로 들어가고, 나머지 입력(키·IV 등)은 값을 적습니다(<code style={{ fontFamily: 'var(--fl-font-mono)' }}>{'{ }'}</code> 로 시크릿 삽입).</div>
+          <div style={{ fontSize: 11, color: 'var(--fl-text-muted)' }}>변환할 필드 값은 위에서 고른 입력으로 들어가고, 나머지 입력(키·IV 등)은 값을 적습니다(<code style={{ fontFamily: 'var(--fl-font-mono)' }}>{'{ }'}</code> 로 시크릿 삽입).</div>
         </div>
       )}
       {t && t.params.length > 0 && (
@@ -152,7 +153,7 @@ function StepPopover({ anchor, field, list, sources, sides, defaultSide, editing
             const val = cfgVal(p.key) ?? p.defaultValue
             return (
               <div key={p.key} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                <span style={{ fontSize: 11.5, minWidth: 80 }}>{p.label}</span>
+                <span style={{ fontSize: 12, minWidth: 80 }}>{p.label}</span>
                 {p.type === 'select' && (p.options?.length ?? 0) > 0
                   ? <select style={input} value={val} onChange={(e) => setCfg(p.key, e.target.value)}>{p.options!.map((o) => <option key={o} value={o}>{o}</option>)}</select>
                   : <div style={{ flex: 1, minWidth: 160 }}><TokenInput ariaLabel={`${field} 파라미터 ${p.key}`} value={val} sources={sources} placeholder={p.placeholder || '값 또는 { } 데이터 삽입'} onChange={(v) => setCfg(p.key, v)} /></div>}
@@ -163,7 +164,7 @@ function StepPopover({ anchor, field, list, sources, sides, defaultSide, editing
       )}
       {t && t.outputs.length > 1 && (
         <div style={{ marginTop: 8, display: 'flex', gap: 6, alignItems: 'center' }}>
-          <span style={{ fontSize: 11.5, minWidth: 80 }}>출력</span>
+          <span style={{ fontSize: 12, minWidth: 80 }}>출력</span>
           <select style={input} value={outputKey ?? t.outputs[0].key} onChange={(e) => setOutputKey(e.target.value)}>{t.outputs.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}</select>
         </div>
       )}
@@ -173,7 +174,7 @@ function StepPopover({ anchor, field, list, sources, sides, defaultSide, editing
         <button onClick={save} disabled={!t || !catalog.query.isSuccess} style={primary}>{editing ? '수정' : '단계 추가'}</button>
       </div>
       {!editing && list.length > 0 && !t && <div style={{ fontSize: 11, color: 'var(--fl-fail)', marginTop: 4 }}>플러그인을 고르세요.</div>}
-      <div style={{ fontSize: 10.5, color: 'var(--fl-text-muted)', marginTop: 6 }}>여러 필드에 같은 단계를 걸면 코덱 화면에서 한 단계로 합쳐 보입니다. 전체/헤더 대상은 코덱 화면에서.</div>
+      <div style={{ fontSize: 11, color: 'var(--fl-text-muted)', marginTop: 6 }}>여러 필드에 같은 단계를 걸면 코덱 화면에서 한 단계로 합쳐 보입니다. 전체/헤더 대상은 코덱 화면에서.</div>
     </div>,
     document.body,
   )
@@ -239,7 +240,7 @@ export function CodecStepWizard({ list, sources, fieldHints, defaultSide, onCanc
   const valid = !!t && catalog.query.isSuccess && (target === 'body' || (target === 'fields' && allFields.length > 0) || (target === 'header' && header.trim()))
   return (
     <div style={{ border: '1px solid var(--fl-primary)', borderRadius: 'var(--fl-radius-sm)', padding: 12, background: 'var(--fl-surface)', display: 'grid', gap: 10 }} role="dialog" aria-label="코덱 단계 추가">
-      <div style={{ fontSize: 12.5, fontWeight: 700 }}>새 코덱 단계</div>
+      <div style={{ fontSize: 13, fontWeight: 700 }}>새 코덱 단계</div>
       <div style={{ display: 'grid', gridTemplateColumns: '84px 1fr', gap: '8px 10px', alignItems: 'start' }}>
         <span style={stepNo}>① 언제</span>
         <div style={{ display: 'inline-flex', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', overflow: 'hidden', width: 'fit-content' }}>
@@ -264,7 +265,7 @@ export function CodecStepWizard({ list, sources, fieldHints, defaultSide, onCanc
                     <label key={h} style={{ ...chipLabel, ...(fields.includes(h) ? chipOn : null) }}><input type="checkbox" checked={fields.includes(h)} onChange={(e) => setFields(e.target.checked ? [...fields, h] : fields.filter((x) => x !== h))} style={{ display: 'none' }} />{h}</label>
                   ))}
                 </div>
-              ) : <div style={{ fontSize: 11.5, color: 'var(--fl-text-muted)' }}>{side === 'request' ? '예상 요청 필드가 없습니다 — 라우트의 예상 요청에 적거나 요청 기록 → [예상 필드로]. ' : '규칙 본문(JSON)에서 키를 못 찾았습니다. '}아래에 직접 적을 수도 있습니다.</div>}
+              ) : <div style={{ fontSize: 12, color: 'var(--fl-text-muted)' }}>{side === 'request' ? '예상 요청 필드가 없습니다 — 라우트의 예상 요청에 적거나 요청 기록 → [예상 필드로]. ' : '규칙 본문(JSON)에서 키를 못 찾았습니다. '}아래에 직접 적을 수도 있습니다.</div>}
               <input value={custom} onChange={(e) => setCustom(e.target.value)} placeholder="직접 입력 — 쉼표 구분(JSON 점 경로: card.no)" style={{ ...input, width: '100%', boxSizing: 'border-box', marginTop: 6, fontFamily: 'var(--fl-font-mono)' }} />
             </div>
           )}
@@ -288,25 +289,25 @@ export function CodecStepWizard({ list, sources, fieldHints, defaultSide, onCanc
             {ports.length > 1 && (
               <>
                 <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                  <span style={{ fontSize: 11.5, minWidth: 90 }}>{msgLabel} →</span>
+                  <span style={{ fontSize: 12, minWidth: 90 }}>{msgLabel} →</span>
                   <select style={input} value={messagePort} aria-label={`${msgLabel}을 받을 입력`} onChange={(e) => setMessagePort(e.target.value)}>
                     {ports.map((p) => <option key={p.key} value={p.key}>{p.label}</option>)}
                   </select>
                 </div>
                 {ports.filter((p) => p.key !== messagePort).map((p) => (
                   <div key={p.key} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                    <span style={{ fontSize: 11.5, minWidth: 90, fontFamily: 'var(--fl-font-mono)' }}>{p.label}</span>
+                    <span style={{ fontSize: 12, minWidth: 90, fontFamily: 'var(--fl-font-mono)' }}>{p.label}</span>
                     <div style={{ flex: 1, minWidth: 180 }}><TokenInput ariaLabel={`입력 ${p.key}`} value={inputOf(p.key).value ?? ''} sources={sources} placeholder={`{{ ${p.key === 'key' ? 'aesKey' : p.key === 'iv' ? 'aesIv' : p.key}@secret }}`} onChange={(v) => setPortValue(p.key, v)} /></div>
                   </div>
                 ))}
-                <div style={{ fontSize: 10.5, color: 'var(--fl-text-muted)' }}>변환할 {msgLabel}은 위에서 고른 입력으로 들어가고, 나머지 입력(키·IV 등)은 값을 적습니다.</div>
+                <div style={{ fontSize: 11, color: 'var(--fl-text-muted)' }}>변환할 {msgLabel}은 위에서 고른 입력으로 들어가고, 나머지 입력(키·IV 등)은 값을 적습니다.</div>
               </>
             )}
             {t?.params.map((p) => {
               const val = cfgVal(p.key) ?? p.defaultValue
               return (
                 <div key={p.key} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                  <span style={{ fontSize: 11.5, minWidth: 90 }}>{p.label}</span>
+                  <span style={{ fontSize: 12, minWidth: 90 }}>{p.label}</span>
                   {p.type === 'select' && (p.options?.length ?? 0) > 0
                     ? <select style={input} value={val} onChange={(e) => setCfg(p.key, e.target.value)}>{p.options!.map((o) => <option key={o} value={o}>{o}</option>)}</select>
                     : <div style={{ flex: 1, minWidth: 180 }}><TokenInput ariaLabel={`파라미터 ${p.key}`} value={val} sources={sources} placeholder={p.placeholder || '값 또는 { } 데이터 삽입'} onChange={(v) => setCfg(p.key, v)} /></div>}
@@ -324,13 +325,13 @@ export function CodecStepWizard({ list, sources, fieldHints, defaultSide, onCanc
   )
 }
 
-const badge: CSSProperties = { fontSize: 10.5, fontWeight: 700, padding: '1px 7px', borderRadius: 999, border: '1px solid currentColor', background: 'var(--fl-surface)', cursor: 'pointer', whiteSpace: 'nowrap' }
-const iconBtn: CSSProperties = { width: 26, height: 26, border: '1px solid var(--fl-border)', borderRadius: 6, background: 'var(--fl-surface)', cursor: 'pointer', fontSize: 13, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: 0 }
+const badge: CSSProperties = { fontSize: 11, fontWeight: 700, padding: '1px 7px', borderRadius: 999, border: '1px solid currentColor', background: 'var(--fl-surface)', cursor: 'pointer', whiteSpace: 'nowrap' }
+const iconBtn: CSSProperties = { ...ui.icon, width: 26, height: 26, justifyContent: 'center' }
 const POP_W = 440
 const pop: CSSProperties = { position: 'fixed', zIndex: 120, overflowY: 'auto', width: POP_W, padding: 12, border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', boxShadow: 'var(--fl-shadow-lg, 0 8px 24px rgba(0,0,0,.18))', textAlign: 'left', fontWeight: 400, cursor: 'default' }
 const lbl: CSSProperties = { fontSize: 11, fontWeight: 700, color: 'var(--fl-text-muted)', marginBottom: 4 }
-const input: CSSProperties = { padding: '5px 8px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 12.5 }
-const miniBtn: CSSProperties = { padding: '5px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 12, cursor: 'pointer' }
+const input: CSSProperties = { padding: '5px 8px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 13 }
+const miniBtn: CSSProperties = { ...ui.mini }
 const primary: CSSProperties = { padding: '5px 12px', border: 'none', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-action-primary-bg)', color: 'var(--fl-action-primary-ink)', fontWeight: 700, fontSize: 12, cursor: 'pointer' }
 const stepNo: CSSProperties = { fontSize: 12, fontWeight: 700, color: 'var(--fl-text-muted)', paddingTop: 5 }
 const chipLabel: CSSProperties = { fontSize: 12, fontFamily: 'var(--fl-font-mono)', padding: '3px 9px', border: '1px solid var(--fl-border)', borderRadius: 999, cursor: 'pointer', background: 'var(--fl-surface-2)', color: 'var(--fl-text)' }

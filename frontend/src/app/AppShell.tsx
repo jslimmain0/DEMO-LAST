@@ -12,6 +12,8 @@ import { desktopApi } from '../auth/desktop'
 import { ServerInstallCard } from '../components/ServerInstallCard'
 import { WorkspaceSwitcher } from '../components/WorkspaceSwitcher'
 import { getTheme, toggleTheme, type Theme } from '../design/theme'
+import { ui } from '../design/ui'
+import { ResizeHandle } from '../components/ResizeHandle'
 
 const NAV: Array<{to: string; label: string; icon: AppIconName}> = [
   { to: '/flows', label: '워크플로', icon: 'flow' },
@@ -32,6 +34,12 @@ export function AppShellTier1({ children, sidebarExtra }: { children: ReactNode;
 
   const [theme, setTheme] = useState<Theme>(getTheme())
   const [settingsOpen, setSettingsOpen] = useState(false)
+  // 사이드바 너비 — 드래그로 64~420px. 140px 미만이면 아이콘만 보이는 좁은 모드.
+  const [sideW, setSideW] = useState(() => {
+    try { const v = Number(localStorage.getItem(SIDEBAR_KEY)); return v >= SIDEBAR_MIN && v <= SIDEBAR_MAX ? v : SIDEBAR_DEFAULT } catch { return SIDEBAR_DEFAULT }
+  })
+  const compact = sideW < 140
+  const saveSideW = (n: number) => { try { localStorage.setItem(SIDEBAR_KEY, String(n)) } catch { /* 저장 불가 환경 */ } }
   const loc = useLocation()
   const library = loc.pathname === '/workspaces'
   const administration = loc.pathname === '/admin'
@@ -54,8 +62,8 @@ export function AppShellTier1({ children, sidebarExtra }: { children: ReactNode;
       textDecoration: 'none',
       fontSize: 14,
       fontWeight: active ? 600 : 500,
-      color: active ? 'var(--fl-primary)' : 'var(--fl-text-soft)',
-      background: active ? 'color-mix(in srgb, var(--fl-primary) 10%, var(--fl-surface))' : 'transparent',
+      color: active ? 'var(--fl-text)' : 'var(--fl-text-soft)',
+      background: active ? 'var(--fl-surface-2)' : 'transparent',
       border: '1px solid transparent',
     }
   }
@@ -64,7 +72,7 @@ export function AppShellTier1({ children, sidebarExtra }: { children: ReactNode;
     <div className="fl-app-frame" style={{ display: 'flex', minHeight: '100dvh' }}>
       <a className="fl-workbench-skip" href="#main" style={skipLink}>본문 바로가기</a>
 
-      <aside role="navigation" aria-label="주요" className="fl-app-sidebar" style={sidebar}>
+      <aside role="navigation" aria-label="주요" className={`fl-app-sidebar${compact ? ' fl-app-sidebar--compact' : ''}`} style={{ ...sidebar, width: sideW }}>
         <Link to="/flows" style={{ display: 'flex', alignItems: 'center', gap: 10, textDecoration: 'none', color: 'var(--fl-text)', padding: '4px 8px 0' }}>
           <span className="fl-brand-mark"><AppIcon name="flow" size={28} /></span>
           <span style={{ fontFamily: 'var(--fl-font-head)', fontWeight: 750, fontSize: 20, letterSpacing: '-.025em' }}>FlowLink</span>
@@ -79,8 +87,8 @@ export function AppShellTier1({ children, sidebarExtra }: { children: ReactNode;
         <div className="fl-sidebar-body">
         <nav style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 2 }}>
           {!library && NAV.map((n) => n.to === '/plugins' && scope.current.origin === 'local' ? null : (<div key={n.to}>
-            <Link key={n.to} to={n.to} style={navItem(n.to)}>
-              <AppIcon name={n.icon} size={20} />
+            <Link key={n.to} to={n.to} style={navItem(n.to)} title={compact ? n.label : undefined} aria-label={compact ? n.label : undefined}>
+              <AppIcon name={n.icon} size={19} style={loc.pathname.startsWith(n.to.split('?')[0]) ? { color: 'var(--fl-primary)' } : undefined} />
               <span>{n.label}</span>
             </Link>
             {n.to === '/flows' && sidebarExtra && <div className="fl-sidebar-folders">{sidebarExtra}</div>}
@@ -88,7 +96,7 @@ export function AppShellTier1({ children, sidebarExtra }: { children: ReactNode;
           ))}
         </nav>
 
-        {serverAdmin.data?.admin && <Link to={NAV_ADMIN.to} style={{ ...navItem(NAV_ADMIN.to), marginTop: 8 }}>
+        {serverAdmin.data?.admin && <Link to={NAV_ADMIN.to} style={{ ...navItem(NAV_ADMIN.to), marginTop: 8 }} title={compact ? NAV_ADMIN.label : undefined} aria-label={compact ? NAV_ADMIN.label : undefined}>
           <AppIcon name="shield" size={18} /><span>{NAV_ADMIN.label}</span>
           {(serverAdmin.data.pendingCount + (serverAdmin.data.pendingPlugins ?? 0)) > 0 && <span style={pendingNavBadge} aria-label={`대기 요청 ${serverAdmin.data.pendingCount + (serverAdmin.data.pendingPlugins ?? 0)}건`}>{serverAdmin.data.pendingCount + (serverAdmin.data.pendingPlugins ?? 0)}</span>}
         </Link>}
@@ -96,7 +104,7 @@ export function AppShellTier1({ children, sidebarExtra }: { children: ReactNode;
         {!desktop && runtime?.kind === 'server' && <ServerInstallCard compact />}
         </div>
         <div className="fl-sidebar-footer">
-        <div className="fl-runtime-status" style={{ padding: '10px 8px 0', fontSize: 11.5, color: 'var(--fl-text-muted)' }}>
+        <div className="fl-runtime-status" style={{ padding: '10px 8px 0', fontSize: 12, color: 'var(--fl-text-muted)' }}>
           {desktop && <span><AppIcon name="monitor" size={16} /><b>로컬</b><small style={{ color: 'var(--fl-ok)' }}>● 준비됨</small></span>}
           <span><AppIcon name="database" size={16} /><b>서버</b><small style={{ color: scope.connected && !scope.remoteError ? 'var(--fl-ok)' : 'var(--fl-text-muted)' }}>● {scope.connected ? scope.remoteError ? '연결 끊김' : '연결됨' : '로그인 필요'}</small></span>
         </div>
@@ -109,9 +117,9 @@ export function AppShellTier1({ children, sidebarExtra }: { children: ReactNode;
           <div style={{ ...userChip, marginTop: 'auto' }} title={isGuest ? '게스트 — GitHub 로그인하면 AI 를 쓸 수 있습니다' : myStatus === 'PENDING' ? '관리자 승인 대기 중 — 팀·AI 는 승인 후 사용 가능' : `${me.username} · ${me.tenant} · ${me.roles.join(', ')}`}>
             <span aria-hidden style={avatar}>{isGuest ? 'G' : me.username.slice(0, 1).toUpperCase()}</span>
             <span style={{ minWidth: 0, flex: 1 }}>
-              <span style={{ display: 'block', fontSize: 12.5, fontWeight: 600, color: 'var(--fl-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{isGuest ? '게스트' : me.username}</span>
+              <span style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--fl-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{isGuest ? '게스트' : me.username}</span>
               <span style={{ display: 'block', fontSize: 12, color: myStatus === 'PENDING' ? 'var(--fl-waiting)' : 'var(--fl-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {isGuest ? 'AI 는 로그인 필요' : myStatus === 'PENDING' ? '⏳ 승인 대기 중' : `${me.tenant} · ${primaryRole(me.roles)}`}
+                {isGuest ? 'AI 는 로그인 필요' : myStatus === 'PENDING' ? '승인 대기 중' : `${me.tenant} · ${primaryRole(me.roles)}`}
               </span>
             </span>
             {isGuest ? (
@@ -135,6 +143,9 @@ export function AppShellTier1({ children, sidebarExtra }: { children: ReactNode;
         </button></div>
         </div>
       </aside>
+      <div className="fl-app-sidebar-handle">
+        <ResizeHandle axis="x" sign={1} size={sideW} min={SIDEBAR_MIN} max={SIDEBAR_MAX} defaultSize={SIDEBAR_DEFAULT} onResize={setSideW} onResizeEnd={saveSideW} ariaLabel="사이드바 너비" />
+      </div>
 
       <main id="main" className="fl-app-main" style={{ flex: 1, minWidth: 0 }}>{administration && <div className="fl-workbench-context"><b>{scope.current.origin === 'local' ? '내 PC 관리' : '서버 관리'}</b><span>{scope.current.origin === 'local' ? '이 PC의 개인 자원' : '현재 서버 계정의 관리 범위'}</span></div>}{children}</main>
       {settingsOpen && <SettingsDialog onClose={() => setSettingsOpen(false)} />}
@@ -142,14 +153,18 @@ export function AppShellTier1({ children, sidebarExtra }: { children: ReactNode;
   )
 }
 
+const SIDEBAR_KEY = 'fl:shell:sidebarW'
+const SIDEBAR_MIN = 64
+const SIDEBAR_MAX = 420
+const SIDEBAR_DEFAULT = 232
+
 const sidebar: CSSProperties = {
-  width: 230,
+  width: SIDEBAR_DEFAULT,
   flexShrink: 0,
   display: 'flex',
   flexDirection: 'column',
   gap: 12,
   padding: '22px 14px 14px',
-  borderRight: '1px solid var(--fl-border)',
   background: 'var(--fl-surface)',
   position: 'sticky',
   top: 0,
@@ -197,7 +212,7 @@ const logoutBtn: CSSProperties = {
   fontSize: 14,
   padding: 4,
 }
-const loginChipBtn: CSSProperties = { flexShrink: 0, border: '1px solid var(--fl-primary)', background: 'transparent', color: 'var(--fl-primary)', cursor: 'pointer', fontSize: 11.5, fontWeight: 700, padding: '4px 9px', borderRadius: 999 }
+const loginChipBtn: CSSProperties = { ...ui.secondary, flexShrink: 0, color: 'var(--fl-primary)' }
 const themeBtn: CSSProperties = {
   marginTop: 'auto',
   display: 'flex',
@@ -209,7 +224,7 @@ const themeBtn: CSSProperties = {
   background: 'transparent',
   color: 'var(--fl-text-muted)',
   cursor: 'pointer',
-  fontSize: 13.5,
+  fontSize: 14,
   fontWeight: 500,
   fontFamily: 'inherit',
   textAlign: 'left',
@@ -219,12 +234,12 @@ const pendingNavBadge: CSSProperties = {
   minWidth: 18,
   height: 18,
   padding: '0 5px',
-  borderRadius: 9,
+  borderRadius: 'var(--fl-radius)',
   display: 'inline-grid',
   placeItems: 'center',
   background: 'var(--fl-waiting)',
   color: '#1a1d27',
-  fontSize: 10.5,
+  fontSize: 11,
   fontWeight: 800,
 }
 const skipLink: CSSProperties = {
@@ -234,6 +249,6 @@ const skipLink: CSSProperties = {
   background: 'var(--fl-action-primary-bg)',
   color: 'var(--fl-action-primary-ink)',
   padding: '8px 14px',
-  borderRadius: 8,
+  borderRadius: 'var(--fl-radius)',
   zIndex: 100,
 }

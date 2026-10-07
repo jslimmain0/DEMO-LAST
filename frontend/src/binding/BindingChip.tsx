@@ -35,7 +35,7 @@ export function BindingChip({
         style={{ border: 'none', background: 'transparent', color: 'var(--fl-text)', cursor: 'pointer', padding: 0, fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 180 }}
       >
         <span style={{ color: 'var(--fl-text-muted)' }}>{binding.nodeName ?? binding.sourceId}</span>
-        {binding.scope === 'req' && <span style={{ color: 'var(--fl-text-muted)', fontSize: 10 }}> (요청)</span>}
+        {binding.scope === 'req' && <span style={{ color: 'var(--fl-text-muted)', fontSize: 11 }}> (요청)</span>}
         {' · '}
         <strong style={{ fontFamily: 'var(--fl-font-mono)' }}>{binding.key}</strong>
       </button>

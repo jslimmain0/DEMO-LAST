@@ -6,6 +6,7 @@ import { Link } from 'react-router-dom'
 import type { SuiteRunItem } from '../api/client'
 import { StatusBadge } from './StatusBadge'
 import { Modal } from './Modal'
+import { ui } from '../design/ui'
 
 /**
  * 스위트 일괄 실행 결과 매트릭스 — 각 워크플로 실행을 폴링해 성공/실패를 한눈에.
@@ -56,7 +57,7 @@ export function SuiteRunDialog({ items, onClose }: { items: SuiteRunItem[]; onCl
                 <span style={{ flex: 1, fontFamily: 'var(--fl-font-head)', fontWeight: 600, fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{it.flowName}</span>
                 {it.error && <span style={{ fontSize: 11, color: 'var(--fl-fail)' }}>{it.error}</span>}
                 {results[i]?.data?.pendingAgent?.status === 'UNKNOWN' && <span style={{ fontSize: 11, color: 'var(--fl-waiting)' }}>결과 확인 필요</span>}
-                <Link to={`/flows/${it.flowId}${it.executionId ? `?execution=${it.executionId}` : ''}`} style={{ fontSize: 11.5, color: 'var(--fl-primary)', textDecoration: 'none', fontWeight: 600 }}>이어보기 →</Link>
+                <Link to={`/flows/${it.flowId}${it.executionId ? `?execution=${it.executionId}` : ''}`} style={{ fontSize: 12, color: 'var(--fl-primary)', textDecoration: 'none', fontWeight: 600 }}>이어보기 →</Link>
               </div>
             )
           })}
@@ -69,5 +70,5 @@ export function SuiteRunDialog({ items, onClose }: { items: SuiteRunItem[]; onCl
   )
 }
 
-const xBtn: CSSProperties = { width: 28, height: 28, borderRadius: 8, border: 'none', background: 'var(--fl-surface-2)', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 15 }
+const xBtn: CSSProperties = { ...ui.close, width: 28, height: 28 }
 const primary: CSSProperties = { padding: '8px 16px', border: 'none', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-action-primary-bg)', color: 'var(--fl-action-primary-ink)', cursor: 'pointer', fontSize: 13, fontWeight: 600 }

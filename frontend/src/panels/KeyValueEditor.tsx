@@ -9,6 +9,7 @@ import { Modal } from '../components/Modal'
 import { bindingToToken, isTokenizable } from '../lib/tokenGrammar'
 import { newId } from '../lib/ids'
 import './field-layout.css'
+import { ui } from '../design/ui'
 
 const input: CSSProperties = {
   flex: 1,
@@ -19,7 +20,7 @@ const input: CSSProperties = {
   background: 'var(--fl-surface)',
   color: 'var(--fl-text)',
   fontFamily: 'var(--fl-font-mono)',
-  fontSize: 12.5,
+  fontSize: 13,
 }
 
 const VALUE_TYPES = ['string', 'number', 'boolean', 'json', 'array']
@@ -139,7 +140,7 @@ export function KeyValueEditor({
   )
 }
 
-const delBtn: CSSProperties = { padding: '3px 8px', minHeight: 28, flexShrink: 0, border: 'none', borderRadius: 'var(--fl-radius-sm)', background: 'transparent', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 12 }
+const delBtn: CSSProperties = { ...ui.icon, flexShrink: 0 }
 const dupWarn: CSSProperties = { borderColor: 'var(--fl-put)', boxShadow: '0 0 0 1px var(--fl-put) inset' }
-const typeSel: CSSProperties = { flexShrink: 0, width: 78, padding: '6px 4px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 11.5 }
-const addBtn: CSSProperties = { marginTop: 2, padding: '6px 10px', border: '1px dashed var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'transparent', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 12.5 }
+const typeSel: CSSProperties = { flexShrink: 0, width: 78, padding: '6px 4px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 12 }
+const addBtn: CSSProperties = { ...ui.dashed, marginTop: 2 }

@@ -13,7 +13,7 @@ import { JsonTree } from '../components/JsonTree'
 // 워크벤치(전체화면 모달)의 인라인 코드 편집기 — 열 때만 로드(BigTextEditor 와 같은 청크)
 const CodeEditorLazy = lazy(() => import('../components/CodeEditor'))
 import { CopyIcon, DataInsertIcon } from '../components/icons'
-import { NodeTypeIcon } from '../components/AppIcon'
+import { AppIcon, NodeTypeIcon } from '../components/AppIcon'
 import { BindingChip } from '../binding/BindingChip'
 import { BindingPicker } from '../binding/BindingPicker'
 import { TokenInput } from '../binding/TokenInput'
@@ -40,11 +40,12 @@ import { PluginResourceNotice } from '../components/PluginResources'
 import { useTransformCatalog } from '../lib/useTransformCatalog'
 import { useAgentEnvironmentBindings } from '../lib/useAgentEnvironmentBindings'
 import { resolveAgentEnvironment } from '../lib/agentEnvironments'
+import { ui } from '../design/ui'
 
-const label: CSSProperties = { display: 'block', fontSize: 11.5, fontWeight: 600, color: 'var(--fl-text-muted)', margin: '12px 0 5px' }
+const label: CSSProperties = { display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--fl-text-muted)', margin: '12px 0 5px' }
 const field: CSSProperties = { width: '100%', padding: '9px 11px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 13, fontFamily: 'var(--fl-font-ui)' }
 const mono: CSSProperties = { ...field, fontFamily: 'var(--fl-font-mono)', fontSize: 12 }
-const braceBtn: CSSProperties = { width: 32, height: 32, flexShrink: 0, border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-primary)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }
+const braceBtn: CSSProperties = { ...ui.icon, width: 32, height: 32, flexShrink: 0, justifyContent: 'center', color: 'var(--fl-primary)' }
 
 const METHODS: HttpMethod[] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD']
 // wait(콜백 대기) 노드 — 콜백에 줄 응답 형식
@@ -693,8 +694,8 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
       {single.requestText && (
         <div style={{ borderTop: '1px solid var(--fl-border)' }}>
           <button onClick={() => setShowSentReq((v) => !v)} aria-expanded={showSentReq}
-            style={{ display: 'block', width: '100%', textAlign: 'left', padding: '6px 12px', border: 'none', background: 'transparent', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 11.5, fontWeight: 600 }}>
-            {showSentReq ? '▾' : '▸'} 실제 전송 요청 (토큰 치환 · 시크릿 마스킹 적용)
+            style={{ display: 'block', width: '100%', textAlign: 'left', padding: '6px 12px', border: 'none', background: 'transparent', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 12, fontWeight: 600 }}>
+            <AppIcon name={showSentReq ? 'chevronDown' : 'chevronRight'} size={13} style={{ color: 'var(--fl-text-muted)', verticalAlign: '-2px' }} /> 실제 전송 요청 (토큰 치환 · 시크릿 마스킹 적용)
           </button>
           {showSentReq && <pre style={{ ...singlePre, maxHeight: '24vh' }}>{single.requestText}</pre>}
         </div>
@@ -708,8 +709,8 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
     <div style={{ margin: '10px 0 2px', border: '1px dashed var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', padding: '7px 11px' }}>
       {/* 기본 접힘 — 펼치지 않아도 넣어둔 값은 단일 실행에 그대로 적용된다 */}
       <button onClick={() => setUpOpen((v) => !v)} aria-expanded={upOpen}
-        style={{ display: 'flex', alignItems: 'center', gap: 6, width: '100%', border: 'none', background: 'transparent', padding: 0, cursor: 'pointer', fontSize: 11.5, fontWeight: 700, color: 'var(--fl-text-muted)', textAlign: 'left' }}>
-        <span aria-hidden style={{ fontSize: 9, width: 10 }}>{upOpen ? '▾' : '▸'}</span>
+        style={{ display: 'flex', alignItems: 'center', gap: 6, width: '100%', border: 'none', background: 'transparent', padding: 0, cursor: 'pointer', fontSize: 12, fontWeight: 700, color: 'var(--fl-text-muted)', textAlign: 'left' }}>
+        <span aria-hidden style={{ fontSize: 11, width: 10 }}><AppIcon name={upOpen ? 'chevronDown' : 'chevronRight'} size={13} style={{ color: 'var(--fl-text-muted)', verticalAlign: '-2px' }} /></span>
         이전 노드 값 입력
         <span style={{ fontWeight: 400 }}>({upTokens.length}개{upFilled ? ` · ${upFilled}개 입력됨` : ''})</span>
         {!upOpen && <span style={{ fontWeight: 400, marginLeft: 'auto', fontSize: 11 }}>단일 실행 시 적용</span>}
@@ -722,7 +723,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
             return (
               <div key={k} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
                 <code
-                  style={{ flexShrink: 0, width: 168, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: 'var(--fl-font-mono)', fontSize: 11.5, color: 'var(--fl-primary)' }}
+                  style={{ flexShrink: 0, width: 168, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: 'var(--fl-font-mono)', fontSize: 12, color: 'var(--fl-primary)' }}
                   title={t.sourceId ? `{{ ${t.key}@${t.sourceId} }} — ${srcName} 의 출력` : `{{ ${t.key} }} — 가장 가까운 상위 출력`}
                 >
                   {t.key}<span style={{ color: 'var(--fl-text-muted)' }}>@{srcName}</span>
@@ -743,7 +744,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
   const lastRunBox = lastNe ? (
     <div style={{ border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', overflow: 'hidden' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 12px', fontSize: 12, fontWeight: 600, background: 'var(--fl-surface-2)', color: 'var(--fl-text-muted)' }}>
-        🕘 지난 전체 실행의 이 노드
+        지난 전체 실행의 이 노드
         <span style={{ color: lastNe.ok ? 'var(--fl-ok)' : 'var(--fl-fail)' }}>
           {lastNe.ok ? '✓' : '✕'}{lastNe.httpStatus != null ? ` HTTP ${lastNe.httpStatus}` : ''}{lastNe.durationMs != null ? ` · ${lastNe.durationMs}ms` : ''}
         </span>
@@ -788,7 +789,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
                 aria-label="노드 이름" value={node.name ?? ''} placeholder={typeLabel(node.type)}
                 onChange={(e) => update(id, { name: e.target.value })}
                 className="fl-name-input"
-                style={{ width: '100%', maxWidth: 520, border: '1px solid transparent', borderRadius: 8, background: 'transparent', padding: '3px 6px', fontFamily: 'var(--fl-font-head)', fontWeight: 700, fontSize: 17, color: 'var(--fl-text)' }}
+                style={{ width: '100%', maxWidth: 520, border: '1px solid transparent', borderRadius: 'var(--fl-radius)', background: 'transparent', padding: '3px 6px', fontFamily: 'var(--fl-font-head)', fontWeight: 700, fontSize: 18, color: 'var(--fl-text)' }}
               />
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 2, paddingLeft: 6, fontSize: 11, color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)' }}>
                 <button onClick={() => copyText(id, '노드 id 를 복사했습니다.')} title="노드 id 복사"
@@ -797,7 +798,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
                 </button>
                 <span aria-hidden style={{ opacity: .5 }}>│</span>
                 <span title="실행에 적용될 활성 환경 — {{ 키@env }}·환경 시크릿이 이 환경 기준으로 주입됩니다">
-                  🌐 {envStore.active ?? '환경 없음'}
+                  {envStore.active ?? '환경 없음'}
                 </span>
               </div>
             </div>
@@ -880,7 +881,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
                     style={{
                       width: 26,
                       height: 26,
-                      borderRadius: 8,
+                      borderRadius: 'var(--fl-radius)',
                       cursor: 'pointer',
                       background: c.bg,
                       border: active ? `2px solid ${c.border}` : '1px solid var(--fl-border)',
@@ -1021,7 +1022,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
             )}
 
             <button onClick={() => setAdvOpen((v) => !v)} style={advToggle} aria-expanded={advOpen}>
-              {advOpen ? '▾' : '▸'} 고급 — 문자셋
+              <AppIcon name={advOpen ? 'chevronDown' : 'chevronRight'} size={13} style={{ color: 'var(--fl-text-muted)', verticalAlign: '-2px' }} /> 고급 — 문자셋
             </button>
             {advOpen && (
               <div style={{ borderLeft: '2px solid var(--fl-border)', paddingLeft: 10, marginTop: 4 }}>
@@ -1039,7 +1040,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
 
             {/* 프리셋 — 흔한 조합을 한 번에(method+본문 종류) */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12 }}>
-              <span style={{ fontSize: 11.5, color: 'var(--fl-text-muted)', fontWeight: 600, flexShrink: 0 }}>프리셋</span>
+              <span style={{ fontSize: 12, color: 'var(--fl-text-muted)', fontWeight: 600, flexShrink: 0 }}>프리셋</span>
               <div style={miniSeg} role="group" aria-label="요청 프리셋">
                 {([['get', 'GET'], ['json', 'JSON'], ['form', 'Form'], ['raw', 'Raw']] as const).map(([k, lbl]) => (
                   <button key={k} type="button" onClick={() => applyPreset(k)} style={miniSegBtn(presetKey === k)}
@@ -1123,7 +1124,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
                     <KeyValueEditor rows={fields.body ?? []} onChange={(rows) => setRows('body', rows)} sources={sources} showType={bodyKind === 'json'} />
                     {bodyKind === 'json' && (
                       <p style={{ ...hintP, marginTop: 6 }}>
-                        💡 키에 <code style={{ fontFamily: 'var(--fl-font-mono)', fontSize: 11 }}>customer.name</code>·<code style={{ fontFamily: 'var(--fl-font-mono)', fontSize: 11 }}>items[0].sku</code> 처럼 경로를 쓰면 <b>중첩 JSON</b> 으로 전송됩니다. 중첩 JSON 을 통째로 넣으려면 <b>Raw 에 붙여넣고 [필드]로 전환</b> — 경로 행으로 펼쳐지고, 왕복해도 형태가 유지됩니다.
+                        키에 <code style={{ fontFamily: 'var(--fl-font-mono)', fontSize: 11 }}>customer.name</code>·<code style={{ fontFamily: 'var(--fl-font-mono)', fontSize: 11 }}>items[0].sku</code> 처럼 경로를 쓰면 <b>중첩 JSON</b> 으로 전송됩니다. 중첩 JSON 을 통째로 넣으려면 <b>Raw 에 붙여넣고 [필드]로 전환</b> — 경로 행으로 펼쳐지고, 왕복해도 형태가 유지됩니다.
                       </p>
                     )}
                   </>
@@ -1170,7 +1171,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
           const previewBlock = (
           <>
             <button onClick={() => setPreviewOpen((v) => !v)} style={advToggle} aria-expanded={previewOpen}>
-              {previewOpen ? '▾' : '▸'} 요청 미리보기 (보이는 것 = 보내는 것 · 토큰은 미해석)
+              <AppIcon name={previewOpen ? 'chevronDown' : 'chevronRight'} size={13} style={{ color: 'var(--fl-text-muted)', verticalAlign: '-2px' }} /> 요청 미리보기 (보이는 것 = 보내는 것 · 토큰은 미해석)
             </button>
             {previewOpen && (
               <div style={{ marginTop: 4 }}>
@@ -1242,7 +1243,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
             placeholder="{{ id }} != null — { } 로 데이터 삽입"
             emptyWarn="⚠ 조건식이 비어 있습니다 — 비면 항상 거짓(F 분기)으로 처리됩니다."
           >
-            <p style={{ fontSize: 11.5, color: 'var(--fl-text-muted)', marginTop: 8 }}>참이면 T 분기, 거짓이면 F 분기로 진행합니다. (SpEL 안전 평가)</p>
+            <p style={{ fontSize: 12, color: 'var(--fl-text-muted)', marginTop: 8 }}>참이면 T 분기, 거짓이면 F 분기로 진행합니다. (SpEL 안전 평가)</p>
           </ConditionEditor>
         )}
 
@@ -1256,11 +1257,11 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
             placeholder="{{ resultCode }} == '0000' — { } 로 데이터 삽입"
             emptyWarn="⚠ 검증 조건식이 비어 있습니다 — 비면 검증이 항상 실패합니다."
           >
-            <p style={{ fontSize: 11.5, color: 'var(--fl-text-muted)', marginTop: 8 }}>
+            <p style={{ fontSize: 12, color: 'var(--fl-text-muted)', marginTop: 8 }}>
               조건이 <b>거짓이면 이 노드가 실패</b>하고 실행이 FAILED 로 끝납니다(테스트 시나리오의 assert).
               두 값 비교도 가능: <code style={{ fontFamily: 'var(--fl-font-mono)', fontSize: 11 }}>{'{{ tid@노티 }} == {{ tid@승인 }}'}</code>
             </p>
-            <p style={{ fontSize: 11.5, color: 'var(--fl-text-muted)', marginTop: 6 }}>
+            <p style={{ fontSize: 12, color: 'var(--fl-text-muted)', marginTop: 6 }}>
               <b>HTTP 상태 검증</b>: HTTP 노드는 <code style={{ fontFamily: 'var(--fl-font-mono)', fontSize: 11 }}>{'{{ httpStatus@노드 }}'}</code> 로
               상태코드를 바인딩합니다 — 예: <code style={{ fontFamily: 'var(--fl-font-mono)', fontSize: 11 }}>{'{{ httpStatus@조회 }} == 200'}</code> /
               <code style={{ fontFamily: 'var(--fl-font-mono)', fontSize: 11 }}>{' != 404'}</code>. (SimpleEvaluationContext 라 비교·산술만 — 메서드 호출은 불가)
@@ -1305,7 +1306,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
             />
             {!node.transformId && <p style={{ ...hintP, color: 'var(--fl-put)', marginTop: 6 }}>⚠ 변환을 선택하세요 — 미선택이면 실행 시 실패합니다.</p>}
             {selectedTransform?.description && (
-              <p style={{ fontSize: 11.5, color: 'var(--fl-text-muted)', marginTop: 6, lineHeight: 1.5, padding: '6px 8px', background: 'var(--fl-surface-2)', borderRadius: 6 }}>
+              <p style={{ fontSize: 12, color: 'var(--fl-text-muted)', marginTop: 6, lineHeight: 1.5, padding: '6px 8px', background: 'var(--fl-surface-2)', borderRadius: 6 }}>
                 {selectedTransform.description}
                 {selectedTransform.inputs.length > 0 && <><br /><span style={{ opacity: 0.85 }}>입력값은 아래 <b>입력</b> 칸(이 노드의 body 필드)에 넣거나 상위 노드에서 바인딩합니다.</span></>}
               </p>
@@ -1353,7 +1354,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
             })}
 
             {selectedTransform && selectedTransform.outputs.length > 0 && (
-              <p style={{ fontSize: 11.5, color: 'var(--fl-text-muted)', marginTop: 10 }}>
+              <p style={{ fontSize: 12, color: 'var(--fl-text-muted)', marginTop: 10 }}>
                 출력: {selectedTransform.outputs.map((o) => (
                   <code key={o.key} style={{ fontFamily: 'var(--fl-font-mono)', marginRight: 6 }}>{o.key}{o.type !== 'string' ? `:${o.type}` : ''}</code>
                 ))} — 하위 노드에서 <code style={{ fontFamily: 'var(--fl-font-mono)' }}>{`{{ ${selectedTransform.outputs[0].key}@${node.name || node.id} }}`}</code> 로 바인딩.
@@ -1419,7 +1420,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
             {(() => {
               const waitNodes = nodes.map((x) => asGraphNode(x.data)).filter((g) => g.type === 'wait')
               if (waitNodes.length === 0) {
-                return <p style={{ ...hintP, color: 'var(--fl-put)', marginTop: 8 }}>💡 콜백을 받으려면 이 뒤에 <b>콜백 대기</b> 노드를 두고, 그 수신 URL 을 아래 returnUrl 필드에 꽂으세요.</p>
+                return <p style={{ ...hintP, color: 'var(--fl-put)', marginTop: 8 }}>콜백을 받으려면 이 뒤에 <b>콜백 대기</b> 노드를 두고, 그 수신 URL 을 아래 returnUrl 필드에 꽂으세요.</p>
               }
               const addReturnUrl = (waitId: string) => {
                 const token = `{{ url@${waitId} }}`
@@ -1432,7 +1433,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
               }
               return (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
-                  <span style={{ fontSize: 11.5, color: 'var(--fl-text-muted)' }}>↩ 콜백 URL 필드 추가:</span>
+                  <span style={{ fontSize: 12, color: 'var(--fl-text-muted)' }}>↩ 콜백 URL 필드 추가:</span>
                   {waitNodes.map((w) => (
                     <button key={w.id} style={ghostMini} title={`returnUrl = {{ url@${w.id} }} 필드를 추가합니다`} onClick={() => addReturnUrl(w.id!)}>
                       {w.name || w.id}
@@ -1586,13 +1587,13 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
         </details>
 
         {node.type !== 'start' && (
-          <div style={{ display: 'flex', gap: 8, marginTop: 28, ...(modal ? { justifyContent: 'flex-end', borderTop: '1px solid var(--fl-border)', paddingTop: 14 } : null) }}>
-            <button onClick={() => duplicateSelection()} style={{ ...deleteBtn, marginTop: 0, ...(modal ? compactAction : { flex: 1 }), borderColor: 'var(--fl-border)', color: 'var(--fl-text-muted)' }} title="이 노드 복제 (Ctrl+D)">⧉ 복제</button>
-            <button onClick={() => deleteNode(id)} style={{ ...deleteBtn, marginTop: 0, ...(modal ? compactAction : { flex: 1 }) }}>이 노드 삭제</button>
+          <div style={{ display: 'flex', gap: 6, marginTop: 24, justifyContent: 'flex-end', borderTop: '1px solid var(--fl-border)', paddingTop: 14 }}>
+            <button onClick={() => duplicateSelection()} style={{ ...ui.secondary, ...ui.mini }} title="이 노드 복제 (Ctrl+D)"><AppIcon name="copy" size={14} /> 복제</button>
+            <button onClick={() => deleteNode(id)} style={{ ...ui.danger, minHeight: 28, padding: '0 10px', fontSize: 12 }}><AppIcon name="trash" size={14} /> 삭제</button>
           </div>
         )}
         {node.type === 'start' && (
-          <button onClick={() => deleteNode(id)} style={modal ? { ...deleteBtn, ...compactAction, marginTop: 28 } : deleteBtn}>이 노드 삭제</button>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 24, borderTop: '1px solid var(--fl-border)', paddingTop: 14 }}><button onClick={() => deleteNode(id)} style={{ ...ui.danger, minHeight: 28, padding: '0 10px', fontSize: 12 }}><AppIcon name="trash" size={14} /> 삭제</button></div>
         )}
       </div>
 
@@ -1661,7 +1662,7 @@ function WaitFieldsEditor({ fields, onChange }: { fields: WaitFieldT[]; onChange
 function WaitReceiveUrl({ nodeId }: { nodeId: string }) {
   const { settingsApi } = useApi()
 
-  // 설정(콜백 수신 주소)의 실제 적용값으로 표시 — 사이드바 ⚙ 설정에서 저장/수정, 기본은 접속 주소 자동
+  // 설정(콜백 수신 주소)의 실제 적용값으로 표시 — 사이드바 설정에서 저장/수정, 기본은 접속 주소 자동
   const relay = useQuery({ queryKey: ['settings', 'relay'], queryFn: settingsApi.relay })
   const pattern = `${relay.data?.effective ?? '{백엔드}'}/relay/{실행ID}/cb/${nodeId}`
   const token = `{{ url@${nodeId} }}`
@@ -1682,7 +1683,7 @@ function WaitReceiveUrl({ nodeId }: { nodeId: string }) {
           title="이 수신 URL로 콜백을 보내는 curl 예시를 복사합니다(실행ID는 실행 로그의 실제 주소로 교체)."
           onClick={() => { void navigator.clipboard?.writeText(`curl -X POST '${pattern}' -H 'Content-Type: application/json' -d '{"resultCode":"0000","tid":"TEST-1"}'`).catch(() => {}) }}
         >cURL 예시 복사</button>
-        <span style={{ fontSize: 10.5, color: 'var(--fl-text-muted)', alignSelf: 'center' }}>또는 실행 중 로그의 <b>🧪 테스트 콜백</b> 버튼</span>
+        <span style={{ fontSize: 11, color: 'var(--fl-text-muted)', alignSelf: 'center' }}>또는 실행 중 로그의 <b>테스트 콜백</b> 버튼</span>
       </div>
       <p style={{ ...hintP, marginTop: 6 }}>
         실행 시작 시 실행ID가 생성되어 URL 이 확정됩니다(정확한 주소는 실행 로그에 표시). 앞 노드(결제요청의 returnUrl/notiUrl 등)에서
@@ -1777,7 +1778,7 @@ function OutputsEditor({ outputs, onChange, nodeId, usageOf, onGoto }: {
             <button
               onClick={() => { void navigator.clipboard?.writeText(`{{ ${o.key}@${nodeId} }}`).then(() => toast(`{{ ${o.key}@${nodeId} }} 복사`, 'ok')).catch(() => {}) }}
               aria-label="바인딩 토큰 복사" title={`{{ ${o.key}@${nodeId} }} 복사 — 하위 노드에 붙여넣기`}
-              style={{ width: 30, flexShrink: 0, border: '1px solid var(--fl-border)', borderRadius: 6, background: 'var(--fl-surface)', color: 'var(--fl-primary)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
+              style={{ ...ui.icon, width: 26, height: 26 }}
             ><CopyIcon /></button>
           )}
           {/* 사용처 배지 — 모든 행에 같은 폭으로 항상 표시(레이아웃 일관). 0곳=흐림·비클릭,
@@ -1796,7 +1797,7 @@ function OutputsEditor({ outputs, onChange, nodeId, usageOf, onGoto }: {
                     : '아직 이 키를 참조하는 하위 노드가 없습니다'}
                   style={{
                     width: 44, padding: '3px 0', textAlign: 'center', borderRadius: 999,
-                    fontSize: 10.5, fontWeight: 700, whiteSpace: 'nowrap',
+                    fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap',
                     ...(used
                       ? { border: '1px solid color-mix(in srgb, var(--fl-ok) 45%, var(--fl-border))', background: 'color-mix(in srgb, var(--fl-ok) 10%, transparent)', color: 'var(--fl-ok)', cursor: 'pointer' }
                       : { border: '1px solid var(--fl-border)', background: 'transparent', color: 'var(--fl-text-muted)' }),
@@ -1806,11 +1807,11 @@ function OutputsEditor({ outputs, onChange, nodeId, usageOf, onGoto }: {
                   <>
                     <div style={{ position: 'fixed', inset: 0, zIndex: 90 }} onClick={() => setUsageMenuKey(null)} />
                     <div style={{ position: 'absolute', top: '110%', right: 0, zIndex: 91, minWidth: 180, background: 'var(--fl-surface)', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', boxShadow: 'var(--fl-shadow-lg)', padding: 5, display: 'flex', flexDirection: 'column', gap: 1 }}>
-                      <div style={{ padding: '4px 9px', fontSize: 10.5, fontWeight: 700, color: 'var(--fl-text-muted)' }}>이 키의 사용처 — 이동할 노드</div>
+                      <div style={{ padding: '4px 9px', fontSize: 11, fontWeight: 700, color: 'var(--fl-text-muted)' }}>이 키의 사용처 — 이동할 노드</div>
                       {u.map((x) => (
                         <button key={x.id} onClick={() => { setUsageMenuKey(null); onGoto?.(x.id) }}
                           style={{ display: 'block', width: '100%', textAlign: 'left', padding: '6px 9px', border: 'none', borderRadius: 6, background: 'transparent', color: 'var(--fl-text)', cursor: 'pointer', fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {x.name} <span style={{ color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)', fontSize: 10.5 }}>#{x.id}</span>
+                          {x.name} <span style={{ color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)', fontSize: 11 }}>#{x.id}</span>
                         </button>
                       ))}
                     </div>
@@ -1820,13 +1821,13 @@ function OutputsEditor({ outputs, onChange, nodeId, usageOf, onGoto }: {
             )
           })()}
           <RowMove i={i} len={outputs.length} onMove={(d) => onChange(moveInList(outputs, i, d))} />
-          <button onClick={() => onChange(outputs.filter((_, idx) => idx !== i))} aria-label="삭제" style={{ width: 28, flexShrink: 0, border: '1px solid var(--fl-border)', borderRadius: 6, background: 'var(--fl-surface)', cursor: 'pointer' }}>×</button>
+          <button onClick={() => onChange(outputs.filter((_, idx) => idx !== i))} aria-label="삭제" title="삭제" style={{ ...ui.icon, width: 26, height: 26 }}><AppIcon name="close" size={14} /></button>
           </div>
         </div>
       ))}
       <div style={{ display: 'flex', gap: 6 }}>
         <button onClick={() => onChange([...outputs, { key: '', type: 'string' }])} style={addDashed}>+ 출력 항목</button>
-        <button onClick={() => setBulkOpen((v) => !v)} style={addDashed} title="키 나열(쉼표/줄바꿈) 또는 샘플 JSON 응답을 붙여넣어 한꺼번에 추가">📋 여러 키 추가</button>
+        <button onClick={() => setBulkOpen((v) => !v)} style={addDashed} title="키 나열(쉼표/줄바꿈) 또는 샘플 JSON 응답을 붙여넣어 한꺼번에 추가">여러 키 추가</button>
       </div>
       {bulkOpen && (
         <div style={{ marginTop: 6 }}>
@@ -1865,7 +1866,7 @@ function VarsEditor({ vars, onChange, sources, sourceType }: { vars: NodeVar[]; 
             ) : (
               <>
                 <input style={{ ...mono, flex: 1 }} type={revealed.has(v.id) ? 'text' : 'password'} value={v.value ?? ''} placeholder="value" onChange={(e) => upd(v.id, { value: e.target.value })} />
-                <button onClick={() => toggleReveal(v.id)} title={revealed.has(v.id) ? '값 숨기기' : '값 보기'} aria-label={revealed.has(v.id) ? '값 숨기기' : '값 보기'} style={braceBtn}>{revealed.has(v.id) ? '🙈' : '👁'}</button>
+                <button onClick={() => toggleReveal(v.id)} title={revealed.has(v.id) ? '값 숨기기' : '값 보기'} aria-label={revealed.has(v.id) ? '값 숨기기' : '값 보기'} style={braceBtn}>{revealed.has(v.id) ? '숨김' : '보기'}</button>
                 <button onClick={() => setPickVar(v.id)} title="데이터 삽입" style={braceBtn}><DataInsertIcon /></button>
               </>
             )
@@ -1883,7 +1884,7 @@ function VarsEditor({ vars, onChange, sources, sourceType }: { vars: NodeVar[]; 
             </div>
           )}
           <label title="시크릿(마스킹)" style={{ fontSize: 11, color: 'var(--fl-text-muted)', display: 'flex', alignItems: 'center', gap: 3 }}>
-            <input type="checkbox" checked={!!v.secret} onChange={(e) => upd(v.id, { secret: e.target.checked })} />🔒
+            <input type="checkbox" checked={!!v.secret} onChange={(e) => upd(v.id, { secret: e.target.checked })} />시크릿
           </label>
           <button onClick={() => onChange(vars.filter((x) => x.id !== v.id))} aria-label="삭제" style={{ width: 28, border: '1px solid var(--fl-border)', borderRadius: 6, background: 'var(--fl-surface)', cursor: 'pointer' }}>×</button>
           {pickVar === v.id && (
@@ -1907,7 +1908,7 @@ function moveInList<T>(arr: T[], i: number, dir: -1 | 1): T[] {
 }
 function RowMove({ i, len, onMove }: { i: number; len: number; onMove: (dir: -1 | 1) => void }) {
   return (
-    <span style={{ display: 'inline-flex', flexDirection: 'column', flexShrink: 0 }}>
+    <span className="fl-row-move" style={{ display: 'inline-flex', flexDirection: 'column', flexShrink: 0 }}>
       <button onClick={() => onMove(-1)} disabled={i === 0} aria-label="위로" title="위로" style={rowMoveBtn(i === 0)}>▲</button>
       <button onClick={() => onMove(1)} disabled={i === len - 1} aria-label="아래로" title="아래로" style={rowMoveBtn(i === len - 1)}>▼</button>
     </span>
@@ -1921,37 +1922,35 @@ const twoColGrid: CSSProperties = { display: 'grid', gridTemplateColumns: 'minma
 const colHead: CSSProperties = { fontSize: 13, fontWeight: 800, color: 'var(--fl-text)', letterSpacing: '.04em', paddingBottom: 9, marginTop: 10, borderBottom: '2px solid var(--fl-border)' }
 // 워크벤치 URL 바 — [메서드 | Base URL | Path | ▶ 실행] 한 줄(포스트맨 어휘)
 const wbBar: CSSProperties = { display: 'flex', gap: 8, alignItems: 'stretch', margin: '12px 0 4px' }
-const wbRunBtn: CSSProperties = { alignSelf: 'flex-start', height: 40, flexShrink: 0, minWidth: 96, padding: '0 18px', border: 'none', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-action-primary-bg)', color: 'var(--fl-action-primary-ink)', cursor: 'pointer', fontSize: 13.5, fontWeight: 700 }
+const wbRunBtn: CSSProperties = { ...ui.primary, alignSelf: 'flex-start', flexShrink: 0, minWidth: 96 }
 // 응답 패널 빈 상태 — 아직 실행 전
-const respEmpty: CSSProperties = { padding: '22px 16px', border: '1px dashed var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', color: 'var(--fl-text-muted)', fontSize: 12.5, textAlign: 'center', lineHeight: 1.6 }
-const closeBtn: CSSProperties = { width: 30, height: 30, borderRadius: 8, border: 'none', background: 'var(--fl-surface-2)', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 16 }
-const iconBtn: CSSProperties = { width: 30, height: 30, flexShrink: 0, borderRadius: 8, border: '1px solid var(--fl-border)', background: 'var(--fl-surface)', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 14 }
-const singleBtn: CSSProperties = { width: '100%', padding: '8px 10px', border: '1px solid var(--fl-primary)', borderRadius: 'var(--fl-radius-sm)', background: 'transparent', color: 'var(--fl-primary)', cursor: 'pointer', fontSize: 12.5, fontWeight: 600 }
-const singlePre: CSSProperties = { margin: 0, padding: '8px 10px', fontSize: 11.5, fontFamily: 'var(--fl-font-mono)', color: 'var(--fl-text)', background: 'var(--fl-surface)', whiteSpace: 'pre-wrap', wordBreak: 'break-all', maxHeight: 200, overflow: 'auto' }
-const deleteBtn: CSSProperties = { marginTop: 28, width: '100%', padding: '9px', border: '1px solid var(--fl-fail)', borderRadius: 'var(--fl-radius-sm)', background: 'transparent', color: 'var(--fl-fail)', cursor: 'pointer', fontSize: 13, fontWeight: 600 }
+const respEmpty: CSSProperties = { padding: '22px 16px', border: '1px dashed var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', color: 'var(--fl-text-muted)', fontSize: 13, textAlign: 'center', lineHeight: 1.6 }
+const closeBtn: CSSProperties = { ...ui.close, width: 30, height: 30 }
+const iconBtn: CSSProperties = { ...ui.icon, width: 30, height: 30, flexShrink: 0 }
+const singleBtn: CSSProperties = { ...ui.secondary, width: '100%', color: 'var(--fl-primary)' }
+const singlePre: CSSProperties = { margin: 0, padding: '8px 10px', fontSize: 12, fontFamily: 'var(--fl-font-mono)', color: 'var(--fl-text)', background: 'var(--fl-surface)', whiteSpace: 'pre-wrap', wordBreak: 'break-all', maxHeight: 200, overflow: 'auto' }
 // 모달 하단 액션 — 풀폭 알약 대신 컴팩트(우측 정렬)
-const compactAction: CSSProperties = { width: 'auto', flex: '0 0 auto', padding: '8px 18px', fontSize: 12.5 }
-const addDashed: CSSProperties = { marginTop: 2, padding: '6px 10px', border: '1px dashed var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'transparent', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 12.5 }
-const hintP: CSSProperties = { fontSize: 11.5, color: 'var(--fl-text-muted)', marginTop: 12, lineHeight: 1.5 }
+const addDashed: CSSProperties = { ...ui.dashed, marginTop: 2 }
+const hintP: CSSProperties = { fontSize: 12, color: 'var(--fl-text-muted)', marginTop: 12, lineHeight: 1.5 }
 // URL 행의 메서드 셀렉트 — 좁은 고정폭 + 메서드 색 강조(모노)
 function methodSel(m?: string): CSSProperties {
   return { ...field, width: 82, flexShrink: 0, fontFamily: 'var(--fl-font-mono)', fontWeight: 700, color: METHOD_COLOR[(m ?? 'GET') as HttpMethod] ?? 'var(--fl-text)', padding: '8px 6px' }
 }
 const ghostMini: CSSProperties = { padding: '5px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 12, fontWeight: 500 }
 const smartLink: CSSProperties = { marginTop: 6, padding: '4px 8px', border: 'none', background: 'transparent', color: 'var(--fl-primary)', cursor: 'pointer', fontSize: 12, fontWeight: 600, textAlign: 'left' }
-const snippetChip: CSSProperties = { padding: '2px 8px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-pill)', background: 'var(--fl-surface-2)', color: 'var(--fl-text)', cursor: 'pointer', fontSize: 11.5, fontFamily: 'var(--fl-font-mono)' }
+const snippetChip: CSSProperties = { padding: '2px 8px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-pill)', background: 'var(--fl-surface-2)', color: 'var(--fl-text)', cursor: 'pointer', fontSize: 12, fontFamily: 'var(--fl-font-mono)' }
 function rowMoveBtn(disabled: boolean): CSSProperties {
-  return { width: 18, height: 11, border: 'none', background: 'transparent', color: disabled ? 'var(--fl-border)' : 'var(--fl-text-muted)', cursor: disabled ? 'default' : 'pointer', fontSize: 8, lineHeight: '11px', padding: 0 }
+  return { width: 18, height: 11, border: 'none', background: 'transparent', color: disabled ? 'var(--fl-border)' : 'var(--fl-text-muted)', cursor: disabled ? 'default' : 'pointer', fontSize: 11, lineHeight: '11px', padding: 0 }
 }
 const advToggle: CSSProperties = { marginTop: 12, padding: '4px 0', border: 'none', background: 'transparent', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 12, fontWeight: 600, textAlign: 'left', width: '100%', display: 'block' }
 // 연결(바로가기) 이웃 노드 칩
 const navChip: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 5, padding: '4px 9px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-pill)', background: 'var(--fl-surface-2)', color: 'var(--fl-text)', cursor: 'pointer', fontSize: 12, maxWidth: 180 }
 // 이웃 칩의 분기 갈래 태그(IF T/F·스위치 트랙명)
-const portTag: CSSProperties = { flexShrink: 0, fontSize: 9.5, fontWeight: 700, fontFamily: 'var(--fl-font-mono)', color: 'var(--fl-put)', border: '1px solid color-mix(in srgb, var(--fl-put) 45%, var(--fl-border))', borderRadius: 999, padding: '0 5px', maxWidth: 72, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }
+const portTag: CSSProperties = { flexShrink: 0, fontSize: 11, fontWeight: 700, fontFamily: 'var(--fl-font-mono)', color: 'var(--fl-put)', border: '1px solid color-mix(in srgb, var(--fl-put) 45%, var(--fl-border))', borderRadius: 999, padding: '0 5px', maxWidth: 72, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }
 // HTTP 요청 3파트 통합 — 탭 대신 항상 보이는 접을 수 있는 섹션(쿼리/헤더/본문/응답)
-const secHeadBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, border: 'none', background: 'transparent', color: 'var(--fl-text)', cursor: 'pointer', fontSize: 12.5, fontWeight: 700, padding: 0 }
-const secBadge: CSSProperties = { marginLeft: 4, fontSize: 10.5, fontFamily: 'var(--fl-font-mono)', color: 'var(--fl-primary)', fontWeight: 600 }
-const ctChip: CSSProperties = { fontSize: 10, fontFamily: 'var(--fl-font-mono)', color: 'var(--fl-text-muted)', background: 'var(--fl-surface-2)', border: '1px solid var(--fl-border)', borderRadius: 5, padding: '2px 6px', whiteSpace: 'nowrap', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis' }
+const secHeadBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, border: 'none', background: 'transparent', color: 'var(--fl-text)', cursor: 'pointer', fontSize: 13, fontWeight: 700, padding: 0 }
+const secBadge: CSSProperties = { marginLeft: 4, fontSize: 11, fontFamily: 'var(--fl-font-mono)', color: 'var(--fl-primary)', fontWeight: 600 }
+const ctChip: CSSProperties = { fontSize: 11, fontFamily: 'var(--fl-font-mono)', color: 'var(--fl-text-muted)', background: 'var(--fl-surface-2)', border: '1px solid var(--fl-border)', borderRadius: 6, padding: '2px 6px', whiteSpace: 'nowrap', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis' }
 function HttpSection({ fixed, hidden, title, badge, open, onToggle, right, children }: {
   fixed?: boolean; hidden?: boolean; title: string; badge?: string; open: boolean; onToggle: () => void; right?: ReactNode; children: ReactNode
 }) {
@@ -1960,7 +1959,7 @@ function HttpSection({ fixed, hidden, title, badge, open, onToggle, right, child
     <div style={{ borderTop: '1px solid var(--fl-border)', marginTop: 10, paddingTop: 8 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, minHeight: 30, flexWrap: 'wrap' }}>
         {fixed ? <strong style={{ fontSize: 12, fontWeight: 600 }}>{title}</strong> : <button onClick={onToggle} aria-expanded={open} style={{ ...secHeadBtn, minWidth: 160, flexShrink: 0 }}>
-          <span aria-hidden style={{ width: 10, display: 'inline-block', fontSize: 10, color: 'var(--fl-text-muted)' }}>{open ? '▾' : '▸'}</span>
+          <span aria-hidden style={{ width: 10, display: 'inline-block', fontSize: 11, color: 'var(--fl-text-muted)' }}><AppIcon name={open ? 'chevronDown' : 'chevronRight'} size={13} style={{ color: 'var(--fl-text-muted)', verticalAlign: '-2px' }} /></span>
           {title}
           {badge ? <span style={secBadge}>{badge === '•' ? '•' : `(${badge})`}</span> : null}
         </button>}
@@ -1970,10 +1969,10 @@ function HttpSection({ fixed, hidden, title, badge, open, onToggle, right, child
     </div>
   )
 }
-const miniSeg: CSSProperties = { display: 'inline-flex', gap: 2, background: 'var(--fl-surface-2)', borderRadius: 7, padding: 2, flexShrink: 0 }
+const miniSeg: CSSProperties = { display: 'inline-flex', gap: 2, background: 'var(--fl-surface-2)', borderRadius: 6, padding: 2, flexShrink: 0 }
 function miniSegBtn(active: boolean): CSSProperties {
   return {
-    padding: '5px 12px', border: 'none', borderRadius: 5, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+    padding: '5px 12px', border: 'none', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer',
     background: active ? 'var(--fl-surface)' : 'transparent',
     color: active ? 'var(--fl-primary)' : 'var(--fl-text-muted)',
     boxShadow: active ? 'var(--fl-shadow)' : 'none',

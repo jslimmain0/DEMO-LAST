@@ -80,7 +80,8 @@ class McpTools(private val mapper: ObjectMapper, private val rest: McpRestClient
                 val schemas = rest.api(c.copy(target = "server", workspaceId = null), "GET", "/schemas")
                 val topic = a.path("topic").asText()
                 val selected = if (topic == "all") schemas else schemas.path(if (topic == "nodes") "flow" else topic)
-                return render(selected) + "\n\nMCP는 중앙 서버에만 있습니다. target local=PC 개인 H2, server=공용·팀 저장 공간. 노드 executionAgent는 별도 선택입니다. 개인 작업 및 PC 실행은 로그인한 Windows 앱이 온라인이어야 합니다. pendingAgent UNKNOWN은 재실행하지 말고 결과를 확인하세요. FORM은 실제 사용자 화면 작업이 필요하며 MCP는 팝업 성공을 가장하지 않습니다."
+                val layoutGuide = if (topic in setOf("all", "nodes", "flow")) "\n\n${McpGraphLayout.GUIDE}" else ""
+                return render(selected) + layoutGuide + "\n\nMCP는 중앙 서버에만 있습니다. target local=PC 개인 H2, server=공용·팀 저장 공간. 노드 executionAgent는 별도 선택입니다. 개인 작업 및 PC 실행은 로그인한 Windows 앱이 온라인이어야 합니다. pendingAgent UNKNOWN은 재실행하지 말고 결과를 확인하세요. FORM은 실제 사용자 화면 작업이 필요하며 MCP는 팝업 성공을 가장하지 않습니다."
             }
             "workspace_list" -> return get("/workspaces")
             "workspace_get" -> return mapOf("workspace" to workspace(c, c.workspaceId), "folders" to folders(c), "flows" to get("/flows"), "mocks" to get("/mock-servers"))
@@ -146,11 +147,12 @@ class McpTools(private val mapper: ObjectMapper, private val rest: McpRestClient
             "flow_get" -> return get("/flows/${id()}")
             "flow_upsert" -> {
                 var flowId = a.text("id")
+                val graph = McpGraphLayout.forSave(a.path("graph"), flowId == null, a.text("layout"))
                 if (flowId == null) {
                     require(!a.text("name").isNullOrBlank()) { "name 또는 id가 필요합니다" }
                     flowId = api("POST", "/flows", mapOf("name" to a.text("name"), "folderId" to folder(c, a.text("folder"))?.text("id"), "workspaceId" to c.workspaceId)).path("id").asText()
                 }
-                val saved = api("POST", "/flows/${enc(requireNotNull(flowId))}/versions", mapOf("graph" to a.path("graph"), "note" to (a.text("note") ?: "mcp"), "pinned" to false))
+                val saved = api("POST", "/flows/${enc(requireNotNull(flowId))}/versions", mapOf("graph" to graph, "note" to (a.text("note") ?: "mcp"), "pinned" to false))
                 return mapOf("flowId" to flowId, "version" to saved, "target" to c.target, "workspace" to c.workspaceId)
             }
             "flow_update" -> {

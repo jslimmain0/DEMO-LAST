@@ -101,7 +101,7 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
     </section>}
     {tab === 'update' && <section id="settings-update" role="tabpanel" aria-label="앱 업데이트"><DesktopUpdateCard /></section>}
     {tab === 'runtime' && <section id="settings-runtime" role="tabpanel" aria-label={runtimeLabel}>
-      <p style={{ ...hint, padding: 12, background: 'var(--fl-surface-2)', borderRadius: 6 }}>
+      <p style={{ ...hint, padding: 12, background: 'var(--fl-surface-2)', borderRadius: 'var(--fl-radius-sm)' }}>
         <b style={{ color: 'var(--fl-text)' }}>{runtimeLabel}</b><br />
         {scope.current.origin === 'local' ? '이 PC에서 실행하는 워크플로에 적용됩니다.' : '현재 서버 계정으로 관리하는 모든 공간에 적용됩니다. 선택한 팀 외의 공간에도 영향을 줍니다.'}
       </p>
@@ -138,15 +138,15 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
     {confirmClose && <div role="alert" style={{ ...section, padding: 14, background: 'var(--fl-surface-2)' }}><p style={{ margin: '0 0 12px', fontSize: 13 }}>저장하지 않은 설정이 있습니다.</p><div style={actions}><button style={button} onClick={() => setConfirmClose(false)}>계속 편집</button><button style={button} onClick={onClose}>변경 버리고 닫기</button></div></div>}
   </Modal>
 }
-const input: CSSProperties = { width: '100%', boxSizing: 'border-box', padding: '9px 10px', border: '1px solid var(--fl-border)', borderRadius: 6, background: 'var(--fl-surface)', color: 'var(--fl-text)', font: 'inherit', fontSize: 13 }
+const input: CSSProperties = { width: '100%', boxSizing: 'border-box', padding: '9px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', font: 'inherit', fontSize: 13 }
 const label: CSSProperties = { display: 'block', fontSize: 12, fontWeight: 600, margin: '12px 0 6px' }
 const hint: CSSProperties = { fontSize: 12.5, color: 'var(--fl-text-muted)', lineHeight: 1.65, overflowWrap: 'anywhere' }
 const code: CSSProperties = { fontFamily: 'var(--fl-font-mono)', fontSize: 12, overflowWrap: 'anywhere' }
 const heading: CSSProperties = { margin: '0 0 8px', fontSize: 14 }
 const section: CSSProperties = { marginTop: 24, paddingTop: 18, borderTop: '1px solid var(--fl-border)' }
-const summary: CSSProperties = { padding: 18, background: 'var(--fl-surface-2)', border: '1px solid var(--fl-border)', borderRadius: 10, minWidth: 0, overflowWrap: 'anywhere' }
+const summary: CSSProperties = { padding: 18, background: 'var(--fl-surface-2)', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius)', minWidth: 0, overflowWrap: 'anywhere' }
 const row: CSSProperties = { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }
 const actions: CSSProperties = { display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 12 }
-const button: CSSProperties = { padding: '8px 12px', border: '1px solid var(--fl-border)', borderRadius: 6, background: 'var(--fl-surface)', color: 'var(--fl-text)', font: 'inherit', fontSize: 12.5, cursor: 'pointer' }
+const button: CSSProperties = { padding: '8px 12px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', font: 'inherit', fontSize: 12.5, cursor: 'pointer' }
 const primary: CSSProperties = { ...button, background: 'var(--fl-action-primary-bg)', borderColor: 'var(--fl-action-primary-bg)', color: 'var(--fl-action-primary-ink)' }
 const errorStyle: CSSProperties = { fontSize: 12.5, lineHeight: 1.6, color: 'var(--fl-fail)' }

@@ -28,6 +28,7 @@ class DesktopAccessFilterTest {
             assertThat(call("/api/v1/secrets", key = session.token).contentAsString).isEqualTo("allowed")
             assertThat(call(key = session.token, origin = "https://attacker.example").status).isEqualTo(403)
             assertThat(call(key = session.token, host = "attacker.example:18180").status).isEqualTo(403)
+            assertThat(call(key = session.token, host = "127.0.0.1:18080").status).isEqualTo(403)
             assertThat(call(key = session.token, origin = "http://localhost:18180").status).isEqualTo(403)
             assertThat(call("/mock/test/page").getHeader("Location")).isEqualTo("http://localhost:18180/mock/test/page")
             assertThat(call("/mock/test/page", host = "localhost:18180").contentAsString).isEqualTo("allowed")

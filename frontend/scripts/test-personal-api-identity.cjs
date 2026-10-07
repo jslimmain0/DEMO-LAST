@@ -37,11 +37,12 @@ function load(file, requires) {
   return exported
 }
 const createApi = (transport, workspaceId, resourceBase, expectedLogin) => ({ transport, workspaceId, resourceBase, expectedLogin, environmentsApi: { list: async () => [], put: async () => { throw new Error('offline') }, remove: async () => {} }, workspacesApi: {} })
+const routePaths = load('../src/app/routePaths.ts', { 'react-router-dom': require('react-router-dom') })
 const provider = load('../src/app/WorkspaceContext.tsx', {
   react, 'react/jsx-runtime': { jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }) },
   '@tanstack/react-query': { hashKey: JSON.stringify, QueryClient: class {}, QueryClientProvider: 'query-provider', useQuery: ({ queryKey }) => ({ data: queryKey[0] === 'desktop' ? connection : queryKey[1] === 'local' ? [{ id: 'pc-id', name: '개인 공간', kind: 'PERSONAL', myRole: 'OWNER', canManage: true }] : [{ id: 'team-id', name: '팀 공간', kind: 'TEAM', myRole: 'EDITOR', canManage: false }], isLoading: false, refetch: () => {} }) },
   'react-router-dom': { useLocation: () => location, useNavigate: () => () => {} },
-  '../api/client': { createApi, localApi, serverApi }, '../auth/AuthContext': { useAuth: () => auth }, '../auth/desktop': { desktopApi: {} }, '../store/editorStore': { useEditorStore: {} }, './routePaths': { workspaceLocation: () => location },
+  '../api/client': { createApi, localApi, serverApi }, '../auth/AuthContext': { useAuth: () => auth }, '../auth/desktop': { desktopApi: {} }, '../store/editorStore': { useEditorStore: {} }, './routePaths': routePaths,
 })
 const environments = load('../src/lib/environments.ts', { react, '../app/WorkspaceContext': provider, '../components/toast': { toast: () => {} } })
 const render = () => { hookIndex = 0; const result = provider.WorkspaceProvider({ children: null }); scope = result.props.value; return scope }

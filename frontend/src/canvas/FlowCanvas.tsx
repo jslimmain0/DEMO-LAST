@@ -1,5 +1,5 @@
-import { useApi } from '../app/WorkspaceContext'
-import { Background, ControlButton, Controls, MiniMap, ReactFlow, getViewportForBounds, useReactFlow } from '@xyflow/react'
+import { useApi, useWorkspace } from '../app/WorkspaceContext'
+import { Background, ControlButton, Controls, MiniMap, ReactFlow, SelectionMode, getViewportForBounds, useReactFlow } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import type { CSSProperties, DragEvent } from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -18,6 +18,8 @@ import { PresenceOverlay } from './PresenceOverlay'
 import { SwitchNode } from './SwitchNode'
 import { NODE_W, catColor } from './nodeMeta'
 import { revealNodeTranslation } from './revealNode'
+import { canChangeExecutionAgent, type ExecutionAgent } from '../lib/executionAgentSelection'
+import { asGraphNode } from './graphAdapter'
 
 const nodeTypes = { flnode: NodeCard, branch: BranchNode, switch: SwitchNode, note: NoteNode, annogroup: GroupNode }
 const edgeTypes = { deletable: DeletableEdge }
@@ -45,6 +47,7 @@ function reclaimCanvasFocus() {
 
 export function FlowCanvas() {
   const { runsApi } = useApi()
+  const scope = useWorkspace()
 
   const nodes = useEditorStore((s) => s.nodes)
   const edges = useEditorStore((s) => s.edges)
@@ -71,10 +74,22 @@ export function FlowCanvas() {
   const addNodeFromTemplate = useEditorStore((s) => s.addNodeFromTemplate)
   const deleteNode = useEditorStore((s) => s.deleteNode)
   const duplicateSelection = useEditorStore((s) => s.duplicateSelection)
+  const copySelection = useEditorStore(s => s.copySelection)
+  const deleteSelection = useEditorStore(s => s.deleteSelection)
+  const setSelectionCollapsed = useEditorStore(s => s.setSelectionCollapsed)
   const updateEdge = useEditorStore((s) => s.updateEdge)
   const alignNodes = useEditorStore((s) => s.alignNodes)
   const distributeNodes = useEditorStore((s) => s.distributeNodes)
   const selectedCount = useEditorStore((s) => s.nodes.reduce((a, n) => a + (n.selected ? 1 : 0), 0))
+  const setSelectionAgent = useEditorStore(s => s.setSelectionAgent)
+  const agentSelectableCount = nodes.filter(n => n.selected && canChangeExecutionAgent(asGraphNode(n.data))).length
+  const selectedAgents = nodes.filter(n => n.selected && canChangeExecutionAgent(asGraphNode(n.data)))
+  const localCount = selectedAgents.filter(n => n.data.reqMode === 'client' || (n.data.executionAgent ?? scope.current.origin) === 'local').length
+  const serverCount = agentSelectableCount - localCount
+  const changeSelectedAgent = (agent: ExecutionAgent) => {
+    const count = setSelectionAgent(agent, scope.current.origin)
+    toast(count ? `${count}개 노드의 실행 위치를 ${agent === 'local' ? '내 PC' : '서버'}로 변경했습니다.` : '선택한 노드가 이미 해당 실행 위치로 설정되어 있습니다.', 'ok')
+  }
   const flowId = useEditorStore((s) => s.flowId)
   const wsReadOnly = useEditorStore((s) => s.readOnly) // 워크스페이스 VIEWER — 우클릭 실행 숨김
   const focusTick = useEditorStore((s) => s.focusTick)
@@ -255,14 +270,31 @@ export function FlowCanvas() {
       onPointerLeave={() => presence.hideCursor()}
     >
       {selectedCount >= 2 && (
-        <div style={{ position: 'absolute', top: 10, left: '50%', transform: 'translateX(-50%)', zIndex: 6, display: 'flex', gap: 3, alignItems: 'center', background: 'var(--fl-surface)', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-pill)', boxShadow: 'var(--fl-shadow-lg)', padding: '4px 6px' }}>
-          <span style={{ fontSize: 11, color: 'var(--fl-text-muted)', padding: '0 4px' }}>{selectedCount}개 정렬</span>
+        <div className="fl-selection-toolbar nodrag nopan" role="toolbar" aria-label="선택 노드 퀵 메뉴" onPointerDown={e => e.stopPropagation()}>
+          <span className="fl-selection-count">{selectedCount}개 선택</span>
+          <div className="fl-selection-agent" role="group" aria-label="실행 위치 일괄 변경">
+            <span title="HTTP · TCP · 변수 지정 · 조건 분기 · 값 검증 노드에 적용">실행 위치 · {agentSelectableCount}개</span>
+            <button aria-pressed={agentSelectableCount > 0 && localCount === agentSelectableCount} title="선택 노드를 내 PC에서 실행" disabled={wsReadOnly || scope.loading || !agentSelectableCount} onClick={() => changeSelectedAgent('local')}>내 PC · {localCount}</button>
+            <button aria-pressed={agentSelectableCount > 0 && serverCount === agentSelectableCount} title="선택 노드를 서버에서 실행" disabled={wsReadOnly || scope.loading || !agentSelectableCount} onClick={() => changeSelectedAgent('server')}>서버 · {serverCount}</button>
+          </div>
+          <div className="fl-selection-actions" role="group" aria-label="선택 노드 작업">
+            <button title="다른 워크플로에도 Ctrl+V로 붙여넣기" onClick={() => { const n = copySelection(); toast(n ? `${n}개 노드 복사됨 — Ctrl+V로 붙여넣기` : '노드를 복사하지 못했습니다.', n ? 'ok' : 'error') }}>복사</button>
+            <button disabled={wsReadOnly} title="연결과 바인딩을 함께 복제 (Ctrl+D)" onClick={() => { const n = duplicateSelection(); if (n) toast(`${n}개 노드 복제됨`, 'ok') }}>복제</button>
+            <button disabled={wsReadOnly} onClick={() => setSelectionCollapsed(true)}>접기</button>
+            <button disabled={wsReadOnly} onClick={() => setSelectionCollapsed(false)}>펼치기</button>
+            <button onClick={fitToSelection}>화면 맞춤</button>
+            <button className="fl-selection-delete" disabled={wsReadOnly} title="선택 노드와 연결 삭제 · Ctrl+Z로 되돌리기" onClick={() => { const n = deleteSelection(); if (n) toast(`${n}개 노드 삭제됨 — Ctrl+Z로 되돌리기`, 'ok') }}>삭제</button>
+            <button title="Esc" onClick={() => selectNode(null)}>선택 해제</button>
+          </div>
+          <div className="fl-selection-align" role="group" aria-label="선택 노드 정렬">
           {([['left', '⇤', '왼쪽'], ['centerX', '⇔', '가로 가운데'], ['right', '⇥', '오른쪽'], ['top', '⤒', '위'], ['centerY', '⇕', '세로 가운데'], ['bottom', '⤓', '아래']] as const).map(([k, ic, t]) => (
-            <button key={k} onClick={() => alignNodes(k)} title={`${t} 정렬`} aria-label={`${t} 정렬`} style={alignBtn}>{ic}</button>
+            <button key={k} disabled={wsReadOnly} onClick={() => alignNodes(k)} title={`${t} 정렬`} aria-label={`${t} 정렬`} style={alignBtn}>{ic}</button>
           ))}
           {selectedCount >= 3 && <span style={{ width: 1, height: 16, background: 'var(--fl-border)', margin: '0 2px' }} />}
-          {selectedCount >= 3 && <button onClick={() => distributeNodes('x')} title="가로 균등 분배" style={alignBtn}>↔</button>}
-          {selectedCount >= 3 && <button onClick={() => distributeNodes('y')} title="세로 균등 분배" style={alignBtn}>↕</button>}
+          {selectedCount >= 3 && <button disabled={wsReadOnly} onClick={() => distributeNodes('x')} title="가로 균등 분배" style={alignBtn}>↔</button>}
+          {selectedCount >= 3 && <button disabled={wsReadOnly} onClick={() => distributeNodes('y')} title="세로 균등 분배" style={alignBtn}>↕</button>}
+          </div>
+          {agentSelectableCount < selectedCount && <span className="fl-selection-hint">실행 위치 고정·Mock 연결 노드는 제외</span>}
         </div>
       )}
       <ReactFlow
@@ -291,11 +323,17 @@ export function FlowCanvas() {
         connectionLineStyle={connectionLineStyle}
         snapToGrid
         snapGrid={[GRID, GRID]}
+        selectionOnDrag={false}
+        selectionKeyCode="Shift"
+        selectionMode={SelectionMode.Partial}
+        panOnDrag={[0, 1]}
+        multiSelectionKeyCode={['Control', 'Meta', 'Shift']}
         disableKeyboardA11y
-        onNodeClick={(_, n) => { reclaimCanvasFocus(); selectNode(n.id) }}
+        onNodeClick={(event, n) => { reclaimCanvasFocus(); if (!event.ctrlKey && !event.metaKey && !event.shiftKey) selectNode(n.id) }}
         onPaneClick={() => { reclaimCanvasFocus(); selectNode(null); setCtxMenu(null); setAddMenu(null) }}
         onNodeDragStart={() => reclaimCanvasFocus()}
-        onNodeContextMenu={(e, n) => { e.preventDefault(); selectNode(n.id); setCtxMenu({ x: e.clientX, y: e.clientY, nodeId: n.id, nodeType: (n.data as { type?: string }).type ?? '' }) }}
+        onNodeContextMenu={(e, n) => { e.preventDefault(); if (!n.selected) selectNode(n.id); setCtxMenu({ x: e.clientX, y: e.clientY, nodeId: n.id, nodeType: (n.data as { type?: string }).type ?? '' }) }}
+        onSelectionContextMenu={(e, selected) => { e.preventDefault(); const n = selected[0]; if (n) setCtxMenu({ x: e.clientX, y: e.clientY, nodeId: n.id, nodeType: String(n.data.type ?? '') }) }}
         onPaneContextMenu={(e) => { e.preventDefault(); openAddMenu((e as MouseEvent).clientX, (e as MouseEvent).clientY) }}
         onDoubleClick={(e) => { if ((e.target as HTMLElement)?.classList?.contains('react-flow__pane')) openAddMenu(e.clientX, e.clientY) }}
         onMoveStart={() => { setCtxMenu(null); setAddMenu(null) }}
@@ -326,11 +364,11 @@ export function FlowCanvas() {
         <>
           <div style={{ position: 'fixed', inset: 0, zIndex: 40 }} onClick={() => setCtxMenu(null)} onContextMenu={(e) => { e.preventDefault(); setCtxMenu(null) }} />
           <div style={{ position: 'fixed', left: Math.min(ctxMenu.x, window.innerWidth - 180), top: Math.min(ctxMenu.y, window.innerHeight - 140), zIndex: 41, background: 'var(--fl-surface)', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', boxShadow: 'var(--fl-shadow-lg)', minWidth: 160, padding: 4 }}>
-            {SINGLE_OK.has(ctxMenu.nodeType) && !wsReadOnly && (
+            {selectedCount <= 1 && SINGLE_OK.has(ctxMenu.nodeType) && !wsReadOnly && (
               <button style={ctxItem} onClick={() => { runSingleFromMenu(ctxMenu.nodeId); setCtxMenu(null) }}>▶ 이 노드만 실행</button>
             )}
-            <button style={ctxItem} onClick={() => { duplicateSelection(); setCtxMenu(null) }}>⧉ 복제 (Ctrl+D)</button>
-            <button style={{ ...ctxItem, color: 'var(--fl-fail)' }} onClick={() => { deleteNode(ctxMenu.nodeId); setCtxMenu(null) }}>× 삭제 (Delete)</button>
+            <button disabled={wsReadOnly} style={ctxItem} onClick={() => { duplicateSelection(); setCtxMenu(null) }}>⧉ {selectedCount > 1 ? `선택 ${selectedCount}개 복제` : '복제'} (Ctrl+D)</button>
+            <button disabled={wsReadOnly} style={{ ...ctxItem, color: 'var(--fl-fail)' }} onClick={() => { if (selectedCount > 1) deleteSelection(); else deleteNode(ctxMenu.nodeId); setCtxMenu(null) }}>× {selectedCount > 1 ? `선택 ${selectedCount}개 삭제` : '삭제'} (Delete)</button>
           </div>
         </>
       )}

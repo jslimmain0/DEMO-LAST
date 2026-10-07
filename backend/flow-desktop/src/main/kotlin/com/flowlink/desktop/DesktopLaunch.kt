@@ -71,11 +71,22 @@ object DesktopLaunch {
                 .header("X-FlowLink-Local", agent.path("token").asText()).POST(HttpRequest.BodyPublishers.noBody()).build()
             val response = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(1)).build().send(request, HttpResponse.BodyHandlers.ofString())
             if (response.statusCode() != 200) return false
-            mapper.readTree(response.body()).path("url").asText()
+            validateWorkspaceUrl(base, mapper.readTree(response.body()).path("url").asText())
         }.getOrNull() ?: return false
         if (!args.contains("--flowlink.desktop.tray=false") && !args.contains("--flowlink.desktop.open-browser=false")) {
             Desktop.getDesktop().browse(URI.create(url))
         }
         return true
+    }
+
+    /** 기존 프로세스의 응답도 그 개인 런타임의 접속 URL만 허용한다. */
+    fun validateWorkspaceUrl(base: URI, value: String): String {
+        val target = URI.create(value)
+        require(target.scheme == "http" && target.host == "127.0.0.1" && target.port == base.port &&
+            target.userInfo == null && target.fragment == null && target.path == "/desktop/open" &&
+            Regex("(?:runtime=(?:local|server)&)?ticket=[A-Za-z0-9_-]{43}").matches(target.rawQuery.orEmpty())) {
+            "작업 화면 주소가 개인 앱의 주소와 일치하지 않습니다."
+        }
+        return target.toString()
     }
 }

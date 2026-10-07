@@ -45,7 +45,7 @@ class McpConfiguration {
         val props = Properties().apply { McpConfiguration::class.java.getResourceAsStream("/flowlink-release.properties")?.use { load(it) } }
         return McpServer.sync(transport).jsonMapper(JacksonMcpJsonMapper(mapper))
             .serverInfo("flowlink", props.getProperty("version", "unknown"))
-            .instructions("FlowLink 중앙 MCP. target은 개인/팀 저장 공간, executionAgent는 요청 출발지입니다. 개인 작업은 로그인한 온라인 Windows 앱이 필요합니다. UNKNOWN 결과를 자동 재실행하지 마세요.")
+            .instructions("FlowLink 중앙 MCP. target은 개인/팀 저장 공간, executionAgent는 요청 출발지입니다. 개인 작업은 로그인한 온라인 Windows 앱이 필요합니다. UNKNOWN 결과를 자동 재실행하지 마세요. ${McpGraphLayout.GUIDE}")
             .capabilities(McpSchema.ServerCapabilities.builder().tools(false).build())
             .requestTimeout(Duration.ofMinutes(20)).tools(McpTools(mapper, rest).specifications()).build()
     }

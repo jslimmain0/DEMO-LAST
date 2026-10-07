@@ -1035,7 +1035,7 @@
   {
     "name": "flow_upsert",
     "title": "워크플로 저장",
-    "description": "graph(flowlink_guide(flow) 규격: nodes/edges, START·END 필수)를 새 버전으로 저장. id 없으면 name 으로 새 워크플로 생성 — workspace·folder 로 어디에 만들지 지목(기존 워크플로 이동은 flow_update). 검증 실패는 서버 메시지.",
+    "description": "graph(flowlink_guide(flow) 규격: nodes/edges, START·END 필수)를 새 버전으로 저장. 새 생성은 기본으로 위→아래 컴팩트 트리 배치하며 START와 END의 x 좌표를 같게 맞춘다. 기존 수정은 좌표를 유지한다. layout=compact-tree로 재배치, preserve로 입력 좌표 유지. id 없으면 name 으로 새 워크플로 생성 — workspace·folder 로 어디에 만들지 지목(기존 워크플로 이동은 flow_update). 검증 실패는 서버 메시지.",
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
@@ -1074,6 +1074,11 @@
         },
         "note": {
           "type": "string"
+        },
+        "layout": {
+          "description": "새 생성 기본값 compact-tree: 위→아래 컴팩트 트리, START·END는 동일 열(x). 기존 수정은 좌표 유지. compact-tree로 재배치, preserve로 입력 좌표 유지.",
+          "type": "string",
+          "enum": ["compact-tree", "preserve"]
         },
         "folder": {
           "description": "폴더 이름 또는 \"상위/하위\" 경로(folder_list). 생략 또는 \"/\"=루트",

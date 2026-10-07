@@ -32,13 +32,13 @@ class DesktopAccessFilter(private val session: DesktopSession) : OncePerRequestF
     override fun doFilterInternal(req: HttpServletRequest, res: HttpServletResponse, chain: FilterChain) {
         val path = req.requestURI.removePrefix(req.contextPath)
         val host = req.getHeader("Host") ?: ""
-        if (!Regex("(127\\.0\\.0\\.1|localhost):[0-9]{1,5}").matches(host)) {
+        if (host != "127.0.0.1:${session.port}" && host != "localhost:${session.port}") {
             res.sendError(403, "허용되지 않은 로컬 호스트입니다."); return
         }
         // 사용자 정의 Mock HTML은 관리 화면과 다른 origin에서 실행한다.
         if (path.startsWith("/mock/") && host.startsWith("127.0.0.1:")) {
             res.status = 307
-            res.setHeader("Location", "http://localhost:${req.serverPort}${req.requestURI}" +
+            res.setHeader("Location", "http://localhost:${session.port}${req.requestURI}" +
                 (req.queryString?.let { "?$it" } ?: ""))
             return
         }
@@ -79,11 +79,18 @@ class DesktopController(private val session: DesktopSession, private val context
 
     @GetMapping("/desktop/open")
     fun open(@RequestParam ticket: String, @RequestParam(required = false) runtime: String?, res: HttpServletResponse) {
+        if (runtime != null && runtime !in listOf("local", "server")) { res.sendError(400, "워크스페이스 구분이 올바르지 않습니다."); return }
         if (!session.claimTicket(ticket)) { res.sendError(401, "연결이 만료되었습니다. Windows 앱에서 다시 열어주세요."); return }
         res.setHeader("Set-Cookie", ResponseCookie.from(session.cookieName, session.token)
             .httpOnly(true).sameSite("Strict").path("/").build().toString())
         res.setHeader("Cache-Control", "no-store")
         res.setHeader("Referrer-Policy", "no-referrer")
-        res.sendRedirect(if (runtime == "server") "/?runtime=server" else "/")
+        val target = when (runtime) {
+            "local" -> "/flows?space=local%3Alocal"
+            "server" -> "/flows?space=server%3Apublic"
+            else -> "/flows"
+        }
+        res.status = HttpServletResponse.SC_FOUND
+        res.setHeader("Location", session.baseUrl + target)
     }
 }

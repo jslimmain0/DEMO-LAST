@@ -6,6 +6,7 @@ import { asGraphNode, fromRF, rfExtras, rfNodeType, toRF } from '../canvas/graph
 import { makeNode } from '../canvas/nodeFactory'
 import { newId } from '../lib/ids'
 import type { RunView } from '../lib/runProgress'
+import { executionAgentPatch, type ExecutionAgent } from '../lib/executionAgentSelection'
 
 // D2: 고빈도 캔버스 상태(nodes/edges/selection)는 zustand 단일 진실원. react-query 서버상태와 분리.
 interface EditorState {
@@ -42,6 +43,7 @@ interface EditorState {
   addNode: (type: NodeType, pos: { x: number; y: number }) => string
   addNodeFromTemplate: (template: GraphNode, pos: { x: number; y: number }) => string
   updateNodeData: (id: string, patch: Partial<GraphNode>) => void
+  setSelectionAgent: (agent: ExecutionAgent, owner: ExecutionAgent) => number
   toggleNodeCollapse: (id: string) => void
   setAllCollapsed: (collapsed: boolean) => void
   selectNode: (id: string | null) => void
@@ -60,6 +62,8 @@ interface EditorState {
   copySelection: () => number
   pasteClipboard: () => number
   duplicateSelection: () => number
+  deleteSelection: () => number
+  setSelectionCollapsed: (collapsed: boolean) => number
   autoLayout: () => void
   // 엣지 재연결(리라우트) — 끝점을 다른 노드/핸들로 옮김. sourceHandle(분기 포트) 승계.
   updateEdge: (oldEdgeId: string, conn: Connection) => void
@@ -268,6 +272,22 @@ export const useEditorStore = create<EditorState>()((set, get) => {
     })
   },
 
+  setSelectionAgent: (agent, owner) => {
+    if (get().readOnly) return 0
+    let changed = 0
+    const nodes = get().nodes.map(node => {
+      if (!node.selected) return node
+      const patch = executionAgentPatch(asGraphNode(node.data), agent, owner)
+      if (!patch) return node
+      changed++
+      return { ...node, data: { ...node.data, ...patch } }
+    })
+    if (!changed) return 0
+    pushHistory()
+    set({ nodes, dirty: true })
+    return changed
+  },
+
   // 노드 접기/펴기 — data.collapsed 토글. dirty(저장·협업 반영)로 표시하되 undo 스택엔 안 쌓는다(편집 아님).
   toggleNodeCollapse: (id) => {
     set({
@@ -351,6 +371,7 @@ export const useEditorStore = create<EditorState>()((set, get) => {
   },
 
   pasteClipboard: () => {
+    if (get().readOnly) return 0
     let clip: NodeClipboard | null = null
     try {
       const raw = localStorage.getItem(CLIP_KEY)
@@ -395,8 +416,34 @@ export const useEditorStore = create<EditorState>()((set, get) => {
 
   // 선택 노드 복제(그룹 내 연결·토큰 재매핑 포함) — 복사+붙여넣기를 한 동작으로
   duplicateSelection: () => {
+    if (get().readOnly) return 0
     if (get().copySelection() === 0) return 0
     return get().pasteClipboard()
+  },
+
+  deleteSelection: () => {
+    if (get().readOnly) return 0
+    const ids = new Set(get().nodes.filter(n => n.selected).map(n => n.id))
+    if (!ids.size) return 0
+    pushHistory()
+    set({ nodes: get().nodes.filter(n => !ids.has(n.id)),
+      edges: get().edges.filter(e => !ids.has(e.source) && !ids.has(e.target)),
+      selectedId: ids.has(get().selectedId ?? '') ? null : get().selectedId, dirty: true })
+    return ids.size
+  },
+
+  setSelectionCollapsed: (collapsed) => {
+    if (get().readOnly) return 0
+    let changed = 0
+    const nodes = get().nodes.map(n => {
+      if (!n.selected || ['note', 'group'].includes(String(n.data.type)) || !!n.data.collapsed === collapsed) return n
+      changed++
+      return { ...n, data: { ...n.data, collapsed } }
+    })
+    if (!changed) return 0
+    pushHistory()
+    set({ nodes, dirty: true })
+    return changed
   },
 
   // 자동 정렬 — 위상 레벨(진입차수 BFS)로 좌→우, 같은 레벨은 세로로. 주석 노드는 그대로 둔다.

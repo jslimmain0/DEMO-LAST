@@ -6,9 +6,23 @@ import org.junit.jupiter.api.io.TempDir
 import org.junit.jupiter.api.assertThrows
 import org.springframework.mock.env.MockEnvironment
 import java.nio.file.Path
+import java.net.URI
 
 class DesktopLaunchTest {
     @TempDir lateinit var directory: Path
+
+    @Test fun `작업 접속 응답의 주소는 기존 개인 앱의 포트와 경로를 벗어나지 않는다`() {
+        val base = URI.create("http://127.0.0.1:18180")
+        val ticket = "a".repeat(43)
+        val valid = "$base/desktop/open?ticket=$ticket"
+        assertThat(DesktopLaunch.validateWorkspaceUrl(base, valid)).isEqualTo(valid)
+        assertThat(DesktopLaunch.validateWorkspaceUrl(base, "$base/desktop/open?runtime=server&ticket=$ticket"))
+            .contains(":18180/desktop/open")
+        for (invalid in listOf("http://127.0.0.1:18080/desktop/open?ticket=$ticket",
+            "https://server.example/desktop/open?ticket=$ticket", "$base/flows", "$valid#other", "$valid&url=http://localhost:18080")) {
+            assertThrows<IllegalArgumentException> { DesktopLaunch.validateWorkspaceUrl(base, invalid) }
+        }
+    }
 
     @Test fun `직접 JAR 실행과 설치 앱의 추가 인자가 개인 프로파일과 기본 포트를 제거하지 못한다`() {
         for (input in listOf(emptyArray(), arrayOf("--flowlink.desktop.open-browser=false"))) {

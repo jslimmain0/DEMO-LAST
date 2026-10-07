@@ -433,7 +433,7 @@ export function Dashboard() {
                   onKeyDown={(e) => { if (e.key === 'Escape' && search) { e.stopPropagation(); setSearch('') } }} />
                 {search && (
                   <button onClick={() => setSearch('')} aria-label="검색 지우기" title="지우기 (Esc)"
-                    style={{ position: 'absolute', right: 6, width: 20, height: 20, border: 'none', borderRadius: 10, background: 'transparent', color: 'var(--fl-text-muted)', fontSize: 13, lineHeight: 1 }}>×</button>
+                    style={{ position: 'absolute', right: 6, width: 20, height: 20, border: 'none', borderRadius: 'var(--fl-radius)', background: 'transparent', color: 'var(--fl-text-muted)', fontSize: 13, lineHeight: 1 }}>×</button>
                 )}
               </div>
               <div style={seg} role="group" aria-label="정렬">
@@ -847,7 +847,7 @@ function CrumbButton({ label, onClick, drop }: { label: string; onClick: () => v
       onDrop={(e) => { e.preventDefault(); setOver(false); drop.onDrop() }}
       style={{
         ...crumbBtn,
-        ...(over ? { color: 'var(--fl-primary)', outline: '1.5px dashed var(--fl-primary)', outlineOffset: 3, borderRadius: 6 } : null),
+        ...(over ? { color: 'var(--fl-primary)', outline: '1.5px dashed var(--fl-primary)', outlineOffset: 3, borderRadius: 'var(--fl-radius-sm)' } : null),
       }}
     >{label}</button>
   )
@@ -869,7 +869,7 @@ const dropHint: CSSProperties = { border: '1px dashed color-mix(in srgb, var(--f
 const dropActive: CSSProperties = { border: '1.5px dashed var(--fl-primary)', background: 'color-mix(in srgb, var(--fl-primary) 10%, var(--fl-surface))', boxShadow: 'var(--fl-shadow-lg)' }
 const bulkMoveSel: CSSProperties = { height: 32, padding: '0 8px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 12.5, cursor: 'pointer' }
 const newFolderBtn: CSSProperties = { width: '100%', marginTop: 8, padding: '8px', border: '1px dashed var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'transparent', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 13 }
-const primaryBtn: CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, background: 'var(--fl-action-primary-bg)', color: 'var(--fl-action-primary-ink)', border: 'none', padding: '9px 16px', borderRadius: 10, fontWeight: 600, fontSize: 13.5, cursor: 'pointer', height: 38 }
+const primaryBtn: CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, background: 'var(--fl-action-primary-bg)', color: 'var(--fl-action-primary-ink)', border: 'none', padding: '9px 16px', borderRadius: 'var(--fl-radius)', fontWeight: 600, fontSize: 13.5, cursor: 'pointer', height: 38 }
 const ghostBtn: CSSProperties = { border: '1px solid var(--fl-border)', background: 'var(--fl-surface)', color: 'var(--fl-text)', padding: '8px 14px', borderRadius: 'var(--fl-radius-sm)', fontSize: 13, cursor: 'pointer' }
 const searchBox: CSSProperties = { padding: '0 12px 0 30px', height: 38, border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 13, width: 240 }
 const seg: CSSProperties = { display: 'flex', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', overflow: 'hidden', height: 38 }
@@ -878,11 +878,11 @@ const cardCheckbox: CSSProperties = { width: 18, height: 18, marginTop: 2, curso
 const selectToggleBtn = (on: boolean): CSSProperties => ({ display: 'flex', alignItems: 'center', gap: 6, height: 38, padding: '0 14px', borderRadius: 'var(--fl-radius-sm)', border: `1px solid ${on ? 'var(--fl-primary)' : 'var(--fl-border)'}`, background: on ? 'var(--fl-surface-2)' : 'var(--fl-surface)', color: on ? 'var(--fl-text)' : 'var(--fl-text-muted)', fontSize: 13, fontWeight: on ? 600 : 500, cursor: 'pointer' })
 const selectBar: CSSProperties = { display: 'flex', alignItems: 'center', gap: 14, padding: '10px 14px', borderRadius: 'var(--fl-radius-sm)', border: '1px solid var(--fl-border)', background: 'var(--fl-surface)' }
 const selectAllLabel: CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--fl-text)', cursor: 'pointer', userSelect: 'none' }
-const dangerBtn = (disabled: boolean): CSSProperties => ({ display: 'flex', alignItems: 'center', gap: 6, background: 'var(--fl-action-danger-bg)', color: 'var(--fl-action-danger-ink)', border: 'none', padding: '8px 14px', borderRadius: 10, fontWeight: 600, fontSize: 13, cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.5 : 1, height: 36 })
-const iconBtn: CSSProperties = { width: 30, height: 30, borderRadius: 8, border: '1px solid var(--fl-border)', background: 'var(--fl-surface)', cursor: 'pointer', color: 'var(--fl-text-muted)', fontSize: 15 }
+const dangerBtn = (disabled: boolean): CSSProperties => ({ display: 'flex', alignItems: 'center', gap: 6, background: 'var(--fl-action-danger-bg)', color: 'var(--fl-action-danger-ink)', border: 'none', padding: '8px 14px', borderRadius: 'var(--fl-radius)', fontWeight: 600, fontSize: 13, cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.5 : 1, height: 36 })
+const iconBtn: CSSProperties = { width: 30, height: 30, borderRadius: 'var(--fl-radius-sm)', border: '1px solid var(--fl-border)', background: 'var(--fl-surface)', cursor: 'pointer', color: 'var(--fl-text-muted)', fontSize: 15 }
 const miniBtn: CSSProperties = { width: 24, height: 28, flexShrink: 0, border: 'none', background: 'transparent', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 12 }
 const menuBox: CSSProperties = { background: 'var(--fl-surface)', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', boxShadow: 'var(--fl-shadow-lg)', padding: 5, zIndex: 100, display: 'grid', gap: 2 }
-const menuItem: CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '7px 10px', border: 'none', background: 'transparent', color: 'var(--fl-text)', fontSize: 13, cursor: 'pointer', textAlign: 'left', borderRadius: 6 }
-const menuSelect: CSSProperties = { width: '100%', padding: '6px 8px', margin: '0 0 2px', border: '1px solid var(--fl-border)', borderRadius: 6, background: 'var(--fl-surface-2)', color: 'var(--fl-text)', fontSize: 12.5 }
-const emptyBox: CSSProperties = { border: '1.5px dashed var(--fl-border)', borderRadius: 16, padding: 40, textAlign: 'center', color: 'var(--fl-text-muted)', fontSize: 14 }
-const errorBox: CSSProperties = { display: 'flex', alignItems: 'center', gap: 14, border: '1px solid var(--fl-fail)', borderRadius: 12, padding: 18, color: 'var(--fl-text)' }
+const menuItem: CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '7px 10px', border: 'none', background: 'transparent', color: 'var(--fl-text)', fontSize: 13, cursor: 'pointer', textAlign: 'left', borderRadius: 'var(--fl-radius-sm)' }
+const menuSelect: CSSProperties = { width: '100%', padding: '6px 8px', margin: '0 0 2px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', color: 'var(--fl-text)', fontSize: 12.5 }
+const emptyBox: CSSProperties = { border: '1.5px dashed var(--fl-border)', borderRadius: 'var(--fl-radius)', padding: 40, textAlign: 'center', color: 'var(--fl-text-muted)', fontSize: 14 }
+const errorBox: CSSProperties = { display: 'flex', alignItems: 'center', gap: 14, border: '1px solid var(--fl-fail)', borderRadius: 'var(--fl-radius)', padding: 18, color: 'var(--fl-text)' }

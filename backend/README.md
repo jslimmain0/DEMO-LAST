@@ -1,5 +1,7 @@
 # 역할별 빌드
 
+중앙 서버의 `/`와 `/download`는 로그인 없이 Windows 앱 다운로드와 설치 안내를 제공한다. 페이지에는 최신 MSI의 버전·용량·변경 사항을 표시하며, 작업 화면은 Windows 앱에서 연다. 서버 실행 전 `FLOWLINK_DISTRIBUTION_DIR`에 배포 폴더의 절대 경로를 지정하고, 그 폴더에 `FlowLink-버전-windows-x64.msi`와 `release-manifest.json`을 함께 게시한다. 미지정 시 서버 실행 위치의 `downloads/`를 사용한다. 게시에는 `flow-desktop/installer/Publish-DesktopRelease.ps1`을 사용한다.
+
 현재 다섯 모듈의 두 실행 JAR 버전은 0.3.9다. agent/core/호스트/드라이버/MCP SDK 패키징 경계와 임시 H2의 서버·개인 launcher 기동, 잘못된 프로파일·바인딩 거부를 확인했다. 최근 수정과 검증 범위는 [아키텍처 일치 검토](../docs/reviews/2026-10-07-architecture-consistency.md)를 따른다. 아래 날짜별 테스트 수는 당시 기록이다. desktop 검증은 임시 JSON과 모의 REST를 사용하며 실제 사용자 IDE 설정을 변경하지 않는다. MCP 프로토콜·도구 호출·IDE 등록 테스트는 수행하지 않았다.
 
 `flow-agent`는 HTTP·TCP 호출, Mock·콜백 처리와 작업 통신 규격을 담는 DB 없는 라이브러리다. `flow-core`는 공통 워크플로·환경·JPA 저장·권한·관리 API와 실행 조정을 소유한다. `flow-server`는 중앙 로그인·공용 DB 설정·협업·배포·PC 명령 중계를 담당하고, `flow-desktop`은 Windows 화면·로그인·트레이·업데이트·개인 H2 설정·작업 전달을 담당한다. `flow-mcp`는 중앙 서버에서 로드하는 Kotlin MCP 라이브러리이며 독립 프로세스가 아니다.
@@ -21,6 +23,8 @@ desktop은 server 소스나 서버 JAR에 의존하지 않는다. 두 호스트�
 DB 연결과 프로파일은 각 호스트의 `src/main/resources/application*.yml`에 있다. core의 `application-core.yml`은 기존 UUID CHAR(36) 매핑과 공통 웹/ORM 설정만 제공한다. 개인 H2는 현재 Hibernate `ddl-auto:update`와 기존 리소스/시크릿 이관 코드로 업그레이드한다. 별도 Flyway 적용으로 기존 개인 DB를 바꾸는 작업은 하지 않는다. Oracle 신규/업그레이드 SQL은 server에 남긴다. 작업 프론트 `frontend/dist`와 SPA 라우팅은 desktop에만 동봉하며, 설치된 앱은 Java와 화면·관리 API·H2를 포함해 서버 없이 개인 작업을 실행할 수 있다.
 
 개인 작업은 **Windows 앱의 ‘개인 워크스페이스 열기’**로 진입한다. 그 브라우저 화면의 개인 API는 PC의 `flow-desktop`에 요청하고, 공용·팀 작업만 중앙 서버에 요청한다. 중앙 서버 URL은 인증·API·MCP·다운로드 전용이며 `/flows`, `/plugins` 등 작업 화면을 제공하지 않는다. 개인 API 보호 때문에 로컬 URL을 직접 입력하는 대신 앱에서 화면을 연다. 서버 연결 실패는 개인 앱 종료·중앙 로그인 강제·개인 자료 삭제 사유가 아니다. 서버 노드·원격 Vault 등 외부 의존이 있는 작업에는 해당 연결이 필요하다.
+
+개인·회사 워크스페이스 모두 화면 주소는 PC 앱의 `http://127.0.0.1:18180`을 사용한다(별도 포트를 지정하면 해당 포트). 회사 공간의 API는 PC의 `/api/v1/remote`를 거쳐 중앙 서버로 전달한다. ‘개인 워크스페이스 열기’는 저장된 회사 공간 선택보다 우선하며, ‘회사 워크스페이스 열기’와 로그인 완료는 공용 공간으로 진입한다. 일회용 접속 주소와 리다이렉트는 PC 앱의 주소·포트를 사용하고, 이전 `runtime` 쿼리는 진입 시 `space`로 정규화한다.
 
 서버가 없는 첫 시작과 로그인 실패 후 개인 생성·저장·조회·SET/ASSERT 실행은 `scripts/test/desktop-offline.ps1 -AgentFile <격리 개인 앱 agent.json>`으로 검증한다. 중앙 서버가 응답하지 않는 루프백 실험 설정에만 실행하며, 실험용 개인 흐름 하나를 남긴다. 서버 로그인·주소 조회·원격 API 전송의 연결 실패는 503 안내로 반환하고 저장된 로그인 정보는 유지한다.
 

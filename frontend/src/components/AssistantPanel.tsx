@@ -167,7 +167,7 @@ export function AssistantPanel({ width, onClose }: { width: number; onClose: () 
             onChange={(e) => void changeModel(e.target.value)}
             disabled={!canEdit || !modelsQ.data?.models?.length}
             title="AI 모델 선택 — 포함 모델은 무료, 프리미엄은 Copilot 프리미엄 요청 쿼터 필요"
-            style={{ flex: 1, minWidth: 0, padding: '4px 8px', fontSize: 12, borderRadius: 6, border: '1px solid var(--fl-border)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontFamily: 'var(--fl-font-mono)' }}
+            style={{ flex: 1, minWidth: 0, padding: '4px 8px', fontSize: 12, borderRadius: 'var(--fl-radius-sm)', border: '1px solid var(--fl-border)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontFamily: 'var(--fl-font-mono)' }}
           >
             {!modelsQ.data?.models?.length && <option value={model}>{model || '불러오는 중…'}</option>}
             {(() => {
@@ -206,7 +206,7 @@ export function AssistantPanel({ width, onClose }: { width: number; onClose: () 
         <div style={{ margin: 12, padding: 12, border: '1px solid var(--fl-primary)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', fontSize: 12.5, lineHeight: 1.6 }}>
           <b>GitHub Copilot 연결</b> — 열린 GitHub 페이지에 아래 코드를 입력하세요(복사됨):
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '8px 0' }}>
-            <code style={{ fontSize: 18, fontWeight: 700, letterSpacing: 2, fontFamily: 'var(--fl-font-mono)', background: 'var(--fl-surface)', padding: '4px 10px', borderRadius: 6 }}>{device.userCode}</code>
+            <code style={{ fontSize: 18, fontWeight: 700, letterSpacing: 2, fontFamily: 'var(--fl-font-mono)', background: 'var(--fl-surface)', padding: '4px 10px', borderRadius: 'var(--fl-radius-sm)' }}>{device.userCode}</code>
             <a href={device.verificationUri} target="_blank" rel="noreferrer" style={{ color: 'var(--fl-primary)', fontSize: 12 }}>페이지 다시 열기 ↗</a>
           </div>
           <div style={{ color: 'var(--fl-text-muted)' }}>인증하면 자동으로 연결됩니다… <button onClick={() => setDevice(null)} style={{ ...connectBtn, background: 'transparent', color: 'var(--fl-text-muted)', border: '1px solid var(--fl-border)' }}>취소</button></div>
@@ -268,9 +268,9 @@ function badge(real?: boolean): CSSProperties {
   return { fontSize: 10, fontWeight: 700, fontFamily: 'var(--fl-font-mono)', padding: '2px 7px', borderRadius: 999, border: '1px solid var(--fl-border)', color: real ? 'var(--fl-primary)' : 'var(--fl-text-muted)', background: real ? 'rgba(97,85,245,.12)' : 'var(--fl-surface-2)' }
 }
 function bubble(role: string): CSSProperties {
-  return { padding: '8px 11px', borderRadius: 12, fontSize: 12.5, lineHeight: 1.55, whiteSpace: 'pre-wrap', wordBreak: 'break-word', background: role === 'user' ? 'var(--fl-action-primary-bg)' : 'var(--fl-surface-2)', color: role === 'user' ? 'var(--fl-action-primary-ink)' : 'var(--fl-text)', border: role === 'user' ? 'none' : '1px solid var(--fl-border)' }
+  return { padding: '8px 11px', borderRadius: 'var(--fl-radius)', fontSize: 12.5, lineHeight: 1.55, whiteSpace: 'pre-wrap', wordBreak: 'break-word', background: role === 'user' ? 'var(--fl-action-primary-bg)' : 'var(--fl-surface-2)', color: role === 'user' ? 'var(--fl-action-primary-ink)' : 'var(--fl-text)', border: role === 'user' ? 'none' : '1px solid var(--fl-border)' }
 }
-const xBtn: CSSProperties = { width: 26, height: 26, borderRadius: 7, border: 'none', background: 'var(--fl-surface-2)', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 15 }
+const xBtn: CSSProperties = { width: 26, height: 26, borderRadius: 'var(--fl-radius-sm)', border: 'none', background: 'var(--fl-surface-2)', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 15 }
 const connectBtn: CSSProperties = { padding: '4px 10px', borderRadius: 999, border: 'none', background: 'var(--fl-action-primary-bg)', color: 'var(--fl-action-primary-ink)', cursor: 'pointer', fontSize: 11, fontWeight: 700 }
 const sendBtn: CSSProperties = { flexShrink: 0, padding: '8px 12px', border: 'none', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-action-primary-bg)', color: 'var(--fl-action-primary-ink)', cursor: 'pointer', fontSize: 12.5, fontWeight: 600 }
 const applyBtn: CSSProperties = { padding: '6px 12px', border: '1px solid var(--fl-primary)', borderRadius: 'var(--fl-radius-sm)', background: 'transparent', color: 'var(--fl-primary)', cursor: 'pointer', fontSize: 12, fontWeight: 600 }

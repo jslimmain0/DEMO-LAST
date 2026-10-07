@@ -11,15 +11,17 @@ import javax.swing.JTextField
 import javax.swing.BorderFactory
 import javax.swing.JPanel
 import javax.swing.plaf.basic.BasicButtonUI
+import javax.swing.plaf.basic.BasicTextFieldUI
+import javax.swing.border.AbstractBorder
 import javax.swing.plaf.FontUIResource
 
 /** 설치 아이콘과 같은 두 실행 지점의 연결 표시. 웹 화면의 브랜드 토큰을 따른다. */
 internal object DesktopBrand {
-    val primary = Color(0x24, 0x5c, 0xdd)
-    val text = Color(0x1b, 0x2a, 0x3d)
-    val muted = Color(0x60, 0x70, 0x85)
-    val background = Color(0xf3, 0xf6, 0xfa)
-    val border = Color(0xdc, 0xe3, 0xed)
+    val primary = Color(0x76, 0x60, 0xd9)
+    val text = Color(0x28, 0x23, 0x38)
+    val muted = Color(0x75, 0x6c, 0x85)
+    val background = Color(0xf6, 0xf4, 0xfc)
+    val border = Color(0xe7, 0xe2, 0xf3)
     val success = Color(0x15, 0x80, 0x3d)
     val attention = Color(0xa1, 0x62, 0x07)
     val body = Font("맑은 고딕", Font.PLAIN, 14)
@@ -33,13 +35,13 @@ internal object DesktopBrand {
                 !isEnabled -> background
                 prominent && model.isPressed -> primary.darker()
                 prominent -> primary
-                model.isRollover -> Color(0xe9, 0xf0, 0xfd)
+                model.isRollover -> Color(0xf0, 0xed, 0xfa)
                 else -> Color.WHITE
             }
-            g.fillRoundRect(1, 1, width - 2, height - 2, 12, 12)
+            g.fillRoundRect(1, 1, width - 2, height - 2, 28, 28)
             g.color = if (hasFocus()) primary else if (prominent && isEnabled) primary else DesktopBrand.border
             g.stroke = BasicStroke(if (hasFocus()) 2f else 1f)
-            g.drawRoundRect(1, 1, width - 3, height - 3, 12, 12)
+            g.drawRoundRect(1, 1, width - 3, height - 3, 28, 28)
             g.dispose(); super.paintComponent(graphics)
         }
     }.apply {
@@ -53,7 +55,36 @@ internal object DesktopBrand {
 
     fun field(field: JTextField): JTextField = field.apply {
         font = body; foreground = DesktopBrand.text; background = Color.WHITE; caretColor = primary
-        border = BorderFactory.createCompoundBorder(BorderFactory.createLineBorder(DesktopBrand.border), BorderFactory.createEmptyBorder(11, 12, 11, 12))
+        setUI(object : BasicTextFieldUI() {
+            override fun paintSafely(graphics: java.awt.Graphics) {
+                val g = graphics.create() as java.awt.Graphics2D
+                g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
+                g.color = if (field.isEnabled) Color.WHITE else DesktopBrand.background
+                g.fillRoundRect(1, 1, field.width - 2, field.height - 2, 28, 28)
+                g.dispose()
+                super.paintSafely(graphics)
+            }
+        })
+        isOpaque = false
+        border = object : AbstractBorder() {
+            override fun getBorderInsets(component: java.awt.Component) = java.awt.Insets(11, 12, 11, 12)
+            override fun getBorderInsets(component: java.awt.Component, insets: java.awt.Insets): java.awt.Insets {
+                insets.set(11, 12, 11, 12)
+                return insets
+            }
+            override fun paintBorder(component: java.awt.Component, graphics: java.awt.Graphics, x: Int, y: Int, width: Int, height: Int) {
+                val g = graphics.create() as java.awt.Graphics2D
+                g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
+                g.color = if (field.hasFocus()) primary else DesktopBrand.border
+                g.stroke = BasicStroke(if (field.hasFocus()) 2f else 1f)
+                g.drawRoundRect(x + 1, y + 1, width - 3, height - 3, 28, 28)
+                g.dispose()
+            }
+        }
+        addFocusListener(object : java.awt.event.FocusAdapter() {
+            override fun focusGained(event: java.awt.event.FocusEvent) { repaint() }
+            override fun focusLost(event: java.awt.event.FocusEvent) { repaint() }
+        })
         minimumSize = java.awt.Dimension(100, 44)
     }
 
@@ -62,11 +93,11 @@ internal object DesktopBrand {
         override fun paintComponent(graphics: java.awt.Graphics) {
             val g = graphics.create() as java.awt.Graphics2D
             g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
-            g.color = Color.WHITE; g.fillRoundRect(0, 0, width - 1, height - 1, 16, 16)
-            g.color = DesktopBrand.border; g.drawRoundRect(0, 0, width - 1, height - 1, 16, 16)
+            g.color = Color.WHITE; g.fillRoundRect(0, 0, width - 1, height - 1, 48, 48)
+            g.color = DesktopBrand.border; g.drawRoundRect(0, 0, width - 1, height - 1, 48, 48)
             g.dispose(); super.paintComponent(graphics)
         }
-    }.apply { isOpaque = false; border = BorderFactory.createEmptyBorder(14, 16, 14, 16) }
+    }.apply { isOpaque = false; border = BorderFactory.createEmptyBorder(18, 20, 18, 20) }
 
     fun configure() {
         runCatching { UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName()) }

@@ -1,4 +1,17 @@
 .fl-editor-workbench { --editor-canvas: var(--fl-canvas-bg); }
+.fl-selection-toolbar { position:absolute; top:10px; left:50%; transform:translateX(-50%); z-index:6; display:flex; flex-wrap:wrap; justify-content:center; align-items:center; gap:8px; width:max-content; max-width:calc(100% - 20px); box-sizing:border-box; padding:8px 12px; border:1px solid var(--fl-border); border-radius:var(--fl-radius); background:var(--fl-surface); box-shadow:var(--fl-shadow-lg); }
+.fl-selection-count,.fl-selection-agent > span,.fl-selection-hint { font-size:12px; color:var(--fl-text-muted); }
+.fl-selection-agent,.fl-selection-align { display:flex; align-items:center; gap:4px; flex-wrap:wrap; justify-content:center; }
+.fl-selection-agent > span { margin-right:4px; }
+.fl-selection-agent > button { padding:7px 12px; border:1px solid var(--fl-border); border-radius:var(--fl-radius-sm); background:var(--fl-surface-2); color:var(--fl-primary); font:inherit; font-size:12px; cursor:pointer; }
+.fl-selection-agent > button:disabled { color:var(--fl-disabled-ink); background:var(--fl-disabled-bg); cursor:default; }
+.fl-selection-hint { flex-basis:100%; text-align:center; font-size:11px; }
+.fl-selection-actions { display:flex; align-items:center; justify-content:center; gap:4px; flex-wrap:wrap; }
+.fl-selection-actions button { padding:6px 9px; border:1px solid var(--fl-border); border-radius:var(--fl-radius-sm); background:var(--fl-surface); color:var(--fl-text); font:inherit; font-size:12px; cursor:pointer; }
+.fl-selection-agent button[aria-pressed="true"] { background:var(--fl-primary); color:white; border-color:var(--fl-primary); }
+.fl-selection-actions button:hover:not(:disabled) { background:var(--fl-surface-2); }
+.fl-selection-actions button.fl-selection-delete { color:var(--fl-fail); }
+.fl-selection-actions button:disabled,.fl-selection-align button:disabled { opacity:.4; cursor:default !important; }
 .fl-editor-workbench .fl-canvas { background:var(--fl-canvas-bg) !important; }
 .fl-editor-heading { display:flex; align-items:center; gap:12px; min-height:64px; padding:10px 20px; border-bottom:1px solid var(--fl-border); background:var(--fl-surface); flex-shrink:0; }
 .fl-editor-heading .fl-name-input { flex:1 1 160px !important; max-width:none !important; min-width:60px !important; font-size:18px !important; letter-spacing:-.025em; }
@@ -13,7 +26,7 @@
 .fl-editor-run-summary strong { color:var(--fl-text); font-size:13px; }
 .fl-editor-run-summary span:last-child { margin-left:auto; }
 .fl-editor-palette { border-right:1px solid var(--fl-border); }
-.fl-editor-palette button[draggable] { border:0 !important; border-radius:5px !important; min-height:36px !important; padding:8px 10px !important; background:transparent !important; font-size:13px !important; }
+.fl-editor-palette button[draggable] { border:0 !important; border-radius:var(--fl-radius-sm) !important; min-height:40px !important; padding:10px 12px !important; background:transparent !important; font-size:13px !important; }
 .fl-editor-palette button[draggable]:hover { background:var(--fl-surface-2) !important; }
 .fl-editor-palette input:focus-visible { outline:2px solid var(--fl-primary); outline-offset:2px; }
 .fl-editor-inspector { border-left:1px solid var(--fl-border); }
@@ -23,7 +36,7 @@
 .fl-editor-node-tools > summary:focus-visible { outline:2px solid var(--fl-focus); outline-offset:3px; }
 .fl-editor-inspector input:not([type=checkbox]), .fl-editor-inspector select { min-height:36px; }
 .fl-editor-inspector .fl-agent-settings { border:0 !important; padding:0 0 16px !important; border-bottom:1px solid var(--fl-border) !important; border-radius:0 !important; background:transparent !important; }
-.fl-editor-node { border-radius:8px !important; box-shadow:0 2px 6px #1524400d !important; }
+.fl-editor-node { border-radius:var(--fl-radius) !important; box-shadow:var(--fl-shadow) !important; }
 .fl-editor-node--selected { outline:2px solid var(--fl-primary); outline-offset:2px; }
 .fl-editor-node .fl-agent-badge { border:0; background:transparent; padding:0; font-size:11px; }
 .fl-editor-node .react-flow__handle { box-shadow:0 0 0 3px var(--fl-surface); }

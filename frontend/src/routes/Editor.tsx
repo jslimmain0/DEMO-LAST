@@ -537,7 +537,7 @@ export function Editor() {
   if (flowQuery.isError) return <div style={{ padding: 40, color: 'var(--fl-fail)' }}>워크플로를 불러오지 못했습니다. 백엔드(18080)를 확인하세요.</div>
 
   return (
-    <div className="fl-editor-workbench" style={{ height: '100dvh', display: 'flex', flexDirection: 'column', background: 'var(--fl-bg)', overflow: 'hidden' }}>
+      <div className="fl-editor-workbench" style={{ height: '100dvh', display: 'flex', flexDirection: 'column', background: 'var(--fl-bg)', overflow: 'hidden' }}>
       <header className="fl-editor-heading">
         {/* 출발 목록으로 복귀하며, 직접 진입한 경우 소속 폴더를 사용한다. */}
         <Link
@@ -554,7 +554,7 @@ export function Editor() {
           onChange={(e) => setName(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter' || e.key === 'Escape') (e.target as HTMLInputElement).blur() }}
           title="워크플로 이름 — 눌러서 편집"
-          style={{ fontFamily: 'var(--fl-font-head)', fontWeight: 600, fontSize: 15, border: '1px solid transparent', borderRadius: 8, padding: '6px 8px', background: 'transparent', color: 'var(--fl-text)', flex: '1 1 140px', minWidth: 120, maxWidth: 280 }}
+          style={{ fontFamily: 'var(--fl-font-head)', fontWeight: 600, fontSize: 15, border: '1px solid transparent', borderRadius: 'var(--fl-radius-sm)', padding: '6px 8px', background: 'transparent', color: 'var(--fl-text)', flex: '1 1 140px', minWidth: 120, maxWidth: 280 }}
         />
         <span role="status" style={{ fontSize: 12, color: dirty ? 'var(--fl-put)' : 'var(--fl-text-muted)' }}>{save.isPending ? '저장 중…' : dirty ? '● 미저장' : '저장됨'}</span>
         <span className="fl-editor-storage" style={{ fontSize: 12, color: 'var(--fl-text-muted)' }}>저장 위치 · {scope.current.origin === 'local' ? '내 PC' : '서버'}</span>
@@ -796,7 +796,7 @@ const modalBackdrop: CSSProperties = { position: 'fixed', inset: 0, background: 
 const modalCard: CSSProperties = { width: 'min(1500px, 96vw)', height: '92vh', display: 'flex', flexDirection: 'column', background: 'var(--fl-surface)', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius)', boxShadow: 'var(--fl-shadow-lg)', overflow: 'hidden' }
 // 도구 드롭다운 메뉴
 const toolsMenu: CSSProperties = { position: 'absolute', top: '110%', right: 0, zIndex: 91, background: 'var(--fl-surface)', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', boxShadow: 'var(--fl-shadow-lg)', minWidth: 200, padding: 4 }
-const toolItem: CSSProperties = { display: 'block', width: '100%', textAlign: 'left', padding: '8px 10px', border: 'none', background: 'transparent', color: 'var(--fl-text)', cursor: 'pointer', fontSize: 12.5, borderRadius: 6 }
+const toolItem: CSSProperties = { display: 'block', width: '100%', textAlign: 'left', padding: '8px 10px', border: 'none', background: 'transparent', color: 'var(--fl-text)', cursor: 'pointer', fontSize: 12.5, borderRadius: 'var(--fl-radius-sm)' }
 const mHeader: CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, padding: '12px 16px', borderBottom: '1px solid var(--fl-border)' }
 const mTitle: CSSProperties = { flex: 1, fontFamily: 'var(--fl-font-head)', fontWeight: 600, fontSize: 14 }
 
@@ -824,7 +824,7 @@ function IssueBadge() {
           <div style={{ position: 'absolute', top: '110%', left: 0, zIndex: 41, width: 300, maxHeight: 320, overflow: 'auto', background: 'var(--fl-surface)', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', boxShadow: 'var(--fl-shadow-lg)', padding: 6 }}>
             {issues.map((iss, i) => (
               <button key={i} onClick={() => { if (iss.nodeId) focusNode(iss.nodeId); setOpen(false) }}
-                style={{ display: 'block', width: '100%', textAlign: 'left', padding: '7px 9px', border: 'none', background: 'transparent', color: 'var(--fl-text)', cursor: iss.nodeId ? 'pointer' : 'default', borderRadius: 6, fontSize: 12.5 }}>
+                style={{ display: 'block', width: '100%', textAlign: 'left', padding: '7px 9px', border: 'none', background: 'transparent', color: 'var(--fl-text)', cursor: iss.nodeId ? 'pointer' : 'default', borderRadius: 'var(--fl-radius-sm)', fontSize: 12.5 }}>
                 <span style={{ color: iss.severity === 'error' ? 'var(--fl-fail)' : 'var(--fl-put)', fontWeight: 700 }}>{iss.severity === 'error' ? '✕' : '⚠'}</span>{' '}
                 <b>{iss.label}</b> — <span style={{ color: 'var(--fl-text-muted)' }}>{iss.detail}</span>
               </button>
@@ -864,6 +864,7 @@ function ShortcutsModal({ onClose }: { onClose: () => void }) {
     ['Ctrl/⌘ + C / V', '노드 복사 / 붙여넣기(워크플로 간)'], ['Ctrl/⌘ + D', '선택 노드 복제'],
     ['Ctrl/⌘ + F', '노드 검색'], ['Ctrl/⌘ + K', '빠른 노드 추가(화면 중앙)'], ['Ctrl/⌘ + A', '전체 선택'],
     ['방향키 (Shift=4칸)', '선택 노드 그리드 이동'], ['Delete / Backspace', '노드·연결 삭제'],
+    ['Shift + 빈 캔버스 드래그', '여러 노드 선택 · 퀵 메뉴로 일괄 편집'], ['빈 캔버스 드래그 / Space + 드래그', '캔버스 이동'],
     ['캔버스 우클릭 / 빈 곳 더블클릭', '그 위치에 노드 추가'], ['핸들을 빈 곳에 드래그', '노드 추가 + 자동 연결'],
     ['엣지 끝점 드래그', '연결 재연결(리라우트)'], ['토큰 칩 Alt/⌘ + 클릭', '값의 소스 노드로 이동'],
     ['노드 우클릭', '컨텍스트 메뉴(실행/복제/삭제)'], ['Esc', '선택 해제 · 모달 닫기'], ['?', '이 도움말'],

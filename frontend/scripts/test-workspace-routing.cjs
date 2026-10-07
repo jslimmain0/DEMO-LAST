@@ -7,8 +7,15 @@ const ts = require('typescript')
 const api = {}
 const source = fs.readFileSync(path.join(__dirname, '../src/app/routePaths.ts'), 'utf8')
 const code = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText
-vm.runInNewContext(code, { exports: api, require })
-const { workspaceLocation, routePaths } = api
+vm.runInNewContext(code, { exports: api, require, URLSearchParams })
+const { workspaceLocation, routePaths, initialWorkspace } = api
+const savedTeam = { origin: 'server', id: 'team-id' }
+assert.equal(initialWorkspace('?runtime=local', true, savedTeam).origin, 'local')
+assert.equal(initialWorkspace('?runtime=local', true, savedTeam).id, 'local')
+assert.equal(initialWorkspace('?runtime=server', true, { origin: 'local', id: 'pc-id' }).id, 'public')
+assert.equal(initialWorkspace('?space=server%3Ateam-id&runtime=local', true, savedTeam).id, 'team-id')
+assert.equal(initialWorkspace('', true, savedTeam).id, 'team-id')
+assert.equal(initialWorkspace('', true, { origin: 'local', id: 123 }).id, 'local')
 for (const [pathname, search] of [
   ['/', ''], ['/', '?runtime=server'], ['/', '?space=local%3Apc-id'], ['/', '?space=server%3Ateam-id'],
   ['/unknown', '?space=local%3Apc-id'], ['/flows/id/unknown', '?space=server%3Apublic'],

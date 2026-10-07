@@ -6,6 +6,8 @@ import jakarta.servlet.http.HttpServletRequest
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.context.annotation.Profile
 import org.springframework.core.io.FileSystemResource
+import org.springframework.core.io.ClassPathResource
+import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
@@ -42,6 +44,15 @@ class DistributionController(
     private data class Inspection(val status: String, val message: String, val release: ReleaseManifest? = null)
     private var cached: Validated? = null
     private val root get() = Path.of(directory).toAbsolutePath().normalize()
+
+    /** 중앙 서버는 설치 안내만 제공하며 Windows 작업 화면으로 fallback하지 않는다. */
+    @GetMapping("/", "/download", "/download/")
+    fun page(req: HttpServletRequest): ResponseEntity<String> {
+        val html = ClassPathResource("static/download.html").inputStream.use { it.readBytes().toString(Charsets.UTF_8) }
+        val base = (req.contextPath.trimEnd('/') + "/").replace("&", "&amp;").replace("\"", "&quot;").replace("<", "&lt;").replace(">", "&gt;")
+        return ResponseEntity.ok().contentType(MediaType.TEXT_HTML).header("Cache-Control", "no-store")
+            .body(html.replace("<base href=\"/\">", "<base href=\"$base\">"))
+    }
 
     @GetMapping("/api/v1/distribution")
     fun metadata(req: HttpServletRequest): ResponseEntity<Map<String, Any?>> {

@@ -44,9 +44,9 @@ class DesktopTray(
             fun item(label: String, action: () -> Unit) = MenuItem(label).also {
                 it.addActionListener { guarded(action) }; menu.add(it)
             }
-            item("개인 워크스페이스 열기") { browse(session.browserUrl() + "&runtime=local") }
+            item("개인 워크스페이스 열기") { browse(session.browserUrl("local")) }
             val serverOpen = item("서버 워크스페이스 열기") {
-                if (remote.view().connected) browse(session.browserUrl() + "&runtime=server") else loginDialog()
+                if (remote.view().connected) browse(session.browserUrl("server")) else loginDialog()
             }
             item("회사 계정 보기 · 변경") { loginDialog() }
             item("IDE · 자동 연결…") { connectDialog() }
@@ -164,7 +164,21 @@ class DesktopTray(
         dialog.pack()
         val bounds = GraphicsEnvironment.getLocalGraphicsEnvironment().maximumWindowBounds
         dialog.setSize(dialog.width.coerceAtMost(bounds.width - 32), dialog.height.coerceAtMost(bounds.height - 32))
-        dialog.setLocationRelativeTo(null); dialog.isVisible = true
+        dialog.setLocationRelativeTo(null)
+        bringForward(dialog)
+    }
+
+    /** 브라우저에서 요청한 창도 기존 브라우저 뒤에 남거나 숨겨진 상태로 유지되지 않게 한다. */
+    private fun bringForward(dialog: JDialog) {
+        val previousAlwaysOnTop = dialog.isAlwaysOnTop
+        try {
+            dialog.isAlwaysOnTop = true
+            dialog.isVisible = true
+            dialog.toFront()
+            dialog.requestFocus()
+        } finally {
+            dialog.isAlwaysOnTop = previousAlwaysOnTop
+        }
     }
 
     private fun welcomeDialog() {
@@ -186,14 +200,14 @@ class DesktopTray(
             },
             card("회사 계정", if (state.connected) "로그인 정보 저장됨 · ${state.login}\n${state.serverUrl}" else if (state.serverUrl.isNotBlank()) "로그인 필요 · ${state.serverUrl}" else "회사 서버가 아직 설정되지 않았습니다. 개인 작업은 바로 사용할 수 있습니다.",
                 if (state.connected) row(
-                    button("회사 워크스페이스 열기") { remember(); browse(session.browserUrl() + "&runtime=server"); dialog.dispose() },
+                    button("회사 워크스페이스 열기") { remember(); browse(session.browserUrl("server")); dialog.dispose() },
                     button("계정 보기 · 변경") { remember(); loginDialog() })
                 else button("회사 계정 로그인") { remember(); loginDialog() }),
             text("PC 주소와 저장 위치는 자동 설정됩니다. 앱 버전 · ${com.flowlink.common.release.ReleaseVersion.version}"),
             row(button("자동 설정 보기") { statusDialog() }, button("IDE · 서버 MCP") { connectDialog() }, button("앱 업데이트") { updateDialog() }),
             nextTime,
         ))
-        val start = button("개인 워크스페이스 열기", true) { remember(); browse(session.browserUrl() + "&runtime=local"); dialog.dispose() }
+        val start = button("개인 워크스페이스 열기", true) { remember(); browse(session.browserUrl("local")); dialog.dispose() }
         content.add(row(button("닫기") { remember(); dialog.dispose() }, start), BorderLayout.SOUTH)
         dialog.rootPane.defaultButton = start
         return dialog
@@ -287,8 +301,8 @@ class DesktopTray(
         return dialog
     }
     fun loginDialog() {
-        if (!EventQueue.isDispatchThread()) { EventQueue.invokeLater { loginDialog() }; return }
-        if (loginWindow?.isDisplayable == true) { loginWindow?.toFront(); return }
+        if (!EventQueue.isDispatchThread()) { EventQueue.invokeLater { guarded { loginDialog() } }; return }
+        loginWindow?.takeIf { it.isDisplayable }?.let { bringForward(it); return }
         show(buildLoginDialog())
     }
 
@@ -323,7 +337,7 @@ class DesktopTray(
         body(content, stack(serverSection, addressEditor, status, authPanel,
             text(if (remote.view().connected) "현재 계정으로 회사 작업을 열 수 있습니다. 계정 변경은 다시 인증할 때만 필요합니다." else "로그인을 시작하면 기본 브라우저가 열립니다. 인증을 마치면 워크스페이스로 이어집니다.")))
         val openCompany = button("회사 워크스페이스 열기", true) {
-            browse(session.browserUrl() + "&runtime=server"); dialog.dispose(); setupWindow?.dispose()
+            browse(session.browserUrl("server")); dialog.dispose(); setupWindow?.dispose()
         }
         content.add(if (remote.view().connected) row(start, openCompany, button("닫기") { dialog.dispose() })
             else row(start, button("닫기") { dialog.dispose() }), BorderLayout.SOUTH)
@@ -354,7 +368,7 @@ class DesktopTray(
                         if (result["status"] == "ready") {
                             complete = true
                             EventQueue.invokeLater { if (dialog.isDisplayable) {
-                                dialog.dispose(); setupWindow?.dispose(); guarded { browse(session.browserUrl() + "&runtime=server") }
+                                dialog.dispose(); setupWindow?.dispose(); guarded { browse(session.browserUrl("server")) }
                                 tray?.displayMessage("서버 로그인 완료", "개인과 팀 워크스페이스를 함께 사용할 수 있습니다.", TrayIcon.MessageType.INFO)
                             } }
                             break

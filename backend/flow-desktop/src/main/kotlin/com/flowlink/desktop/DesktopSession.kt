@@ -50,12 +50,14 @@ class DesktopSession(
         Files.move(file, directory.resolve("agent.json"), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
     }
 
-    fun browserUrl(): String {
+    fun browserUrl(runtime: String? = null): String {
+        require(runtime == null || runtime in listOf("local", "server"))
         val now = System.currentTimeMillis()
         tickets.entries.removeIf { it.value < now }
         val ticket = randomToken()
         tickets[ticket] = now + 30_000
-        return "$baseUrl/desktop/open?ticket=$ticket"
+        val target = runtime?.let { "runtime=$it&" }.orEmpty()
+        return "$baseUrl/desktop/open?${target}ticket=$ticket"
     }
 
     fun claimTicket(ticket: String): Boolean = (tickets.remove(ticket) ?: 0) >= System.currentTimeMillis()

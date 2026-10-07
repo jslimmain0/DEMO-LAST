@@ -5,6 +5,8 @@ spring:
   profiles:
     default: local
 flowlink:
+  auth:
+    github-enabled: ${FLOWLINK_AUTH_GITHUB_ENABLED:false}
   runtime:
     public-url: ${FLOWLINK_PUBLIC_URL:}
 server:

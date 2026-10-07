@@ -9,7 +9,7 @@ $ErrorActionPreference = 'Stop'
 $ResourceDir = [IO.Path]::GetFullPath($OutputDir)
 New-Item -ItemType Directory -Path $ResourceDir -Force | Out-Null
 Add-Type -AssemblyName System.Drawing
-$Primary = [Drawing.ColorTranslator]::FromHtml('#245cdd')
+$Primary = [Drawing.ColorTranslator]::FromHtml('#7660d9')
 
 function Draw-Mark([Drawing.Graphics]$Canvas, [single]$X, [single]$Y, [single]$Size) {
   $saved = $Canvas.Save()
@@ -56,7 +56,7 @@ foreach ($kind in @('banner', 'dialog')) {
   $graphics = [Drawing.Graphics]::FromImage($bitmap); $graphics.Clear([Drawing.Color]::White)
   if ($kind -eq 'banner') { Draw-Mark $graphics 438 8 42 }
   else {
-    $brush = [Drawing.SolidBrush]::new([Drawing.ColorTranslator]::FromHtml('#edf3ff'))
+    $brush = [Drawing.SolidBrush]::new([Drawing.ColorTranslator]::FromHtml('#f0edfa'))
     $graphics.FillRectangle($brush, 0, 0, 164, 312); $brush.Dispose(); Draw-Mark $graphics 34 34 78
     $font = [Drawing.Font]::new('Segoe UI', 19, [Drawing.FontStyle]::Bold)
     $graphics.DrawString('FlowLink', $font, [Drawing.Brushes]::Black, 24, 128); $font.Dispose()
@@ -104,7 +104,13 @@ if (-not $WixPath) {
   }
   if (-not $WixPath) { throw 'Pass -WixPath with the WiX 3 bin directory to generate the Korean installer UI.' }
 }
-$assembly = [Reflection.Assembly]::LoadFrom([IO.Path]::GetFullPath((Join-Path $WixPath 'WixUIExtension.dll')))
+$WixPath = [IO.Path]::GetFullPath($WixPath)
+foreach ($requiredFile in @('candle.exe', 'light.exe', 'WixUIExtension.dll')) {
+  if (-not (Test-Path -LiteralPath (Join-Path $WixPath $requiredFile) -PathType Leaf)) {
+    throw "WiX 3 bin directory is incomplete: missing $requiredFile in '$WixPath'. Install or extract WiX 3 and pass its actual bin directory with -WixPath."
+  }
+}
+$assembly = [Reflection.Assembly]::LoadFrom((Join-Path $WixPath 'WixUIExtension.dll'))
 $reader = [IO.StreamReader]::new($assembly.GetManifestResourceStream('Microsoft.Tools.WindowsInstallerXml.Extensions.Data.ui.wixlib'))
 try { $library = $reader.ReadToEnd() } finally { $reader.Dispose() }
 $match = [regex]::Match($library, '(?s)<WixLocalization\b[^>]*Culture="ko-kr"[^>]*>.*?</WixLocalization>')

@@ -1,33 +1,33 @@
-/* FlowLink 작업대 — 화면의 계층은 표면과 글자로, 현재 선택과 행동은 코발트로 구분한다.
+/* 소프트 Flow — 라벤더 표면과 보라색 강조, 둥근 카드로 작업의 계층을 구분한다.
    사내망·오프라인에서도 같은 한국어 UI를 읽도록 런타임 웹폰트 요청을 사용하지 않는다. */
 
 :root {
   color-scheme: light;
   --fl-action-primary-ink: #ffffff;
-  --fl-primary: #245cdd;
-  --fl-primary-2: #487ae8;
-  --fl-primary-hover: #194ab8;
-  --fl-action-primary-bg: #245cdd;
-  --fl-action-primary-hover: #194ab8;
+  --fl-primary: #7660d9;
+  --fl-primary-2: #9580ec;
+  --fl-primary-hover: #624bbf;
+  --fl-action-primary-bg: #7660d9;
+  --fl-action-primary-hover: #624bbf;
   --fl-action-danger-bg: #bc3d43;
   --fl-action-danger-ink: #ffffff;
 
-  --fl-bg: #f3f6fa;
+  --fl-bg: #f6f4fc;
   --fl-surface: #ffffff;
-  --fl-surface-2: #e9eff6;
-  --fl-surface-hover: #edf2f9;
-  --fl-text: #182538;
-  --fl-text-soft: #3b4d64;
-  --fl-text-muted: #5b697c;
-  --fl-border: #d4dde8;
-  --fl-control-border: #71839b;
-  --fl-focus: #245cdd;
+  --fl-surface-2: #f0edfa;
+  --fl-surface-hover: #f3effc;
+  --fl-text: #282338;
+  --fl-text-soft: #514762;
+  --fl-text-muted: #756c85;
+  --fl-border: #e7e2f3;
+  --fl-control-border: #9485ad;
+  --fl-focus: #7660d9;
   --fl-focus-ring: color-mix(in srgb, var(--fl-focus) 18%, transparent);
-  --fl-disabled-bg: #e5ebf2;
-  --fl-disabled-ink: #657388;
-  --fl-canvas-bg: #eaf0f7;
-  --fl-canvas-grid: #c5d1df;
-  --fl-overlay: rgba(15, 30, 49, .46);
+  --fl-disabled-bg: #ede8f5;
+  --fl-disabled-ink: #7e738f;
+  --fl-canvas-bg: #f4f1fa;
+  --fl-canvas-grid: #d5cde5;
+  --fl-overlay: rgba(33, 24, 52, .36);
   /* 원격 커서(협업) 외곽선 — 캔버스 배경과 대비되게(라이트=진한 후광 / 다크=흰 후광) */
   --fl-cursor-halo: rgba(28, 28, 31, .5);
 
@@ -40,7 +40,7 @@
   --fl-head: #5b697c;
 
   /* 노드 카테고리 9종 */
-  --fl-cat-auth: #245cdd;
+  --fl-cat-auth: #7660d9;
   --fl-cat-bank: #187a69;
   --fl-cat-card: #4b5e87;
   --fl-cat-generic: #5b697c;
@@ -48,7 +48,7 @@
   --fl-cat-if: #4b5e87;
   --fl-cat-assert: #187a69;
   --fl-cat-form: #4b5e87;
-  --fl-cat-input: #245cdd;
+  --fl-cat-input: #7660d9;
   --fl-cat-wait: #905c00;
   --fl-cat-start: #187a69;
   --fl-cat-end: #5b697c;
@@ -56,7 +56,7 @@
   /* 실행 상태 */
   --fl-ok: #187a69;
   --fl-fail: #bc3d43;
-  --fl-running: #245cdd;
+  --fl-running: #7660d9;
   --fl-waiting: #905c00;
   --fl-pending: #5b697c;
   --fl-location-local: #345d9b;
@@ -65,9 +65,9 @@
   /* 타입스케일 / 간격 / 반경 / 그림자 */
   --fl-fs-xs: 12px; --fl-fs-sm: 13px; --fl-fs-md: 14px; --fl-fs-lg: 16px; --fl-fs-xl: 20px; --fl-fs-2xl: 24px; --fl-fs-3xl: clamp(28px, 3vw, 34px);
   --fl-sp-1: 4px; --fl-sp-2: 8px; --fl-sp-3: 12px; --fl-sp-4: 16px; --fl-sp-5: 20px; --fl-sp-6: 24px; --fl-sp-7: 32px; --fl-sp-8: 48px;
-  --fl-radius-sm: 6px; --fl-radius: 10px; --fl-radius-lg: 14px; --fl-radius-pill: 9999px;
-  --fl-shadow: 0 1px 3px rgba(24, 37, 56, .06);
-  --fl-shadow-lg: 0 12px 36px rgba(24, 37, 56, .16), 0 2px 8px rgba(24, 37, 56, .06);
+  --fl-radius-sm: 14px; --fl-radius: 20px; --fl-radius-lg: 26px; --fl-radius-pill: 9999px;
+  --fl-shadow: 0 8px 30px rgba(75, 56, 116, .06);
+  --fl-shadow-lg: 0 18px 52px rgba(75, 56, 116, .13), 0 4px 14px rgba(75, 56, 116, .04);
 
   /* 모션 */
   --fl-ease: cubic-bezier(.2, .8, .2, 1);
@@ -80,36 +80,36 @@
 
 html[data-theme='dark'] {
   color-scheme: dark;
-  --fl-primary: #85acff;
-  --fl-primary-2: #aac7ff;
-  --fl-primary-hover: #aac7ff;
-  --fl-action-primary-bg: #3061cd;
-  --fl-action-primary-hover: #2454bd;
+  --fl-primary: #ac96ff;
+  --fl-primary-2: #c7b7ff;
+  --fl-primary-hover: #c7b7ff;
+  --fl-action-primary-bg: #7660d9;
+  --fl-action-primary-hover: #624bbf;
   --fl-action-danger-bg: #ad353f;
-  --fl-bg: #0f1925;
-  --fl-surface: #172536;
-  --fl-surface-2: #22344a;
-  --fl-surface-hover: #293e56;
-  --fl-text: #edf3fa;
-  --fl-text-soft: #c9d6e5;
-  --fl-text-muted: #aebed0;
-  --fl-border: #3c4f66;
-  --fl-control-border: #70849d;
-  --fl-focus: #a9c8ff;
-  --fl-disabled-bg: #27374b;
-  --fl-disabled-ink: #91a2b8;
-  --fl-canvas-bg: #111e2d;
-  --fl-canvas-grid: #30435a;
-  --fl-overlay: rgba(4, 10, 19, .66);
+  --fl-bg: #18151f;
+  --fl-surface: #24202e;
+  --fl-surface-2: #312b3e;
+  --fl-surface-hover: #393146;
+  --fl-text: #f0ebf9;
+  --fl-text-soft: #d7cce6;
+  --fl-text-muted: #b4a9c6;
+  --fl-border: #41384f;
+  --fl-control-border: #9281a9;
+  --fl-focus: #c7b7ff;
+  --fl-disabled-bg: #332b40;
+  --fl-disabled-ink: #a699b9;
+  --fl-canvas-bg: #1c1825;
+  --fl-canvas-grid: #43384f;
+  --fl-overlay: rgba(11, 7, 19, .66);
   --fl-cursor-halo: rgba(255, 255, 255, .92);
   --fl-get: #74d1b5; --fl-post: #85acff; --fl-put: #e9bd70; --fl-patch: #b8c6e2; --fl-delete: #ff9d9f; --fl-head: #aebed0;
-  --fl-cat-auth: #85acff; --fl-cat-bank: #74d1b5; --fl-cat-card: #b8c6e2; --fl-cat-generic: #aebed0;
+  --fl-cat-auth: #ac96ff; --fl-cat-bank: #74d1b5; --fl-cat-card: #b8c6e2; --fl-cat-generic: #aebed0;
   --fl-cat-set: #e9bd70; --fl-cat-if: #b8c6e2; --fl-cat-assert: #74d1b5; --fl-cat-form: #b8c6e2; --fl-cat-input: #85acff; --fl-cat-wait: #e9bd70; --fl-cat-start: #74d1b5; --fl-cat-end: #aebed0;
   --fl-ok: #74d1b5; --fl-fail: #ff9d9f; --fl-running: #85acff; --fl-waiting: #e9bd70; --fl-pending: #aebed0;
   --fl-location-local: #a5c2eb;
   --fl-location-server: #a0c8c2;
-  --fl-shadow: 0 1px 4px rgba(3, 10, 20, .20);
-  --fl-shadow-lg: 0 16px 44px rgba(3, 10, 20, .4), 0 2px 8px rgba(3, 10, 20, .24);
+  --fl-shadow: 0 8px 30px rgba(8, 4, 16, .20);
+  --fl-shadow-lg: 0 18px 52px rgba(8, 4, 16, .4), 0 4px 14px rgba(8, 4, 16, .24);
 }
 
 * { box-sizing: border-box; }

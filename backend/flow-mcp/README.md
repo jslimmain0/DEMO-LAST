@@ -29,6 +29,8 @@ Windows 자동 설정을 지원하지 않는 클라이언트의 표준 OAuth 코
 
 기존 58개 도구 이름과 인자 계약은 `src/main/resources/flowlink-tools.json`에 보존한다. `target`은 개인/서버 저장 공간을 선택하고 `executionAgent`는 호출할 PC/서버 실행 위치를 선택한다. 개인 저장 공간이나 PC 작업은 로그인한 Windows 앱이 온라인이어야 한다. 개인 H2 전체를 중앙 서버로 동기화하지 않고 계정·장치에 묶인 명령 채널을 사용한다.
 
+`flow_upsert`로 새 워크플로를 생성하면 기본으로 위에서 아래로 진행하는 컴팩트한 트리 배치를 적용한다. 분기는 좌우로 나누고 합류는 아래에 두며 START와 모든 END는 동일한 x 좌표에 둔다. 좌표만 바꾸며 노드 설정·바인딩·연결·주석은 유지한다. 기존 워크플로 수정은 좌표를 보존한다. `layout="compact-tree"`로 재배치하거나 `layout="preserve"`로 생성 시 입력 좌표를 유지할 수 있다. 이 규칙은 MCP 초기 안내·도구 설명·flow 가이드에도 제공한다.
+
 빌드·모듈 경계는 [backend 안내](../README.md)를 따른다. 검증은 순수 계약/URI 정책/승인 화면, 전용 자격의 REST 발급·갱신·폐기, 임시 JSON 설정 병합과 암호화 수명주기, 패키징 경계를 대상으로 한다. MCP 프로토콜·도구 호출·실제 IDE 등록은 테스트하지 않는다. 역사적 Node MCP 검증 기록은 이 Kotlin 구현의 실연동 검증 결과가 아니다.
 
 설정 형식 근거: [VS Code HTTP 서버 인증 헤더](https://code.visualstudio.com/docs/agents/reference/mcp-configuration#http-and-server-sent-events-sse-servers), [GitHub Copilot MCP 설정](https://docs.github.com/en/copilot/how-tos/provide-context/use-mcp/extend-copilot-chat-with-mcp), [Microsoft APM의 IDE 설정 경로](https://microsoft.github.io/apm/integrations/ide-tool-integration/).

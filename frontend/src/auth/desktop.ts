@@ -1,5 +1,5 @@
 import axios from 'axios'
-import { appBase } from '../lib/appBase'
+import { appBase, appUrl } from '../lib/appBase'
 
 // 항상 PC API로 보낸다. 화면이 서버 공간을 보고 있어도 연결/로그아웃은 개인 에이전트가 담당한다.
 const local = axios.create({ baseURL: `${appBase()}/api/v1/desktop` })
@@ -33,5 +33,5 @@ export const desktopApi = {
 }
 export function switchRuntime(target: 'local' | 'server') {
   try { localStorage.removeItem('fl:workspace:selection') } catch { /* private mode */ }
-  window.location.assign(`${appBase()}/flows?space=${target}:${target === 'local' ? 'local' : 'public'}`)
+  window.location.assign(appUrl(`/flows?space=${target}:${target === 'local' ? 'local' : 'public'}`))
 }

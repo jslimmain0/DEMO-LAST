@@ -27,6 +27,9 @@ class McpContractTest {
         }
         assertFalse(valid("flow_upsert", mapOf("name" to "empty")))
         assertTrue(valid("flow_upsert", mapOf("name" to "flow", "graph" to "{\"nodes\":[],\"edges\":[]}")))
+        assertTrue(valid("flow_upsert", mapOf("graph" to emptyMap<String, Any>(), "layout" to "compact-tree")))
+        assertTrue(valid("flow_upsert", mapOf("graph" to emptyMap<String, Any>(), "layout" to "preserve")))
+        assertFalse(valid("flow_upsert", mapOf("graph" to emptyMap<String, Any>(), "layout" to "other")))
         assertFalse(valid("http_request", mapOf("url" to "/mock/example", "timeoutSec" to 121)))
         assertFalse(valid("http_request", mapOf("url" to "/mock/example", "executionAgent" to "browser")))
         assertFalse(valid("plugin_script_submit", mapOf("id" to "a", "action" to "approve")))

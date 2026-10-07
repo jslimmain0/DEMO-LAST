@@ -54,9 +54,9 @@ export function AppShellTier1({ children, sidebarExtra }: { children: ReactNode;
       textDecoration: 'none',
       fontSize: 13.5,
       fontWeight: active ? 600 : 500,
-      color: active ? 'var(--fl-text)' : 'var(--fl-text-muted)',
+      color: active ? 'var(--fl-primary)' : 'var(--fl-text-muted)',
       background: active ? 'var(--fl-surface-2)' : 'transparent',
-      borderLeft: `2px solid ${active ? 'var(--fl-primary)' : 'transparent'}`,
+      border: '2px solid transparent',
     }
   }
 
@@ -144,12 +144,12 @@ export function AppShellTier1({ children, sidebarExtra }: { children: ReactNode;
 }
 
 const sidebar: CSSProperties = {
-  width: 208,
+  width: 232,
   flexShrink: 0,
   display: 'flex',
   flexDirection: 'column',
   gap: 4,
-  padding: '16px 10px',
+  padding: '22px 14px',
   borderRight: '1px solid var(--fl-border)',
   background: 'var(--fl-surface)',
   position: 'sticky',

@@ -4,7 +4,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { createApi, localApi, serverApi, type WorkspaceApi, type WorkspaceView } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
 import { desktopApi } from '../auth/desktop'
-import { workspaceLocation } from './routePaths'
+import { initialWorkspace, workspaceLocation } from './routePaths'
 
 export type WorkspaceOrigin = 'local' | 'server'
 export interface WorkspaceRef extends WorkspaceView { origin: WorkspaceOrigin }
@@ -45,12 +45,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     ...(connected ? (remoteSpaces.data ?? []).map(w => ({ ...w, origin: 'server' as const })) : []),
   ], [desktop, connected, localSpaces.data, remoteSpaces.data])
   const [selection, setSelection] = useState<{ id: string; origin: WorkspaceOrigin }>(() => {
-    const params = new URLSearchParams(window.location.search)
-    const fromUrl = params.get('space')?.match(/^(local|server):(.+)$/)
-    if (fromUrl) return { origin: fromUrl[1] as WorkspaceOrigin, id: fromUrl[2] }
-    if (desktop && params.get('runtime') === 'server') return { origin: 'server', id: 'public' }
-    try { const saved = JSON.parse(localStorage.getItem(storageKey) ?? 'null'); if (saved?.id && ['local', 'server'].includes(saved.origin)) return saved } catch { /* private mode */ }
-    return { id: desktop ? 'local' : 'public', origin: desktop ? 'local' : 'server' }
+    let saved: unknown = null
+    try { saved = JSON.parse(localStorage.getItem(storageKey) ?? 'null') } catch { /* private mode */ }
+    return initialWorkspace(window.location.search, desktop, saved)
   })
   const fallback: WorkspaceRef = { id: desktop ? 'local' : 'public', name: desktop ? '개인 공간' : '공용', kind: desktop ? 'PERSONAL' : 'PUBLIC', myRole: 'OWNER', canManage: true, origin: desktop ? 'local' : 'server' }
   const urlSpace = new URLSearchParams(location.search).get('space')?.match(/^(local|server):(.+)$/)
@@ -67,6 +64,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       return
     }
     const params = new URLSearchParams(location.search)
+    const legacyRuntime = params.has('runtime')
+    params.delete('runtime')
     const fromUrl = params.get('space')?.match(/^(local|server):(.+)$/)
     if (requested.origin === 'local' && requested.id === 'local' && localDefault) {
       setSelection({ origin: 'local', id: localDefault.id })
@@ -83,7 +82,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     if (!fromUrl) {
       params.set('space', `${selection.origin}:${selection.id}`)
     }
-    if (!fromUrl || workspaceLocation(location.pathname, '').pathname !== location.pathname) {
+    if (!fromUrl || legacyRuntime || workspaceLocation(location.pathname, '').pathname !== location.pathname) {
       navigate(workspaceLocation(location.pathname, params.toString(), location.hash), { replace: true, state: location.state })
     }
   }, [desktop, connection.data?.connected, localSpaces.data, localDefault, requested.origin, requested.id, location.pathname, location.search, location.hash, location.state, navigate, selection.origin, selection.id])

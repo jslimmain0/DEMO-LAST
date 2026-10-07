@@ -7,6 +7,12 @@
 - MSI SHA-256: `061fe09fcf16cb25071bb8088fa7426f29d8b97f9fe8469170603e56317574dc`, 149415656 bytes. 공개 파일 전체 다운로드 검증 완료, MSI 설치 및 MCP 검증 미수행.
 - 실제 UI 화면과 검증 기록: [시안 적용 기록](../docs/reviews/2026-10-07-frontend-image-concepts.md).
 
+### 2026-10-08 · Windows 앱 창 개편 0.3.21
+
+- 코드 이미지: `flowlink/server:0.3.21-154eb3f60fbd5d8ed3fbfaa0ea8390f656416c56`. 18088 EC2 Docker에만 배포(`/opt/flowlink/releases/0.3.21-154eb3f60fbd5d8ed3fbfaa0ea8390f656416c56`), 18183은 교체하지 않았다.
+- 배포 정보: serverVersion/version=0.3.21, AVAILABLE, 자동 업데이트 허용. 공개 MSI 전체 다운로드 SHA-256 `318ea5ff6bf4fd3916750b596df35900c0b0a4b1acebecb6cf4b0925c29b2ab9`, 151484136 bytes로 매니페스트와 일치.
+- Windows 앱 시작·연결 상태·로그인·업데이트·IDE 창을 반반 분할 구성으로 변경, 워크플로 카드 전체 클릭. 네이티브 미리보기(700·520·520x380) 경계·잘림 검사, 백엔드 415·프론트 17 테스트, 경계 검사 통과. 실제 설치·MCP 검증은 수행하지 않았다.
+
 ### 2026-10-08 · 화면 디자인 개편 0.3.20
 
 - 코드 이미지: `flowlink/server:0.3.20-43b7c5f63b9d71a592b6de57f4241cda96cce181`. 18088 EC2 Docker에만 배포했고(`/opt/flowlink/releases/0.3.20-43b7c5f63b9d71a592b6de57f4241cda96cce181`), 18183 Oracle·Vault 서버는 교체하지 않았다.

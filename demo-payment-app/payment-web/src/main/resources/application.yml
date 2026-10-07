@@ -1,0 +1,15 @@
+server:
+  address: 127.0.0.1
+  port: 19081
+  tomcat:
+    max-http-form-post-size: 64KB
+spring:
+  application:
+    name: demo-payment-web
+  threads:
+    virtual:
+      enabled: true
+demo-web:
+  payment-api-base-url: http://127.0.0.1:19080
+  timeout-ms: 10000
+  token-key-base64: AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=

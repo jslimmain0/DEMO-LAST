@@ -1,0 +1,32 @@
+{
+  "encoding": "US-ASCII",
+  "lengthField": "length",
+  "lengthFormat": "ascii-decimal",
+  "includesSelf": false,
+  "discriminator": "messageType",
+  "header": [
+    { "name": "length", "len": 4, "type": "length", "pad": "left/zero" },
+    { "name": "messageType", "len": 4, "type": "ascii", "pad": "none" }
+  ],
+  "messages": [
+    {
+      "key": "AUTH:request",
+      "label": "카드 승인 요청",
+      "fields": [
+        { "name": "paymentId", "len": 12, "type": "numeric", "pad": "left/zero" },
+        { "name": "cardNumber", "len": 16, "type": "numeric", "pad": "left/zero" },
+        { "name": "amount", "len": 10, "type": "numeric", "pad": "left/zero" },
+        { "name": "merchantId", "len": 12, "type": "ascii", "pad": "right/space" }
+      ]
+    },
+    {
+      "key": "RESP:response",
+      "label": "카드 승인 응답",
+      "fields": [
+        { "name": "paymentId", "len": 12, "type": "numeric", "pad": "left/zero" },
+        { "name": "responseCode", "len": 4, "type": "numeric", "pad": "left/zero" },
+        { "name": "approvalNo", "len": 8, "type": "ascii", "pad": "right/space" }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>테스트 결제</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 24px 16px; background: #09243c; color: #edf7fc; font-family: 'Malgun Gothic', sans-serif; }
+    main { max-width: 520px; margin: auto; }
+    header { color: #61dcc5; margin: 12px 0 28px; }
+    article { background: #f3f7fa; color: #16354c; border-radius: 20px; padding: 28px; }
+    h1 { margin: 0 0 28px; font-size: 28px; }
+    dl { margin: 0 0 28px; }
+    dl div { display: flex; justify-content: space-between; gap: 12px; margin: 16px 0; }
+    dt { color: #4e6272; } dd { margin: 0; text-align: right; overflow-wrap: anywhere; }
+    .amount { font-size: 26px; font-weight: 700; }
+    fieldset { border: 0; margin: 0; padding: 0; }
+    legend { margin-bottom: 14px; font-weight: 700; }
+    label { display: flex; gap: 12px; align-items: center; padding: 18px 14px; border: 1px solid #a4b9c6; border-radius: 10px; margin-bottom: 12px; }
+    label:has(input:checked) { background: #e1f5f0; border-color: #16876d; }
+    input[type=radio] { accent-color: #16876d; width: 20px; height: 20px; margin: 0; flex-shrink: 0; }
+    label span { display: grid; gap: 5px; } small { color: #4e6272; }
+    button { width: 100%; border: 0; border-radius: 10px; background: #16876d; color: #fff; padding: 18px; font: inherit; font-weight: 700; margin-top: 16px; }
+    button:disabled { background: #48685e; }
+    :focus-visible { outline: 3px solid #146ebe; outline-offset: 4px; }
+    #status, #error { overflow-wrap: anywhere; line-height: 1.6; }
+    #error { color: #a52226; }
+    .note { font-size: 13px; color: #bdd0de; line-height: 1.7; }
+  </style>
+</head>
+<body>
+<main>
+  <header>FlowLink 발표용 · 테스트 결제</header>
+  <article>
+    <h1>결제 인증</h1>
+    <dl>
+      <div><dt>가맹점</dt><dd>{{merchantId}}</dd></div>
+      <div><dt>주문 번호</dt><dd>{{orderId}}</dd></div>
+      <div><dt>주문 금액</dt><dd class="amount">{{amount}}원</dd></div>
+    </dl>
+    <form id="payment-form">
+      <input type="hidden" name="paymentId" value="{{paymentId}}">
+      <input type="hidden" name="pageKey" value="{{pageKey}}">
+      <fieldset id="cards" aria-describedby="error">
+        <legend>테스트 카드 선택</legend>
+        <label><input type="radio" name="card" value="HYUNDAI:1111222233334444" checked required><span>현대카드 · 정상 승인<small>HTTP · 1111 2222 3333 4444</small></span></label>
+        <label><input type="radio" name="card" value="HYUNDAI:9999000011112222" required><span>현대카드 · 승인 거절<small>HTTP · 9999 0000 1111 2222</small></span></label>
+        <label><input type="radio" name="card" value="SHINHAN:1111222233334444" required><span>신한카드 · 정상 승인<small>TCP · 1111 2222 3333 4444</small></span></label>
+        <label><input type="radio" name="card" value="SHINHAN:9999000011112222" required><span>신한카드 · 승인 거절<small>TCP · 9999 0000 1111 2222</small></span></label>
+      </fieldset>
+      <p id="error" role="alert"></p>
+      <p id="status" role="status">토큰 복호화 완료. 결제할 카드를 선택하세요.</p>
+      <button type="submit">결제 인증 요청</button>
+    </form>
+    <form id="return-form" action="{{returnUrl}}" method="post" hidden></form>
+  </article>
+  <p class="note">가맹점이 암호화한 토큰을 받아 화면 진입 시 복호화했습니다.<br>선택한 카드사에만 승인 요청합니다. 현대카드는 HTTP, 신한카드는 TCP Mock의 응답 규칙이 승인·거절 결과를 결정합니다.</p>
+</main>
+<script src="/pay.js" defer></script>
+</body>
+</html>

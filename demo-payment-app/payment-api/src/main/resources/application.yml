@@ -1,0 +1,19 @@
+server:
+  address: 127.0.0.1
+  port: 19080
+  tomcat:
+    max-http-form-post-size: 64KB
+spring:
+  application:
+    name: demo-payment-api
+  threads:
+    virtual:
+      enabled: true
+demo:
+  hyundai-http-base-url: http://127.0.0.1:18080/mock/demo-hyundai
+  shinhan-tcp-host: 127.0.0.1
+  shinhan-tcp-port: 19090
+  timeout-ms: 5000
+  token-ttl-sec: 900
+  allowed-callback-hosts: [127.0.0.1, localhost, "[::1]"]
+  payment-page-url: http://127.0.0.1:19081/pay

@@ -52,3 +52,7 @@ Concept heading: "B · 다크 스튜디오". Color system: calm graphite #171C24
 검증: frontend build, 기존 테스트 17개, lint(기존 Fast Refresh 경고), server DistributionControllerTest, module-artifacts 검사 통과. CUA에서 최신 CSS `index-CI_lZbUj.css`를 확인했다. 1280px 카드 높이 132px, 820px 문서 폭 820px 및 편집 헤더 95.33px, 팔레트 버튼의 가로 넘침 0건을 확인했다. 카드 작업 메뉴와 HTTP 요청 선택이 유지된다. 820px 플러그인 화면은 코드·실행 패널을 세로 배치하여 0px 코드 영역과 실행 버튼 줄바꿈 문제를 수정했다. 실제 사용자 데이터 수정·MCP 검증·MSI 설치는 수행하지 않았다.
 
 실제 화면: [목록 라이트](screenshots/2026-10-07-workbench/workflows-light.png), [목록 다크](screenshots/2026-10-07-workbench/workflows-dark.png), [편집기](screenshots/2026-10-07-workbench/editor-light.png), [좁은 편집기](screenshots/2026-10-07-workbench/editor-narrow.png).
+
+배포 확인: 코드 커밋 `b05a57276f70a32c48a1f0bcc07cc8b523130be7`을 사용한 0.3.18 이미지. Oracle·Vault 검증 서버 18183 갱신, EC2 Docker 검증 서버 18088은 server/proxy healthy. 다운로드 공개 상태 AVAILABLE, server/release 0.3.18, automaticUpdateAllowed=true. 0.3.18 MSI를 전체 HTTP 다운로드해 149415656 bytes와 SHA-256 `061fe09fcf16cb25071bb8088fa7426f29d8b97f9fe8469170603e56317574dc`를 확인했다. 실제 MSI 설치·업데이트 실행은 검증하지 않았다. 18183은 설치 파일 배포용 서버가 아니어서 MISSING을 유지한다.
+
+[배포된 소개 화면](screenshots/2026-10-07-workbench/server-intro.png), [320px 소개 화면](screenshots/2026-10-07-workbench/server-intro-narrow.png), [820px 플러그인 화면](screenshots/2026-10-07-workbench/plugin-narrow.png). 최신 소개 화면에서 320px 뷰포트 대비 문서 폭305px, 다운로드 버튼239.33px로 가로 넘침이 없다. 플러그인 코드 패널320px/실행 패널260px 높이, 실행 버튼69×29px 확인.

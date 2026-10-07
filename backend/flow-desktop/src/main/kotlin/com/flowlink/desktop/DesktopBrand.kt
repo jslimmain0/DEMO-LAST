@@ -16,6 +16,32 @@ import javax.swing.border.AbstractBorder
 import javax.swing.plaf.FontUIResource
 
 /** 설치 아이콘과 같은 두 실행 지점의 연결 표시. 웹 화면의 브랜드 토큰(index.css --fl-*)과 같은 값을 쓴다. */
+/** 폭이 모자라면 다음 줄로 넘기는 FlowLayout — 좁은 창에서 버튼 줄이 잘리지 않게 선호 높이를 줄 수만큼 계산한다. */
+internal class WrapLayout(align: Int, hgap: Int, vgap: Int) : java.awt.FlowLayout(align, hgap, vgap) {
+    override fun preferredLayoutSize(target: java.awt.Container) = layoutSize(target, true)
+    override fun minimumLayoutSize(target: java.awt.Container) = layoutSize(target, false).also { it.width -= hgap + 1 }
+    private fun layoutSize(target: java.awt.Container, preferred: Boolean): java.awt.Dimension = synchronized(target.treeLock) {
+        var container: java.awt.Container = target
+        while (container.width == 0 && container.parent != null) container = container.parent
+        val available = container.width.takeIf { it > 0 } ?: Int.MAX_VALUE
+        val insets = target.insets
+        val maxWidth = available - (insets.left + insets.right + hgap * 2)
+        val size = java.awt.Dimension(0, 0)
+        var rowWidth = 0; var rowHeight = 0
+        fun close() { size.width = maxOf(size.width, rowWidth); if (size.height > 0) size.height += vgap; size.height += rowHeight }
+        for (child in target.components) if (child.isVisible) {
+            val d = if (preferred) child.preferredSize else child.minimumSize
+            if (rowWidth > 0 && rowWidth + hgap + d.width > maxWidth) { close(); rowWidth = 0; rowHeight = 0 }
+            if (rowWidth > 0) rowWidth += hgap
+            rowWidth += d.width; rowHeight = maxOf(rowHeight, d.height)
+        }
+        close()
+        size.width += insets.left + insets.right + hgap * 2
+        size.height += insets.top + insets.bottom + vgap * 2
+        size
+    }
+}
+
 internal object DesktopBrand {
     val primary = Color(0x5b, 0x4b, 0xd0)
     val text = Color(0x18, 0x18, 0x1b)
@@ -110,18 +136,19 @@ internal object DesktopBrand {
     private val inkHover = Color(0x27, 0x27, 0x2a)
     private val divider = Color(0xf4, 0xf4, 0xf5)
 
-    /** 시작 화면 왼쪽 보라 패널 — 배경에 연결선 마크를 옅게 깐다. 폭은 창 폭의 40%(200~290px). */
-    fun sidePanel() = object : JPanel() {
+    /** 왼쪽 보라 패널 — 배경에 연결선 마크를 옅게 깐다. 폭은 창 폭의 ratio(min~max px). */
+    fun sidePanel(ratio: Double = 0.4, min: Int = 200, max: Int = 290) = object : JPanel() {
         override fun getPreferredSize(): java.awt.Dimension {
             val base = super.getPreferredSize()
-            val width = ((parent?.width?.takeIf { it > 0 } ?: 700) * 0.4).toInt().coerceIn(200, 290)
+            val width = ((parent?.width?.takeIf { it > 0 } ?: 700) * ratio).toInt().coerceIn(min, max)
             return java.awt.Dimension(width, base.height)
         }
         override fun paintComponent(graphics: java.awt.Graphics) {
             val g = graphics.create() as java.awt.Graphics2D
             g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
             g.color = primary; g.fillRect(0, 0, width, height)
-            // 제목·상태 글자와 겹치지 않게 오른쪽 가운데에 작게
+            // 제목·상태 글자와 겹치지 않게 오른쪽 가운데에 작게 — 좁은 패널에서는 생략
+            if (width < 220) { g.dispose(); return }
             g.color = Color(255, 255, 255, 30); g.stroke = BasicStroke(7f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND)
             g.translate(width - 118, (height * 0.36).toInt()); g.scale(0.62, 0.62)
             val x = 0; val y = 0

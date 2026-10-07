@@ -94,12 +94,13 @@ class DesktopTray(
     private fun browse(url: String) = Desktop.getDesktop().browse(URI.create(url))
     private fun copy(value: String) = Toolkit.getDefaultToolkit().systemClipboard.setContents(StringSelection(value), null)
     private fun button(title: String, prominent: Boolean = false, action: () -> Unit) = DesktopBrand.button(title, prominent).apply { addActionListener { guarded(action) } }
-    private fun row(vararg controls: java.awt.Component) = JPanel(FlowLayout(FlowLayout.RIGHT, 8, 0)).apply { isOpaque = false; controls.forEach { add(it) } }
+    private fun row(vararg controls: java.awt.Component) = JPanel(WrapLayout(FlowLayout.RIGHT, 8, 4)).apply { isOpaque = false; controls.forEach { add(it) } }
     private fun text(value: String) = object : JTextArea(value) {
         override fun getPreferredSize(): Dimension {
             val wrapWidth = (width.takeIf { it > 40 } ?: 420).coerceAtLeast(100)
             val view = getUI().getRootView(this)
-            view.setSize(wrapWidth.toFloat(), Float.MAX_VALUE)
+            // 한글이 줄 끝에 걸리면 실제 줄바꿈이 계산보다 한 줄 많아질 수 있어 약간 좁게 잰다(잘림 방지).
+            view.setSize((wrapWidth - 6).toFloat(), Float.MAX_VALUE)
             return Dimension(0, kotlin.math.ceil(view.getPreferredSpan(javax.swing.text.View.Y_AXIS).toDouble()).toInt())
         }
         override fun getMinimumSize() = preferredSize
@@ -148,15 +149,25 @@ class DesktopTray(
             defaultCloseOperation = WindowConstants.DISPOSE_ON_CLOSE; setIconImage(DesktopBrand.icon(64))
             minimumSize = Dimension(520, 380)
         }
-        val header = JPanel(BorderLayout(14, 0)).apply {
-            isOpaque = false; add(JLabel(ImageIcon(DesktopBrand.icon(36))).apply { verticalAlignment = SwingConstants.TOP }, BorderLayout.WEST)
-            add(stack(JLabel("FlowLink Windows").apply { font = DesktopBrand.small; foreground = DesktopBrand.primary }, JLabel(title).apply { font = DesktopBrand.body.deriveFont(Font.BOLD, 22f); foreground = DesktopBrand.text }, text(subtitle)), BorderLayout.CENTER)
+        // 시작 화면과 같은 반반 구성 — 왼쪽 보라 패널에 제목·설명, 오른쪽에 내용(content)과 버튼 줄.
+        fun light(value: String, size: Float, bold: Boolean = false, alpha: Int = 255) = text(value).apply {
+            font = DesktopBrand.body.deriveFont(if (bold) Font.BOLD else Font.PLAIN, size); foreground = Color(255, 255, 255, alpha)
+            alignmentX = java.awt.Component.LEFT_ALIGNMENT
+        }
+        val side = DesktopBrand.sidePanel(ratio = 0.32, min = 160, max = 230).apply {
+            add(JLabel(ImageIcon(DesktopBrand.icon(36))).apply { alignmentX = java.awt.Component.LEFT_ALIGNMENT })
+            add(Box.createVerticalStrut(16)); add(light(title, 20f, bold = true))
+            add(Box.createVerticalStrut(10)); add(light(subtitle, 12f, alpha = 215))
+            add(Box.createVerticalGlue())
+            add(light("FlowLink Windows · ${com.flowlink.common.release.ReleaseVersion.version}", 11f, alpha = 160))
         }
         val content = JPanel(BorderLayout(0, 16)).apply {
-            background = DesktopBrand.background; border = BorderFactory.createEmptyBorder(20, 22, 20, 22)
-            add(header, BorderLayout.NORTH); preferredSize = Dimension(width, height)
+            background = DesktopBrand.background; border = BorderFactory.createEmptyBorder(22, 22, 18, 22)
         }
-        dialog.contentPane = content
+        dialog.contentPane = JPanel(BorderLayout()).apply {
+            background = DesktopBrand.background; preferredSize = Dimension(width, height)
+            add(side, BorderLayout.WEST); add(content, BorderLayout.CENTER)
+        }
         dialog.rootPane.registerKeyboardAction({ dialog.dispose() }, KeyStroke.getKeyStroke("ESCAPE"), JComponent.WHEN_IN_FOCUSED_WINDOW)
         return dialog to content
     }

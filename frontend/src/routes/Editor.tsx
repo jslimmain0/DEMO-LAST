@@ -540,13 +540,14 @@ export function Editor() {
       <div className="fl-editor-workbench" style={{ height: '100dvh', display: 'flex', flexDirection: 'column', background: 'var(--fl-bg)', overflow: 'hidden' }}>
       <header className="fl-editor-header">
         <div className="fl-editor-heading">
+        <Link to={returnToList.to} state={returnToList.state} className="fl-editor-brand" aria-label="FlowLink 워크플로 목록"><AppIcon name="flow" size={26} /><b>FlowLink</b></Link>
         {/* 출발 목록으로 복귀하며, 직접 진입한 경우 소속 폴더를 사용한다. */}
         <Link
           to={returnToList.to}
           state={returnToList.state}
           aria-label="워크플로 목록"
           style={{ textDecoration: 'none', color: 'var(--fl-text-muted)', fontSize: 18 }}
-        >←</Link>
+        ><AppIcon name="arrowLeft" size={17} /></Link>
         <span title={`${scope.current.name} · ${scope.current.id}`} style={{ maxWidth: 230, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 12, color: 'var(--fl-text-muted)' }}>{scope.current.name} <span style={{ color: 'var(--fl-primary)' }}> / </span></span>
         <input
           aria-label="워크플로 이름"
@@ -557,7 +558,7 @@ export function Editor() {
           title={`워크플로 이름 — 눌러서 편집 · ${scope.current.origin === 'local' ? '내 PC' : '서버'} 저장 · 노드 ${nodeCount}개`}
           style={{ fontFamily: 'var(--fl-font-head)', fontWeight: 600, fontSize: 15, border: '1px solid transparent', borderRadius: 'var(--fl-radius-sm)', padding: '6px 8px', background: 'transparent', color: 'var(--fl-text)', flex: '1 1 140px', minWidth: 120, maxWidth: 280 }}
         />
-        <span role="status" style={{ fontSize: 12, color: dirty ? 'var(--fl-put)' : 'var(--fl-text-muted)' }}>{save.isPending ? '저장 중…' : dirty ? '● 미저장' : '저장됨'}</span>
+        <span role="status" style={{ fontSize: 12, color: dirty ? 'var(--fl-put)' : 'var(--fl-text-muted)' }}>{save.isPending ? '저장 중…' : dirty ? '● 미저장' : '✓ 저장됨'}</span>
         {isViewer && (
           <span title="viewer 역할은 조회만 가능합니다 — 저장/실행이 비활성화됩니다"
             style={{ fontSize: 12, fontWeight: 600, color: 'var(--fl-waiting)', border: '1px solid var(--fl-waiting)', borderRadius: 'var(--fl-radius-pill)', padding: '2px 8px' }}>

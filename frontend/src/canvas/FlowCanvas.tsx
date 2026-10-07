@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { GraphNode, NodeType } from '../api/types'
 
 import { toast } from '../components/toast'
+import { AppIcon } from '../components/AppIcon'
 import { useEditorStore } from '../store/editorStore'
 import { presence } from '../lib/presence'
 import { BranchNode } from './BranchNode'
@@ -16,10 +17,11 @@ import { NodeCard } from './NodeCard'
 import { NoteNode } from './NoteNode'
 import { PresenceOverlay } from './PresenceOverlay'
 import { SwitchNode } from './SwitchNode'
-import { NODE_W, catColor } from './nodeMeta'
+import { NODE_W, TERMINAL_W, catColor } from './nodeMeta'
 import { revealNodeTranslation } from './revealNode'
 import { canChangeExecutionAgent, type ExecutionAgent } from '../lib/executionAgentSelection'
 import { asGraphNode } from './graphAdapter'
+import './node-visuals.css'
 
 const nodeTypes = { flnode: NodeCard, branch: BranchNode, switch: SwitchNode, note: NoteNode, annogroup: GroupNode }
 const edgeTypes = { deletable: DeletableEdge }
@@ -134,7 +136,7 @@ export function FlowCanvas() {
     const { focusId, nodes: ns } = useEditorStore.getState()
     const n = focusId ? ns.find((x) => x.id === focusId) : null
     if (!n) return
-    const w = n.measured?.width ?? NODE_W
+    const w = n.measured?.width ?? (n.data.type === 'start' || n.data.type === 'end' ? TERMINAL_W : NODE_W)
     const h = n.measured?.height ?? 80
     setCenter(n.position.x + w / 2, n.position.y + h / 2, { zoom: Math.max(1, getZoom()), duration: 320 })
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -194,7 +196,7 @@ export function FlowCanvas() {
     // 영역 박스는 groupW/groupH 만큼 차지 — bounds 에 실제 크기를 반영한다
     const dims = nodes.map((n) => {
       const d = n.data as { type?: string; groupW?: number; groupH?: number }
-      return d.type === 'group' ? { w: d.groupW ?? 396, h: d.groupH ?? 264 } : { w: NODE_W, h: NODE_H }
+      return d.type === 'group' ? { w: d.groupW ?? 396, h: d.groupH ?? 264 } : d.type === 'start' || d.type === 'end' ? { w: TERMINAL_W, h: 85 } : { w: NODE_W, h: NODE_H }
     })
     const minX = Math.min(...nodes.map((n) => n.position.x))
     const minY = Math.min(...nodes.map((n) => n.position.y))
@@ -212,7 +214,7 @@ export function FlowCanvas() {
     if (!target.length) return
     const dims = target.map((n) => {
       const d = n.data as { type?: string; groupW?: number; groupH?: number }
-      return d.type === 'group' ? { w: d.groupW ?? 396, h: d.groupH ?? 264 } : { w: NODE_W, h: 96 }
+      return d.type === 'group' ? { w: d.groupW ?? 396, h: d.groupH ?? 264 } : d.type === 'start' || d.type === 'end' ? { w: TERMINAL_W, h: 85 } : { w: NODE_W, h: 96 }
     })
     const minX = Math.min(...target.map((n) => n.position.x))
     const minY = Math.min(...target.map((n) => n.position.y))
@@ -352,11 +354,11 @@ export function FlowCanvas() {
             bgColor="var(--fl-surface)"
           />
         )}
-        <Controls>
-          <ControlButton onClick={() => zoomTo(1, { duration: 200 })} title="줌 100%" aria-label="줌 100%"><span style={{ fontSize: 9, fontWeight: 700 }}>1:1</span></ControlButton>
-          <ControlButton onClick={fitToSelection} title="선택 영역 맞춤 (없으면 전체)" aria-label="선택 영역 맞춤">⛶</ControlButton>
-          <ControlButton onClick={toggleMinimap} title={showMinimap ? '미니맵 숨기기' : '미니맵 보기'} aria-label="미니맵 토글">▣</ControlButton>
-          <ControlButton onClick={toggleGrid} title={showGrid ? '그리드 숨기기' : '그리드 보기'} aria-label="그리드 토글">▦</ControlButton>
+        <Controls className="fl-horizontal-controls">
+          <ControlButton onClick={() => zoomTo(1, { duration: 200 })} title="줌 100%" aria-label="줌 100%"><span style={{ fontSize: 9, fontWeight: 700 }}>100%</span></ControlButton>
+          <ControlButton onClick={fitToSelection} title="선택 영역 맞춤 (없으면 전체)" aria-label="선택 영역 맞춤"><AppIcon name="expand" size={15} /></ControlButton>
+          <ControlButton onClick={toggleMinimap} title={showMinimap ? '미니맵 숨기기' : '미니맵 보기'} aria-label="미니맵 토글"><AppIcon name="monitor" size={15} /></ControlButton>
+          <ControlButton onClick={toggleGrid} title={showGrid ? '그리드 숨기기' : '그리드 보기'} aria-label="그리드 토글"><AppIcon name="grid" size={15} /></ControlButton>
         </Controls>
         <PresenceOverlay />
       </ReactFlow>

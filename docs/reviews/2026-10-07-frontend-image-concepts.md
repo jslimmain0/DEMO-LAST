@@ -1,6 +1,6 @@
 # FlowLink 프론트 이미지 시안 — 2026-10-07
 
-내장 image_gen으로 생성했다. 실제 프론트는 새 0.3.16 JAR로 18322에서 열었고, 서버 18088의 소개·다운로드 페이지도 확인했다. 사용자가 승인한 v2 방향을 0.3.17 프론트와 서버 다운로드 페이지에 적용했다. 이미지의 예시 콘텐츠와 실제 화면 데이터는 다르며, 사용자가 추가 요청한 최근 작업 영역은 실제 화면에서 제거했다.
+내장 image_gen으로 생성했다. 실제 프론트는 새 0.3.16 JAR로 18322에서 열었고, 서버 18088의 소개·다운로드 페이지도 확인했다. 사용자가 승인한 v2 방향을 0.3.18 프론트와 서버 다운로드 페이지에 적용했다. 이미지의 예시 콘텐츠와 실제 화면 데이터는 다르며, 사용자가 추가 요청한 최근 작업 영역은 실제 화면에서 제거했다.
 
 - A: 밝은 워크벤치. 카드·폴더 탐색, 넓은 캔버스, 단일 툴바와 오른쪽 요청 설정 패널. 권장 방향.
 - B: 다크 스튜디오. 같은 카드·폴더 구조와 차분한 어두운 화면. 편집기의 중복 내비게이션은 실제 구현 시 줄여 캔버스 폭을 확보한다.
@@ -43,4 +43,12 @@ Editor: ONE concise toolbar with back to library, "결제 승인", saved status,
 Critical semantic invariant: Mock is a resource/listener configured under "Mock 서버" and can be an HTTP request target; it is NOT a workflow node. DO NOT create a "Mock" node, Mock palette button or decorative branch to a Mock node. No transform/plugin node in this personal workflow. Team/shared resources exist in company workspaces, do not show personal Vault/plugin management. No Java/H2/Oracle/Vault implementation details, tokens or multiple sign-in screens. No corporate photos, fake testimonials, promotional slogans or footnotes. Render key text verbatim with correct Korean. Incidental small text may be sparse, not gibberish. Aim for a credible frontend redesign ready to translate into CSS and components.
 Concept heading: "B · 다크 스튜디오". Color system: calm graphite #171C24 background, elevated blue-grey #222A35 surfaces, #E4E7ED main text, #99A6B6 secondary, muted mint #75D2CE action, subdued lilac #AC9BD4 selected-node cue, fine borders #36414E. Professional dark UI with clear contrast, no neon glow, no gradients or glass. Left library rail darker than content. Workflow cards have subtle separated headers and elegant colored miniature node routes, compact readable footers. Editor canvas is expansive and lighter graphite than rails; panels are disciplined and visually quiet; selected node feels lifted by one fine outline only. Crisp mint run button. Refined 10px card corners with generous gutters. Do not merely recolor a generic dashboard; match this concrete workflow/file-organizer/editor structure.
 ```
+## 실제 구현과 검증 · 0.3.18
 
+시안의 핵심 구도를 맞추면서 실제 사용 기능을 유지했다. 한 줄 공간 선택, 연결 노드 로고와 SVG 메뉴 아이콘, 이름·설명·상태·날짜 중심의 132px 카드와 아래 작업 메뉴, 컬러 폴더 아이콘을 적용했다. 최근 작업과 카드 내부 흐름은 제거했다. 편집기는 종류별 컬러 타일, 원형 시작·끝, 가로 줌 도구, Params·Headers·Body 선택으로 변경했다. 긴 팔레트 이름은 줄바꿈한다. 전체 화면 요청 편집에서는 기존 섹션을 유지한다.
+
+서버 첫 화면은 큰 제목·Windows 다운로드와 오른쪽 SVG 편집기 예시만 둔다. 기능 소개 메뉴와 별도 안내 페이지는 없다. SVG 예시는 실제 워크플로의 시작·API 호출·검증·끝으로 구성하며 Mock을 노드로 표현하지 않는다.
+
+검증: frontend build, 기존 테스트 17개, lint(기존 Fast Refresh 경고), server DistributionControllerTest, module-artifacts 검사 통과. CUA에서 최신 CSS `index-CI_lZbUj.css`를 확인했다. 1280px 카드 높이 132px, 820px 문서 폭 820px 및 편집 헤더 95.33px, 팔레트 버튼의 가로 넘침 0건을 확인했다. 카드 작업 메뉴와 HTTP 요청 선택이 유지된다. 820px 플러그인 화면은 코드·실행 패널을 세로 배치하여 0px 코드 영역과 실행 버튼 줄바꿈 문제를 수정했다. 실제 사용자 데이터 수정·MCP 검증·MSI 설치는 수행하지 않았다.
+
+실제 화면: [목록 라이트](screenshots/2026-10-07-workbench/workflows-light.png), [목록 다크](screenshots/2026-10-07-workbench/workflows-dark.png), [편집기](screenshots/2026-10-07-workbench/editor-light.png), [좁은 편집기](screenshots/2026-10-07-workbench/editor-narrow.png).

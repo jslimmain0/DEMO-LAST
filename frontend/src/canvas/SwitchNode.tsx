@@ -3,8 +3,10 @@ import type { NodeProps } from '@xyflow/react'
 import { useEffect } from 'react'
 import { useEditorStore } from '../store/editorStore'
 import { asGraphNode } from './graphAdapter'
-import { NODE_W, catColor, typeIcon } from './nodeMeta'
+import { NODE_W, catColor } from './nodeMeta'
 import { RunBadge } from './NodeCard'
+import { NodeTypeIcon } from '../components/AppIcon'
+import './node-visuals.css'
 
 // 스위치 기본 트랙 — switchPorts 없이 저장된(손편집) 그래프 방어
 const DEFAULT_PORTS = [{ id: '1', label: '1' }, { id: '2', label: '2' }]
@@ -51,11 +53,11 @@ export function SwitchNode({ data, selected }: NodeProps) {
     >
       <Handle type="target" position={Position.Left} className="fl-handle" style={{ borderColor: accent }} />
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 12px', borderLeft: `3px solid ${accent}` }}>
-        <span aria-hidden style={{ color: accent, fontSize: 14, width: 16, textAlign: 'center' }}>{typeIcon('switch')}</span>
+      <div className="fl-task-header">
+        <NodeTypeIcon type="switch" size={36} />
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div title={n.name ?? '스위치'} style={{ fontSize: 13.5, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{n.name ?? '스위치'}</div>
-          <div style={{ fontSize: 10.5, color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)' }}>선로 전환기 — 트랙 클릭</div>
+          <div className="fl-task-title" title={n.name ?? '스위치'}>{n.name ?? '스위치'}</div>
+          <div className="fl-task-subtitle">선로 전환기 — 트랙 클릭</div>
         </div>
         <RunBadge state={runState} />
       </div>

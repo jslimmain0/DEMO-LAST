@@ -15,9 +15,9 @@ import { getTheme, toggleTheme, type Theme } from '../design/theme'
 
 const NAV: Array<{to: string; label: string; icon: AppIconName}> = [
   { to: '/flows', label: '워크플로', icon: 'flow' },
-  { to: '/resources', label: '환경 · 시크릿', icon: 'key' },
-  { to: '/mocks', label: 'Mock 서버', icon: 'server' },
-  { to: '/protocols', label: '프로토콜', icon: 'sliders' },
+  { to: '/resources', label: '환경 · 시크릿', icon: 'lock' },
+  { to: '/mocks', label: 'Mock 서버', icon: 'database' },
+  { to: '/protocols', label: '프로토콜', icon: 'link' },
   { to: '/plugins', label: '플러그인 목록', icon: 'code' },
   { to: '/executions', label: '실행 이력', icon: 'clock' },
 ]
@@ -52,9 +52,9 @@ export function AppShellTier1({ children, sidebarExtra }: { children: ReactNode;
       padding: '9px 10px',
       borderRadius: 'var(--fl-radius-sm)',
       textDecoration: 'none',
-      fontSize: 13.5,
+      fontSize: 14,
       fontWeight: active ? 600 : 500,
-      color: active ? 'var(--fl-primary)' : 'var(--fl-text-muted)',
+      color: active ? 'var(--fl-primary)' : 'var(--fl-text-soft)',
       background: active ? 'color-mix(in srgb, var(--fl-primary) 10%, var(--fl-surface))' : 'transparent',
       border: '1px solid transparent',
     }
@@ -66,11 +66,11 @@ export function AppShellTier1({ children, sidebarExtra }: { children: ReactNode;
 
       <aside role="navigation" aria-label="주요" className="fl-app-sidebar" style={sidebar}>
         <Link to="/flows" style={{ display: 'flex', alignItems: 'center', gap: 10, textDecoration: 'none', color: 'var(--fl-text)', padding: '4px 8px 0' }}>
-          <span className="fl-brand-mark"><AppIcon name="flow" size={20} /></span>
-          <span style={{ fontFamily: 'var(--fl-font-head)', fontWeight: 700, fontSize: 17, letterSpacing: '-.01em' }}>FlowLink</span>
+          <span className="fl-brand-mark"><AppIcon name="flow" size={28} /></span>
+          <span style={{ fontFamily: 'var(--fl-font-head)', fontWeight: 750, fontSize: 20, letterSpacing: '-.025em' }}>FlowLink</span>
         </Link>
 
-        <Link to="/workspaces" className="fl-workspace-back">전체 공간 탐색 →</Link>
+        {library && <Link to="/workspaces" className="fl-workspace-back">워크스페이스</Link>}
         <div style={{ display: 'grid', gap: 4, flexShrink: 0 }}>
           {!library && <WorkspaceSwitcher />}
           {desktop && !scope.connected && <button onClick={() => void desktopApi.login()} style={{ ...themeBtn, marginTop: 0 }}>＋ 서버 로그인</button>}
@@ -80,7 +80,7 @@ export function AppShellTier1({ children, sidebarExtra }: { children: ReactNode;
         <nav style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 2 }}>
           {!library && NAV.map((n) => n.to === '/plugins' && scope.current.origin === 'local' ? null : (<div key={n.to}>
             <Link key={n.to} to={n.to} style={navItem(n.to)}>
-              <AppIcon name={n.icon} size={18} />
+              <AppIcon name={n.icon} size={20} />
               <span>{n.label}</span>
             </Link>
             {n.to === '/flows' && sidebarExtra && <div className="fl-sidebar-folders">{sidebarExtra}</div>}
@@ -97,8 +97,8 @@ export function AppShellTier1({ children, sidebarExtra }: { children: ReactNode;
         </div>
         <div className="fl-sidebar-footer">
         <div className="fl-runtime-status" style={{ padding: '10px 8px 0', fontSize: 11.5, color: 'var(--fl-text-muted)' }}>
-          {desktop && <span style={{ color: 'var(--fl-location-local)' }}>● 내 PC 준비됨</span>}
-          <span style={{ color: scope.connected && !scope.remoteError ? 'var(--fl-location-server)' : 'var(--fl-waiting)' }}>● 서버 {scope.connected ? scope.remoteError ? '연결 끊김' : '연결됨' : '로그인 필요'}</span>
+          {desktop && <span><AppIcon name="monitor" size={16} /><b>로컬</b><small style={{ color: 'var(--fl-ok)' }}>● 준비됨</small></span>}
+          <span><AppIcon name="database" size={16} /><b>서버</b><small style={{ color: scope.connected && !scope.remoteError ? 'var(--fl-ok)' : 'var(--fl-text-muted)' }}>● {scope.connected ? scope.remoteError ? '연결 끊김' : '연결됨' : '로그인 필요'}</small></span>
         </div>
         {desktop && <div style={{ ...userChip, marginTop: 'auto' }}>
           <span style={{ flex: 1, minWidth: 0, fontSize: 12, overflowWrap: 'anywhere', lineHeight: 1.5 }}><strong style={{ display: 'block', fontWeight: 600 }}>{scope.connected ? scope.login ?? '사용자' : '개인 공간 사용 중'}</strong>{scope.connected && <small style={{ display: 'block', color: 'var(--fl-text-muted)', fontSize: 11 }}>서버 로그인됨</small>}</span>
@@ -143,12 +143,12 @@ export function AppShellTier1({ children, sidebarExtra }: { children: ReactNode;
 }
 
 const sidebar: CSSProperties = {
-  width: 216,
+  width: 230,
   flexShrink: 0,
   display: 'flex',
   flexDirection: 'column',
-  gap: 4,
-  padding: '18px 12px',
+  gap: 12,
+  padding: '22px 14px 14px',
   borderRight: '1px solid var(--fl-border)',
   background: 'var(--fl-surface)',
   position: 'sticky',

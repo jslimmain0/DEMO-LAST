@@ -9,19 +9,18 @@
 .fl-sidebar-body { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; padding-top: 12px; }
 .fl-sidebar-folders { margin: 4px 0 8px; padding-left: 12px; max-height: min(22dvh, 180px); overflow-y: auto; }
 .fl-sidebar-footer { flex-shrink: 0; border-top: 1px solid var(--fl-border); padding-top: 8px; }
-.fl-runtime-status { display: flex; flex-wrap: wrap; gap: 5px 10px; line-height: 1.5; }
-.fl-runtime-status > span { white-space: nowrap; }
+.fl-runtime-status { display:grid; gap:8px; line-height:1.5; }
+.fl-runtime-status > span { display:flex; align-items:center; gap:9px; white-space:nowrap; }
+.fl-runtime-status b { font-size:12px; font-weight:500; }
+.fl-runtime-status small { font-size:11px; margin-left:auto; }
 .fl-sidebar-footer .fl-runtime-status { padding: 4px 8px 8px !important; font-size: 11px !important; }
 .fl-sidebar-preferences { display: flex; gap: 4px; margin-top: 5px; }
 .fl-sidebar-preferences > button { flex: 1; margin: 0 !important; padding: 8px !important; font-size: 12px !important; gap: 6px !important; }
 .fl-app-sidebar button:disabled { cursor: default; }
 .fl-workspace-back { display: block; padding: 10px 8px 6px; color: var(--fl-text-muted); font-size: 12px; text-decoration: none; }
-.fl-space-current { box-sizing: border-box; width: 100%; min-width: 0; text-align: left; padding: 10px; margin: 4px 0; border: 1px solid var(--fl-border); border-radius: var(--fl-radius-sm); background: var(--fl-surface); color: var(--fl-text); cursor: pointer; }
-.fl-space-current small { display: block; margin: 0 0 5px; font-size: 11px; line-height: 1.4; color: var(--fl-text-muted); }
-.fl-space-current > span { display: flex; gap: 8px; align-items: flex-start; min-width: 0; }
-.fl-space-current b { flex: 1; min-width: 0; font-size: 13px; line-height: 1.45; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
-.fl-space-current > span > svg { flex-shrink: 0; }
-.fl-space-current > small:last-child:not(:first-child) { margin: 5px 0 0; }
+.fl-space-current { box-sizing:border-box; display:flex; align-items:center; gap:8px; width:100%; min-width:0; text-align:left; padding:10px; margin:8px 0 0; border:1px solid var(--fl-border); border-radius:var(--fl-radius-sm); background:var(--fl-surface); color:var(--fl-text); cursor:pointer; }
+.fl-space-current b { flex:1; min-width:0; font-size:13px; font-weight:550; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.fl-space-current small { font-size:10px; color:var(--fl-text-muted); }
 .fl-space-quick { display: grid; gap: 5px; max-height: 40dvh; overflow-y: auto; border: 1px solid var(--fl-border); padding: 10px; border-radius: var(--fl-radius); margin-top: 4px; background: var(--fl-surface); }
 .fl-space-quick button { display: flex; justify-content: space-between; align-items: center; min-width: 0; min-height: 32px; gap: 8px; padding: 7px 0; border: 0; background: none; color: var(--fl-text); cursor: pointer; text-align: left; font-size: 12px; }
 .fl-space-quick button span { flex: 1; min-width: 0; overflow-wrap: anywhere; line-height: 1.5; }
@@ -35,7 +34,7 @@
 .fl-workbench-context small { margin-left: auto; font-size: 11px; }
 
 .fl-workbench-page { padding: 24px 28px 40px; max-width: 1500px; margin: auto; }
-.fl-flow-workspace { min-width: 0; padding: 24px 28px 40px; display: flex; flex-direction: column; gap: 18px; }
+.fl-flow-workspace { background:var(--fl-surface); min-height:100dvh; min-width: 0; padding: 24px 28px 40px; display: flex; flex-direction: column; gap: 18px; }
 .fl-workbench-title { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 20px; }
 .fl-flow-workspace .fl-workbench-title { margin-bottom: 0; }
 .fl-workbench-title > div:first-child { flex: 1; min-width: 200px; }

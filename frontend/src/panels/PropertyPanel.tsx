@@ -13,6 +13,7 @@ import { JsonTree } from '../components/JsonTree'
 // 워크벤치(전체화면 모달)의 인라인 코드 편집기 — 열 때만 로드(BigTextEditor 와 같은 청크)
 const CodeEditorLazy = lazy(() => import('../components/CodeEditor'))
 import { CopyIcon, DataInsertIcon } from '../components/icons'
+import { NodeTypeIcon } from '../components/AppIcon'
 import { BindingChip } from '../binding/BindingChip'
 import { BindingPicker } from '../binding/BindingPicker'
 import { TokenInput } from '../binding/TokenInput'
@@ -155,6 +156,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
   const [advOpen, setAdvOpen] = useState(false) // HTTP 고급(문자셋) 접기
   const [curlText, setCurlText] = useState<string | null>(null) // cURL 붙여넣기 입력창(열림=문자열)
   const [secOverride, setSecOverride] = useState<Record<string, boolean>>({}) // HTTP 요청 섹션 접기 오버라이드
+  const [requestPart, setRequestPart] = useState('query')
   const [previewOpen, setPreviewOpen] = useState(false) // 요청 미리보기 접기
   const focusNode = useEditorStore((s) => s.focusNode)
   const transforms = catalog.query
@@ -167,6 +169,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
   useEffect(() => {
     setSingle(null); setSingleRunning(false)
     setCurlText(null); setSecOverride({}); setPreviewOpen(false); setAdvOpen(false)
+    setRequestPart('query')
     setTcpPrev(null); setTcpPrevErr(null)
   }, [selectedId])
 
@@ -407,6 +410,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
     })
     update(id, { baseUrl: base, path: '', baseUrlBound: null, paramsRaw: false, fields: { params: [...(fields.params ?? []), ...rows], headers: fields.headers ?? [], body: fields.body ?? [] } })
     setSecOverride((p) => ({ ...p, query: true }))
+    setRequestPart('query')
     toast(`쿼리 ${rows.length}개를 Params 로 분리했습니다.`, 'ok')
   }
 
@@ -465,6 +469,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
   // 프리셋: 흔한 조합을 한 번에(method+bodyType). 현재 선택 하이라이트는 파생.
   const presetKey = method === 'GET' ? 'get' : (hasBody && bodyKind === 'json') ? 'json' : (hasBody && bodyKind === 'urlencoded') ? 'form' : (hasBody && bodyKind === 'raw') ? 'raw' : 'other'
   const applyPreset = (k: string) => {
+    setRequestPart(k === 'get' ? 'query' : 'body')
     if (k === 'get') { update(id, { method: 'GET' as HttpMethod }); return }
     if (!hasBody) update(id, { method: 'POST' as HttpMethod }) // GET/HEAD → POST 로 승격해 본문이 실제로 실리게
     // 본문 종류 전환은 changeBodyType 로 — 내용 변환/정규화(보이는 것=보내는 것) 유지
@@ -481,7 +486,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
     : key === 'resp' ? true // 응답(파싱 설정·출력 키)은 기본 펼침 — 실행 결과를 보는 흐름과 붙어 있어야 한다
     : false
   // 전체화면 모달에선 공간이 충분하니 섹션을 기본 펼침(수동 접기는 존중)
-  const secIsOpen = (key: string): boolean => secOverride[key] ?? (modal ? true : secDefault(key))
+  const secIsOpen = (key: string): boolean => !modal && ['query', 'headers', 'body'].includes(key) ? true : secOverride[key] ?? (modal ? true : secDefault(key))
   const toggleSec = (key: string) => setSecOverride((p) => ({ ...p, [key]: !secIsOpen(key) }))
 
   // 단일 실행 응답에서 출력 키 자동 채우기
@@ -776,7 +781,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
         {/* 모달(큰 화면)에선 헤더도 본문과 같은 중앙 칼럼 폭. 이름은 입력창이 아니라 '화면 제목'처럼 —
             타입·#id 메타와 활성 환경(실행에 적용될 컨텍스트)을 헤더에 통합한다. */}
         <div style={{ display: 'flex', alignItems: 'center', gap: modal ? 10 : 7, width: '100%', ...(modal ? { maxWidth: modalColW, margin: '0 auto' } : null) }}>
-          <span aria-hidden style={{ color: catColor(node.cat), fontSize: modal ? 19 : 16, flexShrink: 0 }}>{typeIcon(node.type)}</span>
+          <NodeTypeIcon type={node.type} size={modal ? 32 : 28} />
           {modal ? (
             <div style={{ flex: 1, minWidth: 0 }}>
               <input
@@ -1045,8 +1050,10 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
 
             {bodyConvNote && <p style={{ ...hintP, color: 'var(--fl-put)' }}>⚠ {bodyConvNote}</p>}
 
-            {/* === 요청: 쿼리 / 헤더 / 본문 — 탭 대신 항상 보이는 섹션(한눈에) === */}
-            <HttpSection title="쿼리 (URL)" badge={paramCount ? String(paramCount) : ''} open={secIsOpen('query')} onToggle={() => toggleSec('query')}
+            {!modal && <div className="fl-http-tabs" role="group" aria-label="HTTP 요청 구성">
+              {([['query', 'Params', paramCount], ['headers', 'Headers', headerCount], ['body', 'Body', bodyFilled ? '•' : '']] as const).map(([key, title, count]) => <button key={key} type="button" aria-pressed={requestPart === key} onClick={() => setRequestPart(key)}>{title}{count ? ` (${count})` : ''}</button>)}
+            </div>}
+            <HttpSection fixed={!modal} hidden={!modal && requestPart !== 'query'} title="쿼리 (URL)" badge={paramCount ? String(paramCount) : ''} open={secIsOpen('query')} onToggle={() => toggleSec('query')}
               right={<div style={miniSeg} role="group" aria-label="쿼리 입력 방식">
                 <button type="button" onClick={() => switchKvRaw('params', false)} style={miniSegBtn(!node.paramsRaw)}>필드</button>
                 <button type="button" onClick={() => switchKvRaw('params', true)} style={miniSegBtn(!!node.paramsRaw)}>Raw</button>
@@ -1061,7 +1068,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
               )}
             </HttpSection>
 
-            <HttpSection title="헤더" badge={headerCount ? String(headerCount) : ''} open={secIsOpen('headers')} onToggle={() => toggleSec('headers')}
+            <HttpSection fixed={!modal} hidden={!modal && requestPart !== 'headers'} title="헤더" badge={headerCount ? String(headerCount) : ''} open={secIsOpen('headers')} onToggle={() => toggleSec('headers')}
               right={<div style={miniSeg} role="group" aria-label="헤더 입력 방식">
                 <button type="button" onClick={() => switchKvRaw('headers', false)} style={miniSegBtn(!node.headersRaw)}>필드</button>
                 <button type="button" onClick={() => switchKvRaw('headers', true)} style={miniSegBtn(!!node.headersRaw)}>Raw</button>
@@ -1077,7 +1084,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
             </HttpSection>
 
             {hasBody ? (
-              <HttpSection title="본문 (Body)" badge={bodyFilled ? '•' : ''} open={secIsOpen('body')} onToggle={() => toggleSec('body')}
+              <HttpSection fixed={!modal} hidden={!modal && requestPart !== 'body'} title="본문 (Body)" badge={bodyFilled ? '•' : ''} open={secIsOpen('body')} onToggle={() => toggleSec('body')}
                 right={<select style={{ ...field, width: 'auto', padding: '5px 6px', fontSize: 12 }} value={bodyKind} onChange={(e) => changeBodyType(e.target.value as BodyType)} aria-label="본문 종류">
                   <option value="json">JSON</option>
                   <option value="urlencoded">Form</option>
@@ -1122,7 +1129,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
                   </>
                 )}
               </HttpSection>
-            ) : (
+            ) : (modal || requestPart === 'body') && (
               <p style={{ ...hintP }}>ⓘ {method} 요청은 본문을 보내지 않습니다 — 조회 조건은 위 <b>쿼리(URL)</b>에 넣으세요.</p>
             )}
 
@@ -1945,17 +1952,18 @@ const portTag: CSSProperties = { flexShrink: 0, fontSize: 9.5, fontWeight: 700, 
 const secHeadBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, border: 'none', background: 'transparent', color: 'var(--fl-text)', cursor: 'pointer', fontSize: 12.5, fontWeight: 700, padding: 0 }
 const secBadge: CSSProperties = { marginLeft: 4, fontSize: 10.5, fontFamily: 'var(--fl-font-mono)', color: 'var(--fl-primary)', fontWeight: 600 }
 const ctChip: CSSProperties = { fontSize: 10, fontFamily: 'var(--fl-font-mono)', color: 'var(--fl-text-muted)', background: 'var(--fl-surface-2)', border: '1px solid var(--fl-border)', borderRadius: 5, padding: '2px 6px', whiteSpace: 'nowrap', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis' }
-function HttpSection({ title, badge, open, onToggle, right, children }: {
-  title: string; badge?: string; open: boolean; onToggle: () => void; right?: ReactNode; children: ReactNode
+function HttpSection({ fixed, hidden, title, badge, open, onToggle, right, children }: {
+  fixed?: boolean; hidden?: boolean; title: string; badge?: string; open: boolean; onToggle: () => void; right?: ReactNode; children: ReactNode
 }) {
+  if (hidden) return null
   return (
     <div style={{ borderTop: '1px solid var(--fl-border)', marginTop: 10, paddingTop: 8 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, minHeight: 30, flexWrap: 'wrap' }}>
-        <button onClick={onToggle} aria-expanded={open} style={{ ...secHeadBtn, minWidth: 160, flexShrink: 0 }}>
+        {fixed ? <strong style={{ fontSize: 12, fontWeight: 600 }}>{title}</strong> : <button onClick={onToggle} aria-expanded={open} style={{ ...secHeadBtn, minWidth: 160, flexShrink: 0 }}>
           <span aria-hidden style={{ width: 10, display: 'inline-block', fontSize: 10, color: 'var(--fl-text-muted)' }}>{open ? '▾' : '▸'}</span>
           {title}
           {badge ? <span style={secBadge}>{badge === '•' ? '•' : `(${badge})`}</span> : null}
-        </button>
+        </button>}
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6, minWidth: 0, maxWidth: '100%', flexShrink: 0 }}>{right}</div>
       </div>
       {open && <div style={{ marginTop: 8 }}>{children}</div>}

@@ -5,10 +5,12 @@ import type { NodeProps } from '@xyflow/react'
 
 import type { HttpMethod } from '../api/types'
 import { MethodTag } from '../components/MethodTag'
+import { AppIcon, NodeTypeIcon } from '../components/AppIcon'
 import { getReachInfoCached } from '../lib/reachable'
 import { useEditorStore } from '../store/editorStore'
 import { asGraphNode } from './graphAdapter'
-import { NODE_W, METHOD_COLOR, catColor, typeIcon, typeLabel } from './nodeMeta'
+import { NODE_W, TERMINAL_W, METHOD_COLOR, typeLabel } from './nodeMeta'
+import './node-visuals.css'
 
 export function NodeCard({ data, selected }: NodeProps) {
   const n = asGraphNode(data)
@@ -27,7 +29,6 @@ export function NodeCard({ data, selected }: NodeProps) {
   const waiting = waitingId === n.id || runState === 'waiting'
   const waitingLabel = n.type === 'wait' ? '콜백 대기 중' : n.type === 'input' ? '사용자 입력 대기' : n.type === 'form' ? '폼 전송 대기' : n.type === 'http' && n.reqMode === 'client' && !n.executionAgent ? '브라우저 요청 대기' : '에이전트 작업 대기'
   const running = runState === 'running'
-  const accent = catColor(n.cat)
   const isStart = n.type === 'start'
   const isEnd = n.type === 'end'
   const isHttp = n.type === 'http'
@@ -53,6 +54,30 @@ export function NodeCard({ data, selected }: NodeProps) {
               ? 'var(--fl-put)'
               : 'var(--fl-border)'
 
+  const collapseButton = <button
+    className="nodrag"
+    onClick={(e) => { e.stopPropagation(); toggleCollapse(n.id) }}
+    title={collapsed ? '펴기' : '접기'}
+    aria-label={collapsed ? '노드 펴기' : '노드 접기'}
+    style={{ flexShrink: 0, width: 18, height: 18, padding: 0, border: 'none', background: 'transparent', color: 'var(--fl-text-muted)', cursor: 'pointer' }}
+  ><AppIcon name={collapsed ? 'chevronRight' : 'chevronDown'} size={12} /></button>
+
+  if (isStart || isEnd) return <div className="fl-editor-terminal" style={{ width: TERMINAL_W, opacity: runState === 'skipped' ? .55 : 1 }}>
+    <div className={`fl-terminal-orb${selected ? ' fl-editor-node--selected' : ''}${running ? ' fl-node-running' : ''}`}
+      title={showUnreachable ? '미연결 — 실행 시 건너뜁니다' : n.name ?? typeLabel(n.type)}
+      style={{ color: isStart ? 'var(--fl-ok)' : 'var(--fl-text-soft)', borderStyle: showUnreachable ? 'dashed' : 'solid', borderColor: selected || runState || waiting || showUnreachable ? borderColor : isStart ? 'var(--fl-ok)' : 'var(--fl-control-border)' }}>
+      {!isStart && <Handle type="target" position={Position.Left} className="fl-handle" />}
+      <AppIcon name={isStart ? 'play' : 'stop'} size={24} />
+      <span className="fl-terminal-status"><RunBadge state={waiting ? 'waiting' : runState} waitingLabel={waitingLabel} /></span>
+      {!isEnd && <Handle type="source" id="out" position={Position.Right} className="fl-handle" />}
+    </div>
+    <div className="fl-terminal-label"><span title={n.name ?? typeLabel(n.type)}>{n.name ?? typeLabel(n.type)}</span>{collapseButton}</div>
+    {!collapsed && showUnreachable && <div style={{ color: 'var(--fl-put)', fontSize: 10, textAlign: 'center' }}>⚠ 미연결</div>}
+  </div>
+
+  const subtitle = waiting ? `${waitingLabel}…` : running ? '실행 중…' : runState === 'skipped' ? '건너뜀' : showUnreachable ? '⚠ 미연결'
+    : isHttp ? requestAddress : isTcp ? `${pname ?? '(프로토콜 없음)'} · ${n.tcpMessage || '(미선택)'}` : typeLabel(n.type)
+
   return (
     <div
       className={`fl-editor-node${selected ? ' fl-editor-node--selected' : ''}${running ? ' fl-node-running' : ''}`}
@@ -62,65 +87,47 @@ export function NodeCard({ data, selected }: NodeProps) {
         border: `1px ${showUnreachable ? 'dashed' : 'solid'} ${borderColor}`,
         borderRadius: 'var(--fl-radius)',
         boxShadow: selected ? 'var(--fl-shadow-lg)' : 'var(--fl-shadow)',
-        overflow: 'hidden',
         fontFamily: 'var(--fl-font-ui)',
         opacity: runState === 'skipped' ? 0.55 : 1,
       }}
     >
-      {!isStart && <Handle type="target" position={Position.Left} className="fl-handle" />}
+      <Handle type="target" position={Position.Left} className="fl-handle" />
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 12px', borderLeft: `3px solid ${accent}` }}>
-        <span aria-hidden style={{ color: accent, fontSize: 14, width: 16, textAlign: 'center' }}>{typeIcon(n.type)}</span>
+      <div className="fl-task-header">
+        <NodeTypeIcon type={n.type} size={36} />
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div title={n.name ?? typeLabel(n.type)} style={{ fontSize: 13.5, fontWeight: 600, letterSpacing: '-.01em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <div className="fl-task-title" title={n.name ?? typeLabel(n.type)}>
             {n.name ?? typeLabel(n.type)}
           </div>
           {!collapsed && (
-            <div style={{ fontSize: 11.5, color: showUnreachable ? 'var(--fl-put)' : 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)', fontWeight: showUnreachable ? 600 : 400 }}>
-              {waiting ? `${waitingLabel}…` : running ? '실행 중…' : runState === 'skipped' ? '건너뜀' : showUnreachable ? '⚠ 미연결' : typeLabel(n.type)}
+            <div className="fl-task-subtitle" title={subtitle} style={{ color: showUnreachable ? 'var(--fl-put)' : undefined, fontWeight: showUnreachable ? 600 : 400 }}>
+              {subtitle}
             </div>
           )}
         </div>
         <RunBadge state={waiting ? 'waiting' : runState} waitingLabel={waitingLabel} />
-        {/* 접기/펴기 — 상세행/부라벨을 숨겨 캔버스 정리. nodrag 로 드래그와 분리. */}
-        <button
-          className="nodrag"
-          onClick={(e) => { e.stopPropagation(); toggleCollapse(n.id) }}
-          title={collapsed ? '펴기' : '접기'}
-          aria-label={collapsed ? '노드 펴기' : '노드 접기'}
-          style={{ flexShrink: 0, width: 18, height: 18, padding: 0, border: 'none', background: 'transparent', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 10, lineHeight: 1 }}
-        >{collapsed ? '▸' : '▾'}</button>
+        {collapseButton}
       </div>
-      {!collapsed && <div style={{ padding: '0 12px 7px' }}><NodeAgentBadge node={n} /></div>}
-
-      {!collapsed && isHttp && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 12px', borderTop: '1px solid var(--fl-border)', background: 'var(--fl-surface-2)' }}>
+      {!collapsed && <div className="fl-task-footer">
+        <NodeAgentBadge node={n} />
+        {isHttp && <>
           <span className="fl-editor-method" style={{ color: METHOD_COLOR[(n.method ?? 'GET') as HttpMethod] }}><MethodTag method={(n.method ?? 'GET') as HttpMethod} /></span>
-          <span title={requestAddress} style={{ flex: 1, minWidth: 0, fontFamily: 'var(--fl-font-mono)', fontSize: 11.5, color: 'var(--fl-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {requestAddress}
-          </span>
           {n.method && n.method !== 'GET' && n.method !== 'HEAD' && (
             <span title={`본문 종류: ${n.bodyType ?? 'json'}`} style={{ flexShrink: 0, fontSize: 9.5, fontWeight: 700, fontFamily: 'var(--fl-font-mono)', padding: '2px 5px', borderRadius: 'var(--fl-radius-pill)', color: 'var(--fl-text-muted)', background: 'var(--fl-surface)', border: '1px solid var(--fl-border)' }}>
               {(n.bodyType === 'form' || n.bodyType === 'urlencoded') ? 'FORM' : (n.bodyType ?? 'json').toUpperCase()}
             </span>
           )}
           {n.reqMode === 'client' && !n.executionAgent && <span style={{ fontSize: 10, color: 'var(--fl-waiting)' }}>브라우저 호환</span>}
-        </div>
-      )}
-
-      {!collapsed && isTcp && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 12px', borderTop: '1px solid var(--fl-border)', background: 'var(--fl-surface-2)' }}>
-          <span style={{ flexShrink: 0, fontSize: 9.5, fontWeight: 700, fontFamily: 'var(--fl-font-mono)', padding: '2px 5px', borderRadius: 'var(--fl-radius-pill)', color: 'var(--fl-primary)', background: 'rgba(97,85,245,.12)' }}>TCP</span>
-          <span title={`${pname ?? '(프로토콜 없음)'} · 전문 ${n.tcpMessage || '(미선택)'}`} style={{ flex: 1, minWidth: 0, fontSize: 11.5, color: 'var(--fl-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {pname ?? '(프로토콜 없음)'} · <span style={{ fontFamily: 'var(--fl-font-mono)' }}>{n.tcpMessage || '?'}</span>
-          </span>
+        </>}
+        {isTcp && <>
+          <span style={{ color: 'var(--fl-text-soft)', fontWeight: 600 }}>TCP</span>
           <span title={`${n.tcpHost ?? ''}:${n.tcpPort ?? ''}`} style={{ flexShrink: 0, maxWidth: 92, fontSize: 10, fontFamily: 'var(--fl-font-mono)', color: 'var(--fl-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {(n.tcpHost || '(host)') + (n.tcpPort ? ':' + n.tcpPort : '')}
           </span>
-        </div>
-      )}
+        </>}
+      </div>}
 
-      {!isEnd && <Handle type="source" id="out" position={Position.Right} className="fl-handle" />}
+      <Handle type="source" id="out" position={Position.Right} className="fl-handle" />
     </div>
   )
 }

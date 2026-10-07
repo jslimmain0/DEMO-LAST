@@ -23,9 +23,10 @@ export function WorkspaceSwitcher() {
     .filter(w => w && workspaceIdentity(w) !== workspaceIdentity(scope.current)).slice(0, 5)
   return <div className="fl-space-switcher" ref={container} onBlur={event => { if (event.relatedTarget && !event.currentTarget.contains(event.relatedTarget)) setOpen(false) }}>
     <button ref={trigger} className="fl-space-current" title={`${scope.current.name} · ${scope.current.origin === 'local' ? '내 PC' : `서버 · ${scope.current.id}`}`} aria-expanded={open} aria-controls="workspace-quick-switch" onClick={() => setOpen(!open)}>
-      <small>{scope.current.origin === 'local' ? '내 PC · 개인 공간' : scope.current.kind === 'PUBLIC' ? '서버 · 공용 공간' : '서버 · 팀 공간'}</small>
-      <span><b title={scope.current.name}>{scope.current.name}</b><AppIcon name="chevronDown" size={16} /></span>
-      <small title={scope.current.id}>{scope.current.myRole === 'VIEWER' ? '읽기 전용' : '편집 가능'}{scope.current.origin === 'server' ? ` · ${scope.current.id.slice(0, 8)}` : ''}</small>
+      <AppIcon name={scope.current.origin === 'local' ? 'monitor' : 'workspace'} size={17} />
+      <b title={scope.current.name}>{scope.current.origin === 'local' ? '개인 · 내 PC' : scope.current.name}</b>
+      {scope.current.myRole === 'VIEWER' && <small>읽기 전용</small>}
+      <AppIcon name="chevronDown" size={14} />
     </button>
     {open && <div id="workspace-quick-switch" className="fl-space-quick">
       <span className="fl-workbench-label">즐겨찾기 · 최근 공간</span>

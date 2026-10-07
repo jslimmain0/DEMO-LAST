@@ -1,0 +1,26 @@
+/* 종류 타일은 장식용이며 항상 노드 이름과 함께 사용한다. */
+.fl-type-tile { --fl-tile: #007f95; display:inline-flex; align-items:center; justify-content:center; flex-shrink:0; border-radius:7px; color:#fff; background:var(--fl-tile); box-shadow:inset 0 0 0 1px #ffffff24; }
+.fl-type-tile[data-node-type=tcp], .fl-type-tile[data-node-type=wait] { --fl-tile:#9564d6; }
+.fl-type-tile[data-node-type=if], .fl-type-tile[data-node-type=switch] { --fl-tile:#ba760d; }
+.fl-type-tile[data-node-type=assert] { --fl-tile:#249c58; }
+.fl-type-tile[data-node-type=set] { --fl-tile:#3e72ed; }
+.fl-type-tile[data-node-type=transform] { --fl-tile:#7163c9; }
+.fl-type-tile[data-node-type=start] { --fl-tile:#159772; }
+.fl-type-tile[data-node-type=end], .fl-type-tile[data-node-type=group] { --fl-tile:#657f91; }
+.fl-type-tile[data-node-type=form], .fl-type-tile[data-node-type=input] { --fl-tile:#517cab; }
+.fl-type-tile[data-node-type=note] { --fl-tile:#b78419; }
+.fl-type-http { font:700 7px/1 var(--fl-font-ui); letter-spacing:-.4px; }
+html[data-theme=dark] .fl-type-tile { background:color-mix(in srgb,var(--fl-tile) 46%,var(--fl-surface)); color:color-mix(in srgb,var(--fl-tile) 45%,#fff); box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--fl-tile) 50%,transparent); }
+.fl-task-header { display:flex; align-items:center; gap:10px; padding:12px; }
+.fl-task-title { min-width:0; font-size:13px; font-weight:650; letter-spacing:-.015em; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.fl-task-subtitle { min-width:0; margin-top:4px; font-size:11px; color:var(--fl-text-muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.fl-task-footer { display:flex; align-items:center; flex-wrap:wrap; gap:6px; padding:0 12px 10px 58px; font-size:10px; }
+.fl-editor-terminal { position:relative; width:60px; font-family:var(--fl-font-ui); }
+.fl-terminal-orb { display:grid; place-items:center; position:relative; width:60px; height:60px; border:1px solid; border-radius:50%; background:color-mix(in srgb,currentColor 9%,var(--fl-surface)); box-shadow:var(--fl-shadow); }
+.fl-terminal-orb svg { fill:currentColor; }
+.fl-terminal-label { display:flex; align-items:center; justify-content:center; gap:2px; margin-top:7px; color:var(--fl-text); font-size:12px; font-weight:600; line-height:18px; }
+.fl-terminal-label > span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.fl-terminal-status { position:absolute; top:-4px; right:-4px; background:var(--fl-surface); border-radius:50%; }
+.fl-canvas .fl-horizontal-controls { display:flex; flex-direction:row; border:1px solid var(--fl-border); border-radius:6px; box-shadow:var(--fl-shadow); }
+.fl-canvas .fl-horizontal-controls .react-flow__controls-button { width:30px; height:30px; border-bottom:0; border-right:1px solid var(--fl-border); }
+.fl-canvas .fl-horizontal-controls .react-flow__controls-button:last-child { border-right:0; }

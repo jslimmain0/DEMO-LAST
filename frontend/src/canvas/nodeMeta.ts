@@ -2,6 +2,8 @@ import type { HttpMethod } from '../api/types'
 
 /** 캔버스 노드 고정 폭(px) — NodeCard·BranchNode·SwitchNode·fitBounds 가 공유. */
 export const NODE_W = 230
+/** 원형 시작·끝 노드는 연결점을 포함한 실제 DOM 폭을 bounds에서도 사용한다. */
+export const TERMINAL_W = 60
 
 export const CAT_COLOR: Record<string, string> = {
   auth: 'var(--fl-cat-auth)',

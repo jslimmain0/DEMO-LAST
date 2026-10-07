@@ -3,11 +3,13 @@ import type { CSSProperties, DragEvent } from 'react'
 import { useMemo, useRef, useState } from 'react'
 import type { GraphNode, NodeType } from '../api/types'
 import { MethodTag } from '../components/MethodTag'
+import { NodeTypeIcon } from '../components/AppIcon'
 import { useEditorStore } from '../store/editorStore'
-import { PALETTE, PALETTE_GROUPS } from './nodeFactory'
-import { NODE_W, catColor, typeIcon } from './nodeMeta'
+import { PALETTE } from './nodeFactory'
+import { NODE_W, TERMINAL_W } from './nodeMeta'
 import { findNodePlacement } from './nodePlacement'
 import { useWorkspace } from '../app/WorkspaceContext'
+import './node-visuals.css'
 
 export function Palette({ width = 200, onCollapse }: { width?: number; onCollapse?: () => void }) {
   const pluginsAllowed = useWorkspace().current.origin === 'server'
@@ -26,6 +28,7 @@ export function Palette({ width = 200, onCollapse }: { width?: number; onCollaps
   }, [q, pluginsAllowed])
   const sizeOf = (node: Pick<GraphNode, 'type' | 'groupW' | 'groupH' | 'switchPorts'>) => node.type === 'group'
     ? { width: node.groupW ?? 396, height: node.groupH ?? 264 }
+    : node.type === 'start' || node.type === 'end' ? { width: TERMINAL_W, height: 85 }
     : { width: node.type === 'note' ? 220 : NODE_W, height: node.type === 'switch' ? 70 + (node.switchPorts?.length ?? 2) * 26 : 120 }
   const placement = (node: Pick<GraphNode, 'type' | 'groupW' | 'groupH' | 'switchPorts'>) => {
     const canvas = paneRef.current?.parentElement?.querySelector('.fl-canvas')
@@ -91,27 +94,11 @@ export function Palette({ width = 200, onCollapse }: { width?: number; onCollaps
       <input aria-label="추가할 노드 검색" value={q} onChange={(e) => setQ(e.target.value)} placeholder="노드 검색…"
         onKeyDown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); if (q) setQ(''); else onCollapse?.() } }}
         style={{ width: '100%', padding: '6px 9px', marginBottom: 4, border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', color: 'var(--fl-text)', fontSize: 12.5, outline: 'none' }} />
-      {/* 검색 중엔 평면 목록, 아니면 카테고리 섹션으로(클러터 축소) */}
-      {q.trim()
-        ? shownPalette.map((p) => (
+      {shownPalette.map((p) => (
             <button key={p.type} draggable onDragStart={(e) => onDragStart(e, p.type)} onClick={() => addWithRecent(p.type)} title={`${p.label} 추가 (클릭 또는 드래그)`} style={paletteBtn}>
-              <span aria-hidden style={{ color: catColor(p.cat), fontSize: 15, width: 18, textAlign: 'center' }}>{typeIcon(p.type)}</span>{p.label}
+              <NodeTypeIcon type={p.type} size={28} /><span style={{ minWidth: 0, whiteSpace: 'normal', overflowWrap: 'anywhere', textAlign: 'left', lineHeight: 1.4 }}>{p.label}</span>
             </button>
-          ))
-        : PALETTE_GROUPS.map((g) => {
-            const items = shownPalette.filter((p) => p.group === g)
-            if (items.length === 0) return null
-            return (
-              <div key={g}>
-                <div style={{ ...groupTitle, padding: '6px 10px 4px', fontSize: 11 }}>{g}</div>
-                {items.map((p) => (
-                  <button key={p.type} draggable onDragStart={(e) => onDragStart(e, p.type)} onClick={() => addWithRecent(p.type)} title={`${p.label} 추가 (클릭 또는 드래그)`} style={{ ...paletteBtn, marginBottom: 2 }}>
-                    <span aria-hidden style={{ color: catColor(p.cat), fontSize: 15, width: 18, textAlign: 'center' }}>{typeIcon(p.type)}</span>{p.label}
-                  </button>
-                ))}
-              </div>
-            )
-          })}
+          ))}
       {q.trim() && shownPalette.length === 0 && <div style={{ padding: 8, fontSize: 12, color: 'var(--fl-text-muted)' }}>일치하는 노드 없음</div>}
 
       {palette.map((group) => {

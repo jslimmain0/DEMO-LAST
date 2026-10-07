@@ -396,8 +396,17 @@ export function Dashboard() {
   return (
     <AppShellTier1 sidebarExtra={folderNav}>
       <div className="fl-flow-workspace">
-          {/* hero 밴드 — 최근 워크플로를 실제 노드 흐름으로 연다 */}
-          <header className="fl-workbench-title"><div><h1>워크플로</h1><span>흐름을 찾아 편집하고 실행합니다.</span></div><div style={{ display: 'flex', gap: 8 }}>{canCreateWs && <button onClick={newTeamWs} className="fl-workbench-button">+ 새 팀 공간</button>}<button onClick={() => setWsDialog(true)} className="fl-workbench-button">공간 관리</button></div></header>
+          <header className="fl-workbench-title">
+            <div><h1>워크플로</h1><span>API를 연결하는 워크플로를 만들고 관리합니다.</span></div>
+            <div className="fl-library-header-actions">
+              <div className="fl-flow-search" style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                <AppIcon name="search" size={16} style={{ position: 'absolute', left: 11, color: 'var(--fl-text-muted)', pointerEvents: 'none' }} />
+                <input value={search} onChange={e => setSearch(e.target.value)} placeholder="워크플로 검색…" title="이름·설명·노드 내용으로 검색" aria-label={isFolderId(sel) ? '이 폴더의 워크플로 검색' : sel === 'none' ? '미분류 워크플로 검색' : '전체 워크플로 검색'} style={searchBox} onKeyDown={e => { if (e.key === 'Escape' && search) { e.stopPropagation(); setSearch('') } }} />
+                {search && <button onClick={() => setSearch('')} aria-label="검색 지우기" title="지우기 (Esc)" style={{ position: 'absolute', right: 6, border: 0, background: 'transparent', color: 'var(--fl-text-muted)', cursor: 'pointer' }}><AppIcon name="close" size={14} /></button>}
+              </div>
+              {canEdit && <button onClick={newFlow} disabled={createFlow.isPending || !scopeReady} style={primaryBtn}><AppIcon name="plus" size={17} /> 새 워크플로</button>}
+            </div>
+          </header>
 
           {/* 툴바 — 폴더 안이면 브레드크럼(전체 › 부모 › 현재)으로 위로 이동 */}
           <div className="fl-flow-toolbar" style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
@@ -417,20 +426,11 @@ export function Dashboard() {
                   ))}
                 </nav>
               ) : (
-                <h2 style={{ fontFamily: 'var(--fl-font-head)', fontSize: 'var(--fl-fs-xl)', fontWeight: 600, letterSpacing: '-.01em', margin: 0 }}>{scopeName}</h2>
+                <h2 style={{ fontFamily: 'var(--fl-font-head)', fontSize: 14, fontWeight: 600, letterSpacing: '-.01em', margin: 0 }}>{scopeName}</h2>
               )}
               <span style={{ fontSize: 'var(--fl-fs-xs)', color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)' }}>{visible.length}</span>
             </div>
             <div className="fl-flow-toolbar-actions" style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-              <div className="fl-flow-search" style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-                <span aria-hidden style={{ position: 'absolute', left: 11, color: 'var(--fl-text-muted)', fontSize: 13, pointerEvents: 'none' }}>⌕</span>
-                <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="이름·설명·노드 내용 검색" aria-label={isFolderId(sel) ? '이 폴더의 워크플로 검색' : sel === 'none' ? '미분류 워크플로 검색' : '전체 워크플로 검색'} style={searchBox}
-                  onKeyDown={(e) => { if (e.key === 'Escape' && search) { e.stopPropagation(); setSearch('') } }} />
-                {search && (
-                  <button onClick={() => setSearch('')} aria-label="검색 지우기" title="지우기 (Esc)"
-                    style={{ position: 'absolute', right: 6, width: 20, height: 20, border: 'none', borderRadius: 'var(--fl-radius)', background: 'transparent', color: 'var(--fl-text-muted)', fontSize: 13, lineHeight: 1 }}>×</button>
-                )}
-              </div>
               <div style={seg} role="group" aria-label="정렬">
                 <button onClick={() => setSort('recent')} aria-pressed={sort === 'recent'} style={segBtn(sort === 'recent')}>최근</button>
                 <button onClick={() => setSort('name')} aria-pressed={sort === 'name'} style={segBtn(sort === 'name')}>이름</button>
@@ -445,7 +445,8 @@ export function Dashboard() {
               {canEdit && (visible.length > 0 || selectMode) && (
                 <button onClick={toggleSelectMode} aria-pressed={selectMode} style={selectToggleBtn(selectMode)}>{selectMode ? '선택 완료' : '☑ 선택'}</button>
               )}
-              {canEdit && <button onClick={newFlow} disabled={createFlow.isPending || !scopeReady} style={primaryBtn}>+ 새 워크플로</button>}
+              {canCreateWs && <button onClick={newTeamWs} className="fl-workbench-button"><AppIcon name="plus" size={14} /> 팀 공간</button>}
+              <button onClick={() => setWsDialog(true)} aria-label="현재 공간 관리" title="현재 공간 관리" className="fl-workbench-button"><AppIcon name="settings" size={16} /></button>
             </div>
           </div>
 
@@ -664,17 +665,17 @@ function FlowCard({ flow, detailLink, lastRun, runState, folderOptions, folderLa
         {selectMode
           ? <button className="fl-flow-open" onClick={onToggleSelect} aria-pressed={selected} aria-label={flow.name + ' 선택'}>{cardContent}</button>
           : <Link className="fl-flow-open" to={detailLink.to} state={detailLink.state} draggable={false}>{cardContent}</Link>}
-        <div className="fl-flow-card-actions">
-          <button onClick={onTogglePin} aria-label={flow.name + ' 즐겨찾기 ' + (pinned ? '해제' : '추가')} aria-pressed={!!pinned} title={pinned ? '즐겨찾기 해제' : '즐겨찾기 추가'} className="fl-flow-favorite" style={iconBtn}>{pinned ? '★' : '☆'}</button>
-          {!selectMode && !readOnly && <button ref={triggerRef} onClick={() => setMenu(value => !value)} aria-label={flow.name + ' 작업 메뉴'} aria-haspopup="dialog" aria-expanded={menu} title="작업" style={iconBtn}><AppIcon name="more" size={17} /></button>}
-        </div>
       </div>
       <div className="fl-flow-footer">
         <div className="fl-flow-result">
           {lastRun ? <><StatusBadge status={lastRun.status} /><span title={lastRun.startedAt ? new Date(lastRun.startedAt).toLocaleString('ko-KR') : undefined}>{relTime(lastRun.startedAt)}</span></>
             : <span title={runState === 'ready' ? '이 공간의 최근 실행 50건 기준입니다.' : undefined}>{runState === 'loading' ? '최근 실행 확인 중…' : runState === 'error' ? '최근 실행을 확인하지 못했습니다' : '최근 실행 기록 없음'}</span>}
         </div>
-        <div className="fl-flow-version" title={'마지막 저장 ' + new Date(flow.updatedAt).toLocaleString('ko-KR')}>v{flow.currentVersion} · {relTime(flow.updatedAt) || '방금'} 저장</div>
+        <div className="fl-flow-version" title={`v${flow.currentVersion} · 마지막 저장 ${new Date(flow.updatedAt).toLocaleString('ko-KR')}`}><time dateTime={flow.updatedAt}>{new Date(flow.updatedAt).toLocaleDateString('ko-KR')}</time></div>
+        <div className="fl-flow-card-actions">
+          <button onClick={onTogglePin} aria-label={flow.name + ' 즐겨찾기 ' + (pinned ? '해제' : '추가')} aria-pressed={!!pinned} title={pinned ? '즐겨찾기 해제' : '즐겨찾기 추가'} className="fl-flow-favorite" style={iconBtn}><AppIcon name="star" size={15} style={{ fill: pinned ? 'currentColor' : 'none' }} /></button>
+          {!selectMode && !readOnly && <button ref={triggerRef} onClick={() => setMenu(value => !value)} aria-label={flow.name + ' 작업 메뉴'} aria-haspopup="dialog" aria-expanded={menu} title="작업" style={iconBtn}><AppIcon name="moreVertical" size={17} /></button>}
+        </div>
       </div>
       {menu && createPortal(
         <div ref={anchored.popupRef} role="dialog" aria-label={flow.name + ' 작업'} style={{ ...menuBox, ...anchored.style }}
@@ -740,11 +741,12 @@ function FolderTile({ folder, subCount, onOpen, drop, onDragStartSelf, onDragEnd
       }}
     >
       <button className="fl-folder-open" onClick={onOpen} title={`${folder.name} 폴더 열기`}>
-        <AppIcon name="folder" size={28} />
+        <AppIcon name="folder" size={28} style={{ fill: 'color-mix(in srgb, currentColor 18%, transparent)' }} />
         <span className="fl-folder-info">
           <span className="fl-folder-name">{folder.name}</span>
           <span className="fl-folder-count">워크플로 {folder.flowCount}{subCount > 0 ? ` · 폴더 ${subCount}` : ''}</span>
         </span>
+        <AppIcon name="chevronRight" size={14} />
       </button>
       {!readOnly && (
         <div className="fl-folder-actions">
@@ -843,7 +845,7 @@ function isFolderId(s: Sel): s is string {
 
 const sidebarLabel: CSSProperties = { fontSize: 11, fontWeight: 700, color: 'var(--fl-text-muted)', textTransform: 'uppercase', letterSpacing: '.06em', margin: '16px 8px 6px' }
 const crumbBtn: CSSProperties = { border: 'none', background: 'transparent', padding: 0, cursor: 'pointer', color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-head)', fontSize: 'var(--fl-fs-xl)', fontWeight: 500, letterSpacing: '-.01em' }
-const crumbCurrent: CSSProperties = { fontFamily: 'var(--fl-font-head)', fontSize: 'var(--fl-fs-xl)', fontWeight: 600, letterSpacing: '-.01em', margin: 0 }
+const crumbCurrent: CSSProperties = { fontFamily: 'var(--fl-font-head)', fontSize: 14, fontWeight: 600, letterSpacing: '-.01em', margin: 0 }
 // 드래그 중 드롭 가능한 폴더 힌트(연한 점선) / 드래그오버 중 활성(강조)
 const dropHint: CSSProperties = { border: '1px dashed color-mix(in srgb, var(--fl-primary) 45%, var(--fl-border))' }
 const dropActive: CSSProperties = { border: '1.5px dashed var(--fl-primary)', background: 'color-mix(in srgb, var(--fl-primary) 10%, var(--fl-surface))', boxShadow: 'var(--fl-shadow-lg)' }

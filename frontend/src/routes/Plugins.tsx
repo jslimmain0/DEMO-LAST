@@ -161,7 +161,7 @@ function CentralPlugins() {
 
   return (
     <AppShellTier1>
-      <div style={{ display: 'grid', gridTemplateColumns: '300px minmax(0, 1fr)', height: '100vh', minHeight: 0 }}>
+      <div className="fl-plugin-workbench">
         {/* ── 좌 목록 ── */}
         <aside style={listPane} aria-label="플러그인 목록">
           <PageHeader title="플러그인" count={list.data?.length ?? 0} />
@@ -191,7 +191,7 @@ function CentralPlugins() {
         </aside>
 
         {/* ── 우 편집기 ── */}
-        <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+        <div className="fl-plugin-detail">
           {!draft ? (
             <div style={empty}>
               <div style={{ fontFamily: 'var(--fl-font-head)', fontWeight: 700, fontSize: 17 }}>스크립트 플러그인</div>
@@ -226,7 +226,7 @@ function CentralPlugins() {
                     onClick={() => setAsk({ title: `'${d.name}' 삭제`, message: d.live ? '승인본도 함께 사라지고 서빙이 중단됩니다.' : undefined, confirmLabel: '삭제', danger: true, onConfirm: () => transition.mutate({ op: 'remove' }) })}>삭제</button>}
                 </span>
               </header>
-              <div style={{ flex: 1, display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 380px', minHeight: 0 }}>
+              <div className="fl-plugin-stage">
                 <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', minHeight: 0, borderRight: '1px solid var(--fl-border)' }}>
                   {showDiff && d?.liveSource ? (
                     <PluginDiffView before={d.liveSource} after={draft.source} />
@@ -237,7 +237,7 @@ function CentralPlugins() {
                     </Suspense>
                   )}
                   <div style={statusBar}>
-                    <span>Ctrl+S 저장 · Ctrl+Enter 실행 · Shift+Alt+F 정렬 · <code>fl.</code> 자동완성 · 오른쪽 📖 레퍼런스</span>
+                    <span>Ctrl+S 저장 · Ctrl+Enter 실행 · Shift+Alt+F 정렬 · <code>fl.</code> 자동완성 · 📖 레퍼런스 탭</span>
                     {d?.updatedAt && <span style={{ marginLeft: 'auto' }}>수정 {relTime(d.updatedAt)} · {d.createdBy}</span>}
                   </div>
                 </div>

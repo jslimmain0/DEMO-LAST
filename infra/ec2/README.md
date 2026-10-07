@@ -1,5 +1,13 @@
 # Docker 가상 EC2와 GitHub Actions 배포
 
+## 0.3.16 재배포 확인 (2026-10-07)
+
+`a3293dee6b76a2c78618e183ee4aaf9cb7492704`의 서버 이미지와 MSI를 제작해 기존 SSH `deploy.sh`로 `18088` 가상 EC2에 재배포했다. 같은 서버 JAR로 Oracle·Vault 검증 서버 `18183`도 교체했다. 기존 DB·키·인증 설정 및 이전 EC2 다운로드 파일은 유지했다. 두 서버의 실행 JAR SHA-256은 빌드 결과와 일치한다.
+
+EC2 server·Caddy는 healthy이며 `/`는 Windows 다운로드 안내를 제공한다. 배포 metadata는 서버/설치파일 `0.3.16`, `AVAILABLE`, 자동 업데이트 허용을 반환한다. [MSI 다운로드](http://127.0.0.1:18088/downloads/FlowLink-0.3.16-windows-x64.msi)를 실제 받아 149,411,560 bytes와 SHA-256 `84b4cb88c3597828fa5750e8e1df4b2b2950a91930727fe9e996d8eec9282207`을 확인했다.
+
+agent/core/server/desktop 테스트 398개와 프론트 테스트 17개, lint/build 및 역할별 패키징 경계 검사를 통과했다. 경계 검사는 중앙 서버의 `static/download.html`만 허용하며 작업 SPA·기타 정적 자원은 계속 거부한다. 임시 JAR에 작업 자원을 추가해 거부되는 것도 확인했다. 실제 GitHub Actions 실행·GitHub 로그인·MCP 프로토콜·도구 호출·IDE 등록 및 PC의 MSI 설치/실행 중 개인 앱 교체는 수행하지 않았다.
+
 `ec2` 컨테이너는 SSH와 자체 Docker daemon이 있는 Linux 서버다. 호스트의 Docker socket을 공유하지 않는다. 서버의 `/opt/flowlink`와 내부 Docker 데이터는 named volume으로 보존한다. PC의 Windows 앱 설치에는 Docker가 필요하지 않다.
 
 배포 경로: GitHub Actions의 Linux 서버 빌드 + Windows MSI 빌드 → artifacts → 같은 Docker 네트워크의 self-hosted runner → SSH `ec2:22` → 컨테이너 안에서 Docker 앱 배포. GitHub hosted runner는 PC localhost에 접근하지 못하므로 마지막 배포 job만 self-hosted로 실행한다.

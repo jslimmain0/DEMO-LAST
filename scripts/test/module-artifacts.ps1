@@ -74,7 +74,11 @@ function Inspect-Jar([string]$Path, [string]$Role, [string]$MainClass) {
         $hasFrontend = $null -ne $archive.GetEntry('BOOT-INF/classes/static/index.html')
         Require ($hasFrontend -eq ($Role -eq 'desktop')) "$Role 작업 프론트는 desktop에만 포함해야 합니다."
         if ($Role -eq 'server') {
-            Require (@($archive.Entries | Where-Object { $_.FullName -like 'BOOT-INF/classes/static/*' }).Count -eq 0) 'server에 작업 화면 자산이 포함됐습니다.'
+            Require (@($archive.Entries | Where-Object {
+                $_.FullName -like 'BOOT-INF/classes/static/*' -and
+                -not $_.FullName.EndsWith('/') -and
+                $_.FullName -ne 'BOOT-INF/classes/static/download.html'
+            }).Count -eq 0) 'server에는 다운로드 안내 외의 작업 화면 자산을 포함하면 안 됩니다.'
         }
         if ($Role -eq 'desktop') {
             Require (@($archive.Entries | Where-Object { $_.FullName -match '^BOOT-INF/lib/flowlink-(server|mcp).*\.jar$' }).Count -eq 0) 'desktop은 중앙 server/MCP 모듈에 의존하면 안 됩니다.'

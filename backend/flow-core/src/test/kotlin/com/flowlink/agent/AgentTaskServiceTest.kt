@@ -105,6 +105,19 @@ class AgentTaskServiceTest {
         Mockito.verify(executor, Mockito.times(1)).execute(request)
     }
 
+    @Test fun `PC HTTP completion keeps the permitted text body readable on the server`() {
+        val request = request("local").copy(crossBoundary = true, allowedOutputs = listOf("body", "httpStatus"))
+        create(request)
+        val claim = tasks.claim(request.taskId, AgentClaim("device-1"))
+        val html = "<html><body>응답 본문</body></html>"
+        val result = NodeResult.okHttp(200, "private-request", html, mapOf("body" to html, "httpStatus" to 200), emptyMap())
+        tasks.complete(request.taskId, AgentCompletion("device-1", claim.claimToken!!, result, 5))
+        val stored = tasks.result(request.taskId)!!.result
+        assertThat(stored.responseText).isEqualTo(html)
+        assertThat(stored.value).isEqualTo(mapOf("body" to html, "httpStatus" to 200))
+        assertThat(stored.requestText).doesNotContain("private-request")
+    }
+
     @Test fun `장치와 계정 lease를 강제하고 외부 결과를 허용 키로 제한한다`() {
         val request = request("local")
         create(request)

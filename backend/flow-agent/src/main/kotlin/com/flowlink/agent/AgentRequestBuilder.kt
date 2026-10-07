@@ -81,6 +81,11 @@ class AgentRequestBuilder(private val json: JsonService, private val tokens: Tok
             }
         }
         outputs.addAll(node.outputs.orEmpty().mapNotNull { it.key })
+        if (node.effectiveType() == com.flowlink.core.graph.NodeType.HTTP) {
+            // 모든 HTTP 응답은 상태 코드와 통짜/파싱 실패 본문을 기본 출력으로 제공한다.
+            outputs.add("body")
+            outputs.add("httpStatus")
+        }
         if (node.nodeType().name in setOf("SET", "IF", "ASSERT")) {
             outputs.addAll(node.vars.orEmpty().filterNot { it.secret }.mapNotNull { it.key })
             outputs.add("result"); outputs.add("branch")

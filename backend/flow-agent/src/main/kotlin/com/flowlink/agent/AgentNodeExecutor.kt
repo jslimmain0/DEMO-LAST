@@ -102,12 +102,13 @@ class AgentNodeExecutor(
                     val source = ExecutionContext().apply { putOutput("result", value) }
                     return keys.associateWith { tokens.resolveTokenObject(it, false, "result", source) }
                 }
-                val value = masked(selected(raw.value, request.allowedOutputs))
+                @Suppress("UNCHECKED_CAST")
+                val value = masked(selected(raw.value, request.allowedOutputs)) as Map<String, Any?>
                 @Suppress("UNCHECKED_CAST")
                 val req = masked(selected(raw.reqValues, request.allowedRequestKeys)) as? Map<String, Any?>
                 raw.copy(value = value, storedValue = value, reqValues = req,
                     requestText = "${node.type} · $runtime 에이전트 · ${node.name.orEmpty()}",
-                    responseText = if (raw.ok) json.toJson(value) else "노드 실행 실패 · 상태 ${raw.httpStatus ?: "확인 불가"} · 허용 출력 ${json.toJson(value)}")
+                    responseText = if (raw.ok) AgentResultText.response(raw.value, value, json) else "노드 실행 실패 · 상태 ${raw.httpStatus ?: "확인 불가"} · 허용 출력 ${json.toJson(value)}")
             } else raw.copy(storedValue = masked(raw.storedValue), requestText = SecretMasker.mask(raw.requestText, masks), responseText = SecretMasker.mask(raw.responseText, masks))
         } catch (e: Exception) {
             NodeResult.fail(null, "에이전트 준비 확인", e.message ?: "노드 실행을 준비하지 못했습니다.")

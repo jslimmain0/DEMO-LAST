@@ -126,7 +126,7 @@ class AgentTaskService(
                 body.result.copy(value = output, storedValue = output,
                     reqValues = selected(body.result.reqValues, request.allowedRequestKeys),
                     requestText = "${request.node.type} · ${task.agent} 에이전트",
-                    responseText = json.toJson(output), branch = if (request.node.type == "if") body.result.branch else null)
+                    responseText = AgentResultText.response(body.result.value, output, json), branch = if (request.node.type == "if") body.result.branch else null)
             } else body.result
         }
         finish(task, AgentNodeResult(result, body.durationMs))

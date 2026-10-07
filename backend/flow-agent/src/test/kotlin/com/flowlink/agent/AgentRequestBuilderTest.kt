@@ -16,6 +16,18 @@ class AgentRequestBuilderTest {
     private fun node(raw: String) = mapper.readValue(raw, GraphNode::class.java)
     private val run = AgentRunOptions(UUID.randomUUID(), "pc-device", "server", "dev", "public", "development", agentEnvironments = mapOf("local" to "", "server:public" to ""))
 
+    @Test fun `HTTP default outputs preserve body and status across both execution directions`() {
+        for (owner in listOf("local", "server")) for (responseType in listOf("json", "text", "binary", "xml", "urlencoded", "query")) {
+            val agent = if (owner == "local") "server" else "local"
+            val n = node("""{"id":"n","type":"http","executionAgent":"$agent","respType":"$responseType","outputs":[{"key":"data"},{"key":"id"}]}""")
+            val request = builder.build(n, listOf(n), ExecutionContext(), run.copy(ownerAgent = owner), 0)
+            assertTrue(request.crossBoundary)
+            assertEquals(listOf("data", "id", "body", "httpStatus"), request.allowedOutputs)
+            assertEquals(listOf("data"), builder.build(n.copy(agentOutputs = listOf("data")), listOf(n), ExecutionContext(), run.copy(ownerAgent = owner), 0).allowedOutputs)
+            assertTrue(builder.build(n.copy(agentOutputs = emptyList()), listOf(n), ExecutionContext(), run.copy(ownerAgent = owner), 0).allowedOutputs.isEmpty())
+        }
+    }
+
     @Test fun `plugin transform ignores old destinations and is forbidden in personal workflows`() {
         val n = node("""{"id":"plugin","type":"transform","transformId":"test","executionAgent":"local","agentWorkspaceId":"other-team","agentEnvironment":"old-env"}""")
         val request = builder.build(n, listOf(n), ExecutionContext(), run, 0)

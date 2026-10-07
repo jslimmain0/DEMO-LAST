@@ -16,4 +16,14 @@
 - 다섯 모듈 산출물 및 호스트 경계 검사 통과: 서버에는 SPA가 없고 글꼴·라이선스만 함께 제공한다. 개인 앱은 Oracle·MCP 의존 없이 개인 H2와 기존 키를 유지한다.
 - 사용자 워크플로 저장·실행, 운영 계정 변경, MCP 프로토콜·도구 호출·IDE 등록, 실제 MSI 설치는 수행하지 않았다.
 
+## 배포 확인과 제한
+
+- 0.3.19 코드 커밋: `0b55d724842637ea69d8a0395b49bbb9e87f5adb`. 개인 검증 앱 18322, Oracle·Vault 서버 18183, EC2 Docker 검증 서버 18088에 반영했다. Oracle·Vault 컨테이너 및 볼륨은 교체하지 않았다.
+- 18088 서버·프록시 health 통과. 배포 정보는 serverVersion/version=0.3.19, available=true, automaticUpdateAllowed=true, releaseStatus=AVAILABLE이다.
+- 공개 MSI 전체 다운로드 후 매니페스트와 일치: SHA-256 `a1a93ef8b7666c33b1a53269405d5f74d3ea1438ace7fb2918b7f89071a3dd1d`, 151467752 bytes. 설치/자동 설치 과정 자체는 실행하지 않았다.
+- 소개 페이지 h1의 실제 글꼴은 Pretendard Variable, isCustomFont=true. 320 화면에서 문서/스크롤 너비가 모두 305(스크롤바 제외)로 가로 넘침이 없었다. 공개 폰트 다운로드가 번들 원본과 동일함을 확인했다.
+- 기존 팀 자료 `oracle-vault-1790993067898`의 실행 계획에서는 계산 위치가 —, 환경은 워크플로 환경으로 표시된다. 다만 이 자료의 기존 Vault 암호문을 읽는 과정에서 `cipher: message authentication failed`가 발생해 실행 준비가 차단된다. 시크릿 값을 빈 값으로 대체하거나 키·자료를 변경하지 않았다. 이 자료의 실제 실행 완료는 확인하지 못했다.
+
+배포 화면: [소개 페이지](screenshots/2026-10-07-typography/server-intro.png), [320 소개 페이지](screenshots/2026-10-07-typography/server-intro-320.png), [계산 실행 계획과 기존 Vault 오류](screenshots/2026-10-07-typography/calculation-plan.png).
+
 스크린샷: [계산 설정](screenshots/2026-10-07-typography/calculation-panel.png), [호출 설정](screenshots/2026-10-07-typography/editor.png), [실행 이력](screenshots/2026-10-07-typography/executions.png), [820 카드 목록](screenshots/2026-10-07-typography/workflows-820.png), [다크 테마](screenshots/2026-10-07-typography/workflows-dark.png).

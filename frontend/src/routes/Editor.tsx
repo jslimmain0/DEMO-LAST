@@ -538,7 +538,8 @@ export function Editor() {
 
   return (
       <div className="fl-editor-workbench" style={{ height: '100dvh', display: 'flex', flexDirection: 'column', background: 'var(--fl-bg)', overflow: 'hidden' }}>
-      <header className="fl-editor-heading">
+      <header className="fl-editor-header">
+        <div className="fl-editor-heading">
         {/* 출발 목록으로 복귀하며, 직접 진입한 경우 소속 폴더를 사용한다. */}
         <Link
           to={returnToList.to}
@@ -553,11 +554,10 @@ export function Editor() {
           value={flowName}
           onChange={(e) => setName(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter' || e.key === 'Escape') (e.target as HTMLInputElement).blur() }}
-          title="워크플로 이름 — 눌러서 편집"
+          title={`워크플로 이름 — 눌러서 편집 · ${scope.current.origin === 'local' ? '내 PC' : '서버'} 저장 · 노드 ${nodeCount}개`}
           style={{ fontFamily: 'var(--fl-font-head)', fontWeight: 600, fontSize: 15, border: '1px solid transparent', borderRadius: 'var(--fl-radius-sm)', padding: '6px 8px', background: 'transparent', color: 'var(--fl-text)', flex: '1 1 140px', minWidth: 120, maxWidth: 280 }}
         />
         <span role="status" style={{ fontSize: 12, color: dirty ? 'var(--fl-put)' : 'var(--fl-text-muted)' }}>{save.isPending ? '저장 중…' : dirty ? '● 미저장' : '저장됨'}</span>
-        <span className="fl-editor-storage" style={{ fontSize: 12, color: 'var(--fl-text-muted)' }}>저장 위치 · {scope.current.origin === 'local' ? '내 PC' : '서버'}</span>
         {isViewer && (
           <span title="viewer 역할은 조회만 가능합니다 — 저장/실행이 비활성화됩니다"
             style={{ fontSize: 12, fontWeight: 600, color: 'var(--fl-waiting)', border: '1px solid var(--fl-waiting)', borderRadius: 'var(--fl-radius-pill)', padding: '2px 8px' }}>
@@ -565,16 +565,10 @@ export function Editor() {
           </span>
         )}
         {copyNote && <span role="status" style={{ fontSize: 12, color: 'var(--fl-primary)', fontWeight: 600 }}>{copyNote}</span>}
-        <span title="노드 수" style={{ fontSize: 11.5, color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)' }}>노드 {nodeCount}</span>
         <IssueBadge />
         <PresenceAvatars />
-        <div className="fl-editor-primary-actions">
-          {running && <button onClick={onStop} style={stopBtn} title="실행 중단 — 대기 중이면 즉시 해제됩니다">⏹ 중단</button>}
-          <button onClick={() => save.mutate()} disabled={save.isPending || !dirty || !canEdit} title={canEdit ? undefined : 'viewer 역할은 저장할 수 없습니다'} style={saveBtn}>저장</button>
-          <button onClick={() => onRun()} disabled={running || !canEdit} title={canEdit ? '노드별 PC·서버 실행 위치와 자원을 확인한 뒤 실행합니다' : 'viewer 역할은 실행할 수 없습니다'} style={runBtn}><AppIcon name={running ? 'pause' : 'play'} size={16} />{running ? '실행 중…' : '실행 계획'}</button>
         </div>
-      </header>
-      <div className="fl-editor-toolbar" role="toolbar" aria-label="워크플로 편집과 실행">
+        <div className="fl-editor-toolbar" role="toolbar" aria-label="워크플로 편집과 실행">
         <button ref={paletteToggleRef} type="button" aria-expanded={paletteVisible} aria-controls="editor-palette" onClick={() => {
           const next = !paletteVisible; setFloatingPaletteOpen(next); setPaletteCollapsed(!next); persistUI('fl:editor:palColl', next ? '0' : '1')
           if (next) requestAnimationFrame(() => document.querySelector<HTMLInputElement>('#editor-palette input')?.focus())
@@ -587,14 +581,15 @@ export function Editor() {
             // 좁은 화면에서 팔레트+속성+어시스턴트 3열이 캔버스를 0으로 짓누르지 않게, 열 때 속성 패널 자동 접기
             if (next && !propCollapsed && vp.w < 1200) { setPropCollapsed(true); persistUI('fl:editor:propColl', '1') }
             return next
-          })} title="AI 어시스턴트 — 자연어로 플로우 만들기" aria-label="AI 어시스턴트" style={{ ...ghostBtn, padding: '8px 11px', color: assistantOpen ? 'var(--fl-primary)' : undefined }}><AppIcon name="sparkles" size={16} /> 어시스턴트</button>
+          })} title="AI 어시스턴트 — 자연어로 플로우 만들기" aria-label="AI 어시스턴트" style={{ ...ghostBtn, padding: '8px 11px', color: assistantOpen ? 'var(--fl-primary)' : undefined }}><AppIcon name="sparkles" size={16} /><span className="fl-editor-tool-label">어시스턴트</span></button>
           <button onClick={undo} disabled={!canUndo} aria-label="되돌리기" title="되돌리기 (Ctrl+Z)" style={{ ...ghostBtn, padding: '8px 11px', opacity: canUndo ? 1 : 0.4 }}><AppIcon name="undo" size={16} /></button>
           <button onClick={redo} disabled={!canRedo} aria-label="다시 실행" title="다시 실행 (Ctrl+Shift+Z)" style={{ ...ghostBtn, padding: '8px 11px', opacity: canRedo ? 1 : 0.4 }}><AppIcon name="redo" size={16} /></button>
-          <button onClick={() => setToolsOpen((v) => !v)} title="도구" aria-label="도구 메뉴" style={{ ...ghostBtn, padding: '8px 11px' }}><AppIcon name="more" size={16} /> 작업 도구</button>
+          <button onClick={() => setToolsOpen((v) => !v)} title="작업 도구" aria-label="도구 메뉴" style={{ ...ghostBtn, padding: '8px 11px' }}><AppIcon name="more" size={16} /><span className="fl-editor-tool-label">작업 도구</span></button>
           {toolsOpen && (
             <>
               <div style={{ position: 'fixed', inset: 0, zIndex: 90 }} onClick={() => setToolsOpen(false)} />
               <div style={toolsMenu}>
+                <div style={{ ...toolItem, color: 'var(--fl-text-muted)' }}>노드 {nodeCount}개 · {scope.current.origin === 'local' ? '내 PC' : '서버'}에 저장</div>
                 <button style={toolItem} onClick={() => { autoLayout(); setToolsOpen(false) }}>⇥ 자동 정렬</button>
                 <button style={toolItem} disabled={!canEdit} onClick={() => { setImportTab('workflow'); setToolsOpen(false) }}>가져오기 · 워크플로 / API / cURL</button>
                 <button style={toolItem} onClick={() => { setWorkflowIO('export'); setToolsOpen(false) }}>내보내기</button>
@@ -617,7 +612,13 @@ export function Editor() {
           <span style={{ flex: 1 }} />
 
         </div>
-      </div>
+        </div>
+        <div className="fl-editor-primary-actions">
+          {running && <button onClick={onStop} style={stopBtn} title="실행 중단 — 대기 중이면 즉시 해제됩니다">⏹ 중단</button>}
+          <button onClick={() => save.mutate()} disabled={save.isPending || !dirty || !canEdit} title={canEdit ? undefined : 'viewer 역할은 저장할 수 없습니다'} style={saveBtn}>저장</button>
+          <button onClick={() => onRun()} disabled={running || !canEdit} title={canEdit ? '노드별 PC·서버 실행 위치와 자원을 확인한 뒤 실행합니다' : 'viewer 역할은 실행할 수 없습니다'} style={runBtn}><AppIcon name={running ? 'pause' : 'play'} size={16} />{running ? '실행 중…' : '실행 계획'}</button>
+        </div>
+      </header>
       {!hasTask && canEdit && <div role="note" className="fl-editor-start-hint">노드 추가에서 <b>API 호출</b>을 고른 뒤 시작 → API 호출 → 끝을 연결하세요. 주소와 요청을 편집하고 실행 계획에서 확인합니다. 기존 API는 작업 도구 → 가져오기로 추가할 수 있습니다.</div>}
 
       <ReactFlowProvider>

@@ -24,7 +24,7 @@ const NAV: Array<{to: string; label: string; icon: AppIconName}> = [
 // 관리 콘솔 — 관리자에게만 노출(백엔드 /admin/* 도 403 으로 이중 방어)
 const NAV_ADMIN: {to: string; label: string; icon: AppIconName} = { to: '/admin?space=server%3Apublic', label: '서버 관리', icon: 'shield' }
 
-/** 앱 전역 셸 — AI Studio 식 좌측 세로 사이드바 네비 + 우측 콘텐츠.
+/** 앱 전역 셸 — 공간·메뉴를 탐색하는 사이드바 + 우측 작업면.
  *  sidebarExtra: 페이지가 사이드바에 덧붙이는 컨텍스트 UI(예: 대시보드의 폴더 목록). */
 export function AppShellTier1({ children, sidebarExtra }: { children: ReactNode; sidebarExtra?: ReactNode }) {
   const { adminApi } = useApi()
@@ -48,15 +48,15 @@ export function AppShellTier1({ children, sidebarExtra }: { children: ReactNode;
     return {
       display: 'flex',
       alignItems: 'center',
-      gap: 11,
-      padding: '9px 12px',
+      gap: 10,
+      padding: '9px 10px',
       borderRadius: 'var(--fl-radius-sm)',
       textDecoration: 'none',
       fontSize: 13.5,
       fontWeight: active ? 600 : 500,
       color: active ? 'var(--fl-primary)' : 'var(--fl-text-muted)',
-      background: active ? 'var(--fl-surface-2)' : 'transparent',
-      border: '2px solid transparent',
+      background: active ? 'color-mix(in srgb, var(--fl-primary) 10%, var(--fl-surface))' : 'transparent',
+      border: '1px solid transparent',
     }
   }
 
@@ -77,9 +77,8 @@ export function AppShellTier1({ children, sidebarExtra }: { children: ReactNode;
         </div>
 
         <div className="fl-sidebar-body">
-        {!library && <div style={sectionLabel}>작업</div>}
         <nav style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 2 }}>
-          {!library && NAV.map((n, index) => n.to === '/plugins' && scope.current.origin === 'local' ? null : (<div key={n.to}>{index === 1 && <div style={sectionLabel}>연동 자원</div>}{index === 5 && <div style={sectionLabel}>실행</div>}
+          {!library && NAV.map((n) => n.to === '/plugins' && scope.current.origin === 'local' ? null : (<div key={n.to}>
             <Link key={n.to} to={n.to} style={navItem(n.to)}>
               <AppIcon name={n.icon} size={18} />
               <span>{n.label}</span>
@@ -144,12 +143,12 @@ export function AppShellTier1({ children, sidebarExtra }: { children: ReactNode;
 }
 
 const sidebar: CSSProperties = {
-  width: 232,
+  width: 216,
   flexShrink: 0,
   display: 'flex',
   flexDirection: 'column',
   gap: 4,
-  padding: '22px 14px',
+  padding: '18px 12px',
   borderRight: '1px solid var(--fl-border)',
   background: 'var(--fl-surface)',
   position: 'sticky',
@@ -159,14 +158,6 @@ const sidebar: CSSProperties = {
   overflowY: 'hidden',
   overflowX: 'hidden',
   scrollbarGutter: 'stable',
-}
-const sectionLabel: CSSProperties = {
-  fontSize: 11,
-  fontWeight: 700,
-  color: 'var(--fl-text-muted)',
-  textTransform: 'uppercase',
-  letterSpacing: '.06em',
-  margin: '14px 8px 6px',
 }
 /** 대표 역할 하나만 표시(우선순위: admin > editor > viewer). */
 function primaryRole(roles: string[]): string {

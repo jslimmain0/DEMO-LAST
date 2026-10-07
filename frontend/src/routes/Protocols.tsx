@@ -9,6 +9,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 
 import { AppShellTier1 } from '../app/AppShell'
+import './resources.css'
 import { usePermissions } from '../auth/AuthContext'
 import { ProtocolEditor } from '../components/ProtocolEditor'
 import { toast } from '../components/toast'
@@ -56,7 +57,7 @@ export function Protocols() {
 
   return (
     <AppShellTier1>
-      <div style={{ display: 'grid', gridTemplateColumns: '280px 1fr', height: '100dvh', overflow: 'hidden' }}>
+      <div className="fl-protocol-workbench">
         <aside style={listPane}>
           <PageHeader title="프로토콜" count={list.data?.length ?? 0} />
           <input ref={searchRef} value={q} onChange={(e) => setQ(e.target.value)} placeholder="검색 ( / )" aria-label="프로토콜 검색"
@@ -84,7 +85,7 @@ export function Protocols() {
             <div style={empty}>
               <div style={{ fontFamily: 'var(--fl-font-head)', fontWeight: 700, fontSize: 17 }}>프로토콜</div>
               <p style={{ maxWidth: 460, margin: '8px auto 0', fontSize: 13.5, lineHeight: 1.6 }}>
-                왼쪽에서 프로토콜을 고르거나 새로 만드세요. 한 번 정의하면 TCP 노드·TCP Mock 이 같이 씁니다.
+                목록에서 프로토콜을 고르거나 새로 만드세요. 한 번 정의하면 TCP 노드·TCP Mock 이 같이 씁니다.
               </p>
             </div>
           ) : detail.isLoading ? (

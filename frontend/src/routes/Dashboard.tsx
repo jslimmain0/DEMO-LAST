@@ -12,10 +12,9 @@ import { AppShellTier1 } from '../app/AppShell'
 import { useAuth, usePermissions } from '../auth/AuthContext'
 import { AskDialog } from '../components/AskDialog'
 import type { AskSpec } from '../components/AskDialog'
-import { FlowGhost, FlowMini } from '../components/MiniFlow'
+import { FlowGhost } from '../components/MiniFlow'
 import { AppIcon } from '../components/AppIcon'
 import { useAnchoredPopover } from '../components/useAnchoredPopover'
-import { typeLabel } from '../canvas/nodeMeta'
 import { StatusBadge } from '../components/StatusBadge'
 import { SuiteRunDialog } from '../components/SuiteRunDialog'
 import { toast } from '../components/toast'
@@ -288,7 +287,7 @@ export function Dashboard() {
     })
   }
 
-  // recent() 한 번으로 모든 카드·hero 의 '최근 실행'을 확보(카드별 N+1 회피). flowId 별 최신 1건.
+  // recent() 한 번으로 모든 카드의 '최근 실행'을 확보(카드별 N+1 회피). flowId 별 최신 1건.
   const lastRunByFlow = useMemo(() => {
     const m = new Map<string, ExecutionSummary>()
     for (const e of runs.data ?? []) if (!m.has(e.flowId)) m.set(e.flowId, e) // recent() 는 최신순
@@ -354,10 +353,6 @@ export function Dashboard() {
 
   const noneCount = allFlows.filter((f) => !f.folderId).length
   const scopeName = sel === 'all' ? (search.trim() ? '검색 (전체)' : '홈') : sel === 'none' ? '미분류' : folderList.find((f) => f.id === sel)?.name ?? '워크플로'
-  // hero 는 전체 스코프·검색 없음일 때만, 가장 최근 수정 워크플로 하나로 페이지를 연다.
-  const heroFlow = sel === 'all' && !search.trim()
-    ? [...allFlows].sort((a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? ''))[0]
-    : undefined
 
   // 사이드바 폴더 트리 — 들여쓰기로 중첩 표현. 각 항목은 드롭 타깃(워크플로/폴더 이동).
   const dropTo = (folderId: string | null) => ({
@@ -402,7 +397,7 @@ export function Dashboard() {
     <AppShellTier1 sidebarExtra={folderNav}>
       <div className="fl-flow-workspace">
           {/* hero 밴드 — 최근 워크플로를 실제 노드 흐름으로 연다 */}
-          <header className="fl-workbench-title"><div><h1>워크플로</h1><span>흐름을 찾아 편집하고 실행합니다.</span></div><div style={{ display: 'flex', gap: 8 }}>{canCreateWs && <button onClick={newTeamWs} className="fl-workbench-button">+ 새 팀 공간</button>}<button onClick={() => setWsDialog(true)} className="fl-workbench-button">공간 관리</button></div></header>{heroFlow && <Hero flow={heroFlow} detailLink={catalog.detail(heroFlow.id)} lastRun={lastRunByFlow.get(heroFlow.id)} />}
+          <header className="fl-workbench-title"><div><h1>워크플로</h1><span>흐름을 찾아 편집하고 실행합니다.</span></div><div style={{ display: 'flex', gap: 8 }}>{canCreateWs && <button onClick={newTeamWs} className="fl-workbench-button">+ 새 팀 공간</button>}<button onClick={() => setWsDialog(true)} className="fl-workbench-button">공간 관리</button></div></header>
 
           {/* 툴바 — 폴더 안이면 브레드크럼(전체 › 부모 › 현재)으로 위로 이동 */}
           <div className="fl-flow-toolbar" style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
@@ -598,14 +593,6 @@ export function Dashboard() {
   )
 }
 
-// ---------- hero ----------
-
-function Hero({ flow, lastRun, detailLink }: { flow: FlowSummary; lastRun?: ExecutionSummary; detailLink: CatalogLink }) {
-  // 목록 요약(nodeTypes/nodeCats)로 미리보기 — 카드별 graph 재조회(N+1) 없이 그린다
-  return <section className="fl-recent-work" aria-label="최근 워크플로"><span>최근 작업</span><Link to={detailLink.to} state={detailLink.state}>{flow.name}</Link>{lastRun && <StatusBadge status={lastRun.status} />}<Link className="fl-recent-open" to={detailLink.to} state={detailLink.state}>이어서 편집 →</Link></section>
-
-}
-
 // ---------- 카드 ----------
 
 function FlowCard({ flow, detailLink, lastRun, runState, folderOptions, folderLabel, selectMode, selected, pinned, onTogglePin, onToggleSelect, onRename, onDuplicate, onDelete, onMove, onDragStartSelf, onDragEndSelf, readOnly }: {
@@ -628,9 +615,6 @@ function FlowCard({ flow, detailLink, lastRun, runState, folderOptions, folderLa
   onDragEndSelf: () => void
   readOnly?: boolean
 }) {
-  // 실제 저장된 타입 요약이다. 연결 순서나 전체 그래프를 추정하지 않는다.
-  const types = flow.nodeTypes ?? []
-  const summary = [...new Set(types)].map(typeLabel).join(' · ')
   const [menu, setMenu] = useState(false)
   const triggerRef = useRef<HTMLButtonElement>(null)
   const firstActionRef = useRef<HTMLButtonElement>(null)
@@ -659,10 +643,6 @@ function FlowCard({ flow, detailLink, lastRun, runState, folderOptions, folderLa
       {flow.description && <span className="fl-flow-description" title={flow.description}>{flow.description}</span>}
     </span>
     {folderLabel && <span className="fl-flow-folder" title={folderLabel}><AppIcon name="folder" size={13} /> {folderLabel}</span>}
-    <span className="fl-flow-preview">
-      {types.length > 0 ? <><FlowMini cats={flow.nodeCats ?? types} /><span title={'저장된 노드 종류: ' + summary}>{summary}</span></> : <span>{flow.nodeCount === 0 ? '아직 노드가 없습니다' : '구성 정보 없음'}</span>}
-      {flow.nodeCount != null && flow.nodeCount > 0 && <span className="fl-flow-node-count">노드 {flow.nodeCount}개</span>}
-    </span>
   </>
 
   return (

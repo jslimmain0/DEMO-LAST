@@ -1,33 +1,33 @@
-/* 소프트 Flow — 라벤더 표면과 보라색 강조, 둥근 카드로 작업의 계층을 구분한다.
+/* FlowLink 작업대 — 밝은 미네랄 표면·청록 강조와 그래파이트·민트 테마.
    사내망·오프라인에서도 같은 한국어 UI를 읽도록 런타임 웹폰트 요청을 사용하지 않는다. */
 
 :root {
   color-scheme: light;
   --fl-action-primary-ink: #ffffff;
-  --fl-primary: #7660d9;
-  --fl-primary-2: #9580ec;
-  --fl-primary-hover: #624bbf;
-  --fl-action-primary-bg: #7660d9;
-  --fl-action-primary-hover: #624bbf;
+  --fl-primary: #007f95;
+  --fl-primary-2: #009bad;
+  --fl-primary-hover: #006b7d;
+  --fl-action-primary-bg: #007f95;
+  --fl-action-primary-hover: #006b7d;
   --fl-action-danger-bg: #bc3d43;
   --fl-action-danger-ink: #ffffff;
 
-  --fl-bg: #f6f4fc;
+  --fl-bg: #f4f7f8;
   --fl-surface: #ffffff;
-  --fl-surface-2: #f0edfa;
-  --fl-surface-hover: #f3effc;
-  --fl-text: #282338;
-  --fl-text-soft: #514762;
-  --fl-text-muted: #756c85;
-  --fl-border: #e7e2f3;
-  --fl-control-border: #9485ad;
-  --fl-focus: #7660d9;
+  --fl-surface-2: #edf3f5;
+  --fl-surface-hover: #f0f7f8;
+  --fl-text: #142f3e;
+  --fl-text-soft: #3e596b;
+  --fl-text-muted: #607788;
+  --fl-border: #dce5ea;
+  --fl-control-border: #a8bac6;
+  --fl-focus: #007f95;
   --fl-focus-ring: color-mix(in srgb, var(--fl-focus) 18%, transparent);
-  --fl-disabled-bg: #ede8f5;
-  --fl-disabled-ink: #7e738f;
-  --fl-canvas-bg: #f4f1fa;
-  --fl-canvas-grid: #d5cde5;
-  --fl-overlay: rgba(33, 24, 52, .36);
+  --fl-disabled-bg: #edf1f4;
+  --fl-disabled-ink: #718493;
+  --fl-canvas-bg: #fbfdfe;
+  --fl-canvas-grid: #d6e2e8;
+  --fl-overlay: rgba(12, 30, 42, .36);
   /* 원격 커서(협업) 외곽선 — 캔버스 배경과 대비되게(라이트=진한 후광 / 다크=흰 후광) */
   --fl-cursor-halo: rgba(28, 28, 31, .5);
 
@@ -40,7 +40,7 @@
   --fl-head: #5b697c;
 
   /* 노드 카테고리 9종 */
-  --fl-cat-auth: #7660d9;
+  --fl-cat-auth: #007f95;
   --fl-cat-bank: #187a69;
   --fl-cat-card: #4b5e87;
   --fl-cat-generic: #5b697c;
@@ -48,7 +48,7 @@
   --fl-cat-if: #4b5e87;
   --fl-cat-assert: #187a69;
   --fl-cat-form: #4b5e87;
-  --fl-cat-input: #7660d9;
+  --fl-cat-input: #007f95;
   --fl-cat-wait: #905c00;
   --fl-cat-start: #187a69;
   --fl-cat-end: #5b697c;
@@ -56,7 +56,7 @@
   /* 실행 상태 */
   --fl-ok: #187a69;
   --fl-fail: #bc3d43;
-  --fl-running: #7660d9;
+  --fl-running: #007f95;
   --fl-waiting: #905c00;
   --fl-pending: #5b697c;
   --fl-location-local: #345d9b;
@@ -65,9 +65,9 @@
   /* 타입스케일 / 간격 / 반경 / 그림자 */
   --fl-fs-xs: 12px; --fl-fs-sm: 13px; --fl-fs-md: 14px; --fl-fs-lg: 16px; --fl-fs-xl: 20px; --fl-fs-2xl: 24px; --fl-fs-3xl: clamp(28px, 3vw, 34px);
   --fl-sp-1: 4px; --fl-sp-2: 8px; --fl-sp-3: 12px; --fl-sp-4: 16px; --fl-sp-5: 20px; --fl-sp-6: 24px; --fl-sp-7: 32px; --fl-sp-8: 48px;
-  --fl-radius-sm: 14px; --fl-radius: 20px; --fl-radius-lg: 26px; --fl-radius-pill: 9999px;
-  --fl-shadow: 0 8px 30px rgba(75, 56, 116, .06);
-  --fl-shadow-lg: 0 18px 52px rgba(75, 56, 116, .13), 0 4px 14px rgba(75, 56, 116, .04);
+  --fl-radius-sm: 6px; --fl-radius: 10px; --fl-radius-lg: 14px; --fl-radius-pill: 9999px;
+  --fl-shadow: 0 2px 6px rgba(20, 47, 62, .04);
+  --fl-shadow-lg: 0 12px 32px rgba(20, 47, 62, .14), 0 2px 8px rgba(20, 47, 62, .06);
 
   /* 모션 */
   --fl-ease: cubic-bezier(.2, .8, .2, 1);
@@ -80,36 +80,37 @@
 
 html[data-theme='dark'] {
   color-scheme: dark;
-  --fl-primary: #ac96ff;
-  --fl-primary-2: #c7b7ff;
-  --fl-primary-hover: #c7b7ff;
-  --fl-action-primary-bg: #7660d9;
-  --fl-action-primary-hover: #624bbf;
+  --fl-primary: #77d7d3;
+  --fl-primary-2: #a0e5e1;
+  --fl-primary-hover: #a0e5e1;
+  --fl-action-primary-bg: #77d7d3;
+  --fl-action-primary-hover: #a0e5e1;
+  --fl-action-primary-ink: #102c31;
   --fl-action-danger-bg: #ad353f;
-  --fl-bg: #18151f;
-  --fl-surface: #24202e;
-  --fl-surface-2: #312b3e;
-  --fl-surface-hover: #393146;
-  --fl-text: #f0ebf9;
-  --fl-text-soft: #d7cce6;
-  --fl-text-muted: #b4a9c6;
-  --fl-border: #41384f;
-  --fl-control-border: #9281a9;
-  --fl-focus: #c7b7ff;
-  --fl-disabled-bg: #332b40;
-  --fl-disabled-ink: #a699b9;
-  --fl-canvas-bg: #1c1825;
-  --fl-canvas-grid: #43384f;
-  --fl-overlay: rgba(11, 7, 19, .66);
+  --fl-bg: #111a20;
+  --fl-surface: #19252d;
+  --fl-surface-2: #223039;
+  --fl-surface-hover: #283942;
+  --fl-text: #e8f1f5;
+  --fl-text-soft: #c2d3dd;
+  --fl-text-muted: #9db1bf;
+  --fl-border: #32454f;
+  --fl-control-border: #607985;
+  --fl-focus: #77d7d3;
+  --fl-disabled-bg: #25343d;
+  --fl-disabled-ink: #8ca1ae;
+  --fl-canvas-bg: #17232b;
+  --fl-canvas-grid: #344853;
+  --fl-overlay: rgba(5, 12, 16, .66);
   --fl-cursor-halo: rgba(255, 255, 255, .92);
   --fl-get: #74d1b5; --fl-post: #85acff; --fl-put: #e9bd70; --fl-patch: #b8c6e2; --fl-delete: #ff9d9f; --fl-head: #aebed0;
-  --fl-cat-auth: #ac96ff; --fl-cat-bank: #74d1b5; --fl-cat-card: #b8c6e2; --fl-cat-generic: #aebed0;
+  --fl-cat-auth: #77d7d3; --fl-cat-bank: #74d1b5; --fl-cat-card: #b8c6e2; --fl-cat-generic: #aebed0;
   --fl-cat-set: #e9bd70; --fl-cat-if: #b8c6e2; --fl-cat-assert: #74d1b5; --fl-cat-form: #b8c6e2; --fl-cat-input: #85acff; --fl-cat-wait: #e9bd70; --fl-cat-start: #74d1b5; --fl-cat-end: #aebed0;
   --fl-ok: #74d1b5; --fl-fail: #ff9d9f; --fl-running: #85acff; --fl-waiting: #e9bd70; --fl-pending: #aebed0;
   --fl-location-local: #a5c2eb;
   --fl-location-server: #a0c8c2;
-  --fl-shadow: 0 8px 30px rgba(8, 4, 16, .20);
-  --fl-shadow-lg: 0 18px 52px rgba(8, 4, 16, .4), 0 4px 14px rgba(8, 4, 16, .24);
+  --fl-shadow: 0 2px 6px rgba(0, 0, 0, .16);
+  --fl-shadow-lg: 0 12px 32px rgba(0, 0, 0, .36), 0 2px 8px rgba(0, 0, 0, .22);
 }
 
 * { box-sizing: border-box; }
@@ -283,14 +284,14 @@ code, kbd, pre, samp { font-family: var(--fl-font-mono); }
   background: var(--fl-primary);
 }
 
-/* 대시보드 워크플로 카드 — 호버 시 살짝 떠오르고 그림자가 깊어진다(캔버스와 같은 상호작용 어휘). */
+/* 대시보드 카드 — 위치는 유지하고 테두리·표면만 강조한다. */
 .fl-flow-card {
   transition: transform var(--fl-dur-base) var(--fl-ease), box-shadow var(--fl-dur-base) var(--fl-ease), border-color var(--fl-dur-base) var(--fl-ease);
 }
 .fl-flow-card:hover { box-shadow: var(--fl-shadow); }
-/* 카드 액션(⋯)은 평소 숨고, 호버·포커스 시 드러난다 — 카드를 폼이 아닌 콘텐츠로. */
+/* 카드 액션은 항상 보여 포인터·키보드·터치에서 같은 작업을 찾는다. */
 .fl-flow-card .fl-card-actions {
-  opacity: 0;
+  opacity: 1;
   transition: opacity var(--fl-dur-fast) var(--fl-ease);
 }
 .fl-flow-card:hover .fl-card-actions,

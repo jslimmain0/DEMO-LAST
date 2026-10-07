@@ -7,6 +7,12 @@
 - MSI SHA-256: `061fe09fcf16cb25071bb8088fa7426f29d8b97f9fe8469170603e56317574dc`, 149415656 bytes. 공개 파일 전체 다운로드 검증 완료, MSI 설치 및 MCP 검증 미수행.
 - 실제 UI 화면과 검증 기록: [시안 적용 기록](../docs/reviews/2026-10-07-frontend-image-concepts.md).
 
+### 2026-10-08 · 화면 디자인 개편 0.3.20
+
+- 코드 이미지: `flowlink/server:0.3.20-43b7c5f63b9d71a592b6de57f4241cda96cce181`. 18088 EC2 Docker에만 배포했고(`/opt/flowlink/releases/0.3.20-43b7c5f63b9d71a592b6de57f4241cda96cce181`), 18183 Oracle·Vault 서버는 교체하지 않았다.
+- 배포 정보: serverVersion/version=0.3.20, releaseStatus=AVAILABLE, automaticUpdateAllowed=true. 새 다운로드 페이지(아키텍처 그림 포함) 응답 확인.
+- 공개 MSI 전체 다운로드 후 매니페스트와 일치: SHA-256 `abd4e621125cdee80ec9cd9d1795a48afd10812401cccc62fdb82ad4faed7d54`, 151467752 bytes. 백엔드 테스트 415개·프론트 테스트 17개·lint/build·역할별 경계 검사 통과. 실제 설치·MCP 검증은 수행하지 않았다.
+
 ### 2026-10-07 · 글꼴·계산 컨텍스트 0.3.19
 
 - 코드 이미지: `flowlink/server:0.3.19-0b55d724842637ea69d8a0395b49bbb9e87f5adb`.

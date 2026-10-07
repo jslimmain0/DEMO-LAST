@@ -617,6 +617,7 @@ function FlowCard({ flow, detailLink, lastRun, runState, folderOptions, folderLa
   onDragEndSelf: () => void
   readOnly?: boolean
 }) {
+  const navigate = useNavigate()
   const [menu, setMenu] = useState(false)
   const triggerRef = useRef<HTMLButtonElement>(null)
   const firstActionRef = useRef<HTMLButtonElement>(null)
@@ -657,6 +658,12 @@ function FlowCard({ flow, detailLink, lastRun, runState, folderOptions, folderLa
   return (
     <article
       className="fl-flow-card"
+      // 카드 어디를 눌러도 열린다(제목 링크만 클릭되던 문제). 버튼·입력·링크는 각자 동작.
+      onClick={(event) => {
+        if (!(event.target instanceof Element) || event.target.closest('a, button, input, select, label, [role="dialog"]')) return
+        if (selectMode) onToggleSelect()
+        else navigate(detailLink.to, { state: detailLink.state })
+      }}
       data-selected={selected || undefined}
       aria-label={flow.name}
       draggable={!readOnly}

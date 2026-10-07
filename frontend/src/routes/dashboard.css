@@ -74,3 +74,6 @@
 .fl-dashboard-grid .fl-flow-name { font-size:15px; }
 .fl-flow-card-top { min-height:0; margin-bottom:6px; }
 .fl-dashboard-grid .fl-flow-footer { padding-top:10px; margin-top:auto; border-top:1px solid var(--fl-border) !important; }
+
+/* 카드 전체가 클릭 영역 */
+.fl-flow-workspace .fl-flow-card { cursor: pointer; }

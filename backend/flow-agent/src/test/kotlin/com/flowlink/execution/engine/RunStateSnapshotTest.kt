@@ -44,6 +44,41 @@ class RunStateSnapshotTest {
 
     private fun noopRecorder() = NodeRecorder { _, _, _, _, _ -> }
 
+    @Test fun `calculations ignore legacy destinations and use the workflow context in both runtimes`() {
+        val graph = json.parseGraph("""{"nodes":[
+          {"id":"s","type":"start"},
+          {"id":"v","type":"set","executionAgent":"local","agentEnvironment":"missing","agentWorkspaceId":"other-team","agentMock":"missing-mock","agentOutputs":[],"vars":[{"key":"marker","value":"{{MARKER@env}}"},{"key":"amount","value":"{{amount@input}}"},{"key":"credential","value":"{{TOKEN@secret}}","secret":true}]},
+          {"id":"if","type":"if","executionAgent":"local","agentEnvironment":"missing","condition":"{{amount@v}} == 17"},
+          {"id":"ok","type":"assert","executionAgent":"local","agentMock":"missing-mock","condition":"{{amount@v}} == 17"},
+          {"id":"bad","type":"assert","condition":"false"},
+          {"id":"end","type":"end"}
+        ],"edges":[{"from":"s","to":"v"},{"from":"v","to":"if"},{"from":"if","fromPort":"true","to":"ok"},{"from":"if","fromPort":"false","to":"bad"},{"from":"ok","to":"end"},{"from":"bad","to":"end"}]}""")
+        for (owner in listOf("local", "server")) {
+            val ctx = ExecutionContext().apply {
+                workspaceId = java.util.UUID.randomUUID()
+                putOutput("env", mapOf("MARKER" to owner))
+                putSeed("input", mapOf("amount" to 17))
+                putSeed("secret", mapOf("TOKEN" to "owner-credential"))
+            }
+            val state = executor.newRun(graph, ctx)
+            state.configureAgentRun(com.flowlink.agent.AgentRunOptions(java.util.UUID.randomUUID(), "pc", owner, "dev", ctx.workspaceId.toString(), "workflow-env"))
+            val visited = mutableListOf<String>()
+            val outcome = executor.execute(state, NodeRecorder { node, _, _, status, _ ->
+                if (status == com.flowlink.core.domain.NodeExecutionStatus.SUCCEEDED) visited.add(node.id!!)
+                if (node.usesWorkflowContext()) {
+                    assertNull(node.executionAgent); assertNull(node.agentEnvironment); assertNull(node.agentMock)
+                }
+            })
+            assertEquals(ExecutionStatus.SUCCEEDED, outcome.status)
+            assertNull(outcome.pendingAgent)
+            assertEquals(owner, (ctx.raw("v") as Map<*, *>)["marker"])
+            assertEquals("owner-credential", (ctx.raw("v") as Map<*, *>)["credential"])
+            assertTrue(visited.containsAll(listOf("v", "if", "ok")))
+            assertTrue(!visited.contains("bad"))
+        }
+        assertEquals("missing", graph.nodesOrEmpty().first { it.id == "v" }.agentEnvironment)
+    }
+
     @Test
     fun snapshotJsonRoundTripThenResume() {
         val graph = json.mapper().readValue(graphJson, FlowGraph::class.java)

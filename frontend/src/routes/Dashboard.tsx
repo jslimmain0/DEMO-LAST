@@ -428,7 +428,7 @@ export function Dashboard() {
               ) : (
                 <h2 style={{ fontFamily: 'var(--fl-font-head)', fontSize: 14, fontWeight: 600, letterSpacing: '-.01em', margin: 0 }}>{scopeName}</h2>
               )}
-              <span style={{ fontSize: 'var(--fl-fs-xs)', color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)' }}>{visible.length}</span>
+              <span style={{ fontSize: 'var(--fl-fs-xs)', color: 'var(--fl-text-muted)', fontVariantNumeric: 'tabular-nums' }}>{visible.length}</span>
             </div>
             <div className="fl-flow-toolbar-actions" style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
               <div style={seg} role="group" aria-label="정렬">
@@ -457,7 +457,7 @@ export function Dashboard() {
                 <input ref={selectAllRef} type="checkbox" checked={allSelected} onChange={toggleAll} style={{ width: 16, height: 16, accentColor: 'var(--fl-primary)', cursor: 'pointer' }} />
                 현재 범위 전체 선택 ({visible.length})
               </label>
-              <span style={{ fontSize: 12.5, color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)' }}>{selectedIds.size}개 선택됨</span>
+              <span style={{ fontSize: 12.5, color: 'var(--fl-text-muted)', fontVariantNumeric: 'tabular-nums' }}>{selectedIds.size}개 선택됨</span>
               <span style={{ fontSize: 12, color: 'var(--fl-text-muted)' }}>카드 본문 또는 체크박스로 선택</span>
               {selectedOutsidePage > 0 && <span className="fl-selection-hidden" role="status" style={{ fontSize: 12, color: 'var(--fl-text-muted)' }}>이 페이지 밖 {selectedOutsidePage}개{selectedOutsideScope > 0 ? ` · 현재 범위 밖 ${selectedOutsideScope}개 포함` : ''}</span>}
               {selectedIds.size > 0 && <button onClick={() => setSelectedIds(new Set())} style={ghostBtn}>선택 해제</button>}
@@ -812,7 +812,7 @@ function SidebarItem({ label, count, active, onClick, glyph, title, indent = 0, 
       <button onClick={onClick} title={title ?? label} aria-current={active ? 'page' : undefined} style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 6, padding: '8px 6px', paddingLeft: 8 + Math.min(indent, 3) * 8, border: 'none', background: 'transparent', cursor: 'pointer', color: active ? 'var(--fl-text)' : 'var(--fl-text-muted)', fontWeight: active ? 600 : 500, fontSize: 13.5, textAlign: 'left' }}>
         <span aria-hidden style={{ width: 16, flexShrink: 0, textAlign: 'center' }}>{glyph}</span>
         <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
-        <span style={{ flexShrink: 0, fontSize: 11.5, color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)' }}>{count}</span>
+        <span style={{ flexShrink: 0, fontSize: 12, color: 'var(--fl-text-muted)', fontVariantNumeric: 'tabular-nums' }}>{count}</span>
       </button>
     </div>
   )
@@ -843,7 +843,7 @@ function isFolderId(s: Sel): s is string {
   return s !== 'all' && s !== 'none'
 }
 
-const sidebarLabel: CSSProperties = { fontSize: 11, fontWeight: 700, color: 'var(--fl-text-muted)', textTransform: 'uppercase', letterSpacing: '.06em', margin: '16px 8px 6px' }
+const sidebarLabel: CSSProperties = { fontSize: 12, fontWeight: 600, color: 'var(--fl-text-muted)', margin: '16px 8px 6px' }
 const crumbBtn: CSSProperties = { border: 'none', background: 'transparent', padding: 0, cursor: 'pointer', color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-head)', fontSize: 'var(--fl-fs-xl)', fontWeight: 500, letterSpacing: '-.01em' }
 const crumbCurrent: CSSProperties = { fontFamily: 'var(--fl-font-head)', fontSize: 14, fontWeight: 600, letterSpacing: '-.01em', margin: 0 }
 // 드래그 중 드롭 가능한 폴더 힌트(연한 점선) / 드래그오버 중 활성(강조)

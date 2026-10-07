@@ -73,12 +73,16 @@ function Inspect-Jar([string]$Path, [string]$Role, [string]$MainClass) {
         Require ($null -ne $archive.GetEntry('BOOT-INF/lib/flowlink-core.jar')) "$Role 공통 core 라이브러리가 없습니다."
         $hasFrontend = $null -ne $archive.GetEntry('BOOT-INF/classes/static/index.html')
         Require ($hasFrontend -eq ($Role -eq 'desktop')) "$Role 작업 프론트는 desktop에만 포함해야 합니다."
+        foreach ($asset in @('PretendardVariable.woff2', 'OFL.txt')) {
+            $fontAsset = $archive.GetEntry("BOOT-INF/classes/static/fonts/$asset")
+            Require ($null -ne $fontAsset -and $fontAsset.Length -gt 0) "$Role 오프라인 글꼴·라이선스가 없습니다: $asset"
+        }
         if ($Role -eq 'server') {
             Require (@($archive.Entries | Where-Object {
                 $_.FullName -like 'BOOT-INF/classes/static/*' -and
                 -not $_.FullName.EndsWith('/') -and
-                $_.FullName -ne 'BOOT-INF/classes/static/download.html'
-            }).Count -eq 0) 'server에는 다운로드 안내 외의 작업 화면 자산을 포함하면 안 됩니다.'
+                $_.FullName -notin @('BOOT-INF/classes/static/download.html', 'BOOT-INF/classes/static/fonts/PretendardVariable.woff2', 'BOOT-INF/classes/static/fonts/OFL.txt')
+            }).Count -eq 0) 'server에는 소개 페이지와 글꼴 외의 작업 화면 자산을 포함하면 안 됩니다.'
         }
         if ($Role -eq 'desktop') {
             Require (@($archive.Entries | Where-Object { $_.FullName -match '^BOOT-INF/lib/flowlink-(server|mcp).*\.jar$' }).Count -eq 0) 'desktop은 중앙 server/MCP 모듈에 의존하면 안 됩니다.'

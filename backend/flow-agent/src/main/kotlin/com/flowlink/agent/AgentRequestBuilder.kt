@@ -32,6 +32,8 @@ class AgentRequestBuilder(private val json: JsonService, private val tokens: Tok
     }
 
     fun build(node: GraphNode, allNodes: Collection<GraphNode>, ctx: ExecutionContext, run: AgentRunOptions, seq: Int): AgentNodeRequest {
+        if (node.effectiveType() !in setOf(com.flowlink.core.graph.NodeType.HTTP, com.flowlink.core.graph.NodeType.TCP, com.flowlink.core.graph.NodeType.TRANSFORM))
+            throw BadRequestException("호출·변환 노드만 에이전트 작업으로 실행합니다. 계산은 워크플로의 공간·환경을 사용합니다.")
         val transform = node.nodeType() == com.flowlink.core.graph.NodeType.TRANSFORM
         if (transform && run.ownerAgent == "local") throw BadRequestException("플러그인은 공용·팀 워크스페이스에서만 사용할 수 있습니다.")
         val agent = if (transform) "server" else node.executionAgent ?: run.ownerAgent

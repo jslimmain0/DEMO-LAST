@@ -15,7 +15,7 @@
 .fl-editor-workbench .fl-canvas { background:var(--fl-canvas-bg) !important; }
 .fl-editor-header { display:flex; align-items:center; flex-wrap:wrap; gap:8px 16px; min-height:56px; padding:10px 16px; border-bottom:1px solid var(--fl-border); background:var(--fl-surface); flex-shrink:0; }
 .fl-editor-heading { display:flex; align-items:center; flex-wrap:wrap; flex:1 1 260px; gap:6px 8px; min-width:0; }
-.fl-editor-heading .fl-name-input { flex:1 1 140px !important; max-width:none !important; min-width:60px !important; font-size:16px !important; letter-spacing:-.025em; }
+.fl-editor-heading .fl-name-input { flex:1 1 140px !important; max-width:none !important; min-width:60px !important; font-size:17px !important; font-weight:650; letter-spacing:-.02em; }
 .fl-editor-heading > span:first-of-type { max-width:140px !important; }
 .fl-editor-primary-actions { display:flex; align-items:center; gap:8px; margin-left:auto; flex-shrink:0; }
 .fl-editor-primary-actions button { min-height:34px; padding:7px 12px !important; font-weight:650; white-space:nowrap; }
@@ -64,5 +64,5 @@
 .fl-editor-brand b { font-size:17px; letter-spacing:-.025em; }
 @media(max-width:1400px) { .fl-editor-brand b { display:none; } .fl-editor-brand { padding-right:8px; } }
 .fl-http-tabs { display:flex; gap:16px; margin-top:18px; border-bottom:1px solid var(--fl-border); }
-.fl-http-tabs button { padding:9px 0; border:0; border-bottom:2px solid transparent; color:var(--fl-text-muted); background:none; font:inherit; font-size:12px; cursor:pointer; }
+.fl-http-tabs button { padding:9px 0; border:0; border-bottom:2px solid transparent; color:var(--fl-text-muted); background:none; font:inherit; font-size:13px; font-weight:550; cursor:pointer; }
 .fl-http-tabs button[aria-pressed=true] { color:var(--fl-primary); border-bottom-color:var(--fl-primary); font-weight:700; }

@@ -1,5 +1,11 @@
-/* FlowLink 작업대 — 밝은 미네랄 표면·청록 강조와 그래파이트·민트 테마.
-   사내망·오프라인에서도 같은 한국어 UI를 읽도록 런타임 웹폰트 요청을 사용하지 않는다. */
+/* 글꼴은 설치 파일에 포함한다. 사내망·오프라인에서도 동일한 한국어 UI를 제공한다. */
+@font-face {
+  font-family: 'Pretendard Variable';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('/fonts/PretendardVariable.woff2') format('woff2');
+}
 
 :root {
   color-scheme: light;
@@ -73,7 +79,7 @@
   --fl-ease: cubic-bezier(.2, .8, .2, 1);
   --fl-dur-fast: 120ms; --fl-dur-base: 200ms; --fl-dur-slow: 320ms;
 
-  --fl-font-ui: 'Segoe UI Variable Text', 'Segoe UI', 'Malgun Gothic', '맑은 고딕', 'Apple SD Gothic Neo', sans-serif;
+  --fl-font-ui: 'Pretendard Variable', 'Segoe UI', 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif;
   --fl-font-head: var(--fl-font-ui);
   --fl-font-mono: 'Cascadia Code', 'Consolas', 'D2Coding', 'Malgun Gothic', monospace;
 }
@@ -119,6 +125,8 @@ body {
   font-family: var(--fl-font-ui);
   font-size: var(--fl-fs-md);
   line-height: 1.5;
+  letter-spacing: -.01em;
+  font-kerning: normal;
   color: var(--fl-text);
   background: var(--fl-bg);
   -webkit-font-smoothing: antialiased;
@@ -128,7 +136,8 @@ a { color: inherit; }
    검게 보이지 않도록 부모(테마) 색을 상속받게 한다. 명시 color 를 준 버튼은 그대로 우선. */
 button { font-family: inherit; color: inherit; }
 input, select, textarea { font-family: inherit; }
-code, kbd, pre, samp { font-family: var(--fl-font-mono); }
+code, kbd, pre, samp { font-family: var(--fl-font-mono); letter-spacing: 0; }
+.cm-editor { letter-spacing: 0; }
 
 .fl-action-button {
   display: inline-flex;
@@ -142,7 +151,7 @@ code, kbd, pre, samp { font-family: var(--fl-font-mono); }
   background: var(--fl-surface);
   color: var(--fl-text);
   font-size: var(--fl-fs-sm);
-  font-weight: 600;
+  font-weight: 650;
   line-height: 1.4;
   cursor: pointer;
   transition: background var(--fl-dur-fast), border-color var(--fl-dur-fast), box-shadow var(--fl-dur-fast);
@@ -169,6 +178,9 @@ code, kbd, pre, samp { font-family: var(--fl-font-mono); }
   line-height: 1.5;
 }
 .fl-control:disabled { background: var(--fl-disabled-bg); color: var(--fl-disabled-ink); border-color: var(--fl-border); opacity: 1; }
+.fl-control::placeholder { color: var(--fl-text-muted); opacity: 1; }
+.fl-control:hover:not(:disabled):not(:focus) { border-color: var(--fl-text-muted); }
+.fl-control:focus-visible { border-color: var(--fl-focus); outline: 2px solid var(--fl-focus); outline-offset: 2px; }
 .fl-field-label { display: block; margin-bottom: 6px; color: var(--fl-text-soft); font-size: var(--fl-fs-sm); font-weight: 600; }
 .fl-field-help { margin: 6px 0 0; color: var(--fl-text-muted); font-size: var(--fl-fs-xs); line-height: 1.6; overflow-wrap: anywhere; }
 .fl-table-wrap { min-width: 0; overflow: auto; border: 1px solid var(--fl-border); border-radius: var(--fl-radius); background: var(--fl-surface); }

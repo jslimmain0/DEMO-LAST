@@ -1,5 +1,7 @@
 # 역할별 빌드
 
+HTTP·TCP만 호출 위치를 선택한다. 변수 지정·조건 분기·값 검증·경로 전환은 워크플로의 환경과 실행 컨텍스트에서 계산한다. 과거 그래프에 저장된 계산 노드의 목적지 공간·환경·위치는 실행할 때 무시하며 원본 버전은 보존한다.
+
 HTTP 노드를 다른 실행 에이전트로 위임할 때 기본 출력에 `body`와 `httpStatus`를 포함한다. 텍스트·HTML 및 JSON 파싱 실패로 보존한 본문도 PC·서버 양쪽에서 전달하고 표시한다. 명시한 `agentOutputs` 제한과 시크릿 마스킹은 유지한다.
 
 중앙 서버의 `/`와 `/download`는 로그인 없이 Windows 앱 다운로드와 설치 안내를 제공한다. 페이지에는 최신 MSI의 버전·용량·변경 사항을 표시하며, 작업 화면은 Windows 앱에서 연다. 서버 실행 전 `FLOWLINK_DISTRIBUTION_DIR`에 배포 폴더의 절대 경로를 지정하고, 그 폴더에 `FlowLink-버전-windows-x64.msi`와 `release-manifest.json`을 함께 게시한다. 미지정 시 서버 실행 위치의 `downloads/`를 사용한다. 게시에는 `flow-desktop/installer/Publish-DesktopRelease.ps1`을 사용한다.

@@ -42,7 +42,7 @@ states[3] = 'failure-notification'
 let tree = render()
 const heading = walk(tree, node => node.props?.className === 'fl-execution-heading')[0]
 assert.match(text(heading), /2건/)
-assert.match(text(heading), /✕ 2/)
+assert.equal(walk(heading, node => node.props?.['aria-label'] === '실패 2건').length, 1)
 assert.doesNotMatch(text(heading), /✓/)
 const rows = walk(tree, node => node.props?.className?.split(' ').includes('fl-flow-card'))
 assert.equal(rows.length, 2)

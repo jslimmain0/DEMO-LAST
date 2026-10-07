@@ -13,7 +13,7 @@ function load(file, modules, extra = '') {
   return exported
 }
 const base = { react, 'react/jsx-runtime': {jsx,jsxs:jsx}, 'react-router-dom': {Link:'link'}, '../app/WorkspaceContext': {useWorkspace: () => ({...scope, connected})}, '../auth/AuthContext': {useAuth: () => ({desktop:{}})}, 'react-dom': {createPortal: value => value}, '../lib/appBase': {appUrl: value => value} }
-const agents = load('components/AgentSettings.tsx', base)
+const agents = load('components/AgentSettings.tsx', {...base, '../lib/executionAgentSelection': load('lib/executionAgentSelection.ts', {})})
 const catalogModule = load('lib/useTransformCatalog.ts', {...base, '../components/AgentSettings': agents, '@tanstack/react-query': {useQuery: value => {options = value; return query}}})
 const notices = load('components/PluginResources.tsx', base)
 function walk(node, predicate, results = []) {

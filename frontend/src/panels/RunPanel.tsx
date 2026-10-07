@@ -50,7 +50,7 @@ export function RunPanel({
     if (!execution) return
     const lines = [`# 실행 ${execution.id} · ${execution.status}${execution.error ? ` · ${execution.error}` : ''}`]
     for (const nd of execution.nodes) {
-      lines.push(`\n## [${nd.status}] ${nd.nodeName || nd.nodeId}${nd.executionAgent ? ` · ${nd.executionAgent === 'local' ? '내 PC' : '서버'} 에이전트` : ''}${nd.httpStatus != null ? ` · HTTP ${nd.httpStatus}` : ''}${nd.durationMs != null ? ` · ${nd.durationMs}ms` : ''}`)
+      lines.push(`\n## [${nd.status}] ${nd.nodeName || nd.nodeId}${nd.executionAgent && !['set', 'if', 'assert', 'switch'].includes(nd.nodeType ?? '') ? ` · ${nd.executionAgent === 'local' ? '내 PC' : '서버'} 에이전트` : ''}${nd.httpStatus != null ? ` · HTTP ${nd.httpStatus}` : ''}${nd.durationMs != null ? ` · ${nd.durationMs}ms` : ''}`)
       if (nd.requestText) lines.push(`요청:\n${nd.requestText}`)
       if (nd.responseText) lines.push(`응답:\n${nd.responseText}`)
       if (nd.output != null) lines.push(`출력:\n${JSON.stringify(nd.output, null, 2)}`)
@@ -132,7 +132,7 @@ export function RunPanel({
                 <StatusBadge status={nd.status} />
                 {nd.nodeType === 'http' && nd.httpStatus != null && methodOf(nd.requestText) && <MethodTag method={methodOf(nd.requestText)!} />}
                 <span style={{ fontSize: 13, fontWeight: 500 }}>{nd.nodeName || nd.nodeId}</span>
-                {nd.executionAgent && <AgentBadge agent={nd.executionAgent} />}
+                {nd.executionAgent && !['set', 'if', 'assert', 'switch'].includes(nd.nodeType ?? '') && <AgentBadge agent={nd.executionAgent} />}
                 <span style={{ marginLeft: 'auto', display: 'flex', gap: 12, color: 'var(--fl-text-muted)', fontSize: 12, fontFamily: 'var(--fl-font-mono)' }}>
                   {nd.httpStatus != null && <span>{nd.httpStatus}</span>}
                   {nd.durationMs != null && <span>{duration(nd.durationMs)}</span>}

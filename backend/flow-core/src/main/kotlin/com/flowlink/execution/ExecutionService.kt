@@ -164,10 +164,10 @@ class ExecutionService(
         val version = versionRepo.findByFlowIdAndVersionNo(flowId, flow.currentVersion)
             .orElseThrow { NotFoundException.of("FlowVersion", "$flowId/v${flow.currentVersion}") }
         val graph = json.parseGraph(version.graphJson)
-        val node = graph.nodesOrEmpty().find { it.id == nodeId }
+        val node = graph.nodesOrEmpty().find { it.id == nodeId }?.runtimeNode()
             ?: throw NotFoundException.of("Node", nodeId)
 
-        if (node.executionAgent != null || node.agentEnvironment != null || node.agentWorkspaceId != null || node.agentMock != null || !req?.agentEnvironments.isNullOrEmpty()) {
+        if (node.executionAgent != null || node.agentEnvironment != null || node.agentWorkspaceId != null || node.agentMock != null || (!node.usesWorkflowContext() && !req?.agentEnvironments.isNullOrEmpty())) {
             throw BadRequestException("에이전트 노드는 전체 실행 API의 onlyNodeId를 사용하세요. 목적지 환경을 명시적으로 선택해야 합니다.")
         }
 
@@ -252,7 +252,7 @@ class ExecutionService(
         }
 
         if (workspace.localRuntime || req?.agentDeviceId != null || req?.clientExecutionId != null || req?.onlyNodeId != null ||
-            graph.nodesOrEmpty().any { it.executionAgent != null || it.agentEnvironment != null || it.agentWorkspaceId != null || it.agentMock != null } || !req?.agentEnvironments.isNullOrEmpty()) {
+            graph.nodesOrEmpty().map { it.runtimeNode() }.any { it.executionAgent != null || it.agentEnvironment != null || it.agentWorkspaceId != null || it.agentMock != null } || !req?.agentEnvironments.isNullOrEmpty()) {
             return runManaged(flow, version, graph, req, trigger, tenant)
         }
 
@@ -343,7 +343,7 @@ class ExecutionService(
             }
             if (only != null && only.effectiveType() !in setOf(NodeType.HTTP, NodeType.TCP, NodeType.SET, NodeType.IF, NodeType.ASSERT, NodeType.TRANSFORM))
                 throw BadRequestException("이 노드는 단독 실행을 지원하지 않습니다.")
-            val selected = only?.let { listOf(it) } ?: graph.nodesOrEmpty()
+            val selected = (only?.let { listOf(it) } ?: graph.nodesOrEmpty()).map { it.runtimeNode() }
             if (workspace.localRuntime && selected.any { it.effectiveType() == NodeType.TRANSFORM })
                 throw BadRequestException("플러그인은 공용·팀 워크스페이스에서만 사용할 수 있습니다.")
             if (device == "server" && selected.any { it.effectiveType() != NodeType.TRANSFORM && it.executionAgent == "local" })
@@ -819,7 +819,7 @@ class ExecutionService(
         return NodeRecorder { node, seq, result, status, durationMs ->
             val masks = SecretMasker.variants(secretValues + (state?.let(::secretValuesOf) ?: emptyList()))
             val ne = NodeExecution.of(execId, node.id!!, node.name, node.type, seq)
-            ne.executionAgent = if (node.effectiveType() == NodeType.TRANSFORM) "server" else node.executionAgent ?: if (workspace.localRuntime) "local" else "server"
+            ne.executionAgent = if (node.usesWorkflowContext()) null else if (node.effectiveType() == NodeType.TRANSFORM) "server" else node.executionAgent ?: if (workspace.localRuntime) "local" else "server"
             val outputJson = if (result.storedValue != null) SecretMasker.mask(json.toJson(result.storedValue), masks) else null
             val requestText = SecretMasker.mask(result.requestText, masks)
             val responseText = SecretMasker.mask(result.responseText, masks)

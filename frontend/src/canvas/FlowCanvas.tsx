@@ -274,11 +274,11 @@ export function FlowCanvas() {
       {selectedCount >= 2 && (
         <div className="fl-selection-toolbar nodrag nopan" role="toolbar" aria-label="선택 노드 퀵 메뉴" onPointerDown={e => e.stopPropagation()}>
           <span className="fl-selection-count">{selectedCount}개 선택</span>
-          <div className="fl-selection-agent" role="group" aria-label="실행 위치 일괄 변경">
-            <span title="HTTP · TCP · 변수 지정 · 조건 분기 · 값 검증 노드에 적용">실행 위치 · {agentSelectableCount}개</span>
+          {agentSelectableCount > 0 && <div className="fl-selection-agent" role="group" aria-label="실행 위치 일괄 변경">
+            <span title="HTTP · TCP 호출 노드에 적용">호출 위치 · {agentSelectableCount}개</span>
             <button aria-pressed={agentSelectableCount > 0 && localCount === agentSelectableCount} title="선택 노드를 내 PC에서 실행" disabled={wsReadOnly || scope.loading || !agentSelectableCount} onClick={() => changeSelectedAgent('local')}>내 PC · {localCount}</button>
             <button aria-pressed={agentSelectableCount > 0 && serverCount === agentSelectableCount} title="선택 노드를 서버에서 실행" disabled={wsReadOnly || scope.loading || !agentSelectableCount} onClick={() => changeSelectedAgent('server')}>서버 · {serverCount}</button>
-          </div>
+          </div>}
           <div className="fl-selection-actions" role="group" aria-label="선택 노드 작업">
             <button title="다른 워크플로에도 Ctrl+V로 붙여넣기" onClick={() => { const n = copySelection(); toast(n ? `${n}개 노드 복사됨 — Ctrl+V로 붙여넣기` : '노드를 복사하지 못했습니다.', n ? 'ok' : 'error') }}>복사</button>
             <button disabled={wsReadOnly} title="연결과 바인딩을 함께 복제 (Ctrl+D)" onClick={() => { const n = duplicateSelection(); if (n) toast(`${n}개 노드 복제됨`, 'ok') }}>복제</button>
@@ -296,7 +296,7 @@ export function FlowCanvas() {
           {selectedCount >= 3 && <button disabled={wsReadOnly} onClick={() => distributeNodes('x')} title="가로 균등 분배" style={alignBtn}>↔</button>}
           {selectedCount >= 3 && <button disabled={wsReadOnly} onClick={() => distributeNodes('y')} title="세로 균등 분배" style={alignBtn}>↕</button>}
           </div>
-          {agentSelectableCount < selectedCount && <span className="fl-selection-hint">실행 위치 고정·Mock 연결 노드는 제외</span>}
+          {agentSelectableCount > 0 && agentSelectableCount < selectedCount && <span className="fl-selection-hint">호출 위치 변경은 HTTP·TCP 노드에만 적용</span>}
         </div>
       )}
       <ReactFlow

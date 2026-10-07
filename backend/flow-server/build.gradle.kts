@@ -11,3 +11,11 @@ springBoot { mainClass.set("com.flowlink.server.ServerApplicationKt") }
 tasks.named<org.springframework.boot.gradle.tasks.bundling.BootJar>("bootJar") {
     archiveFileName.set("flowlink-server.jar")
 }
+
+// 소개 페이지와 Windows 화면은 동일한 번들 글꼴을 사용한다. SPA는 desktop에만 포함한다.
+tasks.named<ProcessResources>("processResources") {
+    from(rootProject.file("../frontend/public/fonts")) {
+        include("*.woff2", "OFL.txt")
+        into("static/fonts")
+    }
+}

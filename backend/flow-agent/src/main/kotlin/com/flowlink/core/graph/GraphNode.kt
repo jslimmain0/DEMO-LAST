@@ -71,7 +71,7 @@ data class GraphNode(
     // --- canvas 위치(실행과 무관) ---
     val x: Double?,
     val y: Double?,
-    // 저장 공간과 독립적인 실행 위치. 미지정은 저장 공간의 런타임을 사용한다.
+    // HTTP/TCP의 실행 위치. 계산 노드는 저장 공간의 컨텍스트를 사용한다.
     val executionAgent: String? = null,
     val agentEnvironment: String? = null,
     val agentWorkspaceId: String? = null,
@@ -100,6 +100,13 @@ data class GraphNode(
         }
         return t
     }
+
+    fun usesWorkflowContext(): Boolean = effectiveType() in setOf(NodeType.SET, NodeType.IF, NodeType.ASSERT, NodeType.SWITCH)
+
+    /** 저장 JSON은 유지하고 과거 계산 노드의 목적지 설정만 실행 시 무시한다. */
+    fun runtimeNode(): GraphNode = if (usesWorkflowContext()) copy(
+        executionAgent = null, agentEnvironment = null, agentWorkspaceId = null, agentMock = null, agentOutputs = null,
+    ) else this
 
     fun fieldsOrEmpty(): NodeFields =
         fields ?: NodeFields(emptyList(), emptyList(), emptyList())

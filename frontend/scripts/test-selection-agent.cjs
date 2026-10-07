@@ -53,7 +53,7 @@ test('same effective destination preserves overrides; browser HTTP converts to a
   const patch = executionAgentPatch({ type: 'http', reqMode: 'client', executionAgent: 'server', agentMock: { id: 'legacy' } }, 'server', 'local')
   assert.equal(patch.reqMode, 'server')
   assert.equal(patch.agentMock, undefined)
-  for (const type of ['start', 'end', 'wait', 'form', 'input', 'transform', 'switch', 'note', 'group']) assert.equal(executionAgentPatch({ type }, 'local', 'server'), null)
+  for (const type of ['start', 'end', 'wait', 'form', 'input', 'transform', 'switch', 'set', 'if', 'assert', 'note', 'group']) assert.equal(executionAgentPatch({ type }, 'local', 'server'), null)
 })
 test('selection collapse and deletion preserve unselected nodes and undo restores connections', () => {
   const nodes = ['http', 'note', 'tcp', 'end'].map((type, i) => ({ id: String(i), type: 'flnode', position: { x: i * 220, y: 0 }, selected: i < 2, data: { id: String(i), type } }))

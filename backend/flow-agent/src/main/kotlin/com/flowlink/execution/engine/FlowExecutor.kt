@@ -149,7 +149,7 @@ class FlowExecutor(
 
     fun newRun(graph: FlowGraph, ctx: ExecutionContext, relayBase: String?, relayRunId: String?): RunState {
         // 메모/영역 박스(주석)는 실행과 무관 — 위상정렬/활성화/기록에서 제외(연결도 없어 UNKNOWN 실패를 만들지 않게)
-        val nodes = graph.nodesOrEmpty().filter { !it.nodeType().isAnnotation() }
+        val nodes = graph.nodesOrEmpty().filter { !it.nodeType().isAnnotation() }.map { it.runtimeNode() }
         val edges = graph.edgesOrEmpty()
         val byId = HashMap<String, GraphNode>()
         nodes.forEach { n -> byId[n.id!!] = n }
@@ -327,7 +327,7 @@ class FlowExecutor(
             }
 
             val agentRun = st.agentRun
-            if (agentRun != null && et in setOf(NodeType.HTTP, NodeType.TCP, NodeType.TRANSFORM, NodeType.SET, NodeType.IF, NodeType.ASSERT)) {
+            if (agentRun != null && et in setOf(NodeType.HTTP, NodeType.TCP, NodeType.TRANSFORM)) {
                 val request = try { agentRequests.build(node, st.byId.values, st.ctx, agentRun, st.seq) }
                 catch (e: com.flowlink.common.error.BadRequestException) {
                     recorder.record(node, st.seq++, NodeResult.fail(null, "에이전트 입력 확인", e.message), NodeExecutionStatus.FAILED, 0)
@@ -522,6 +522,7 @@ class FlowExecutor(
      * 콜백/모달이 필요해 단독 실행을 지원하지 않는다.
      */
     fun runSingleNode(node: GraphNode, ctx: ExecutionContext = ExecutionContext()): NodeResult {
+        val node = node.runtimeNode()
         val et = node.effectiveType()
         if (et == NodeType.FORM || et == NodeType.WAIT || et == NodeType.INPUT ||
             (et == NodeType.HTTP && isClientMode(node))) {

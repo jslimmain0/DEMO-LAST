@@ -199,7 +199,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
     const agentEnvironments = await agentBindings.save()
     if (node && !usesOwnerResources(node) && resolveAgentEnvironment(node, resources.agent, resources.workspaceId, scope.current, activeEnvName(), agentEnvironments).name === undefined) throw new Error('실행 계획에서 이 실행 위치의 환경을 먼저 선택하세요.')
     if (!stillSelected()) return
-    const env = !resources.crossBoundary && !node?.agentEnvironment ? activeEnvVars() : {}
+    const env = !resources.crossBoundary && (node && usesOwnerResources(node) || !node?.agentEnvironment) ? activeEnvVars() : {}
     // 이 노드가 참조하는 상류 토큰에 사용자가 넣은 값 → {소스노드: {키: 값}} (bare 토큰은 __prev)
     const rf = nodes.find((x) => x.id === selectedId)
     const upstream: Record<string, Record<string, unknown>> = {}
@@ -818,7 +818,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
 
       {/* 모달(큰 화면)에선 내용을 편한 폭의 중앙 칼럼으로 — 2단 타입(http/tcp)은 넓게 */}
       <div style={{ padding: modal ? '20px 28px' : '16px 18px', overflowY: 'auto', flex: 1, ...(modal ? { width: '100%', maxWidth: modalColW, margin: '0 auto' } : null) }}>
-        <AgentSettings key={id} node={node} update={patch => update(id, patch)} disabled={!canEdit} />
+        <AgentSettings node={node} update={patch => update(id, patch)} disabled={!canEdit} />
         {unreachable && (
           <div style={{ marginTop: 10, padding: '8px 10px', border: '1px solid var(--fl-put)', borderRadius: 'var(--fl-radius-sm)', background: 'color-mix(in srgb, var(--fl-put) 12%, transparent)', fontSize: 12, color: 'var(--fl-text)', lineHeight: 1.5 }}>
             ⚠ <b>시작(START)에 연결되어 있지 않습니다.</b> 이 노드는 실행 시 <b>건너뜁니다</b> — 위쪽 노드에서 핸들(●)을 끌어 연결하세요.

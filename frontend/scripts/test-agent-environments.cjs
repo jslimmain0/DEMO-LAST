@@ -19,20 +19,34 @@ assert.equal(resolver.resolveAgentEnvironment({}, 'server', 'team', owner, 'dev'
 assert.equal(resolver.resolveAgentEnvironment({}, 'local', 'pc', owner, 'dev', { local: '' }).name, '')
 assert.equal(resolver.resolveAgentEnvironment({ agentEnvironment: '' }, 'local', 'pc', owner, 'dev', { local: 'personal-dev' }).name, '')
 console.log('PASS: cross-space requires explicit choice; common is explicit; node override wins')
-const nodes = load('../src/components/AgentSettings.tsx', {})
+const rules = load('../src/lib/executionAgentSelection.ts', {})
+const nodes = load('../src/components/AgentSettings.tsx', {
+  '../lib/executionAgentSelection': rules,
+  '../app/WorkspaceContext': {useWorkspace: () => ({current: owner})},
+  '../auth/AuthContext': {useAuth: () => ({desktop: {}})},
+})
 assert.equal(nodes.usesOwnerResources({ type: 'form', executionAgent: 'local' }), true)
 assert.equal(nodes.usesOwnerResources({ type: 'input' }), true)
 assert.equal(nodes.usesOwnerResources({ type: 'switch', executionAgent: 'local' }), true)
 assert.equal(nodes.usesOwnerResources({ type: 'http', reqMode: 'client', executionAgent: 'server' }), true)
 assert.equal(nodes.usesOwnerResources({ type: 'tcp', executionAgent: 'local' }), false)
 assert.equal(nodes.nodeAgent({ type: 'switch', executionAgent: 'local' }, 'server'), 'server')
-console.log('PASS: browser/form/input/wait/switch use owner resources; managed TCP uses destination')
+for (const type of ['set', 'if', 'assert']) {
+  const node = {type, executionAgent: 'local', agentEnvironment: 'wrong'}
+  assert.equal(nodes.usesOwnerResources(node), true)
+  assert.equal(nodes.nodeAgent(node, 'server'), 'server')
+  assert.equal(rules.canChangeExecutionAgent(node), false)
+  assert.equal(nodes.NodeAgentBadge({node}), null)
+  assert.equal(nodes.AgentSettings({node, update() {}, disabled: false}), null)
+}
+console.log('PASS: calculations ignore legacy destinations and use owner resources; HTTP/TCP use destination')
 const inspectionQueries = [], inspectionRequests = []
 const planNodes = [
   { id: 'form', type: 'form', executionAgent: 'local', agentEnvironment: 'wrong-private' },
   { id: 'input', type: 'input' },
   { id: 'switch', type: 'switch', executionAgent: 'local' },
   { id: 'browser', type: 'http', reqMode: 'client', executionAgent: 'local' },
+  ...['set', 'if', 'assert'].map(type => ({id: type, type, executionAgent: 'local', agentWorkspaceId: 'other', agentEnvironment: 'wrong-private'})),
   { id: 'pc', type: 'http', executionAgent: 'local' },
 ]
 const planWorkspace = { current: { ...owner, name: '팀' }, scopeKey: 'server:team', remoteKey: 'alice', connected: true, workspaces: [{ origin: 'local', id: 'pc' }, { ...owner, name: '팀' }], agentApi: (agent, workspaceId) => ({ runsApi: { inspectAgent: async (node, envName) => { inspectionRequests.push({ agent, workspaceId, node, envName }); return {} } } }) }
@@ -49,6 +63,7 @@ const plan = load('../src/components/ExecutionPlanDialog.tsx', {
   '../lib/reachable': { computeReachInfo: () => ({ hasStart: false }) },
   '../lib/environments': { useEnvStore: () => ({ active: 'dev' }), useEnvironment: () => ({ prepareForRun: async () => {} }) },
   './AgentSettings': nodes,
+  '../lib/executionAgentSelection': rules,
   '../lib/agentEnvironments': resolver,
   '../lib/useAgentEnvironmentBindings': { useAgentEnvironmentBindings: () => ({ ready: true, bindings: { local: 'personal-dev' } }) },
 })
@@ -74,7 +89,7 @@ const hook = load('../src/lib/useAgentEnvironmentBindings.ts', {
 })
 async function run() {
   for (const query of inspectionQueries.filter(query => query.enabled)) await query.queryFn()
-  for (const id of ['form', 'input', 'browser']) {
+  for (const id of ['form', 'input', 'browser', 'set', 'if', 'assert']) {
     const request = inspectionRequests.find(request => request.node.id === id)
     assert.equal(request.agent, 'server')
     assert.equal(request.workspaceId, 'team')

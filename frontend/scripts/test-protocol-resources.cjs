@@ -8,7 +8,7 @@ function load(file, modules) {
   vm.runInNewContext(ts.transpileModule(fs.readFileSync(path.join(__dirname,'../src',file),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX}}).outputText,{exports,require:name=>modules[name]??{}})
   return exports
 }
-const agents = load('components/AgentSettings.tsx',base)
+const agents = load('components/AgentSettings.tsx',{...base,'../lib/executionAgentSelection':load('lib/executionAgentSelection.ts',{})})
 let list = {isSuccess:true,data:[{id:'wire',name:'전문'}]}, detail = {}, queries = []
 const panel = load('panels/TcpNodePanel.tsx',{...base,'../components/AgentSettings':agents,'@tanstack/react-query':{useQuery:q=>{queries.push(q);return q.queryKey.at(-1)==='protocols'?list:detail}}})
 const node = {type:'tcp',executionAgent:'server',protocolId:'wire',tcpValues:{amount:'keep'}}

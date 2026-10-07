@@ -40,6 +40,19 @@ class ManagedExecutionIntegrationTest {
     @Autowired lateinit var workspaces: com.flowlink.workspace.WorkspaceService
     @SpyBean lateinit var crypto: com.flowlink.common.crypto.CryptoProvider
 
+    private fun withHttpTarget(block: (String) -> Unit) {
+        val server = com.sun.net.httpserver.HttpServer.create(java.net.InetSocketAddress("127.0.0.1", 0), 0)
+        server.createContext("/") { exchange ->
+            exchange.requestBody.use { it.readAllBytes() }
+            val body = """{"copied":7,"answer":"ok"}""".toByteArray()
+            exchange.responseHeaders.set("Content-Type", "application/json")
+            exchange.sendResponseHeaders(200, body.size.toLong())
+            exchange.responseBody.use { it.write(body) }
+        }
+        server.start()
+        try { block("http://127.0.0.1:" + server.address.port) } finally { server.stop(0) }
+    }
+
     private val device = "test-pc"
     private fun flow(vararg body: String): UUID {
         val all = listOf("""{"id":"start","type":"start"}""") + body.toList() + """{"id":"end","type":"end"}"""
@@ -68,11 +81,11 @@ class ManagedExecutionIntegrationTest {
         await().atMost(Duration.ofSeconds(10)).untilAsserted { assertThat(executions.get(id).status).isEqualTo(ExecutionStatus.SUCCEEDED) }
     }
 
-    @Test fun `PC와 서버 노드를 번갈아 처리하고 중복 결과를 한 번만 적용한다`() {
+    @Test fun `PC와 서버 노드를 번갈아 처리하고 중복 결과를 한 번만 적용한다`() = withHttpTarget { target ->
         val id = flow(
-            """{"id":"pc","type":"set","executionAgent":"local","vars":[{"key":"amount","value":"7"}]}""",
-            """{"id":"remote","type":"set","executionAgent":"server","vars":[{"key":"copied","value":"{{amount@pc}}"}]}""",
-            """{"id":"last","type":"assert","executionAgent":"local","condition":"{{copied@remote}} == 7"}""",
+            """{"id":"pc","type":"http","executionAgent":"local","baseUrl":"http://unused.test","outputs":[{"key":"amount"}]}""",
+            """{"id":"remote","type":"http","executionAgent":"server","baseUrl":"$target","method":"POST","bodyType":"json","fields":{"body":[{"key":"amount","value":"{{amount@pc}}"}]},"outputs":[{"key":"copied"}]}""",
+            """{"id":"last","type":"http","executionAgent":"local","baseUrl":"http://unused.test","fields":{"body":[{"key":"copied","value":"{{copied@remote}}"}]},"outputs":[{"key":"result"}]}""",
         )
         val request = request()
         val run = executions.run(id, request)
@@ -105,8 +118,8 @@ class ManagedExecutionIntegrationTest {
         assertThrows<BadRequestException> { executions.run(id, request.copy(input = json.readTree("{\"changed\":true}"))) }
     }
 
-    @Test fun `서버 전용 관리 실행은 브라우저나 PC 없이 다음 작업까지 진행한다`() {
-        val id = flow("""{"id":"remote","type":"set","executionAgent":"server","vars":[{"key":"answer","value":"ok"}]}""")
+    @Test fun `서버 전용 관리 실행은 브라우저나 PC 없이 다음 작업까지 진행한다`() = withHttpTarget { target ->
+        val id = flow("""{"id":"remote","type":"http","executionAgent":"server","baseUrl":"$target","outputs":[{"key":"answer"}]}""")
         val run = executions.run(id, null)
         succeeded(run.id)
         assertThat(rows.findById(run.id).get().agentDeviceId).isEqualTo("server")
@@ -115,7 +128,7 @@ class ManagedExecutionIntegrationTest {
 
     @Test fun `WAIT 도착 전 콜백을 보관하고 작업 완료 후 자동 소비한다`() {
         val id = flow(
-            """{"id":"pc","type":"set","executionAgent":"local","vars":[]}""",
+            """{"id":"pc","type":"http","executionAgent":"local","baseUrl":"http://unused.test"}""",
             """{"id":"callback","type":"wait","waitTimeoutSec":30,"callbackRespType":"json","callbackRespBody":"{\"accepted\":true}"}""",
             """{"id":"last","type":"set","executionAgent":"local","vars":[{"key":"paid","value":"{{paid@callback}}"}]}""",
         )
@@ -123,16 +136,14 @@ class ManagedExecutionIntegrationTest {
         val response = executions.recordWaitCallback(run.id, "callback", "POST", emptyMap(), "{\"paid\":true}")
         assertThat(response.body).isEqualTo("{\"accepted\":true}")
         complete(pending(run.id, "pc"), emptyMap<String, Any>())
-        val last = pending(run.id, "last")
-        assertThat(last.request!!.values["callback"]).isEqualTo(mapOf("paid" to true))
         executions.recordWaitCallback(run.id, "callback", "POST", emptyMap(), "{\"paid\":false}")
-        complete(last, mapOf("paid" to true))
         succeeded(run.id)
+        assertThat(nodes.findByExecutionIdOrderBySeqAsc(run.id).first { it.nodeId == "last" }.outputJson).contains("true")
         assertThat(nodes.findByExecutionIdOrderBySeqAsc(run.id).filter { it.nodeId == "callback" }).hasSize(1)
     }
 
     @Test fun `확인 불가 작업을 취소한 뒤 늦은 결과가 와도 실행되지 않는다`() {
-        val id = flow("""{"id":"pc","type":"set","executionAgent":"local","vars":[]}""")
+        val id = flow("""{"id":"pc","type":"http","executionAgent":"local","baseUrl":"http://unused.test"}""")
         val run = executions.run(id, request())
         val task = pending(run.id, "pc")
         tasks.unknown(task.taskId, AgentUnknown(device, task.claimToken!!, "connection lost"))
@@ -145,7 +156,7 @@ class ManagedExecutionIntegrationTest {
     }
 
     @Test fun `PC 없는 서버 실행의 로컬 노드를 실행 전에 거절한다`() {
-        val id = flow("""{"id":"pc","type":"set","executionAgent":"local","vars":[]}""")
+        val id = flow("""{"id":"pc","type":"http","executionAgent":"local","baseUrl":"http://unused.test"}""")
         assertThrows<BadRequestException> { executions.run(id, null) }
         assertThat(rows.findByFlowIdOrderByStartedAtDesc(id, org.springframework.data.domain.PageRequest.of(0, 10))).isEmpty()
     }
@@ -164,10 +175,39 @@ class ManagedExecutionIntegrationTest {
         assertThat(records.single().outputJson).contains("17")
     }
 
+    @Test fun `계산 노드의 과거 목적지는 무시하고 전체 단일 관리 실행이 같은 환경을 사용한다`() {
+        val id = flow(
+            """{"id":"selected","type":"set","executionAgent":"local","agentWorkspaceId":"missing-team","agentEnvironment":"missing-env","agentMock":"missing-mock","agentOutputs":[],"vars":[{"key":"marker","value":"{{MARKER@env}}"},{"key":"amount","value":"{{amount@input}}"}]}""",
+            """{"id":"check","type":"assert","executionAgent":"local","agentEnvironment":"missing-env","condition":"{{amount@selected}} == 17"}""",
+        )
+        val saved = versions.findByFlowIdAndVersionNo(id, 1).get().graphJson
+        val req = RunRequest(json.readTree("""{"amount":17}"""), json.readTree("""{"MARKER":"OWNER"}"""), null, null)
+        val run = executions.run(id, req)
+        succeeded(run.id)
+        assertThat(rows.findById(run.id).get().agentDeviceId).isNull()
+        assertThat(taskRows.findByExecutionId(run.id)).isEmpty()
+        val records = nodes.findByExecutionIdOrderBySeqAsc(run.id)
+        assertThat(records.first { it.nodeId == "selected" }.outputJson).contains("OWNER", "17")
+        assertThat(records.filter { it.nodeId in setOf("selected", "check") }).allSatisfy { assertThat(it.executionAgent).isNull() }
+
+        val destinationOverrides = req.copy(agentEnvironments = mapOf("local" to "missing-env"))
+        val single = executions.runSingleNode(id, "selected", destinationOverrides)
+        assertThat(single.ok).isTrue()
+        assertThat(single.output).isEqualTo(mapOf("marker" to "OWNER", "amount" to 17))
+        val managed = executions.run(id, destinationOverrides.copy(onlyNodeId = "selected"))
+        succeeded(managed.id)
+        assertThat(taskRows.findByExecutionId(managed.id)).isEmpty()
+        val managedRecords = nodes.findByExecutionIdOrderBySeqAsc(managed.id)
+        assertThat(managedRecords).hasSize(1)
+        assertThat(managedRecords.single().outputJson).contains("OWNER", "17")
+        assertThat(managedRecords.single().executionAgent).isNull()
+        assertThat(versions.findByFlowIdAndVersionNo(id, 1).get().graphJson).isEqualTo(saved)
+    }
+
     @Test fun `다음 체크포인트 저장 실패는 결과 이력과 작업 생성을 롤백하고 저장된 결과만 재적용한다`() {
         val id = flow(
-            """{"id":"first","type":"set","executionAgent":"local","vars":[]}""",
-            """{"id":"next","type":"set","executionAgent":"local","vars":[]}""",
+            """{"id":"first","type":"http","executionAgent":"local","baseUrl":"http://unused.test"}""",
+            """{"id":"next","type":"http","executionAgent":"local","baseUrl":"http://unused.test"}""",
         )
         val run = executions.run(id, request())
         val failed = java.util.concurrent.atomic.AtomicBoolean()
@@ -192,7 +232,7 @@ class ManagedExecutionIntegrationTest {
     @Test fun `진행 중인 팀 실행의 저장 공간을 삭제하거나 이관할 수 없다`() {
         val team = workspaces.createTeam("실행보호 ${UUID.randomUUID()}")
         val target = workspaces.createTeam("이관대상 ${UUID.randomUUID()}")
-        val id = flow("""{"id":"pc","type":"set","executionAgent":"local","vars":[]}""")
+        val id = flow("""{"id":"pc","type":"http","executionAgent":"local","baseUrl":"http://unused.test"}""")
         flows.findById(id).get().let { it.workspaceId = UUID.fromString(team.id); flows.save(it) }
         val run = executions.run(id, request())
         assertThrows<BadRequestException> { workspaces.delete(UUID.fromString(team.id), UUID.fromString(target.id)) }
@@ -200,7 +240,7 @@ class ManagedExecutionIntegrationTest {
     }
 
     @Test fun `다른 실행기 환경을 선택하지 않으면 공통으로 실행하지 않는다`() {
-        val id = flow("""{"id":"pc","type":"set","executionAgent":"local","vars":[]}""")
+        val id = flow("""{"id":"pc","type":"http","executionAgent":"local","baseUrl":"http://unused.test"}""")
         val run = executions.run(id, request().copy(agentEnvironments = emptyMap()))
         assertThat(run.status).isEqualTo(ExecutionStatus.FAILED)
         assertThat(run.error).contains("목적지 환경")

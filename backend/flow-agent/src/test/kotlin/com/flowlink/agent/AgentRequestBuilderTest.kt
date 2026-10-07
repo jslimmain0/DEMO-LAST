@@ -64,7 +64,7 @@ class AgentRequestBuilderTest {
             putSeed("secret", mapOf("token" to "super-secret"))
             putOutput("before", mapOf("echo" to "super-secret"))
         }
-        val n = node("""{"id":"next","type":"set","executionAgent":"local","agentOutputs":[],"vars":[{"key":"echo","value":"{{ echo@before }}"}]}""")
+        val n = node("""{"id":"next","type":"http","executionAgent":"local","agentOutputs":[],"fields":{"body":[{"key":"echo","value":"{{ echo@before }}"}]}}""")
         assertThrows(BadRequestException::class.java) { builder.build(n, listOf(n), ctx, run, 0) }
         ctx.putOutput("before", mapOf("echo" to "safe"))
         assertEquals(emptyList<String>(), builder.build(n, listOf(n), ctx, run, 0).allowedOutputs)
@@ -72,7 +72,7 @@ class AgentRequestBuilderTest {
 
     @Test fun `different workspace on same server also has a data boundary`() {
         val ctx = ExecutionContext().apply { putOutput("env", mapOf("marker" to "OWNER")) }
-        val n = node("""{"id":"next","type":"set","executionAgent":"server","agentWorkspaceId":"${UUID.randomUUID()}","agentEnvironment":"","vars":[]}""")
+        val n = node("""{"id":"next","type":"http","executionAgent":"server","agentWorkspaceId":"${UUID.randomUUID()}","agentEnvironment":"","vars":[]}""")
         val request = builder.build(n, listOf(n), ctx, run, 0)
         assertTrue(request.crossBoundary)
         assertTrue(request.seeds.isEmpty())
@@ -80,14 +80,14 @@ class AgentRequestBuilderTest {
     }
 
     @Test fun `crossing without destination environment fails instead of common fallback`() {
-        val n = node("""{"id":"n","type":"set","executionAgent":"local","vars":[]}""")
+        val n = node("""{"id":"n","type":"http","executionAgent":"local","vars":[]}""")
         assertThrows(BadRequestException::class.java) { builder.build(n, listOf(n), ExecutionContext(), run.copy(agentEnvironments = emptyMap()), 0) }
         assertEquals("development", builder.build(n, listOf(n), ExecutionContext(), run.copy(agentEnvironments = mapOf("local" to "development")), 0).envName)
         assertEquals("", builder.build(n.copy(agentEnvironment = ""), listOf(n), ExecutionContext(), run, 0).envName)
     }
 
     @Test fun `explicit common and node override never carry owner environment seed`() {
-        val n = node("""{"id":"n","type":"set","executionAgent":"server","vars":[]}""")
+        val n = node("""{"id":"n","type":"http","executionAgent":"server","vars":[]}""")
         val ctx = ExecutionContext().apply { putOutput("env", mapOf("URL" to "owner-only")) }
         val common = builder.build(n, listOf(n), ctx, run, 0)
         assertEquals("", common.envName)
@@ -98,5 +98,11 @@ class AgentRequestBuilderTest {
         val inherited = builder.build(n, listOf(n), ctx, run.copy(agentEnvironments = emptyMap()), 0)
         assertEquals("development", inherited.envName)
         assertTrue(inherited.seeds.containsKey("env"))
+    }
+    @Test fun `calculations cannot create new agent tasks`() {
+        for (type in listOf("set", "if", "assert", "switch")) {
+            val n = node("""{"id":"calc","type":"$type","executionAgent":"local"}""")
+            assertThrows(BadRequestException::class.java) { builder.build(n, listOf(n), ExecutionContext(), run, 0) }
+        }
     }
 }

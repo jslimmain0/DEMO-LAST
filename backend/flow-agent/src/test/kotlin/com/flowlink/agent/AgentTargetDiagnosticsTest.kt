@@ -14,6 +14,25 @@ import org.springframework.web.client.RestClient
 import java.util.UUID
 
 class AgentTargetDiagnosticsTest {
+    @Test fun `calculation readiness ignores legacy destination and Mock fields`() {
+        val json = JsonService(jacksonObjectMapper())
+        for (local in listOf(true, false)) {
+            val resources = mock(AgentResources::class.java)
+            val space = UUID.randomUUID()
+            `when`(resources.localRuntime).thenReturn(local)
+            `when`(resources.workspaceScope("owner")).thenReturn(space)
+            `when`(resources.environmentExists("workflow-env", space)).thenReturn(true)
+            `when`(resources.environment("workflow-env", space)).thenReturn(emptyMap())
+            `when`(resources.secrets("workflow-env", space)).thenReturn(emptyMap())
+            val executor = AgentNodeExecutor(mock(FlowExecutor::class.java), resources, json, TokenResolver(json), mock(TransformRegistry::class.java))
+            for (type in listOf("set", "if", "assert", "switch")) {
+                val node = json.mapper().readValue("""{"id":"calc","type":"$type","executionAgent":"${if (local) "server" else "local"}","agentWorkspaceId":"other-team","agentEnvironment":"missing","agentMock":"missing-mock"}""", GraphNode::class.java)
+                assertTrue(executor.inspect(node, "owner", "workflow-env").isEmpty())
+                assertDoesNotThrow { executor.targetDiagnostics(node, "owner", "workflow-env") }
+            }
+            verify(resources, never()).mockTarget(anyString(), any())
+        }
+    }
     @Test fun `browser Mock combination cannot report agent Mock as effective address`() {
         val mapper = jacksonObjectMapper()
         val json = JsonService(mapper)

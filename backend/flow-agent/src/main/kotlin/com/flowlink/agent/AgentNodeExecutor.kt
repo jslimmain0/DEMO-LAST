@@ -17,7 +17,7 @@ class AgentNodeExecutor(
 ) {
     val runtime: String get() = if (resources.localRuntime) "local" else "server"
 
-    private fun ownerResources(node: GraphNode) = node.reqMode == "client" || node.effectiveType() in setOf(NodeType.FORM, NodeType.INPUT, NodeType.WAIT, NodeType.SWITCH)
+    private fun ownerResources(node: GraphNode) = node.usesWorkflowContext() || node.reqMode == "client" || node.effectiveType() in setOf(NodeType.FORM, NodeType.INPUT, NodeType.WAIT)
 
     fun inspect(node: GraphNode, workspaceId: String?, envName: String?): Map<String, String> {
         if (node.nodeType() == NodeType.TRANSFORM && runtime == "local") throw BadRequestException("플러그인은 중앙 서버에서만 실행합니다.")
@@ -33,7 +33,7 @@ class AgentNodeExecutor(
     }
 
     fun targetDiagnostics(node: GraphNode, workspaceId: String?, envName: String?): Map<String, Any?> {
-        val node = if (node.effectiveType() in setOf(NodeType.FORM, NodeType.INPUT, NodeType.WAIT, NodeType.SWITCH)) node.copy(agentMock = null, executionAgent = runtime) else node
+        val node = if (node.usesWorkflowContext() || node.effectiveType() in setOf(NodeType.FORM, NodeType.INPUT, NodeType.WAIT)) node.copy(agentMock = null, executionAgent = runtime) else node
         val scope = resources.workspaceScope(workspaceId)
         val ctx = ExecutionContext().apply { putOutput("env", resources.environment(envName, scope)); putSeed("secret", resources.secrets(envName, scope)) }
         if (!node.agentMock.isNullOrBlank()) {
@@ -62,6 +62,7 @@ class AgentNodeExecutor(
             val node = request.node
             if (node.nodeType() == NodeType.TRANSFORM && runtime == "local") throw BadRequestException("플러그인은 중앙 서버에서만 실행합니다.")
             if (node.executionAgent != runtime) throw BadRequestException("선택한 에이전트와 실제 실행 프로세스가 다릅니다.")
+            // 이미 저장된 과거 계산 작업은 완료할 수 있다. 새 계산 작업은 builder에서 생성하지 않는다.
             if (node.effectiveType() !in setOf(NodeType.HTTP, NodeType.TCP, NodeType.SET, NodeType.IF, NodeType.ASSERT, NodeType.TRANSFORM))
                 throw BadRequestException("에이전트에서 독립 실행할 수 없는 노드입니다.")
             if (node.reqMode == "client") throw BadRequestException("브라우저 요청은 에이전트 작업으로 실행할 수 없습니다.")

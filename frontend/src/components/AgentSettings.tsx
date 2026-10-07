@@ -2,22 +2,24 @@ import { useMemo, type CSSProperties } from 'react'
 import type { GraphNode } from '../api/types'
 import { useWorkspace, type WorkspaceOrigin } from '../app/WorkspaceContext'
 import { useAuth } from '../auth/AuthContext'
+import { usesWorkflowContext } from '../lib/executionAgentSelection'
+import { AppIcon } from './AppIcon'
 import './execution-ui.css'
 export const isBrowserRequest = (node: GraphNode) => node.type === 'http' && node.reqMode === 'client'
-export const usesOwnerResources = (node: GraphNode) => isBrowserRequest(node) || ['form', 'input', 'wait', 'switch'].includes(node.type)
+export const usesOwnerResources = (node: GraphNode) => isBrowserRequest(node) || usesWorkflowContext(node) || ['form', 'input', 'wait'].includes(node.type)
 
 export function nodeAgent(node: GraphNode, owner: WorkspaceOrigin): WorkspaceOrigin {
   if (node.type === 'transform') return 'server'
   if (node.type === 'input' || node.type === 'form') return 'local'
-  if (node.type === 'wait' || node.type === 'switch') return owner
+  if (node.type === 'wait' || usesWorkflowContext(node)) return owner
   return node.executionAgent ?? owner
 }
 export function AgentBadge({ agent, label }: { agent: WorkspaceOrigin; label?: string }) {
-  return <span className={`fl-agent-badge fl-agent-badge--${agent}`}><span aria-hidden="true">{agent === 'local' ? '▣' : '▤'}</span>{label ?? (agent === 'local' ? '내 PC' : '서버')}</span>
+  return <span className={`fl-agent-badge fl-agent-badge--${agent}`}><AppIcon name={agent === 'local' ? 'monitor' : 'server'} size={13} />{label ?? (agent === 'local' ? '내 PC' : '서버')}</span>
 }
 export function NodeAgentBadge({ node }: { node: GraphNode }) {
   const { current } = useWorkspace()
-  if (['start', 'end', 'switch', 'note', 'group'].includes(node.type)) return null
+  if (!['http', 'tcp', 'transform', 'wait', 'form', 'input'].includes(node.type)) return null
   return <AgentBadge agent={nodeAgent(node, current.origin)} label={isBrowserRequest(node) ? '브라우저 요청' : node.type === 'wait' ? `${current.origin === 'local' ? '내 PC' : '서버'} 수신` : node.type === 'form' || node.type === 'input' ? '내 PC 화면' : undefined} />
 }
 export function useNodeResources(node?: GraphNode | null) {
@@ -35,7 +37,7 @@ export function useNodeResources(node?: GraphNode | null) {
 export function AgentSettings({ node, update, disabled }: { node: GraphNode; update: (patch: Partial<GraphNode>) => void; disabled: boolean }) {
   const scope = useWorkspace()
   const { desktop } = useAuth()
-  const selectable = ['http', 'tcp', 'set', 'if', 'assert'].includes(node.type)
+  const selectable = ['http', 'tcp'].includes(node.type)
   const agent = nodeAgent(node, scope.current.origin)
   const browser = isBrowserRequest(node)
   const legacyMock = !!node.agentMock && !browser

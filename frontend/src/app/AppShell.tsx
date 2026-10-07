@@ -101,7 +101,7 @@ export function AppShellTier1({ children, sidebarExtra }: { children: ReactNode;
           <span><AppIcon name="database" size={16} /><b>서버</b><small style={{ color: scope.connected && !scope.remoteError ? 'var(--fl-ok)' : 'var(--fl-text-muted)' }}>● {scope.connected ? scope.remoteError ? '연결 끊김' : '연결됨' : '로그인 필요'}</small></span>
         </div>
         {desktop && <div style={{ ...userChip, marginTop: 'auto' }}>
-          <span style={{ flex: 1, minWidth: 0, fontSize: 12, overflowWrap: 'anywhere', lineHeight: 1.5 }}><strong style={{ display: 'block', fontWeight: 600 }}>{scope.connected ? scope.login ?? '사용자' : '개인 공간 사용 중'}</strong>{scope.connected && <small style={{ display: 'block', color: 'var(--fl-text-muted)', fontSize: 11 }}>서버 로그인됨</small>}</span>
+          <span style={{ flex: 1, minWidth: 0, fontSize: 12, overflowWrap: 'anywhere', lineHeight: 1.5 }}><strong style={{ display: 'block', fontWeight: 600 }}>{scope.connected ? scope.login ?? '사용자' : '개인 공간 사용 중'}</strong>{scope.connected && <small style={{ display: 'block', color: 'var(--fl-text-muted)', fontSize: 12 }}>서버 로그인됨</small>}</span>
           {scope.connected ? <button onClick={logout} aria-label="서버 로그아웃" style={logoutBtn}>⎋</button> : <button onClick={() => setSettingsOpen(true)} style={loginChipBtn}>연결</button>}
         </div>}
 
@@ -110,7 +110,7 @@ export function AppShellTier1({ children, sidebarExtra }: { children: ReactNode;
             <span aria-hidden style={avatar}>{isGuest ? 'G' : me.username.slice(0, 1).toUpperCase()}</span>
             <span style={{ minWidth: 0, flex: 1 }}>
               <span style={{ display: 'block', fontSize: 12.5, fontWeight: 600, color: 'var(--fl-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{isGuest ? '게스트' : me.username}</span>
-              <span style={{ display: 'block', fontSize: 11, color: myStatus === 'PENDING' ? 'var(--fl-waiting)' : 'var(--fl-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              <span style={{ display: 'block', fontSize: 12, color: myStatus === 'PENDING' ? 'var(--fl-waiting)' : 'var(--fl-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {isGuest ? 'AI 는 로그인 필요' : myStatus === 'PENDING' ? '⏳ 승인 대기 중' : `${me.tenant} · ${primaryRole(me.roles)}`}
               </span>
             </span>

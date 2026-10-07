@@ -65,7 +65,8 @@ class SecretService(
         if (!NAME.matches(n)) throw BadRequestException("시크릿 이름은 영문/숫자/._- 만 허용합니다.")
         if (value.isEmpty()) throw BadRequestException("시크릿 값이 비어 있습니다.")
         val env = normalizeEnv(environment)
-        val enc = crypto.encrypt(value)
+        // 이미 Vault에서 암호화한 값은 이중 암호화하지 않고 그대로 보관한다.
+        val enc = if (RoutingCrypto.isTransitFormat(value)) value else crypto.encrypt(value)
         val existing = repo.findByTenantIdAndWorkspaceKeyAndEnvironmentAndName(tenant(), scope, env, n).orElse(null)
         if (existing == null) repo.save(Secret.create(tenant(), n, enc, env).also { it.workspaceKey = scope })
         else existing.encValue = enc

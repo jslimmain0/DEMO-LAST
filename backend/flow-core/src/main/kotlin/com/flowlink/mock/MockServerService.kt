@@ -41,6 +41,7 @@ class MockServerService(
     private val protocolRepo: com.flowlink.core.repository.ProtocolRepository,
     private val env: org.springframework.core.env.Environment,
     private val resourceWorkspace: com.flowlink.workspace.ResourceWorkspace,
+    private val connection: org.springframework.beans.factory.ObjectProvider<com.flowlink.common.host.LocalServerConnection>? = null,
 ) {
 
     @Transactional(readOnly = true)
@@ -214,7 +215,8 @@ class MockServerService(
         if (spec == null || spec.isNull) {
             throw BadRequestException("spec 이 없습니다.")
         }
-        val raw = spec.toString()
+        val stored = normalizeResourceSpec(spec)
+        val raw = stored.toString()
         // 저장 전 파싱 + TCP 규칙 검증 — 깨진 spec 이 게이트웨이에서 500 을 만들거나, 절대 응답 못 하는 규칙이 저장되지 않게 한다
         validateTcp(parseSpec(raw), m.workspaceId)
         // 구조 비교 — 저장된 spec 이 pretty-print(생성 기본값/복원)라도 내용이 같으면 스냅샷을 만들지 않는다
@@ -300,15 +302,17 @@ class MockServerService(
      * 시크릿 값이 실제로 쓰이므로 승인 사용자만(시크릿 쓰기와 같은 게이트) + 대상 Mock 읽기 권한. 결과의 시크릿 값은 마스킹.
      */
     fun tryCodec(id: UUID, req: MockDtos.CodecTryRequest): MockDtos.CodecTryResult {
-        if (workspace.localRuntime) throw com.flowlink.common.error.ForbiddenException("플러그인은 공용·팀 워크스페이스에서만 사용할 수 있습니다.")
         val mock = findReadable(id)
+        val savedSpec = parseSpec(mock.specJson)
+        if (workspace.localRuntime && savedSpec.resourceWorkspaceId != "public") throw com.flowlink.common.error.ForbiddenException("플러그인은 공용·팀 워크스페이스에서만 사용할 수 있습니다.")
         if (!workspace.isApproved(workspace.currentUsername())) throw com.flowlink.common.error.ForbiddenException("코덱 시험은 가입 승인 후 가능합니다(시크릿 값 사용).")
         val codec = req.codec ?: throw BadRequestException("codec 이 없습니다.")
         val side = (req.side ?: "request").lowercase(Locale.ROOT)
-        val scope = secretProvider.scope(tenant(), req.environment, cached = false, workspaceId = mock.workspaceId)
+        val trialSpec = savedSpec.copy(codec = codec, environment = req.environment)
+        val scope = secretProvider.scope(tenant(), req.environment, cached = false, workspaceId = mock.workspaceId, spec = trialSpec)
         val secrets = scope.secrets
         val mapper = json.mapper()
-        val lookup: (String) -> com.flowlink.transform.FlowTransform? = { transforms.get(it, mock.workspaceId).orElse(null) }
+        val lookup: (String) -> com.flowlink.transform.FlowTransform? = scope.transformLookup ?: { transforms.get(it, resourceScope(savedSpec, mock.workspaceId)).orElse(null) }
         val traces = ArrayList<MockCodec.StepTrace>()
         val headersIn = LinkedHashMap<String, String>()
         for ((k, v) in req.headers ?: emptyMap()) headersIn[k.lowercase(Locale.ROOT)] = v
@@ -330,7 +334,7 @@ class MockServerService(
             val out = MockCodec.applyRequest(codec.request, request, ctx, lookup, mapper, traces)
             return MockDtos.CodecTryResult(m(out.bodyText), out.headers.mapValues { m(it.value) }, out.bodyFields.mapValues { m(it.value) }, traces.map { it.copy(input = m(it.input), output = m(it.output)) })
         } catch (e: MockCodec.CodecException) {
-            throw BadRequestException(e.message ?: "코덱 실패")
+            throw BadRequestException(m(e.message ?: "코덱 실패"))
         }
     }
 
@@ -447,6 +451,28 @@ class MockServerService(
         }
     }
 
+    private fun normalizeResourceSpec(source: JsonNode): JsonNode {
+        val spec = parseSpec(source.toString())
+        if (spec.resourceWorkspaceId == null) return source
+        if (spec.resourceWorkspaceId != "public") throw BadRequestException("공통 자원 공간은 public만 선택할 수 있습니다.")
+        if (spec.envSource != null && spec.envSource !in setOf("local", "server")) throw BadRequestException("알 수 없는 환경 출처입니다.")
+        if (!workspace.localRuntime && spec.envSource == "local") throw BadRequestException("서버 Mock에서는 내 PC 환경을 사용할 수 없습니다.")
+        val copy = source.deepCopy<com.fasterxml.jackson.databind.node.ObjectNode>()
+        if (workspace.localRuntime) {
+            val active = connection?.getObject()?.connectionIdentity() ?: throw BadRequestException("PC 서버 연결 정보가 준비되지 않았습니다.")
+            copy.set<JsonNode>("resourceIdentity", json.mapper().valueToTree(com.flowlink.agent.CentralResourceIdentity(active.serverUrl, active.login)))
+            if (spec.envSource == null) copy.put("envSource", "local")
+        } else {
+            copy.remove("resourceIdentity")
+            if (spec.envSource == null) copy.put("envSource", "server")
+        }
+        return copy
+    }
+
+    private fun resourceScope(spec: MockSpec, owner: UUID?): UUID? = if (spec.resourceWorkspaceId == "public") null else owner
+    private fun resourceIdentity(spec: MockSpec): com.flowlink.agent.CentralResourceIdentity? = if (workspace.localRuntime && spec.resourceWorkspaceId == "public")
+        spec.resourceIdentity?.takeIf { it.serverUrl.isNotBlank() } ?: throw BadRequestException("Mock을 저장한 서버 연결 정보가 필요합니다.") else null
+
     /** 쓰기 경로 로드 — 워크스페이스 EDITOR 이상(VIEWER 는 조회만). */
     private fun find(id: UUID): MockServer {
         val m = repository.findByIdAndTenantId(id, tenant())
@@ -555,26 +581,30 @@ class MockServerService(
         val m = findReadable(id)
         val mockSpec = parseSpec(m.specJson)
         val tcp = mockSpec.tcp ?: throw BadRequestException("TCP Mock 이 아닙니다.")
-        val resolve = secretProvider.scope(m.tenantId, mockSpec.environment, cached = false, workspaceId = m.workspaceId).resolver() // 코덱 파라미터의 {{ 이름@secret }}·{{ 키@env }}
+        val scope = secretProvider.scope(m.tenantId, mockSpec.environment, cached = false, workspaceId = m.workspaceId, spec = mockSpec)
+        val resolve = scope.resolver()
         val port = tcpRegistry.listeningPort(id) ?: throw BadRequestException("리스너가 열려 있지 않습니다(Mock 켜짐·프로토콜 선택 확인).")
         val pid = tcp.protocolId?.trim()?.takeIf { it.isNotEmpty() } ?: throw BadRequestException("프로토콜을 먼저 고르세요.")
-        val spec = protocolService.specOf(UUID.fromString(pid), m.tenantId, m.workspaceId)
+        val spec = scope.protocol ?: if (mockSpec.resourceWorkspaceId == "public") protocolService.spec(pid, null, resourceIdentity(mockSpec)) else protocolService.specOf(UUID.fromString(pid), m.tenantId, m.workspaceId)
+        val plugins = scope.codecLookup ?: protocolService.plugins(resourceScope(mockSpec, m.workspaceId), resourceIdentity(mockSpec))
         val key = req.key?.trim()?.takeIf { it.isNotEmpty() } ?: throw BadRequestException("전문(key)을 고르세요.")
         val enc = try {
-            ProtocolCodec.encode(spec, key, req.values ?: emptyMap(), Direction.SEND, protocolService.plugins(m.workspaceId), resolve = resolve)
-        } catch (e: ProtocolCodec.ProtocolException) { throw BadRequestException(e.message ?: "조립 실패") }
+            ProtocolCodec.encode(spec, key, req.values ?: emptyMap(), Direction.SEND, plugins, resolve = resolve)
+        } catch (e: ProtocolCodec.ProtocolException) { throw BadRequestException(scope.mask(e.message ?: "조립 실패")) }
         val x = try {
             TcpClient.exchange("127.0.0.1", port, tcp.timeoutMs?.takeIf { it > 0 } ?: 5000, enc.bytes, spec)
         } catch (e: Exception) { throw BadRequestException("전송 실패: ${e.message}") }
         val d = try {
-            ProtocolCodec.decode(spec, x.response.bytes, Direction.RECV, protocolService.plugins(m.workspaceId), resolve = resolve)
-        } catch (e: ProtocolCodec.ProtocolException) { throw BadRequestException(e.message ?: "응답 해석 실패") }
+            ProtocolCodec.decode(spec, x.response.bytes, Direction.RECV, plugins, resolve = resolve)
+        } catch (e: ProtocolCodec.ProtocolException) { throw BadRequestException(scope.mask(e.message ?: "응답 해석 실패")) }
         val cs = spec.charset()
+        val requestBytes = scope.maskBytes(enc.bytes)
+        val responseBytes = scope.maskBytes(x.response.bytes)
         return MockDtos.TcpSendResult(
-            ProtocolDtos.PreviewResult(enc.bytes.size, TcpBytes.hexDump(enc.bytes), TcpBytes.printable(enc.bytes, cs), enc.fields, emptyList(), enc.warnings),
+            ProtocolDtos.PreviewResult(enc.bytes.size, TcpBytes.hexDump(requestBytes), TcpBytes.printable(requestBytes, cs), enc.fields.map { it.copy(value = scope.mask(it.value)) }, emptyList(), enc.warnings.map(scope::mask)),
             MockDtos.DecodedView(
-                d.messageKey, d.disc, d.header, d.body, TcpBytes.decodeEscaped(x.response.bytes, cs),
-                TcpBytes.hexDump(x.response.bytes), x.response.bytes.size, x.response.chunks, x.response.partial, d.warnings,
+                d.messageKey, d.disc, d.header.mapValues { scope.mask(it.value) }, d.body?.mapValues { scope.mask(it.value) }, TcpBytes.decodeEscaped(responseBytes, cs),
+                TcpBytes.hexDump(responseBytes), x.response.bytes.size, x.response.chunks, x.response.partial, d.warnings.map(scope::mask),
             ),
             x.elapsedMs,
         )
@@ -585,13 +615,16 @@ class MockServerService(
      * 프로토콜을 아직 안 고른 spec 은 규칙 검사를 건너뛴다(편집 중 저장 허용 — 리스너도 안 열린다).
      */
     private fun validateTcp(spec: MockSpec, workspaceId: UUID?) {
-        if (workspace.localRuntime && (listOf(spec.codec) + spec.routesOrEmpty().map { it.codec }).any { !it?.request.isNullOrEmpty() || !it?.response.isNullOrEmpty() })
+        if (spec.resourceWorkspaceId != null && spec.resourceWorkspaceId != "public") throw BadRequestException("공통 자원 공간은 public만 선택할 수 있습니다.")
+        if (spec.envSource != null && spec.envSource !in setOf("local", "server")) throw BadRequestException("알 수 없는 환경 출처입니다.")
+        if (spec.resourceWorkspaceId == "public" && !workspace.localRuntime && spec.envSource == "local") throw BadRequestException("서버 Mock에서는 내 PC 환경을 사용할 수 없습니다.")
+        if (workspace.localRuntime && spec.resourceWorkspaceId != "public" && (listOf(spec.codec) + spec.routesOrEmpty().map { it.codec }).any { !it?.request.isNullOrEmpty() || !it?.response.isNullOrEmpty() })
             throw BadRequestException("개인 Mock에서는 플러그인 코덱을 사용할 수 없습니다. 기존 코덱을 제거하세요.")
         spec.tcp?.port?.let { tcpRegistry.validatePort(it) }
         val tcp = spec.tcp ?: return
         val pid = tcp.protocolId?.trim()
         val proto = if (pid.isNullOrEmpty()) null else try {
-            protocolService.specOf(UUID.fromString(pid), workspaceId = workspaceId)
+            if (spec.resourceWorkspaceId == "public") protocolService.spec(pid, null, resourceIdentity(spec)) else protocolService.specOf(UUID.fromString(pid), workspaceId = workspaceId)
         } catch (e: Exception) { throw BadRequestException("TCP Mock 의 프로토콜을 찾을 수 없습니다: $pid") }
         for ((i, r) in tcp.rulesOrEmpty().withIndex()) {
             if (r.isProxy()) {

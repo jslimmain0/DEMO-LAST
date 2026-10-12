@@ -15,6 +15,24 @@ function load(file) {
 }
 const { useEditorStore: store } = load(path.join(__dirname, '../src/store/editorStore.ts'))
 const { executionAgentPatch } = load(path.join(__dirname, '../src/lib/executionAgentSelection.ts'))
+
+test('authoring exports public resource intent while preserving imported node destinations and raw data', () => {
+  const graph = { name: 'legacy', nodes: [{ id: 'tcp', type: 'tcp', protocolId: 'private-legacy-id', executionAgent: 'local', agentWorkspaceId: 'original-space', agentEnvironment: 'legacy-stage', tcpValues: { value: '{{ TOKEN@env }}' }, customPayload: { nested: ['원본', 4] } }], edges: [], palette: [{ id: 'group', name: 'imported', items: [] }] }
+  store.getState().loadGraph('flow', 'legacy', graph)
+  const exported = JSON.parse(JSON.stringify(store.getState().getGraph()))
+  assert.equal(exported.resourceWorkspaceId, 'public', 'future scheduled/API runs retain the UI shared-resource intent')
+  assert.equal(Object.hasOwn(exported, 'envSource'), false, 'a per-run PC source is not frozen into the flow graph')
+  assert.equal(Object.hasOwn(graph, 'resourceWorkspaceId'), false, 'loading does not mutate a legacy definition')
+  assert.equal(exported.nodes[0].protocolId, 'private-legacy-id', 'an unresolved protocol is not replaced with a shared protocol')
+  assert.equal(exported.nodes[0].agentWorkspaceId, 'original-space')
+  assert.equal(exported.nodes[0].agentEnvironment, 'legacy-stage')
+  assert.deepEqual(exported.nodes[0].customPayload, graph.nodes[0].customPayload)
+  store.getState().importGraph(exported)
+  const roundTrip = JSON.parse(JSON.stringify(store.getState().getGraph()))
+  assert.equal(roundTrip.resourceWorkspaceId, 'public')
+  assert.deepEqual(roundTrip.nodes[0], exported.nodes[0])
+  assert.deepEqual(roundTrip.palette, exported.palette)
+})
 test('mixed selection changes eligible nodes as one undoable action and serializes destination cleanup', () => {
   const data = [
     { id: 'http', type: 'http', executionAgent: 'local', agentWorkspaceId: 'old-space', agentEnvironment: 'old-env' },
@@ -78,5 +96,10 @@ test('selection collapse and deletion preserve unselected nodes and undo restore
   assert.equal(store.getState().setSelectionCollapsed(true), 0)
   assert.equal(store.getState().duplicateSelection(), 0)
   assert.equal(store.getState().pasteClipboard(), 0)
+  const history = store.getState().past
+  store.setState({ dirty: false })
+  store.getState().updateNodeData('0', { name: '읽기 전용에서 변경 시도' })
+  assert.equal(store.getState().dirty, false)
+  assert.equal(store.getState().past, history)
   assert.deepEqual(store.getState().nodes, nodes)
 })

@@ -1,8 +1,11 @@
 package com.flowlink.agent
 
+import com.fasterxml.jackson.annotation.JsonInclude
 import com.flowlink.core.graph.GraphNode
 import com.flowlink.execution.engine.NodeResult
 import java.util.UUID
+
+data class CentralResourceIdentity(val serverUrl: String, val login: String? = null)
 
 data class AgentRunOptions(
     val executionId: UUID, val deviceId: String, val ownerAgent: String,
@@ -10,6 +13,8 @@ data class AgentRunOptions(
     val serverUrl: String? = null, val login: String? = null,
     val dependencyHashes: Map<String, Map<String, String>> = emptyMap(),
     val agentEnvironments: Map<String, String> = emptyMap(),
+    @get:JsonInclude(JsonInclude.Include.NON_NULL) val resourceWorkspaceId: String? = null,
+    @get:JsonInclude(JsonInclude.Include.NON_NULL) val envSource: String? = null,
 )
 
 /** 바인딩에 필요한 값만 전달한다. 환경과 시크릿은 목적지에서 해석한다. */
@@ -20,6 +25,9 @@ data class AgentNodeRequest(
     val crossBoundary: Boolean = true,
     val allowedOutputs: List<String> = emptyList(), val allowedRequestKeys: List<String> = emptyList(),
     val dependencyHashes: Map<String, String> = emptyMap(),
+    @get:JsonInclude(JsonInclude.Include.NON_NULL) val resourceWorkspaceId: String? = null,
+    @get:JsonInclude(JsonInclude.Include.NON_NULL) val resourceIdentity: CentralResourceIdentity? = null,
+    @get:JsonInclude(JsonInclude.Include.NON_NULL) val envSource: String? = null,
 )
 
 data class AgentNodeResult(val result: NodeResult, val durationMs: Long)

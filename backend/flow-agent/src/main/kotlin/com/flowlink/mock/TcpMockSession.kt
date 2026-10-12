@@ -32,6 +32,7 @@ class TcpMockSession(
     private val mask: (String) -> String = { it },
     private val sleeper: (Long) -> Unit = { Thread.sleep(it) },
     private val env: Map<String, String> = emptyMap(),
+    private val verifyResourceAccess: () -> Unit = {},
 ) {
     /** 코덱 파라미터 안의 `{{ 이름@secret }}`·`{{ 키@env }}` — 이 Mock 의 환경 스코프로 푼다. */
     private val resolve: (String) -> String = MockSecretProvider.Scope(secrets, env).resolver()
@@ -57,6 +58,10 @@ class TcpMockSession(
 
     /** 프레임 하나 처리. false = 연결을 끊어야 함(reset). */
     fun handleFrame(frame: Framer.Frame, output: OutputStream, onReset: () -> Unit): Boolean {
+        try { verifyResourceAccess() } catch (_: Exception) {
+            log(entry("in", "none", null, emptyMap(), frame.bytes, frame.chunks, null, "중앙 Mock 연결 계정을 확인하지 못해 연결을 종료합니다.", "error", frame.partial))
+            return false
+        }
         val decoded = try { ProtocolCodec.decode(spec, frame.bytes, Direction.SEND, plugins, resolve = resolve) } catch (e: ProtocolCodec.ProtocolException) {
             log(entry("in", "none", null, emptyMap(), frame.bytes, frame.chunks, null, e.message, "error", frame.partial)); return true
         } catch (e: Exception) { // 코덱 플러그인 등에서 튀어나온 예외 — 연결을 조용히 죽이지 않고 로그 행으로

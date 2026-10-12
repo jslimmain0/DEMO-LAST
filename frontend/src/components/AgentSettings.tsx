@@ -1,6 +1,6 @@
 import { useMemo, type CSSProperties } from 'react'
 import type { GraphNode } from '../api/types'
-import { useWorkspace, type WorkspaceOrigin } from '../app/WorkspaceContext'
+import { useCentralApi, useWorkspace, type WorkspaceOrigin } from '../app/WorkspaceContext'
 import { useAuth } from '../auth/AuthContext'
 import { usesWorkflowContext } from '../lib/executionAgentSelection'
 import { AppIcon } from './AppIcon'
@@ -24,14 +24,21 @@ export function NodeAgentBadge({ node }: { node: GraphNode }) {
 }
 export function useNodeResources(node?: GraphNode | null) {
   const scope = useWorkspace()
+  const central = useCentralApi()
   const { desktop } = useAuth()
   const browser = !!node && isBrowserRequest(node)
   const ownerResources = !!node && usesOwnerResources(node)
   const agent = node && !ownerResources ? nodeAgent(node, scope.current.origin) : scope.current.origin
-  const workspaceId = node?.type === 'transform' || ownerResources ? scope.current.id : agent === 'local' ? (scope.workspaces.find(w => w.origin === 'local')?.id ?? 'local') : node?.agentWorkspaceId ?? (scope.current.origin === 'server' ? scope.current.id : 'public')
+  const workspaceId = node?.type === 'transform' ? 'public' : ownerResources ? scope.current.id : agent === 'local' ? (scope.workspaces.find(w => w.origin === 'local')?.id ?? 'local') : node?.agentWorkspaceId ?? (scope.current.origin === 'server' ? scope.current.id : 'public')
   const { agentApi } = scope
-  const api = useMemo(() => agentApi(agent, workspaceId), [agentApi, agent, workspaceId])
-  return { agent, workspaceId, api, crossBoundary: agent !== scope.current.origin || workspaceId !== scope.current.id, key: ['agent-resources', agent, agent === 'server' ? scope.remoteKey : 'pc', workspaceId] as const, available: node?.type === 'transform' && scope.current.origin === 'local' ? false : browser || (agent === 'local' ? !!desktop : scope.connected) }
+  const api = useMemo(() => {
+    const destination = agentApi(agent, workspaceId)
+    return { ...destination, secretsApi: central.secretsApi, protocolsApi: central.protocolsApi, pluginsApi: central.pluginsApi, transformsApi: central.transformsApi, codecsApi: central.codecsApi }
+  }, [agentApi, agent, workspaceId, central])
+  return { agent, workspaceId, api, crossBoundary: agent !== scope.current.origin || workspaceId !== scope.current.id,
+    key: ['agent-resources', 'central', scope.remoteKey, 'public'] as const,
+    environmentKey: ['agent-environments', agent, agent === 'server' ? scope.remoteKey : 'pc', workspaceId] as const,
+    available: ['tcp', 'transform'].includes(node?.type ?? '') ? scope.connected : browser || (agent === 'local' ? !!desktop : scope.connected) }
 }
 
 export function AgentSettings({ node, update, disabled }: { node: GraphNode; update: (patch: Partial<GraphNode>) => void; disabled: boolean }) {

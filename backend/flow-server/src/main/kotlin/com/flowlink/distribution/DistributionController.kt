@@ -51,7 +51,7 @@ class DistributionController(
         val html = ClassPathResource("static/download.html").inputStream.use { it.readBytes().toString(Charsets.UTF_8) }
         val base = (req.contextPath.trimEnd('/') + "/").replace("&", "&amp;").replace("\"", "&quot;").replace("<", "&lt;").replace(">", "&gt;")
         return ResponseEntity.ok().contentType(MediaType.TEXT_HTML).header("Cache-Control", "no-store")
-            .body(html.replace("<base href=\"/\">", "<base href=\"$base\">"))
+            .body(html.replace("<base href=\"./\">", "<base href=\"$base\">"))
     }
 
     @GetMapping("/api/v1/distribution")

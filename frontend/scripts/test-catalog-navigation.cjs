@@ -40,17 +40,19 @@ console.log('PASS: home/folder round trip; direct entry; account/server/workspac
 
 let currentScope = scope
 let history = [{ pathname: '/flows', search: '?space=server%3Ateam', hash: '', state: null, key: 1 }]
-let index = 0, key = 1, ref
+let index = 0, key = 1, ref, navigationType = 'POP', queued = null
 const location = () => history[index]
 const navigate = (to, options = {}) => {
+  if (queued) { queued.push({ to, options }); return }
   const parsed = new URL(to, 'https://app.test')
   const entry = { pathname: parsed.pathname, search: parsed.search, hash: parsed.hash, state: options.state, key: ++key }
+  navigationType = options.replace ? 'REPLACE' : 'PUSH'
   if (options.replace) history[index] = entry
   else { history = history.slice(0, index + 1); history.push(entry); index++ }
 }
 const hook = load('../src/lib/useCatalogNavigation.ts', {
   react: { useRef: initial => ref ?? (ref = { current: initial }) },
-  'react-router-dom': { useLocation: location, useNavigate: () => navigate },
+  'react-router-dom': { useLocation: location, useNavigate: () => navigate, useNavigationType: () => navigationType },
   '../app/WorkspaceContext': { useWorkspace: () => currentScope },
   './catalogNavigation': resolver,
 })
@@ -72,6 +74,7 @@ list = hook.useCatalogNavigation('flows')
 assert.equal(list.view.search, 'settlement')
 assert.equal(list.view.page, 2)
 index -= 2 // Native browser Back reaches the original list entry.
+navigationType = 'POP'
 ref = undefined
 list = hook.useCatalogNavigation('flows')
 assert.equal(list.view.search, 'settlement')
@@ -104,3 +107,79 @@ const catalog = load('../src/lib/catalog.ts')
 assert.equal(catalog.catalogPage(26, 99, 25).page, 2, 'deleted results clamp the restored page')
 assert.equal(catalog.catalogPage(0, 99, 25).page, 1)
 console.log('PASS: Mock search/sort/filter/page round trip, batched filter reset, stale-page clamp')
+
+currentScope = scope
+history = [{ pathname: '/mocks', search: '?space=server%3Ateam&serverSpace=chosen-team', hash: '', state: null, key: ++key }]; index = 0; ref = undefined
+mocks = hook.useCatalogNavigation('mocks')
+mocks.update({ search: 'callback', kind: 'TCP', filter: 'fail', sort: 'port', page: 3, size: 50 })
+mocks = hook.useCatalogNavigation('mocks')
+const pcMock = mocks.detail('same-id', { origin: 'local', id: 'pc-id' })
+assert.equal(pcMock.to, '/mocks/same-id?space=local%3Apc-id')
+navigate(pcMock.to, { state: pcMock.state })
+currentScope = { ...scope, scopeKey: 'local:pc:pc-id', current: { origin: 'local', id: 'pc-id' } }; ref = undefined
+const pcBack = hook.useCatalogReturn('mocks')
+assert.equal(new URLSearchParams(pcBack.to.split('?')[1]).get('serverSpace'), 'chosen-team')
+assert.equal(new URLSearchParams(pcBack.to.split('?')[1]).get('space'), 'server:team')
+assert.equal(pcBack.state.catalog.view.page, 3)
+const pcNavigator = hook.useCatalogNavigation('mocks')
+const anotherServerMock = pcNavigator.detail('same-id', { origin: 'server', id: 'other-team' })
+navigate(anotherServerMock.to, { state: anotherServerMock.state })
+currentScope = { ...scope, scopeKey: 'server:https://example.test:alice:other-team', current: { origin: 'server', id: 'other-team' } }; ref = undefined
+const unifiedBack = hook.useCatalogReturn('mocks')
+assert.equal(unifiedBack.to, pcBack.to, 'sidebar detail-to-detail navigation keeps the original unified catalog URL')
+assert.equal(unifiedBack.state.catalog.view.search, 'callback')
+assert.equal(unifiedBack.state.catalog.view.kind, 'TCP')
+assert.equal(unifiedBack.state.catalog.view.filter, 'fail')
+assert.equal(unifiedBack.state.catalog.view.sort, 'port')
+assert.equal(unifiedBack.state.catalog.view.page, 3)
+navigate(unifiedBack.to, { state: unifiedBack.state }); currentScope = scope; ref = undefined
+mocks = hook.useCatalogNavigation('mocks')
+assert.equal(mocks.view.page, 3)
+mocks.update({ page: 1 }, '?space=server%3Ateam&serverSpace=new-team')
+mocks = hook.useCatalogNavigation('mocks')
+assert.equal(mocks.view.search, 'callback')
+assert.equal(mocks.view.kind, 'TCP')
+assert.equal(mocks.view.page, 1)
+assert.equal(new URLSearchParams(location().search).get('serverSpace'), 'new-team', 'server filter updates URL and preserved catalog state together')
+for (const changed of [{ ...scope, remoteKey: 'https://example.test:bob:true' }, { ...scope, remoteKey: 'https://other.test:alice:true' }]) {
+  assert.equal(resolver.catalogReturnLink(anotherServerMock.state, 'mocks', changed).state.catalog, undefined, 'unified filters cannot cross server/account boundaries')
+}
+for (const to of ['//evil.test/mocks?space=local:pc-id', '/mocks/same-id?space=local:pc-id', '/mocks?space=local:', '/mocks?space=local:pc-id&space=server:team']) {
+  assert.equal(resolver.catalogReturnLink({ catalogReturn: { ...anotherServerMock.state.catalogReturn, to } }, 'mocks', scope).state.catalog, undefined, 'invalid return path rejected')
+}
+console.log('PASS: unified Mock PC/server/detail/sidebar round trip retains search/kind/serverSpace/page; account boundary and invalid targets reject')
+
+currentScope = { ...scope, remoteKey: 'https://example.test:bob:true' }
+ref = undefined
+const anotherAccount = hook.useCatalogNavigation('mocks')
+assert.equal(new URLSearchParams(anotherAccount.search).has('serverSpace'), false, 'live account change drops previous account server filter')
+assert.equal(anotherAccount.view.search, '')
+const afterAccountChange = anotherAccount.detail('pc-item', { origin: 'local', id: 'pc-id' })
+assert.equal(new URLSearchParams(afterAccountChange.state.catalogReturn.to.split('?')[1]).has('serverSpace'), false, 'opening an item cannot revive a foreign server filter')
+history = [{ pathname: '/mocks', search: '?space=local%3Apc-id&serverSpace=explicit-team', state: null, key: ++key }]; index = 0; ref = undefined
+assert.equal(new URLSearchParams(hook.useCatalogNavigation('mocks').search).get('serverSpace'), 'explicit-team', 'an explicit fresh deep link remains valid')
+console.log('PASS: account changes clear historical server filters while fresh explicit filters stay usable')
+
+currentScope = scope
+history = [{ pathname: '/mocks', search: '?space=server%3Ateam', state: null, key: ++key }]; index = 0; ref = undefined; navigationType = 'POP'
+mocks = hook.useCatalogNavigation('mocks')
+queued = []
+mocks.update({ page: 1 }, '?space=server%3Ateam&serverSpace=public')
+mocks.update({ search: '결제', page: 1 })
+const requests = queued; queued = null
+assert.equal(new URLSearchParams(requests[1].to.split('?')[1]).get('serverSpace'), 'public', 'rapid search inherits the just-selected server filter before router commit')
+navigate(requests[0].to, requests[0].options)
+mocks = hook.useCatalogNavigation('mocks')
+assert.equal(mocks.view.search, '결제', 'intermediate router commit cannot clear freshly typed search')
+const rapidOpen = mocks.detail('payment-id', { origin: 'server', id: 'public' })
+assert.equal(rapidOpen.state.catalogReturn.catalog.view.search, '결제')
+assert.equal(new URLSearchParams(rapidOpen.state.catalogReturn.to.split('?')[1]).get('serverSpace'), 'public')
+navigate(requests[1].to, requests[1].options)
+assert.equal(hook.useCatalogNavigation('mocks').view.search, '결제')
+queued = []
+mocks = hook.useCatalogNavigation('mocks')
+mocks.update({ search: '취소' })
+queued = null
+history[index] = { ...history[index], state: null, search: '?space=server%3Ateam', key: ++key }; navigationType = 'POP'
+assert.equal(hook.useCatalogNavigation('mocks').view.search, '', 'explicit browser Back wins over pending input')
+console.log('PASS: rapid server-filter/search/open survives intermediate router commits; explicit browser Back restores its history')

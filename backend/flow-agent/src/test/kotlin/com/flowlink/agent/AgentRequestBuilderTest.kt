@@ -40,6 +40,54 @@ class AgentRequestBuilderTest {
         assertThrows(BadRequestException::class.java) { builder.build(http, listOf(http), ExecutionContext(), run.copy(ownerAgent = "local"), 0) }
     }
 
+    @Test fun `personal common-resource opt-in delegates transform and preserves explicit PC environment snapshot`() {
+        val n = node("""{"id":"plugin","type":"transform","transformId":"test","executionAgent":"local","agentWorkspaceId":"old-team","agentEnvironment":"old-env"}""")
+        val ctx = ExecutionContext().apply { putOutput("env", mapOf("URL" to "pc-value")); putSeed("secret", mapOf("TOKEN" to "never-transfer")) }
+        val common = run.copy(ownerAgent = "local", workspaceId = UUID.randomUUID().toString(), envName = "PC 개발", agentEnvironments = emptyMap(),
+            serverUrl = "https://company.test", login = "alice", resourceWorkspaceId = "public", envSource = "local")
+        val request = builder.build(n, listOf(n), ctx, common, 0)
+        assertEquals("server", request.node.executionAgent)
+        assertEquals("public", request.workspaceId)
+        assertEquals("public", request.resourceWorkspaceId)
+        assertEquals(CentralResourceIdentity("https://company.test", "alice"), request.resourceIdentity)
+        assertEquals("local", request.envSource)
+        assertEquals("PC 개발", request.envName)
+        assertEquals(mapOf("URL" to "pc-value"), request.seeds["env"])
+        assertTrue(request.crossBoundary)
+        assertFalse(mapper.writeValueAsString(request).contains("never-transfer"))
+    }
+
+    @Test fun `common server secret references remain tokens and destination environment override wins`() {
+        val n = node("""{"id":"n","type":"http","executionAgent":"server","rawHeaders":"Authorization: {{ TOKEN@secret }}"}""")
+        val ctx = ExecutionContext().apply { putOutput("env", mapOf("URL" to "owner-only")); putSeed("secret", mapOf("TOKEN" to "never-transfer")) }
+        val common = run.copy(ownerAgent = "local", resourceWorkspaceId = "public", envSource = "server", agentEnvironments = emptyMap(), serverUrl = "https://company.test")
+        val request = builder.build(n, listOf(n), ctx, common, 0)
+        assertEquals("server", request.envSource)
+        assertTrue(request.seeds.isEmpty())
+        assertFalse(mapper.writeValueAsString(request).contains("never-transfer"))
+        val overridden = builder.build(n.copy(agentEnvironment = "destination"), listOf(n), ctx, common, 0)
+        assertEquals("server", overridden.envSource)
+        assertEquals("destination", overridden.envName)
+        assertTrue(overridden.seeds.isEmpty())
+        assertThrows(BadRequestException::class.java) { builder.build(n, listOf(n), ctx, common.copy(resourceWorkspaceId = UUID.randomUUID().toString()), 0) }
+        assertThrows(BadRequestException::class.java) { builder.build(n, listOf(n), ctx, common.copy(envSource = "unknown"), 0) }
+        val team = common.copy(ownerAgent = "server", workspaceId = UUID.randomUUID().toString(), envSource = "local")
+        val explicitCommon = builder.build(n.copy(agentEnvironment = ""), listOf(n), ctx, team, 0)
+        assertEquals("", explicitCommon.envName)
+        assertEquals("server", explicitCommon.envSource)
+        assertTrue(explicitCommon.seeds.isEmpty())
+    }
+
+    @Test fun `old request JSON omits new opt-in fields and round trips without changing defaults`() {
+        val n = node("""{"id":"n","type":"http","executionAgent":"local"}""")
+        val request = builder.build(n, listOf(n), ExecutionContext(), run, 0)
+        val text = mapper.writeValueAsString(request)
+        assertFalse(text.contains("resourceWorkspaceId"))
+        assertFalse(text.contains("resourceIdentity"))
+        assertFalse(text.contains("envSource"))
+        assertEquals(request, mapper.readValue(text, AgentNodeRequest::class.java))
+    }
+
     @Test fun `crossing request preserves typed required inputs and resolves environment at destination`() {
         val ctx = ExecutionContext().apply {
             putOutput("env", mapOf("marker" to "SERVER", "ignored" to "private"))

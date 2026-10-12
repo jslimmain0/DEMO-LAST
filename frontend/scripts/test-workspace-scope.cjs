@@ -7,7 +7,7 @@ const vm = require('node:vm')
 const ts = require('typescript')
 const axios = require('axios')
 
-const source = fs.readFileSync(path.join(__dirname, '../src/api/client.ts'), 'utf8').replaceAll('import.meta.env.DEV', 'false')
+const source = fs.readFileSync(path.join(__dirname, '../src/api/client.ts'), 'utf8').replaceAll('import.meta.env.DEV', 'false').replaceAll('import.meta.env.VITE_FRONTEND_MOCK', 'undefined')
 const code = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } }).outputText
 const exportsObject = {}
 vm.runInNewContext(code, { exports: exportsObject, setTimeout: fn => setTimeout(fn, 0), require: name => name === 'axios' ? axios : name === '../lib/appBase' ? { appBase: () => '/flowlink' } : require(name), window: { location: { origin: 'http://localhost:18180' } } })
@@ -17,6 +17,12 @@ const local = axios.create({ baseURL: 'http://localhost:18180/api/v1', adapter }
 const remote = axios.create({ baseURL: 'http://localhost:18180/api/v1/remote', adapter })
 const personal = exportsObject.createApi(local, 'personal-id')
 const team = exportsObject.createApi(remote, 'team-id', 'https://flow.company/flowlink', 'alice')
+const mockSource = fs.readFileSync(path.join(__dirname, '../src/api/client.ts'), 'utf8').replaceAll('import.meta.env.DEV', 'true').replaceAll('import.meta.env.VITE_FRONTEND_MOCK', "'true'")
+const mockCode = ts.transpileModule(mockSource, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } }).outputText
+const mockExports = {}
+vm.runInNewContext(mockCode, { exports: mockExports, require: name => name === 'axios' ? axios : name === '../lib/appBase' ? { appBase: () => '' } : require(name), window: { location: { origin: 'http://127.0.0.1:5174' } } })
+assert.equal(mockExports.createApi(remote, 'public', 'https://company.invalid').mockBaseUrl('payments'), 'http://127.0.0.1:5174/mock/ws/public/payments')
+assert.equal(mockExports.createApi(local, 'local').resourceUrl('/hooks/run'), 'http://127.0.0.1:5174/hooks/run')
 
 async function run() {
   await personal.environmentsApi.put('dev', { marker: 'PERSONAL' })

@@ -38,6 +38,8 @@ class ManagedExecutionIntegrationTest {
     @Autowired lateinit var taskRows: AgentTaskRepository
     @Autowired lateinit var json: JsonService
     @Autowired lateinit var workspaces: com.flowlink.workspace.WorkspaceService
+    @Autowired lateinit var environments: com.flowlink.environment.EnvironmentService
+    @Autowired lateinit var plugins: com.flowlink.plugin.PluginScriptService
     @SpyBean lateinit var crypto: com.flowlink.common.crypto.CryptoProvider
 
     private fun withHttpTarget(block: (String) -> Unit) {
@@ -175,6 +177,52 @@ class ManagedExecutionIntegrationTest {
         assertThat(records.single().outputJson).contains("17")
     }
 
+    @Test fun `경로 스위치 단일 테스트는 선택 트랙만 출력하고 다른 노드는 실행하지 않는다`() {
+        val id = flow(
+            """{"id":"selected","type":"switch","switchActive":"2","switchPorts":[{"id":"1","label":"처음"},{"id":"2","label":"선택"}]}""",
+            """{"id":"next","type":"assert","condition":"false"}""",
+        )
+        val run = executions.run(id, RunRequest(null, null, null, null, onlyNodeId = "selected"))
+        succeeded(run.id)
+        val records = nodes.findByExecutionIdOrderBySeqAsc(run.id)
+        assertThat(records).hasSize(1)
+        assertThat(records.single().nodeId).isEqualTo("selected")
+        assertThat(json.readTree(records.single().outputJson!!).path("branch").asText()).isEqualTo("2")
+        assertThat(taskRows.findByExecutionId(run.id)).isEmpty()
+    }
+
+    @Test fun `단일 테스트 재실행은 원래 버전 입력 환경 상류 값과 선택 노드를 보존한다`() {
+        val id = flow(
+            """{"id":"first","type":"set","vars":[{"key":"amount","value":"wrong"}]}""",
+            """{"id":"selected","type":"set","vars":[{"key":"copy","value":"{{amount@first}}"},{"key":"stage","value":"{{STAGE@env}}"},{"key":"order","value":"{{order@input}}"}]}""",
+        )
+        val request = RunRequest(json.readTree("{\"order\":\"original\"}"), json.readTree("{\"STAGE\":\"DEV\"}"), null, null,
+            upstream = json.readTree("{\"first\":{\"amount\":17}}"), onlyNodeId = "selected",
+            agentDeviceId = device, clientExecutionId = UUID.randomUUID(), agentEnvironments = mapOf("server:public" to ""))
+        val original = executions.run(id, request)
+        succeeded(original.id)
+        val saved = rows.findById(original.id).get().inputJson!!
+        assertThat(saved).contains("encryptedOptions").doesNotContain("\"onlyNodeId\"", "\"STAGE\"", "\"upstream\"", device)
+        val originalVersion = versions.findById(original.flowVersionId).get()
+        versions.save(FlowVersion.create(id, 2, originalVersion.name, originalVersion.graphJson, null, "dev"))
+        flows.findById(id).get().let { it.currentVersion = 2; flows.save(it) }
+
+        val rerun = executions.rerun(original.id, RunRequest(null, null, null, null))
+        succeeded(rerun.id)
+        assertThat(rerun.id).isNotEqualTo(original.id)
+        assertThat(rerun.flowVersionId).isEqualTo(original.flowVersionId)
+        assertThat(rows.findById(rerun.id).get().agentDeviceId).isEqualTo("server")
+        val records = nodes.findByExecutionIdOrderBySeqAsc(rerun.id)
+        assertThat(records).hasSize(1)
+        assertThat(records.single().nodeId).isEqualTo("selected")
+        val output = json.readTree(records.single().outputJson!!)
+        assertThat(output.path("copy").asInt()).isEqualTo(17)
+        assertThat(output.path("stage").asText()).isEqualTo("DEV")
+        assertThat(output.path("order").asText()).isEqualTo("original")
+        assertThat(json.toJson(executions.get(rerun.id))).doesNotContain("encryptedOptions", "FlowLink.ExecutionRequest.v1")
+        assertThat(json.toJson(executions.listForFlow(id, 10))).doesNotContain("encryptedOptions", "FlowLink.ExecutionRequest.v1")
+    }
+
     @Test fun `계산 노드의 과거 목적지는 무시하고 전체 단일 관리 실행이 같은 환경을 사용한다`() {
         val id = flow(
             """{"id":"selected","type":"set","executionAgent":"local","agentWorkspaceId":"missing-team","agentEnvironment":"missing-env","agentMock":"missing-mock","agentOutputs":[],"vars":[{"key":"marker","value":"{{MARKER@env}}"},{"key":"amount","value":"{{amount@input}}"}]}""",
@@ -245,5 +293,64 @@ class ManagedExecutionIntegrationTest {
         assertThat(run.status).isEqualTo(ExecutionStatus.FAILED)
         assertThat(run.error).contains("목적지 환경")
         assertThat(taskRows.findByExecutionId(run.id)).isEmpty()
+    }
+
+    @Test fun `팀 흐름에서 서버 공통 환경을 골라도 같은 이름의 팀 변수와 합치지 않는다`() {
+        val team = workspaces.createTeam("환경 출처 ${UUID.randomUUID()}")
+        val name = "shared-${UUID.randomUUID()}"
+        environments.put(name, mapOf("marker" to "CENTRAL"), "public")
+        environments.put(name, mapOf("marker" to "TEAM", "teamOnly" to "private-team-value"), team.id)
+        val id = flow(
+            """{"id":"copy","type":"set","vars":[{"key":"marker","value":"{{marker@env}}"}]}""",
+            """{"id":"check","type":"assert","condition":"{{teamOnly@env}} == 'private-team-value'"}""",
+        )
+        flows.findById(id).get().let { it.workspaceId = UUID.fromString(team.id); flows.save(it) }
+        val run = executions.run(id, RunRequest(null, json.readTree("{}"), name, null,
+            envSource = "server", resourceWorkspaceId = "public"))
+        assertThat(executions.get(run.id).status).isEqualTo(ExecutionStatus.FAILED)
+        assertThat(executions.get(run.id).error).contains("teamOnly")
+        val value = nodes.findByExecutionIdOrderBySeqAsc(run.id).first { it.nodeId == "copy" }.outputJson
+        assertThat(value).contains("CENTRAL").doesNotContain("TEAM", "private-team-value")
+    }
+
+    @Test fun `서버 흐름의 PC 환경은 명시한 변수 묶음만 사용한다`() {
+        val id = flow("""{"id":"copy","type":"set","vars":[{"key":"marker","value":"{{marker@env}}"}]}""")
+        val run = executions.run(id, request().copy(envName = "only-on-pc", env = json.readTree("""{"marker":"PC"}"""),
+            envSource = "local", resourceWorkspaceId = "public"))
+        succeeded(run.id)
+        assertThat(nodes.findByExecutionIdOrderBySeqAsc(run.id).first { it.nodeId == "copy" }.outputJson).contains("PC")
+        assertThrows<BadRequestException> { executions.run(id, RunRequest(null, null, "only-on-pc", null, envSource = "local")) }
+    }
+
+    @Test fun `PC 작업의 요청 상세를 이력에서 요약으로 덮어쓰지 않는다`() {
+        val id = flow("""{"id":"pc","type":"http","executionAgent":"local","baseUrl":"http://unused.test"}""")
+        val run = executions.run(id, request().copy(onlyNodeId = "pc"))
+        val task = pending(run.id, "pc")
+        tasks.complete(task.taskId, AgentCompletion(device, task.claimToken!!,
+            NodeResult.ok(200, "POST http://127.0.0.1/orders\nAuthorization: ••••••\n{\"amount\":32100}", "완료", emptyMap<String, Any?>())))
+        succeeded(run.id)
+        val record = nodes.findByExecutionIdOrderBySeqAsc(run.id).single()
+        assertThat(record.requestText).contains("POST http://127.0.0.1/orders", "Authorization: ••••••", "32100")
+    }
+
+    @Test fun `저장된 공통 자원 선택은 UI 실행 옵션 없이도 팀 흐름의 중앙 변환을 실행한다`() {
+        val pluginId = "shared-${UUID.randomUUID()}"
+        val plugin = plugins.create(com.flowlink.plugin.PluginScriptDtos.SaveRequest("공통 변환",
+            "({id:'$pluginId',label:'공통',inputs:[],outputs:[{key:'result'}],apply(){return {result:'CENTRAL_PLUGIN'}}})"))
+        plugins.submit(plugin.id); plugins.approve(plugin.id)
+        val team = workspaces.createTeam("공통 그래프 ${UUID.randomUUID()}")
+        val id = flow("""{"id":"convert","type":"transform","transformId":"$pluginId","outputs":[{"key":"result"}]}""")
+        flows.findById(id).get().let { it.workspaceId = UUID.fromString(team.id); flows.save(it) }
+        val old = versions.findByFlowIdAndVersionNo(id, 1).get()
+        val graph = json.readTree(old.graphJson) as com.fasterxml.jackson.databind.node.ObjectNode
+        graph.put("resourceWorkspaceId", "public")
+        versions.save(FlowVersion.create(id, 2, old.name, graph.toString(), null, "dev"))
+        flows.findById(id).get().let { it.currentVersion = 2; flows.save(it) }
+        val run = executions.run(id, null)
+        succeeded(run.id)
+        val record = nodes.findByExecutionIdOrderBySeqAsc(run.id).first { it.nodeId == "convert" }
+        assertThat(record.outputJson).contains("CENTRAL_PLUGIN")
+        assertThat(record.executionAgent).isEqualTo("server")
+        assertThrows<BadRequestException> { executions.runSingleNode(id, "convert") }
     }
 }

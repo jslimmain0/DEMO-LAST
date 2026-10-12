@@ -1,5 +1,5 @@
 import type { CSSProperties } from 'react'
-import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, lazy, memo, useEffect, useMemo, useRef, useState } from 'react'
 import type { BindableSource } from '../binding/upstream'
 import { previewDocument, renderTemplatePreview, templateTokens } from '../lib/templatePreview'
 import type { CodeEditorHandle, CodeLang, CodeStatus, EditorLang } from './CodeEditor'
@@ -8,9 +8,11 @@ import { Modal } from './Modal'
 import { toast } from './toast'
 import { ui } from '../design/ui'
 import { AppIcon } from './AppIcon'
+import './bigTextEditor.css'
 
 // CodeMirror(하이라이트·문법 체크·정렬·자동완성)는 무거워서 편집기를 열 때만 로드
 const CodeEditorLazy = lazy(() => import('./CodeEditor'))
+const EMPTY_SAMPLES: Record<string, string> = {}
 
 export type BigTextLang = CodeLang | 'text' | 'auto'
 
@@ -40,6 +42,7 @@ export function BigTextEditor({
   language = 'auto',
   sources = [],
   samples,
+  readOnly = false,
 }: {
   title: string
   value: string
@@ -50,6 +53,7 @@ export function BigTextEditor({
   language?: BigTextLang
   sources?: BindableSource[]         // `{{` 자동완성 소스(예상 요청·상태·시크릿·상위 노드 출력)
   samples?: Record<string, string>   // 미리보기 샘플 값 초기 세트(`key@source` → 값)
+  readOnly?: boolean
 }) {
   const [lang, setLang] = useState<EditorLang>(() => (language === 'auto' ? detectLang(value) : language))
   const [wrap, setWrap] = useState(() => { try { return localStorage.getItem('fl:bigedit:wrap') !== '0' } catch { return true } })
@@ -57,10 +61,12 @@ export function BigTextEditor({
   const [status, setStatus] = useState<CodeStatus | null>(null)
   const editorRef = useRef<CodeEditorHandle>(null)
   const canPreview = lang === 'html' || lang === 'json'
-  const canFormat = lang !== 'text'
+  const canFormat = lang !== 'text' && !readOnly
+  const change = (next: string) => { if (!readOnly) onChange(next) }
   const toggleWrap = () => setWrap((v) => { try { localStorage.setItem('fl:bigedit:wrap', v ? '0' : '1') } catch { /* */ } return !v })
   const togglePreview = () => setPreview((v) => { try { localStorage.setItem('fl:bigedit:preview', v ? '0' : '1') } catch { /* */ } return !v })
   const format = () => {
+    if (readOnly) return
     const r = editorRef.current?.format()
     if (r === 'fail') toast(`정렬 실패 — ${lang === 'json' ? 'JSON 문법을 확인하세요' : '문법을 확인하세요'}(원문 유지)`, 'error')
     else if (r === 'noop') toast('이미 정렬돼 있습니다.', 'info')
@@ -68,7 +74,7 @@ export function BigTextEditor({
     editorRef.current?.focus()
   }
   return (
-    <Modal onClose={onClose} ariaLabel={title} width="min(1500px, 96vw)" maxWidth="96vw" height="92vh" maxHeight="94vh" zIndex={320} card={{ padding: 0, display: 'flex', flexDirection: 'column' }}>
+    <Modal onClose={onClose} ariaLabel={title} width="min(1500px, 96vw)" maxWidth="96vw" height="92vh" maxHeight="94vh" zIndex={320} card={{ padding: 0, display: 'flex', flexDirection: 'column', containerType: 'inline-size' }}>
       <header style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', borderBottom: '1px solid var(--fl-border)', flexShrink: 0, flexWrap: 'wrap' }}>
         <strong style={{ flex: 1, minWidth: 160, fontFamily: 'var(--fl-font-head)', fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{title}</strong>
         <select
@@ -83,22 +89,22 @@ export function BigTextEditor({
           <option value="xml">XML</option>
           <option value="text">텍스트</option>
         </select>
-        <button onClick={format} disabled={!canFormat} title={canFormat ? '자동 정렬 (Shift+Alt+F) — {{ 토큰 }} 은 그대로 보호' : '텍스트 모드에는 정렬이 없습니다'} style={{ ...toolBtn, opacity: canFormat ? 1 : 0.45 }}>⇥ 정렬</button>
+        <button onClick={format} disabled={!canFormat} title={readOnly ? '읽기 전용 본문은 정렬할 수 없습니다' : canFormat ? '자동 정렬 (Shift+Alt+F) — {{ 토큰 }} 은 그대로 보호' : '텍스트 모드에는 정렬이 없습니다'} style={{ ...toolBtn, opacity: canFormat ? 1 : 0.45 }}>⇥ 정렬</button>
         <button onClick={toggleWrap} aria-pressed={wrap} title="긴 줄 줄바꿈" style={{ ...toolBtn, ...(wrap ? toolOn : null) }}>↩ 줄바꿈</button>
         <button onClick={togglePreview} disabled={!canPreview} aria-pressed={preview && canPreview} title={canPreview ? (lang === 'html' ? '샘플 값으로 렌더한 페이지를 옆에 보여줍니다(실시간)' : 'JSON 트리로 보기') : 'HTML/JSON 만 미리보기'} style={{ ...toolBtn, ...(preview && canPreview ? toolOn : null), opacity: canPreview ? 1 : 0.45 }}>미리보기</button>
         <span style={{ fontSize: 12, color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)', flexShrink: 0 }}>{value.length.toLocaleString()}자</span>
         <button onClick={onClose} aria-label="닫기" title="닫기 (Esc)" style={xBtn}>×</button>
       </header>
-      <div style={{ flex: 1, minHeight: 0, display: 'flex' }}>
-        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
-          <Suspense fallback={<textarea value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} spellCheck={false} style={plainArea} />}>
-            <CodeEditorLazy ref={editorRef} value={value} onChange={onChange} language={lang} sources={sources} wrap={wrap} placeholder={placeholder} onStatus={setStatus} />
+      <div className="fl-big-text-body">
+        <div className="fl-big-text-input">
+          <Suspense fallback={<textarea value={value} readOnly={readOnly} aria-label={title} onChange={(e) => change(e.target.value)} placeholder={placeholder} spellCheck={false} style={plainArea} />}>
+            <CodeEditorLazy ref={editorRef} value={value} onChange={change} language={lang} sources={sources} wrap={wrap} placeholder={placeholder} onStatus={setStatus} readOnly={readOnly} ariaLabel={title} />
           </Suspense>
         </div>
-        {preview && canPreview && <PreviewPane lang={lang} value={value} initialSamples={samples ?? {}} />}
+        {preview && canPreview && <PreviewPane lang={lang} value={value} initialSamples={samples ?? EMPTY_SAMPLES} />}
       </div>
       <footer style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '6px 16px', borderTop: '1px solid var(--fl-border)', fontSize: 12, color: 'var(--fl-text-muted)', flexShrink: 0, flexWrap: 'wrap' }}>
-        <span style={{ flex: 1, minWidth: 200 }}>{hint}</span>
+        <span style={{ flex: 1, minWidth: 200 }}>{readOnly ? '읽기 전용입니다. 본문을 복사하거나 샘플 값으로 미리 볼 수 있습니다.' : hint}</span>
         <span style={{ display: 'inline-flex', gap: 10, fontFamily: 'var(--fl-font-mono)', flexShrink: 0 }} aria-label="편집기 상태">
           {status && <span>줄 {status.line}:{status.col}</span>}
           {status && status.selected > 0 && <span>선택 {status.selected.toLocaleString()}자</span>}
@@ -115,32 +121,40 @@ export function BigTextEditor({
 }
 
 /** 미리보기 pane — HTML 은 샌드박스 iframe(앱 세션·쿠키 접근 불가), JSON 은 트리. 토큰은 샘플 값으로 치환(300ms 디바운스). */
-function PreviewPane({ lang, value, initialSamples }: { lang: 'html' | 'json'; value: string; initialSamples: Record<string, string> }) {
+const PreviewPane = memo(function PreviewPane({ lang, value, initialSamples }: { lang: 'html' | 'json'; value: string; initialSamples: Record<string, string> }) {
   const [samples, setSamples] = useState<Record<string, string>>(() => ({ ...initialSamples }))
   const [samplesOpen, setSamplesOpen] = useState(true)
-  const [rendered, setRendered] = useState(() => renderTemplatePreview(value, initialSamples))
   const [tick, setTick] = useState(0)
-  const tokens = useMemo(() => templateTokens(value), [value])
+  // 입력 원문은 즉시 반영하고 토큰 탐색·문서 생성·JSON 해석만 이 스냅샷을 사용한다.
+  const [snapshot, setSnapshot] = useState(() => ({ value, samples, rendered: renderTemplatePreview(value, samples), tick }))
+  const tokens = useMemo(() => templateTokens(snapshot.value), [snapshot.value])
   useEffect(() => {
-    const t = setTimeout(() => setRendered(renderTemplatePreview(value, samples)), 300)
+    const t = setTimeout(() => setSnapshot({ value, samples, rendered: renderTemplatePreview(value, samples), tick }), 300)
     return () => clearTimeout(t)
   }, [value, samples, tick])
   const valueOf = (id: string, key: string) => samples[id] ?? samples[key] ?? ''
-  let jsonView: { ok: true; data: unknown } | { ok: false; error: string } | null = null
-  if (lang === 'json') {
-    try { jsonView = { ok: true, data: JSON.parse(rendered) } } catch (e) { jsonView = { ok: false, error: (e as Error).message } }
-  }
+  const pending = value !== snapshot.value || samples !== snapshot.samples || tick !== snapshot.tick
+  const content = useMemo(() => {
+    if (lang === 'html') return <iframe key={snapshot.tick} title="HTML 미리보기" sandbox="allow-scripts allow-forms allow-modals allow-popups" srcDoc={previewDocument(snapshot.rendered)} style={{ flex: 1, border: 0, background: '#fff', minHeight: 0 }} />
+    try {
+      const data: unknown = JSON.parse(snapshot.rendered)
+      return <div style={{ flex: 1, overflow: 'auto', padding: '8px 12px', minHeight: 0 }}><JsonTree value={data} defaultOpenDepth={4} /></div>
+    } catch (error) {
+      return <div style={{ padding: 12, fontSize: 12, color: 'var(--fl-fail)' }}>JSON 으로 해석할 수 없습니다 — {(error as Error).message}<div style={{ color: 'var(--fl-text-muted)', marginTop: 4 }}>따옴표 없는 토큰(<code>{'"n": {{ amount@body }}'}</code>)은 샘플 값이 숫자여야 합니다.</div></div>
+    }
+  }, [lang, snapshot.rendered, snapshot.tick])
   return (
-    <div style={paneWrap} aria-label="미리보기">
+    <div className="fl-big-text-preview" aria-label="미리보기">
       <div style={paneBar}>
         <strong style={{ fontSize: 12 }}>미리보기</strong>
         <span style={{ fontSize: 11, color: 'var(--fl-text-muted)' }}>{lang === 'html' ? '샌드박스 — 스크립트는 돌지만 앱 세션엔 접근 못 함' : 'JSON 트리(샘플 값 치환 후)'}</span>
-        <span style={{ marginLeft: 'auto' }} />
+        <span role="status" style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--fl-text-muted)' }}>{pending ? '갱신 대기…' : ''}</span>
         <button onClick={() => setSamplesOpen((v) => !v)} aria-expanded={samplesOpen} style={{ ...toolBtn, padding: '2px 8px', fontSize: 12 }} title="템플릿 토큰에 넣을 샘플 값"><AppIcon name={samplesOpen ? 'chevronDown' : 'chevronRight'} size={13} style={{ color: 'var(--fl-text-muted)', verticalAlign: '-2px' }} /> 샘플 값 {tokens.length}</button>
-        <button onClick={() => setTick((t) => t + 1)} style={{ ...toolBtn, padding: '2px 8px', fontSize: 12 }} title="다시 렌더">↻</button>
+        <button onClick={() => setTick((t) => t + 1)} aria-label="미리보기 다시 시작" style={{ ...toolBtn, padding: '2px 8px', fontSize: 12 }} title="최신 입력으로 미리보기 다시 시작">↻</button>
       </div>
       {samplesOpen && (
-        <div style={sampleBox}>
+        <div className="fl-big-text-samples" style={sampleBox}>
+          {tokens.length > 0 && <span style={{ fontSize: 11, color: 'var(--fl-text-muted)' }}>샘플 값은 미리보기에만 사용됩니다. 본문 입력은 바뀌지 않습니다.</span>}
           {tokens.length === 0 && <span style={{ fontSize: 12, color: 'var(--fl-text-muted)' }}>템플릿 토큰이 없습니다 — 본문이 그대로 렌더됩니다.</span>}
           {tokens.map((t) => (
             <label key={t.id} style={sampleRow}>
@@ -152,16 +166,10 @@ function PreviewPane({ lang, value, initialSamples }: { lang: 'html' | 'json'; v
           ))}
         </div>
       )}
-      {lang === 'html' ? (
-        <iframe title="HTML 미리보기" sandbox="allow-scripts allow-forms allow-modals allow-popups" srcDoc={previewDocument(rendered)} style={{ flex: 1, border: 0, background: '#fff', minHeight: 0 }} />
-      ) : jsonView?.ok ? (
-        <div style={{ flex: 1, overflow: 'auto', padding: '8px 12px', minHeight: 0 }}><JsonTree value={jsonView.data} defaultOpenDepth={4} /></div>
-      ) : (
-        <div style={{ padding: 12, fontSize: 12, color: 'var(--fl-fail)' }}>JSON 으로 해석할 수 없습니다 — {jsonView?.error}<div style={{ color: 'var(--fl-text-muted)', marginTop: 4 }}>따옴표 없는 토큰(<code>{'"n": {{ amount@body }}'}</code>)은 샘플 값이 숫자여야 합니다.</div></div>
-      )}
+      {content}
     </div>
   )
-}
+})
 
 /** 작은 textarea 우상단에 붙이는 ⤢(크게 편집) 버튼 — 부모는 position:relative 컨테이너로 감싼다. */
 export function ExpandCorner({ onClick, label = '크게 편집' }: { onClick: () => void; label?: string }) {
@@ -186,9 +194,8 @@ const plainArea: CSSProperties = {
   background: 'var(--fl-surface)', color: 'var(--fl-text)',
   fontFamily: 'var(--fl-font-mono)', fontSize: 13, lineHeight: 1.65, tabSize: 2,
 }
-const paneWrap: CSSProperties = { width: '46%', minWidth: 320, borderLeft: '1px solid var(--fl-border)', display: 'flex', flexDirection: 'column', minHeight: 0, background: 'var(--fl-surface-2)' }
 const paneBar: CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', borderBottom: '1px solid var(--fl-border)', flexShrink: 0, flexWrap: 'wrap' }
-const sampleBox: CSSProperties = { display: 'grid', gap: 4, padding: '6px 10px', borderBottom: '1px solid var(--fl-border)', maxHeight: 180, overflowY: 'auto', flexShrink: 0 }
+const sampleBox: CSSProperties = { display: 'grid', gap: 4, padding: '6px 10px', borderBottom: '1px solid var(--fl-border)', overflowY: 'auto', flexShrink: 0 }
 const sampleRow: CSSProperties = { display: 'flex', alignItems: 'center', gap: 8 }
 const sampleKey: CSSProperties = { fontFamily: 'var(--fl-font-mono)', fontSize: 12, minWidth: 140, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--fl-primary)' }
 const sampleInput: CSSProperties = { flex: 1, minWidth: 0, padding: '3px 8px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 12, fontFamily: 'var(--fl-font-mono)' }

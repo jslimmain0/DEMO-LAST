@@ -12,24 +12,27 @@ import { useEnvStore, useEnvironment } from '../lib/environments'
 import type { RunRequest } from '../api/types'
 import { usesWorkflowContext } from '../lib/executionAgentSelection'
 import { AgentBadge, nodeAgent, isBrowserRequest, usesOwnerResources } from './AgentSettings'
-import { destinationKey, resolveAgentEnvironment } from '../lib/agentEnvironments'
+import { agentEnvironmentSource, destinationKey, resolveAgentEnvironment } from '../lib/agentEnvironments'
 import { useAgentEnvironmentBindings } from '../lib/useAgentEnvironmentBindings'
 import { Modal } from './Modal'
 import { ActionButton } from './ActionButton'
 import { ui } from '../design/ui'
 import { AppIcon } from './AppIcon'
+import { FRONTEND_MOCK } from '../lib/frontendMock'
 
 export function ExecutionPlanDialog({ onClose, onRun }: { onClose: () => void; onRun: (dependencies: RunRequest['agentDependencies'], environments: Record<string, string>) => void }) {
   const scope = useWorkspace()
   const { desktop } = useAuth()
   const environment = useEnvStore()
+  const localEnvironments = useEnvStore('local')
   const environmentStore = useEnvironment()
+  const environmentSource = environmentStore.origin ?? scope.current.origin
   const bindings = useAgentEnvironmentBindings()
   const [saveError, setSaveError] = useState('')
   const [saving, setSaving] = useState(false)
   const mounted = useRef(true)
   useEffect(() => { mounted.current = true; return () => { mounted.current = false } }, [])
-  const preparation = useQuery({ queryKey: ['execution-environment-ready', scope.scopeKey], queryFn: async () => { await environmentStore.prepareForRun(); return true }, staleTime: 0, gcTime: 0, retry: false })
+  const preparation = useQuery({ queryKey: ['execution-environment-ready', scope.scopeKey, environmentSource, environment.active], queryFn: async () => { await environmentStore.prepareForRun(); return true }, staleTime: 0, gcTime: 0, retry: false })
   const nodes = useEditorStore(s => s.nodes)
   const edges = useEditorStore(s => s.edges)
   const plan = useMemo(() => {
@@ -37,16 +40,15 @@ export function ExecutionPlanDialog({ onClose, onRun }: { onClose: () => void; o
     return topoOrder(nodes, edges).map(id => asGraphNode(nodes.find(n => n.id === id)!.data))
       .filter(n => !['start', 'end', 'note', 'group'].includes(n.type) && (!reach.hasStart || reach.reachable.has(n.id)))
   }, [nodes, edges])
-  const planIdentity = `${scope.scopeKey}:${scope.remoteKey}:${environment.active}:${JSON.stringify(plan)}:${JSON.stringify(bindings.bindings)}`
+  const planIdentity = `${scope.scopeKey}:${scope.remoteKey}:${environmentSource}:${environment.active}:${JSON.stringify(plan)}:${JSON.stringify(bindings.bindings)}`
   const latestPlan = useRef(planIdentity)
   latestPlan.current = planIdentity
   const isAvailable = (n: typeof plan[number]) => {
-    if (n.type === 'transform' && scope.current.origin === 'local') return false
     const agent = nodeAgent(n, scope.current.origin)
     return isBrowserRequest(n) || (agent === 'local' ? !!desktop || ['form', 'input'].includes(n.type) : scope.connected && !scope.remoteError)
   }
   const ownerResources = usesOwnerResources
-  const resourceSpace = (n: typeof plan[number]) => n.type === 'transform' || ownerResources(n) ? scope.current.id : nodeAgent(n, scope.current.origin) === 'local' ? scope.workspaces.find(w => w.origin === 'local')?.id ?? 'local' : n.agentWorkspaceId ?? (scope.current.origin === 'server' ? scope.current.id : 'public')
+  const resourceSpace = (n: typeof plan[number]) => n.type === 'transform' ? 'public' : ownerResources(n) ? scope.current.id : nodeAgent(n, scope.current.origin) === 'local' ? scope.workspaces.find(w => w.origin === 'local')?.id ?? 'local' : n.agentWorkspaceId ?? (scope.current.origin === 'server' ? scope.current.id : 'public')
   const environmentSelection = (n: typeof plan[number]) => n.type === 'transform' || ownerResources(n) ? { name: environment.active ?? '', source: n.type === 'transform' ? '중앙 플러그인 · 워크플로 환경' : usesWorkflowContext(n) ? '워크플로 환경에서 계산' : '워크플로 공간에서 값 조립' } : resolveAgentEnvironment(n, nodeAgent(n, scope.current.origin), resourceSpace(n), scope.current, environment.active, bindings.bindings)
   const environmentName = (n: typeof plan[number]) => environmentSelection(n).name
   const destinations = [...new Map(plan.filter(n => !isBrowserRequest(n) && ['http', 'tcp'].includes(n.type)).map(n => [destinationKey(nodeAgent(n, scope.current.origin), resourceSpace(n)), { agent: nodeAgent(n, scope.current.origin), workspaceId: resourceSpace(n) }])).entries()]
@@ -54,46 +56,59 @@ export function ExecutionPlanDialog({ onClose, onRun }: { onClose: () => void; o
     const agent = ownerResources(n) ? scope.current.origin : nodeAgent(n, scope.current.origin)
     const workspaceId = ownerResources(n) ? scope.current.id : resourceSpace(n)
     const envName = environmentName(n)
+    const envSource = agentEnvironmentSource(n, agent, workspaceId, environmentSource, bindings.bindings)
+    const env = envSource === 'local' ? envName ? localEnvironments.envs[envName] : {} : undefined
     const enabled = bindings.ready && envName !== undefined && preparation.isSuccess && !preparation.isFetching && isAvailable(n) && ['http', 'tcp', 'set', 'if', 'assert', 'transform', 'form', 'input'].includes(n.type)
-    return { queryKey: ['agent-inspection', agent, agent === 'server' ? scope.remoteKey : 'pc', workspaceId, envName, n], queryFn: () => scope.agentApi(agent, workspaceId).runsApi.inspectAgent(ownerResources(n) ? n : { ...n, executionAgent: agent }, envName), enabled, retry: false, staleTime: 0 }
+    return { queryKey: ['agent-inspection', agent, agent === 'server' ? scope.remoteKey : 'pc', workspaceId, envName, envSource, env, scope.resourceIdentity, n], queryFn: () => scope.agentApi(agent, workspaceId).runsApi.inspectAgent(ownerResources(n) ? n : { ...n, executionAgent: agent }, envName, envSource, env, scope.resourceIdentity), enabled, retry: false, staleTime: 0 }
   }) })
   const checking = preparation.isPending || preparation.isFetching || inspections.some(r => r.isFetching)
   const invalid = preparation.isError || inspections.some(r => r.isError || r.data?.ready === false)
   const missing = plan.some(n => !isBrowserRequest(n) && ['http', 'tcp', 'set', 'if', 'assert', 'transform'].includes(n.type) && environmentName(n) === undefined)
   const blocked = !bindings.ready || missing || saving || plan.some(n => !isAvailable(n)) || checking || invalid
-  return <Modal onClose={onClose} ariaLabel="실행 계획" width={1100} card={{ padding: 22, overflowY: 'auto' }}>
+  const locations = [...new Set(plan.filter(n => !usesWorkflowContext(n)).map(n => isBrowserRequest(n) ? '브라우저' : nodeAgent(n, scope.current.origin) === 'local' ? '내 PC' : '서버'))]
+  return <Modal onClose={onClose} ariaLabel="실행 계획" width={880} card={{ padding: 22, overflowY: 'auto' }}>
     <header style={{ display: 'flex', gap: 12, alignItems: 'center' }}><strong style={{ fontSize: 18 }}>실행 계획</strong><button aria-label="실행 계획 닫기" title="닫기" onClick={onClose} style={{ ...ui.close, marginLeft: 'auto' }}><AppIcon name="close" size={16} /></button></header>
-    <p style={{ fontSize: 13, lineHeight: 1.65, color: 'var(--fl-text-muted)' }}>저장 공간: <b style={{ color: 'var(--fl-text)' }}>{scope.current.name} · {scope.current.origin === 'local' ? '개인 PC H2' : '서버 DB'}</b><br />HTTP·TCP는 선택한 위치에서 호출합니다. 변수·조건·검증은 워크플로의 환경과 앞 노드의 결과로 계산합니다.</p>
-    {destinations.length > 0 && <section aria-label="이 PC의 연결 설정" style={{ display: 'flex', flexWrap: 'wrap', gap: 12, padding: '12px 0' }}><b style={{ width: '100%', fontSize: 12 }}>이 PC의 연결 설정 · {environment.active || '공통 환경'} 단계 {bindings.persistent ? '· PC에 저장' : '· 현재 세션에서 사용'}</b>
+    <p style={{ fontSize: 13, lineHeight: 1.65, color: 'var(--fl-text-muted)' }}>실행할 위치와 사용할 환경을 확인하세요. {plan.length}개 노드를 순서대로 실행합니다.</p>
+    <dl className="fl-execution-plan-summary" aria-label="실행 요약">
+      <div><dt>워크플로 저장 위치</dt><dd>{scope.current.origin === 'local' ? '내 PC' : `서버 · ${scope.current.name}`}</dd></div>
+      <div><dt>실행 위치</dt><dd>{locations.join(' · ') || '워크플로 내부 계산'}</dd></div>
+      <div><dt>워크플로 환경</dt><dd>{environment.active ? `${environmentSource === 'local' ? '내 PC' : '서버'} · ${environment.active}` : '선택 안 함 · 공통 환경만'}</dd></div>
+      <div><dt>공통 자원</dt><dd>서버 · 공용 시크릿·프로토콜·플러그인</dd></div>
+    </dl>
+    <p role="status" className={`fl-execution-plan-status${blocked ? ' is-pending' : ''}`}>{checking ? '환경과 자원을 확인하고 있습니다…' : blocked ? '아래의 연결·환경 설정을 확인하세요.' : '실행 준비가 끝났습니다.'}</p>
+    {destinations.length > 0 && <details className="fl-execution-plan-details" open={missing || !!bindings.error || bindings.dirty || !!saveError}>
+      <summary>위치별 환경 연결{missing ? ' · 선택 필요' : bindings.dirty ? ' · 저장 필요' : ''}</summary>
+      <section aria-label="이 PC의 연결 설정" style={{ display: 'flex', flexWrap: 'wrap', gap: 12, padding: '12px 0' }}><b style={{ width: '100%', fontSize: 12 }}>{environment.active || '공통 환경'} 단계 {bindings.persistent ? '· PC에 저장' : '· 현재 세션에서 사용'}</b>
       {destinations.map(([key, target]) => <DestinationEnvironment key={key} destination={key} target={target} bindings={bindings} />)}
       <button style={button} disabled={!bindings.ready || !bindings.dirty || saving} onClick={async () => { setSaving(true); setSaveError(''); try { await bindings.save() } catch (error) { setSaveError(isAxiosError(error) ? error.response?.data?.message ?? error.message : error instanceof Error ? error.message : '연결 설정 저장 실패') } finally { setSaving(false) } }}>{saving ? '저장 중…' : bindings.dirty ? '연결 설정 저장' : '연결 설정 저장됨'}</button>
-    </section>}
+    </section></details>}
       {bindings.error && <p role="alert">연결 설정을 불러오지 못했습니다. {bindings.error instanceof Error ? bindings.error.message : ''} <button style={button} onClick={() => void bindings.reload()}>다시 불러오기</button></p>}
       {saveError && <p role="alert" style={{ color: 'var(--fl-fail)' }}>{saveError} <button style={button} disabled={saving} onClick={async () => { if (bindings.dirty && !window.confirm('내 연결 선택을 취소하고 마지막으로 저장된 설정을 불러올까요?')) return; const result = await bindings.reload(true); if (result.isSuccess) setSaveError('') }}>저장된 설정 다시 불러오기</button></p>}
-    <div className="fl-execution-plan-table" style={{ maxHeight: '55vh', overflow: 'auto' }}><table style={{ borderCollapse: 'collapse', width: '100%', fontSize: 13, textAlign: 'left' }}>
-      <thead><tr>{['순서·노드', '실행·수신 위치', '자원 공간', '환경·대상', '위치 간 전달', '준비 상태'].map(t => <th key={t} style={{ ...cell, color: 'var(--fl-text-muted)', fontWeight: 600 }}>{t}</th>)}</tr></thead>
+    <details className="fl-execution-plan-details" open={invalid || missing || plan.some(n => !isAvailable(n))}>
+    <summary>노드별 실행 상세 · {plan.length}개{invalid ? ' · 확인 필요' : ''}</summary>
+    <div className="fl-execution-plan-table" style={{ maxHeight: '45vh', overflow: 'auto' }}><table style={{ borderCollapse: 'collapse', width: '100%', fontSize: 13, textAlign: 'left' }}>
+      <thead><tr>{['순서·노드', '실행·수신 위치', '실행 공간', '환경·대상', '위치 간 전달', '준비 상태'].map(t => <th key={t} style={{ ...cell, color: 'var(--fl-text-muted)', fontWeight: 600 }}>{t}</th>)}</tr></thead>
       <tbody>{plan.map((n, i) => {
         const agent = isBrowserRequest(n) ? scope.current.origin : nodeAgent(n, scope.current.origin)
         const spaceId = resourceSpace(n)
         const resourceAgent = ownerResources(n) ? scope.current.origin : agent
         const space = scope.workspaces.find(w => w.origin === resourceAgent && w.id === spaceId)
-        const personalPlugin = n.type === 'transform' && scope.current.origin === 'local'
+        const selectedSource = agentEnvironmentSource(n, resourceAgent, spaceId, environmentSource, bindings.bindings)
         const available = isAvailable(n)
         const inspection = inspections[i]
         const issue = inspection.isError ? (isAxiosError(inspection.error) ? inspection.error.response?.data?.message ?? '자원 확인 실패' : inspection.error.message) : inspection.data?.issues.join(' · ')
         const presentation = n.type === 'form' ? '브라우저 팝업 · 실행 시 주소 조립' : n.type === 'input' ? '사용자 입력 · 대상 주소 없음' : n.type === 'wait' ? '콜백 수신 대기' : n.type === 'switch' ? `저장된 선택 경로 · ${n.switchActive || '1'}` : undefined
         return <tr key={n.id}><td style={cell}><b>{i + 1}. {n.name || typeLabel(n.type)}</b><small style={{ display: 'block', marginTop: 4, color: 'var(--fl-text-muted)' }}>{typeLabel(n.type)}</small></td>
           <td style={cell}>{usesWorkflowContext(n) ? <span style={{ color: 'var(--fl-text-muted)' }}>—</span> : <AgentBadge agent={agent} label={isBrowserRequest(n) ? '브라우저 요청' : n.type === 'wait' ? `${agent === 'local' ? '내 PC' : '서버'} 수신` : undefined} />}</td>
-          <td style={{ ...cell, minWidth: 140, maxWidth: 230, overflowWrap: 'anywhere' }}><b>{personalPlugin ? '개인 공간에서 사용 불가' : space?.name ?? (spaceId === 'public' ? '공용' : '접근 확인 필요')}</b><small style={{ display: 'block', marginTop: 4, color: 'var(--fl-text-muted)' }} title={spaceId}>{personalPlugin ? '공용·팀 워크스페이스에서 구성하세요' : `${resourceAgent === 'local' ? '내 PC' : '서버'} · ${spaceId.slice(0, 8)}`}</small></td>
-          <td style={{ ...cell, maxWidth: 250, overflowWrap: 'anywhere' }}>{n.type === 'input' ? '사용자 입력 · 대상 주소 없음' : environmentName(n) === undefined ? '환경 미설정' : environmentName(n) || '공통 환경'}{n.type !== 'input' && <small style={{ display: 'block', marginTop: 4 }}>{environmentSelection(n).source}</small>}<small style={{ display: 'block', marginTop: 4 }}>{inspection.data?.targetDiagnostics?.resolvedTarget ?? (inspection.data?.targetDiagnostics?.source === 'upstream-binding' ? '상류 출력에 따라 실행 시 결정' : presentation ?? (['http', 'tcp'].includes(n.type) ? '대상 주소 구성 확인 필요' : '—'))}</small>{inspection.data?.targetDiagnostics?.warnings.map(warning => <small key={warning} style={{ display: 'block', marginTop: 4 }}>{warning}</small>)}</td>
+          <td style={{ ...cell, minWidth: 140, maxWidth: 230, overflowWrap: 'anywhere' }}><b>{space?.name ?? (spaceId === 'public' ? '공용' : '접근 확인 필요')}</b><small style={{ display: 'block', marginTop: 4, color: 'var(--fl-text-muted)' }} title={spaceId}>{`${resourceAgent === 'local' ? '내 PC' : '서버'} · ${spaceId.slice(0, 8)}`}</small></td>
+          <td style={{ ...cell, maxWidth: 250, overflowWrap: 'anywhere' }}>{n.type === 'input' ? '사용자 입력 · 대상 주소 없음' : environmentName(n) === undefined ? '환경 미설정' : `${selectedSource === 'local' ? '내 PC' : '서버'} · ${environmentName(n) || '공통 환경'}`}{n.type !== 'input' && <small style={{ display: 'block', marginTop: 4 }}>{environmentSelection(n).source}</small>}<small style={{ display: 'block', marginTop: 4 }}>{inspection.data?.targetDiagnostics?.resolvedTarget ?? (inspection.data?.targetDiagnostics?.source === 'upstream-binding' ? '상류 출력에 따라 실행 시 결정' : presentation ?? (['http', 'tcp'].includes(n.type) ? '대상 주소 구성 확인 필요' : '—'))}</small>{inspection.data?.targetDiagnostics?.warnings.map(warning => <small key={warning} style={{ display: 'block', marginTop: 4 }}>{warning}</small>)}</td>
           <td style={{ ...cell, maxWidth: 190, overflowWrap: 'anywhere' }}>{usesWorkflowContext(n) ? '흐름 내 출력' : n.agentOutputs == null ? '필요한 출력 키 자동 선택' : n.agentOutputs.length ? n.agentOutputs.join(', ') : '전달 없음'}</td>
-          <td style={{ ...cell, maxWidth: 230, overflowWrap: 'anywhere', color: available && !issue ? 'var(--fl-ok)' : 'var(--fl-waiting)' }}>{!available ? n.type === 'transform' && scope.current.origin === 'local' ? '공용·팀 공간 전용' : agent === 'local' ? 'PC 앱 필요' : '서버 연결 필요' : environmentName(n) === undefined ? '환경 선택 필요' : inspection.isFetching ? '구성 확인 중…' : issue || (inspection.data?.ready ? isBrowserRequest(n) ? '브라우저 요청 구성 확인' : '구성 확인 완료' : presentation ?? '연결 준비')}</td></tr>
+          <td style={{ ...cell, maxWidth: 230, overflowWrap: 'anywhere', color: available && !issue ? 'var(--fl-ok)' : 'var(--fl-waiting)' }}>{!available ? agent === 'local' ? 'PC 앱 필요' : '서버 연결 필요' : environmentName(n) === undefined ? '환경 선택 필요' : inspection.isFetching ? '구성 확인 중…' : issue || (inspection.data?.ready ? isBrowserRequest(n) ? '브라우저 요청 구성 확인' : '구성 확인 완료' : presentation ?? '연결 준비')}</td></tr>
       })}</tbody>
-    </table></div>
-    <p style={{ fontSize: 12, color: 'var(--fl-text-muted)', lineHeight: 1.65 }}>구성 확인은 실제 네트워크 접속 확인이 아닙니다. 시크릿은 실행 위치의 공간에서 읽습니다. 브라우저 요청은 워크플로 공간의 환경을 사용합니다.</p>
+    </table></div></details>
+    <p style={{ fontSize: 12, color: 'var(--fl-text-muted)', lineHeight: 1.65 }}>{FRONTEND_MOCK ? '프론트 개발 모드입니다. 선택한 환경 출처와 서버 공통 자원을 확인하며, 실행 결과는 샘플입니다.' : '구성 확인은 실제 네트워크 접속 확인이 아닙니다. 시크릿·프로토콜·플러그인은 서버 공통 자원이며, 워크플로에는 선택한 출처의 환경만 적용합니다.'}</p>
     {preparation.isError && <p role="alert" style={{ color: 'var(--fl-fail)', fontSize: 12 }}>환경을 준비하지 못해 실행하지 않습니다. {preparation.error.message}</p>}
     {invalid && <button style={button} onClick={async () => { const ready = await preparation.refetch(); if (ready.isSuccess) await Promise.all(inspections.filter((r, i) => isAvailable(plan[i]) && (r.isError || r.data?.ready === false)).map(r => r.refetch())) }}>환경·자원 다시 확인</button>}
-    {blocked && <p role="alert" style={{ fontSize: 12, color: 'var(--fl-waiting)' }}>{checking ? '실행에 필요한 자원을 확인하고 있습니다.' : '위에 표시된 연결·자원 문제를 수정한 뒤 실행하세요.'}</p>}
     <footer className="fl-execution-plan-actions"><ActionButton disabled={saving} onClick={onClose}>계속 편집</ActionButton><ActionButton variant="primary" disabled={blocked} onClick={async () => {
       const dependencies: NonNullable<RunRequest['agentDependencies']> = {}
       plan.forEach((n, i) => { const hashes = inspections[i].data?.dependencyHashes; if (hashes && Object.keys(hashes).length) dependencies[n.id] = hashes })
@@ -110,8 +125,9 @@ function DestinationEnvironment({ destination, target, bindings }: { destination
   const environment = useEnvStore()
   const [search, setSearch] = useState('')
   const { agentApi } = scope
-  const api = useMemo(() => agentApi(target.agent, target.workspaceId), [agentApi, target.agent, target.workspaceId])
-  const query = useQuery({ queryKey: ['destination-environments', target.agent, target.agent === 'server' ? scope.remoteKey : 'pc', target.workspaceId], queryFn: api.environmentsApi.list, enabled: target.agent === 'local' || scope.connected, retry: false })
+  const environmentWorkspace = target.agent === 'server' ? 'public' : target.workspaceId
+  const api = useMemo(() => agentApi(target.agent, environmentWorkspace), [agentApi, target.agent, environmentWorkspace])
+  const query = useQuery({ queryKey: ['destination-environments', target.agent, target.agent === 'server' ? scope.remoteKey : 'pc', environmentWorkspace], queryFn: api.environmentsApi.list, enabled: target.agent === 'local' || scope.connected, retry: false })
   const own = target.agent === scope.current.origin && target.workspaceId === scope.current.id
   const selected = Object.hasOwn(bindings.bindings, destination) ? bindings.bindings[destination] : own ? environment.active ?? '' : '__unset__'
   const name = scope.workspaces.find(w => w.origin === target.agent && w.id === target.workspaceId)?.name ?? (target.workspaceId === 'public' ? '공용' : target.workspaceId.slice(0, 8))

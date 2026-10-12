@@ -146,4 +146,17 @@ class TcpMockSessionTest {
         assertThat(logs.last().hex).isEmpty() // 마스킹된 행은 hex 로도 원문이 새면 안 된다
         assertThat(logs.last().note).contains("hex 생략")
     }
+
+    @Test fun `중앙 계정이 바뀌면 유지 연결도 다음 프레임부터 응답하지 않는다`() {
+        var checks = 0
+        val rules = listOf(MockTcpRule("r", null, mock("거래코드" to "9001", "응답코드" to "0000")))
+        val s = TcpMockSession(spec, MockTcp(9600, "p", rules = rules), ProtocolCodec.NO_PLUGINS, emptyMap(), { 1L }, { logs.add(it) }, { null },
+            verifyResourceAccess = { checks++; if (checks > 1) throw IllegalStateException("secret-password") })
+        val (response, _) = run(s, req + req)
+        assertThat(checks).isEqualTo(2)
+        assertThat(response).hasSize(12)
+        assertThat(logs.map { it.dir }).containsExactly("in", "out", "in")
+        assertThat(logs.last().level).isEqualTo("error")
+        assertThat(logs.last().note).contains("계정").doesNotContain("secret-password")
+    }
 }

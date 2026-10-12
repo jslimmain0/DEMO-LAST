@@ -1,4 +1,4 @@
-import { useApi, useWorkspace } from '../app/WorkspaceContext'
+import { useWorkspace } from '../app/WorkspaceContext'
 import { Background, ControlButton, Controls, MiniMap, ReactFlow, SelectionMode, getViewportForBounds, useReactFlow } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import type { CSSProperties, DragEvent } from 'react'
@@ -26,6 +26,14 @@ import { ui } from '../design/ui'
 
 const nodeTypes = { flnode: NodeCard, branch: BranchNode, switch: SwitchNode, note: NoteNode, annogroup: GroupNode }
 const edgeTypes = { deletable: DeletableEdge }
+const canvasAriaLabels = {
+  'controls.ariaLabel': '캔버스 보기',
+  'controls.zoomIn.ariaLabel': '확대',
+  'controls.zoomOut.ariaLabel': '축소',
+  'controls.fitView.ariaLabel': '전체 흐름 맞춤',
+  'controls.interactive.ariaLabel': '캔버스 편집 잠금 전환',
+  'minimap.ariaLabel': '워크플로 미니맵',
+}
 const connectionLineStyle: CSSProperties = { stroke: 'var(--fl-primary)', strokeWidth: 2 }
 const alignBtn: CSSProperties = { ...ui.icon, width: 26, height: 26, justifyContent: 'center' }
 // 배경 도트(gap 22)와 같은 간격으로 스냅 — 노드가 그리드에 딱딱 맞게 배치된다
@@ -48,8 +56,7 @@ function reclaimCanvasFocus() {
   if (sel && !sel.isCollapsed) sel.removeAllRanges()
 }
 
-export function FlowCanvas() {
-  const { runsApi } = useApi()
+export function FlowCanvas({ onExpandProps }: { onExpandProps?: () => void } = {}) {
   const scope = useWorkspace()
 
   const nodes = useEditorStore((s) => s.nodes)
@@ -173,13 +180,6 @@ export function FlowCanvas() {
   }, [])
   const toggleMinimap = () => setShowMinimap((v) => { localStorage.setItem('fl:canvas:minimap', v ? '0' : '1'); return !v })
   const toggleGrid = () => setShowGrid((v) => { localStorage.setItem('fl:canvas:grid', v ? '0' : '1'); return !v })
-  const runSingleFromMenu = async (nodeId: string) => {
-    if (!flowId) return
-    try {
-      const r = await runsApi.runNode(flowId, nodeId)
-      toast(r.ok ? `이 노드 실행 성공${r.httpStatus != null ? ` · HTTP ${r.httpStatus}` : ''}` : `실행 실패: ${r.responseText ?? ''}`, r.ok ? 'ok' : 'error')
-    } catch (e) { toast(`실행 실패: ${e instanceof Error ? e.message : e}`, 'error') }
-  }
   const SINGLE_OK = new Set(['http', 'set', 'if', 'switch', 'assert', 'transform', 'tcp'])
 
   // 정적 fitView prop 은 노드 로드 전(빈 store)에 맞춰져 노드가 좌하단에 몰리는 버그가 있고,
@@ -301,6 +301,7 @@ export function FlowCanvas() {
         </div>
       )}
       <ReactFlow
+        ariaLabelConfig={canvasAriaLabels}
         nodes={nodes}
         edges={displayEdges}
         nodeTypes={nodeTypes}
@@ -368,7 +369,7 @@ export function FlowCanvas() {
           <div style={{ position: 'fixed', inset: 0, zIndex: 40 }} onClick={() => setCtxMenu(null)} onContextMenu={(e) => { e.preventDefault(); setCtxMenu(null) }} />
           <div style={{ position: 'fixed', left: Math.min(ctxMenu.x, window.innerWidth - 180), top: Math.min(ctxMenu.y, window.innerHeight - 140), zIndex: 41, background: 'var(--fl-surface)', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', boxShadow: 'var(--fl-shadow-lg)', minWidth: 160, padding: 4 }}>
             {selectedCount <= 1 && SINGLE_OK.has(ctxMenu.nodeType) && !wsReadOnly && (
-              <button style={ctxItem} onClick={() => { runSingleFromMenu(ctxMenu.nodeId); setCtxMenu(null) }}>▶ 이 노드만 실행</button>
+              <button style={ctxItem} onClick={() => { useEditorStore.getState().focusNode(ctxMenu.nodeId); onExpandProps?.(); setCtxMenu(null) }}>이 노드 테스트 설정</button>
             )}
             <button disabled={wsReadOnly} style={ctxItem} onClick={() => { duplicateSelection(); setCtxMenu(null) }}>⧉ {selectedCount > 1 ? `선택 ${selectedCount}개 복제` : '복제'} (Ctrl+D)</button>
             <button disabled={wsReadOnly} style={{ ...ctxItem, color: 'var(--fl-fail)' }} onClick={() => { if (selectedCount > 1) deleteSelection(); else deleteNode(ctxMenu.nodeId); setCtxMenu(null) }}>× {selectedCount > 1 ? `선택 ${selectedCount}개 삭제` : '삭제'} (Delete)</button>

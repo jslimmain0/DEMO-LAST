@@ -1,4 +1,9 @@
-import type { HttpMethod } from '../api/types'
+import type { HttpMethod, NodeExecutionView } from '../api/types'
+
+/** 실시간 응답의 파싱된 출력과 실행 이력의 원문 출력을 모두 표시한다. */
+export function outputText(node: Pick<NodeExecutionView, 'output' | 'outputJson'>): string | null {
+  return node.output != null ? JSON.stringify(node.output, null, 2) : node.outputJson ?? null
+}
 
 /**
  * 노드 실행 로그 공용 조각 — RunPanel(라이브)과 Executions 상세 모달(이력)이 같은 요청/응답/출력 블록을

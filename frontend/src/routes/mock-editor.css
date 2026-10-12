@@ -1,0 +1,10 @@
+.fl-mock-editor{container:fl-mock-editor / inline-size;min-width:0}
+.fl-mock-editor header{min-width:0}
+.fl-mock-detail{min-width:0}
+@container fl-mock-editor (max-width:760px){
+  .fl-mock-editor-body{flex-direction:column;overflow:auto}
+  .fl-mock-config-nav{width:100%!important;max-height:190px;box-sizing:border-box;flex-shrink:0;border-right:0!important;border-bottom:1px solid var(--fl-border);overflow:auto}
+  .fl-mock-config-nav>div[style*="grid"]{grid-template-columns:repeat(auto-fit,minmax(160px,1fr))}
+  .fl-mock-detail{overflow:visible!important;flex-shrink:0!important}
+  .fl-mock-sendbox{grid-template-columns:minmax(0,1fr)!important;align-content:start}
+}

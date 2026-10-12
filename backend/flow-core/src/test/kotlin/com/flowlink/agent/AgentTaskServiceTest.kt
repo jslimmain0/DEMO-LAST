@@ -115,7 +115,7 @@ class AgentTaskServiceTest {
         val stored = tasks.result(request.taskId)!!.result
         assertThat(stored.responseText).isEqualTo(html)
         assertThat(stored.value).isEqualTo(mapOf("body" to html, "httpStatus" to 200))
-        assertThat(stored.requestText).doesNotContain("private-request")
+        assertThat(stored.requestText).isEqualTo("private-request")
     }
 
     @Test fun `장치와 계정 lease를 강제하고 외부 결과를 허용 키로 제한한다`() {
@@ -133,7 +133,8 @@ class AgentTaskServiceTest {
         val result = tasks.result(request.taskId)!!.result
         assertThat(result.value as Map<*, *>).hasSize(2)
         assertThat(result.reqValues!!.keys).containsExactly("orderId")
-        assertThat(mapper.writeValueAsString(result)).doesNotContain("must-not-pass", "private-request", "private-response")
+        assertThat(result.requestText).isEqualTo("private-request")
+        assertThat(mapper.writeValueAsString(result)).doesNotContain("must-not-pass", "private-response")
         tasks.complete(request.taskId, completion.copy(result = raw.copy(value = mapOf("amount" to 99))))
         assertThat((tasks.result(request.taskId)!!.result.value as Map<*, *>)["amount"]).isEqualTo(42)
         Mockito.`when`(workspace.currentUsername()).thenReturn("another-user")

@@ -31,7 +31,7 @@ class EnvironmentServiceTest {
     @Autowired lateinit var userRepo: AppUserRepository
 
     @AfterEach
-    fun clear() = SecurityContextHolder.clearContext()
+    fun clear() { SecurityContextHolder.clearContext(); com.flowlink.common.tenant.TenantContext.clear() }
 
     private fun asUser(name: String) {
         val jwt = Jwt.withTokenValue("t").header("alg", "none").claim("preferred_username", name).subject(name).build()
@@ -88,5 +88,17 @@ class EnvironmentServiceTest {
         service.putRunInput(flow.id, emptyMap())
         assertThat(service.runInput(flow.id)).isEmpty()
         assertThatThrownBy { service.runInput(java.util.UUID.randomUUID()) }.isInstanceOf(BadRequestException::class.java)
+    }
+
+    @Test
+    fun `공유 워크플로 입력은 다른 테넌트에서도 권한 검사 후 독립 저장한다`() {
+        val flow = flowService.create(CreateFlowRequest("shared-input", null, null, null))
+        service.putRunInput(flow.id, mapOf("orderId" to "default-order"))
+        com.flowlink.common.tenant.TenantContext.setTenantId("other-tenant")
+        assertThat(service.runInput(flow.id)).isEmpty()
+        service.putRunInput(flow.id, mapOf("orderId" to "other-order"))
+        assertThat(service.runInput(flow.id)).containsEntry("orderId", "other-order")
+        com.flowlink.common.tenant.TenantContext.clear()
+        assertThat(service.runInput(flow.id)).containsEntry("orderId", "default-order")
     }
 }

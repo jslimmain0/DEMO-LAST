@@ -45,7 +45,7 @@ class McpConfiguration {
         val props = Properties().apply { McpConfiguration::class.java.getResourceAsStream("/flowlink-release.properties")?.use { load(it) } }
         return McpServer.sync(transport).jsonMapper(JacksonMcpJsonMapper(mapper))
             .serverInfo("flowlink", props.getProperty("version", "unknown"))
-            .instructions("FlowLink 중앙 MCP. target은 개인/팀 저장 공간, executionAgent는 요청 출발지입니다. 개인 작업은 로그인한 온라인 Windows 앱이 필요합니다. UNKNOWN 결과를 자동 재실행하지 마세요. ${McpGraphLayout.GUIDE}")
+            .instructions("FlowLink 중앙 MCP. $RESOURCE_GUIDE UNKNOWN 결과를 자동 재실행하지 마세요. ${McpGraphLayout.GUIDE}")
             .capabilities(McpSchema.ServerCapabilities.builder().tools(false).build())
             .requestTimeout(Duration.ofMinutes(20)).tools(McpTools(mapper, rest).specifications()).build()
     }
@@ -109,6 +109,7 @@ class McpConfiguration {
     }
 
     companion object {
+        const val RESOURCE_GUIDE = "target/workspace는 워크플로·Mock 저장 위치, envSource는 내 PC/local 또는 서버/server 환경 출처, executionAgent는 HTTP/TCP 요청 출발지입니다. 시크릿·프로토콜·플러그인은 서버 공통(public) 카탈로그이며 공통 자원을 선택한 PC 흐름도 참조할 수 있습니다. 새 흐름과 Mock은 public metadata를 기본으로 저장하고 기존 metadata 없는 자료·재실행은 원래 계약을 보존합니다. 내 PC 환경과 서버의 같은 이름 환경을 자동 병합하지 않습니다. TRANSFORM은 서버에서 흐름의 선택 환경으로 실행합니다. 개인 작업·PC 환경·PC 호출은 로그인한 온라인 Windows 앱이 필요합니다. Mock 목록은 서버와 내 PC를 함께 표시하며 오프라인 위치는 unavailable로 구분합니다."
         const val MAX_REQUEST_BYTES = 8L * 1024 * 1024
         const val MAX_REGISTRATION_BYTES = 64L * 1024
         private const val MANAGEMENT_AUTHORIZATION = "flowlink.mcp.managementAuthorization"

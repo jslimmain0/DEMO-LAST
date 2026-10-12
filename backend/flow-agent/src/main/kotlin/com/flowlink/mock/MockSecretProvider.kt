@@ -12,7 +12,11 @@ import java.util.concurrent.ConcurrentHashMap
 class MockSecretProvider(private val loader: MockScopeLoader) {
 
     /** 한 환경의 시크릿(공통 + 오버레이) + 환경 변수. [resolver] 는 문자열의 두 토큰을 푸는 함수(다른 토큰은 빈 문자열 — MockTemplate 규약, 토큰 없으면 그대로). */
-    class Scope(val secrets: Map<String, String>, val env: Map<String, String>) {
+    class Scope(val secrets: Map<String, String>, val env: Map<String, String>,
+                val transformLookup: ((String) -> com.flowlink.transform.FlowTransform?)? = null,
+                val codecLookup: com.flowlink.protocol.ProtocolCodec.PluginLookup? = null,
+                val protocol: com.flowlink.protocol.ProtocolSpec? = null,
+                val verifyAccess: () -> Unit = {}) {
         private val masks by lazy { com.flowlink.execution.engine.SecretMasker.variants(secrets.values) }
         fun mask(value: String): String = com.flowlink.execution.engine.SecretMasker.mask(value, masks) ?: value
 
@@ -20,7 +24,7 @@ class MockSecretProvider(private val loader: MockScopeLoader) {
         fun maskBytes(bytes: ByteArray): ByteArray {
             if (secrets.isEmpty()) return bytes
             val out = bytes.copyOf()
-            for (secret in secrets.values.filter { it.isNotBlank() }.sortedByDescending { it.length }) for (charset in listOf(Charsets.UTF_8, java.nio.charset.Charset.forName("EUC-KR"), java.nio.charset.Charset.forName("MS949"))) {
+            for (secret in masks) for (charset in listOf(Charsets.UTF_8, java.nio.charset.Charset.forName("EUC-KR"), java.nio.charset.Charset.forName("MS949"))) {
                 val needle = secret.toByteArray(charset)
                 if (needle.isEmpty() || needle.size > out.size) continue
                 for (start in 0..out.size - needle.size) if (needle.indices.all { out[start + it] == needle[it] }) {
@@ -41,8 +45,10 @@ class MockSecretProvider(private val loader: MockScopeLoader) {
     private val cache = ConcurrentHashMap<String, Entry>()
 
     /** [cached]=false 는 대화형(시험·미리보기) — 방금 저장한 값이 바로 보이게 캐시를 건너뛴다. */
-    fun scope(tenantId: String, environment: String?, cached: Boolean = true, workspaceId: java.util.UUID? = null): Scope {
+    fun scope(tenantId: String, environment: String?, cached: Boolean = true, workspaceId: java.util.UUID? = null, spec: MockSpec? = null): Scope {
         val env = environment?.trim().orEmpty()
+        // 중앙 자원은 현재 PC 계정을 매번 검증한다. 이전 계정의 복호화 값을 캐시에서 재사용하지 않는다.
+        if (spec?.resourceWorkspaceId != null) return loader.load(tenantId, env, workspaceId, spec)
         val key = "$tenantId|$workspaceId|$env"
         val now = System.currentTimeMillis()
         if (cached) cache[key]?.let { if (now - it.at < TTL_MS) return it.scope }
@@ -63,4 +69,7 @@ class MockSecretProvider(private val loader: MockScopeLoader) {
     }
 }
 
-fun interface MockScopeLoader { fun load(tenantId: String, environment: String, workspaceId: java.util.UUID?): MockSecretProvider.Scope }
+fun interface MockScopeLoader {
+    fun load(tenantId: String, environment: String, workspaceId: java.util.UUID?): MockSecretProvider.Scope
+    fun load(tenantId: String, environment: String, workspaceId: java.util.UUID?, spec: MockSpec): MockSecretProvider.Scope = load(tenantId, environment, workspaceId)
+}

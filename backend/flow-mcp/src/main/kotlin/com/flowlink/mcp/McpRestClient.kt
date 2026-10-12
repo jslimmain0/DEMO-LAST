@@ -22,15 +22,20 @@ class McpRestClient(private val mapper: ObjectMapper) {
 
     fun api(ctx: McpInvocation, method: String, path: String, body: JsonNode? = null, query: Map<String, String?> = emptyMap(), viaPc: Boolean = ctx.target == "local", remoteOnPc: Boolean = false): JsonNode {
         require(path.startsWith('/') && !path.startsWith("//") && !path.contains('?') && !path.contains('#')) { "잘못된 API 경로" }
+        val shared = listOf("/protocols", "/secrets", "/plugins", "/transforms", "/codecs").any { path == it || path.startsWith("$it/") }
+        val serverEnvironment = ctx.target == "server" && (path == "/environments" || path.startsWith("/environments/"))
+        val routed = if (shared) ctx.copy(target = "server", workspaceId = "public") else if (serverEnvironment) ctx.copy(workspaceId = "public") else ctx
         val params = query.toMutableMap()
-        if (ctx.workspaceId != null && params["workspaceId"] == null) params["workspaceId"] = ctx.workspaceId
-        val payload = if (method == "POST" && path in setOf("/protocols", "/plugins/scripts", "/mock-servers", "/flows", "/folders") && ctx.workspaceId != null) {
+        if (shared || serverEnvironment) params["workspaceId"] = "public"
+        else if (routed.workspaceId != null && params["workspaceId"] == null) params["workspaceId"] = routed.workspaceId
+        val payload = if (method == "POST" && path in setOf("/protocols", "/plugins/scripts", "/mock-servers", "/flows", "/folders") && routed.workspaceId != null) {
             (body?.deepCopy<JsonNode>() as? ObjectNode ?: mapper.createObjectNode()).apply {
-                if (!hasNonNull("workspaceId")) put("workspaceId", ctx.workspaceId)
+                if (shared || !hasNonNull("workspaceId")) put("workspaceId", routed.workspaceId)
             }
         } else body
-        val apiPath = "/api/v1" + (if (remoteOnPc) "/remote" else "") + path
-        return if (viaPc) bridge(ctx, method, apiPath, payload, params) else direct(ctx, method, apiPath, payload, params)
+        val pc = viaPc && !shared
+        val apiPath = "/api/v1" + (if (remoteOnPc && !shared) "/remote" else "") + path
+        return if (pc) bridge(routed, method, apiPath, payload, params) else direct(routed, method, apiPath, payload, params)
     }
 
     fun direct(ctx: McpInvocation, method: String, path: String, body: JsonNode? = null, query: Map<String, String?> = emptyMap()): JsonNode {

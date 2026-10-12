@@ -14,7 +14,7 @@ function load(file, modules, extra = '') {
   vm.runInNewContext(code, { exports: exported, require: name => modules[name] ?? (name.endsWith('/design/ui') ? designUi : {}), window: {open: url => {opened = url}}, document: {body:{}}, setTimeout: () => {} })
   return exported
 }
-const base = { react, 'react/jsx-runtime': {jsx,jsxs:jsx}, 'react-router-dom': {Link:'link'}, '../app/WorkspaceContext': {useWorkspace: () => ({...scope, connected})}, '../auth/AuthContext': {useAuth: () => ({desktop:{}})}, 'react-dom': {createPortal: value => value}, '../lib/appBase': {appUrl: value => value} }
+const base = { react, 'react/jsx-runtime': {jsx,jsxs:jsx}, 'react-router-dom': {Link:'link'}, '../app/WorkspaceContext': {useWorkspace: () => ({...scope, connected}), useCentralApi: () => scope.agentApi('server', 'public')}, '../auth/AuthContext': {useAuth: () => ({desktop:{}})}, 'react-dom': {createPortal: value => value}, '../lib/appBase': {appUrl: value => value} }
 const agents = load('components/AgentSettings.tsx', {...base, '../lib/executionAgentSelection': load('lib/executionAgentSelection.ts', {})})
 const catalogModule = load('lib/useTransformCatalog.ts', {...base, '../components/AgentSettings': agents, '@tanstack/react-query': {useQuery: value => {options = value; return query}}})
 const notices = load('components/PluginResources.tsx', base)
@@ -25,17 +25,17 @@ function walk(node, predicate, results = []) {
 }
 function text(node) {return Array.isArray(node) ? node.map(text).join('') : node && typeof node === 'object' ? text(node.props?.children) : typeof node === 'string' ? node : ''}
 let catalog = catalogModule.useTransformCatalog({type:'transform', executionAgent:'local'})
-assert.equal(catalog.resources.workspaceId, 'team'); assert.equal(options.queryFn(), 'server:team')
+assert.equal(catalog.resources.workspaceId, 'public'); assert.equal(options.queryFn(), 'server:public')
 assert.equal(options.queryKey[0], 'transforms'); assert.match(catalog.newLocation, /space=server%3Ateam&new=transform/)
 catalog = catalogModule.useTransformCatalog({type:'transform', executionAgent:'server'})
-assert.equal(options.queryFn(), 'server:team'); assert.match(catalog.newLocation, /space=server%3Ateam&new=transform/)
-assert.match(catalogModule.useTransformCatalog().label, /개발팀/)
+assert.equal(options.queryFn(), 'server:public'); assert.match(catalog.newLocation, /space=server%3Ateam&new=transform/)
+assert.match(catalogModule.useTransformCatalog().label, /서버 공통/)
 assert.equal(agents.AgentSettings({node:{type:'transform'},update(){},disabled:false}), null)
 assert.equal(agents.nodeAgent({type:'http',executionAgent:'local'},'server'), 'local')
 assert.equal(agents.nodeAgent({type:'transform',executionAgent:'local'},'server'), 'server')
 scope.current = {origin:'local',id:'pc'}
-catalog = catalogModule.useTransformCatalog(); assert.equal(options.enabled,false); assert.equal(catalog.allowed,false)
-assert.match(text(notices.PluginResourceNotice({catalog})),/공용·팀 워크스페이스에서만/)
+catalog = catalogModule.useTransformCatalog(); assert.equal(options.enabled,true); assert.equal(catalog.allowed,true)
+assert.equal(options.queryFn(), 'server:public', 'PC workflow uses the same central catalog')
 scope.current = {origin:'server',id:'team'}
 connected = false; catalogModule.useTransformCatalog(); assert.equal(options.enabled, false); connected = true
 query = {...query,isSuccess:false,isPending:true}
@@ -45,7 +45,7 @@ query = {...query,isPending:false,isError:true}
 assert.match(text(notices.PluginResourceNotice({catalog:catalogModule.useTransformCatalog(),selected:['missing']})), /불러오지 못했습니다/)
 query = {...query,isSuccess:true,isError:false}
 notice = notices.PluginResourceNotice({catalog:catalogModule.useTransformCatalog(),selected:['missing']})
-assert.match(text(notice), /개발팀에 승인된 플러그인이 없습니다/)
+assert.match(text(notice), /서버 공통에 승인된 플러그인이 없습니다/)
 walk(notice,n => n.type === 'button')[0].props.onClick(); assert.equal(refreshes,1)
 const picker = load('components/TransformPicker.tsx',base)
 const loading = picker.TransformPicker({list:[],value:'same',loading:true,onChange(){}})

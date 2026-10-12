@@ -28,6 +28,15 @@
 .fl-execution-plan-table small { font-size: 12px; line-height: 1.5; }
 .fl-execution-plan-table td:first-child { min-width: 130px; overflow-wrap: anywhere; }
 .fl-execution-plan-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; padding-top: 12px; }
+.fl-execution-plan-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin: 18px 0; padding: 16px; border: 1px solid var(--fl-border); border-radius: var(--fl-radius); background: var(--fl-surface-2); }
+.fl-execution-plan-summary dt { margin-bottom: 8px; font-size: 12px; color: var(--fl-text-muted); }
+.fl-execution-plan-summary dd { margin: 0; font-size: 14px; font-weight: 650; overflow-wrap: anywhere; }
+.fl-execution-plan-status { margin: 12px 0; color: var(--fl-ok); font-size: 13px; }
+.fl-execution-plan-status.is-pending { color: var(--fl-waiting); }
+.fl-execution-plan-details { margin-top: 10px; border-top: 1px solid var(--fl-border); }
+.fl-execution-plan-details > summary { cursor: pointer; min-height: 40px; padding: 12px 0; box-sizing: border-box; font-size: 13px; color: var(--fl-text-soft); }
+.fl-execution-plan-details > summary:focus-visible { outline: 2px solid var(--fl-focus); outline-offset: 2px; }
+@media (max-width: 560px) { .fl-execution-plan-summary { grid-template-columns: 1fr; gap: 12px; } .fl-execution-plan-summary dt { margin-bottom: 4px; } }
 @media (forced-colors: active) {
   .fl-agent-badge { color: CanvasText; background: Canvas; border-color: CanvasText; }
   .fl-agent-address { border-color: CanvasText; }

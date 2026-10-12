@@ -14,6 +14,7 @@ class GraphValidator(
 ) {
 
     fun validate(graph: FlowGraph) {
+        if (graph.resourceWorkspaceId != null && graph.resourceWorkspaceId != "public") throw BadRequestException("서버 공통 자원 공간을 선택하세요.")
         val nodes = graph.nodesOrEmpty()
         if (nodes.size > props.maxNodesPerRun) {
             throw BadRequestException(

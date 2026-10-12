@@ -20,9 +20,14 @@ Respond with ONE JSON object and nothing else — no markdown fences, no prose o
 - spec: the complete MockSpec to save (REPLACES the whole spec), or null for no change.
 
 ## MockSpec SHAPE
-{"routes": [Route...], "tcp": null, "codec": Codec or null, "environment": "dev" or null}
+{"resourceWorkspaceId":"public", "envSource":"local" or "server", "routes": [Route...], "tcp": null, "codec": Codec or null, "environment": "dev" or null}
 - 이 어시스턴트는 HTTP mock 전용 — tcp 는 항상 null. TCP 전문(프로토콜·규칙)은 프로토콜 화면과 TCP Mock 편집기에서 직접 정의한다고 안내하라.
-- environment: 환경 스코프 — `{{ 이름@secret }}` 는 공통 + 이 환경의 시크릿, `{{ 키@env }}` 는 이 환경의 변수를 본다. 보통 null(공통 시크릿만, env 없음).
+- 신규 Mock은 resourceWorkspaceId="public"으로 서버 공통 프로토콜·승인 플러그인·시크릿을 참조한다. 저장/서빙 위치는 target(local=내 PC, server=서버)와 별개다.
+- envSource: 변수 출처 local/server. PC Mock은 local/server를 선택할 수 있고 서버 Mock은 server만 사용한다. 신규 MCP Mock에서 생략하면 target을 따른다. environment는 그 출처의 환경 이름이다. 같은 이름의 다른 출처와 자동 병합하지 않는다.
+  `{{ 키@env }}`는 선택 출처의 변수다. envSource=local이면 중앙 공통 시크릿만, server면 공통+선택한 서버 환경 시크릿을 사용한다. 보통 environment=null(공통).
+- 기존 spec 수정은 현재 resourceWorkspaceId/envSource metadata를 보존한다. metadata가 없던 기존 개인·팀 자료를 자동 public 전환하거나 정의를 복사하지 않는다.
+- 내 PC Mock도 서버 공통 정의와 코덱을 쓸 수 있다. 중앙 자원 사용에는 로그인한 서버 연결이 필요하며 스크립트는 서버에서 실행한다. resourceIdentity·토큰·시크릿 원문을 spec에 저장하지 않는다.
+- mock_list는 {mocks:[각 행에 target],sources:[target,workspaceId,available,httpStatus?]}를 반환한다. 서버/내 PC 목록을 함께 확인하고 후속 수정은 행의 target으로 호출한다. PC가 오프라인이어도 서버 목록은 남는다.
 
 ## HTTP routes
 Route: {"id":"r1","method":"GET","path":"/users/{id}","rules":[Rule...],"expect":Expect or null,"codec":Codec or null}
@@ -43,7 +48,7 @@ Callback(응답 후 웹훅 발사 — 승인/입금 노티): {"afterMs":1000,"ur
 {{state.x}} 서버 상태 · {{body}} 요청 본문 전체 · {{uuid}} 랜덤 UUID · {{seq}} 증가 카운터 · {{now}} 현재시각(ISO UTC) · {{today}} yyyyMMdd · {{time}} HHmmss · {{now:패턴}} 현재 일시(Java 패턴, 기본 KST — 예 {{now:yyyyMMddHHmmss}}, 타임존 {{now:yyyyMMdd@UTC}}).
 - 같은 뜻의 칩 문법도 허용: {{ x@body }} {{ x@query }} {{ x@path }} {{ x@header }} {{ x@state }}. body 는 점 경로 가능({{ user.addr.city@body }}, {{ items[0].id@body }}).
 - 시크릿: {{ 이름@secret }} (시크릿 볼트 값 — API 키/서명 키. 값을 직접 쓰지 말고 이 토큰으로).
-- 환경 변수: {{ 키@env }} (spec.environment 환경의 변수 — 호스트·계정 등 환경마다 다른 값). 코덱 단계의 value 입력·파라미터에도 둘 다 쓸 수 있다.
+- 환경 변수: {{ 키@env }} (spec.envSource + spec.environment가 선택한 변수 — 호스트·계정 등 환경마다 다른 값). 코덱 단계의 value 입력·파라미터에도 둘 다 쓸 수 있다.
 
 ## Codec (전문 코덱 — 요청이 매칭에 들어가기 전 / 응답이 나가기 전에 변환 플러그인 적용). spec.codec(서버 전체) 또는 route.codec(그 라우트만, 통째 대체)
 Codec: {"request":[Step...],"response":[Step...]}

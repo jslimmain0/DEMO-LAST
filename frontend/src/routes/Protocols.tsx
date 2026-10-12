@@ -1,6 +1,6 @@
 import { PageHeader } from '../components/PageHeader'
 import { AppIcon } from '../components/AppIcon'
-import { useApi } from '../app/WorkspaceContext'
+import { useCentralApi, useWorkspace } from '../app/WorkspaceContext'
 // frontend/src/routes/Protocols.tsx — 프로토콜(고정길이 전문 규격) 목록 + 편집기.
 // 선택 상태는 URL(/protocols/:id) 이라 새로고침·딥링크가 유지된다(TCP 노드·Mock 의 "관리 →" 가 직행).
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -18,17 +18,20 @@ import { newProtocolSpec } from '../lib/protocolSpec'
 import { ui } from '../design/ui'
 
 export function Protocols() {
-  const { protocolsApi } = useApi()
+  const { protocolsApi } = useCentralApi()
+  const scope = useWorkspace()
 
   const { id } = useParams()
   const navigate = useNavigate()
   const qc = useQueryClient()
-  const { canEdit } = usePermissions()
+  const { canEdit: permitted } = usePermissions()
+  const resourceWorkspace = scope.workspaces.find(space => space.origin === 'server' && space.id === 'public')
+  const canEdit = permitted && scope.connected && resourceWorkspace?.myRole !== 'VIEWER'
   const [q, setQ] = useState('')
   const searchRef = useRef<HTMLInputElement>(null)
 
-  const list = useQuery({ queryKey: ['protocols'], queryFn: protocolsApi.list })
-  const detail = useQuery({ queryKey: ['protocol', id], queryFn: () => protocolsApi.get(id!), enabled: !!id })
+  const list = useQuery({ queryKey: ['protocols', 'central', scope.remoteKey], queryFn: protocolsApi.list, enabled: scope.connected })
+  const detail = useQuery({ queryKey: ['protocol', id, 'central', scope.remoteKey], queryFn: () => protocolsApi.get(id!), enabled: !!id && scope.connected })
 
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ['protocols'] })
@@ -60,7 +63,7 @@ export function Protocols() {
     <AppShellTier1>
       <div className="fl-protocol-workbench">
         <aside style={listPane}>
-          <PageHeader title="프로토콜" count={list.data?.length ?? 0} />
+          <PageHeader title="프로토콜" count={list.data?.length ?? 0} description="서버 · 공통 자원" />
           <input ref={searchRef} value={q} onChange={(e) => setQ(e.target.value)} placeholder="검색 ( / )" aria-label="프로토콜 검색"
             onKeyDown={(e) => { if (e.key === 'Escape' && q) { e.stopPropagation(); setQ('') } }} style={search} />
           {canEdit && (
@@ -69,6 +72,7 @@ export function Protocols() {
             </button>
           )}
           <div style={{ overflowY: 'auto', display: 'grid', gap: 3, alignContent: 'start' }}>
+            {!scope.connected && <div style={muted} role="status">서버에 연결하면 공통 프로토콜을 볼 수 있습니다.</div>}
             {list.isLoading && <div style={muted}>불러오는 중…</div>}
             {list.isError && <div style={{ ...muted, color: 'var(--fl-fail)' }}>목록을 불러오지 못했습니다.</div>}
             {list.data && !items.length && <div style={muted}>{q ? '일치하는 프로토콜이 없습니다.' : '아직 프로토콜이 없습니다.'}</div>}
@@ -94,7 +98,7 @@ export function Protocols() {
           ) : detail.isError ? (
             <div style={{ ...empty, color: 'var(--fl-fail)' }}>{apiErrorMessage(detail.error)}</div>
           ) : detail.data ? (
-            <ProtocolEditor key={detail.data.id} detail={detail.data} canEdit={canEdit} onSaved={invalidate} />
+            <ProtocolEditor key={`${scope.remoteKey.replace(/:(?:true|false)$/, '')}:${detail.data.id}`} detail={detail.data} canEdit={canEdit} onSaved={invalidate} />
           ) : null}
         </div>
       </div>

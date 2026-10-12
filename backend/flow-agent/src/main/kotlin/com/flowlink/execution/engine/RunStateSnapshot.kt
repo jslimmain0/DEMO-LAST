@@ -25,4 +25,5 @@ data class RunStateSnapshot(
     val agentRequest: com.flowlink.agent.AgentNodeRequest? = null,
     val workspaceId: java.util.UUID? = null,
     val singleNodeId: String? = null,
+    val resourceIdentity: com.flowlink.agent.CentralResourceIdentity? = null,
 )

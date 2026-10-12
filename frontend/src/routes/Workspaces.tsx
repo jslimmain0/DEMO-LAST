@@ -10,12 +10,13 @@ import { AppShellTier1 } from '../app/AppShell'
 import { matchesCatalog, catalogPage } from '../lib/catalog'
 import { CatalogPagination } from '../components/CatalogPagination'
 import { readWorkspaceNavigation, visitWorkspace, workspaceIdentity, workspaceStorageKey } from '../lib/workspaceNavigation'
+import { AppIcon } from '../components/AppIcon'
 
 export function Workspaces() {
   const scope = useWorkspace()
   const { desktop, me } = useAuth()
   const connection = useQuery({ queryKey: ['desktop', 'connection'], queryFn: desktopApi.connection, enabled: !!desktop })
-  const server = scope.agentApi('server')
+  const server = scope.agentApi('server', 'public')
   const membership = useQuery({ queryKey: ['server-membership', scope.remoteKey], queryFn: server.adminApi.me, enabled: scope.connected, retry: false })
   const [ask, setAsk] = useState<AskSpec | null>(null)
   const createTeam = useMutation({ mutationFn: server.workspacesApi.create, onSuccess: w => { scope.refresh(); scope.select(w.id, 'server'); toast('팀 공간을 만들었습니다.', 'ok') }, onError: e => toast(apiErrorMessage(e), 'error') })
@@ -24,7 +25,8 @@ export function Workspaces() {
   try { serverHost = new URL(serverUrl).host } catch { /* display configured address */ }
   const create = () => setAsk({ title: '새 팀 공간', message: `팀 작업은 ${serverHost}에 저장됩니다.`, input: { label: '팀 공간 이름', placeholder: '예: 결제팀' }, confirmLabel: '만들기', onConfirm: name => createTeam.mutate(name) })
   const key = workspaceStorageKey(scope.remoteKey)
-  const [favorites, setFavorites] = useState(() => readWorkspaceNavigation(key).favorites)
+  const [favoriteState, setFavoriteState] = useState(() => ({ key, values: readWorkspaceNavigation(key).favorites }))
+  const favorites = favoriteState.key === key ? favoriteState.values : readWorkspaceNavigation(key).favorites
   const [filter, setFilter] = useState('all')
   const [search, setSearch] = useState('')
   const [requestedPage, setPage] = useState(1)
@@ -38,7 +40,7 @@ export function Workspaces() {
   const favorite = (w: WorkspaceRef) => {
     const id = workspaceIdentity(w)
     const next = favorites.includes(id) ? favorites.filter(x => x !== id) : [...favorites, id]
-    setFavorites(next)
+    setFavoriteState({ key, values: next })
     try { localStorage.setItem(key, JSON.stringify({ ...readWorkspaceNavigation(key), favorites: next })) } catch { /* private mode */ }
   }
   const row = (w: WorkspaceRef) => <tr key={workspaceIdentity(w)}>
@@ -46,22 +48,22 @@ export function Workspaces() {
     <td><button className="fl-space-open" aria-label={`${w.name} · ${w.id} 열기`} onClick={() => choose(w)}><b>{w.name}</b><small title={w.id}>ID · {w.id.slice(0, 8)}</small></button></td>
     <td><span className={`fl-location-chip ${w.origin}`}>{w.origin === 'local' ? '내 PC' : w.kind === 'PUBLIC' ? '서버 · 공용' : '서버 · 팀'}</span></td>
     <td>{w.myRole === 'OWNER' ? '관리자' : w.myRole === 'EDITOR' ? '편집 가능' : '읽기 전용'}</td>
-    <td>{workspaceIdentity(w) === workspaceIdentity(scope.current) ? <span className="fl-space-active">현재 공간</span> : <button className="fl-workbench-button" onClick={() => choose(w)}>열기 →</button>}</td>
+    <td><button className="fl-workbench-button" onClick={() => choose(w)}>워크플로 열기 →</button></td>
   </tr>
   return <AppShellTier1>
     <div className="fl-workbench-page fl-workspace-library">
-      <header className="fl-workbench-title"><div><h1>공간 탐색</h1><span>내 PC의 개인 작업과 회사 서버의 팀 작업을 찾아 엽니다.</span></div><button className="fl-workbench-button" onClick={scope.refresh}>목록 새로고침</button></header>
-      {personal.length > 0 && <section className="fl-personal-space"><div><h2>내 PC의 개인 공간</h2><p>서버 로그인과 관계없이 이 PC에 저장됩니다.</p></div><div>{personal.map(w => <button key={w.id} onClick={() => choose(w)}><b>{w.name}</b><span>개인 작업 열기 →</span></button>)}</div></section>}
-      <section aria-labelledby="server-spaces-title"><div className="fl-library-heading"><div><h2 id="server-spaces-title">회사 서버의 공용·팀 공간</h2><span>{serverHost} · {scope.connected ? `${scope.login ?? me?.username ?? '사용자'} 로그인` : '로그인 필요'}</span></div>{scope.connected && membership.data?.myStatus === 'APPROVED' && <button className="fl-workbench-button" disabled={createTeam.isPending} onClick={create}>{createTeam.isPending ? '만드는 중…' : '＋ 새 팀 공간'}</button>}</div>
-        {!scope.connected && <p className="fl-library-guide">서버 로그인 후 회사의 공용·팀 공간을 엽니다. 개인 작업은 계속 내 PC에 저장됩니다.</p>}
+      <header className="fl-workbench-title"><div><h1>공간 탐색</h1><span>워크플로를 저장하고 함께 작업할 공간을 찾습니다.</span></div><button className="fl-workbench-button" onClick={scope.refresh}><AppIcon name="refresh" size={15} />새로고침</button></header>
+      {!!desktop && <section className="fl-personal-space"><div><h2><AppIcon name="monitor" size={18} />내 PC</h2><p>개인 워크플로와 Mock, 환경 변수는 이 PC에서 관리합니다.</p></div><div>{personal.length ? personal.map(w => <button key={w.id} onClick={() => choose(w)}><b>개인 워크플로</b><span>열기 →</span></button>) : <button onClick={() => scope.select('local', 'local')}><b>개인 워크플로</b><span>열기 →</span></button>}</div></section>}
+      <section aria-labelledby="server-spaces-title"><div className="fl-library-heading"><div><h2 id="server-spaces-title">서버 공간</h2><span title={serverUrl}>{serverHost} · {scope.connected ? scope.login ?? me?.username ?? '사용자' : '로그인 필요'}</span></div>{scope.connected && membership.data?.myStatus === 'APPROVED' && <button className="fl-workbench-button" disabled={createTeam.isPending} onClick={create}>{createTeam.isPending ? '만드는 중…' : '＋ 새 팀 공간'}</button>}</div>
+        {!scope.connected && <div className="fl-library-disconnected"><AppIcon name="database" size={22} /><div><b>회사 서버에 연결하세요</b><p>로그인하면 공용·팀 공간과 서버 공통 자원을 사용할 수 있습니다.</p></div>{desktop && <button className="fl-workbench-button" onClick={() => void desktopApi.login()}>서버 로그인</button>}</div>}
         {scope.connected && membership.data?.myStatus === 'PENDING' && <p className="fl-library-guide" role="status">가입 신청이 접수됐습니다. 관리자가 승인하면 팀 공간을 이용할 수 있습니다.</p>}
         {scope.connected && membership.data?.myStatus === 'BLOCKED' && <p className="fl-library-guide" role="status">서버 계정 사용이 제한돼 있습니다. 회사 FlowLink 관리자에게 문의하세요.</p>}
         {scope.connected && membership.data?.myStatus === 'APPROVED' && !scope.workspaces.some(w => w.origin === 'server' && w.kind === 'TEAM') && <p className="fl-library-guide">아직 참여 중인 팀 공간이 없습니다. 기존 팀 관리자에게 멤버 추가를 요청하거나 새 팀 공간을 만드세요.</p>}
         {scope.connected && membership.isError && <p className="fl-library-guide" role="alert">가입 상태를 확인하지 못했습니다. <button className="fl-workbench-button" onClick={() => void membership.refetch()}>다시 확인</button></p>}
-        <div className="fl-library-toolbar"><div className="fl-library-filters" role="group" aria-label="공간 분류">{[['all', '전체'], ['favorites', '즐겨찾기'], ['recent', '최근'], ['team', '팀'], ['public', '공용']].map(([id, label]) => <button key={id} aria-pressed={filter === id} onClick={() => { setFilter(id); setPage(1) }}>{label}</button>)}</div><input aria-label="서버 공간 검색" placeholder="공간 이름 또는 ID 검색" value={search} onChange={e => { setSearch(e.target.value); setPage(1) }} /></div>
+        {scope.connected && <><div className="fl-library-toolbar"><div className="fl-library-filters" role="group" aria-label="공간 분류">{[['all', '전체'], ['favorites', '즐겨찾기'], ['recent', '최근'], ['team', '팀'], ['public', '공용']].map(([id, label]) => <button key={id} aria-pressed={filter === id} onClick={() => { setFilter(id); setPage(1) }}>{label}</button>)}</div><input aria-label="서버 공간 검색" placeholder="공간 이름 또는 ID 검색" value={search} onChange={e => { setSearch(e.target.value); setPage(1) }} /></div>
         <CatalogPagination total={spaces.length} page={page.page} size={size} onPage={setPage} onSize={n => { setSize(n); setPage(1) }} label="공간" />
         <div className="fl-library-table fl-table-wrap"><table className="fl-table"><thead><tr><th aria-label="즐겨찾기" /><th>공간 이름</th><th>저장 위치</th><th>내 권한</th><th>작업</th></tr></thead><tbody>{spaces.slice(page.start, page.end).map(row)}</tbody></table></div>
-        {!spaces.length && <p className="fl-library-empty" role="status">{scope.connected && scope.remoteLoading ? '공간 목록을 불러오는 중입니다.' : !scope.connected ? '사이드바의 서버 로그인으로 연결하세요.' : '조건에 맞는 공간이 없습니다. 검색어나 분류를 바꿔보세요.'}</p>}
+        {!spaces.length && !scope.remoteError && <p className="fl-library-empty" role="status">{scope.remoteLoading ? '공간 목록을 불러오는 중입니다.' : '조건에 맞는 공간이 없습니다. 검색어나 분류를 바꿔보세요.'}</p>}</>}
         {scope.remoteError && <p role="alert">서버 공간 목록을 갱신하지 못했습니다. 연결 후 다시 시도하세요.</p>}
       </section>
       {ask && <AskDialog spec={ask} onClose={() => setAsk(null)} />}

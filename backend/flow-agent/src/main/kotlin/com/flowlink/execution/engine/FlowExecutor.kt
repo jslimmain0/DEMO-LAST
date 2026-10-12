@@ -165,7 +165,7 @@ class FlowExecutor(
     fun snapshot(st: RunState): RunStateSnapshot = RunStateSnapshot(
         st.active.toList(), st.ctx.snapshotValues(), st.ctx.snapshotSeeds(),
         st.index, st.seq, st.pendingNodeId, st.pendingFormSpec, st.relayBase, st.relayRunId,
-        st.agentRun, st.agentRequest, st.ctx.workspaceId, st.singleNodeId,
+        st.agentRun, st.agentRequest, st.ctx.workspaceId, st.singleNodeId, st.ctx.resourceIdentity,
     )
 
     /** 스냅샷 + 원본 그래프로 RunState 를 되살린다(서버 재시작 후 콜백/재개용). */
@@ -182,6 +182,7 @@ class FlowExecutor(
         st.agentRun = snap.agentRun
         st.agentRequest = snap.agentRequest
         st.ctx.workspaceId = snap.workspaceId
+        st.ctx.resourceIdentity = snap.resourceIdentity
         st.singleNodeId = snap.singleNodeId
         return st
     }
@@ -539,8 +540,14 @@ class FlowExecutor(
     }
 
     /** TCP 요청 전문 미리보기(전송 없음) — 상류 바인딩은 빈 컨텍스트라 리터럴/토큰만 해석. */
-    fun previewTcp(node: GraphNode, workspaceId: java.util.UUID? = null, env: Map<String, String> = emptyMap(), secrets: Map<String, String> = emptyMap()): com.flowlink.protocol.ProtocolDtos.PreviewResult =
-        tcpExecutor.preview(node, ExecutionContext().apply { this.workspaceId = workspaceId; putOutput("env", env); putSeed("secret", secrets) })
+    fun previewTcp(node: GraphNode, workspaceId: java.util.UUID? = null, env: Map<String, String> = emptyMap(), secrets: Map<String, String> = emptyMap(), resourceIdentity: com.flowlink.agent.CentralResourceIdentity? = null): com.flowlink.protocol.ProtocolDtos.PreviewResult {
+        val preview = tcpExecutor.preview(node, ExecutionContext().apply { this.workspaceId = workspaceId; this.resourceIdentity = resourceIdentity; putOutput("env", env); putSeed("secret", secrets) })
+        val scope = com.flowlink.mock.MockSecretProvider.Scope(secrets, env)
+        val bytes = com.flowlink.common.tcp.TcpBytes.hexToBytes(preview.hex) ?: byteArrayOf()
+        return preview.copy(hex = com.flowlink.common.tcp.TcpBytes.hexDump(scope.maskBytes(bytes)), text = scope.mask(preview.text),
+            fields = preview.fields.map { it.copy(value = scope.mask(it.value), warn = it.warn?.let(scope::mask)) },
+            errors = preview.errors.map { it.copy(message = scope.mask(it.message)) }, warnings = preview.warnings.map(scope::mask))
+    }
 
     private fun processNode(node: GraphNode, ctx: ExecutionContext): NodeResult =
         when (node.nodeType()) {
@@ -642,7 +649,7 @@ class FlowExecutor(
             inputs[spec.key] = if (f == null) "" else tokens.stringify(tokens.fieldValue(f, ctx))
         }
 
-        val config = node.config ?: emptyMap()
+        val config = node.config.orEmpty().mapValues { (_, value) -> tokens.resolveTokens(value, ctx) }
         val out: Map<String, String>? = try {
             transform.apply(inputs, config)
         } catch (e: Exception) {

@@ -1,4 +1,4 @@
-import { useApi } from '../app/WorkspaceContext'
+import { useApi, useWorkspace } from '../app/WorkspaceContext'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { CSSProperties } from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -30,10 +30,13 @@ import { applicableSecretNames, mockSources, envKeys } from '../lib/mockSources'
 import { lintTcpRules } from '../lib/protocolSpec'
 import { useProtocol } from '../panels/TcpNodePanel'
 import { relTime } from '../lib/format'
-import { useCatalogReturn } from '../lib/useCatalogNavigation'
+import { useCatalogNavigation, useCatalogReturn } from '../lib/useCatalogNavigation'
 import { useUnsavedNavigation } from '../components/UnsavedNavigation'
 import { AppIcon } from '../components/AppIcon'
 import { ui } from '../design/ui'
+import { MockNavigator } from '../components/MockNavigator'
+import { AgentBadge } from '../components/AgentSettings'
+import './mock-editor.css'
 
 const methodColor = (m: string): string => METHOD_COLOR[m as HttpMethod] ?? 'var(--fl-cat-generic)'
 const EMPTY_TCP: MockTcpSpec = { port: 9091, protocolId: null, upstream: null, timeoutMs: 5000, rules: [] }
@@ -53,18 +56,20 @@ type NavSel =
  * 헤더: 이름 인라인·미저장 표시·자동 저장·Ctrl+S·버전·⋯ 도구·✨ AI.
  */
 export function MockServerEditor() {
-  const { adminApi, mocksApi, workspacesApi, secretsApi, environmentsApi, mockBaseUrl } = useApi()
+  const scope = useWorkspace()
+  const { adminApi, mocksApi, workspacesApi, secretsApi, mockBaseUrl } = useApi()
 
   const { id = '' } = useParams()
   const qc = useQueryClient()
   const navigate = useNavigate()
   const returnToList = useCatalogReturn('mocks')
+  const catalog = useCatalogNavigation('mocks')
   const { canEdit: canEditGlobal } = usePermissions()
   const { me, isGuest } = useAuth()
   const aiMe = useQuery({ queryKey: ['admin', 'me'], queryFn: adminApi.me, staleTime: 30_000 })
   const aiPending = aiMe.data?.myStatus === 'PENDING'
   const badgeInk = useReadableInk('var(--fl-cat-generic)')
-  const detail = useQuery({ queryKey: ['mock-server', id], queryFn: () => mocksApi.get(id), enabled: !!id })
+  const detail = useQuery({ queryKey: ['mock-server', id], queryFn: () => mocksApi.get(id), enabled: !!id, retry: false })
   const wss = useQuery({ queryKey: ['workspaces'], queryFn: workspacesApi.list })
   const wsRole = detail.data?.workspaceId ? (wss.data?.find((w) => w.id === detail.data!.workspaceId)?.myRole ?? 'VIEWER') : 'EDITOR'
   const canEdit = canEditGlobal && wsRole !== 'VIEWER'
@@ -86,16 +91,24 @@ export function MockServerEditor() {
   const [autosave, setAutosave] = useState(() => { try { return localStorage.getItem('fl:mock:autosave') === '1' } catch { return false } })
   const [nav, setNav] = useState<NavSel>({ kind: 'overview' })
   const [navQ, setNavQ] = useState('')
-  const [trafficOpen, setTrafficOpen] = useState(() => { try { return localStorage.getItem('fl:mock:traffic') !== '0' } catch { return true } })
+  const [trafficOpen, setTrafficOpen] = useState(() => { try { return localStorage.getItem('fl:mock:traffic') === '1' } catch { return false } })
   const [trafficTab, setTrafficTab] = useState<'log' | 'send'>('log')
+  const envSource = spec.envSource ?? scope.current.origin
+  const invalidLocalSource = scope.current.origin === 'server' && envSource === 'local'
+  const envWorkspace = envSource === 'server' || invalidLocalSource ? 'public' : scope.current.id
+  const environmentApi = useMemo(() => scope.agentApi(invalidLocalSource ? 'server' : envSource, envWorkspace).environmentsApi, [scope, envSource, envWorkspace, invalidLocalSource])
   const secretsQ = useQuery({ queryKey: ['secrets'], queryFn: secretsApi.list, retry: false })
-  const envsQ = useQuery({ queryKey: ['environments'], queryFn: environmentsApi.list, retry: false })
-  const secrets: SecretView[] = secretsQ.data ?? []
+  const envsQ = useQuery({ queryKey: ['mock-environments', envSource, envSource === 'server' ? scope.remoteKey : 'pc', envWorkspace], queryFn: environmentApi.list, retry: false, enabled: !invalidLocalSource && (envSource === 'local' || scope.connected) })
+  const secrets: SecretView[] = (secretsQ.data ?? []).filter(secret => envSource === 'server' || !secret.environment)
   const secretEnvs = [...new Set(secrets.map((x) => x.environment).filter((x): x is string => !!x))].sort()
+  const environmentNames = [...new Set([...(envsQ.data ?? []).map(env => env.name), ...(envSource === 'server' ? secretEnvs : [])])].sort((a, b) => a.localeCompare(b, 'ko'))
+  const resourceSpec = (value: MockServerSpec): MockServerSpec => ({ ...value, resourceWorkspaceId: 'public', envSource: value.envSource ?? scope.current.origin })
 
   const invalidate = useCallback(() => {
     void qc.invalidateQueries({ queryKey: ['mock-server', id] })
     void qc.invalidateQueries({ queryKey: ['mock-servers'] })
+    void qc.invalidateQueries({ queryKey: ['mock-fleet'] })
+    void qc.invalidateQueries({ queryKey: ['mock-explorer'] })
     void qc.invalidateQueries({ queryKey: ['mock-versions', id] })
   }, [qc, id])
 
@@ -123,7 +136,7 @@ export function MockServerEditor() {
     mutationFn: async () => {
       const snapshot = structuredClone(draftRef.current)
       if (snapshot.name.trim() && snapshot.name.trim() !== detail.data?.name) await mocksApi.update(snapshot.id, { name: snapshot.name.trim() })
-      await mocksApi.updateSpec(snapshot.id, snapshot.spec)
+      await mocksApi.updateSpec(snapshot.id, resourceSpec(snapshot.spec))
       return snapshot
     },
     onSuccess: (snapshot) => {
@@ -161,16 +174,19 @@ export function MockServerEditor() {
       for (let n = 2; n < 30; n++) { candidate = `${d.slug.slice(0, 40 - String(n).length - 1)}-${n}`; if ((await mocksApi.slugCheck(candidate)).available) break }
       const created = await mocksApi.create({ name: `${d.name} (복제)`, slug: candidate, type: d.kind === 'TCP' ? 'TCP' : 'HTTP', workspaceId: d.workspaceId ?? null })
       const s = spec.tcp ? { ...spec, tcp: { ...spec.tcp, port: (spec.tcp.port ?? 9091) + 1 } } : spec // TCP 포트 충돌 방지 — 포트 +1 · 꺼서 복제(연결 화면에서 확인 후 켬)
-      await mocksApi.updateSpec(created.id, s, { note: `${d.slug} 복제` })
+      await mocksApi.updateSpec(created.id, resourceSpec(s), { note: `${d.slug} 복제` })
       if (spec.tcp) await mocksApi.update(created.id, { enabled: false })
       return created
     },
-    onSuccess: (c) => { toast(`'${c.name}' 으로 복제했습니다.`, 'ok'); qc.invalidateQueries({ queryKey: ['mock-servers'] }); navigate(`/mocks/${c.id}`) },
+    onSuccess: (c) => { toast(`'${c.name}' 으로 복제했습니다.`, 'ok'); qc.invalidateQueries({ queryKey: ['mock-servers'] }); const link = catalog.detail(c.id); navigate(link.to, { state: link.state }) },
     onError: (e) => toast(apiErrorMessage(e, '복제 실패'), 'error'),
   })
   const mutate = useCallback((fn: (s: MockServerSpec) => MockServerSpec) => { setSpec((s) => fn(s)); setDirty(true); setNote(null) }, [])
   const d = detail.data
   const base = d ? mockBaseUrl(d.slug, me?.tenant, d.basePath) : ''
+  const tcpHost = d?.listener?.advertisedAddress ?? (base ? new URL(base).hostname : window.location.hostname)
+  const tcpPort = `:${spec.tcp?.port ?? 9091}`
+  const tcpAddress = `${tcpHost}${tcpHost.endsWith(tcpPort) ? '' : tcpPort}`
   const kind = d?.kind ?? 'HTTP'
   const isTcp = kind === 'TCP'
   const isHttp = !isTcp
@@ -182,7 +198,7 @@ export function MockServerEditor() {
 
   const proto = useProtocol(tcp.protocolId || undefined)
   const protoSpec: ProtocolSpec | undefined = proto.data?.spec
-  const secretNames = useMemo(() => applicableSecretNames(secretsQ.data, spec.environment), [secretsQ.data, spec.environment])
+  const secretNames = useMemo(() => applicableSecretNames(secretsQ.data, envSource === 'server' ? spec.environment : null), [secretsQ.data, spec.environment, envSource])
   const envKeyList = useMemo(() => envKeys(envsQ.data, spec.environment), [envsQ.data, spec.environment])
   const tcpLints = useMemo(() => (isTcp && protoSpec ? lintTcpRules(tcp, protoSpec) : []), [isTcp, protoSpec, tcp])
 
@@ -291,23 +307,26 @@ export function MockServerEditor() {
   const httpFieldHints = { request: [...new Set(routes.flatMap((r) => (r.expect?.body ?? []).map((f) => f.key)).filter(Boolean))], response: [] as string[] }
 
   return (
-    <AppShellTier1>
+    <AppShellTier1 sidebarExtra={<MockNavigator />}>
       {!d ? (
-        <p style={{ color: 'var(--fl-text-muted)', padding: 24 }}>불러오는 중…</p>
+        <div style={{ padding: 24 }}>
+          {detail.isError ? <><p role="alert" style={{ color: 'var(--fl-fail)' }}>Mock을 불러오지 못했습니다. {apiErrorMessage(detail.error)}</p><button onClick={() => void detail.refetch()} style={ghostBtn}>다시 불러오기</button> <button onClick={leave} style={ghostBtn}>목록으로</button></> : <p role="status" style={{ color: 'var(--fl-text-muted)' }}>Mock을 불러오는 중…</p>}
+        </div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 0px)', minHeight: 0 }}>
+        <div className="fl-mock-editor" style={{ display: 'flex', flexDirection: 'column', height: '100dvh', minHeight: 0 }}>
           {/* ── 헤더 ── */}
           <header style={hdr}>
             <button onClick={leave} title="Mock 목록으로" aria-label="목록으로" style={{ ...ghostBtn, padding: '6px 10px' }}>←</button>
             <input value={name} onChange={(e) => { setName(e.target.value); setDirty(true) }} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === 'Escape') (e.target as HTMLInputElement).blur() }}
               disabled={!canEdit} aria-label="이름" style={{ ...input, fontSize: 16, fontWeight: 700, minWidth: 200, maxWidth: 360, background: 'transparent', border: '1px solid transparent' }} />
             <span style={{ ...badge, background: isTcp ? 'var(--fl-cat-tcp)' : 'var(--fl-cat-generic)', color: badgeInk }}>{legacyMixed ? 'HTTP Mock · 레거시(TCP 혼합)' : isTcp ? 'TCP Mock' : 'HTTP Mock'}</span>
+            <AgentBadge agent={scope.current.origin} label={scope.current.origin === 'local' ? '내 PC' : `서버 · ${scope.current.name}`} />
             <button style={{ ...miniBtn, color: d.enabled ? 'var(--fl-ok)' : 'var(--fl-text-muted)', opacity: canEdit ? 1 : 0.5 }} disabled={!canEdit} onClick={() => toggle.mutate()} title={d.enabled ? (isTcp ? '리스너 열림 — 클릭하면 닫음' : '서빙 중 — 클릭하면 끔') : '꺼짐 — 클릭하면 켬'}>{d.enabled ? (isTcp ? '● 리스너 열림' : '● 서빙 중') : '○ 꺼짐'}</button>
             {isHttp && (
               <button onClick={() => { void navigator.clipboard?.writeText(base).then(() => toast('base URL 복사됨', 'ok')).catch(() => {}) }} title={`base URL 복사 — ${base}`} style={{ ...miniBtn, fontFamily: 'var(--fl-font-mono)', fontSize: 12, maxWidth: 320, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{base} ⧉</button>
             )}
             {isTcp && (
-              <button onClick={() => { const addr = `${window.location.hostname || 'localhost'}:${tcp.port ?? 9091}`; void navigator.clipboard?.writeText(addr).then(() => toast('주소 복사됨', 'ok')).catch(() => {}) }} title="host:port 복사 — 워크플로 TCP 노드 대상" style={{ ...miniBtn, fontFamily: 'var(--fl-font-mono)', fontSize: 12 }}>{window.location.hostname || 'localhost'}:{tcp.port ?? 9091} ⧉</button>
+              <button onClick={() => { void navigator.clipboard?.writeText(tcpAddress).then(() => toast('주소 복사됨', 'ok')).catch(() => {}) }} title={`TCP 주소 복사 — ${tcpAddress}`} style={{ ...miniBtn, fontFamily: 'var(--fl-font-mono)', fontSize: 12 }}>{tcpAddress} ⧉</button>
             )}
             <span style={{ fontSize: 12, color: dirty ? 'var(--fl-put, #f5a623)' : note?.startsWith('저장됨') ? 'var(--fl-ok)' : 'var(--fl-text-muted)', fontWeight: dirty || note?.startsWith('저장됨') ? 700 : 500 }} role="status">
               {save.isPending ? '저장 중…' : dirty ? (autosave ? '● 미저장 (자동 저장 대기)' : '● 미저장') : note?.startsWith('저장됨') ? '✓ 저장됨' : `v${d.currentVersion ?? 0} · ${relTime(d.updatedAt ?? '') || '방금'}`}
@@ -337,8 +356,8 @@ export function MockServerEditor() {
           </header>
 
           {/* ── 본문: 좌 목록 | 우 상세 ── */}
-          <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
-            <nav style={leftNav} aria-label="Mock 구성">
+          <div className="fl-mock-editor-body" style={{ flex: 1, display: 'flex', minHeight: 0 }}>
+            <nav className="fl-mock-config-nav" style={leftNav} aria-label="Mock 구성">
               {isHttp && (
                 <>
                   <div style={navHead}>
@@ -404,7 +423,7 @@ export function MockServerEditor() {
               {isHttp && <button onClick={() => setNav({ kind: 'overview' })} style={{ ...navItem, ...(nav.kind === 'overview' ? navActive : null) }}><span aria-hidden>☰</span><span style={{ flex: 1 }}>개요 · 시작하기</span></button>}
             </nav>
 
-            <section style={rightPane} aria-label="상세">
+            <section className="fl-mock-detail" style={rightPane} aria-label="상세">
               {legacyMixed && (
                 <div style={legacyBanner} role="note">
                   <span style={{ fontSize: 16 }}>⚠</span>
@@ -434,7 +453,7 @@ export function MockServerEditor() {
                       {canEdit && <button style={{ ...primaryBtn, padding: '6px 12px', fontSize: 12 }} onClick={() => toggle.mutate()}>리스너 켜기</button>}
                     </div>
                   )}
-                  <TcpConnPanel tcp={tcp} environment={spec.environment} readOnly={!canEdit} onChange={setTcp} />
+                  <TcpConnPanel tcp={tcp} sources={sourcesFor()} address={tcpAddress} readOnly={!canEdit} onChange={setTcp} />
                 </>
               )}
               {nav.kind === 'rule' && selRule && (
@@ -467,19 +486,25 @@ export function MockServerEditor() {
                     <div>
                       <div style={lbl}>{isTcp ? '리스너 주소' : '서빙 주소'}</div>
                       {isHttp && <div style={{ display: 'flex', gap: 6 }}><input readOnly value={base} onFocus={(e) => e.currentTarget.select()} style={{ ...input, flex: 1, fontFamily: 'var(--fl-font-mono)', fontSize: 12 }} /><button style={miniBtn} onClick={() => { void navigator.clipboard?.writeText(base).then(() => toast('복사됨', 'ok')).catch(() => {}) }}>⧉ 복사</button></div>}
-                      {isTcp && <div style={{ display: 'flex', gap: 6 }}><input readOnly value={`${window.location.hostname || 'localhost'}:${tcp.port ?? 9091}`} onFocus={(e) => e.currentTarget.select()} style={{ ...input, flex: 1, fontFamily: 'var(--fl-font-mono)', fontSize: 12 }} /><button style={miniBtn} onClick={() => setNav({ kind: 'conn' })}>포트 바꾸기 →</button></div>}
+                      {isTcp && <div style={{ display: 'flex', gap: 6 }}><input readOnly value={tcpAddress} onFocus={(e) => e.currentTarget.select()} style={{ ...input, flex: 1, fontFamily: 'var(--fl-font-mono)', fontSize: 12 }} /><button style={miniBtn} onClick={() => setNav({ kind: 'conn' })}>포트 바꾸기 →</button></div>}
                       <div style={{ fontSize: 12, color: 'var(--fl-text-muted)', marginTop: 4 }}>slug <code style={code}>{d.slug}</code> 는 {isHttp ? '서빙 주소라' : '식별자라'} 바꿀 수 없습니다(전역 유일). 다른 {isHttp ? '주소' : 'slug'}가 필요하면 [⋯ 도구 → 복제]로 새 slug 를 만드세요. {isHttp ? '서빙은 무인증(외부 시스템이 호출하는 대상).' : '리스너는 무인증(사내망 전제).'}</div>
                     </div>
                     <div>
-                      <div style={lbl}>시크릿 환경</div>
+                      <div style={lbl}>환경 출처·적용 환경</div>
                       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                        <select style={{ ...input, minWidth: 160 }} value={spec.environment ?? ''} disabled={!canEdit} onChange={(e) => mutate((s) => ({ ...s, environment: e.target.value || null }))} title="{{ 이름@secret }} 해석 스코프 — 공통 시크릿에 이 환경의 시크릿을 덮어씀">
-                          <option value="">공통만</option>
-                          {secretEnvs.map((e) => <option key={e} value={e}>{e}</option>)}
-                          {spec.environment && !secretEnvs.includes(spec.environment) && <option value={spec.environment}>{spec.environment}</option>}
+                        <select aria-label="Mock 환경 출처" style={{ ...input, minWidth: 120 }} value={envSource} disabled={!canEdit} onChange={e => mutate(s => ({ ...s, envSource: e.target.value as 'local' | 'server', environment: null }))}>
+                          {scope.current.origin === 'local' && <option value="local">내 PC</option>}
+                          <option value="server" disabled={!scope.connected}>서버 공통</option>
+                          {invalidLocalSource && <option value="local" disabled>내 PC · 서버 Mock에서 사용 불가</option>}
                         </select>
-                        <span style={{ fontSize: 12, color: 'var(--fl-text-muted)' }}>{secrets.length ? `적용 가능한 시크릿 ${secrets.filter((x) => !x.environment || x.environment === (spec.environment ?? null)).length}개 — 값 칸에서 { } 로 삽입` : '시크릿 없음 — 워크플로 편집기 도구 → 시크릿 볼트에서 추가'}</span>
+                        <select aria-label="Mock 적용 환경" style={{ ...input, minWidth: 160 }} value={spec.environment ?? ''} disabled={!canEdit || invalidLocalSource || !envsQ.isSuccess} onChange={(e) => mutate((s) => ({ ...s, environment: e.target.value || null }))} title="선택한 출처의 환경 변수와 서버 공통 시크릿을 사용합니다.">
+                          <option value="">공통만</option>
+                          {environmentNames.map((e) => <option key={e} value={e}>{e}</option>)}
+                          {spec.environment && !environmentNames.includes(spec.environment) && <option value={spec.environment}>{spec.environment} · 존재 확인 필요</option>}
+                        </select>
+                        <span style={{ fontSize: 12, color: 'var(--fl-text-muted)' }}>서버 공통 시크릿 {secretNames.length}개{envSource === 'local' ? ' · PC 환경에는 공통 시크릿만 적용' : ' · 선택 환경의 시크릿 포함'}</span>
                       </div>
+                      {invalidLocalSource ? <p role="alert" style={hint}>서버 Mock은 PC 환경을 지속적으로 읽을 수 없습니다. 서버 공통 환경을 선택하세요.</p> : envsQ.isError ? <p role="alert" style={hint}>환경을 불러오지 못했습니다. {apiErrorMessage(envsQ.error, '환경 조회 실패')} <button style={miniBtn} onClick={() => void envsQ.refetch()}>다시 불러오기</button></p> : <p style={hint}>{envSource === 'server' && !scope.connected ? '서버 환경을 사용하려면 서버에 연결하세요.' : envsQ.isPending ? '환경을 불러오는 중…' : '프로토콜·플러그인·시크릿은 서버 공통 자원을 사용합니다.'}</p>}
                     </div>
                     {isHttp && canEdit && (
                       <div>
@@ -500,7 +525,7 @@ export function MockServerEditor() {
                         <div style={{ ...lbl, color: 'var(--fl-fail)' }}>위험 구역</div>
                         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                           <button style={miniBtn} onClick={() => reset.mutate()} title="state·seq·hits·요청 기록 초기화">↺ 상태·요청 기록 초기화</button>
-                          <button style={{ ...miniBtn, color: 'var(--fl-fail)' }} onClick={() => setAsk({ title: 'Mock 서버 삭제', danger: true, confirmLabel: '삭제', message: `'${d.name}' 을 삭제할까요? 이 Mock 을 호출하는 워크플로는 실패하게 됩니다. 되돌릴 수 없습니다.`, onConfirm: () => { void mocksApi.remove(id).then(() => { toast('삭제했습니다.', 'ok'); qc.invalidateQueries({ queryKey: ['mock-servers'] }); navigate('/mocks') }).catch((e) => toast(apiErrorMessage(e, '삭제 실패'), 'error')) } })}>이 Mock 삭제</button>
+                          <button style={{ ...miniBtn, color: 'var(--fl-fail)' }} onClick={() => setAsk({ title: 'Mock 서버 삭제', danger: true, confirmLabel: '삭제', message: `'${d.name}' 을 삭제할까요? 이 Mock 을 호출하는 워크플로는 실패하게 됩니다. 되돌릴 수 없습니다.`, onConfirm: () => { void mocksApi.remove(id).then(() => { toast('삭제했습니다.', 'ok'); qc.invalidateQueries({ queryKey: ['mock-servers'] }); leave() }).catch((e) => toast(apiErrorMessage(e, '삭제 실패'), 'error')) } })}>이 Mock 삭제</button>
                         </div>
                       </div>
                     )}
@@ -635,6 +660,7 @@ function TrafficPanel({ id, canEdit, base, spec, onSpec, journal, open, onToggle
     onSelectRoute(routes[idx].id)
   }
   const replay = async (r: MockRequestLog) => {
+    if (!(await ensureSaved())) return
     const qs = Object.entries(r.query).map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join('&')
     const hasBody = r.method !== 'GET' && r.method !== 'HEAD'
     const headers: Record<string, string> = {}
@@ -710,27 +736,30 @@ function SendBox({ base, ensureSaved, routeFilter, onSent }: { base: string; ens
   const [body, setBody] = useState('')
   const [result, setResult] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const busyRef = useRef(false)
   useEffect(() => { if (routeFilter) { setMethod(routeFilter.method === 'ANY' ? 'POST' : routeFilter.method); setPath(routeFilter.path.replace(/\{[^}/]+\}/g, '1')) } }, [routeFilter])
   const send = async () => {
-    if (!(await ensureSaved())) return
+    if (busyRef.current) return
+    busyRef.current = true
     setBusy(true); setResult(null)
     try {
+      if (!(await ensureSaved())) return
       const res = await fetch(base + path, { method, headers: method === 'GET' || method === 'HEAD' ? undefined : { 'Content-Type': body.trim().startsWith('{') ? 'application/json' : 'application/x-www-form-urlencoded' }, body: method === 'GET' || method === 'HEAD' ? undefined : body })
       const text = await res.text()
       const hdrs = ['x-signature', 'x-sig', 'x-auth', 'content-type'].map((h) => res.headers.get(h) ? `${h}: ${res.headers.get(h)}` : null).filter(Boolean).join('\n')
       setResult(`HTTP ${res.status}\n${hdrs}\n\n${text.slice(0, 4000)}`)
       onSent()
-    } catch (e) { setResult(`요청 실패: ${(e as Error).message}`) } finally { setBusy(false) }
+    } catch (e) { setResult(`요청 실패: ${(e as Error).message}`) } finally { busyRef.current = false; setBusy(false) }
   }
   return (
-    <div style={{ flex: 1, overflowY: 'auto', padding: '6px 12px 10px', display: 'grid', gap: 6, gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)' }}>
+    <div className="fl-mock-sendbox" style={{ flex: 1, overflowY: 'auto', padding: '6px 12px 10px', display: 'grid', gap: 10, gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)' }}>
       <div style={{ display: 'grid', gap: 6, alignContent: 'start' }}>
-        <div style={{ display: 'flex', gap: 6 }}>
-          <select style={{ ...input, minWidth: 90 }} value={method} onChange={(e) => setMethod(e.target.value)}>{['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].map((m) => <option key={m}>{m}</option>)}</select>
-          <input style={{ ...input, flex: 1, fontFamily: 'var(--fl-font-mono)' }} value={path} onChange={(e) => setPath(e.target.value)} placeholder="/hello?name=kim" onKeyDown={(e) => { if (e.key === 'Enter' && !busy) { e.preventDefault(); void send() } }} />
-          <button style={primaryBtn} disabled={busy} onClick={() => { void send() }}>전송</button>
+        <div style={{ display: 'flex', gap: 6, minWidth: 0 }}>
+          <select aria-label="보낼 요청 메서드" style={{ ...input, minWidth: 80 }} value={method} onChange={(e) => setMethod(e.target.value)}>{['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].map((m) => <option key={m}>{m}</option>)}</select>
+          <input aria-label="보낼 요청 경로" style={{ ...input, flex: 1, minWidth: 0, width: 0, fontFamily: 'var(--fl-font-mono)' }} value={path} onChange={(e) => setPath(e.target.value)} placeholder="/hello?name=kim" onKeyDown={(e) => { if (e.key === 'Enter' && !busy) { e.preventDefault(); void send() } }} />
+          <button style={{ ...primaryBtn, flexShrink: 0 }} disabled={busy} onClick={() => { void send() }}>전송</button>
         </div>
-        {method !== 'GET' && <textarea style={{ ...input, width: '100%', minHeight: 70, fontFamily: 'var(--fl-font-mono)', fontSize: 12, resize: 'vertical', boxSizing: 'border-box' }} value={body} onChange={(e) => setBody(e.target.value)} placeholder='요청 본문 — {"otp":"111111"} 또는 a=1&b=2' />}
+        {method !== 'GET' && <textarea aria-label="보낼 요청 본문" style={{ ...input, width: '100%', minHeight: 70, fontFamily: 'var(--fl-font-mono)', fontSize: 12, resize: 'vertical', boxSizing: 'border-box' }} value={body} onChange={(e) => setBody(e.target.value)} placeholder='요청 본문 — {"otp":"111111"} 또는 a=1&b=2' />}
       </div>
       <pre style={{ ...reqPre, maxHeight: 200, minHeight: 60, margin: 0 }}>{result ?? '응답이 여기에 표시됩니다.'}</pre>
     </div>
@@ -743,7 +772,7 @@ const hdr: CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, padd
 const leftNav: CSSProperties = { width: 'clamp(150px, 22vw, 268px)', flexShrink: 0, borderRight: '1px solid var(--fl-border)', background: 'var(--fl-surface)', padding: 10, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }
 const navHead: CSSProperties = { display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 12, fontWeight: 700, color: 'var(--fl-text)', padding: '4px 6px 6px' }
 const navItem: CSSProperties = { display: 'flex', alignItems: 'center', gap: 7, width: '100%', padding: '7px 8px', border: '1px solid transparent', borderRadius: 'var(--fl-radius)', background: 'transparent', color: 'var(--fl-text)', cursor: 'pointer', textAlign: 'left', fontSize: 13 }
-const navActive: CSSProperties = { background: 'var(--fl-surface-2)', borderColor: 'var(--fl-border)', color: 'var(--fl-text)', fontWeight: 650 }
+const navActive: CSSProperties = { background: 'var(--fl-surface-2)', border: '1px solid var(--fl-border)', color: 'var(--fl-text)', fontWeight: 650 }
 const mchip: CSSProperties = { fontSize: 11, fontWeight: 800, fontFamily: 'var(--fl-font-mono)', minWidth: 40 }
 const hitBadge: CSSProperties = { fontSize: 11, fontWeight: 700, padding: '1px 6px', borderRadius: 999, background: 'var(--fl-surface-2)', border: '1px solid var(--fl-border)', color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)' }
 const divider: CSSProperties = { height: 1, background: 'var(--fl-border)', margin: '6px 0' }

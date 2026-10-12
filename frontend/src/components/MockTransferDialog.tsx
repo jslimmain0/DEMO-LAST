@@ -1,4 +1,5 @@
 import { useApi } from '../app/WorkspaceContext'
+import type { WorkspaceApi } from '../api/client'
 import { useEffect, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { useNavigate } from 'react-router-dom'
@@ -48,8 +49,9 @@ export function MockExportDialog({ mock, spec, onClose }: { mock: MockServerDeta
  * Mock 가져오기(새로 만들기) — 붙여넣기 → 이름/slug 확인(실시간 slug 검사, 충돌 시 -2 제안) → create + updateSpec.
  * TCP 는 꺼서 가져온다(포트 전역 자원).
  */
-export function MockImportDialog({ workspaceId, onClose, onImported }: { workspaceId: string | null; onClose: () => void; onImported?: (id: string) => void }) {
-  const { mocksApi } = useApi()
+export function MockImportDialog({ workspaceId, api, onClose, onImported }: { workspaceId: string | null; api?: WorkspaceApi['mocksApi']; onClose: () => void; onImported?: (id: string) => void }) {
+  const owned = useApi()
+  const mocksApi = api ?? owned.mocksApi
 
   const navigate = useNavigate()
   const [text, setText] = useState('')

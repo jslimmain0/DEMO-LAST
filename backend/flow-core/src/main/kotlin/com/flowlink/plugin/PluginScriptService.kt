@@ -167,7 +167,7 @@ class PluginScriptService(
         resourceWorkspace.requireWrite(row.workspaceKey)
         requireAuthorOrAdmin(row, "삭제")
         usages.invalidate() // 30초 캐시 — 방금 붙인 사용처를 놓치고 지우지 않게
-        val n = usages.count(row.pluginId, row.workspaceKey)
+        val n = usages.count(row.pluginId, row.workspaceKey, refresh = true)
         if (n > 0) throw BadRequestException("사용 중인 플러그인은 삭제할 수 없습니다(사용처 ${n}곳) — 먼저 워크플로/Mock/프로토콜에서 제거하세요.")
         repo.delete(row)
         if (row.liveSource != null) reloadAfterCommit()

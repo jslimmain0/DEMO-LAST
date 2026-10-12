@@ -277,10 +277,10 @@ const runsApi = {
   // TCP 요청 전문 미리보기(전송 없음) — 편집 중 노드를 실어 미저장 편집을 실시간 반영
   tcpPreview: (flowId: string, nodeId: string, node: GraphNode) =>
     http.post<import('./types').ProtocolPreview>(`/flows/${flowId}/nodes/${nodeId}/tcp-preview`, node).then((r) => r.data),
-  agentTcpPreview: (node: GraphNode, envName?: string | null) =>
-    http.post<import('./types').ProtocolPreview>('/agent/tcp-preview', node, { params: { envName } }).then(r => r.data),
-  inspectAgent: (node: GraphNode, envName?: string | null) =>
-    http.post<import('./types').AgentInspection>('/agent/inspect', { node, workspaceId, envName }).then(r => r.data),
+  agentTcpPreview: (node: GraphNode, envName?: string | null, envSource?: 'local' | 'server', env?: Record<string, unknown>, resourceIdentity?: RunRequest['resourceIdentity']) =>
+    http.post<import('./types').ProtocolPreview>('/agent/tcp-preview/resources', { node, workspaceId, envName, envSource, resourceWorkspaceId: 'public', ...(env !== undefined ? { env } : {}), ...(resourceIdentity ? { resourceIdentity } : {}) }).then(r => r.data),
+  inspectAgent: (node: GraphNode, envName?: string | null, envSource?: 'local' | 'server', env?: Record<string, unknown>, resourceIdentity?: RunRequest['resourceIdentity']) =>
+    http.post<import('./types').AgentInspection>('/agent/inspect', { node, workspaceId, envName, envSource, resourceWorkspaceId: 'public', ...(env !== undefined ? { env } : {}), ...(resourceIdentity ? { resourceIdentity } : {}) }).then(r => r.data),
   recent: (limit = 50, workspaceId?: string) =>
     http.get<ExecutionSummary[]>('/executions', { params: { limit, ...(workspaceId && workspaceId !== 'public' ? { workspaceId } : {}) } }).then((r) => r.data),
   // 서버측 필터/페이지네이션 — status/flowId/기간(epoch ms)/offset
@@ -320,6 +320,7 @@ const assistantApi = {
   deleteSession: (id: string) => http.delete(`/assistant/sessions/${id}`).then(() => undefined),
 }
   const resourceUrl = (path: string) => {
+    if (import.meta.env.DEV && import.meta.env.VITE_FRONTEND_MOCK === 'true') return `${window.location.origin}${path}`
     const base = resourceBase ?? (import.meta.env.DEV ? `http://${window.location.hostname || 'localhost'}:18080` : `${window.location.origin}${appBase()}`)
     return `${base.replace(/\/+$/, '')}${path}`
   }

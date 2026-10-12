@@ -114,11 +114,11 @@ class MockGatewayController(
         // 상태 있는 목: 서버(slug)별 상태 맵 + 규칙 히트수(순차 응답)를 store 에서 — 조건/템플릿에서 {{state.KEY}}·source=state.
         val state = store.state(server.id)
         val hits = store.hitsSnapshot(server.id)
-        val scope = secretProvider.scope(server.tenantId, spec.environment, workspaceId = server.workspaceId)
+        val scope = secretProvider.scope(server.tenantId, spec.environment, workspaceId = server.workspaceId, spec = spec)
         val secrets = scope.secrets
         val masks = SecretMasker.variants(secrets.values)
         val mapper = json.mapper()
-        val lookup: (String) -> FlowTransform? = { transforms.get(it, server.workspaceId, server.tenantId).orElse(null) }
+        val lookup: (String) -> FlowTransform? = scope.transformLookup ?: { transforms.get(it, if (spec.resourceWorkspaceId == "public") null else server.workspaceId, server.tenantId).orElse(null) }
         // 전문 코덱 — 경로/메서드가 맞은 라우트의 유효 코덱(라우트 > 서버)으로 본문/필드/헤더를 디코딩한 뒤 조건·템플릿에 넘긴다.
         var decoded: String? = null
         var matchedRoute: MockSpec.MockRoute? = null

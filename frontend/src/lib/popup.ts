@@ -1,5 +1,8 @@
 // form(폼 전송) 노드 — 팝업을 열고 hidden form 을 자동 submit 한다. 기다리지 않는다(fire-and-forget).
 import type { PendingFormRequest } from '../api/types'
+import { registerEscapeClose } from '../components/useEscapeClose'
+
+const iframeClosers = new Map<string, () => void>()
 
 /**
  * 창 이름이 노드별로 고정이라 재실행하면 새 창이 아니라 같은 창을 재사용한다.
@@ -69,38 +72,56 @@ export function openFormPopup(form: PendingFormRequest): string | null {
  * @returns null=성공, 문자열=실패 사유
  */
 export function openFormIframe(form: PendingFormRequest): string | null {
+  let dispose: (() => void) | undefined
   try {
     const iname = 'flowlink_iframe_' + form.nodeId
-    document.getElementById('fl-iframe-ov-' + form.nodeId)?.remove() // 재실행 시 이전 모달 정리
+    iframeClosers.get(form.nodeId)?.()
+    const previousFocus = document.activeElement as HTMLElement | null
+    const label = form.nodeName?.trim() || '폼 전송'
     const ov = document.createElement('div')
     ov.id = 'fl-iframe-ov-' + form.nodeId
     ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:center;justify-content:center'
     const modal = document.createElement('div')
+    modal.setAttribute('role', 'dialog')
+    modal.setAttribute('aria-modal', 'true')
+    modal.setAttribute('aria-label', label)
     modal.style.cssText = 'width:480px;height:720px;max-width:94vw;max-height:90vh;background:#fff;border-radius:14px;overflow:hidden;box-shadow:0 24px 64px rgba(0,0,0,.45);display:flex;flex-direction:column'
     const bar = document.createElement('div')
     bar.style.cssText = 'height:40px;flex-shrink:0;display:flex;align-items:center;justify-content:space-between;padding:0 6px 0 14px;background:#f5f5f7;border-bottom:1px solid #e5e5e7;font:600 13px system-ui,sans-serif;color:#333'
     const title = document.createElement('span')
-    title.textContent = '결제창 (iframe)'
+    title.textContent = label
     const close = document.createElement('button')
+    close.type = 'button'
     close.textContent = '✕'
-    close.setAttribute('aria-label', '닫기')
+    close.setAttribute('aria-label', `${label} 닫기`)
     close.style.cssText = 'width:28px;height:28px;border:none;background:transparent;cursor:pointer;font-size:15px;color:#666'
-    const cleanup = () => { ov.remove(); window.removeEventListener('message', onMsg) }
+    let unregisterEscape = () => {}
+    const cleanup = () => {
+      if (iframeClosers.get(form.nodeId) !== cleanup) return
+      iframeClosers.delete(form.nodeId)
+      ov.remove(); window.removeEventListener('message', onMsg); unregisterEscape()
+      if (previousFocus?.isConnected) previousFocus.focus({ preventScroll: true })
+    }
+    dispose = cleanup
     close.onclick = cleanup
     bar.appendChild(title)
     bar.appendChild(close)
     const iframe = document.createElement('iframe')
     iframe.name = iname
+    iframe.title = `${label} 내용`
     iframe.style.cssText = 'flex:1;width:100%;border:none'
     modal.appendChild(bar)
     modal.appendChild(iframe)
     ov.appendChild(modal)
     ov.onclick = (e) => { if (e.target === ov) cleanup() }
     const onMsg = (e: MessageEvent) => {
-      if (e.data === 'fl-close' || e.data === 'fl-close-' + form.nodeId) cleanup()
+      if (e.source === iframe.contentWindow && (e.data === 'fl-close' || e.data === 'fl-close-' + form.nodeId)) cleanup()
     }
+    iframeClosers.set(form.nodeId, cleanup)
     window.addEventListener('message', onMsg)
+    unregisterEscape = registerEscapeClose(cleanup)
     document.body.appendChild(ov)
+    close.focus({ preventScroll: true })
 
     const f = document.createElement('form')
     f.method = (form.method || 'POST').toUpperCase() === 'GET' ? 'get' : 'post'
@@ -123,6 +144,7 @@ export function openFormIframe(form: PendingFormRequest): string | null {
     }
     return null
   } catch (e) {
+    dispose?.()
     return 'iframe form 제출 실패: ' + (e instanceof Error ? e.message : String(e))
   }
 }

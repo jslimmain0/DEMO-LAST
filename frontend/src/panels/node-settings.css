@@ -1,0 +1,38 @@
+.fl-node-settings-content { overflow-wrap: anywhere; }
+.fl-node-test-action { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 12px 0; }
+.fl-node-test-action > span { font-size: 12px; color: var(--fl-text-muted); }
+.fl-node-test-result { width: 100%; min-width: 0; }
+.fl-node-workbench-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 28px; align-items: start; margin-top: 8px; }
+.fl-node-request-bar { display: grid; grid-template-columns: 82px minmax(0, 1.6fr) minmax(0, 1fr) auto; gap: 8px; align-items: end; margin: 12px 0 4px; }
+.fl-node-request-bar > div { display: grid; gap: 5px; min-width: 0; }
+.fl-node-request-bar > div > span { font-size: 12px; font-weight: 600; color: var(--fl-text-muted); }
+.fl-node-request-bar > button { align-self: end !important; min-height: 38px; }
+.fl-node-input-fields { display: grid; gap: 12px; container-type: inline-size; min-width: 0; }
+.fl-node-input-field { display: grid; gap: 8px; border: 1px solid var(--fl-border); border-radius: var(--fl-radius-sm); padding: 12px; min-width: 0; }
+.fl-node-input-identity { display: grid; grid-template-columns: minmax(0, 1fr) 110px; gap: 8px; min-width: 0; }
+.fl-node-input-field label { display: grid; gap: 5px; font-size: 12px; font-weight: 600; color: var(--fl-text-muted); min-width: 0; }
+.fl-node-input-actions { display: flex; justify-content: flex-end; align-items: center; gap: 6px; }
+.fl-node-input-actions .fl-row-move { flex-direction: row !important; gap: 4px; }
+.fl-node-input-actions button, .fl-node-input-actions .fl-row-move button { min-width: 28px; min-height: 28px; height: 28px !important; line-height: 28px !important; }
+.fl-node-input-actions .fl-row-move button { width: 28px !important; }
+.fl-node-input-fields button:focus-visible { outline: 2px solid var(--fl-focus); outline-offset: 2px; }
+.fl-node-tcp-selector { display: grid; grid-template-columns: minmax(0, 2fr) minmax(100px, 1fr); gap: 8px; }
+.fl-node-tcp-target { display: grid; grid-template-columns: minmax(0, 2fr) minmax(90px, 1fr); gap: 8px; }
+@container (min-width: 650px) {
+  .fl-node-input-field { grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) auto; align-items: end; }
+}
+@container (max-width: 860px) {
+  .fl-node-workbench-grid { grid-template-columns: minmax(0, 1fr); gap: 18px; }
+  .fl-node-request-bar { grid-template-columns: 82px minmax(0, 1fr); }
+  .fl-node-request-path { grid-column: 1 / -1; }
+  .fl-node-request-bar > button { grid-column: 1 / -1; justify-self: end; }
+}
+@container (max-width: 480px) {
+  .fl-node-settings-content { padding: 14px !important; }
+  .fl-node-tcp-selector { grid-template-columns: minmax(0, 1fr); }
+  .fl-node-upstream-field { flex-direction: column; align-items: stretch !important; }
+  .fl-node-upstream-field code { width: auto !important; }
+}
+@container (max-width: 300px) {
+  .fl-node-input-identity { grid-template-columns: minmax(0, 1fr); }
+}

@@ -11,6 +11,8 @@ import { TokenInput } from '../binding/TokenInput'
 import type { BindableSource } from '../binding/upstream'
 import { byteLen, fieldsOf, messageKeys, padOf, requestKeys, tableLen, withOffsets } from '../lib/protocolSpec'
 import { ui } from '../design/ui'
+import { relTime } from '../lib/format'
+import './node-settings.css'
 
 type Update = (patch: Partial<GraphNode>) => void
 
@@ -36,7 +38,6 @@ export function TcpRequestPanel({ node, update, sources, canEdit, preview, previ
   const protos = useQuery({ queryKey: [...resources.key, 'protocols'], queryFn: protocolsApi.list, staleTime: 15_000, enabled: resources.available })
   const proto = useProtocol(node.protocolId || undefined, node)
   const scope = useWorkspace()
-  const space = scope.workspaces.find(w => w.origin === resources.agent && w.id === resources.workspaceId)
   const missing = !!node.protocolId && protos.isSuccess && !protos.data?.some(p => p.id === node.protocolId)
   const spec = proto.data?.spec
   const values = node.tcpValues ?? {}
@@ -48,7 +49,7 @@ export function TcpRequestPanel({ node, update, sources, canEdit, preview, previ
   const errFor = (name: string) => preview?.errors.find((e) => e.field === name)?.message
   return (
     <>
-      <label style={label}>대상 (host:port)</label>
+      <label style={label}>연결 대상</label>
       {node.agentMock ? <div style={{ fontSize: 12, lineHeight: 1.6 }}>
         <span style={{ color: 'var(--fl-text-muted)' }}>기존 Mock 연결 · {node.agentMock}</span>
         <button type="button" disabled={!canEdit} style={{ ...singleBtn, marginTop: 6 }} onClick={() => update({ agentMock: undefined, tcpHost: '', tcpPort: undefined, tcpPortEnvKey: undefined })}>연결 해제 후 주소 직접 입력</button>
@@ -57,7 +58,7 @@ export function TcpRequestPanel({ node, update, sources, canEdit, preview, previ
       <HostPortInput node={node} update={update} canEdit={canEdit} />
       {node.tcpPortEnvKey && <p style={{ fontSize: 12, color: 'var(--fl-text-muted)' }}>포트는 기존 환경 키 <code>{node.tcpPortEnvKey}</code>를 사용합니다. 포트를 입력하면 해당 값으로 바뀝니다.</p>}
       </>}
-      <div style={{ display: 'flex', gap: 6 }}>
+      <div className="fl-node-tcp-selector">
         <div style={{ flex: 2, minWidth: 0 }}>
           <label style={label}>프로토콜</label>
           <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
@@ -66,21 +67,21 @@ export function TcpRequestPanel({ node, update, sources, canEdit, preview, previ
               {node.protocolId && !protos.data?.some(p => p.id === node.protocolId) && <option value={node.protocolId}>기존 프로토콜 · 확인 필요</option>}
               {(protos.data ?? []).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
-            <Link to={`${node.protocolId && !missing ? `/protocols/${node.protocolId}` : '/protocols'}?space=${encodeURIComponent(`${resources.agent}:${resources.workspaceId}`)}`} target="_blank" rel="noreferrer" style={{ fontSize: 12, whiteSpace: 'nowrap', color: 'var(--fl-primary)' }}>관리 →</Link>
+            <Link to={`${node.protocolId && !missing ? `/protocols/${node.protocolId}` : '/protocols'}?space=${encodeURIComponent(`${scope.current.origin}:${scope.current.id}`)}`} target="_blank" rel="noreferrer" style={{ fontSize: 12, whiteSpace: 'nowrap', color: 'var(--fl-primary)' }}>관리 →</Link>
           </div>
         </div>
-        <div style={{ flex: 1, minWidth: 0 }}><label style={label}>타임아웃(ms)</label><input style={field} type="number" value={node.tcpTimeoutMs ?? 5000} readOnly={!canEdit} onChange={(e) => update({ tcpTimeoutMs: Number(e.target.value) })} /></div>
+        <div style={{ minWidth: 0 }}><label style={label}>응답 대기(ms)</label><input aria-label="TCP 응답 대기 시간" style={field} type="number" value={node.tcpTimeoutMs ?? 5000} readOnly={!canEdit} onChange={(e) => { if (canEdit) update({ tcpTimeoutMs: Number(e.target.value) }) }} /></div>
       </div>
-      <p style={{ fontSize: 12, color: 'var(--fl-text-muted)', overflowWrap: 'anywhere' }}>프로토콜 저장소: {resources.agent === 'local' ? '내 PC' : '서버'} · {space?.name ?? (resources.workspaceId === 'public' ? '공용' : resources.workspaceId)}</p>
-      {!resources.available ? <p role="status">{resources.agent === 'local' ? 'PC 앱 연결을 확인하세요.' : '서버에 로그인한 뒤 프로토콜을 선택하세요.'}</p>
+      <p style={{ fontSize: 12, color: 'var(--fl-text-muted)', overflowWrap: 'anywhere' }}>프로토콜 저장소: 서버 · 공통 자원{proto.data?.updatedAt && <span title={proto.data.updatedAt}> · 수정 {relTime(proto.data.updatedAt)}</span>}</p>
+      {!resources.available ? <p role="status">서버에 로그인한 뒤 프로토콜을 선택하세요.</p>
         : protos.isError ? <p role="alert">프로토콜을 불러오지 못했습니다. {apiErrorMessage(protos.error)} <button type="button" style={singleBtn} onClick={() => { void protos.refetch(); if (node.protocolId) void proto.refetch() }}>다시 확인</button></p>
-        : missing ? <p role="alert">기존 프로토콜이 이 실행 위치의 공간에 없습니다. 이 공간의 프로토콜을 선택하세요. 기존 전문·필드 값은 유지됩니다.</p>
+        : missing ? <p role="alert">기존 프로토콜이 서버 공통 목록에 없습니다. 공통 프로토콜을 선택하세요. 기존 전문·필드 값은 유지됩니다.</p>
         : proto.isError ? <p role="alert">선택한 프로토콜을 불러오지 못했습니다. {apiErrorMessage(proto.error)} <button type="button" style={singleBtn} onClick={() => { void protos.refetch(); void proto.refetch() }}>다시 확인</button></p>
-        : protos.isSuccess && !protos.data?.length ? <p role="status">이 실행 위치에는 프로토콜이 없습니다. 관리 화면에서 먼저 만드세요.</p> : null}
+        : protos.isSuccess && !protos.data?.length ? <p role="status">서버 공통 프로토콜이 없습니다. 관리 화면에서 먼저 만드세요.</p> : null}
       {spec && (
         <>
           <label style={label}>전문 (송신)</label>
-          <select style={field} value={node.tcpMessage ?? ''} disabled={!canEdit} onChange={(e) => update({ tcpMessage: e.target.value, tcpValues: {} })}>
+          <select aria-label="송신 전문" style={field} value={node.tcpMessage ?? ''} disabled={!canEdit} onChange={(e) => update({ tcpMessage: e.target.value, tcpValues: {} })}>
             <option value="">— 전문을 고르세요 —</option>
             {requestKeys(spec).map((m) => <option key={m.key} value={m.key}>{m.label}</option>)}
           </select>
@@ -113,11 +114,11 @@ export function TcpRequestPanel({ node, update, sources, canEdit, preview, previ
 /** 호스트와 포트를 나누어 IPv6와 포트 입력 중의 빈 값을 그대로 편집한다. */
 function HostPortInput({ node, update, canEdit }: { node: GraphNode; update: Update; canEdit: boolean }) {
   return (
-    <div style={{ display: 'flex', gap: 6 }}>
-      <input style={{ ...mono, flex: 2, minWidth: 0 }} aria-label="TCP 호스트" value={node.tcpHost ?? ''} placeholder="10.20.3.14" readOnly={!canEdit}
-        onChange={e => update({ tcpHost: e.target.value })} />
-      <input style={{ ...mono, flex: 1, minWidth: 0 }} aria-label="TCP 포트" type="number" min={1} max={65535} value={node.tcpPortEnvKey ? '' : node.tcpPort ?? ''} placeholder={node.tcpPortEnvKey ? '환경 키 사용 중' : '9600'} readOnly={!canEdit}
-        onChange={e => update({ tcpPort: e.target.value ? Number(e.target.value) : undefined, tcpPortEnvKey: undefined })} />
+    <div className="fl-node-tcp-target">
+      <label><span style={label}>호스트</span><input style={mono} aria-label="TCP 호스트" value={node.tcpHost ?? ''} placeholder="10.20.3.14" readOnly={!canEdit}
+        onChange={e => { if (canEdit) update({ tcpHost: e.target.value }) }} /></label>
+      <label><span style={label}>포트</span><input style={mono} aria-label="TCP 포트" type="number" min={1} max={65535} value={node.tcpPortEnvKey ? '' : node.tcpPort ?? ''} placeholder={node.tcpPortEnvKey ? '환경 키 사용 중' : '9600'} readOnly={!canEdit}
+        onChange={e => { if (canEdit) update({ tcpPort: e.target.value ? Number(e.target.value) : undefined, tcpPortEnvKey: undefined }) }} /></label>
     </div>
   )
 }
@@ -137,10 +138,7 @@ export function FieldRow({ f, offset, value, encoding, sources, canEdit, err, on
         <span style={{ color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)' }}>{f.type} {padOf(f)}</span>
         <span style={{ fontFamily: 'var(--fl-font-mono)', color: over ? 'var(--fl-fail)' : 'var(--fl-text-muted)' }}>{bytes ?? '?'}/{f.len} B</span>
       </div>
-      {/* TokenInput 은 readOnly prop 이 없다 — 읽기 전용은 컨테이너에서 포인터/탭 차단 */}
-      <div style={canEdit ? undefined : { pointerEvents: 'none', opacity: 0.7 }} aria-disabled={!canEdit}>
-        <TokenInput ariaLabel={`필드 ${f.name}`} value={value} onChange={onChange} sources={sources} placeholder={f.type === 'binary' ? 'hex — 예: 0A FF' : '값 또는 { } 로 데이터 삽입'} />
-      </div>
+      <TokenInput readOnly={!canEdit} ariaLabel={`필드 ${f.name}`} value={value} onChange={next => { if (canEdit) onChange(next) }} sources={sources} placeholder={f.type === 'binary' ? 'hex — 예: 0A FF' : '값 또는 { } 로 데이터 삽입'} />
       {warn && <div style={{ fontSize: 11, color: 'var(--fl-fail)', marginTop: 3 }}>{warn}</div>}
     </div>
   )
@@ -177,7 +175,7 @@ export function TcpResponsePanel({ node, update, canEdit }: { node: GraphNode; u
   return (
     <>
       <label style={label}>응답 전문 (출력 키 기준)</label>
-      <select style={field} value={node.tcpResponseMessage ?? ''} disabled={!canEdit} onChange={(e) => update({ tcpResponseMessage: e.target.value, outputs: outputsFor(spec, e.target.value || undefined) })}>
+      <select aria-label="응답 전문" style={field} value={node.tcpResponseMessage ?? ''} disabled={!canEdit} onChange={(e) => update({ tcpResponseMessage: e.target.value, outputs: outputsFor(spec, e.target.value || undefined) })}>
         <option value="">— 헤더 필드만 —</option>
         {messageKeys(spec).map((m) => <option key={m.key} value={m.key}>{m.label}</option>)}
       </select>
@@ -190,7 +188,7 @@ export function TcpResponsePanel({ node, update, canEdit }: { node: GraphNode; u
 }
 
 const label: CSSProperties = { display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--fl-text-muted)', margin: '10px 0 4px' }
-const field: CSSProperties = { width: '100%', padding: '8px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 13 }
+const field: CSSProperties = { width: '100%', minWidth: 0, boxSizing: 'border-box', padding: '8px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 13 }
 const mono: CSSProperties = { ...field, fontFamily: 'var(--fl-font-mono)' }
 const offBadge: CSSProperties = { flexShrink: 0, fontSize: 11, fontFamily: 'var(--fl-font-mono)', color: 'var(--fl-text-muted)', background: 'var(--fl-surface-2)', borderRadius: 6, padding: '2px 4px', minWidth: 26, textAlign: 'center' }
 const singleBtn: CSSProperties = { ...ui.secondary, width: '100%', color: 'var(--fl-primary)' }

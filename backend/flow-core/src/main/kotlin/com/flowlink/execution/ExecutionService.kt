@@ -101,8 +101,11 @@ class ExecutionService(
     private val artifactCleanup: com.flowlink.maintenance.ExecutionArtifactCleanup,
     txManager: PlatformTransactionManager,
     private val updateGate: com.flowlink.common.lifecycle.RuntimeUpdateGate = com.flowlink.common.lifecycle.RuntimeUpdateGate(),
+    private val centralResources: ObjectProvider<com.flowlink.common.host.LocalServerResources>,
+    private val requestBuilder: com.flowlink.agent.AgentRequestBuilder,
 ) {
     private val mapper: ObjectMapper = json.mapper()
+    private val replay = ExecutionReplay(mapper, crypto)
 
     /** claim(조건부 DELETE)·suspension upsert 용 프로그램적 트랜잭션 — 서비스 메서드가 비트랜잭션이라 프록시 자기호출 문제를 피한다. */
     private val tx = TransactionTemplate(txManager)
@@ -155,6 +158,7 @@ class ExecutionService(
         updateGate.work { runSingleNodeAllowed(flowId, nodeId, req) }
 
     private fun runSingleNodeAllowed(flowId: UUID, nodeId: String, req: RunRequest?): SingleNodeRunResult {
+        if (req?.resourceWorkspaceId != null || req?.envSource != null) throw BadRequestException("공통 자원과 환경 출처가 있는 노드는 전체 실행 API의 onlyNodeId를 사용하세요.")
         // flow 는 전역 공유 — 공유 테넌트로 조회(로그인 테넌트 무관).
         val flow = flowRepo.findByIdAndTenantId(flowId, TenantContext.SHARED_FLOW_TENANT)
             .orElseThrow { NotFoundException.of("Flow", flowId) }
@@ -166,6 +170,8 @@ class ExecutionService(
         val graph = json.parseGraph(version.graphJson)
         val node = graph.nodesOrEmpty().find { it.id == nodeId }?.runtimeNode()
             ?: throw NotFoundException.of("Node", nodeId)
+
+        if (graph.resourceWorkspaceId != null) throw BadRequestException("서버 공통 자원을 사용하는 노드는 전체 실행 API의 onlyNodeId로 테스트하세요.")
 
         if (node.executionAgent != null || node.agentEnvironment != null || node.agentWorkspaceId != null || node.agentMock != null || (!node.usesWorkflowContext() && !req?.agentEnvironments.isNullOrEmpty())) {
             throw BadRequestException("에이전트 노드는 전체 실행 API의 onlyNodeId를 사용하세요. 목적지 환경을 명시적으로 선택해야 합니다.")
@@ -229,7 +235,8 @@ class ExecutionService(
     fun run(flowId: UUID, req: RunRequest?, trigger: TriggerType = TriggerType.MANUAL): ExecutionDetail =
         updateGate.work { runAllowed(flowId, req, trigger) }
 
-    private fun runAllowed(flowId: UUID, req: RunRequest?, trigger: TriggerType): ExecutionDetail {
+    private fun runAllowed(flowId: UUID, request: RunRequest?, trigger: TriggerType): ExecutionDetail {
+        validateResourceRequest(request)
         val tenant = TenantContext.getTenantId() // 실행(Execution) 행은 사용자별 — 아래 Execution.start·워커 전파에 사용
         // flow 는 전역 공유 — 조회만 공유 테넌트로(실행 이력은 위 tenant 로 격리 유지).
         val flow = flowRepo.findByIdAndTenantId(flowId, TenantContext.SHARED_FLOW_TENANT)
@@ -242,21 +249,26 @@ class ExecutionService(
             workspace.requireWrite(workspace.currentUsername(), flow.workspaceId)
         }
 
-        val versionNo = req?.versionNo ?: flow.currentVersion
+        val versionNo = request?.versionNo ?: flow.currentVersion
         val version = versionRepo.findByFlowIdAndVersionNo(flowId, versionNo)
             .orElseThrow { NotFoundException.of("FlowVersion", "$flowId/v$versionNo") }
 
         val graph = json.parseGraph(version.graphJson)
+        val req = if (graph.resourceWorkspaceId != null) (request ?: RunRequest(null, null, null, null)).copy(
+            resourceWorkspaceId = request?.resourceWorkspaceId ?: graph.resourceWorkspaceId,
+            envSource = request?.envSource ?: if (workspace.localRuntime) "local" else "server",
+        ) else request
+        validateResourceRequest(req)
         if (graph.nodesOrEmpty().size > props.maxNodesPerRun) {
             throw BadRequestException("노드 수가 상한을 초과했습니다.")
         }
 
-        if (workspace.localRuntime || req?.agentDeviceId != null || req?.clientExecutionId != null || req?.onlyNodeId != null ||
+        if (workspace.localRuntime || req?.resourceWorkspaceId != null || req?.envSource != null || req?.agentDeviceId != null || req?.clientExecutionId != null || req?.onlyNodeId != null ||
             graph.nodesOrEmpty().map { it.runtimeNode() }.any { it.executionAgent != null || it.agentEnvironment != null || it.agentWorkspaceId != null || it.agentMock != null } || !req?.agentEnvironments.isNullOrEmpty()) {
             return runManaged(flow, version, graph, req, trigger, tenant)
         }
 
-        val inputJson: String? = req?.input?.let { if (it.isNull) null else json.toJson(it) }
+        val inputJson = replay.store(req)
 
         val execution = Execution.start(
             tenant, flowId, version.id, trigger, currentUser(), inputJson
@@ -323,6 +335,8 @@ class ExecutionService(
             .joinToString("") { "%02x".format(it) }
         val relayBase = relayResolver.resolve()
         val account = if (workspace.localRuntime) desktopConnection.getObject().connectionIdentity() else null
+        if (workspace.localRuntime && req?.resourceIdentity != null && req.resourceIdentity != account?.let { com.flowlink.agent.CentralResourceIdentity(it.serverUrl, it.login) })
+            throw BadRequestException("서버 또는 계정이 변경되었습니다. 실행 계획을 다시 확인하세요.")
         return managedTx.execute {
             // 동일 플로우의 동시 시작 요청을 직렬화한다. 다른 플로우의 ID 충돌은 PK로 거절된다.
             flowRepo.locked(flow.id) ?: throw NotFoundException.of("Flow", flow.id)
@@ -341,23 +355,29 @@ class ExecutionService(
             val only = req?.onlyNodeId?.let { id ->
                 graph.nodesOrEmpty().find { it.id == id } ?: throw NotFoundException.of("Node", id)
             }
-            if (only != null && only.effectiveType() !in setOf(NodeType.HTTP, NodeType.TCP, NodeType.SET, NodeType.IF, NodeType.ASSERT, NodeType.TRANSFORM))
+            if (only != null && only.effectiveType() !in setOf(NodeType.HTTP, NodeType.TCP, NodeType.SET, NodeType.IF, NodeType.SWITCH, NodeType.ASSERT, NodeType.TRANSFORM))
                 throw BadRequestException("이 노드는 단독 실행을 지원하지 않습니다.")
             val selected = (only?.let { listOf(it) } ?: graph.nodesOrEmpty()).map { it.runtimeNode() }
-            if (workspace.localRuntime && selected.any { it.effectiveType() == NodeType.TRANSFORM })
+            if (workspace.localRuntime && req?.resourceWorkspaceId != "public" && selected.any { it.effectiveType() == NodeType.TRANSFORM })
                 throw BadRequestException("플러그인은 공용·팀 워크스페이스에서만 사용할 수 있습니다.")
             if (device == "server" && selected.any { it.effectiveType() != NodeType.TRANSFORM && it.executionAgent == "local" })
                 throw BadRequestException("내 PC 노드가 있는 실행은 Windows 앱에서 시작하세요.")
-            if (workspace.localRuntime && selected.any { it.executionAgent == "server" } && account?.connected != true)
+            if (workspace.localRuntime && (selected.any { it.executionAgent == "server" || it.effectiveType() == NodeType.TRANSFORM } || req?.envSource == "server") && account?.connected != true)
                 throw BadRequestException("서버 노드를 실행하려면 Windows 앱에서 서버에 로그인하세요.")
             val execution = Execution.start(tenant, flow.id, version.id, trigger, username,
-                req?.input?.takeUnless { it.isNull }?.let(json::toJson), execId).apply {
+                replay.store(req), execId).apply {
                 agentDeviceId = device; runRequestHash = requestHash
             }
             executionRepo.save(execution)
-            val ctx = ExecutionContext().apply { workspaceId = flow.workspaceId }
+            val identity = if (workspace.localRuntime) account?.let { com.flowlink.agent.CentralResourceIdentity(it.serverUrl, it.login) } else req?.resourceIdentity
+            val ctx = ExecutionContext().apply { workspaceId = flow.workspaceId; if (req?.resourceWorkspaceId == "public") resourceIdentity = identity }
             seedWorkspaceInput(ctx, req)
-            val secrets = secretMap(req?.envName, flow.workspaceId)
+            val secretKeys = selected.flatMap { requestBuilder.references(it) }.filter { it.source == "secret" }.map { it.key }.toSet()
+            val secretEnvironment = if (req?.envSource == "local") null else req?.envName
+            val secrets = if (req?.resourceWorkspaceId != "public") secretMap(req?.envName, flow.workspaceId)
+                else if (workspace.localRuntime) centralResources.getObject().secrets(secretEnvironment, secretKeys,
+                    identity ?: throw BadRequestException("서버 자원 연결을 확인하세요."))
+                else secretMap(secretEnvironment, null).filterKeys { it in secretKeys }
             if (secrets.isNotEmpty()) ctx.putSeed("secret", secrets)
             if (only != null) req?.upstream?.takeIf { it.isObject }?.fields()?.forEach { (source, value) ->
                 if (value.isObject && source !in setOf("secret", "env", "input")) seedScope(ctx, value, source)
@@ -367,7 +387,8 @@ class ExecutionService(
             }
             val state = flowExecutor.newRun(graph, ctx, relayBase, execId.toString())
             state.configureAgentRun(AgentRunOptions(execId, device, owner, username, flow.workspaceId?.toString() ?: "public", req?.envName,
-                account?.serverUrl, account?.login, req?.agentDependencies.orEmpty(), req?.agentEnvironments.orEmpty()), only?.id)
+                identity?.serverUrl, identity?.login, req?.agentDependencies.orEmpty(), req?.agentEnvironments.orEmpty(),
+                resourceWorkspaceId = req?.resourceWorkspaceId, envSource = req?.envSource), only?.id)
             val outcome = flowExecutor.execute(state, recorder(execId, secrets.values, state))
             settleManaged(execution, outcome, state)
             if (workspace.localRuntime && execution.status == ExecutionStatus.WAITING)
@@ -774,11 +795,10 @@ class ExecutionService(
     fun rerun(execId: UUID, req: RunRequest? = null): ExecutionDetail {
         val src = executionRepo.findByIdAndTenantId(execId, TenantContext.getTenantId())
             .orElseThrow { NotFoundException.of("Execution", execId) }
-        val versionNo = versionRepo.findById(src.flowVersionId).map { it.versionNo }.orElse(null)
-        val input = src.inputJson?.let { json.readTree(it) }
-        return run(src.flowId, RunRequest(input, req?.env, req?.envName, versionNo,
-            agentDeviceId = req?.agentDeviceId, clientExecutionId = req?.clientExecutionId, onlyNodeId = req?.onlyNodeId,
-            agentDependencies = req?.agentDependencies.orEmpty(), agentEnvironments = req?.agentEnvironments.orEmpty()))
+        val versionNo = versionRepo.findById(src.flowVersionId).map { it.versionNo }
+            .orElseThrow { NotFoundException.of("FlowVersion", src.flowVersionId) }
+        val request = replay.restore(src.inputJson, src.agentDeviceId != null || src.runRequestHash != null, versionNo, req)
+        return run(src.flowId, request)
     }
 
     /** 실행 목록에 워크플로 이름을 채운다(삭제/보관된 플로우도 이름 조회 — UUID 노출 방지). */
@@ -1013,15 +1033,33 @@ class ExecutionService(
     }
 
     private fun seedWorkspaceInput(ctx: ExecutionContext, req: RunRequest?) {
-        if (!environmentService.exists(req?.envName, ctx.workspaceId)) throw BadRequestException("선택한 실행 환경이 없습니다: ${req?.envName}")
+        validateResourceRequest(req)
         seedScope(ctx, req?.input, "input")
         val values = linkedMapOf<String, Any?>()
-        values.putAll(environmentService.vars(req?.envName, ctx.workspaceId))
+        val source = req?.envSource
+        if (source == "server" && workspace.localRuntime) {
+            val account = desktopConnection.getObject().connectionIdentity()
+            if (!account.connected) throw BadRequestException("서버 환경을 사용하려면 Windows 앱에서 로그인하세요.")
+            val identity = ctx.resourceIdentity ?: com.flowlink.agent.CentralResourceIdentity(account.serverUrl, account.login)
+            values.putAll(centralResources.getObject().environment(req?.envName, identity))
+        } else if (source == "local" && !workspace.localRuntime) {
+            if (req?.agentDeviceId.isNullOrBlank() || req?.agentDeviceId == "server" || req?.env?.isObject != true)
+                throw BadRequestException("PC 환경은 Windows 앱에서 확인한 변수 묶음과 함께 실행하세요.")
+        } else {
+            val scope = if (source == "server") null else ctx.workspaceId
+            if (!environmentService.exists(req?.envName, scope)) throw BadRequestException("선택한 실행 환경이 없습니다: ${req?.envName}")
+            values.putAll(environmentService.vars(req?.envName, scope))
+        }
         req?.env?.takeIf { it.isObject }?.let { node ->
             @Suppress("UNCHECKED_CAST")
             values.putAll(mapper.convertValue(node, Map::class.java) as Map<String, Any?>)
         }
         if (values.isNotEmpty()) ctx.putOutput("env", values)
+    }
+
+    private fun validateResourceRequest(req: RunRequest?) {
+        if (req?.envSource != null && req.envSource !in setOf("local", "server")) throw BadRequestException("알 수 없는 환경 출처입니다.")
+        if (req?.resourceWorkspaceId != null && req.resourceWorkspaceId != "public") throw BadRequestException("서버 공통 자원 공간을 선택하세요.")
     }
 
     // 실행 입력(input)·선택 환경(env)의 변수 묶음을 소스 id 로 시드 → {{ key@input }} / {{ key@env }} 로 참조.

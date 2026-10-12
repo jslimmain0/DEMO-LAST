@@ -11,7 +11,7 @@ export interface CatalogScope { scopeKey: string; remoteKey: string; current: { 
 interface CatalogEntry { identity: string; section: CatalogSection; view: CatalogView }
 export interface CatalogLink { to: string; state: { catalog?: CatalogEntry; catalogReturn?: { to: string; catalog: CatalogEntry } } }
 const object = (value: unknown): Record<string, unknown> => value != null && typeof value === 'object' ? value as Record<string, unknown> : {}
-export const catalogIdentity = (scope: CatalogScope) => JSON.stringify([scope.scopeKey, scope.remoteKey.replace(/:(true|false)$/, '')])
+export const catalogIdentity = (scope: CatalogScope, section: CatalogSection = 'flows') => JSON.stringify([section === 'mocks' ? 'mocks' : scope.scopeKey, scope.remoteKey.replace(/:(true|false)$/, '')])
 export const catalogSpace = (scope: CatalogScope) => `${scope.current.origin}:${scope.current.id}`
 export function catalogDefaults(section: CatalogSection): CatalogView {
   return { search: '', sort: section === 'flows' ? 'recent' : 'name', page: 1, size: 25, filter: 'all', kind: 'all' }
@@ -36,23 +36,29 @@ export function readCatalogView(state: unknown, section: CatalogSection, identit
 export function catalogState(state: unknown, section: CatalogSection, identity: string, view: CatalogView) {
   return { ...object(state), catalog: { identity, section, view } }
 }
+export function catalogSearch(section: CatalogSection, scope: CatalogScope, search: string, state: unknown) {
+  const params = new URLSearchParams(search), entry = object(object(state).catalog)
+  if (section === 'mocks' && entry.section === 'mocks' && typeof entry.identity === 'string' && entry.identity !== catalogIdentity(scope, 'mocks')) params.delete('serverSpace')
+  return params.toString()
+}
 export function catalogListUrl(section: CatalogSection, scope: CatalogScope, search = '') {
   const params = new URLSearchParams(search)
-  params.set('space', catalogSpace(scope))
+  if (section !== 'mocks' || params.getAll('space').length !== 1 || !/^(local|server):.+$/.test(params.get('space') ?? '')) params.set('space', catalogSpace(scope))
   return `/${section}?${params}`
 }
-export function catalogDetailLink(section: CatalogSection, id: string, scope: CatalogScope, search: string, view: CatalogView): CatalogLink {
-  const catalog: CatalogEntry = { identity: catalogIdentity(scope), section, view }
-  return { to: `/${section}/${encodeURIComponent(id)}?space=${encodeURIComponent(catalogSpace(scope))}`,
+export function catalogDetailLink(section: CatalogSection, id: string, scope: CatalogScope, search: string, view: CatalogView, target = scope.current): CatalogLink {
+  const catalog: CatalogEntry = { identity: catalogIdentity(scope, section), section, view }
+  return { to: `/${section}/${encodeURIComponent(id)}?space=${encodeURIComponent(`${target.origin}:${target.id}`)}`,
     state: { catalogReturn: { to: catalogListUrl(section, scope, search), catalog } } }
 }
 export function catalogReturnLink(state: unknown, section: CatalogSection, scope: CatalogScope, folder?: string | null): CatalogLink {
   const saved = object(object(state).catalogReturn)
-  const entry = readEntry(saved.catalog, section, catalogIdentity(scope))
+  const entry = readEntry(saved.catalog, section, catalogIdentity(scope, section))
   if (entry && typeof saved.to === 'string' && saved.to.startsWith(`/${section}?`)) {
     const params = new URLSearchParams(saved.to.slice(saved.to.indexOf('?') + 1))
-    if (params.getAll('space').length === 1 && params.get('space') === catalogSpace(scope)) {
-      return { to: catalogListUrl(section, scope, params.toString()), state: { catalog: entry } }
+    const space = params.get('space')
+    if (params.getAll('space').length === 1 && (section === 'mocks' ? /^(local|server):.+$/.test(space ?? '') : space === catalogSpace(scope))) {
+      return { to: section === 'mocks' ? saved.to : catalogListUrl(section, scope, params.toString()), state: { catalog: entry } }
     }
   }
   const params = new URLSearchParams()

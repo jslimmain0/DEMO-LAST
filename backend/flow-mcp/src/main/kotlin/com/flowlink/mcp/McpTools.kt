@@ -35,9 +35,7 @@ class McpTools(private val mapper: ObjectMapper, private val rest: McpRestClient
                     args.set<JsonNode>(key, value)
                 }
                 val initial = context.get("invocation") as McpInvocation
-                var scoped = initial.copy(target = args.path("target").asText("server"))
-                val unscoped = name in setOf("flowlink_status", "flowlink_update_status", "flowlink_guide", "workspace_list", "http_request")
-                if (!unscoped || args.hasNonNull("workspace")) scoped = scoped.copy(workspaceId = workspace(scoped, args.text("workspace")).path("id").asText())
+                val scoped = scopeFor(name, args, initial)
                 McpSchema.CallToolResult(render(invoke(name, args, scoped)), false)
             } catch (ex: Exception) {
                 val hint = when ((ex as? McpApiException)?.status) {
@@ -50,7 +48,17 @@ class McpTools(private val mapper: ObjectMapper, private val rest: McpRestClient
         }
     }
 
-    private fun invoke(name: String, a: ObjectNode, c: McpInvocation): Any? {
+    internal fun scopeFor(name: String, args: ObjectNode, initial: McpInvocation): McpInvocation {
+        val selected = initial.copy(target = args.path("target").asText("server"))
+        if (name.startsWith("protocol_") || name.startsWith("plugin_") || name in setOf("secret_list", "transform_preview"))
+            return selected.copy(target = "server", workspaceId = "public")
+        if (name.startsWith("env_") && selected.target == "server") return selected.copy(workspaceId = "public")
+        if (name == "mock_list") return selected.copy(workspaceId = null)
+        val unscoped = name in setOf("flowlink_status", "flowlink_update_status", "flowlink_guide", "workspace_list", "http_request")
+        return if (!unscoped || args.hasNonNull("workspace")) selected.copy(workspaceId = workspace(selected, args.text("workspace")).path("id").asText()) else selected
+    }
+
+    internal fun invoke(name: String, a: ObjectNode, c: McpInvocation): Any? {
         fun api(method: String, path: String, body: Any? = null, query: Map<String, String?> = emptyMap()): JsonNode = rest.api(c, method, path, body?.let { mapper.valueToTree(it) }, query)
         fun get(path: String) = api("GET", path)
         fun id() = enc(a.path("id").asText())
@@ -81,7 +89,7 @@ class McpTools(private val mapper: ObjectMapper, private val rest: McpRestClient
                 val topic = a.path("topic").asText()
                 val selected = if (topic == "all") schemas else schemas.path(if (topic == "nodes") "flow" else topic)
                 val layoutGuide = if (topic in setOf("all", "nodes", "flow")) "\n\n${McpGraphLayout.GUIDE}" else ""
-                return render(selected) + layoutGuide + "\n\nMCP는 중앙 서버에만 있습니다. target local=PC 개인 H2, server=공용·팀 저장 공간. 노드 executionAgent는 별도 선택입니다. 개인 작업 및 PC 실행은 로그인한 Windows 앱이 온라인이어야 합니다. pendingAgent UNKNOWN은 재실행하지 말고 결과를 확인하세요. FORM은 실제 사용자 화면 작업이 필요하며 MCP는 팝업 성공을 가장하지 않습니다."
+                return render(selected) + layoutGuide + "\n\nMCP는 중앙 서버에만 있습니다. ${McpConfiguration.RESOURCE_GUIDE} pendingAgent UNKNOWN은 재실행하지 말고 결과를 확인하세요. FORM은 실제 사용자 화면 작업이 필요하며 MCP는 팝업 성공을 가장하지 않습니다."
             }
             "workspace_list" -> return get("/workspaces")
             "workspace_get" -> return mapOf("workspace" to workspace(c, c.workspaceId), "folders" to folders(c), "flows" to get("/flows"), "mocks" to get("/mock-servers"))
@@ -111,15 +119,24 @@ class McpTools(private val mapper: ObjectMapper, private val rest: McpRestClient
                 }
                 return api("POST", "/protocols/preview", fields("key", "values", "environment").apply { set<JsonNode>("spec", spec); if (!has("values")) set<JsonNode>("values", mapper.createObjectNode()) })
             }
-            "protocol_delete" -> { api("DELETE", "/protocols/${id()}"); return "삭제됨" }
-            "mock_list" -> return get("/mock-servers/fleet").path("servers").filter { it.path("workspaceId").asText("public") == c.workspaceId }
+            "protocol_delete" -> { api("DELETE", "/protocols/${protocol().path("id").asText()}"); return "삭제됨" }
+            "mock_list" -> return mockList(c, a.text("workspace"))
             "mock_get" -> return get(mockPath())
             "mock_upsert" -> {
                 val matches = get("/mock-servers").filter { it.path("slug").asText() == a.path("slug").asText() }
                 require(matches.size <= 1) { "Mock slug가 겹칩니다. workspace를 지정하세요" }
+                val previous = matches.singleOrNull()?.let { get("/mock-servers/${it.path("id").asText()}").path("spec") }
+                val spec = a.path("spec").deepCopy<JsonNode>() as? ObjectNode ?: error("spec은 JSON 객체여야 합니다")
+                for (key in listOf("resourceWorkspaceId", "envSource")) if (!spec.has(key) && previous?.has(key) == true) spec.set<JsonNode>(key, previous.path(key))
+                if (previous == null || spec.hasNonNull("envSource")) {
+                    if (!spec.has("resourceWorkspaceId")) spec.put("resourceWorkspaceId", "public")
+                    if (spec.path("resourceWorkspaceId").asText() == "public" && !spec.hasNonNull("envSource")) spec.put("envSource", c.target)
+                }
+                spec.text("envSource")?.let { require(it in setOf("local", "server") && (c.target == "local" || it == "server")) { "서버 Mock은 서버 환경만 사용할 수 있습니다. PC Mock은 local/server를 선택하세요" } }
+                spec.remove("resourceIdentity") // Native saving pins its actual connection; never use the MCP loopback origin.
                 val m = matches.singleOrNull() ?: api("POST", "/mock-servers", fields("name", "slug", "type").apply { if (!has("name")) put("name", a.path("slug").asText()) })
                 val path = "/mock-servers/${m.path("id").asText()}"
-                api("PUT", "$path/spec", fields("spec").apply { put("note", "mcp") })
+                api("PUT", "$path/spec", mapper.createObjectNode().apply { set<JsonNode>("spec", spec); put("note", "mcp") })
                 if (a.hasNonNull("name") || a.hasNonNull("enabled")) api("PATCH", path, fields("name", "enabled"))
                 return get(path)
             }
@@ -147,7 +164,11 @@ class McpTools(private val mapper: ObjectMapper, private val rest: McpRestClient
             "flow_get" -> return get("/flows/${id()}")
             "flow_upsert" -> {
                 var flowId = a.text("id")
-                val graph = McpGraphLayout.forSave(a.path("graph"), flowId == null, a.text("layout"))
+                val graph = McpGraphLayout.forSave(a.path("graph"), flowId == null, a.text("layout")).deepCopy<JsonNode>() as? ObjectNode ?: error("graph는 JSON 객체여야 합니다")
+                if (!graph.has("resourceWorkspaceId")) {
+                    if (flowId == null) graph.put("resourceWorkspaceId", "public")
+                    else get("/flows/${enc(flowId)}").path("graph").get("resourceWorkspaceId")?.let { graph.set<JsonNode>("resourceWorkspaceId", it) }
+                }
                 if (flowId == null) {
                     require(!a.text("name").isNullOrBlank()) { "name 또는 id가 필요합니다" }
                     flowId = api("POST", "/flows", mapOf("name" to a.text("name"), "folderId" to folder(c, a.text("folder"))?.text("id"), "workspaceId" to c.workspaceId)).path("id").asText()
@@ -167,7 +188,7 @@ class McpTools(private val mapper: ObjectMapper, private val rest: McpRestClient
             "flow_version" -> return version("/flows/${id()}")
             "flow_run", "node_run" -> {
                 val flowId = if (name == "node_run") a.path("flowId").asText() else a.path("id").asText()
-                val body = fields("input", "envName", "upstream")
+                val body = fields("input", "envName", "upstream", "envSource")
                 if (name == "node_run") body.put("onlyNodeId", a.path("nodeId").asText())
                 val started = startRun(c, flowId, body)
                 return waitDone(c, started, a.path("timeoutSec").asInt(120))
@@ -193,7 +214,7 @@ class McpTools(private val mapper: ObjectMapper, private val rest: McpRestClient
             }
             "execution_rerun" -> {
                 val ex = get("/executions/${id()}")
-                val localNeeded = c.target == "server" && needsPc(c, ex.path("flowId").asText(), ex.text("flowVersionId"))
+                val localNeeded = c.target == "server" && needsPc(runGraph(c, ex.path("flowId").asText(), ex.text("flowVersionId")), conservativePublic = true)
                 val started = rest.api(c, "POST", "/executions/${id()}/rerun", viaPc = c.target == "local" || localNeeded, remoteOnPc = localNeeded)
                 return waitDone(c, started, a.path("timeoutSec").asInt(120))
             }
@@ -206,7 +227,7 @@ class McpTools(private val mapper: ObjectMapper, private val rest: McpRestClient
                 require(flowIds.isNotEmpty()) { "실행할 워크플로가 없습니다" }
                 val deadline = System.nanoTime() + Duration.ofSeconds(a.path("timeoutSec").asLong(180)).toNanos()
                 // Each flow is submitted once; mixed PC/server flows use the same device journal as the UI.
-                val started = flowIds.map { flowId -> flowId to runCatching { startRun(c, flowId, mapper.createObjectNode()) } }
+                val started = flowIds.map { flowId -> flowId to runCatching { startRun(c, flowId, fields("input", "envName", "envSource")) } }
                 return started.map { (flowId, result) -> result.fold({ waitDone(c, it, ((deadline - System.nanoTime()) / 1_000_000_000).toInt().coerceAtLeast(0)) }, { mapOf("flowId" to flowId, "error" to it.message, "안내" to "접수 결과가 불명확하면 재실행하지 마세요") }) }
             }
             "env_list" -> return get("/environments")
@@ -249,11 +270,29 @@ class McpTools(private val mapper: ObjectMapper, private val rest: McpRestClient
     }
 
     private fun startRun(c: McpInvocation, flowId: String, body: ObjectNode): JsonNode {
-        val pc = c.target == "server" && needsPc(c, flowId)
+        val graph = runGraph(c, flowId)
+        if (body.hasNonNull("envSource") || graph.path("resourceWorkspaceId").asText() == "public") {
+            val source = body.text("envSource") ?: c.target
+            require(source in setOf("local", "server")) { "envSource는 local 또는 server여야 합니다" }
+            body.put("envSource", source); body.put("resourceWorkspaceId", "public")
+            val environment = body.text("envName").orEmpty()
+            val vars = if (environment.isBlank()) mapper.createObjectNode() else {
+                val selected = if (source == "server") c.copy(target = "server", workspaceId = "public") else {
+                    val local = c.copy(target = "local", workspaceId = null)
+                    local.copy(workspaceId = workspace(local, null).path("id").asText())
+                }
+                val list = rest.api(selected, "GET", "/environments")
+                val matches = list.filter { it.path("name").asText() == environment }
+                require(matches.size == 1 && matches.single().path("vars").isObject) { "선택한 ${if (source == "local") "PC" else "서버 공통"} 환경이 없습니다: $environment" }
+                matches.single().path("vars").deepCopy<JsonNode>()
+            }
+            body.set<JsonNode>("env", vars)
+        }
+        val pc = c.target == "server" && (body.text("envSource") == "local" || needsPc(graph))
         return rest.api(c, "POST", "/flows/${enc(flowId)}/runs", body, viaPc = c.target == "local" || pc, remoteOnPc = pc)
     }
 
-    private fun needsPc(c: McpInvocation, flowId: String, versionId: String? = null): Boolean {
+    private fun runGraph(c: McpInvocation, flowId: String, versionId: String? = null): JsonNode {
         val detail = rest.api(c, "GET", "/flows/${enc(flowId)}")
         val graph = if (versionId != null) {
             val versions = rest.api(c, "GET", "/flows/${enc(flowId)}/versions")
@@ -261,7 +300,35 @@ class McpTools(private val mapper: ObjectMapper, private val rest: McpRestClient
                 ?: error("원본 실행 버전을 확인하지 못했습니다. 다시 실행하지 않습니다")
             rest.api(c, "GET", "/flows/${enc(flowId)}/versions/${version.path("versionNo").asInt()}")
         } else detail.path("graph")
-        return graph.path("nodes").any { it.path("executionAgent").asText() == "local" || it.path("reqMode").asText() == "client" || it.path("type").asText().lowercase() in setOf("form", "input") }
+        return graph
+    }
+
+    private fun needsPc(graph: JsonNode, conservativePublic: Boolean = false): Boolean {
+        if (conservativePublic && graph.path("resourceWorkspaceId").asText() == "public") return true
+        return graph.path("nodes").any {
+            val type = it.path("type").asText().lowercase()
+            type in setOf("form", "input") || type in setOf("http", "tcp") && (it.path("executionAgent").asText() == "local" || type == "http" && it.path("reqMode").asText() == "client")
+        }
+    }
+
+    private fun mockList(c: McpInvocation, selectedWorkspace: String?): Any {
+        val mocks = mutableListOf<JsonNode>()
+        val sources = mutableListOf<Map<String, Any?>>()
+        for (target in listOf("server", "local")) {
+            try {
+                val context = c.copy(target = target, workspaceId = null)
+                val reference = if (target == c.target) selectedWorkspace else null
+                val id = if (target == "server" && reference.isNullOrBlank()) "public" else workspace(context, reference).path("id").asText()
+                val fleet = rest.api(context.copy(workspaceId = id), "GET", "/mock-servers/fleet")
+                mocks += fleet.path("servers").filter { it.path("workspaceId").asText("public") == id }.map { (it.deepCopy<JsonNode>() as ObjectNode).put("target", target) }
+                sources += mapOf("target" to target, "workspaceId" to id, "available" to true)
+            } catch (error: Exception) {
+                sources += mapOf("target" to target, "available" to false, "httpStatus" to (error as? McpApiException)?.status,
+                    "안내" to if (target == "local") "온라인 Windows 앱의 연결·개인 공간을 확인하세요" else "서버 목록을 읽지 못했습니다")
+            }
+        }
+        require(sources.any { it["available"] == true }) { "서버와 PC Mock 목록을 모두 읽지 못했습니다. 연결과 권한을 확인하세요" }
+        return mapOf("mocks" to mocks, "sources" to sources)
     }
 
     private fun waitDone(c: McpInvocation, started: JsonNode, seconds: Int): Any {

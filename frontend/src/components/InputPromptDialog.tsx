@@ -36,6 +36,7 @@ export function InputPromptDialog({
         const n = Number(raw)
         if (raw.trim() === '' || !Number.isFinite(n)) {
           setError(`"${name}" 값은 숫자여야 합니다.`)
+          document.getElementById(`fl-input-${f.key}`)?.focus()
           return
         }
         out[f.key] = n
@@ -46,6 +47,7 @@ export function InputPromptDialog({
           out[f.key] = raw.trim() === '' ? null : JSON.parse(raw)
         } catch {
           setError(`"${name}" 값이 유효한 JSON 이 아닙니다.`)
+          document.getElementById(`fl-input-${f.key}`)?.focus()
           return
         }
       } else {
@@ -57,7 +59,11 @@ export function InputPromptDialog({
 
   return (
     <Modal onClose={onCancel} ariaLabel="사용자 입력 대기" zIndex={220} closeOnBackdrop={false} width={420} maxWidth="100%" maxHeight="76vh"
-      onKeyDown={(e) => { if (e.key === 'Enter' && !(e.target instanceof HTMLTextAreaElement)) { e.preventDefault(); confirm() } }}>
+      onKeyDown={(e) => {
+        if (e.defaultPrevented || e.nativeEvent.isComposing || e.keyCode === 229) return
+        const tag = (e.target as HTMLElement).tagName
+        if (e.key === 'Enter' && (tag === 'INPUT' || (tag === 'TEXTAREA' && (e.ctrlKey || e.metaKey)))) { e.preventDefault(); confirm() }
+      }}>
         <header style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '14px 16px', borderBottom: '1px solid var(--fl-border)' }}>
           <span aria-hidden style={{ color: 'var(--fl-cat-input)', fontSize: 16 }}>⌨</span>
           <strong style={{ fontFamily: 'var(--fl-font-head)', fontSize: 16 }}>입력 대기 · {input.nodeName || input.nodeId}</strong>
@@ -105,8 +111,8 @@ export function InputPromptDialog({
               </div>
             )
           })}
-          {error && <p style={{ margin: 0, fontSize: 13, color: 'var(--fl-fail)' }}>⚠ {error}</p>}
-          <p style={{ margin: 0, fontSize: 12, color: 'var(--fl-text-muted)' }}>확인(Enter)하면 이 값이 노드 출력이 되어 다음 노드에서 바인딩됩니다. 취소(Esc)는 실행을 중단합니다.</p>
+          {error && <p role="alert" style={{ margin: 0, fontSize: 13, color: 'var(--fl-fail)' }}>⚠ {error}</p>}
+          <p style={{ margin: 0, fontSize: 12, color: 'var(--fl-text-muted)' }}>Enter로 확인합니다(JSON 입력은 Ctrl+Enter). 입력값은 다음 노드에서 사용되며, 취소(Esc)는 실행을 중단합니다.</p>
         </div>
         <footer style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, padding: '12px 16px', borderTop: '1px solid var(--fl-border)' }}>
           <button onClick={onCancel} style={ghostBtn}>취소</button>

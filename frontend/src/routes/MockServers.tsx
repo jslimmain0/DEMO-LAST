@@ -19,6 +19,9 @@ import { apiErrorMessage } from '../lib/apiError'
 import { matchesCatalog, type MockSort } from '../lib/catalog'
 import { useCatalogNavigation } from '../lib/useCatalogNavigation'
 import { ui } from '../design/ui'
+import { MockNavigator } from '../components/MockNavigator'
+import { locatedFleet, mockLocation } from '../lib/mockCatalog'
+import { ResourceLocationBar } from '../components/ResourceLocationBar'
 
 type Kind = 'HTTP' | 'TCP'
 
@@ -30,30 +33,44 @@ type Kind = 'HTTP' | 'TCP'
  * 5초 폴링(살아있음·리스너 상태). 편집은 행 클릭 → 편집기.
  */
 export function MockServers() {
-  const { mocksApi, mockBaseUrl } = useApi()
+  const { mockBaseUrl } = useApi()
 
   const qc = useQueryClient()
   const navigate = useNavigate()
   const catalog = useCatalogNavigation('mocks')
+  const params = new URLSearchParams(catalog.search)
   const { canEdit: canEditUser } = usePermissions()
-  const { me } = useAuth()
+  const { me, desktop } = useAuth()
   const scope = useWorkspace()
-  const canEditGlobal = canEditUser && scope.current.myRole !== 'VIEWER'
-  const runtime = { kind: scope.current.origin }
-  const fleet = useQuery({ queryKey: ['mock-fleet'], queryFn: mocksApi.fleet, refetchInterval: 5000 })
-  const f = useMemo(() => fleet.data ? { ...fleet.data,
-    workspaces: fleet.data.workspaces.filter(w => w.id === scope.current.id),
-    servers: fleet.data.servers.filter(s => s.workspaceId === scope.current.id),
-    ports: fleet.data.ports.filter(p => !p.workspaceId || p.workspaceId === scope.current.id).map(p => p.kind === 'HTTP' ? { ...p, count: fleet.data!.servers.filter(s => s.workspaceId === scope.current.id && s.kind !== 'TCP' && s.enabled).length } : p),
-  } : undefined, [fleet.data, scope.current.id])
+  const { agentApi } = scope
+  const canEditGlobal = canEditUser
+  const localId = scope.workspaces.find(w => w.origin === 'local')?.id ?? 'local'
+  const localApi = useMemo(() => agentApi('local', localId), [agentApi, localId])
+  const centralApi = useMemo(() => agentApi('server', 'public'), [agentApi])
+  const fleet = useQuery({ queryKey: ['mock-fleet', 'server', scope.remoteKey], queryFn: centralApi.mocksApi.fleet, enabled: scope.connected, refetchInterval: 5000, retry: false })
+  const pcFleet = useQuery({ queryKey: ['mock-fleet', 'local', localId], queryFn: localApi.mocksApi.fleet, enabled: !!desktop, refetchInterval: 5000, retry: false })
+  const serverWorkspace = params.get('serverSpace') ?? ''
+  const setServerWorkspace = (value: string) => { const next = new URLSearchParams(params); if (value) next.set('serverSpace', value); else next.delete('serverSpace'); catalog.update({ page: 1 }, next.toString()) }
+  const f = useMemo(() => {
+    const pc = pcFleet.data ? locatedFleet(pcFleet.data, 'local') : null
+    const server = scope.connected && fleet.data ? locatedFleet(fleet.data, 'server') : null
+    if (!pc && !server) return undefined
+    return { ...(pc ?? server!), workspaces: [...(pc?.workspaces ?? []), ...(server?.workspaces ?? []).filter(w => !serverWorkspace || w.id === `server:${serverWorkspace}`)],
+      servers: [...(pc?.servers ?? []), ...(server?.servers ?? []).filter(s => !serverWorkspace || s.workspaceId === `server:${serverWorkspace}`)],
+      ports: [...(pc?.ports ?? []), ...(server?.ports ?? []).filter(p => !serverWorkspace || !p.workspaceId || p.workspaceId === `server:${serverWorkspace}`)] }
+  }, [pcFleet.data, fleet.data, scope.connected, serverWorkspace])
   const servers = useMemo(() => f?.servers ?? [], [f])
   const host = new URL(mockBaseUrl('')).hostname
   const wsWritable = useMemo(() => (f?.workspaces ?? []).filter((w) => w.myRole === 'OWNER' || w.myRole === 'EDITOR'), [f])
-  const wsDestinations = useMemo(() => (fleet.data?.workspaces ?? []).filter(w => w.myRole === 'OWNER' || w.myRole === 'EDITOR').sort((a, b) => a.name.localeCompare(b.name, 'ko')), [fleet.data])
+  const wsDestinations = useMemo(() => (f?.workspaces ?? []).filter(w => w.myRole === 'OWNER' || w.myRole === 'EDITOR').sort((a, b) => a.name.localeCompare(b.name, 'ko')), [f])
   const wsName = (id: string) => f?.workspaces.find((w) => w.id === id)?.name ?? '공용'
 
   // 만들기/가져오기 대상 워크스페이스 — 대시보드와 같은 마지막 선택(fl:workspace) 기억
-  const [createWs, setCreateWs] = useState<string>(scope.current.id)
+  const [createWs, setCreateWs] = useState<string>(desktop ? `local:${localId}` : 'server:public')
+  const createLocation = mockLocation(createWs)
+  const mocksApi = useMemo(() => agentApi(createLocation.origin, createLocation.id).mocksApi, [agentApi, createLocation.origin, createLocation.id])
+  const apiFor = (s: MockFleetServer) => { const location = mockLocation(s.workspaceId); return scope.agentApi(location.origin, location.id).mocksApi }
+  const findMock = (id: string) => servers.find(s => s.id === id)!
   useEffect(() => { if (f && !fleet.isFetching && wsWritable.length && !wsWritable.some((w) => w.id === createWs)) setCreateWs(wsWritable[0].id) }, [f, fleet.isFetching, wsWritable, createWs])
 
   const q = catalog.view.search
@@ -72,10 +89,10 @@ export function MockServers() {
   const [selectMode, setSelectMode] = useState(false)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   useEffect(() => {
-    if (!fleet.data) return
+    if (!f) return
     const ids = new Set(servers.map(s => s.id))
     setSelected(previous => [...previous].every(id => ids.has(id)) ? previous : new Set([...previous].filter(id => ids.has(id))))
-  }, [fleet.data, servers])
+  }, [f, servers])
   const [creating, setCreating] = useState<Kind | null>(null)
   const [name, setName] = useState('')
   const [slug, setSlug] = useState('')
@@ -84,27 +101,28 @@ export function MockServers() {
   const [exporting, setExporting] = useState<MockServerDetail | null>(null)
   const [ask, setAsk] = useState<AskSpec | null>(null)
 
-  const invalidate = () => { qc.invalidateQueries({ queryKey: ['mock-fleet'] }); qc.invalidateQueries({ queryKey: ['mock-servers'] }) }
+  const invalidate = () => { qc.invalidateQueries({ queryKey: ['mock-fleet'] }); qc.invalidateQueries({ queryKey: ['mock-servers'] }); qc.invalidateQueries({ queryKey: ['mock-explorer'] }) }
   const create = useMutation({
-    mutationFn: () => mocksApi.create({ name: name.trim() || slug.trim(), slug: slug.trim(), type: creating ?? 'HTTP', workspaceId: createWs === 'public' ? null : createWs }),
+    mutationFn: () => mocksApi.create({ name: name.trim() || slug.trim(), slug: slug.trim(), type: creating ?? 'HTTP', workspaceId: createLocation.id }),
     onSuccess: () => { setName(''); setSlug(''); setError(null); setCreating(null); invalidate() },
     onError: (e) => setError(apiErrorMessage(e)),
   })
   // 화면을 떠나도 저장과 캐시 갱신은 완료하되, 이전 공간의 상세 화면으로 이동하지 않는다.
-  const createMock = () => { if (!create.isPending) create.mutate(undefined, { onSuccess: d => { const link = catalog.detail(d.id); navigate(link.to, { state: link.state }) } }) }
-  const toggle = useMutation({ mutationFn: (s: MockFleetServer) => mocksApi.update(s.id, { enabled: !s.enabled }), onSuccess: invalidate, onError: (e) => toast(apiErrorMessage(e, '변경 실패'), 'error') })
-  const remove = useMutation({ mutationFn: (id: string) => mocksApi.remove(id), onSuccess: invalidate, onError: (e) => toast(apiErrorMessage(e, '삭제 실패'), 'error') })
-  const rename = useMutation({ mutationFn: (v: { id: string; name: string }) => mocksApi.update(v.id, { name: v.name }), onSuccess: () => { invalidate(); toast('이름을 바꿨습니다.', 'ok') }, onError: (e) => toast(apiErrorMessage(e, '이름 변경 실패'), 'error') })
-  const move = useMutation({ mutationFn: (v: { id: string; workspaceId: string }) => mocksApi.update(v.id, { workspaceId: v.workspaceId }), onSuccess: () => { invalidate(); toast('워크스페이스를 옮겼습니다.', 'ok') }, onError: (e) => toast(apiErrorMessage(e, '이동 실패'), 'error') })
+  const createMock = () => { if (!create.isPending) create.mutate(undefined, { onSuccess: d => { const link = catalog.detail(d.id, createLocation); navigate(link.to, { state: link.state }) } }) }
+  const toggle = useMutation({ mutationFn: (s: MockFleetServer) => apiFor(s).update(mockLocation(s.id).id, { enabled: !s.enabled }), onSuccess: invalidate, onError: (e) => toast(apiErrorMessage(e, '변경 실패'), 'error') })
+  const remove = useMutation({ mutationFn: (id: string) => apiFor(findMock(id)).remove(mockLocation(id).id), onSuccess: invalidate, onError: (e) => toast(apiErrorMessage(e, '삭제 실패'), 'error') })
+  const rename = useMutation({ mutationFn: (v: { id: string; name: string }) => apiFor(findMock(v.id)).update(mockLocation(v.id).id, { name: v.name }), onSuccess: () => { invalidate(); toast('이름을 바꿨습니다.', 'ok') }, onError: (e) => toast(apiErrorMessage(e, '이름 변경 실패'), 'error') })
+  const move = useMutation({ mutationFn: (v: { id: string; workspaceId: string }) => { if (mockLocation(v.id).origin !== mockLocation(v.workspaceId).origin) throw new Error('내 PC와 서버 사이에는 복제해서 옮겨주세요.'); return apiFor(findMock(v.id)).update(mockLocation(v.id).id, { workspaceId: mockLocation(v.workspaceId).id }) }, onSuccess: () => { invalidate(); toast('워크스페이스를 옮겼습니다.', 'ok') }, onError: (e) => toast(apiErrorMessage(e, '이동 실패'), 'error') })
   const duplicate = useMutation({
     mutationFn: async (s: MockFleetServer) => {
-      const d = await mocksApi.get(s.id)
+      const api = apiFor(s)
+      const d = await api.get(mockLocation(s.id).id)
       let n = 2; let candidate = `${s.slug}-${n}`.slice(0, 40)
-      for (; n < 30; n++) { candidate = `${s.slug.slice(0, 40 - String(n).length - 1)}-${n}`; if ((await mocksApi.slugCheck(candidate)).available) break }
-      const created = await mocksApi.create({ name: `${s.name} (복제)`, slug: candidate, type: s.kind === 'TCP' ? 'TCP' : 'HTTP', workspaceId: s.workspaceId === 'public' ? null : s.workspaceId })
+      for (; n < 30; n++) { candidate = `${s.slug.slice(0, 40 - String(n).length - 1)}-${n}`; if ((await api.slugCheck(candidate)).available) break }
+      const created = await api.create({ name: `${s.name} (복제)`, slug: candidate, type: s.kind === 'TCP' ? 'TCP' : 'HTTP', workspaceId: mockLocation(s.workspaceId).id })
       const spec = d.spec?.tcp ? { ...d.spec, tcp: { ...d.spec.tcp, port: (d.spec.tcp.port ?? 9091) + 1 } } : d.spec // TCP 포트 충돌 방지 — 포트 +1 · 꺼서 복제
-      await mocksApi.updateSpec(created.id, spec ?? { routes: [] }, { note: `${s.slug} 복제` })
-      if (d.spec?.tcp) await mocksApi.update(created.id, { enabled: false })
+      await api.updateSpec(created.id, spec ?? { routes: [] }, { note: `${s.slug} 복제` })
+      if (d.spec?.tcp) await api.update(created.id, { enabled: false })
       return created
     },
     onSuccess: (d) => { invalidate(); toast(`'${d.name}' 으로 복제했습니다(slug ${d.slug}).`, 'ok') },
@@ -113,14 +131,26 @@ export function MockServers() {
   const bulk = useMutation({
     mutationFn: async (op: { kind: 'on' | 'off' | 'delete' | 'move'; workspaceId?: string }) => {
       const ids = [...selected]
-      for (const id of ids) {
-        if (op.kind === 'delete') await mocksApi.remove(id)
-        else if (op.kind === 'move') await mocksApi.update(id, { workspaceId: op.workspaceId })
-        else await mocksApi.update(id, { enabled: op.kind === 'on' })
+      if (op.kind === 'move') {
+        const target = mockLocation(op.workspaceId!)
+        if (ids.some(id => mockLocation(id).origin !== target.origin)) throw new Error('같은 실행 위치의 Mock만 한 번에 이동할 수 있습니다. 내 PC와 서버 사이에는 복제해서 옮겨주세요.')
+      }
+      let completed = 0
+      try {
+        for (const id of ids) {
+          const api = apiFor(findMock(id)), source = mockLocation(id)
+          if (op.kind === 'delete') await api.remove(source.id)
+          else if (op.kind === 'move') await api.update(source.id, { workspaceId: mockLocation(op.workspaceId!).id })
+          else await api.update(source.id, { enabled: op.kind === 'on' })
+          completed++
+          setSelected(previous => { const remaining = new Set(previous); remaining.delete(id); return remaining })
+        }
+      } catch (error) {
+        throw new Error(`${completed}개 완료 · ${ids.length - completed}개 미완료. ${apiErrorMessage(error)} 남은 선택으로 다시 시도하세요.`)
       }
       return ids.length
     },
-    onSuccess: (n, op) => { invalidate(); setSelected(new Set()); setBulkDestination(''); toast(`${n}개 ${op.kind === 'delete' ? '삭제' : op.kind === 'on' ? '켜기' : op.kind === 'off' ? '끄기' : '이동'} 완료`, 'ok') },
+    onSuccess: (n, op) => { invalidate(); setBulkDestination(''); toast(`${n}개 ${op.kind === 'delete' ? '삭제' : op.kind === 'on' ? '켜기' : op.kind === 'off' ? '끄기' : '이동'} 완료`, 'ok') },
     onError: (e) => { invalidate(); toast(apiErrorMessage(e, '일괄 작업 실패'), 'error') },
   })
 
@@ -147,8 +177,9 @@ export function MockServers() {
   useEffect(() => {
     setSlugTaken(null)
     if (!slugFormatOk) return
-    const t = setTimeout(() => { mocksApi.slugCheck(slug.trim()).then((r) => setSlugTaken(!r.available)).catch(() => setSlugTaken(null)) }, 350)
-    return () => clearTimeout(t)
+    let active = true
+    const t = setTimeout(() => { mocksApi.slugCheck(slug.trim()).then((r) => { if (active) setSlugTaken(!r.available) }).catch(() => { if (active) setSlugTaken(null) }) }, 350)
+    return () => { active = false; clearTimeout(t) }
   }, [slug, slugFormatOk, mocksApi])
   const slugOk = slugFormatOk && slugTaken !== true
 
@@ -167,22 +198,22 @@ export function MockServers() {
     switch (action) {
       case 'toggle': toggle.mutate(s); break
       case 'fav': toggleFav(s.id); break
-      case 'copyUrl': void navigator.clipboard?.writeText(mockBaseUrl(s.slug, me?.tenant, s.basePath)).then(() => toast('base URL 복사됨', 'ok')).catch(() => {}); break
+      case 'copyUrl': { const location = mockLocation(s.workspaceId); void navigator.clipboard?.writeText(scope.agentApi(location.origin, location.id).mockBaseUrl(s.slug, me?.tenant, s.basePath)).then(() => toast('주소를 복사했습니다.', 'ok')).catch(() => toast('주소를 복사하지 못했습니다.', 'error')); break }
       case 'rename': setAsk({ title: '이름 바꾸기', input: { label: '이름', initial: s.name }, confirmLabel: '변경', onConfirm: (v) => rename.mutate({ id: s.id, name: v }) }); break
       case 'duplicate': duplicate.mutate(s); break
-      case 'export': mocksApi.get(s.id).then(setExporting).catch((e) => toast(apiErrorMessage(e, '불러오기 실패'), 'error')); break
+      case 'export': apiFor(s).get(mockLocation(s.id).id).then(setExporting).catch((e) => toast(apiErrorMessage(e, '불러오기 실패'), 'error')); break
       case 'move': if (arg && arg !== s.workspaceId) move.mutate({ id: s.id, workspaceId: arg }); break
-      case 'goFlow': if (arg) navigate(`/flows/${arg}`); break
+      case 'goFlow': if (arg) navigate(`/flows/${arg}?space=${encodeURIComponent(s.workspaceId)}`); break
       case 'delete': setAsk({ title: 'Mock 서버 삭제', danger: true, confirmLabel: '삭제', message: `'${s.name}' Mock 서버를 삭제할까요? 되돌릴 수 없습니다.${(s.usedBy?.length ?? 0) ? ` 이 Mock 을 쓰는 워크플로 ${s.usedBy!.length}개가 호출에 실패하게 됩니다.` : ''}`, onConfirm: () => remove.mutate(s.id) }); break
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [me?.tenant])
+  }, [me?.tenant, scope.agentApi, servers, favs])
   const onToggleSelect = useCallback((s: MockFleetServer) => {
     setSelectMode(true)
     setSelected((p) => { const n = new Set(p); if (n.has(s.id)) n.delete(s.id); else n.add(s.id); return n })
   }, [])
   const onCreateIn = useCallback((wsId: string) => { setCreateWs(wsId); setCreating('HTTP'); setError(null) }, [])
-  const onOpen = (s: MockFleetServer) => { const link = catalog.detail(s.id); navigate(link.to, { state: link.state }) }
+  const onOpen = (s: MockFleetServer) => { const link = catalog.detail(mockLocation(s.id).id, mockLocation(s.workspaceId)); navigate(link.to, { state: link.state }) }
 
   const stats = {
     total: servers.length,
@@ -195,27 +226,30 @@ export function MockServers() {
   }
   const selectedServers = servers.filter((s) => selected.has(s.id))
   const selectedEditable = canEditGlobal && selectedServers.every((s) => s.readable && s.myRole !== 'VIEWER')
+  const selectedOrigins = new Set(selectedServers.map(s => mockLocation(s.id).origin))
+  const canMoveSelection = selectedOrigins.size === 1
 
   return (
-    <AppShellTier1>
+    <AppShellTier1 sidebarExtra={<MockNavigator />}>
       <div className="fl-page fl-mock-catalog">
-        <PageHeader title="Mock 서버" count={servers.length} description={<>이 공간의 Mock은 <b>{scope.current.origin === 'local' ? '내 PC' : '서버'}</b>에서 요청을 받습니다. 응답 규칙을 편집하고 테스트 대상을 준비하세요.</>} actions={<>
+        <PageHeader title="Mock" count={servers.length} description="내 PC와 서버의 테스트 대상을 함께 관리합니다. Mock을 열어 응답 규칙을 편집하세요." actions={<>
           {canEditGlobal && <button onClick={() => setImporting(true)} style={ghostBtn} title="내보내기 JSON을 가져와 새 Mock 만들기"><AppIcon name="upload" size={16} /> 가져오기</button>}
           {canEditGlobal && <button onClick={() => { setCreating('TCP'); setError(null) }} style={ghostBtn}>+ TCP Mock</button>}
           {canEditGlobal && <button onClick={() => { setCreating('HTTP'); setError(null) }} style={primaryBtn}>+ HTTP Mock</button>}
         </>} />
 
+        <ResourceLocationBar combined serverWorkspaceId={serverWorkspace} onServerWorkspaceChange={setServerWorkspace} label="표시 범위" />
         {creating && (
           <div style={createRow}>
             <span style={{ ...kindPill, background: creating === 'TCP' ? 'var(--fl-cat-tcp)' : 'var(--fl-primary)' }}>{creating === 'TCP' ? 'TCP' : 'HTTP'}</span>
             <select aria-label="만들 워크스페이스" value={createWs} onChange={(e) => setCreateWs(e.target.value)} style={selectStyle} title="어느 워크스페이스에 만들지">
-              {(wsWritable.length ? wsWritable : [{ id: createWs, name: runtime?.kind === 'local' ? '개인 · 내 PC' : '공용', kind: runtime?.kind === 'local' ? 'PERSONAL' : 'PUBLIC' }]).map((w) => (
+              {(wsWritable.length ? wsWritable : [{ id: createWs, name: createLocation.origin === 'local' ? '내 PC' : '서버 · 공용', kind: createLocation.origin === 'local' ? 'PERSONAL' : 'PUBLIC' }]).map((w) => (
                 <option key={w.id} value={w.id}>{w.kind === 'PERSONAL' ? '개인 ·' : w.kind === 'TEAM' ? '팀 ·' : '공용 ·'} {w.name}</option>
               ))}
             </select>
             <input style={input} placeholder={creating === 'TCP' ? '이름 (예: 코어뱅킹 잔액조회)' : '이름 (예: 결제 게이트웨이)'} value={name} onChange={(e) => setName(e.target.value)} autoFocus aria-label="이름" />
             <span style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
-              <input style={{ ...input, fontFamily: 'var(--fl-font-mono)', paddingRight: 84, borderColor: slugTaken === true ? 'var(--fl-fail)' : undefined }} aria-label="slug"
+              <input style={{ ...input, fontFamily: 'var(--fl-font-mono)', paddingRight: 84, borderColor: slugTaken === true ? 'var(--fl-fail)' : 'var(--fl-border)' }} aria-label="slug"
                 placeholder={creating === 'TCP' ? 'slug (예: corebank)' : 'slug (예: pay-mock)'} value={slug} onChange={(e) => setSlug(e.target.value.toLowerCase())} onKeyDown={(e) => { if (e.key === 'Enter' && slugOk) createMock() }} />
               {slugFormatOk && slugTaken !== null && (
                 <span style={{ position: 'absolute', right: 10, fontSize: 11, fontWeight: 700, pointerEvents: 'none', color: slugTaken ? 'var(--fl-fail)' : 'var(--fl-ok)' }}>{slugTaken ? '✕ 사용 중' : '✓ 사용 가능'}</span>
@@ -230,6 +264,8 @@ export function MockServers() {
         )}
         {error && <p style={{ color: 'var(--fl-fail)', fontSize: 13, marginTop: 8 }}>{error}</p>}
         {fleet.isError && <p style={{ color: 'var(--fl-fail)', fontSize: 13, marginTop: 18 }}>서버 현황을 불러오지 못했습니다: {apiErrorMessage(fleet.error)}</p>}
+        {!scope.connected && <p role="status" style={{ color: 'var(--fl-text-muted)', fontSize: 13 }}>서버 연결이 필요합니다. 내 PC Mock은 계속 사용할 수 있습니다.</p>}
+        {pcFleet.isError && <p role="alert" style={{ color: 'var(--fl-fail)', fontSize: 13 }}>내 PC Mock을 불러오지 못했습니다. <button onClick={() => void pcFleet.refetch()} style={miniBtn}>다시 확인</button></p>}
 
         {/* 상태와 필터를 한 곳에서 조작한다. */}
         {f && servers.length > 0 && (
@@ -257,7 +293,7 @@ export function MockServers() {
             <select aria-label="Mock 정렬" value={sort} onChange={e => setSort(e.target.value as MockSort)} style={selectStyle}><option value="name">이름순</option><option value="recent">최근 수정순</option><option value="state">실패·서빙 상태순</option><option value="port">포트순</option></select>
             {matchActive && <button onClick={() => { setQ(''); setFilter('all'); setKindFilter('all') }} style={miniBtn}>필터 초기화</button>}
             {matchActive && <span style={metaMono} aria-label="일치 수">{matched.length}/{servers.length} 일치</span>}
-            {canEditGlobal && <button onClick={() => { setSelectMode((v) => !v); setSelected(new Set()) }} style={{ ...ghostBtn, ...(selectMode ? { borderColor: 'var(--fl-primary)', color: 'var(--fl-primary)' } : null) }} title="여러 Mock 을 골라 한 번에 켜기/끄기/이동/삭제 (Ctrl+클릭으로도 선택)">{selectMode ? '선택 취소' : '☑ 선택'}</button>}
+            {canEditGlobal && <button onClick={() => { setSelectMode((v) => !v); setSelected(new Set()) }} style={{ ...ghostBtn, borderColor: selectMode ? 'var(--fl-primary)' : 'var(--fl-border)', color: selectMode ? 'var(--fl-primary)' : 'var(--fl-text)' }} title="여러 Mock 을 골라 한 번에 켜기/끄기/이동/삭제 (Ctrl+클릭으로도 선택)">{selectMode ? '선택 취소' : '☑ 선택'}</button>}
           </div>
         )}
         {selectMode && (
@@ -269,11 +305,12 @@ export function MockServers() {
             <button style={miniBtn} disabled={!selected.size || !selectedEditable || bulk.isPending} onClick={() => bulk.mutate({ kind: 'off' })}>○ 끄기</button>
             {wsDestinations.length > 1 && (
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-              <select aria-label="선택 Mock을 이동할 워크스페이스" value={bulkDestination} disabled={!selected.size || !selectedEditable || bulk.isPending} onChange={(e) => setBulkDestination(e.target.value)} style={{ ...selectStyle, height: 30, padding: '4px 8px' }}>
+              <select aria-label="선택 Mock을 이동할 워크스페이스" value={bulkDestination} disabled={!selected.size || !selectedEditable || !canMoveSelection || bulk.isPending} onChange={(e) => setBulkDestination(e.target.value)} style={{ ...selectStyle, height: 30, padding: '4px 8px' }}>
                 <option value="">이동할 공간 선택…</option>
-                {wsDestinations.filter(w => w.id !== scope.current.id).map((w) => <option key={w.id} value={w.id}>{w.kind === 'PERSONAL' ? '개인 ·' : w.kind === 'TEAM' ? '팀 ·' : '공용 ·'} {w.name} · ID {w.id.slice(0, 8)}</option>)}
+                {wsDestinations.filter(w => selectedOrigins.has(mockLocation(w.id).origin)).map((w) => <option key={w.id} value={w.id}>{w.kind === 'PERSONAL' ? '내 PC ·' : w.kind === 'TEAM' ? '서버 팀 ·' : '서버 공용 ·'} {w.name}</option>)}
               </select>
-              <button style={miniBtn} disabled={!bulkDestination || !selected.size || !selectedEditable || bulk.isPending} onClick={() => bulk.mutate({ kind: 'move', workspaceId: bulkDestination })}>선택한 공간으로 이동</button>
+              <button style={miniBtn} disabled={!bulkDestination || !selected.size || !selectedEditable || !canMoveSelection || bulk.isPending} onClick={() => bulk.mutate({ kind: 'move', workspaceId: bulkDestination })}>선택한 공간으로 이동</button>
+              {selectedOrigins.size > 1 && <small style={{ color: 'var(--fl-text-muted)' }}>이동하려면 같은 위치의 Mock만 선택하세요.</small>}
               </span>
             )}
             <button style={{ ...miniBtn, color: 'var(--fl-fail)' }} disabled={!selected.size || !selectedEditable || bulk.isPending}
@@ -308,7 +345,7 @@ export function MockServers() {
         )}
       </div>
       {ask && <AskDialog spec={ask} onClose={() => setAsk(null)} />}
-      {importing && <MockImportDialog workspaceId={createWs === 'public' ? null : createWs} onClose={() => setImporting(false)} onImported={() => invalidate()} />}
+      {importing && <MockImportDialog workspaceId={createLocation.id} api={mocksApi} onClose={() => setImporting(false)} onImported={() => invalidate()} />}
       {exporting && <MockExportDialog mock={exporting} onClose={() => setExporting(null)} />}
     </AppShellTier1>
   )

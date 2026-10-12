@@ -8,6 +8,7 @@ import type { ExecutionSummary, FlowSummary, FolderSummary } from '../api/types'
 
 import type { SuiteRunItem } from '../api/client'
 import { WorkspaceDialog } from '../components/WorkspaceDialog'
+import { ResourceLocationBar } from '../components/ResourceLocationBar'
 import { AppShellTier1 } from '../app/AppShell'
 import { useAuth, usePermissions } from '../auth/AuthContext'
 import { AskDialog } from '../components/AskDialog'
@@ -36,7 +37,7 @@ function readLayout(key: string): Layout {
 }
 
 export function Dashboard() {
-  const { adminApi, flowsApi, foldersApi, runsApi, suitesApi } = useApi()
+  const { flowsApi, foldersApi, runsApi, suitesApi } = useApi()
 
   const qc = useQueryClient()
   const navigate = useNavigate()
@@ -48,7 +49,9 @@ export function Dashboard() {
   const wsId = scope.current.id
 
   // ---- 워크스페이스(폴더 위 최상위 스코프) ----
-  const adminMe = useQuery({ queryKey: ['admin', 'me'], queryFn: adminApi.me, staleTime: 30_000 }) // 승인 대기 안내용(캐시 공유)
+  const { agentApi } = scope
+  const serverAdminApi = useMemo(() => agentApi('server', 'public').adminApi, [agentApi])
+  const adminMe = useQuery({ queryKey: ['server-admin', scope.remoteKey], queryFn: serverAdminApi.me, enabled: scope.connected, staleTime: 30_000 })
   const currentWs = scope.current
   const wsRole = currentWs?.myRole ?? 'EDITOR'
   const canEdit = canEditGlobal && wsRole !== 'VIEWER' // VIEWER 롤은 조회만
@@ -408,6 +411,8 @@ export function Dashboard() {
               {canEdit && <button onClick={newFlow} disabled={createFlow.isPending || !scopeReady} style={primaryBtn}><AppIcon name="plus" size={17} /> 새 워크플로</button>}
             </div>
           </header>
+
+          <ResourceLocationBar label="목록 위치" />
 
           {/* 툴바 — 폴더 안이면 브레드크럼(전체 › 부모 › 현재)으로 위로 이동 */}
           <div className="fl-flow-toolbar" style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>

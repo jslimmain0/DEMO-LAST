@@ -4,7 +4,7 @@ const assert = require('node:assert/strict'), fs = require('node:fs'), path = re
 const designUi = (() => { const out = {}; require('node:vm').runInNewContext(require('typescript').transpileModule(require('node:fs').readFileSync(require('node:path').join(__dirname, '../src/design/ui.ts'), 'utf8'), { compilerOptions: { module: require('typescript').ModuleKind.CommonJS, target: require('typescript').ScriptTarget.ES2022 } }).outputText, { exports: out }); return out })()
 const jsx = (type, props) => ({type, props})
 const scope = {current:{origin:'server',id:'team'},connected:true,workspaces:[{origin:'local',id:'pc',name:'개인 공간'},{origin:'server',id:'team',name:'개발팀'}],agentApi:(origin,space)=>({protocolsApi:{list:()=>`${origin}:${space}`,get:id=>id}})}
-const base = {react:{useMemo:f=>f()},'react/jsx-runtime':{jsx,jsxs:jsx},'react-router-dom':{Link:'link'},'../app/WorkspaceContext':{useWorkspace:()=>scope},'../auth/AuthContext':{useAuth:()=>({desktop:{}})},'../lib/apiError':{apiErrorMessage:()=> '접근 권한 없음'}}
+const base = {react:{useMemo:f=>f()},'react/jsx-runtime':{jsx,jsxs:jsx},'react-router-dom':{Link:'link'},'../app/WorkspaceContext':{useWorkspace:()=>scope,useCentralApi:()=>scope.agentApi('server','public')},'../auth/AuthContext':{useAuth:()=>({desktop:{}})},'../lib/apiError':{apiErrorMessage:()=> '접근 권한 없음'}}
 function load(file, modules) {
   const exports = {}
   vm.runInNewContext(ts.transpileModule(fs.readFileSync(path.join(__dirname,'../src',file),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX}}).outputText,{exports,require:name=>modules[name]??(name.endsWith('/design/ui')?designUi:{})})
@@ -19,10 +19,10 @@ function walk(n, pred, out=[]) {if(Array.isArray(n)) n.forEach(x=>walk(x,pred,ou
 const text = n=>Array.isArray(n)?n.map(text).join(''):n&&typeof n==='object'?text(n.props?.children):typeof n==='string'?n:''
 const select = tree=>walk(tree,n=>n.type==='select'&&n.props['aria-label']==='프로토콜')[0]
 let tree = render()
-assert.equal(queries[0].queryFn(),'server:team');assert.match(text(tree),/서버 · 개발팀/);assert.equal(select(tree).props.disabled,false)
-node.executionAgent='local';tree=render();assert.equal(queries[0].queryFn(),'local:pc');assert.match(text(tree),/내 PC · 개인 공간/)
-list={isSuccess:true,data:[]};detail={isError:true,error:{}};tree=render();assert.match(text(tree),/기존 프로토콜이 이 실행 위치의 공간에 없습니다/);assert.doesNotMatch(text(tree),/접근 권한 없음/);assert.equal(walk(tree,n=>n.type==='link')[0].props.to,'/protocols?space=local%3Apc');assert.equal(select(tree).props.value,'wire');assert.equal(node.tcpValues.amount,'keep');detail={}
+assert.equal(queries[0].queryFn(),'server:public');assert.match(text(tree),/서버 · 공통 자원/);assert.equal(select(tree).props.disabled,false)
+node.executionAgent='local';tree=render();assert.equal(queries[0].queryFn(),'server:public');assert.match(text(tree),/서버 · 공통 자원/)
+list={isSuccess:true,data:[]};detail={isError:true,error:{}};tree=render();assert.match(text(tree),/기존 프로토콜이 서버 공통 목록에 없습니다/);assert.doesNotMatch(text(tree),/접근 권한 없음/);assert.equal(walk(tree,n=>n.type==='link')[0].props.to,'/protocols?space=server%3Ateam');assert.equal(select(tree).props.value,'wire');assert.equal(node.tcpValues.amount,'keep');detail={}
 list={isPending:true};tree=render();assert.equal(select(tree).props.disabled,true);assert.match(text(tree),/불러오는 중/)
 list={isError:true,error:{}};tree=render();assert.match(text(tree),/접근 권한 없음/);assert.equal(select(tree).props.disabled,true)
 node.executionAgent='server';scope.connected=false;tree=render();assert.equal(queries[0].enabled,false);assert.match(text(tree),/서버에 로그인/);assert.equal(select(tree).props.disabled,true)
-console.log('PASS: TCP protocol storage follows execution location; missing selection and field values preserved; pending/error/offline explicit')
+console.log('PASS: TCP protocol storage always uses server public; execution metadata and missing field values remain preserved; pending/error/offline explicit')

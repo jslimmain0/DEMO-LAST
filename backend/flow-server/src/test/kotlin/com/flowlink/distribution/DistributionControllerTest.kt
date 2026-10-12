@@ -29,6 +29,16 @@ class DistributionControllerTest {
     }
     private fun writeManifest(value: Any) = Files.writeString(directory.resolve("release-manifest.json"), mapper.writeValueAsString(value))
 
+    @Test fun `다운로드 페이지는 서버 context를 기준으로 상대 자원을 연결한다`() {
+        for (context in listOf("", "/flowlink")) {
+            val request = MockHttpServletRequest().apply { contextPath = context }
+            assertThat(controller().page(request).body)
+                .contains("<base href=\"$context/\">")
+                .contains("src=\"./images/download-flow.webp\"")
+                .contains("src=\"./images/download-editor.png\"")
+        }
+    }
+
     @Test fun `MCP 기본 주소는 공개 서버의 포트와 context 경로를 유지한다`() {
         val configured = DistributionController(directory.toString(), "https://flowlink.example/app/", "", mapper)
         assertThat(metadata(configured)["mcpUrl"]).isEqualTo("https://flowlink.example/app/mcp")

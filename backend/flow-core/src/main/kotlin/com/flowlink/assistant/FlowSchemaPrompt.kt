@@ -23,7 +23,18 @@ If you output a graph, it REPLACES the whole canvas, so include every node the u
 (keep the user's existing nodes unless they asked to remove them — the current graph is given below).
 
 ## FlowGraph SHAPE
-{"name": "<optional>", "nodes": [Node...], "edges": [Edge...]}
+{"name": "<optional>", "resourceWorkspaceId":"public", "nodes": [Node...], "edges": [Edge...]}
+- resourceWorkspaceId="public": 서버 공통 시크릿·프로토콜·플러그인을 참조한다. 내 PC에 저장한 흐름도 사용할 수 있다.
+  새 MCP 흐름은 이 선택이 기본이다. 기존 흐름 수정은 현재 metadata를 유지하며, 기존에 없는 값을 자동 추가해 개인·팀 자원 참조를 바꾸지 않는다.
+  기존 정의를 공통 카탈로그로 자동 복사하지 않는다. 전환할 때 protocol_list/plugin_list의 공통 id를 먼저 확인한다.
+
+## 저장 위치·환경 출처·실행 위치
+- target/workspace는 흐름과 Mock의 저장 위치(local=내 PC H2, server=서버 공간)다. 시크릿·프로토콜·플러그인 목록은 서버 public 공통 하나다.
+- flow_run/node_run/suite_run의 envSource="local"|"server"와 envName으로 실행 환경 하나를 선택한다. 같은 이름이어도 출처가 다르면 별개이며 자동 병합하지 않는다.
+  신규 공통 자원 흐름의 envSource 생략은 target, 기존 metadata 없는 흐름은 이전 workspace 환경을 유지한다. 없는 환경·조회 실패는 다른 환경으로 대체하지 않는다.
+- 내 PC 환경으로 공통 자원을 실행하면 중앙 공통 시크릿만 사용한다. 서버의 같은 이름 환경 시크릿을 자동 선택하지 않는다.
+  서버 환경을 선택하면 해당 서버 환경 시크릿을 공통 위에 적용한다. 시크릿 원문·서버 계정·resourceIdentity를 graph에 넣지 않는다.
+- PC가 보낸 요청 본문은 디버깅에 표시되지만 시크릿은 가린다. 실제 전송 값은 유지하고 서버/PC 경계의 허용 출력 정책은 유지한다.
 
 Edge: {"id":"e1", "from":"<nodeId>", "to":"<nodeId>", "fromPort":"out"}
 - fromPort default "out" → OMIT for normal nodes. IF node: two edges with "true" and "false".
@@ -45,12 +56,12 @@ Node common keys: {"id","name","type","cat","x","y"}
   {{ name@secret }} (시크릿 볼트), {{ url@waitNodeId }} (wait 노드 콜백 수신 URL, wait 앞 노드에서도 사용 가능),
   {{ httpStatus@httpNodeId }} (HTTP 상태코드).
 - Mixed text ok: "https://api.x.com/{{ id@n1 }}/detail".
-- HTTP/TCP can set executionAgent="local" (installed PC) or "server" per node. SET/IF/ASSERT/SWITCH always calculate in the workflow workspace and environment; never set executionAgent, agentEnvironment, agentWorkspaceId, agentMock or agentOutputs on them. TRANSFORM is available only in public/team workspaces and always runs on the central server using the workflow workspace and environment. Never set an execution destination on TRANSFORM.
+- HTTP/TCP can set executionAgent="local" (installed PC) or "server" per node. SET/IF/ASSERT/SWITCH always calculate in the workflow environment; never set executionAgent, agentEnvironment, agentWorkspaceId, agentMock or agentOutputs on them. 공통 자원을 선택한 TRANSFORM은 개인 흐름에서도 중앙 서버 public에서 실행하고 흐름의 envSource 환경을 사용한다. Never set an execution destination on TRANSFORM. 기존 metadata 없는 흐름은 기존 workspace 자원 계약을 유지한다.
   Omission follows the workflow workspace. Keep reqMode="server" for both native agent choices;
   reqMode="client" means legacy browser fetch and is not the PC agent.
-  agentEnvironment names a destination environment, agentWorkspaceId selects the remote resource workspace,
+  보통 실행 도구의 envSource+envName만 선택한다. 기존 agentEnvironment는 노드 목적지 환경을 별도 지정하는 override이며 agentWorkspaceId는 위임할 서버 공간이다. 공통 자원 lookup은 resourceWorkspaceId="public"을 따른다.
   agentMock names a Mock slug at the destination, agentOutputs lists fields allowed to cross the boundary.
-  Never copy secret values into graph literals. Use {{ name@secret }} to resolve at the selected executor.
+  Never copy secret values into graph literals. Use {{ name@secret }}. 공통 자원을 쓰는 PC 실행기는 필요한 시크릿만 로그인한 서버에서 받아 사용하며 스크립트 코드는 PC로 보내지 않는다. TCP 정의와 승인 코덱 버전을 함께 고정한다.
   A personal workflow stays in PC H2 even when it contains server nodes. Team workflows stay on the server.
   WAIT callback listeners and Mock listeners follow their owning workspace (personal=PC, team/public=server).
 - SpEL for if/assert conditions: only comparisons/logic/arithmetic and string "+" — NO method calls

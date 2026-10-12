@@ -19,28 +19,32 @@ import org.springframework.stereotype.Component
 @Component
 class TcpNodeExecutor(private val tokens: TokenResolver, private val protocols: ProtocolResources) {
 
-    class Built(val spec: ProtocolSpec, val encoded: ProtocolCodec.Encoded, val values: LinkedHashMap<String, String>, val host: String, val port: Int, val timeoutMs: Int, val reqText: String)
+    class Built(val spec: ProtocolSpec, val encoded: ProtocolCodec.Encoded, val values: LinkedHashMap<String, String>, val host: String, val port: Int, val timeoutMs: Int, val reqText: String, val plugins: ProtocolCodec.PluginLookup)
 
     fun build(node: GraphNode, ctx: ExecutionContext): Built {
         tokens.requireResourceReferences(node, ctx)
         val pid = node.protocolId?.trim()?.takeIf { it.isNotEmpty() } ?: throw IllegalArgumentException("프로토콜을 선택하세요.")
-        val spec = try { protocols.spec(pid, ctx.workspaceId) } catch (e: Exception) {
+        val snapshot = try { protocols.snapshot(pid, ctx.workspaceId, ctx.resourceIdentity) } catch (e: Exception) {
             if (e is NotFoundException || e is IllegalArgumentException) throw IllegalArgumentException("프로토콜을 찾을 수 없습니다: $pid") else throw e
         }
+        if (ctx.expectedProtocolFingerprint != null && snapshot.fingerprint != ctx.expectedProtocolFingerprint)
+            throw IllegalArgumentException("전문·코덱 버전이 실행 계획과 다릅니다. 다시 실행하세요.")
+        val spec = snapshot.spec
         val key = node.tcpMessage?.trim()?.takeIf { it.isNotEmpty() } ?: throw IllegalArgumentException("전문(거래코드)을 선택하세요.")
         val host = tokens.resolveTokens(node.tcpHost ?: "", ctx).trim()
         val port = EndpointResolver.port(node, ctx) ?: node.tcpPort ?: 0
         val values = LinkedHashMap<String, String>()
         for ((k, v) in node.tcpValues ?: emptyMap()) values[k] = if (v.contains("{{")) tokens.stringify(tokens.resolveLiteral(v, ctx)) else v
+        val plugins = snapshot.plugins
         val enc = try {
-            ProtocolCodec.encode(spec, key, values, Direction.SEND, protocols.plugins(ctx.workspaceId), resolve = { tokens.resolveTokens(it, ctx) }) // 코덱 파라미터의 {{ 이름@secret }}·{{ 키@env }}
+            ProtocolCodec.encode(spec, key, values, Direction.SEND, plugins, resolve = { tokens.resolveTokens(it, ctx) }) // 코덱 파라미터의 {{ 이름@secret }}·{{ 키@env }}
         } catch (e: ProtocolCodec.ProtocolException) {
             throw IllegalArgumentException(e.message, e)
         } catch (e: RuntimeException) {
             throw IllegalArgumentException("전문 조립 중 오류: ${e.message ?: e}", e)
         }
         val reqText = "TCP $host:$port · $key · ${spec.charset().name()} · ${enc.bytes.size}B\n" + table(enc.fields) + "\n" + TcpBytes.printable(enc.bytes, spec.charset())
-        return Built(spec, enc, values, host, port, if ((node.tcpTimeoutMs ?: 0) <= 0) 5000 else node.tcpTimeoutMs!!, reqText)
+        return Built(spec, enc, values, host, port, if ((node.tcpTimeoutMs ?: 0) <= 0) 5000 else node.tcpTimeoutMs!!, reqText, plugins)
     }
 
     /** 전송 없이 조립 — 검증/조립 실패는 errors 로(속성 패널이 필드 옆에 표시). */
@@ -59,7 +63,7 @@ class TcpNodeExecutor(private val tokens: TokenResolver, private val protocols: 
         if (b.host.isBlank()) return NodeResult.fail(0, b.reqText, "⚠ 호스트가 없습니다.")
         return try {
             val x = TcpClient.exchange(b.host, b.port, b.timeoutMs, b.encoded.bytes, b.spec)
-            val d = ProtocolCodec.decode(b.spec, x.response.bytes, Direction.RECV, protocols.plugins(ctx.workspaceId), resolve = { tokens.resolveTokens(it, ctx) })
+            val d = ProtocolCodec.decode(b.spec, x.response.bytes, Direction.RECV, b.plugins, resolve = { tokens.resolveTokens(it, ctx) })
             val out = LinkedHashMap<String, Any?>()
             out.putAll(d.header)
             if (d.body != null) out.putAll(d.body) else out["body"] = TcpBytes.decodeEscaped(d.rawBody, b.spec.charset())

@@ -153,6 +153,9 @@ class DesktopConnection(private val session: DesktopSession, private val mapper:
         val suffix = req.requestURI.removePrefix("/api/v1/remote")
         val decoded = java.net.URLDecoder.decode(suffix, Charsets.UTF_8)
         if (!suffix.startsWith('/') || decoded.contains("..") || decoded.contains('\\') || decoded.contains("//")) throw BadRequestException("허용되지 않은 원격 경로입니다.")
+        val routedPath = decoded.split('/').joinToString("/") { it.substringBefore(';') }
+        if (routedPath.startsWith("/agent/resources") || routedPath.startsWith("/agent/central-protocols") || routedPath.startsWith("/agent/central-codecs") || routedPath.startsWith("/agent/central-transforms"))
+            throw BadRequestException("이 자원 API는 PC 실행기에서만 사용할 수 있습니다.")
         val path = "/api/v1$suffix" + (req.queryString?.let { "?$it" } ?: "")
         var bytes = req.inputStream.readNBytes(21 * 1024 * 1024 + 1)
         if (bytes.size > 21 * 1024 * 1024) throw BadRequestException("요청 크기가 21MB를 초과했습니다.")
@@ -167,6 +170,12 @@ class DesktopConnection(private val session: DesktopSession, private val mapper:
             Regex("^/executions/[0-9a-fA-F-]{36}/rerun$").matches(suffix))
         val startsSuite = req.method == "POST" && suffix == "/suites/run"
         val trackedRuns = linkedMapOf<java.util.UUID, java.util.UUID>()
+        if (req.method == "POST" && suffix in setOf("/agent/inspect", "/agent/tcp-preview/resources")) {
+            val body = mapper.readTree(bytes) as? com.fasterxml.jackson.databind.node.ObjectNode ?: throw BadRequestException("자원 확인 요청은 JSON 객체여야 합니다.")
+            body.set<com.fasterxml.jackson.databind.JsonNode>("resourceIdentity", mapper.valueToTree(
+                com.flowlink.agent.CentralResourceIdentity(active.serverUrl, active.login)))
+            bytes = mapper.writeValueAsBytes(body)
+        }
         if (startsRun || startsSuite) {
             val run = (if (bytes.isEmpty()) mapper.createObjectNode() else mapper.readTree(bytes)) as? com.fasterxml.jackson.databind.node.ObjectNode
                 ?: throw BadRequestException("실행 요청은 JSON 객체여야 합니다.")
@@ -193,6 +202,10 @@ class DesktopConnection(private val session: DesktopSession, private val mapper:
                 run.put("clientExecutionId", id.toString()); trackedRuns[id] = id
             }
             run.put("agentDeviceId", session.deviceId)
+            if (run.hasNonNull("resourceWorkspaceId") || run.hasNonNull("envSource")) {
+                run.set<com.fasterxml.jackson.databind.JsonNode>("resourceIdentity", mapper.valueToTree(
+                    com.flowlink.agent.CentralResourceIdentity(active.serverUrl, active.login)))
+            }
             bytes = mapper.writeValueAsBytes(run)
             // 응답이 유실되어도 같은 ID를 조회한다. 시작 API의 clientExecutionId 멱등성을 사용한다.
             trackedRuns.values.forEach { events.publishEvent(DesktopRemoteRunStarted(it, active.serverUrl, active.login)) }

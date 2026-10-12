@@ -28,6 +28,7 @@ export function TokenInput({
   ariaLabel,
   autoFocus = false,
   variant = 'inline',
+  readOnly = false,
 }: {
   value: string
   onChange: (v: string) => void
@@ -36,10 +37,14 @@ export function TokenInput({
   ariaLabel?: string
   autoFocus?: boolean
   variant?: 'inline' | 'large' // large = 자세히 보기 다이얼로그 안의 큰 편집(줄바꿈 표시 허용)
+  readOnly?: boolean
 }) {
   const rootRef = useRef<HTMLDivElement | null>(null)
   const lastValueRef = useRef<string | null>(null) // 마지막으로 emit/rebuild 한 값 — echo 재렌더 방지
   const savedRangeRef = useRef<Range | null>(null) // 피커 열기 직전 캐럿 위치(칩 삽입 지점)
+  const composingRef = useRef(false)
+  const readOnlyRef = useRef(readOnly); readOnlyRef.current = readOnly
+  const overflowFrameRef = useRef<number | null>(null)
   const [picking, setPicking] = useState(false)
   const [empty, setEmpty] = useState(value === '')
   const [overflow, setOverflow] = useState(false) // inline: 내용이 한 줄을 넘는가 → ⤢ 자세히 보기 노출
@@ -51,27 +56,28 @@ export function TokenInput({
   onChangeRef.current = onChange
 
   const updateOverflow = () => {
-    const root = rootRef.current
-    if (!root || isLarge) return
-    setOverflow(root.scrollWidth > root.clientWidth + 1)
+    if (isLarge || overflowFrameRef.current !== null) return
+    overflowFrameRef.current = requestAnimationFrame(() => {
+      overflowFrameRef.current = null
+      const root = rootRef.current
+      if (root) setOverflow(root.scrollWidth > root.clientWidth + 1)
+    })
   }
 
   const emit = () => {
     const root = rootRef.current
-    if (!root) return
+    if (!root || composingRef.current || readOnlyRef.current) return
     const s = serializeDom(root)
-    lastValueRef.current = s
     setEmpty(s === '')
+    if (s === lastValueRef.current) return
+    lastValueRef.current = s
     onChangeRef.current(s)
     updateOverflow()
   }
 
   // 밖에서 value 가 바뀐 경우에만 DOM 재구성(자기 echo 는 건너뜀 — 캐럿/IME 보존)
   useEffect(() => {
-    if (value === lastValueRef.current) {
-      updateOverflow()
-      return
-    }
+    if (composingRef.current || value === lastValueRef.current) return
     lastValueRef.current = value
     setEmpty(value === '')
     const root = rootRef.current
@@ -80,6 +86,10 @@ export function TokenInput({
     // emit 은 칩 × 삭제 콜백용 — rebuild 자체는 onChange 를 부르지 않는다
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value])
+
+  useEffect(() => () => {
+    if (overflowFrameRef.current !== null) cancelAnimationFrame(overflowFrameRef.current)
+  }, [])
 
   // 패널 리사이즈 등 컨테이너 폭 변화에도 넘침 여부 재계산
   useEffect(() => {
@@ -116,6 +126,7 @@ export function TokenInput({
 
   // 칩이 맨 앞/맨 끝인데 패드(제로폭 공백)가 지워졌으면 복구 — 캐럿 착지 자리를 항상 보장
   const ensurePads = () => {
+    if (readOnlyRef.current) return
     const root = rootRef.current
     if (!root) return
     const first = root.firstChild
@@ -125,12 +136,13 @@ export function TokenInput({
   }
 
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
-    if (e.key === 'Enter') e.preventDefault() // 한 줄 입력 — 줄바꿈 금지
+    if (e.key === 'Enter' && !composingRef.current && !e.nativeEvent.isComposing && e.keyCode !== 229) e.preventDefault() // IME 확정 Enter 는 브라우저에 맡긴다.
   }
 
   // 붙여넣기는 항상 평문으로 — 토큰이 섞여 있으면 즉시 칩으로 렌더
   const onPaste = (e: ClipboardEvent<HTMLDivElement>) => {
     e.preventDefault()
+    if (readOnlyRef.current) return
     const text = e.clipboardData.getData('text/plain').replace(/\r?\n/g, ' ')
     insertAtCaret(text)
   }
@@ -146,13 +158,14 @@ export function TokenInput({
     const holder = document.createElement('div')
     holder.appendChild(range.cloneContents())
     e.clipboardData.setData('text/plain', serializeDom(holder))
-    if (cut) {
+    if (cut && !readOnlyRef.current) {
       range.deleteContents()
       emit()
     }
   }
 
   const insertAtCaret = (text: string) => {
+    if (readOnlyRef.current) return
     const root = rootRef.current
     if (!root) return
     const sel = window.getSelection()
@@ -182,6 +195,7 @@ export function TokenInput({
 
   // 데이터 삽입 피커에서 고른 바인딩을 저장해 둔 캐럿 위치(없으면 끝)에 칩으로 삽입
   const insertBinding = (b: Binding) => {
+    if (readOnlyRef.current) return
     const root = rootRef.current
     if (!root) return
     root.focus() // 피커(모달)에서 돌아온 포커스를 입력으로 복귀 — 바로 이어서 타이핑 가능
@@ -211,6 +225,7 @@ export function TokenInput({
 
   // 손으로 {{ … }} 를 타이핑한 경우 — 포커스를 벗어날 때 칩으로 정돈
   const onBlur = () => {
+    if (composingRef.current || readOnlyRef.current) return
     saveRange()
     const root = rootRef.current
     if (!root) return
@@ -229,15 +244,20 @@ export function TokenInput({
         <div
           ref={rootRef}
           className="fl-token-input"
-          contentEditable
+          contentEditable={!readOnly}
           suppressContentEditableWarning
           role="textbox"
           aria-label={ariaLabel}
+          aria-readonly={readOnly}
+          tabIndex={readOnly ? 0 : undefined}
           spellCheck={false}
-          style={isLarge ? editorLargeStyle : editorStyle}
+          style={{ ...(isLarge ? editorLargeStyle : editorStyle), ...(readOnly ? { background: 'var(--fl-surface-2)' } : null) }}
+          onClickCapture={(e) => { if (readOnly && (e.target as HTMLElement).closest('.fl-token-chip-x')) { e.preventDefault(); e.stopPropagation() } }}
           onInput={emit}
+          onCompositionStart={() => { composingRef.current = true; setEmpty(false) }}
+          onCompositionEnd={() => { composingRef.current = false; emit() }}
           onKeyDown={onKeyDown}
-          onKeyUp={() => { ensurePads(); saveRange() }}
+          onKeyUp={() => { if (!composingRef.current) { ensurePads(); saveRange() } }}
           onMouseUp={saveRange}
           onClick={ensurePads}
           onPaste={onPaste}
@@ -262,6 +282,7 @@ export function TokenInput({
         onClick={() => setPicking(true)}
         title="데이터 삽입"
         aria-label="데이터 삽입"
+        disabled={readOnly}
         style={braceBtn}
       ><DataInsertIcon /></button>
       {picking && (
@@ -281,6 +302,7 @@ export function TokenInput({
             placeholder={placeholder}
             ariaLabel={`${ariaLabel ?? '값'} 자세히 보기`}
             autoFocus
+            readOnly={readOnly}
           />
         </ExpandDialog>
       )}

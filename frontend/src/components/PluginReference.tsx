@@ -46,7 +46,7 @@ const COMMON = [
   ['규칙', '순수 함수 — 파일·네트워크·Java 없음, fl.* + 표준 JS 만. 호출당 시간 상한(기본 2초). fl.log() 는 실행 패널 콘솔'],
 ] as const
 
-export function PluginReference({ manifest, source, onInsert }: { manifest: FlApiEntry[]; source: string; onInsert: (text: string) => void }) {
+export function PluginReference({ manifest, source, onInsert, canInsert = true }: { manifest: FlApiEntry[]; source: string; onInsert: (text: string) => void; canInsert?: boolean }) {
   const [q, setQ] = useState('')
   const kind: PluginKind = /kind\s*:\s*['"]messageCodec['"]/.test(source) ? 'messageCodec' : /kind\s*:\s*['"]fieldCodec['"]/.test(source) ? 'fieldCodec' : 'transform'
   const shape = SHAPE[kind]
@@ -69,13 +69,13 @@ export function PluginReference({ manifest, source, onInsert }: { manifest: FlAp
         </section>
       )}
       <section style={{ display: 'grid', gap: 4 }}>
-        <strong style={{ fontSize: 13 }}>fl.* 함수 <span style={{ fontWeight: 400, color: 'var(--fl-text-muted)' }}>— 클릭하면 예제를 커서에 삽입</span></strong>
+        <strong style={{ fontSize: 13 }}>fl.* 함수 <span style={{ fontWeight: 400, color: 'var(--fl-text-muted)' }}>{canInsert ? '— 클릭하면 예제를 커서에 삽입' : '— 편집 화면에서 예제를 삽입할 수 있습니다'}</span></strong>
         {!groups.length && <div style={note}>일치하는 함수가 없습니다.</div>}
         {groups.map(([ns, es]) => (
           <div key={ns} style={{ display: 'grid', gap: 2 }}>
             <div style={{ fontSize: 11, fontFamily: 'var(--fl-font-mono)', color: 'var(--fl-text-muted)', marginTop: 4 }}>{ns}</div>
             {es.map((e) => (
-              <button key={e.path} onClick={() => onInsert(e.example)} title={e.signature} style={row}>
+              <button key={e.path} disabled={!canInsert} onClick={() => onInsert(e.example)} title={e.signature} style={{ ...row, opacity: canInsert ? 1 : 0.65 }}>
                 <span style={{ fontFamily: 'var(--fl-font-mono)', fontSize: 12, fontWeight: 700, color: 'var(--fl-primary)' }}>{e.path.slice(3)}</span>
                 <span style={{ fontSize: 12, color: 'var(--fl-text)' }}>{e.doc}</span>
                 <code style={{ fontSize: 11, color: 'var(--fl-text-muted)', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{e.signature}</code>

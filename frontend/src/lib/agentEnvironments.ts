@@ -6,6 +6,11 @@ export function destinationKey(agent: WorkspaceOrigin, workspaceId: string) {
   return agent === 'local' ? 'local' : `server:${workspaceId || 'public'}`
 }
 
+export function agentEnvironmentSource(node: GraphNode, agent: WorkspaceOrigin, workspaceId: string, workflowSource: WorkspaceOrigin, mapping: AgentEnvironmentMap): WorkspaceOrigin {
+  const owner = ['set', 'if', 'assert', 'switch', 'transform', 'form', 'input', 'wait'].includes(node.type) || node.type === 'http' && node.reqMode === 'client'
+  return !owner && (node.agentEnvironment != null || Object.hasOwn(mapping, destinationKey(agent, workspaceId))) ? agent : workflowSource
+}
+
 /** 같은 이름으로 다른 공간의 환경을 추정하지 않는다. 빈 문자열은 명시적인 공통 환경. */
 export function resolveAgentEnvironment(node: GraphNode, agent: WorkspaceOrigin, workspaceId: string, owner: { origin: WorkspaceOrigin; id: string }, stage: string | null, mapping: AgentEnvironmentMap) {
   if (node.type === 'transform') return { name: stage ?? '', source: '중앙 플러그인 · 워크플로 환경' }

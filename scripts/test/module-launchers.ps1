@@ -73,7 +73,11 @@ try {
     Require ($config.runtime.kind -eq 'server') '서버 launcher가 개인 runtime으로 기동했습니다.'
     Require ((Request $server '/api/v1/auth/github/device/poll?session=module-boundary').Status -eq 200) '서버에 중앙 로그인 발급 API가 없습니다.'
     Require ((Request $server '/api/v1/distribution').Status -eq 200) '서버 distribution API가 없습니다.'
-    foreach ($path in @('/', '/index.html', '/flows', '/plugins')) {
+    foreach ($path in @('/', '/download')) {
+        $intro = Request $server $path
+        Require ($intro.Status -eq 200 -and $intro.Body -match '<html' -and $intro.Body -notmatch '<div id="root"') "중앙 설치 안내 페이지가 없습니다: $path"
+    }
+    foreach ($path in @('/index.html', '/flows', '/plugins')) {
         Require ((Request $server $path).Status -eq 404) "중앙 서버가 작업 프론트를 제공합니다: $path"
     }
     $desktop = Start-App 'desktop' 'desktop' @()

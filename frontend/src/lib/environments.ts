@@ -1,6 +1,6 @@
-import { useSyncExternalStore } from 'react'
+import { useMemo, useSyncExternalStore } from 'react'
 import type { WorkspaceApi } from '../api/client'
-import { useApi, useWorkspace } from '../app/WorkspaceContext'
+import { useWorkspace, type WorkspaceOrigin } from '../app/WorkspaceContext'
 import { toast } from '../components/toast'
 
 /** 환경 데이터와 지연 저장은 워크스페이스에 묶인다. 공간 사이 자동 이관은 하지 않는다. */
@@ -9,7 +9,7 @@ export interface EnvStore {
   envs: Record<string, Record<string, string>>
 }
 
-export function createEnvironment(api: WorkspaceApi, scopeKey: string) {
+export function createEnvironment(api: WorkspaceApi, scopeKey: string, origin?: WorkspaceOrigin) {
 const { environmentsApi } = api
 const ACTIVE_KEY = `fl:env:active:${scopeKey}`
 let cache: EnvStore = { active: readActive(), envs: {} }
@@ -165,17 +165,48 @@ function setActiveEnv(name: string | null): void {
 }
 
 
-return { getLoadStatus: () => loadStatus, getSaveStatus: () => saveStatus, prepareForRun, ensureEnvLoaded, flushEnvStore, getEnvStore, setEnvStore, renameEnv, activeEnvVars, activeEnvName, setActiveEnv, subscribe: (cb: () => void) => { listeners.add(cb); void ensureEnvLoaded().catch(() => {}); return () => { listeners.delete(cb) } } }
+return { origin, hasUnstoredChanges, getLoadStatus: () => loadStatus, getSaveStatus: () => saveStatus, prepareForRun, ensureEnvLoaded, flushEnvStore, getEnvStore, setEnvStore, renameEnv, activeEnvVars, activeEnvName, activeEnvSource: () => origin, setActiveEnv, subscribe: (cb: () => void) => { listeners.add(cb); void ensureEnvLoaded().catch(() => {}); return () => { listeners.delete(cb) } } }
 }
-const stores = new WeakMap<WorkspaceApi, ReturnType<typeof createEnvironment>>()
-export function useEnvironment() {
- const api = useApi(); const { scopeKey } = useWorkspace()
- let store = stores.get(api)
- if (!store) { store = createEnvironment(api, scopeKey); stores.set(api, store) }
- return store
+const stores = new Map<string, ReturnType<typeof createEnvironment>>()
+if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') window.addEventListener('beforeunload', event => {
+  if (![...stores.values()].some(store => store.hasUnstoredChanges())) return
+  event.preventDefault(); event.returnValue = ''
+})
+const sources = new Map<string, WorkspaceOrigin>()
+const sourceListeners = new Set<() => void>()
+export function useEnvironmentSource() {
+  const { scopeKey, current } = useWorkspace()
+  const key = `fl:env:source:${scopeKey}`
+  const get = () => {
+    if (!sources.has(key)) {
+      let saved: string | null = null
+      try { saved = localStorage.getItem(key) } catch { /* private mode */ }
+      sources.set(key, saved === 'local' || saved === 'server' ? saved : current.origin)
+    }
+    return sources.get(key)!
+  }
+  const origin = useSyncExternalStore(callback => { sourceListeners.add(callback); return () => { sourceListeners.delete(callback) } }, get)
+  return { origin, setOrigin: (next: WorkspaceOrigin) => {
+    sources.set(key, next)
+    try { localStorage.setItem(key, next) } catch { /* private mode */ }
+    sourceListeners.forEach(callback => callback())
+  } }
 }
-export function useEnvStore(): EnvStore { const store = useEnvironment(); return useSyncExternalStore(store.subscribe, store.getEnvStore) }
+export function useEnvironment(origin?: WorkspaceOrigin) {
+  const scope = useWorkspace()
+  const { agentApi } = scope
+  const selection = useEnvironmentSource()
+  const target = origin ?? selection.origin
+  const workspaceId = target === 'local' ? (scope.workspaces.find(space => space.origin === 'local')?.id ?? 'local') : 'public'
+  const identity = scope.remoteKey.replace(/:(?:true|false)$/, '')
+  const key = `${target}:${target === 'server' ? identity : 'pc'}:${workspaceId}`
+  const api = useMemo(() => agentApi(target, workspaceId), [agentApi, target, workspaceId])
+  let store = stores.get(key)
+  if (!store) { store = createEnvironment(api, key, target); stores.set(key, store) }
+  return store
+}
+export function useEnvStore(origin?: WorkspaceOrigin): EnvStore { const store = useEnvironment(origin); return useSyncExternalStore(store.subscribe, store.getEnvStore) }
 
-export function useEnvironmentSaveStatus() { const store = useEnvironment(); return useSyncExternalStore(store.subscribe, store.getSaveStatus) }
+export function useEnvironmentSaveStatus(origin?: WorkspaceOrigin) { const store = useEnvironment(origin); return useSyncExternalStore(store.subscribe, store.getSaveStatus) }
 
-export function useEnvironmentLoadStatus() { const store = useEnvironment(); return useSyncExternalStore(store.subscribe, store.getLoadStatus) }
+export function useEnvironmentLoadStatus(origin?: WorkspaceOrigin) { const store = useEnvironment(origin); return useSyncExternalStore(store.subscribe, store.getLoadStatus) }

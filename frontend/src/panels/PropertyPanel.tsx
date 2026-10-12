@@ -27,7 +27,7 @@ import { duplicateKeys, parseOutputKeys } from '../lib/bulkPaste'
 import { parseCurl, toCurl } from '../lib/curl'
 import { computeReachInfo, isUnreachableExecutable } from '../lib/reachable'
 import { useEnvStore, useEnvironment } from '../lib/environments'
-import { useRunInput } from '../lib/runInput'
+import { useRunInput, useRunInputActions } from '../lib/runInput'
 import { bindingToToken, isTokenizable, tokenRegex } from '../lib/tokenGrammar'
 import { newId } from '../lib/ids'
 import { presence } from '../lib/presence'
@@ -39,11 +39,12 @@ import { AgentSettings, isBrowserRequest, usesOwnerResources, useNodeResources }
 import { PluginResourceNotice } from '../components/PluginResources'
 import { useTransformCatalog } from '../lib/useTransformCatalog'
 import { useAgentEnvironmentBindings } from '../lib/useAgentEnvironmentBindings'
-import { resolveAgentEnvironment } from '../lib/agentEnvironments'
+import { agentEnvironmentSource, resolveAgentEnvironment } from '../lib/agentEnvironments'
 import { ui } from '../design/ui'
+import './node-settings.css'
 
 const label: CSSProperties = { display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--fl-text-muted)', margin: '12px 0 5px' }
-const field: CSSProperties = { width: '100%', padding: '9px 11px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 13, fontFamily: 'var(--fl-font-ui)' }
+const field: CSSProperties = { width: '100%', minWidth: 0, boxSizing: 'border-box', padding: '9px 11px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontSize: 13, fontFamily: 'var(--fl-font-ui)' }
 const mono: CSSProperties = { ...field, fontFamily: 'var(--fl-font-mono)', fontSize: 12 }
 const braceBtn: CSSProperties = { ...ui.icon, width: 32, height: 32, flexShrink: 0, justifyContent: 'center', color: 'var(--fl-primary)' }
 
@@ -117,7 +118,8 @@ function respOutputLabel(rt: RespType | undefined): string {
 export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseModal, onCollapse }: {
   width?: number | string; modal?: boolean; onExpand?: () => void; onCloseModal?: () => void; onCollapse?: () => void
 }) {
- const { prepareForRun, activeEnvVars, activeEnvName } = useEnvironment()
+ const { prepareForRun, activeEnvVars, activeEnvName, activeEnvSource } = useEnvironment()
+  const { activeInputVars } = useRunInputActions()
 
   const { runsApi, flowsApi } = useApi()
   const scope = useWorkspace()
@@ -136,11 +138,11 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
   const { secretsApi } = resources.api
   const edges = useEditorStore((s) => s.edges)
   const flowId = useEditorStore((s) => s.flowId)
-  const update = useEditorStore((s) => s.updateNodeData)
+  const updateNodeData = useEditorStore((s) => s.updateNodeData)
   const selectNode = useEditorStore((s) => s.selectNode)
-  const deleteNode = useEditorStore((s) => s.deleteNode)
-  const duplicateSelection = useEditorStore((s) => s.duplicateSelection)
-  const removeEdge = useEditorStore((s) => s.removeEdge)
+  const deleteNodeData = useEditorStore((s) => s.deleteNode)
+  const duplicateNodeSelection = useEditorStore((s) => s.duplicateSelection)
+  const removeEdgeData = useEditorStore((s) => s.removeEdge)
   const [pick, setPick] = useState<string | null>(null) // rawBody | rawParams | rawHeaders (Raw 텍스트영역 전용)
   const [bigEdit, setBigEdit] = useState<'rawBody' | 'callbackRespBody' | null>(null) // 거의 전체화면 본문 편집
   const [respView, setRespView] = useState<'tree' | 'raw'>('tree') // 워크벤치 응답 보기(트리=경로 토큰 클릭)
@@ -148,6 +150,8 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
   const [bodyConvNote, setBodyConvNote] = useState<string | null>(null) // 필드↔Raw 변환 안내
   const [single, setSingle] = useState<SingleNodeRunResult | null>(null) // 이 노드만 실행 결과
   const [singleRunning, setSingleRunning] = useState(false)
+  const singleBusy = useRef<string | null>(null)
+  const singleSource = useRef<GraphNode | null>(null)
   const singleTarget = useRef({ flowId, selectedId })
   singleTarget.current = { flowId, selectedId }
   const singleMounted = useRef(true)
@@ -157,7 +161,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
   const [advOpen, setAdvOpen] = useState(false) // HTTP 고급(문자셋) 접기
   const [curlText, setCurlText] = useState<string | null>(null) // cURL 붙여넣기 입력창(열림=문자열)
   const [secOverride, setSecOverride] = useState<Record<string, boolean>>({}) // HTTP 요청 섹션 접기 오버라이드
-  const [requestPart, setRequestPart] = useState('query')
+  const [requestPart, setRequestPart] = useState(() => node?.type === 'http' && !['GET', 'HEAD'].includes(node.method ?? 'GET') ? 'body' : 'query')
   const [previewOpen, setPreviewOpen] = useState(false) // 요청 미리보기 접기
   const focusNode = useEditorStore((s) => s.focusNode)
   const transforms = catalog.query
@@ -165,12 +169,18 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
   // 워크스페이스 롤 합성 — Editor 가 flow 의 myRole 로 계산해 스토어에 주입(VIEWER 는 단일 실행 등 쓰기 액션 차단)
   const wsReadOnly = useEditorStore((s) => s.readOnly)
   const canEdit = canEditGlobal && !wsReadOnly
+  const update = (nodeId: string, patch: Partial<GraphNode>) => { if (canEdit) updateNodeData(nodeId, patch) }
+  const deleteNode = (nodeId: string) => { if (canEdit) deleteNodeData(nodeId) }
+  const removeEdge = (edgeId: string) => { if (canEdit) removeEdgeData(edgeId) }
+  const duplicateSelection = () => { if (canEdit) duplicateNodeSelection() }
 
   // 다른 노드 선택 시 단일 실행 결과 + HTTP 임시 UI 상태 초기화(다른 노드로 새어가지 않게)
   useEffect(() => {
     setSingle(null); setSingleRunning(false)
     setCurlText(null); setSecOverride({}); setPreviewOpen(false); setAdvOpen(false)
-    setRequestPart('query')
+    const selected = useEditorStore.getState().nodes.find(item => item.id === selectedId)
+    const data = selected ? asGraphNode(selected.data) : null
+    setRequestPart(data?.type === 'http' && !['GET', 'HEAD'].includes(data.method ?? 'GET') ? 'body' : 'query')
     setTcpPrev(null); setTcpPrevErr(null)
   }, [selectedId])
 
@@ -192,15 +202,20 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
   // 이 노드만 실행 — 즉석 실행. 활성 환경(env)·시크릿은 전달되고, 상류 노드 값은 아래 입력폼(upstream)으로 넣는다.
   const runSingle = async () => {
     if (!flowId || !selectedId || !canEdit) return
+    const targetKey = `${flowId}:${selectedId}`
+    if (singleBusy.current === targetKey) return
+    singleBusy.current = targetKey
+    let tested: GraphNode | null = null
     const stillSelected = () => singleMounted.current && singleTarget.current.flowId === flowId && singleTarget.current.selectedId === selectedId && useEditorStore.getState().flowId === flowId
-    const showResult = (result: SingleNodeRunResult) => { if (stillSelected()) setSingle(result) }
+    const showResult = (result: SingleNodeRunResult) => { if (stillSelected()) { singleSource.current = tested; setSingle(result) } }
+    setSingle(null)
     setSingleRunning(true)
     try {
     await prepareForRun()
     const agentEnvironments = await agentBindings.save()
     if (node && !usesOwnerResources(node) && resolveAgentEnvironment(node, resources.agent, resources.workspaceId, scope.current, activeEnvName(), agentEnvironments).name === undefined) throw new Error('실행 계획에서 이 실행 위치의 환경을 먼저 선택하세요.')
     if (!stillSelected()) return
-    const env = !resources.crossBoundary && (node && usesOwnerResources(node) || !node?.agentEnvironment) ? activeEnvVars() : {}
+    const env = activeEnvVars()
     // 이 노드가 참조하는 상류 토큰에 사용자가 넣은 값 → {소스노드: {키: 값}} (bare 토큰은 __prev)
     const rf = nodes.find((x) => x.id === selectedId)
     const upstream: Record<string, Record<string, unknown>> = {}
@@ -212,13 +227,20 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
         ;(upstream[src] ??= {})[t.key] = coerceUpstreamInput(raw)
       }
     }
+    const input = activeInputVars()
     const body = {
       agentEnvironments,
       envName: activeEnvName(),
-      ...(Object.keys(env).length ? { env } : {}),
+      envSource: activeEnvSource() ?? scope.current.origin,
+      resourceWorkspaceId: 'public' as const,
+      resourceIdentity: scope.resourceIdentity,
+      env,
+      ...(Object.keys(input).length ? { input } : {}),
       ...(Object.keys(upstream).length ? { upstream } : {}),
     }
       const store = useEditorStore.getState()
+      const targetNode = store.nodes.find(item => item.id === selectedId)
+      tested = targetNode ? asGraphNode(targetNode.data) : null
       if (store.dirty) {
         const graph = store.getGraph()
         const version = await flowsApi.saveVersion(flowId, { graph })
@@ -231,7 +253,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
       } else showResult(await runsApi.runNode(flowId, selectedId, body))
     }
     catch (e) { showResult({ ok: false, httpStatus: null, output: null, requestText: null, responseText: isAxiosError(e) ? e.response?.data?.message ?? e.message : e instanceof Error ? e.message : String(e) }) }
-    finally { if (stillSelected()) setSingleRunning(false) }
+    finally { if (singleBusy.current === targetKey) singleBusy.current = null; if (stillSelected()) setSingleRunning(false) }
   }
 
   // TCP 전문 미리보기 — 편집 중 노드를 실어 조립 바이트/오프셋/오버플로를 받아온다(전송·저장 없음).
@@ -245,7 +267,10 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
       const mapping = await agentBindings.save()
       const selected = resolveAgentEnvironment(asGraphNode(n.data), resources.agent, resources.workspaceId, scope.current, activeEnvName(), mapping)
       if (selected.name === undefined) throw new Error('실행 계획에서 이 실행 위치의 환경을 먼저 선택하세요.')
-      setTcpPrev(await resources.api.runsApi.agentTcpPreview(asGraphNode(n.data), selected.name))
+      const target = asGraphNode(n.data)
+      const source = agentEnvironmentSource(target, resources.agent, resources.workspaceId, activeEnvSource() ?? scope.current.origin, mapping)
+      const env = source === 'local' ? selected.name ? localEnvStore.envs[selected.name] : {} : undefined
+      setTcpPrev(await resources.api.runsApi.agentTcpPreview(target, selected.name, source, env, scope.resourceIdentity))
     }
     catch (e) { setTcpPrev(null); setTcpPrevErr(e instanceof Error ? e.message : String(e)) }
   }
@@ -253,9 +278,12 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
   // 조상 소스 + 그래프 내 wait 노드 수신 URL(앞 노드에서 returnUrl/notiUrl 에 꽂는 표준 패턴)
   // envStore 를 구독해 활성 환경 변수 변경(스위처/관리 다이얼로그)이 즉시 바인딩 피커에 반영되게 한다.
   const envStore = useEnvStore()
-  const agentEnvs = useQuery({ queryKey: [...resources.key, 'environments'], queryFn: resources.api.environmentsApi.list, enabled: resources.available })
+  const localEnvStore = useEnvStore('local')
+  const serverEnvStore = useEnvStore('server')
   const agentEnvName = node ? usesOwnerResources(node) ? envStore.active : resolveAgentEnvironment(node, resources.agent, resources.workspaceId, scope.current, envStore.active, agentBindings.bindings).name : envStore.active
-  const agentEnvVars = !resources.crossBoundary && agentEnvName === envStore.active && agentEnvName ? envStore.envs[agentEnvName] ?? {} : agentEnvs.data?.find(e => e.name === agentEnvName)?.vars ?? {}
+  const source = node ? agentEnvironmentSource(node, resources.agent, resources.workspaceId, activeEnvSource() ?? scope.current.origin, agentBindings.bindings) : activeEnvSource() ?? scope.current.origin
+  const sourceStore = source === 'local' ? localEnvStore : serverEnvStore
+  const agentEnvVars = agentEnvName ? sourceStore.envs[agentEnvName] ?? {} : {}
   const runInput = useRunInput()
   // 워크벤치(모달)에서 지난 전체 실행의 이 노드 기록을 미리 보여준다 — 임시 단일 실행과 실제 그래프 실행의 단절 해소
   const lastRunQ = useQuery({
@@ -273,16 +301,16 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
 
   // 시크릿 이름을 바인딩 소스로 노출({{ 이름@secret }}) — 값은 서버에만(write-only).
   // 활성 환경에서 적용될 것만 보여준다: 공통 + 활성 환경(백엔드 activeSecrets 오버레이 규칙과 동일, 이름으로 dedupe).
-  const secretsQ = useQuery({ queryKey: [...resources.key, 'secrets'], queryFn: secretsApi.list, enabled: resources.available && !(current.origin === 'local' && resources.agent === 'server') })
+  const secretsQ = useQuery({ queryKey: [...resources.key, 'secrets'], queryFn: secretsApi.list, enabled: resources.available && scope.connected })
   const secretNames = useMemo(() => {
-    const active = agentEnvName
+    const active = source === 'server' ? agentEnvName : null
     const seen = new Set<string>()
     for (const s of secretsQ.data ?? []) {
       const common = !s.environment
       if (common || s.environment === active) seen.add(s.name)
     }
     return Array.from(seen)
-  }, [secretsQ.data, agentEnvName])
+  }, [secretsQ.data, agentEnvName, source])
   // env/input 을 시그니처로 참조 — bindableSources 가 activeEnvVars/activeInputVars 를 명령형으로 읽으므로,
   // 변경 시 재계산되도록 memo 입력에 포함(린트가 '미사용'으로 오인하지 않게 실제 값으로 참조).
   const envSig = JSON.stringify(agentEnvVars) + '|' + JSON.stringify(runInput) + '|' + secretNames.join(',')
@@ -429,7 +457,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
     if (node.bodyType === 'raw' || node.bodyType === 'xml' || node.jsonRaw) return node.rawBody ?? ''
     const rows = fields.body ?? []
     if (!rows.length) return ''
-    if ((node.bodyType ?? 'json') === 'json') return `{${rows.filter((r) => r.key).map((r) => `"${r.key}":${JSON.stringify(r.bound ? bindingToToken(r.bound) : (r.value ?? ''))}`).join(',')}}`
+    if ((node.bodyType ?? 'json') === 'json') return fieldsToRaw(rows.map(row => ({ key: row.key, value: row.bound ? bindingToToken(row.bound) : row.value ?? '', type: row.type })), 'json')
     return rows.filter((r) => r.key).map((r) => `${r.key}=${r.bound ? bindingToToken(r.bound) : (r.value ?? '')}`).join('&')
   }
   const copyCurl = () => copyText(toCurl({ method: node.method ?? 'GET', url: mergedUrl, headers: headerList(), body: currentBody() }), 'cURL 로 복사했습니다.')
@@ -533,7 +561,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
     }
     return hs
   })()
-  const previewText = `${method} ${previewUrl}\n${previewHeaders.map((h) => `${h.key}: ${h.value}`).join('\n')}${hasBody && currentBody() ? '\n\n' + currentBody() : ''}`
+  const previewText = previewOpen ? `${method} ${previewUrl}\n${previewHeaders.map((h) => `${h.key}: ${h.value}`).join('\n')}${hasBody && currentBody() ? '\n\n' + currentBody() : ''}` : ''
 
   // [필드 ↔ Raw] 전환 시 현재 내용을 서로 변환(치환). 바인딩은 토큰으로, id 는 새로 부여.
   const switchBodyMode = (raw: boolean) => {
@@ -662,6 +690,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
       <div style={{ padding: bigResult ? '8px 12px' : '6px 10px', fontSize: bigResult ? 12.5 : 12, fontWeight: 600, background: 'var(--fl-surface-2)', color: single.ok ? 'var(--fl-ok)' : 'var(--fl-fail)' }}>
         {single.ok ? '✓ 성공' : '✕ 실패'}{single.httpStatus != null ? ` · HTTP ${single.httpStatus}` : ''}{single.durationMs != null ? ` · ${single.durationMs}ms` : ''}{single.executionId && <a href={appUrl(`/executions?space=${encodeURIComponent(`${current.origin}:${current.id}`)}`)} target="_blank" rel="noreferrer" style={{ marginLeft: 8, color: 'var(--fl-primary)', fontSize: 11 }}>이력 저장됨 ↗</a>}
       </div>
+      {singleSource.current && singleSource.current !== node && <p role="status" style={{ ...hintP, margin: '8px 12px', color: 'var(--fl-put)' }}>테스트 후 설정이 바뀌었습니다. 현재 설정으로 다시 테스트하세요.</p>}
       {single.output != null && (
         bigResult && typeof single.output === 'object' ? (
           // 워크벤치: 중첩 JSON 은 클릭 가능한 트리 — 키 클릭 = 경로 토큰({{ user.name@노드 }}) 복사
@@ -721,14 +750,14 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
             const k = `${t.sourceId ?? ''}|${t.key}`
             const srcName = t.sourceId ? (nodeLabel(t.sourceId).name || t.sourceId) : '가까운 상위'
             return (
-              <div key={k} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+              <div key={k} className="fl-node-upstream-field" style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
                 <code
                   style={{ flexShrink: 0, width: 168, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: 'var(--fl-font-mono)', fontSize: 12, color: 'var(--fl-primary)' }}
                   title={t.sourceId ? `{{ ${t.key}@${t.sourceId} }} — ${srcName} 의 출력` : `{{ ${t.key} }} — 가장 가까운 상위 출력`}
                 >
                   {t.key}<span style={{ color: 'var(--fl-text-muted)' }}>@{srcName}</span>
                 </code>
-                <input style={{ ...mono, flex: 1 }} value={upVals[k] ?? ''} placeholder="테스트 값 (비우면 빈 값)"
+                <input readOnly={!canEdit} aria-label={`테스트 입력 ${t.key}`} style={{ ...mono, flex: 1 }} value={upVals[k] ?? ''} placeholder="테스트 값 (비우면 빈 값)"
                   onChange={(e) => setUpVal(k, e.target.value)} />
               </div>
             )
@@ -777,7 +806,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
   ) : null
 
   return (
-    <aside className="fl-editor-inspector" aria-label="노드 편집" style={{ ...shell, width }}>
+    <aside className="fl-editor-inspector" data-node-settings={modal ? 'modal' : 'docked'} aria-label="노드 편집" style={{ ...shell, width, containerType: 'inline-size', minWidth: 0 }}>
       <header style={{ padding: modal ? '14px 16px 12px' : '14px 16px', borderBottom: '1px solid var(--fl-border)' }}>
         {/* 모달(큰 화면)에선 헤더도 본문과 같은 중앙 칼럼 폭. 이름은 입력창이 아니라 '화면 제목'처럼 —
             타입·#id 메타와 활성 환경(실행에 적용될 컨텍스트)을 헤더에 통합한다. */}
@@ -786,24 +815,24 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
           {modal ? (
             <div style={{ flex: 1, minWidth: 0 }}>
               <input
-                aria-label="노드 이름" value={node.name ?? ''} placeholder={typeLabel(node.type)}
+                aria-label="노드 이름" readOnly={!canEdit} value={node.name ?? ''} placeholder={typeLabel(node.type)}
                 onChange={(e) => update(id, { name: e.target.value })}
                 className="fl-name-input"
                 style={{ width: '100%', maxWidth: 520, border: '1px solid transparent', borderRadius: 'var(--fl-radius)', background: 'transparent', padding: '3px 6px', fontFamily: 'var(--fl-font-head)', fontWeight: 700, fontSize: 18, color: 'var(--fl-text)' }}
               />
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 2, paddingLeft: 6, fontSize: 11, color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)' }}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10, minWidth: 0, marginTop: 2, paddingLeft: 6, fontSize: 11, color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)' }}>
                 <button onClick={() => copyText(id, '노드 id 를 복사했습니다.')} title="노드 id 복사"
-                  style={{ border: 'none', background: 'transparent', padding: 0, font: 'inherit', color: 'inherit', cursor: 'pointer' }}>
+                  style={{ border: 'none', background: 'transparent', padding: 0, minWidth: 0, maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', font: 'inherit', color: 'inherit', cursor: 'pointer' }}>
                   {typeLabel(node.type)} · #{id} ⧉
                 </button>
                 <span aria-hidden style={{ opacity: .5 }}>│</span>
                 <span title="실행에 적용될 활성 환경 — {{ 키@env }}·환경 시크릿이 이 환경 기준으로 주입됩니다">
-                  {envStore.active ?? '환경 없음'}
+                  {activeEnvSource() === 'local' ? '내 PC' : '서버'} · {envStore.active ?? '공통 환경'}
                 </span>
               </div>
             </div>
           ) : (
-            <input aria-label="노드 이름" value={node.name ?? ''} placeholder={typeLabel(node.type)} onChange={(e) => update(id, { name: e.target.value })} style={{ ...field, fontWeight: 600, fontFamily: 'var(--fl-font-head)' }} />
+            <input aria-label="노드 이름" readOnly={!canEdit} value={node.name ?? ''} placeholder={typeLabel(node.type)} onChange={(e) => update(id, { name: e.target.value })} style={{ ...field, fontWeight: 600, fontFamily: 'var(--fl-font-head)' }} />
           )}
           {onExpand && (
             <button onClick={onExpand} aria-label="넓게 편집" title="넓은 모달로 편집" style={iconBtn}>⤢</button>
@@ -818,8 +847,15 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
       </header>
 
       {/* 모달(큰 화면)에선 내용을 편한 폭의 중앙 칼럼으로 — 2단 타입(http/tcp)은 넓게 */}
-      <div style={{ padding: modal ? '20px 28px' : '16px 18px', overflowY: 'auto', flex: 1, ...(modal ? { width: '100%', maxWidth: modalColW, margin: '0 auto' } : null) }}>
+      <div className="fl-node-settings-content" style={{ padding: modal ? '20px 28px' : '16px 18px', overflowY: 'auto', flex: 1, minHeight: 0, minWidth: 0, boxSizing: 'border-box', ...(modal ? { width: '100%', maxWidth: modalColW, margin: '0 auto' } : null) }}>
+        {!canEdit && <p role="status" style={{ ...hintP, marginTop: 0 }}>읽기 전용입니다. 설정과 실행 결과를 확인하거나 복사할 수 있습니다.</p>}
         <AgentSettings node={node} update={patch => update(id, patch)} disabled={!canEdit} />
+        {!twoCol && SINGLE_RUNNABLE.has(node.type) && canEdit && <div className="fl-node-test-action">
+          <button type="button" onClick={runSingle} disabled={singleRunning} style={wbRunBtn} title="현재 입력을 저장한 뒤 이 노드만 실행합니다. 결과는 이 버튼 아래에 표시됩니다.">{singleRunning ? '테스트 중…' : '이 노드 테스트'}</button>
+          <span>현재 설정을 저장하고 실행합니다.</span>
+          {upstreamInputs && <div className="fl-node-test-result">{upstreamInputs}</div>}
+          {runResultBox && <div className="fl-node-test-result">{runResultBox}</div>}
+        </div>}
         {unreachable && (
           <div style={{ marginTop: 10, padding: '8px 10px', border: '1px solid var(--fl-put)', borderRadius: 'var(--fl-radius-sm)', background: 'color-mix(in srgb, var(--fl-put) 12%, transparent)', fontSize: 12, color: 'var(--fl-text)', lineHeight: 1.5 }}>
             ⚠ <b>시작(START)에 연결되어 있지 않습니다.</b> 이 노드는 실행 시 <b>건너뜁니다</b> — 위쪽 노드에서 핸들(●)을 끌어 연결하세요.
@@ -831,7 +867,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
             {node.type === 'note' ? (
               <>
                 <label style={label}>메모 내용</label>
-                <textarea
+                <textarea readOnly={!canEdit}
                   aria-label="메모 내용"
                   style={{ ...field, minHeight: 110, resize: 'vertical', lineHeight: 1.5 }}
                   value={node.noteText ?? ''}
@@ -843,7 +879,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
               <>
                 <label style={label}>크기 (px · 그리드 22 배수로 스냅)</label>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                  <input
+                  <input readOnly={!canEdit}
                     aria-label="영역 폭"
                     type="number"
                     step={22}
@@ -853,7 +889,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
                     onChange={(e) => update(id, { groupW: Math.max(110, Math.round((Number(e.target.value) || 396) / 22) * 22) })}
                   />
                   <span style={{ color: 'var(--fl-text-muted)', fontSize: 12 }}>×</span>
-                  <input
+                  <input readOnly={!canEdit}
                     aria-label="영역 높이"
                     type="number"
                     step={22}
@@ -920,7 +956,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
               <div style={{ display: 'grid', gap: 6 }}>
                 {ports.map((p) => (
                   <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <input
+                    <input disabled={!canEdit}
                       type="radio"
                       name={`sw-active-${id}`}
                       aria-label={`트랙 ${p.label || p.id} 로 전환`}
@@ -929,7 +965,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
                       style={{ accentColor: 'var(--fl-put)', cursor: 'pointer' }}
                     />
                     <span style={{ fontFamily: 'var(--fl-font-mono)', fontSize: 11, color: 'var(--fl-text-muted)', width: 16, textAlign: 'center' }}>{p.id}</span>
-                    <input
+                    <input readOnly={!canEdit}
                       aria-label={`트랙 ${p.id} 이름`}
                       style={{ ...field, flex: 1 }}
                       value={p.label ?? ''}
@@ -962,7 +998,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
         {node.type === 'http' && (() => {
           // URL 을 이루는 요소들 — 도킹(세로 흐름)과 모달(워크벤치 바)에서 배치만 달리 재사용
           const methodEl = (
-            <select aria-label="메서드" style={{ ...methodSel(node.method), alignSelf: 'flex-start' }} value={node.method ?? 'GET'} onChange={(e) => update(id, { method: e.target.value as HttpMethod })}>
+            <select aria-label="메서드" disabled={!canEdit} style={{ ...methodSel(node.method), alignSelf: 'flex-start' }} value={node.method ?? 'GET'} onChange={(e) => { update(id, { method: e.target.value as HttpMethod }); setRequestPart(['GET', 'HEAD'].includes(e.target.value) ? 'query' : 'body') }}>
               {METHODS.map((m) => <option key={m} value={m}>{m}</option>)}
             </select>
           )
@@ -972,9 +1008,9 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
             <p style={hintP}>Path는 유지됩니다. 새 주소를 입력한 뒤 저장하세요.</p>
           </div> : node.baseUrlBound && !isTokenizable(node.baseUrlBound) ? (
             // 토큰 문법 밖 키/id 의 구(舊) bound — 이관하면 조용히 깨지므로 구조적 바인딩 칩 유지
-            <BindingChip binding={node.baseUrlBound} sourceType={sourceType(node.baseUrlBound)} onRemove={() => update(id, { baseUrlBound: null })} />
+            <BindingChip binding={node.baseUrlBound} sourceType={sourceType(node.baseUrlBound)} onRemove={canEdit ? () => update(id, { baseUrlBound: null }) : undefined} />
           ) : (<div style={{ minWidth: 0, width: '100%' }}>
-            <TokenInput
+            <TokenInput readOnly={!canEdit}
               ariaLabel="Base URL"
               value={baseUrlValue}
               onChange={(v) => update(id, { baseUrl: v, baseUrlBound: null, agentMock: undefined })}
@@ -983,7 +1019,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
             /></div>
           )
           const pathEl = (
-            <TokenInput
+            <TokenInput readOnly={!canEdit}
               ariaLabel="Path"
               value={node.path ?? ''}
               onChange={(v) => update(id, { path: v })}
@@ -1012,7 +1048,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
             </div>
             {curlText !== null && (
               <div style={{ marginTop: 6 }}>
-                <textarea autoFocus style={{ ...mono, minHeight: 74, resize: 'vertical' }} value={curlText} onChange={(e) => setCurlText(e.target.value)}
+                <textarea readOnly={!canEdit} autoFocus style={{ ...mono, minHeight: 74, resize: 'vertical' }} value={curlText} onChange={(e) => setCurlText(e.target.value)}
                   placeholder="curl -X POST 'https://api.example.com/pay' -H 'Authorization: Bearer ...' --data '{&quot;amount&quot;:1000}'" />
                 <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
                   <button onClick={() => applyCurl(curlText)} style={{ ...braceBtn, width: 'auto', padding: '0 14px', color: 'var(--fl-primary)', fontWeight: 600 }}>적용</button>
@@ -1027,7 +1063,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
             {advOpen && (
               <div style={{ borderLeft: '2px solid var(--fl-border)', paddingLeft: 10, marginTop: 4 }}>
                 <label style={label}>문자셋 (요청 인코딩 · 응답 디코딩)</label>
-                <select style={field} value={node.charset ?? 'UTF-8'} onChange={(e) => update(id, { charset: e.target.value })}>
+                <select disabled={!canEdit} style={field} value={node.charset ?? 'UTF-8'} onChange={(e) => update(id, { charset: e.target.value })}>
                   {CHARSETS.map((c) => <option key={c} value={c}>{c}</option>)}
                 </select>
                 {node.reqMode === 'client' && (node.charset ?? 'UTF-8') !== 'UTF-8' && (
@@ -1039,7 +1075,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
             )}
 
             {/* 프리셋 — 흔한 조합을 한 번에(method+본문 종류) */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12 }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginTop: 12 }}>
               <span style={{ fontSize: 12, color: 'var(--fl-text-muted)', fontWeight: 600, flexShrink: 0 }}>프리셋</span>
               <div style={miniSeg} role="group" aria-label="요청 프리셋">
                 {([['get', 'GET'], ['json', 'JSON'], ['form', 'Form'], ['raw', 'Raw']] as const).map(([k, lbl]) => (
@@ -1051,42 +1087,42 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
 
             {bodyConvNote && <p style={{ ...hintP, color: 'var(--fl-put)' }}>⚠ {bodyConvNote}</p>}
 
-            {!modal && <div className="fl-http-tabs" role="group" aria-label="HTTP 요청 구성">
-              {([['query', 'Params', paramCount], ['headers', 'Headers', headerCount], ['body', 'Body', bodyFilled ? '•' : '']] as const).map(([key, title, count]) => <button key={key} type="button" aria-pressed={requestPart === key} onClick={() => setRequestPart(key)}>{title}{count ? ` (${count})` : ''}</button>)}
-            </div>}
-            <HttpSection fixed={!modal} hidden={!modal && requestPart !== 'query'} title="쿼리 (URL)" badge={paramCount ? String(paramCount) : ''} open={secIsOpen('query')} onToggle={() => toggleSec('query')}
+            <div className="fl-http-tabs" role="group" aria-label="HTTP 요청 구성">
+              {([['query', '쿼리', paramCount], ['headers', '헤더', headerCount], ['body', '본문', bodyFilled ? '•' : '']] as const).map(([key, title, count]) => <button key={key} type="button" aria-pressed={requestPart === key} onClick={() => setRequestPart(key)}>{title}{count ? ` (${count})` : ''}</button>)}
+            </div>
+            <HttpSection fixed hidden={requestPart !== 'query'} title="쿼리 (URL)" badge={paramCount ? String(paramCount) : ''} open onToggle={() => toggleSec('query')}
               right={<div style={miniSeg} role="group" aria-label="쿼리 입력 방식">
                 <button type="button" onClick={() => switchKvRaw('params', false)} style={miniSegBtn(!node.paramsRaw)}>필드</button>
                 <button type="button" onClick={() => switchKvRaw('params', true)} style={miniSegBtn(!!node.paramsRaw)}>Raw</button>
               </div>}>
               {node.paramsRaw ? (
                 <div>
-                  <textarea style={{ ...mono, minHeight: 90, resize: 'vertical' }} value={node.rawParams ?? ''} onChange={(e) => update(id, { rawParams: e.target.value })} placeholder="a=1&b=2  또는 { } 로 데이터 삽입" />
+                  <textarea readOnly={!canEdit} style={{ ...mono, minHeight: 90, resize: 'vertical' }} value={node.rawParams ?? ''} onChange={(e) => update(id, { rawParams: e.target.value })} placeholder="a=1&b=2  또는 { } 로 데이터 삽입" />
                   <button onClick={() => setPick('rawParams')} style={{ ...braceBtn, width: 'auto', padding: '0 10px', marginTop: 4 }} title="데이터 삽입"><DataInsertIcon /></button>
                 </div>
               ) : (
-                <KeyValueEditor rows={fields.params ?? []} onChange={(rows) => setRows('params', rows)} sources={sources} warnDupes={false} />
+                <KeyValueEditor readOnly={!canEdit} rows={fields.params ?? []} onChange={(rows) => setRows('params', rows)} sources={sources} warnDupes={false} />
               )}
             </HttpSection>
 
-            <HttpSection fixed={!modal} hidden={!modal && requestPart !== 'headers'} title="헤더" badge={headerCount ? String(headerCount) : ''} open={secIsOpen('headers')} onToggle={() => toggleSec('headers')}
+            <HttpSection fixed hidden={requestPart !== 'headers'} title="헤더" badge={headerCount ? String(headerCount) : ''} open onToggle={() => toggleSec('headers')}
               right={<div style={miniSeg} role="group" aria-label="헤더 입력 방식">
                 <button type="button" onClick={() => switchKvRaw('headers', false)} style={miniSegBtn(!node.headersRaw)}>필드</button>
                 <button type="button" onClick={() => switchKvRaw('headers', true)} style={miniSegBtn(!!node.headersRaw)}>Raw</button>
               </div>}>
               {node.headersRaw ? (
                 <div>
-                  <textarea style={{ ...mono, minHeight: 90, resize: 'vertical' }} value={node.rawHeaders ?? ''} onChange={(e) => update(id, { rawHeaders: e.target.value })} placeholder={'Authorization: Bearer ...\nContent-Type: application/json'} />
+                  <textarea readOnly={!canEdit} style={{ ...mono, minHeight: 90, resize: 'vertical' }} value={node.rawHeaders ?? ''} onChange={(e) => update(id, { rawHeaders: e.target.value })} placeholder={'Authorization: Bearer ...\nContent-Type: application/json'} />
                   <button onClick={() => setPick('rawHeaders')} style={{ ...braceBtn, width: 'auto', padding: '0 10px', marginTop: 4 }} title="데이터 삽입"><DataInsertIcon /></button>
                 </div>
               ) : (
-                <KeyValueEditor rows={fields.headers ?? []} onChange={(rows) => setRows('headers', rows)} sources={sources} />
+                <KeyValueEditor readOnly={!canEdit} rows={fields.headers ?? []} onChange={(rows) => setRows('headers', rows)} sources={sources} />
               )}
             </HttpSection>
 
             {hasBody ? (
-              <HttpSection fixed={!modal} hidden={!modal && requestPart !== 'body'} title="본문 (Body)" badge={bodyFilled ? '•' : ''} open={secIsOpen('body')} onToggle={() => toggleSec('body')}
-                right={<select style={{ ...field, width: 'auto', padding: '5px 6px', fontSize: 12 }} value={bodyKind} onChange={(e) => changeBodyType(e.target.value as BodyType)} aria-label="본문 종류">
+              <HttpSection fixed hidden={requestPart !== 'body'} title="본문" badge={bodyFilled ? '•' : ''} open onToggle={() => toggleSec('body')}
+                right={<select disabled={!canEdit} style={{ ...field, width: 'auto', padding: '5px 6px', fontSize: 12 }} value={bodyKind} onChange={(e) => changeBodyType(e.target.value as BodyType)} aria-label="본문 종류">
                   <option value="json">JSON</option>
                   <option value="urlencoded">Form</option>
                   <option value="xml">XML</option>
@@ -1104,16 +1140,16 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
                     {modal && (bodyKind === 'json' || bodyKind === 'xml') ? (
                       // 워크벤치: 본문을 인라인 코드 편집기(하이라이트·문법 체크)로 — 넓어진 공간을 실제로 쓴다
                       <div style={{ position: 'relative' }}>
-                        <Suspense fallback={<textarea style={{ ...mono, minHeight: 240 }} value={node.rawBody ?? ''} onChange={(e) => update(id, { rawBody: e.target.value })} placeholder={rawBodyPlaceholder(bodyKind)} />}>
+                        <Suspense fallback={<textarea style={{ ...mono, minHeight: 240 }} value={node.rawBody ?? ''} readOnly={!canEdit} aria-label="요청 본문 코드" onChange={(e) => update(id, { rawBody: e.target.value })} placeholder={rawBodyPlaceholder(bodyKind)} />}>
                           <div style={{ height: 260, display: 'flex', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', overflow: 'hidden' }}>
-                            <CodeEditorLazy value={node.rawBody ?? ''} onChange={(v) => update(id, { rawBody: v })} language={bodyKind === 'xml' ? 'xml' : 'json'} />
+                            <CodeEditorLazy value={node.rawBody ?? ''} onChange={(v) => update(id, { rawBody: v })} language={bodyKind === 'xml' ? 'xml' : 'json'} readOnly={!canEdit} ariaLabel="요청 본문 코드" />
                           </div>
                         </Suspense>
                         <ExpandCorner onClick={() => setBigEdit('rawBody')} />
                       </div>
                     ) : (
                       <div style={{ position: 'relative' }}>
-                        <textarea style={{ ...mono, minHeight: 130, resize: 'vertical' }} value={node.rawBody ?? ''} onChange={(e) => update(id, { rawBody: e.target.value })} placeholder={rawBodyPlaceholder(bodyKind)} />
+                        <textarea readOnly={!canEdit} style={{ ...mono, minHeight: 130, resize: 'vertical' }} value={node.rawBody ?? ''} onChange={(e) => update(id, { rawBody: e.target.value })} placeholder={rawBodyPlaceholder(bodyKind)} />
                         <ExpandCorner onClick={() => setBigEdit('rawBody')} />
                       </div>
                     )}
@@ -1121,7 +1157,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
                   </div>
                 ) : (
                   <>
-                    <KeyValueEditor rows={fields.body ?? []} onChange={(rows) => setRows('body', rows)} sources={sources} showType={bodyKind === 'json'} />
+                    <KeyValueEditor readOnly={!canEdit} rows={fields.body ?? []} onChange={(rows) => setRows('body', rows)} sources={sources} showType={bodyKind === 'json'} />
                     {bodyKind === 'json' && (
                       <p style={{ ...hintP, marginTop: 6 }}>
                         키에 <code style={{ fontFamily: 'var(--fl-font-mono)', fontSize: 11 }}>customer.name</code>·<code style={{ fontFamily: 'var(--fl-font-mono)', fontSize: 11 }}>items[0].sku</code> 처럼 경로를 쓰면 <b>중첩 JSON</b> 으로 전송됩니다. 중첩 JSON 을 통째로 넣으려면 <b>Raw 에 붙여넣고 [필드]로 전환</b> — 경로 행으로 펼쳐지고, 왕복해도 형태가 유지됩니다.
@@ -1130,7 +1166,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
                   </>
                 )}
               </HttpSection>
-            ) : (modal || requestPart === 'body') && (
+            ) : requestPart === 'body' && (
               <p style={{ ...hintP }}>ⓘ {method} 요청은 본문을 보내지 않습니다 — 조회 조건은 위 <b>쿼리(URL)</b>에 넣으세요.</p>
             )}
 
@@ -1140,7 +1176,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
           <>
             {/* 응답 섹션 — 워크벤치에선 상위 칼럼 제목이 이미 '응답'이라 '파싱 설정'으로 구분(중복 라벨 방지) */}
             <HttpSection title={twoCol ? '파싱 설정 · 출력 키' : '응답'} badge={normRespType(node.respType)} open={secIsOpen('resp')} onToggle={() => toggleSec('resp')}
-              right={<select style={{ ...field, width: 'auto', padding: '5px 6px', fontSize: 12 }} value={normRespType(node.respType)} onChange={(e) => update(id, { respType: e.target.value as RespType })} aria-label="응답 타입">
+              right={<select disabled={!canEdit} style={{ ...field, width: 'auto', padding: '5px 6px', fontSize: 12 }} value={normRespType(node.respType)} onChange={(e) => update(id, { respType: e.target.value as RespType })} aria-label="응답 타입">
                 {RESP_TYPES.map((r) => <option key={r} value={r}>{respTypeLabel(r)}</option>)}
               </select>}>
               {node.respType === 'query' && (
@@ -1149,7 +1185,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
               {KEYED_RESP.includes(node.respType ?? 'json') ? (
                 <>
                   <label style={label}>{respOutputLabel(node.respType)}</label>
-                  <OutputsEditor outputs={node.outputs ?? []} onChange={(outputs) => update(id, { outputs })} nodeId={id} usageOf={usageOf} onGoto={gotoNode} />
+                  <OutputsEditor readOnly={!canEdit} outputs={node.outputs ?? []} onChange={(outputs) => update(id, { outputs })} nodeId={id} usageOf={usageOf} onGoto={gotoNode} />
                   {single?.output && typeof single.output === 'object' && !Array.isArray(single.output) && (
                     <button onClick={populateOutputs} style={{ ...ghostMini, marginTop: 6 }} title="방금 '이 노드만 실행'한 응답의 키를 출력 목록에 채웁니다">↧ 이 응답에서 키 채우기</button>
                   )}
@@ -1200,20 +1236,20 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
           // 전체화면 모달: API 워크벤치 — 상단 [메서드|URL|Path|▶실행] 바, 좌 요청 구성 / 우 실행 응답+출력 매핑
           // Ctrl/Cmd+Enter = 실행(포스트맨 근육기억)
           return (
-            <div onKeyDown={(e) => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && canEdit && !singleRunning) { e.preventDefault(); void runSingle() } }}>
-              <div style={wbBar}>
-                {methodEl}
-                <div style={{ flex: 1.6, minWidth: 0 }}>{baseUrlEl}</div>
-                <div style={{ flex: 1, minWidth: 0 }}>{pathEl}</div>
+            <div onKeyDown={(e) => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && !e.nativeEvent.isComposing && e.keyCode !== 229 && canEdit && !singleRunning) { e.preventDefault(); void runSingle() } }}>
+              <div className="fl-node-request-bar">
+                <div className="fl-node-request-method"><span>메서드</span>{methodEl}</div>
+                <div className="fl-node-request-base"><span>기본 주소</span>{baseUrlEl}</div>
+                <div className="fl-node-request-path"><span>요청 경로</span>{pathEl}</div>
                 {canEdit && (
                   <button onClick={runSingle} disabled={singleRunning} style={wbRunBtn}
                     title="이 노드만 즉석 실행 (Ctrl+Enter) — 응답이 오른쪽 패널에 표시됩니다. 환경변수·시크릿 적용, 이전 노드 값은 입력폼으로.">
-                    {singleRunning ? '실행 중…' : '▶ 실행'}
+                    {singleRunning ? '테스트 중…' : '이 노드 테스트'}
                   </button>
                 )}
               </div>
               {urlExtras}
-              <div style={twoColGrid}>
+              <div className="fl-node-workbench-grid">
                 <div style={{ minWidth: 0 }}><div style={colHead}>요청</div>{reqRest}{previewBlock}</div>
                 <div style={{ minWidth: 0 }}>
                   <div style={colHead}>응답</div>
@@ -1221,7 +1257,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
                   <div style={{ margin: '12px 0 4px' }}>
                     {runResultBox ?? lastRunBox ?? (
                       <div style={respEmpty}>
-                        {singleRunning ? '실행 중…' : '위의 ▶ 실행 (Ctrl+Enter) 을 누르면 실제 응답이 여기에 표시됩니다.'}
+                        {singleRunning ? '테스트 중…' : '위의 이 노드 테스트 (Ctrl+Enter)를 누르면 실제 응답이 여기에 표시됩니다.'}
                         <div style={{ fontSize: 11, marginTop: 6, opacity: .75 }}>환경변수({'{{ 키@env }}'})·시크릿({'{{ 이름@secret }}'})이 적용되고, 이전 노드 값({'{{ 키@노드 }}'})은 위 입력폼으로 넣습니다.</div>
                       </div>
                     )}
@@ -1234,7 +1270,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
         })()}
 
         {node.type === 'if' && (
-          <ConditionEditor
+          <ConditionEditor readOnly={!canEdit}
             label="조건식"
             ariaLabel="조건식"
             value={node.condition}
@@ -1248,7 +1284,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
         )}
 
         {node.type === 'assert' && (
-          <ConditionEditor
+          <ConditionEditor readOnly={!canEdit}
             label="검증 조건식"
             ariaLabel="검증 조건식"
             value={node.condition}
@@ -1270,7 +1306,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
         )}
 
         {node.type === 'set' && (
-          <VarsEditor vars={node.vars ?? []} onChange={(vars) => update(id, { vars })} sources={sources} sourceType={sourceType} />
+          <VarsEditor readOnly={!canEdit} vars={node.vars ?? []} onChange={(vars) => update(id, { vars })} sources={sources} sourceType={sourceType} />
         )}
 
         {node.type === 'transform' && !catalog.allowed && <PluginResourceNotice catalog={catalog} />}
@@ -1318,9 +1354,9 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
                 <div key={io.key}>
                   <label style={label}>입력 · {io.label}</label>
                   {f?.bound && !isTokenizable(f.bound) ? (
-                    <BindingChip binding={f.bound} sourceType={sourceType(f.bound)} onRemove={() => setInputField(io.key, { bound: null })} />
+                    <BindingChip binding={f.bound} sourceType={sourceType(f.bound)} onRemove={canEdit ? () => setInputField(io.key, { bound: null }) : undefined} />
                   ) : (
-                    <TokenInput
+                    <TokenInput readOnly={!canEdit}
                       ariaLabel={`입력 ${io.label}`}
                       value={f?.bound ? bindingToToken(f.bound) : (f?.value ?? '')}
                       onChange={(v) => setInputField(io.key, { value: v, bound: null })}
@@ -1339,15 +1375,15 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
                 <div key={p.key}>
                   <label style={label}>{p.label}</label>
                   {p.type === 'select' && (p.options?.length ?? 0) > 0 ? (
-                    <select style={field} value={val} onChange={(e) => set(e.target.value)}>
+                    <select disabled={!canEdit} style={field} value={val} onChange={(e) => set(e.target.value)}>
                       {p.options!.map((o) => <option key={o} value={o}>{o}</option>)}
                     </select>
                   ) : p.type === 'number' ? (
-                    <input type="number" style={field} value={val} placeholder={p.placeholder} onChange={(e) => set(e.target.value)} />
+                    <input readOnly={!canEdit} type="number" style={field} value={val} placeholder={p.placeholder} onChange={(e) => set(e.target.value)} />
                   ) : p.type === 'textarea' ? (
-                    <textarea style={{ ...field, minHeight: 60, resize: 'vertical' }} value={val} placeholder={p.placeholder} onChange={(e) => set(e.target.value)} />
+                    <textarea readOnly={!canEdit} style={{ ...field, minHeight: 60, resize: 'vertical' }} value={val} placeholder={p.placeholder} onChange={(e) => set(e.target.value)} />
                   ) : (
-                    <input style={field} value={val} placeholder={p.placeholder} onChange={(e) => set(e.target.value)} />
+                    <input readOnly={!canEdit} style={field} value={val} placeholder={p.placeholder} onChange={(e) => set(e.target.value)} />
                   )}
                 </div>
               )
@@ -1386,7 +1422,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
           </>
           )
           return twoCol ? (
-            <div style={twoColGrid}>
+            <div className="fl-node-workbench-grid">
               <div style={{ minWidth: 0 }}><div style={colHead}>요청 전문 구성</div>{reqCol}</div>
               <div style={{ minWidth: 0 }}><div style={colHead}>응답 · 확인</div>{respCol}</div>
             </div>
@@ -1398,7 +1434,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
         {node.type === 'form' && (
           <>
             <label style={label}>열기 URL — 팝업/iframe 으로 열어 form 을 제출할 주소</label>
-            <TokenInput
+            <TokenInput readOnly={!canEdit}
               ariaLabel="열기 URL"
               value={node.formAction ?? ''}
               onChange={(v) => update(id, { formAction: v })}
@@ -1407,7 +1443,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
             />
             {!((node.formAction ?? '').trim()) && <p style={{ ...hintP, color: 'var(--fl-put)', marginTop: 6 }}>⚠ 열기 URL 이 비어 있습니다 — 비면 이 노드가 실행 시 실패합니다.</p>}
             <label style={label}>메서드</label>
-            <select style={{ ...field, width: 'auto' }} value={node.formMethod ?? 'POST'} onChange={(e) => update(id, { formMethod: e.target.value })}>
+            <select disabled={!canEdit} style={{ ...field, width: 'auto' }} value={node.formMethod ?? 'POST'} onChange={(e) => update(id, { formMethod: e.target.value })}>
               <option value="POST">POST</option>
               <option value="GET">GET</option>
             </select>
@@ -1452,11 +1488,11 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
             {bodyConvNote && <p style={{ ...hintP, color: 'var(--fl-put)', marginTop: 0 }}>⚠ {bodyConvNote}</p>}
             {node.jsonRaw ? (
               <div>
-                <textarea style={{ ...mono, minHeight: 100, resize: 'vertical' }} value={node.rawBody ?? ''} onChange={(e) => update(id, { rawBody: e.target.value })} placeholder="field1=value1&field2=value2  또는 { } 로 데이터 삽입" />
+                <textarea readOnly={!canEdit} style={{ ...mono, minHeight: 100, resize: 'vertical' }} value={node.rawBody ?? ''} onChange={(e) => update(id, { rawBody: e.target.value })} placeholder="field1=value1&field2=value2  또는 { } 로 데이터 삽입" />
                 <button onClick={() => setPick('rawBody')} style={{ ...braceBtn, width: 'auto', padding: '0 10px', marginTop: 4 }} title="데이터 삽입"><DataInsertIcon /></button>
               </div>
             ) : (
-              <KeyValueEditor rows={node.fields?.body ?? []} onChange={(rows) => update(id, { fields: { params: fields.params ?? [], headers: fields.headers ?? [], body: rows } })} sources={sources} />
+              <KeyValueEditor readOnly={!canEdit} rows={node.fields?.body ?? []} onChange={(rows) => update(id, { fields: { params: fields.params ?? [], headers: fields.headers ?? [], body: rows } })} sources={sources} />
             )}
             <p style={hintP}>
               실행 시 선택한 방식(<b>팝업 창</b> 또는 <b>페이지 내 iframe 모달</b>)으로 결제창을 열고 숨김 폼을 자동 제출한 뒤
@@ -1471,7 +1507,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
         {node.type === 'wait' && (
           <>
             <label style={label}>타임아웃 (초)</label>
-            <input
+            <input readOnly={!canEdit}
               style={{ ...field, width: 120 }}
               type="number"
               min={1}
@@ -1481,11 +1517,11 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
             <p style={{ ...hintP, marginTop: 6 }}>시간 안에 콜백이 없으면 노드 실패 → 실행이 중단됩니다.</p>
 
             <label style={label}>콜백에 줄 응답</label>
-            <select style={{ ...field, width: 'auto' }} value={node.callbackRespType ?? 'text'} onChange={(e) => update(id, { callbackRespType: e.target.value })}>
+            <select disabled={!canEdit} style={{ ...field, width: 'auto' }} value={node.callbackRespType ?? 'text'} onChange={(e) => update(id, { callbackRespType: e.target.value })}>
               {CALLBACK_RESP_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
             </select>
             <div style={{ position: 'relative', marginTop: 6 }}>
-              <textarea
+              <textarea readOnly={!canEdit}
                 style={{ ...mono, minHeight: 80, resize: 'vertical' }}
                 value={node.callbackRespBody ?? ''}
                 onChange={(e) => update(id, { callbackRespBody: e.target.value })}
@@ -1507,7 +1543,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
             <WaitReceiveUrl nodeId={id} />
 
             <label style={label}>응답 규격 (출력) — 콜백 본문 키 (하위 노드가 바인딩)</label>
-            <OutputsEditor outputs={node.outputs ?? []} onChange={(outputs) => update(id, { outputs })} nodeId={id} usageOf={usageOf} onGoto={gotoNode} />
+            <OutputsEditor readOnly={!canEdit} outputs={node.outputs ?? []} onChange={(outputs) => update(id, { outputs })} nodeId={id} usageOf={usageOf} onGoto={gotoNode} />
             <p style={hintP}>
               선언은 바인딩 피커 칩용입니다 — 실제로는 콜백 본문(JSON/urlencoded 파싱)의 <b>모든</b> 키가 출력이 되고,
               키 구조가 아니면 원문이 body 로 제공됩니다. 수신 URL 은 <code>{`{{ url@${id} }}`}</code> 로 어느 노드에서든 바인딩됩니다.
@@ -1520,13 +1556,14 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
             <label style={label}>안내 메시지 — 입력 창에 표시 ({'{ }'} 토큰 가능)</label>
             <textarea
               style={{ ...field, minHeight: 60, resize: 'vertical' }}
+              readOnly={!canEdit} aria-label="입력 창 안내 메시지"
               value={node.waitMsg ?? ''}
               onChange={(e) => update(id, { waitMsg: e.target.value })}
               placeholder="휴대폰으로 받은 OTP를 입력하세요"
             />
             <button onClick={() => setPick('waitMsg')} style={{ ...braceBtn, width: 'auto', padding: '0 10px', marginTop: 4 }} title="데이터 삽입"><DataInsertIcon /></button>
             <label style={label}>입력 필드 (키 · 라벨 · 타입)</label>
-            <WaitFieldsEditor fields={node.waitFields ?? []} onChange={(waitFields) => update(id, { waitFields })} />
+            <WaitFieldsEditor fields={node.waitFields ?? []} readOnly={!canEdit} onChange={(waitFields) => update(id, { waitFields })} />
             {(node.waitFields ?? []).filter((f) => f.key?.trim()).length === 0 && <p style={{ ...hintP, color: 'var(--fl-put)', marginTop: 6 }}>⚠ 입력 필드가 없습니다 — 최소 1개(키)를 추가하세요.</p>}
             <p style={hintP}>
               실행이 이 노드에 도달하면 <b>입력 창</b>이 뜨고, 값을 입력해 확인하면 각 키가 이 노드의 출력이 되어
@@ -1542,7 +1579,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
 
         {/* 모달(큰 화면)에선 풀폭 알약 대신 우측 정렬 컴팩트 버튼 — 화면 비율에 맞게 */}
         <details key={id} className="fl-editor-node-tools">
-          <summary>{SINGLE_RUNNABLE.has(node.type) && canEdit ? '노드 정보·연결·단일 실행' : '노드 정보·연결'}</summary>
+          <summary>노드 정보·연결</summary>
         {/* 모달에선 타입·#id 가 헤더로 올라갔다 — 도킹에서만 표시 */}
         {!modal && (
           <button
@@ -1582,18 +1619,17 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
         )}
 
         {/* 2단 모달(http/tcp)에선 단일 실행이 오른쪽 '응답·확인' 칼럼으로 이동 */}
-        {!twoCol && singleRunBlock}
 
         </details>
 
         {node.type !== 'start' && (
           <div style={{ display: 'flex', gap: 6, marginTop: 24, justifyContent: 'flex-end', borderTop: '1px solid var(--fl-border)', paddingTop: 14 }}>
-            <button onClick={() => duplicateSelection()} style={{ ...ui.secondary, ...ui.mini }} title="이 노드 복제 (Ctrl+D)"><AppIcon name="copy" size={14} /> 복제</button>
-            <button onClick={() => deleteNode(id)} style={{ ...ui.danger, minHeight: 28, padding: '0 10px', fontSize: 12 }}><AppIcon name="trash" size={14} /> 삭제</button>
+            <button disabled={!canEdit} onClick={() => duplicateSelection()} style={{ ...ui.secondary, ...ui.mini }} title="이 노드 복제 (Ctrl+D)"><AppIcon name="copy" size={14} /> 복제</button>
+            <button disabled={!canEdit} onClick={() => deleteNode(id)} style={{ ...ui.danger, minHeight: 28, padding: '0 10px', fontSize: 12 }}><AppIcon name="trash" size={14} /> 삭제</button>
           </div>
         )}
         {node.type === 'start' && (
-          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 24, borderTop: '1px solid var(--fl-border)', paddingTop: 14 }}><button onClick={() => deleteNode(id)} style={{ ...ui.danger, minHeight: 28, padding: '0 10px', fontSize: 12 }}><AppIcon name="trash" size={14} /> 삭제</button></div>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 24, borderTop: '1px solid var(--fl-border)', paddingTop: 14 }}><button disabled={!canEdit} onClick={() => deleteNode(id)} style={{ ...ui.danger, minHeight: 28, padding: '0 10px', fontSize: 12 }}><AppIcon name="trash" size={14} /> 삭제</button></div>
         )}
       </div>
 
@@ -1601,6 +1637,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
       {bigEdit === 'rawBody' && (
         <BigTextEditor
           title="요청 본문 (Raw) — 크게 편집"
+          readOnly={!canEdit}
           value={node.rawBody ?? ''}
           onChange={(v) => update(id, { rawBody: v })}
           onClose={() => setBigEdit(null)}
@@ -1613,6 +1650,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
       {bigEdit === 'callbackRespBody' && (
         <BigTextEditor
           title="콜백에 줄 응답 본문 — 크게 편집"
+          readOnly={!canEdit}
           value={node.callbackRespBody ?? ''}
           onChange={(v) => update(id, { callbackRespBody: v })}
           onClose={() => setBigEdit(null)}
@@ -1633,27 +1671,41 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
 
 
 /** input(사용자 입력) 노드의 입력 필드 정의 편집기 — 키가 그대로 출력 키가 된다. */
-function WaitFieldsEditor({ fields, onChange }: { fields: WaitFieldT[]; onChange: (f: WaitFieldT[]) => void }) {
-  const upd = (fid: string, patch: Partial<WaitFieldT>) => onChange(fields.map((f) => (f.id === fid ? { ...f, ...patch } : f)))
+function WaitFieldsEditor({ fields, onChange, readOnly = false }: { fields: WaitFieldT[]; onChange: (f: WaitFieldT[]) => void; readOnly?: boolean }) {
+  const box = useRef<HTMLDivElement>(null)
+  const newField = useRef<string | null>(null)
+  const duplicate = duplicateKeys(fields.map(item => item.key))
+  const upd = (fid: string, patch: Partial<WaitFieldT>) => { if (!readOnly) onChange(fields.map((f) => (f.id === fid ? { ...f, ...patch } : f))) }
+  const add = () => {
+    if (readOnly) return
+    const id = newId(); newField.current = id
+    onChange([...fields, { id, key: '', label: '', type: 'string' }])
+  }
+  useEffect(() => {
+    const target = Array.from(box.current?.querySelectorAll<HTMLInputElement>('[data-input-key]') ?? []).find(input => input.dataset.inputKey === newField.current)
+    if (target) { target.focus(); target.scrollIntoView({ block: 'nearest' }); newField.current = null }
+  }, [fields.length])
   return (
-    <div className="fl-editor-field-list">
+    <div ref={box} className="fl-node-input-fields">
+      {duplicate.size > 0 && <p role="alert" style={{ ...hintP, color: 'var(--fl-put)', marginTop: 0 }}>중복된 출력 키가 있습니다: {[...duplicate].join(', ')}. 필드마다 다른 키를 사용하세요.</p>}
       {fields.map((f, i) => (
-        <div key={f.id} className="fl-editor-field-row"><div className="fl-editor-field-main">
-          <input aria-label={`입력 키 ${i + 1}`} style={{ ...mono, flex: 1, minWidth: 0 }} value={f.key} placeholder="키(=출력)" onChange={(e) => upd(f.id, { key: e.target.value })}
-            onKeyDown={(e) => { if (e.key === 'Enter' && i === fields.length - 1) { e.preventDefault(); onChange([...fields, { id: newId(), key: '', label: '', type: 'string' }]) } }} />
-
-          <select aria-label={`입력 타입 ${i + 1}`} style={{ ...field, width: 84 }} value={f.type ?? 'string'} onChange={(e) => upd(f.id, { type: e.target.value })}>
-            {['string', 'number', 'boolean', 'json'].map((t) => <option key={t} value={t}>{t}</option>)}
-          </select>
+        <div key={f.id} className="fl-node-input-field"><div className="fl-node-input-identity">
+          <label><span>출력 키</span><input aria-label={`입력 키 ${i + 1}`} readOnly={readOnly} data-input-key={f.id} style={mono} value={f.key} placeholder="예: otp" onChange={(e) => upd(f.id, { key: e.target.value })}
+            onKeyDown={(e) => { if (e.key === 'Enter' && !e.nativeEvent.isComposing && e.keyCode !== 229) { e.preventDefault(); Array.from(box.current?.querySelectorAll<HTMLInputElement>('[data-input-label]') ?? []).find(input => input.dataset.inputLabel === f.id)?.focus() } }} /></label>
+          <label><span>입력 형식</span><select aria-label={`입력 타입 ${i + 1}`} disabled={readOnly} style={field} value={f.type ?? 'string'} onChange={(e) => upd(f.id, { type: e.target.value })}>
+            {([['string', '문자'], ['number', '숫자'], ['boolean', '예/아니요'], ['json', 'JSON']] as const).map(([type, name]) => <option key={type} value={type}>{name}</option>)}
+          </select></label>
           </div>
-          <input aria-label={`입력 표시 이름 ${i + 1}`} style={{ ...field, flex: 1 }} value={f.label ?? ''} placeholder="라벨(표시)" onChange={(e) => upd(f.id, { label: e.target.value })} />
-          <div className="fl-editor-field-actions">
-          <RowMove i={i} len={fields.length} onMove={(d) => onChange(moveInList(fields, i, d))} />
-          <button onClick={() => onChange(fields.filter((x) => x.id !== f.id))} aria-label="삭제" style={{ width: 26, flexShrink: 0, border: '1px solid var(--fl-border)', borderRadius: 6, background: 'var(--fl-surface)', cursor: 'pointer' }}>×</button>
+          <label><span>입력 창 표시 이름</span><input aria-label={`입력 표시 이름 ${i + 1}`} readOnly={readOnly} data-input-label={f.id} style={field} value={f.label ?? ''} placeholder="예: 인증번호" onChange={(e) => upd(f.id, { label: e.target.value })}
+            onKeyDown={e => { if (!readOnly && e.key === 'Enter' && !e.nativeEvent.isComposing && e.keyCode !== 229 && i === fields.length - 1) { e.preventDefault(); add() } }} /></label>
+          <div className="fl-node-input-actions">
+          {!readOnly && <RowMove i={i} len={fields.length} onMove={(d) => onChange(moveInList(fields, i, d))} />}
+          <button disabled={readOnly} onClick={() => { if (!readOnly) onChange(fields.filter((x) => x.id !== f.id)) }} aria-label={`입력 필드 ${i + 1} 삭제`} style={iconBtn}>×</button>
           </div>
         </div>
       ))}
-      <button onClick={() => onChange([...fields, { id: newId(), key: '', label: '', type: 'string' }])} style={addDashed}>+ 입력 필드</button>
+      <button disabled={readOnly} onClick={add} style={addDashed}>+ 입력 필드</button>
+      {!readOnly && fields.length > 0 && <p style={{ ...hintP, marginTop: 0 }}>출력 키에서 Enter로 표시 이름을 입력하고, 마지막 표시 이름에서 Enter를 누르면 다음 필드가 추가됩니다.</p>}
     </div>
   )
 }
@@ -1702,7 +1754,7 @@ function appendCond(cond: string | undefined, s: string): string {
  * 두 노드가 같은 SpEL 조건 UI 를 쓰므로 한 곳으로 통합(중복 제거). 노드별 안내는 children 으로.
  */
 function ConditionEditor({
-  label: lbl, ariaLabel, value, onChange, sources, placeholder, emptyWarn, children,
+  label: lbl, ariaLabel, value, onChange, sources, placeholder, emptyWarn, children, readOnly = false,
 }: {
   label: string
   ariaLabel: string
@@ -1712,37 +1764,40 @@ function ConditionEditor({
   placeholder: string
   emptyWarn: string
   children?: ReactNode
+  readOnly?: boolean
 }) {
   return (
     <>
       <label style={label}>{lbl}</label>
-      <TokenInput ariaLabel={ariaLabel} value={value ?? ''} onChange={onChange} sources={sources} placeholder={placeholder} />
-      <CondSnippets onInsert={(s) => onChange(appendCond(value, s))} />
+      <TokenInput readOnly={readOnly} ariaLabel={ariaLabel} value={value ?? ''} onChange={next => { if (!readOnly) onChange(next) }} sources={sources} placeholder={placeholder} />
+      <CondSnippets readOnly={readOnly} onInsert={(s) => { if (!readOnly) onChange(appendCond(value, s)) }} />
       {!((value ?? '').trim()) && <p style={{ ...hintP, color: 'var(--fl-put)', marginTop: 6 }}>{emptyWarn}</p>}
       {children}
     </>
   )
 }
 // IF/ASSERT 조건식 자주 쓰는 비교 스니펫 — 클릭하면 조건식 끝에 붙는다.
-function CondSnippets({ onInsert }: { onInsert: (s: string) => void }) {
+function CondSnippets({ onInsert, readOnly = false }: { onInsert: (s: string) => void; readOnly?: boolean }) {
   const snips = ['!= null', '== 200', '!= 404', "== '0000'", '== true']
   return (
     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 6 }}>
       <span style={{ fontSize: 11, color: 'var(--fl-text-muted)', alignSelf: 'center' }}>빠른 삽입:</span>
       {snips.map((s) => (
-        <button key={s} type="button" onClick={() => onInsert(s)} title={`조건식 끝에 "${s}" 추가`} style={snippetChip}>{s}</button>
+        <button key={s} type="button" disabled={readOnly} onClick={() => { if (!readOnly) onInsert(s) }} title={`조건식 끝에 "${s}" 추가`} style={snippetChip}>{s}</button>
       ))}
     </div>
   )
 }
 
-function OutputsEditor({ outputs, onChange, nodeId, usageOf, onGoto }: {
+function OutputsEditor({ outputs, onChange: applyChange, nodeId, usageOf, onGoto, readOnly = false }: {
   outputs: NodeOutput[]
   onChange: (o: NodeOutput[]) => void
   nodeId?: string
   usageOf?: (key: string) => Array<{ id: string; name: string }> // 하류 사용처(키/하위 경로 참조 노드)
   onGoto?: (nodeId: string) => void
+  readOnly?: boolean
 }) {
+  const onChange = (next: NodeOutput[]) => { if (!readOnly) applyChange(next) }
   const upd = (i: number, patch: Partial<NodeOutput>) => onChange(outputs.map((o, idx) => (idx === i ? { ...o, ...patch } : o)))
   const [bulkOpen, setBulkOpen] = useState(false)
   const [bulkText, setBulkText] = useState('')
@@ -1763,14 +1818,14 @@ function OutputsEditor({ outputs, onChange, nodeId, usageOf, onGoto }: {
     <div className="fl-editor-field-list">
       {outputs.map((o, i) => (
         <div key={i} className="fl-editor-field-row"><div className="fl-editor-field-main">
-          <input aria-label={`출력 키 ${i + 1}`}
+          <input readOnly={readOnly} aria-label={`출력 키 ${i + 1}`}
             style={{ ...mono, flex: 1, minWidth: 0, ...(o.key.trim() && dup.has(o.key.trim()) ? { borderColor: 'var(--fl-put)', boxShadow: '0 0 0 1px var(--fl-put) inset' } : null) }}
             value={o.key} placeholder="키"
             title={o.key.trim() && dup.has(o.key.trim()) ? '중복 키 — 같은 키가 여러 번 선언돼 있습니다' : undefined}
             onChange={(e) => upd(i, { key: e.target.value })}
-            onKeyDown={(e) => { if (e.key === 'Enter' && i === outputs.length - 1) { e.preventDefault(); onChange([...outputs, { key: '', type: 'string' }]) } }}
+            onKeyDown={(e) => { if (e.key === 'Enter' && !e.nativeEvent.isComposing && e.keyCode !== 229 && i === outputs.length - 1) { e.preventDefault(); onChange([...outputs, { key: '', type: 'string' }]) } }}
           />
-          <select aria-label={`출력 타입 ${i + 1}`} style={{ ...field, width: 96 }} value={o.type ?? 'string'} onChange={(e) => upd(i, { type: e.target.value })}>
+          <select disabled={readOnly} aria-label={`출력 타입 ${i + 1}`} style={{ ...field, width: 96 }} value={o.type ?? 'string'} onChange={(e) => upd(i, { type: e.target.value })}>
             {OUTPUT_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
           </select>
           </div><div className="fl-editor-field-actions">
@@ -1820,25 +1875,25 @@ function OutputsEditor({ outputs, onChange, nodeId, usageOf, onGoto }: {
               </span>
             )
           })()}
-          <RowMove i={i} len={outputs.length} onMove={(d) => onChange(moveInList(outputs, i, d))} />
-          <button onClick={() => onChange(outputs.filter((_, idx) => idx !== i))} aria-label="삭제" title="삭제" style={{ ...ui.icon, width: 26, height: 26 }}><AppIcon name="close" size={14} /></button>
+          {!readOnly && <RowMove i={i} len={outputs.length} onMove={(d) => onChange(moveInList(outputs, i, d))} />}
+          <button disabled={readOnly} onClick={() => onChange(outputs.filter((_, idx) => idx !== i))} aria-label="삭제" title="삭제" style={{ ...ui.icon, width: 26, height: 26 }}><AppIcon name="close" size={14} /></button>
           </div>
         </div>
       ))}
       <div style={{ display: 'flex', gap: 6 }}>
-        <button onClick={() => onChange([...outputs, { key: '', type: 'string' }])} style={addDashed}>+ 출력 항목</button>
+        <button disabled={readOnly} onClick={() => onChange([...outputs, { key: '', type: 'string' }])} style={addDashed}>+ 출력 항목</button>
         <button onClick={() => setBulkOpen((v) => !v)} style={addDashed} title="키 나열(쉼표/줄바꿈) 또는 샘플 JSON 응답을 붙여넣어 한꺼번에 추가">여러 키 추가</button>
       </div>
       {bulkOpen && (
         <div style={{ marginTop: 6 }}>
-          <textarea
+          <textarea readOnly={readOnly}
             value={bulkText} onChange={(e) => setBulkText(e.target.value)} autoFocus
             placeholder={'code, tid, message\n또는 샘플 JSON 응답 붙여넣기 → 키+타입 자동'}
             aria-label="여러 키 추가"
             style={{ ...mono, width: '100%', minHeight: 72, resize: 'vertical', boxSizing: 'border-box' }}
           />
           <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
-            <button onClick={applyBulk} style={{ padding: '6px 12px', border: 'none', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-action-primary-bg)', color: 'var(--fl-action-primary-ink)', cursor: 'pointer', fontSize: 12, fontWeight: 600 }}>추가</button>
+            <button disabled={readOnly} onClick={applyBulk} style={{ padding: '6px 12px', border: 'none', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-action-primary-bg)', color: 'var(--fl-action-primary-ink)', cursor: 'pointer', fontSize: 12, fontWeight: 600 }}>추가</button>
             <button onClick={() => { setBulkOpen(false); setBulkText('') }} style={{ padding: '6px 12px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'transparent', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 12 }}>취소</button>
           </div>
         </div>
@@ -1847,7 +1902,8 @@ function OutputsEditor({ outputs, onChange, nodeId, usageOf, onGoto }: {
   )
 }
 
-function VarsEditor({ vars, onChange, sources, sourceType }: { vars: NodeVar[]; onChange: (v: NodeVar[]) => void; sources: BindableSource[]; sourceType: (b: Binding) => string | undefined }) {
+function VarsEditor({ vars, onChange: applyChange, sources, sourceType, readOnly = false }: { vars: NodeVar[]; onChange: (v: NodeVar[]) => void; sources: BindableSource[]; sourceType: (b: Binding) => string | undefined; readOnly?: boolean }) {
+  const onChange = (next: NodeVar[]) => { if (!readOnly) applyChange(next) }
   // 시크릿 행은 마스킹(password) 유지가 우선이라 인라인 칩 대신 기존 [값|칩 + { }] 방식을 유지한다.
   const [pickVar, setPickVar] = useState<string | null>(null)
   const [revealed, setRevealed] = useState<Set<string>>(new Set())
@@ -1858,23 +1914,23 @@ function VarsEditor({ vars, onChange, sources, sourceType }: { vars: NodeVar[]; 
       <label style={label}>변수</label>
       {vars.map((v, vi) => (
         <div key={v.id} style={{ display: 'flex', gap: 6, marginBottom: 6, alignItems: 'center' }}>
-          <input style={{ ...mono, flex: 1 }} value={v.key} placeholder="key" onChange={(e) => upd(v.id, { key: e.target.value })}
-            onKeyDown={(e) => { if (e.key === 'Enter' && vi === vars.length - 1) { e.preventDefault(); onChange([...vars, { id: newId(), key: '', value: '', secret: false }]) } }} />
+          <input readOnly={readOnly} style={{ ...mono, flex: 1 }} value={v.key} placeholder="key" onChange={(e) => upd(v.id, { key: e.target.value })}
+            onKeyDown={(e) => { if (e.key === 'Enter' && !e.nativeEvent.isComposing && e.keyCode !== 229 && vi === vars.length - 1) { e.preventDefault(); onChange([...vars, { id: newId(), key: '', value: '', secret: false }]) } }} />
           {v.secret ? (
             v.bound ? (
-              <div style={{ flex: 1 }}><BindingChip binding={v.bound} sourceType={sourceType(v.bound)} onRemove={() => upd(v.id, { bound: null })} onClick={() => setPickVar(v.id)} /></div>
+              <div style={{ flex: 1 }}><BindingChip binding={v.bound} sourceType={sourceType(v.bound)} onRemove={readOnly ? undefined : () => upd(v.id, { bound: null })} onClick={readOnly ? undefined : () => setPickVar(v.id)} /></div>
             ) : (
               <>
-                <input style={{ ...mono, flex: 1 }} type={revealed.has(v.id) ? 'text' : 'password'} value={v.value ?? ''} placeholder="value" onChange={(e) => upd(v.id, { value: e.target.value })} />
+                <input readOnly={readOnly} style={{ ...mono, flex: 1 }} type={revealed.has(v.id) ? 'text' : 'password'} value={v.value ?? ''} placeholder="value" onChange={(e) => upd(v.id, { value: e.target.value })} />
                 <button onClick={() => toggleReveal(v.id)} title={revealed.has(v.id) ? '값 숨기기' : '값 보기'} aria-label={revealed.has(v.id) ? '값 숨기기' : '값 보기'} style={braceBtn}>{revealed.has(v.id) ? '숨김' : '보기'}</button>
-                <button onClick={() => setPickVar(v.id)} title="데이터 삽입" style={braceBtn}><DataInsertIcon /></button>
+                <button disabled={readOnly} onClick={() => setPickVar(v.id)} title="데이터 삽입" style={braceBtn}><DataInsertIcon /></button>
               </>
             )
           ) : v.bound && !isTokenizable(v.bound) ? (
-            <div style={{ flex: 1 }}><BindingChip binding={v.bound} sourceType={sourceType(v.bound)} onRemove={() => upd(v.id, { bound: null })} /></div>
+            <div style={{ flex: 1 }}><BindingChip binding={v.bound} sourceType={sourceType(v.bound)} onRemove={readOnly ? undefined : () => upd(v.id, { bound: null })} /></div>
           ) : (
             <div style={{ flex: 1, minWidth: 0, display: 'flex' }}>
-              <TokenInput
+              <TokenInput readOnly={readOnly}
                 ariaLabel={`변수 ${v.key || 'value'}`}
                 value={v.bound ? bindingToToken(v.bound) : (v.value ?? '')}
                 onChange={(val) => upd(v.id, { value: val, bound: null })}
@@ -1884,15 +1940,15 @@ function VarsEditor({ vars, onChange, sources, sourceType }: { vars: NodeVar[]; 
             </div>
           )}
           <label title="시크릿(마스킹)" style={{ fontSize: 11, color: 'var(--fl-text-muted)', display: 'flex', alignItems: 'center', gap: 3 }}>
-            <input type="checkbox" checked={!!v.secret} onChange={(e) => upd(v.id, { secret: e.target.checked })} />시크릿
+            <input disabled={readOnly} type="checkbox" checked={!!v.secret} onChange={(e) => upd(v.id, { secret: e.target.checked })} />시크릿
           </label>
-          <button onClick={() => onChange(vars.filter((x) => x.id !== v.id))} aria-label="삭제" style={{ width: 28, border: '1px solid var(--fl-border)', borderRadius: 6, background: 'var(--fl-surface)', cursor: 'pointer' }}>×</button>
+          <button disabled={readOnly} onClick={() => onChange(vars.filter((x) => x.id !== v.id))} aria-label="삭제" style={{ width: 28, border: '1px solid var(--fl-border)', borderRadius: 6, background: 'var(--fl-surface)', cursor: 'pointer' }}>×</button>
           {pickVar === v.id && (
             <BindingPicker sources={sources} onClose={() => setPickVar(null)} onPick={(b) => { upd(v.id, { bound: b, value: '' }); setPickVar(null) }} />
           )}
         </div>
       ))}
-      <button onClick={() => onChange([...vars, { id: newId(), key: '', value: '', secret: false }])} style={addDashed}>+ 변수 추가</button>
+      <button disabled={readOnly} onClick={() => onChange([...vars, { id: newId(), key: '', value: '', secret: false }])} style={addDashed}>+ 변수 추가</button>
     </>
   )
 }
@@ -1917,11 +1973,9 @@ function RowMove({ i, len, onMove }: { i: number; len: number; onMove: (dir: -1 
 
 const shell: CSSProperties = { flexShrink: 0, background: 'var(--fl-surface)', display: 'flex', flexDirection: 'column', height: '100%' }
 // 전체화면 모달 2단 레이아웃 — 요청(좌) | 응답(우) 워크벤치
-const twoColGrid: CSSProperties = { display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', columnGap: 44, alignItems: 'start', marginTop: 8 }
 // 칼럼 제목은 안쪽 섹션 제목(12.5px)보다 강하게 — 위계 역전 방지
 const colHead: CSSProperties = { fontSize: 13, fontWeight: 800, color: 'var(--fl-text)', letterSpacing: '.04em', paddingBottom: 9, marginTop: 10, borderBottom: '2px solid var(--fl-border)' }
 // 워크벤치 URL 바 — [메서드 | Base URL | Path | ▶ 실행] 한 줄(포스트맨 어휘)
-const wbBar: CSSProperties = { display: 'flex', gap: 8, alignItems: 'stretch', margin: '12px 0 4px' }
 const wbRunBtn: CSSProperties = { ...ui.primary, alignSelf: 'flex-start', flexShrink: 0, minWidth: 96 }
 // 응답 패널 빈 상태 — 아직 실행 전
 const respEmpty: CSSProperties = { padding: '22px 16px', border: '1px dashed var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', color: 'var(--fl-text-muted)', fontSize: 13, textAlign: 'center', lineHeight: 1.6 }
@@ -1950,7 +2004,7 @@ const portTag: CSSProperties = { flexShrink: 0, fontSize: 11, fontWeight: 700, f
 // HTTP 요청 3파트 통합 — 탭 대신 항상 보이는 접을 수 있는 섹션(쿼리/헤더/본문/응답)
 const secHeadBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, border: 'none', background: 'transparent', color: 'var(--fl-text)', cursor: 'pointer', fontSize: 13, fontWeight: 700, padding: 0 }
 const secBadge: CSSProperties = { marginLeft: 4, fontSize: 11, fontFamily: 'var(--fl-font-mono)', color: 'var(--fl-primary)', fontWeight: 600 }
-const ctChip: CSSProperties = { fontSize: 11, fontFamily: 'var(--fl-font-mono)', color: 'var(--fl-text-muted)', background: 'var(--fl-surface-2)', border: '1px solid var(--fl-border)', borderRadius: 6, padding: '2px 6px', whiteSpace: 'nowrap', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis' }
+const ctChip: CSSProperties = { display: 'inline-block', fontSize: 11, fontFamily: 'var(--fl-font-mono)', color: 'var(--fl-text-muted)', background: 'var(--fl-surface-2)', border: '1px solid var(--fl-border)', borderRadius: 6, padding: '2px 6px', whiteSpace: 'nowrap', maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis' }
 function HttpSection({ fixed, hidden, title, badge, open, onToggle, right, children }: {
   fixed?: boolean; hidden?: boolean; title: string; badge?: string; open: boolean; onToggle: () => void; right?: ReactNode; children: ReactNode
 }) {
@@ -1969,7 +2023,7 @@ function HttpSection({ fixed, hidden, title, badge, open, onToggle, right, child
     </div>
   )
 }
-const miniSeg: CSSProperties = { display: 'inline-flex', gap: 2, background: 'var(--fl-surface-2)', borderRadius: 6, padding: 2, flexShrink: 0 }
+const miniSeg: CSSProperties = { display: 'inline-flex', flexWrap: 'wrap', minWidth: 0, maxWidth: '100%', gap: 2, background: 'var(--fl-surface-2)', borderRadius: 6, padding: 2, flexShrink: 0 }
 function miniSegBtn(active: boolean): CSSProperties {
   return {
     padding: '5px 12px', border: 'none', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer',

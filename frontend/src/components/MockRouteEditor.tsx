@@ -40,7 +40,8 @@ export function RouteCard({ base, ensureSaved, mockId, spec, secrets, envs, rout
   onGoCodec?: () => void                             // 코덱 화면으로 이동
 }) {
   const { mocksApi } = useApi()
-  const pluginsAllowed = useWorkspace().current.origin === 'server'
+  useWorkspace()
+  const pluginsAllowed = true
 
   const setRule = (i: number, u: MockRuleSpec) => onChange({ ...route, rules: route.rules.map((x, xi) => (xi === i ? u : x)) })
   const dupRule = (i: number) => {
@@ -59,11 +60,14 @@ export function RouteCard({ base, ensureSaved, mockId, spec, secrets, envs, rout
   // 이 라우트 원클릭 테스트 — 경로 파라미터/예상 요청 예시값으로 mock 에 실제 요청
   const [test, setTest] = useState<{ status: number; body: string; rule?: string | null } | string | null>(null)
   const [testing, setTesting] = useState(false)
+  const testingRef = useRef(false)
   const runTest = async (rule?: MockRuleSpec) => {
+    if (testingRef.current) return
+    testingRef.current = true
     // 테스트는 저장된 mock 을 호출하므로 미저장 편집을 먼저 반영(아니면 stale 상태 테스트)
-    if (!(await ensureSaved())) return
     setTesting(true); setTest(null)
     try {
+      if (!(await ensureSaved())) return
       const req = buildSampleRequest(route, rule)
       const method = route.method === 'ANY' ? 'POST' : route.method
       const hasBody = method !== 'GET' && method !== 'HEAD'
@@ -76,7 +80,7 @@ export function RouteCard({ base, ensureSaved, mockId, spec, secrets, envs, rout
       }
       setTest({ status: res.status, body: text, rule: matched })
     } catch (e) { setTest(e instanceof Error ? e.message : String(e)) }
-    finally { setTesting(false) }
+    finally { testingRef.current = false; setTesting(false) }
   }
   const condCount = route.rules.reduce((a, r) => a + (r.when?.length ?? 0), 0)
   const badges: string[] = []
@@ -260,10 +264,16 @@ function RuleCard({ rule, index, total, route, sources, readOnly, codec, onCodec
   const [pick, setPick] = useState<'body' | 'cb' | null>(null) // 여러 줄 본문의 { } 데이터 삽입
   const bodyRef = useRef<HTMLTextAreaElement>(null)
   const cbRef = useRef<HTMLTextAreaElement>(null)
+  const collapsedValue = useRef('')
   const conds = rule.when ?? []
   const setCond = (i: number, c: MockCond) => onChange({ ...rule, when: conds.map((x, xi) => (xi === i ? c : x)) })
   const cb = rule.callback ?? {}
   const setCb = (patch: Partial<typeof cb>) => onChange({ ...rule, callback: { ...cb, ...patch } })
+  const openBig = (target: 'body' | 'cb') => {
+    // 모달 뒤 textarea만 고정한다. 원문·저장·큰 편집기는 계속 최신 값을 사용한다.
+    collapsedValue.current = (target === 'body' ? rule.body : cb.body) ?? ''
+    setBig(target)
+  }
   const headers = rule.headers ?? []
   const condListId = (i: number) => `cond-keys-${rule.id}-${i}`
   const respKeys = useMemo(() => responseBodyKeys(rule), [rule])
@@ -334,7 +344,7 @@ function RuleCard({ rule, index, total, route, sources, readOnly, codec, onCodec
           ref={bodyRef}
           aria-label={`규칙 ${index + 1} 응답 본문`}
           style={{ ...input, width: '100%', minHeight: 74, fontFamily: 'var(--fl-font-mono)', fontSize: 12, resize: 'vertical', boxSizing: 'border-box', paddingRight: 64 }}
-          value={rule.body ?? ''}
+          value={big === 'body' ? collapsedValue.current : rule.body ?? ''}
           disabled={readOnly}
           placeholder={'응답 본문 — 예: {"orderId":"{{ orderId@body }}","status":"{{ status@state }}"}'}
           onChange={(e) => onChange({ ...rule, body: e.target.value })}
@@ -342,7 +352,7 @@ function RuleCard({ rule, index, total, route, sources, readOnly, codec, onCodec
         {!readOnly && sources.length > 0 && (
           <button onClick={() => setPick('body')} title="데이터 삽입(요청 값·상태·시크릿)" aria-label="본문 데이터 삽입" style={{ ...braceBtn, position: 'absolute', right: 34, top: 6 }}><DataInsertIcon /></button>
         )}
-        <ExpandCorner onClick={() => setBig('body')} label="응답 본문 크게 편집" />
+        <ExpandCorner onClick={() => openBig('body')} label="응답 본문 크게 편집" />
       </div>
       {/* 응답 JSON 키 — 나갈 때 감쌀 필드(암호화·인코딩)는 여기서 ◈ */}
       {respKeys.length > 0 && (
@@ -406,7 +416,7 @@ function RuleCard({ rule, index, total, route, sources, readOnly, codec, onCodec
                 ref={cbRef}
                 aria-label={`규칙 ${index + 1} 콜백 본문`}
                 style={{ ...input, width: '100%', minHeight: 46, fontFamily: 'var(--fl-font-mono)', fontSize: 12, resize: 'vertical', boxSizing: 'border-box', paddingRight: 64 }}
-                value={cb.body ?? ''}
+                value={big === 'cb' ? collapsedValue.current : cb.body ?? ''}
                 disabled={readOnly}
                 placeholder="콜백 본문(urlencoded) — 예: resultCode=0000&orderId={{ orderId@body }}"
                 onChange={(e) => setCb({ body: e.target.value })}
@@ -414,7 +424,7 @@ function RuleCard({ rule, index, total, route, sources, readOnly, codec, onCodec
               {!readOnly && sources.length > 0 && (
                 <button onClick={() => setPick('cb')} title="데이터 삽입" aria-label="콜백 본문 데이터 삽입" style={{ ...braceBtn, position: 'absolute', right: 34, top: 6 }}><DataInsertIcon /></button>
               )}
-              <ExpandCorner onClick={() => setBig('cb')} label="콜백 본문 크게 편집" />
+              <ExpandCorner onClick={() => openBig('cb')} label="콜백 본문 크게 편집" />
             </div>
           </div>
         )}
@@ -435,6 +445,7 @@ function RuleCard({ rule, index, total, route, sources, readOnly, codec, onCodec
       {big === 'body' && (
         <BigTextEditor
           title={`규칙 ${index + 1}/${total} — 응답 본문 크게 편집`}
+          readOnly={readOnly}
           value={rule.body ?? ''}
           onChange={(v) => onChange({ ...rule, body: v })}
           onClose={() => setBig(null)}
@@ -448,6 +459,7 @@ function RuleCard({ rule, index, total, route, sources, readOnly, codec, onCodec
       {big === 'cb' && (
         <BigTextEditor
           title={`규칙 ${index + 1}/${total} — 콜백 본문 크게 편집`}
+          readOnly={readOnly}
           value={cb.body ?? ''}
           onChange={(v) => setCb({ body: v })}
           onClose={() => setBig(null)}

@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type Context, type ReactNode } from 'react'
 import { hashKey, QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { createApi, localApi, serverApi, type WorkspaceApi, type WorkspaceView } from '../api/client'
@@ -14,6 +14,7 @@ interface Scope {
   api: WorkspaceApi
   scopeKey: string
   remoteKey: string
+  resourceIdentity?: { serverUrl: string; login: string | null }
   connected: boolean
   login: string | null
   remoteError: boolean
@@ -23,7 +24,10 @@ interface Scope {
   refresh: () => void
   agentApi: (origin: WorkspaceOrigin, workspaceId?: string) => WorkspaceApi
 }
-const WorkspaceContext = createContext<Scope | null>(null)
+// 개발 갱신 중 이전 화면과 새 Provider가 서로 다른 context를 읽지 않게 유지한다.
+const hotState = import.meta.hot?.data as { workspaceContext?: Context<Scope | null> } | undefined
+const WorkspaceContext = hotState?.workspaceContext ?? createContext<Scope | null>(null)
+if (hotState) hotState.workspaceContext = WorkspaceContext
 const storageKey = 'fl:workspace:selection'
 
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
@@ -67,7 +71,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     const legacyRuntime = params.has('runtime')
     params.delete('runtime')
     const fromUrl = params.get('space')?.match(/^(local|server):(.+)$/)
-    if (requested.origin === 'local' && requested.id === 'local' && localDefault) {
+    if (requested.origin === 'local' && requested.id === 'local' && localDefault && localDefault.id !== requested.id) {
       setSelection({ origin: 'local', id: localDefault.id })
       params.set('space', `local:${localDefault.id}`)
       navigate(workspaceLocation(location.pathname, params.toString(), location.hash), { replace: true, state: location.state })
@@ -90,9 +94,15 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const currentTransport = desktop && current.origin === 'server' ? serverApi : localApi
   const currentResourceBase = current.origin === 'server' ? serverUrl : undefined
   const currentLogin = desktop && current.origin === 'server' ? login : null
-  const api = useMemo(() => createApi(currentTransport, current.id, currentResourceBase, currentLogin), [currentTransport, current.id, currentResourceBase, currentLogin])
+  const ownedApi = useMemo(() => createApi(currentTransport, current.id, currentResourceBase, currentLogin), [currentTransport, current.id, currentResourceBase, currentLogin])
+  const api = useMemo(() => {
+    const owned = ownedApi
+    return { ...owned, secretsApi: remote.secretsApi, protocolsApi: remote.protocolsApi, pluginsApi: remote.pluginsApi, transformsApi: remote.transformsApi, codecsApi: remote.codecsApi }
+  }, [ownedApi, remote])
   // Each workspace owns a cache. Old async responses and invalidations cannot reach a newly selected workspace.
-  const queryClient = useMemo(() => new QueryClient({ defaultOptions: { queries: { refetchOnWindowFocus: false, retry: 1, queryKeyHashFn: key => hashKey([scopeKey, ...key]) } } }), [scopeKey])
+  const centralIdentity = useRef(remoteKey)
+  centralIdentity.current = remoteKey
+  const queryClient = useMemo(() => new QueryClient({ defaultOptions: { queries: { refetchOnWindowFocus: false, retry: 1, queryKeyHashFn: key => hashKey([scopeKey, ...(/^(secret|protocol|plugin|transform|codec)/.test(String(key[0])) ? [centralIdentity.current] : []), ...key]) } } }), [scopeKey])
   const select = (id: string, origin?: WorkspaceOrigin) => {
     const target = workspaces.find(w => w.id === id && (!origin || w.origin === origin))
     const next = { id, origin: target?.origin ?? origin ?? current.origin }
@@ -103,7 +113,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const agentApi = useCallback((origin: WorkspaceOrigin, workspaceId?: string) => createApi(desktop && origin === 'server' ? serverApi : localApi,
       origin === 'local' ? (workspaces.find(w => w.origin === 'local')?.id ?? 'local') : (workspaceId ?? (current.origin === 'server' ? current.id : 'public')),
       origin === 'server' ? serverUrl : undefined, desktop && origin === 'server' ? login : null), [desktop, workspaces, current.origin, current.id, serverUrl, login])
-  const value: Scope = { current, workspaces, api, scopeKey, remoteKey, connected, login, remoteError: remoteSpaces.isError, loading: current.origin === 'local' ? localSpaces.isLoading : remoteSpaces.isLoading, remoteLoading: remoteSpaces.isLoading,
+  const resourceIdentity = desktop && !(connection.data?.serverUrl ?? auth.desktop?.serverUrl) ? undefined : { serverUrl, login: desktop ? login : auth.me?.username ?? null }
+  const value: Scope = { current, workspaces, api, scopeKey, remoteKey, resourceIdentity, connected, login, remoteError: remoteSpaces.isError, loading: current.origin === 'local' ? localSpaces.isLoading : remoteSpaces.isLoading, remoteLoading: remoteSpaces.isLoading,
     select, refresh: () => { if (desktop) void localSpaces.refetch(); if (connected) void remoteSpaces.refetch() }, agentApi,
   }
   return <WorkspaceContext.Provider value={value}><QueryClientProvider key={scopeKey} client={queryClient}>{children}</QueryClientProvider></WorkspaceContext.Provider>
@@ -111,3 +122,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
 export function useWorkspace() { const scope = useContext(WorkspaceContext); if (!scope) throw new Error('워크스페이스가 준비되지 않았습니다.'); return scope }
 export function useApi() { return useWorkspace().api }
+export function useCentralApi() {
+  const { agentApi } = useWorkspace()
+  const central = useMemo(() => agentApi('server', 'public'), [agentApi])
+  return central
+}

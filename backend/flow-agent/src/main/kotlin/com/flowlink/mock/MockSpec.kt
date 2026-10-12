@@ -20,7 +20,10 @@ data class MockSpec(
      * 시크릿 스코프 — 이 Mock 이 `{{ 이름@secret }}` 를 풀 때 쓰는 시크릿 환경 이름(dev/staging/prod).
      * 없으면 공통 시크릿만. 서빙은 서버에서 도니 브라우저 활성 환경과 무관(Mock 별 설정). 환경 변수({{키@env}})는 Mock 에 없음(사용자 결정).
      */
-    val environment: String? = null
+    val environment: String? = null,
+    @get:com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL) val resourceWorkspaceId: String? = null,
+    @get:com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL) val resourceIdentity: com.flowlink.agent.CentralResourceIdentity? = null,
+    @get:com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL) val envSource: String? = null,
 ) {
     fun routesOrEmpty(): List<MockRoute> = routes ?: emptyList()
 

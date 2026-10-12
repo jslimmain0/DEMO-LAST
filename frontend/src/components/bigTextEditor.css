@@ -1,0 +1,10 @@
+.fl-big-text-body { display: flex; flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
+.fl-big-text-input { display: flex; flex-direction: column; flex: 1; min-height: 0; min-width: 0; }
+.fl-big-text-preview { display: flex; flex-direction: column; flex: 0 0 46%; min-height: 0; min-width: 0; border-left: 1px solid var(--fl-border); background: var(--fl-surface-2); }
+.fl-big-text-samples { max-height: 180px; }
+@container (max-width: 740px) {
+  .fl-big-text-body { flex-direction: column; }
+  .fl-big-text-input { flex: 1 1 52%; min-height: 120px; }
+  .fl-big-text-preview { flex: 1 1 48%; border-left: 0; border-top: 1px solid var(--fl-border); }
+  .fl-big-text-samples { max-height: 90px; }
+}

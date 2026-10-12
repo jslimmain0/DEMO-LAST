@@ -4,6 +4,11 @@ import com.fasterxml.jackson.databind.JsonNode
 import com.flowlink.common.error.BadRequestException
 import com.flowlink.common.error.ForbiddenException
 import com.flowlink.common.error.NotFoundException
+import com.flowlink.agent.CentralResourceIdentity
+import com.flowlink.common.host.LocalServerResources
+import com.flowlink.common.host.CentralCodecDescriptor
+import com.flowlink.common.host.CentralProtocolSnapshot
+import com.flowlink.codec.CodecPlugin
 import com.flowlink.common.json.JsonService
 import com.flowlink.common.tcp.TcpBytes
 import com.flowlink.common.tenant.TenantContext
@@ -26,6 +31,7 @@ class ProtocolService(
     private val scopes: com.flowlink.mock.MockSecretProvider,
     private val events: ApplicationEventPublisher,
     private val resourceWorkspace: com.flowlink.workspace.ResourceWorkspace,
+    private val localServerResources: org.springframework.beans.factory.ObjectProvider<LocalServerResources>? = null,
 ) : ProtocolResources {
     private fun tenant(): String = TenantContext.getTenantId()
     private fun requireApproved() { if (!workspace.isApproved(workspace.currentUsername())) throw ForbiddenException("프로토콜 변경은 가입 승인 후 가능합니다.") }
@@ -49,9 +55,33 @@ class ProtocolService(
 
     override fun plugins(workspaceId: UUID?): ProtocolCodec.PluginLookup = ProtocolCodec.PluginLookup { transforms.codec(it, workspaceId) }
 
+    override fun plugins(workspaceId: UUID?, resourceIdentity: CentralResourceIdentity?): ProtocolCodec.PluginLookup =
+        if (central(workspaceId, resourceIdentity)) CentralProtocolCodecs(serverResources(), resourceIdentity!!).lookup()
+        else plugins(workspaceId)
+
     @Transactional(readOnly = true)
     override fun spec(reference: String, workspaceId: UUID?): ProtocolSpec =
         specOf(resolveId(reference, workspaceId), workspaceId = workspaceId)
+
+    override fun spec(reference: String, workspaceId: UUID?, resourceIdentity: CentralResourceIdentity?): ProtocolSpec =
+        if (central(workspaceId, resourceIdentity)) serverResources().protocolSpec(reference, resourceIdentity!!)
+        else spec(reference, workspaceId)
+
+    override fun snapshot(reference: String, workspaceId: UUID?, resourceIdentity: CentralResourceIdentity?): ResolvedProtocol {
+        if (!central(workspaceId, resourceIdentity)) return capture(reference, workspaceId).let {
+            ResolvedProtocol(it.spec, ProtocolCodec.PluginLookup { id -> it.codecs[id] }, it.fingerprint)
+        }
+        val server = serverResources()
+        val captured = server.protocolSnapshot(reference, resourceIdentity!!)
+        if (captured.fingerprint != fingerprintOf(captured.spec, captured.codecs))
+            throw IllegalStateException("서버 전문·코덱 버전 응답이 일치하지 않습니다.")
+        return ResolvedProtocol(captured.spec, CentralProtocolCodecs(server, resourceIdentity).lookup(captured.codecs), captured.fingerprint)
+    }
+
+    private fun central(workspaceId: UUID?, identity: CentralResourceIdentity?): Boolean =
+        workspace.localRuntime && workspaceId == null && identity != null
+    private fun serverResources(): LocalServerResources = localServerResources?.ifAvailable
+        ?: throw IllegalStateException("서버 프로토콜 연결이 준비되지 않았습니다.")
 
     private fun summary(p: Protocol): ProtocolDtos.Summary {
         val s = try { json.mapper().readValue(p.specJson, ProtocolSpec::class.java) } catch (e: Exception) { ProtocolSpec() }
@@ -83,17 +113,38 @@ class ProtocolService(
     @Transactional(readOnly = true)
     fun canonicalReference(reference: String, workspaceId: UUID? = null): String = repo.findById(resolveId(reference, workspaceId)).orElseThrow().name
 
+    private data class CapturedProtocol(val spec: ProtocolSpec, val codecs: Map<String, CodecPlugin>, val descriptors: List<CentralCodecDescriptor>, val fingerprint: String)
+
+    /** spec과 실제 구현/승인 버전을 함께 복사한다. 이후 registry가 바뀌어도 이 snapshot은 바뀌지 않는다. */
+    private fun capture(reference: String, workspaceId: UUID?): CapturedProtocol = synchronized(transforms) {
+        val spec = specOf(resolveId(reference, workspaceId), workspaceId = workspaceId)
+        val ids = ((spec.headerOrEmpty() + spec.messagesOrEmpty().flatMap { it.fieldsOrEmpty() }).mapNotNull { it.plugin?.id }
+            + spec.messagePlugins.orEmpty().mapNotNull { it.id }).distinct().sorted()
+        val codecs = ids.associateWith { id -> transforms.codec(id, workspaceId)
+            ?: throw NotFoundException("전문이 사용하는 코덱이 이 워크스페이스에 없습니다: $id") }
+        val descriptors = ids.map { id ->
+            val codec = codecs.getValue(id)
+            CentralCodecDescriptor(id, codec.label(), if (codec is com.flowlink.codec.MessageCodec) "message" else "field",
+                transforms.fingerprint(id, workspaceId) ?: throw NotFoundException("전문 코덱 승인 버전이 없습니다: $id"))
+        }
+        CapturedProtocol(spec, codecs, descriptors, fingerprintOf(spec, descriptors))
+    }
+
+    private fun fingerprintOf(spec: ProtocolSpec, descriptors: List<CentralCodecDescriptor>): String =
+        ProtocolFingerprint.of(spec, descriptors.associate { it.id to it.fingerprint })
+
     /** 실제로 실행되는 스키마와 승인된 필드/메시지 코덱을 함께 고정한다. */
     @Transactional(readOnly = true)
-    fun fingerprint(reference: String, workspaceId: UUID? = null): String {
-        val spec = specOf(resolveId(reference, workspaceId), workspaceId = workspaceId)
-        val pluginIds = (spec.headerOrEmpty() + spec.messagesOrEmpty().flatMap { it.fieldsOrEmpty() }).mapNotNull { it.plugin?.id } + spec.messagePlugins.orEmpty().mapNotNull { it.id }
-        val dependencies = pluginIds.distinct().sorted().associateWith { id ->
-            transforms.fingerprint(id, workspaceId) ?: throw NotFoundException("전문이 사용하는 코덱이 이 워크스페이스에 없습니다: $id")
-        }
-        val canonical = json.mapper().copy().configure(com.fasterxml.jackson.databind.SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS, true).writeValueAsBytes(mapOf("spec" to spec, "codecs" to dependencies))
-        return java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(canonical))
+    fun fingerprint(reference: String, workspaceId: UUID? = null): String = capture(reference, workspaceId).fingerprint
+
+    @Transactional(readOnly = true)
+    fun resourceSnapshot(reference: String, workspaceId: UUID? = null): CentralProtocolSnapshot = capture(reference, workspaceId).let {
+        CentralProtocolSnapshot(it.spec, it.descriptors, it.fingerprint)
     }
+
+    fun fingerprint(reference: String, workspaceId: UUID?, resourceIdentity: CentralResourceIdentity?): String =
+        if (central(workspaceId, resourceIdentity)) serverResources().protocolFingerprint(reference, resourceIdentity!!)
+        else fingerprint(reference, workspaceId)
 
     @Transactional
     fun create(name: String?, spec: JsonNode?, workspaceId: String? = null): ProtocolDtos.Detail {

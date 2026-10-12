@@ -115,7 +115,7 @@ class EnvironmentService(
     private fun runInputKey(flowId: UUID) = "runinput:$flowId"
 
     private fun flowWorkspace(flowId: UUID, write: Boolean): UUID? {
-        val flow = flows.findByIdAndTenantId(flowId, tenant()).orElseThrow { BadRequestException("워크플로가 없습니다: $flowId") }
+        val flow = flows.findByIdAndTenantId(flowId, TenantContext.SHARED_FLOW_TENANT).orElseThrow { BadRequestException("워크플로가 없습니다: $flowId") }
         val me = workspace.currentUsername()
         if (write) workspace.requireWrite(me, flow.workspaceId) else workspace.requireRead(me, flow.workspaceId)
         return flow.workspaceId

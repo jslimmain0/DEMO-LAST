@@ -8,12 +8,12 @@ import { Link } from 'react-router-dom'
 import type { MockTcpCond, MockTcpFault, MockTcpRuleSpec, MockTcpSpec, ProtocolField, ProtocolSpec, TcpLogEntry, TcpSendResult } from '../api/types'
 
 import { TokenInput } from '../binding/TokenInput'
+import type { BindableSource } from '../binding/upstream'
 import { apiErrorMessage } from '../lib/apiError'
 import { toast } from './toast'
 import { relTime } from '../lib/format'
 import { byteLen, lintTcpRules, requestKeys, withOffsets } from '../lib/protocolSpec'
 import { tcpMockSources } from '../lib/mockSources'
-import { useVaultSources } from '../lib/vaultSources'
 import { FieldRow, PreviewBox } from '../panels/TcpNodePanel'
 import { ui } from '../design/ui'
 
@@ -57,12 +57,10 @@ export function tcpRuleSummary(rule: MockTcpRuleSpec, spec: ProtocolSpec | undef
 
 // ---------- 연결 ----------
 
-export function TcpConnPanel({ tcp, environment, readOnly, onChange }: { tcp: MockTcpSpec; environment?: string | null; readOnly?: boolean; onChange: (patch: Partial<MockTcpSpec>) => void }) {
+export function TcpConnPanel({ tcp, sources, address, readOnly, onChange }: { tcp: MockTcpSpec; sources: BindableSource[]; address: string; readOnly?: boolean; onChange: (patch: Partial<MockTcpSpec>) => void }) {
   const { protocolsApi } = useApi()
 
-  const vault = useVaultSources(environment) // upstream 주소도 환경마다 다르다 — {{ 키@env }}·{{ 이름@secret }}
   const protos = useQuery({ queryKey: ['protocols'], queryFn: protocolsApi.list, staleTime: 15_000 })
-  const addr = `${window.location.hostname || 'localhost'}:${tcp.port ?? 9091}`
   return (
     <section style={panel}>
       <h2 style={h2}>연결 <span style={{ fontWeight: 400, fontSize: 12, color: 'var(--fl-text-muted)' }}>(포트 · 프로토콜 · 실서버)</span></h2>
@@ -83,13 +81,14 @@ export function TcpConnPanel({ tcp, environment, readOnly, onChange }: { tcp: Mo
             onChange={(e) => onChange({ protocolId: e.target.value || null })}>
             <option value="">— 선택 —</option>
             {(protos.data ?? []).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            {tcp.protocolId && !protos.data?.some(p => p.id === tcp.protocolId) && <option value={tcp.protocolId}>{tcp.protocolId} · 서버 공통 자원에서 존재 확인 필요</option>}
           </select>
           <Link to={tcp.protocolId ? `/protocols/${tcp.protocolId}` : '/protocols'} style={linkStyle}>관리 →</Link>
         </div>
         <div style={row}>
           <span style={{ ...lbl, minWidth: 96 }}>실서버(upstream)</span>
           <span style={{ display: 'flex', width: 220 }}>
-            <TokenInput ariaLabel="upstream host:port" value={tcp.upstream ?? ''} sources={vault} placeholder="10.20.3.14:9600"
+            <TokenInput ariaLabel="upstream host:port" value={tcp.upstream ?? ''} sources={sources} readOnly={readOnly} placeholder="10.20.3.14:9600"
               onChange={(v) => onChange({ upstream: v.trim() || null })} />
           </span>
           <span style={meta}>proxy 규칙이 넘길 실서버 — 비워 두면 mock 응답만</span>
@@ -102,10 +101,11 @@ export function TcpConnPanel({ tcp, environment, readOnly, onChange }: { tcp: Mo
         </div>
         <div style={row}>
           <span style={{ ...lbl, minWidth: 96 }}>리스닝 주소</span>
-          <input readOnly value={addr} onFocus={(e) => e.currentTarget.select()} aria-label="리스닝 주소" style={{ ...input, width: 220, fontFamily: 'var(--fl-font-mono)' }} />
+          <input readOnly value={address} onFocus={(e) => e.currentTarget.select()} aria-label="리스닝 주소" style={{ ...input, width: 220, fontFamily: 'var(--fl-font-mono)' }} />
           <span style={meta}>워크플로 TCP 노드의 대상</span>
         </div>
       </div>
+      {protos.isError && <p role="alert" style={hint}>서버 공통 프로토콜을 불러오지 못했습니다. {apiErrorMessage(protos.error, '프로토콜 조회 실패')} <button type="button" style={miniBtn} onClick={() => void protos.refetch()}>다시 불러오기</button></p>}
     </section>
   )
 }

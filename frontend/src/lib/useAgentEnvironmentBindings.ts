@@ -2,7 +2,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useWorkspace } from '../app/WorkspaceContext'
 import { useAuth } from '../auth/AuthContext'
 import { desktopApi, type EnvironmentBindings } from '../auth/desktop'
-import { useEnvStore } from './environments'
+import { useEnvStore, useEnvironment } from './environments'
 const drafts = new Map<string, EnvironmentBindings & { dirty?: boolean }>()
 if (typeof window !== 'undefined') window.addEventListener('beforeunload', event => {
   if (![...drafts.values()].some(draft => draft.dirty)) return
@@ -14,11 +14,12 @@ export function useAgentEnvironmentBindings() {
   const workspace = useWorkspace()
   const auth = useAuth()
   const environment = useEnvStore()
+  const environmentStore = useEnvironment()
   const queryClient = useQueryClient()
   const connection = useQuery({ queryKey: ['desktop', 'connection'], queryFn: desktopApi.connection, enabled: !!auth.desktop, refetchInterval: 3000, retry: false })
   const identity = auth.desktop ? connection.data : undefined
   const identityReady = auth.ready && (auth.desktop ? connection.isSuccess : !!auth.me?.username)
-  const owner = { origin: workspace.current.origin, workspaceId: workspace.current.id, environment: environment.active }
+  const owner = { origin: workspace.current.origin, workspaceId: workspace.current.id, environment: `${environmentStore.origin ?? workspace.current.origin}:${environment.active ?? ''}` }
   const key = ['agent-environment-bindings', owner.origin, owner.workspaceId, owner.environment, auth.desktop ? identity?.serverUrl ?? '' : window.location.origin, auth.desktop ? identity?.login ?? '' : auth.me?.username ?? ''] as const
   const draftKey = JSON.stringify(key)
   const loaded = useQuery({ queryKey: key, queryFn: async () => {

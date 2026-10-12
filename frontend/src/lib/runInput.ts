@@ -9,6 +9,7 @@ const { runInputApi } = api
 let flowId: string | null = null
 let vars: Record<string, string> = {}
 let saved: Record<string, string> = {}
+let revision = 0
 let flushTimer: ReturnType<typeof setTimeout> | null = null
 const listeners = new Set<() => void>()
 
@@ -21,12 +22,13 @@ function loadRunInput(id: string): void {
     void flush()
   }
   flowId = id
+  const requestedRevision = ++revision
   vars = {}; saved = {}
   notify()
   void (async () => {
     try {
       const r = await runInputApi.get(id)
-      if (flowId !== id) return // 그 사이 다른 플로우로 전환
+      if (flowId !== id || revision !== requestedRevision) return // 전환하거나 읽기 중 입력한 초안은 유지한다.
       const next = r.vars ?? {}
       if (flowId !== id) return
       vars = next; saved = { ...next }
@@ -36,6 +38,7 @@ function loadRunInput(id: string): void {
 }
 
 function setRunInputVars(next: Record<string, string>): void {
+  revision++
   vars = next
   notify()
   if (flushTimer) clearTimeout(flushTimer)
@@ -73,6 +76,6 @@ function getRunInputVars(): Record<string, string> { return vars }
 
 return { loadRunInput, setRunInputVars, flushRunInput, activeInputVars, getRunInputVars, subscribe: (cb: () => void) => { listeners.add(cb); return () => { listeners.delete(cb) } } }
 }
-const stores = new WeakMap<WorkspaceApi, ReturnType<typeof createRunInput>>()
-export function useRunInputActions() { const api = useApi(); let store = stores.get(api); if (!store) { store = createRunInput(api); stores.set(api, store) } return store }
+const stores = new WeakMap<WorkspaceApi['runInputApi'], ReturnType<typeof createRunInput>>()
+export function useRunInputActions() { const api = useApi(); let store = stores.get(api.runInputApi); if (!store) { store = createRunInput(api); stores.set(api.runInputApi, store) } return store }
 export function useRunInput() { const store = useRunInputActions(); return useSyncExternalStore(store.subscribe, store.getRunInputVars) }

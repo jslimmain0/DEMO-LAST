@@ -1,15 +1,17 @@
 import type { CSSProperties } from 'react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { duplicateKeys, parseDotEnv, validateDotEnv } from '../lib/bulkPaste'
-import { useEnvStore, useEnvironment, useEnvironmentSaveStatus, useEnvironmentLoadStatus } from '../lib/environments'
+import { useEnvStore, useEnvironment, useEnvironmentSaveStatus, useEnvironmentLoadStatus, useEnvironmentSource } from '../lib/environments'
 import { Modal } from './Modal'
-import { useWorkspace } from '../app/WorkspaceContext'
+import { useWorkspace, type WorkspaceOrigin } from '../app/WorkspaceContext'
 import { AskDialog, type AskSpec } from './AskDialog'
 import { toast } from './toast'
 import { ResourceScopeNote } from './ResourceScopeNote'
 import { useUnsavedNavigation } from './UnsavedNavigation'
 import { AppIcon } from './AppIcon'
 import { ui } from '../design/ui'
+import { useAuth } from '../auth/AuthContext'
+import '../routes/resources.css'
 
 /**
  * 환경(dev/staging/prod) 관리 다이얼로그.
@@ -19,19 +21,41 @@ import { ui } from '../design/ui'
  */
 export function EnvManagerDialog({ onClose }: { onClose: () => void }) {
   const [dirty, setDirty] = useState(false)
-  const status = useEnvironmentSaveStatus()
-  useUnsavedNavigation({ dirty, saving: status === 'pending' || status === 'saving', label: '적용하지 않은 환경 입력', blockedReason: status === 'error' ? '환경 변수를 다시 저장한 뒤 이동하세요. 현재 입력은 유지됩니다.' : undefined })
+  const localStatus = useEnvironmentSaveStatus('local')
+  const serverStatus = useEnvironmentSaveStatus('server')
+  const saving = [localStatus, serverStatus].some(status => status === 'pending' || status === 'saving')
+  useUnsavedNavigation({ dirty, saving, label: '적용하지 않은 환경 입력' })
   const [ask, setAsk] = useState<AskSpec | null>(null)
-  const close = () => dirty ? setAsk({ title: '미적용 변경', message: '아직 적용하지 않은 입력을 버리고 닫을까요?', confirmLabel: '버리고 닫기', onConfirm: onClose }) : onClose()
-  return <><Modal onClose={close} ariaLabel="환경 관리" width={1060} height="min(780px, 90vh)" card={{ padding: 18 }}><EnvManagerPanel onClose={close} onDraftChange={setDirty} /></Modal>{ask && <AskDialog spec={ask} onClose={() => setAsk(null)} />}</>
+  const close = () => {
+    if (saving) { toast('환경 변수를 저장 중입니다. 저장 후 닫으세요.', 'error'); return }
+    if (dirty) setAsk({ title: '미적용 변경', message: '아직 적용하지 않은 입력을 버리고 닫을까요?', confirmLabel: '버리고 닫기', onConfirm: onClose })
+    else onClose()
+  }
+  return <><Modal onClose={close} ariaLabel="환경 관리" width={1280} height="min(840px, 90vh)" card={{ padding: 18 }}><EnvironmentManagement onDraftChange={setDirty} /><button onClick={close} style={{ ...primaryBtn, alignSelf: 'flex-end', marginTop: 12 }}>닫기</button></Modal>{ask && <AskDialog spec={ask} onClose={() => setAsk(null)} />}</>
 }
 
-export function EnvManagerPanel({ onClose, onDraftChange, compact = false }: { onClose?: () => void; onDraftChange?: (dirty: boolean) => void; compact?: boolean }) {
-  const { current } = useWorkspace()
-  const loadStatus = useEnvironmentLoadStatus()
-  const readOnly = current.myRole === 'VIEWER'
+export function EnvironmentManagement({ onDraftChange }: { onDraftChange?: (dirty: boolean) => void }) {
+  const { desktop } = useAuth()
+  const scope = useWorkspace()
+  const serverIdentity = scope.remoteKey.replace(/:(?:true|false)$/, '')
+  const [localDirty, setLocalDirty] = useState(false)
+  const [serverDirty, setServerDirty] = useState(false)
+  useEffect(() => { onDraftChange?.(localDirty || serverDirty); return () => onDraftChange?.(false) }, [localDirty, serverDirty, onDraftChange])
+  return <div className="fl-environment-locations">
+    {desktop && <section className="fl-environment-location" aria-label="내 PC 환경 변수"><header><AppIcon name="monitor" size={17} /><strong>내 PC</strong><span>이 PC의 연결 주소와 개발 변수</span></header><EnvManagerPanel compact origin="local" onDraftChange={setLocalDirty} /></section>}
+    <section className="fl-environment-location" aria-label="서버 환경 변수"><header><AppIcon name="server" size={17} /><strong>서버</strong><span>공용 환경</span></header>{!scope.connected && <p role="status" className="fl-resource-connection">서버 연결 필요 · 서버 입력은 유지됩니다. 내 PC 환경은 계속 사용할 수 있습니다.</p>}<EnvManagerPanel key={serverIdentity} compact origin="server" onDraftChange={setServerDirty} /></section>
+  </div>
+}
+
+export function EnvManagerPanel({ onClose, onDraftChange, compact = false, origin }: { onClose?: () => void; onDraftChange?: (dirty: boolean) => void; compact?: boolean; origin?: WorkspaceOrigin }) {
+  const scope = useWorkspace()
+  const current = origin ? scope.workspaces.find(space => space.origin === origin && (origin === 'local' || space.id === 'public')) ?? scope.current : scope.current
+  const selectedSource = useEnvironmentSource()
+  const target = origin ?? selectedSource.origin
+  const loadStatus = useEnvironmentLoadStatus(origin)
+  const readOnly = current.myRole === 'VIEWER' || target === 'server' && !scope.connected
   const editingBlocked = readOnly || loadStatus !== 'ready'
-  const status = useEnvironmentSaveStatus()
+  const status = useEnvironmentSaveStatus(origin)
   const [draft, setDraft] = useState(false)
   const [ask, setAsk] = useState<AskSpec | null>(null)
   useEffect(() => { onDraftChange?.(draft); return () => onDraftChange?.(false) }, [draft, onDraftChange])
@@ -39,9 +63,9 @@ export function EnvManagerPanel({ onClose, onDraftChange, compact = false }: { o
     if (draft) setAsk({ title: '아직 적용하지 않은 변경', message: '오류가 있는 행 또는 적용하지 않은 텍스트를 버릴까요?', confirmLabel: '버리고 계속', onConfirm: action })
     else action()
   }
- const { getEnvStore, setEnvStore, ensureEnvLoaded, flushEnvStore, renameEnv: renameEnvOnServer } = useEnvironment()
+ const { getEnvStore, setEnvStore, ensureEnvLoaded, flushEnvStore, renameEnv: renameEnvOnServer } = useEnvironment(origin)
 
-  const store = useEnvStore()
+  const store = useEnvStore(origin)
   const names = useMemo(() => Object.keys(store.envs).sort((a, b) => a.localeCompare(b)), [store.envs])
   const [selected, setSelected] = useState<string | null>(store.active ?? names[0] ?? null)
   const [compare, setCompare] = useState('')
@@ -59,6 +83,7 @@ export function EnvManagerPanel({ onClose, onDraftChange, compact = false }: { o
     const s = getEnvStore()
     while (s.envs[name]) name = `${base}-${++n}`
     setEnvStore({ active: s.active ?? name, envs: { ...s.envs, [name]: {} } })
+    if (!s.active) selectedSource.setOrigin(target)
     setSelected(name)
     setEnvFilter('')
   }
@@ -86,6 +111,7 @@ export function EnvManagerPanel({ onClose, onDraftChange, compact = false }: { o
   }
   const setActive = (name: string | null) => {
     const s = getEnvStore()
+    selectedSource.setOrigin(target)
     setEnvStore({ ...s, active: name && s.envs[name] ? name : null })
   }
   const setVars = (name: string, vars: Record<string, string>) => {
@@ -113,28 +139,34 @@ export function EnvManagerPanel({ onClose, onDraftChange, compact = false }: { o
           <b style={{ flex: 1, fontSize: 16 }}>환경 관리</b>
           {onClose && <button onClick={onClose} aria-label="닫기" style={xBtn}>×</button>}
         </header>}
-        {!compact && <ResourceScopeNote />}
+        {!compact && <ResourceScopeNote origin={target} />}
         {loadStatus === 'loading' && <p role="status" style={hint}>환경 목록을 불러오는 중입니다. 완료 후 편집할 수 있습니다.</p>}
         {loadStatus === 'error' && <p role="alert" style={{ ...hint, color: 'var(--fl-fail)' }}>환경 목록을 불러오지 못했습니다. <button style={ghostBtn} onClick={() => void ensureEnvLoaded().catch(() => {})}>다시 불러오기</button></p>}
-        {readOnly && <p role="status" style={hint}>읽기 전용 공간입니다. 환경 선택과 비교는 가능하지만 변수는 변경할 수 없습니다.</p>}
-        <div role="status" className="fl-env-status"><span>실행에 적용할 환경 <b>{store.active ?? '선택 안 함'}</b></span><span className={`fl-env-save-state fl-env-save-state--${status}`}>{status === 'saved' ? '변수 저장됨' : status === 'pending' ? '저장 대기' : status === 'saving' ? '저장 중…' : '저장 실패'} {status === 'error' && <button style={ghostBtn} onClick={() => void flushEnvStore()}>다시 저장</button>}</span></div>
+        {readOnly && <p role="status" style={hint}>{target === 'server' && !scope.connected ? '서버 연결 후 변수를 저장할 수 있습니다.' : '읽기 전용 공간입니다. 환경 선택과 비교는 가능하지만 변수는 변경할 수 없습니다.'}</p>}
+        <div role="status" className="fl-env-status"><span>{target === selectedSource.origin ? '실행 환경' : '마지막 선택'} <b>{store.active ?? '선택 안 함'}</b></span><span className={`fl-env-save-state fl-env-save-state--${status}`}>{status === 'saved' ? '변수 저장됨' : status === 'pending' ? '저장 대기' : status === 'saving' ? '저장 중…' : '저장 실패'}</span></div>
+        {status === 'error' && <div role="alert" className="fl-env-save-error"><span>{target === 'local' ? '내 PC' : '서버'} 환경 저장 실패. 화면을 이동해도 현재 세션의 입력은 유지됩니다. 새로고침 전에 다시 저장하세요.</span><button style={ghostBtn} disabled={target === 'server' && !scope.connected} onClick={() => void flushEnvStore()}>다시 저장</button>{target === 'server' && !scope.connected && <span>서버 연결 후 다시 저장하세요.</span>}</div>}
         {!compact && <p style={hint}>
           환경마다 변수(baseUrl·연결 주소 등)를 두고 <b>활성 환경</b>을 고르면 실행 시 <code style={code}>{'{{ 키@env }}'}</code> 로 주입됩니다.
           노드를 일일이 안 고치고 dev/staging/prod 를 한 번에 전환하세요.
           토큰과 비밀번호는 시크릿 볼트에 저장하세요.
         </p>}
 
-        {names.length === 0 ? (
+        {names.length === 0 ? (loadStatus === 'ready' ? (
           <div style={empty}>
             아직 환경이 없습니다.
             <button disabled={editingBlocked} onClick={() => leaveDraft(addEnv)} style={{ ...primaryBtn, marginLeft: 10 }}>+ 환경 만들기</button>
           </div>
-        ) : (
+        ) : null) : (
           <div className="fl-env-layout">
+            <div className="fl-env-compact-collection">
+              <label><span>편집할 환경</span><select aria-label={`${target === 'local' ? '내 PC' : '서버'} 편집할 환경`} style={mono} value={selected ?? ''} disabled={loadStatus !== 'ready'} onChange={event => leaveDraft(() => setSelected(event.target.value || null))}>{names.map(name => <option key={name} value={name}>{name}</option>)}</select></label>
+              <button disabled={editingBlocked} onClick={() => leaveDraft(addEnv)} style={ghostBtn}>+ 환경</button>
+              <button aria-pressed={target === selectedSource.origin && selected === store.active} disabled={!selected || target === 'server' && !scope.connected} onClick={() => selected && setActive(selected)} style={ghostBtn}>실행 환경으로 선택</button>
+            </div>
             {/* 환경 목록 */}
             <div className="fl-env-collection">
               <div className="fl-env-list-heading"><strong>환경 목록</strong><button disabled={editingBlocked} onClick={() => leaveDraft(addEnv)} style={ghostBtn}>+ 환경</button></div>
-              <input type="search" aria-label="환경 이름 검색" value={envFilter} onChange={e => setEnvFilter(e.target.value)} placeholder="환경 이름 검색" style={mono} />
+              <input type="search" aria-label={`${target === 'local' ? '내 PC' : '서버'} 환경 검색`} value={envFilter} onChange={e => setEnvFilter(e.target.value)} placeholder="환경 이름 검색" style={mono} />
               <span style={hint} role="status">환경 {shownNames.length} / {names.length}개</span>
               <div style={{ overflowY: 'auto', minHeight: 0, flex: 1, display: 'grid', alignContent: 'start', gap: 6 }}>
               {shownNames.length === 0 && <p style={hint}>일치하는 환경이 없습니다.</p>}
@@ -146,11 +178,12 @@ export function EnvManagerPanel({ onClose, onDraftChange, compact = false }: { o
                   <input
                     type="radio"
                     name="active-env"
-                    checked={store.active === name}
+                    checked={target === selectedSource.origin && store.active === name}
+                    disabled={target === 'server' && !scope.connected}
                     onChange={() => setActive(name)}
                     onClick={(e) => e.stopPropagation()}
-                    aria-label={`${name} 활성화`}
-                    title="활성 환경으로 설정"
+                    aria-label={`${target === 'local' ? '내 PC' : '서버'} · ${name} 환경 선택`}
+                    title={`${target === 'local' ? '내 PC' : '서버'} 실행 환경으로 선택`}
                     style={{ cursor: 'pointer' }}
                   />
                   <button aria-pressed={selected === name} onClick={() => leaveDraft(() => setSelected(name))} style={{ flex: 1, minWidth: 0, border: 0, background: 'transparent', color: 'inherit', cursor: 'pointer', textAlign: 'left', overflow: 'hidden', overflowWrap: 'anywhere', whiteSpace: 'normal', fontSize: 13, padding: '4px 0' }} title={name}>{name}</button>
@@ -389,4 +422,4 @@ const seg: CSSProperties = { display: 'inline-flex', border: '1px solid var(--fl
 const segBtn: CSSProperties = { padding: '4px 12px', border: 'none', background: 'transparent', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 12 }
 const segOn: CSSProperties = { background: 'var(--fl-surface-2)', color: 'var(--fl-text)', fontWeight: 600 }
 const countBadge: CSSProperties = { flexShrink: 0, fontSize: 11, color: 'var(--fl-text-muted)', background: 'var(--fl-surface-2)', borderRadius: 'var(--fl-radius)', padding: '1px 6px' }
-const empty: CSSProperties = { display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--fl-text-muted)', fontSize: 13, padding: 24 }
+const empty: CSSProperties = { display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center', gap: 8, textAlign: 'center', color: 'var(--fl-text-muted)', fontSize: 13, padding: 24 }

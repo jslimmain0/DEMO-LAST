@@ -15,38 +15,52 @@ import java.util.UUID
 class AgentRequestBuilder(private val json: JsonService, private val tokens: TokenResolver) {
     data class Ref(val key: String, val source: String?, val request: Boolean = false)
 
-    fun references(node: GraphNode): List<Ref> {
-        val refs = linkedSetOf<Ref>()
-        fun visit(value: JsonNode) {
-            if (value.isTextual) {
-                val matcher = TokenResolver.tokenPattern().matcher(value.asText())
-                while (matcher.find()) refs.add(Ref(matcher.group(1), matcher.group(3), matcher.group(2) != null))
-            } else if (value.isObject) {
-                if (value.hasNonNull("sourceId") && value.hasNonNull("key"))
-                    refs.add(Ref(value["key"].asText(), value["sourceId"].asText(), value.path("scope").asText() == "req"))
-                value.elements().forEachRemaining { visit(it) }
-            } else if (value.isArray) value.forEach { visit(it) }
+    fun references(node: GraphNode): List<Ref> = references(node, json)
+
+    companion object {
+        fun references(node: GraphNode, json: JsonService): List<Ref> {
+            val refs = linkedSetOf<Ref>()
+            fun visit(value: JsonNode) {
+                if (value.isTextual) {
+                    val matcher = TokenResolver.tokenPattern().matcher(value.asText())
+                    while (matcher.find()) refs.add(Ref(matcher.group(1), matcher.group(3), matcher.group(2) != null))
+                } else if (value.isObject) {
+                    if (value.hasNonNull("sourceId") && value.hasNonNull("key"))
+                        refs.add(Ref(value["key"].asText(), value["sourceId"].asText(), value.path("scope").asText() == "req"))
+                    value.elements().forEachRemaining { visit(it) }
+                } else if (value.isArray) value.forEach { visit(it) }
+            }
+            visit(json.mapper().valueToTree(node))
+            return refs.toList()
         }
-        visit(json.mapper().valueToTree(node))
-        return refs.toList()
     }
 
     fun build(node: GraphNode, allNodes: Collection<GraphNode>, ctx: ExecutionContext, run: AgentRunOptions, seq: Int): AgentNodeRequest {
         if (node.effectiveType() !in setOf(com.flowlink.core.graph.NodeType.HTTP, com.flowlink.core.graph.NodeType.TCP, com.flowlink.core.graph.NodeType.TRANSFORM))
             throw BadRequestException("호출·변환 노드만 에이전트 작업으로 실행합니다. 계산은 워크플로의 공간·환경을 사용합니다.")
+        if (run.resourceWorkspaceId != null && run.resourceWorkspaceId != "public") throw BadRequestException("공통 자원 공간은 public만 선택할 수 있습니다.")
+        if (run.envSource != null && run.envSource !in setOf("local", "server")) throw BadRequestException("알 수 없는 환경 출처입니다.")
+        val shared = run.resourceWorkspaceId == "public"
         val transform = node.nodeType() == com.flowlink.core.graph.NodeType.TRANSFORM
-        if (transform && run.ownerAgent == "local") throw BadRequestException("플러그인은 공용·팀 워크스페이스에서만 사용할 수 있습니다.")
+        if (transform && run.ownerAgent == "local" && !shared) throw BadRequestException("플러그인은 공용·팀 워크스페이스에서만 사용할 수 있습니다.")
         val agent = if (transform) "server" else node.executionAgent ?: run.ownerAgent
         if (agent !in setOf("local", "server")) throw BadRequestException("알 수 없는 실행 에이전트: $agent")
-        val targetSpace = if (transform) run.workspaceId else if (agent == "local") null else node.agentWorkspaceId
+        val targetSpace = if (transform) if (shared) "public" else run.workspaceId else if (agent == "local") null else node.agentWorkspaceId
             ?: if (run.ownerAgent == "server") run.workspaceId else "public"
         val cross = agent != run.ownerAgent || (agent == "server" &&
-            (targetSpace ?: "public") != (run.workspaceId ?: "public"))
+            (targetSpace ?: "public") != (run.workspaceId ?: "public")) ||
+            (shared && (run.ownerAgent == "local" || (run.workspaceId ?: "public") != "public"))
         val environmentKey = if (agent == "local") "local" else "server:${targetSpace ?: "public"}"
-        val envName = if (transform) run.envName else node.agentEnvironment ?: if (run.agentEnvironments.containsKey(environmentKey)) run.agentEnvironments.getValue(environmentKey)
-            else if (!cross) run.envName else throw BadRequestException("목적지 환경을 선택하세요: $environmentKey (공통 환경도 명시적으로 선택해야 합니다.)")
+        val overrideEnvironment = !transform && (node.agentEnvironment != null || run.agentEnvironments.containsKey(environmentKey))
+        val envSource = if (overrideEnvironment) if (shared) agent else null else run.envSource
+        val envName = when {
+            overrideEnvironment -> node.agentEnvironment ?: run.agentEnvironments.getValue(environmentKey)
+            envSource != null -> run.envName.orEmpty()
+            transform || !cross -> run.envName
+            else -> throw BadRequestException("목적지 환경을 선택하세요: $environmentKey (공통 환경도 명시적으로 선택해야 합니다.)")
+        }
         val secrets = (ctx.raw("secret") as? Map<*, *>)?.values?.mapNotNull { it as? String }.orEmpty().toMutableList()
-        if (run.ownerAgent == "local" && agent == "server" && references(node).any { it.source == "secret" })
+        if (run.ownerAgent == "local" && agent == "server" && !shared && references(node).any { it.source == "secret" })
             throw BadRequestException("중앙 시크릿은 공용·팀 워크스페이스에서만 사용할 수 있습니다.")
         for (source in allNodes) for (v in source.vars.orEmpty().filter { it.secret }) {
             v.key?.let { key -> tokens.resolveTokenObject(key, false, source.id, ctx)?.let { secrets.add(tokens.stringify(it)) } }
@@ -70,7 +84,8 @@ class AgentRequestBuilder(private val json: JsonService, private val tokens: Tok
             val source = ref.source?.let { (if (ref.request) "req:" else "") + it } ?: "__agent_inputs"
             values.getOrPut(source) { linkedMapOf() }[ref.key] = value
         }
-        if (!cross && node.agentEnvironment == null && !run.agentEnvironments.containsKey(environmentKey)) ctx.raw("env")?.let { seeds["env"] = it }
+        if (envSource == "local" && agent == "server") seeds["env"] = ctx.raw("env") ?: emptyMap<String, Any?>()
+        else if (envSource == null && !cross && node.agentEnvironment == null && !run.agentEnvironments.containsKey(environmentKey)) ctx.raw("env")?.let { seeds["env"] = it }
         if (cross && node.vars.orEmpty().any { it.secret && !it.value.isNullOrEmpty() })
             throw BadRequestException("다른 에이전트의 SET 노드에는 목적지 시크릿 참조를 사용하세요.")
         val nodeJson = json.toJson(node)
@@ -97,6 +112,9 @@ class AgentRequestBuilder(private val json: JsonService, private val tokens: Tok
             run.executionId, node.copy(executionAgent = agent, agentWorkspaceId = targetSpace, agentEnvironment = if (transform) null else node.agentEnvironment), values, seeds, targetSpace,
             envName, cross, node.agentOutputs ?: outputs.toList(), requests.toList(),
             run.dependencyHashes[node.id].orEmpty(),
+            resourceWorkspaceId = run.resourceWorkspaceId,
+            resourceIdentity = run.serverUrl?.takeIf { it.isNotBlank() }?.let { CentralResourceIdentity(it, run.login) }.takeIf { shared || envSource == "server" },
+            envSource = envSource,
         )
     }
 }

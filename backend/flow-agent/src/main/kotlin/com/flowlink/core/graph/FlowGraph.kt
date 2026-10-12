@@ -11,7 +11,9 @@ data class FlowGraph(
     val version: Int?,
     val name: String?,
     val nodes: List<GraphNode>?,
-    val edges: List<GraphEdge>?
+    val edges: List<GraphEdge>?,
+    @get:com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+    val resourceWorkspaceId: String? = null,
 ) {
     fun nodesOrEmpty(): List<GraphNode> = nodes ?: emptyList()
 

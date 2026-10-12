@@ -31,6 +31,8 @@ class SchemaController {
 # 스크립트 플러그인(JS) 작성 규격
 스크립트의 **마지막 표현식이 플러그인 객체**다. 샌드박스: 표준 JS + `fl.*` 만(Java/파일/네트워크 없음), 호출당 2초.
 저장: 화면(/plugins) 또는 MCP plugin_script_upsert(초안) → plugin_script_try(시험) → plugin_script_submit(승인 요청) → **관리자 승인(화면)** 후에만 레지스트리에 올라간다.
+MCP의 플러그인·프로토콜·시크릿 목록은 서버 public 공통 카탈로그다. target/workspace로 별도 개인·팀 목록을 만들지 않는다. 기존 정의를 자동 이관하지 않으며 PC가 오프라인이어도 공통 목록은 조회할 수 있다.
+공통 자원을 선택한 내 PC 흐름의 TRANSFORM도 서버에서 실행하며 흐름의 envSource 환경을 사용한다. 내 PC TCP/Mock은 공통 정의를 조회하고 코덱·변환 스크립트는 서버에서 실행한다.
 승인 전 그 id 를 쓰는 TRANSFORM 노드·코덱은 실행 시 실패하므로 옆에 메모 노드로 '플러그인 승인 필요' 를 남긴다.
 승인 요청 뒤: 사용자에게 '승인 대기 중 — 관리자 승인 필요' 라고 알리고 plugin_script_wait 로 기다린다. 승인되면 사용자에게 다시 알리고 이어서 배선, 반려면 사유를 전하고 초안을 고쳐 재요청.
 예제: 화면 '예제에서 시작…' 에 레거시 des-cipher 포팅(des-encrypt/des-decrypt — DES/ECB, zero 패딩, hex)이 있다. 키를 hex/base64 로 받으면 `fl.hex.dec(k, { as: 'bytes' })` 로 바이트 키를 넘긴다.
@@ -55,12 +57,17 @@ class SchemaController {
 필드 코덱:        ({ id, label, kind: 'fieldCodec', params?, encode(value, ctx) { return 문자열 }, decode(value, ctx) { return 문자열 } })
 전문 코덱:        ({ id, label, kind: 'messageCodec', params?, encode(bytes, ctx) { return 바이트배열 }, decode(bytes, ctx) { return 바이트배열 } })
 ctx = { config, direction: 'send'|'recv', field: {name,len,type,pad}|null, message: {필드명: 값} }. id 는 [a-z0-9-] 1~64자(소문자·숫자·하이픈, 첫 글자는 하이픈 불가).
-입력·파라미터 값에는 `{{ 이름@secret }}`(시크릿 볼트)·`{{ 키@env }}`(환경 변수)를 쓸 수 있다 — 워크플로는 실행 환경, Mock 은 spec.environment, 프로토콜 미리보기·시험 실행(plugin_script_try)은 environment 인자의 환경으로 서버가 푼다. 비밀·환경별 값은 직접 적지 말고 토큰으로.
+입력·파라미터 값에는 `{{ 이름@secret }}`(시크릿 볼트)·`{{ 키@env }}`(환경 변수)를 쓸 수 있다 — 워크플로는 envSource+envName, Mock은 spec.envSource+environment, 프로토콜 미리보기·시험 실행(plugin_script_try)은 environment 인자의 서버 환경으로 푼다. 실제 TRANSFORM 실행의 config도 같은 토큰을 해석한다.
+envSource=local 공통 실행은 중앙 공통 시크릿만 사용하며 서버의 같은 이름 환경 시크릿을 자동 선택하지 않는다. 실제 전송/변환 값은 유지하고 시험·실행 로그에서는 시크릿을 가린다. 비밀·환경별 값은 직접 적지 말고 토큰으로.
 """
 
         /** 에이전트가 소스 코드에서 워크플로/프로토콜/Mock 을 만들 때 지킬 규약 — 코드에 없는 값은 지어내지 않는다. */
         const val AGENT_RULES: String = """
 # FlowLink 에이전트 규약
+저장 위치(target/workspace), 환경 출처(envSource local/server), HTTP/TCP 실행 위치(executionAgent)는 별개다. 시크릿·프로토콜·플러그인은 서버 public 공통 카탈로그이며 공통 자원을 선택한 내 PC 흐름도 참조한다.
+새 MCP 흐름/Mock은 public metadata를 기본으로 저장한다. 기존 자료 수정은 현재 metadata를 유지하고 metadata 없는 개인·팀 참조를 자동 전환/복사하지 않는다. restore/rerun도 원본 선택을 유지한다.
+envName은 선택한 출처의 이름이다. 같은 이름의 내 PC/서버 환경을 자동 병합하지 않으며 없거나 조회에 실패하면 실행하지 않는다. 내 PC 환경 선택 시 중앙 시크릿은 공통만 사용한다.
+mock_list는 mocks/sources로 내 PC와 서버를 함께 보여준다. source.available=false이면 해당 위치를 재선택한 척하지 말고 연결 상태를 알린다. 후속 Mock 수정은 행의 target과 서버 workspace를 사용한다.
 1. 코드에서 확인되지 않는 값(계좌번호·키·유효한 시나리오 순서)은 지어내지 않는다. 값 자리는 토큰으로 비워 둔다:
    - 환경마다 다른 값 → {{ 키@env }} (env_put 으로 환경 변수 등록 가능)
    - 비밀 → {{ 이름@secret }} (시크릿 볼트는 사용자가 화면에서 채운다)

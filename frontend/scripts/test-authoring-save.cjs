@@ -23,22 +23,34 @@ function options(file, context, name = 'save') {
 }
 function deferred() { let resolve, reject; const promise = new Promise((a, b) => { resolve = a; reject = b }); return { promise, resolve, reject } }
 async function mock() {
+  const tree = source('routes/MockServerEditor.tsx')
+  const resourceDeclaration = find(tree, node => ts.isVariableDeclaration(node) && node.name.getText(tree) === 'resourceSpec')
+  const resourceExports = {}, scope = { current: { origin: 'local' } }
+  vm.runInNewContext(ts.transpileModule(`exports.apply = ${resourceDeclaration.initializer.getText(tree)}`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText, { exports: resourceExports, scope })
+  const resourceSpec = resourceExports.apply
+  assert.equal(resourceSpec({ routes: [] }).envSource, 'local')
+  assert.equal(resourceSpec({ routes: [], envSource: 'server' }).envSource, 'server')
+  scope.current.origin = 'server'
+  assert.equal(resourceSpec({ routes: [] }).envSource, 'server')
+  scope.current.origin = 'local'
   const draftRef = { current: { id: 'mock', name: 'Mock', spec: { routes: [{ path: '/A' }] }, dirty: true } }
   const request = deferred(), writes = [], notices = [], activeRef = { current: true }
   let dirty = true
   const save = options('routes/MockServerEditor.tsx', {
-    draftRef, activeRef, detail: { data: { name: 'Mock' } }, mocksApi: { updateSpec: async (id, spec) => { writes.push({ id, spec }); await request.promise } },
+    draftRef, activeRef, resourceSpec, detail: { data: { name: 'Mock' } }, mocksApi: { updateSpec: async (id, spec) => { writes.push({ id, spec }); await request.promise } },
     setDirty: value => { dirty = value }, setNote: value => notices.push(value), invalidate: () => {}, apiErrorMessage: () => '저장 실패',
   })
   const pending = save.mutationFn()
   draftRef.current = { ...draftRef.current, spec: { routes: [{ path: '/B' }] } }
   request.resolve(); const saved = await pending; save.onSuccess(saved)
   assert.equal(writes[0].spec.routes[0].path, '/A')
+  assert.equal(writes[0].spec.resourceWorkspaceId, 'public')
+  assert.equal(writes[0].spec.envSource, 'local')
+  assert.equal(Object.hasOwn(writes[0].spec, 'resourceIdentity'), false, 'the browser does not invent persistent Mock server connection metadata')
   assert.equal(draftRef.current.spec.routes[0].path, '/B')
   assert.equal(dirty, true)
   assert.match(notices.at(-1), /추가 편집/)
   // Run the real query hydration effect: a save-triggered refetch must not restore A over B.
-  const tree = source('routes/MockServerEditor.tsx')
   const effect = find(tree, node => ts.isCallExpression(node) && node.expression.getText(tree) === 'useEffect' && node.arguments[1]?.getText(tree) === '[detail.data]')
   let replaced = false
   const effectCode = ts.transpileModule(`(${effect.arguments[0].getText(tree)})()`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText

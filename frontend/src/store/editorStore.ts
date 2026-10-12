@@ -168,7 +168,7 @@ export const useEditorStore = create<EditorState>()((set, get) => {
     })
   },
 
-  getGraph: () => ({ ...fromRF(get().nodes, get().edges, get().flowName), palette: get().palette }),
+  getGraph: () => ({ ...fromRF(get().nodes, get().edges, get().flowName), palette: get().palette, resourceWorkspaceId: 'public' }),
 
   onNodesChange: (changes) => {
     // 드래그 시작 시 1회 스냅샷 · 삭제(Delete 키)도 스냅샷
@@ -258,6 +258,7 @@ export const useEditorStore = create<EditorState>()((set, get) => {
   },
 
   updateNodeData: (id, patch) => {
+    if (get().readOnly) return
     // 속성 타이핑은 900ms 안의 같은 노드 연속 수정을 한 히스토리 항목으로 병합(키 입력마다 스택이 넘치지 않게)
     const now = Date.now()
     if (!lastDataEdit || lastDataEdit.nodeId !== id || now - lastDataEdit.at > 900) {

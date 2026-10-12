@@ -1,182 +1,158 @@
 <!doctype html>
 <html lang="ko">
 <head>
-  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><base href="/">
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><base href="./">
   <meta name="description" content="FlowLink로 API·TCP 호출과 콜백 대기, 응답 검증을 하나의 흐름으로 만들고 실행하세요. 개인 작업은 내 PC에서, 팀 작업은 회사 서버와 함께합니다.">
   <title>FlowLink · Windows 앱 다운로드</title>
-  <link rel="preload" href="fonts/PretendardVariable.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="./fonts/PretendardVariable.woff2" as="font" type="font/woff2" crossorigin>
   <style>
-    @font-face { font-family: "Pretendard Variable"; src: url("fonts/PretendardVariable.woff2") format("woff2"); font-style: normal; font-weight: 100 900; font-display: swap; }
-    /* 앱(index.css)과 같은 토큰 — 무채색 바탕 + 바이올렛 강조 하나 */
-    :root {
-      color-scheme: light;
-      --bg: #fafafa; --surface: #ffffff; --surface-2: #f4f4f5; --border: #e4e4e7; --control: #d4d4d8;
-      --text: #18181b; --soft: #3f3f46; --muted: #71717a;
-      --primary: #5b4bd0; --primary-hover: #4b3cb8; --primary-soft: #efedfb; --on-primary: #ffffff;
-      --ok: #15803d; --ok-soft: #dcfce7; --warn: #b45309; --warn-soft: #fef3c7; --fail: #b91c1c; --fail-soft: #fee2e2;
-      --mono: "Cascadia Code", Consolas, "D2Coding", monospace;
-      --radius-sm: 6px; --radius: 10px; --radius-lg: 14px;
-      font-family: "Pretendard Variable", "Segoe UI", "Malgun Gothic", sans-serif; font-synthesis: none;
-      color: var(--text); background: var(--bg);
+    @font-face { font-family: "Pretendard Variable"; src: url("./fonts/PretendardVariable.woff2") format("woff2"); font-weight: 100 900; font-display: swap; }
+    :root { color-scheme: light; --bg:#f8f8fb; --surface:#fff; --surface-2:#f0f0f5; --text:#1e1e26; --soft:#50505d; --muted:#6c6c7b; --border:#dcdce6; --control:#c5c5d2; --primary:#5b4bd0; --primary-soft:#eae7fa; --ok:#197348; --warn:#936015; --fail:#b53036; --radius-sm:8px; --radius:16px; --radius-lg:28px; --mono:"Cascadia Code",Consolas,monospace; font-family:"Pretendard Variable","Segoe UI","Malgun Gothic",sans-serif; color:var(--text); background:var(--bg); font-synthesis:none; }
+    @media (prefers-color-scheme:dark) { :root { color-scheme:dark; --bg:#15151b; --surface:#202029; --surface-2:#252530; --text:#f5f5fa; --soft:#c8c8d6; --muted:#aaaabc; --border:#3c3c4b; --control:#626274; --primary:#b4aaff; --primary-soft:#302a49; --ok:#73d2a1; --warn:#f1c77e; --fail:#ff9ba0; } .arch-frame img { filter:invert(.92) hue-rotate(180deg) contrast(.9); } }
+    * { box-sizing:border-box; }
+    body { margin:0; line-height:1.65; word-break:keep-all; overflow-wrap:anywhere; -webkit-font-smoothing:antialiased; }
+    a { color:var(--primary); text-underline-offset:4px; }
+    a:focus-visible,button:focus-visible,summary:focus-visible,[tabindex]:focus-visible { outline:3px solid var(--primary); outline-offset:4px; }
+    code,.mono { font-family:var(--mono); letter-spacing:0; }
+    [hidden] { display:none !important; }
+    .wrap { max-width:1360px; margin:auto; padding:0 56px; }
+    section { scroll-margin-top:96px; }
+    .btn { display:inline-flex; align-items:center; justify-content:center; gap:12px; min-height:44px; padding:10px 18px; border:1px solid var(--control); border-radius:var(--radius-sm); background:var(--surface); color:var(--text); font:inherit; font-size:14px; font-weight:650; text-decoration:none; cursor:pointer; transition:background .18s,transform .18s; }
+    .btn:hover { background:var(--surface-2); }
+    .btn:active { transform:translateY(1px); }
+    .btn-primary { color:#fff; background:#5b4bd0; border-color:#5b4bd0; }
+    .btn-primary:hover { background:#4939b5; border-color:#4939b5; }
+    .btn-lg { min-height:60px; padding:14px 26px; font-size:15px; border-radius:var(--radius-sm); }
+    .btn-icon { min-height:36px; padding:6px 12px; font-size:12px; flex-shrink:0; }
+    .btn svg { flex-shrink:0; }
+    .topbar { position:sticky; top:0; z-index:10; background:var(--bg); border-bottom:1px solid var(--border); }
+    .topbar .wrap { min-height:76px; display:flex; align-items:center; gap:36px; }
+    .brand { display:flex; align-items:center; gap:12px; color:var(--text); font-size:22px; font-weight:800; letter-spacing:-.04em; text-decoration:none; flex-shrink:0; }
+    .brand-mark { width:34px; height:34px; border-radius:var(--radius-sm); background:#5b4bd0; display:grid; place-items:center; }
+    .topnav { display:flex; gap:32px; margin-left:auto; font-size:14px; }
+    .topnav a { padding:10px 0; color:var(--soft); text-decoration:none; }
+    .topnav a:hover { color:var(--primary); }
+    .server-pill { display:flex; align-items:center; gap:8px; color:var(--muted); font-size:12px; white-space:nowrap; }
+    .dot { width:6px; height:6px; border-radius:50%; background:var(--muted); flex-shrink:0; }
+    .dot.ok { background:var(--ok); } .dot.warn { background:var(--warn); } .dot.fail { background:var(--fail); }
+    .hero { padding:64px 0 72px; }
+    .hero-grid { display:grid; grid-template-columns:minmax(0,1.08fr) minmax(0,1fr); gap:44px; align-items:center; }
+    .hero-copy { padding:24px 0; }
+    .eyebrow { margin:0 0 24px; font-size:14px; font-weight:650; color:var(--primary); }
+    .hero h1 { margin:0; font-size:clamp(40px,4.5vw,64px); line-height:1.2; letter-spacing:-.065em; font-weight:800; }
+    .hero h1 span { display:block; }
+    .hero h1 .accent { color:var(--primary); }
+    .hero .lead { margin:28px 0; max-width:500px; font-size:17px; line-height:1.8; color:var(--soft); }
+    .cta { display:flex; align-items:center; flex-wrap:wrap; gap:14px; }
+    .download-big strong { display:block; line-height:1.35; }
+    .download-big small { display:block; margin-top:4px; font-size:11px; font-weight:450; opacity:.9; }
+    .text-link { display:inline-flex; align-items:center; gap:10px; font-size:14px; font-weight:600; color:var(--text); text-decoration:none; padding:12px 4px; }
+    .text-link:hover { color:var(--primary); }
+    #status { margin:18px 0 0; max-width:500px; min-height:22px; font-size:12px; color:var(--muted); }
+    #compatibility { margin:12px 0 0; font-size:13px; color:var(--warn); }
+    .hero-visual { margin:0; overflow:hidden; border-radius:var(--radius-lg); background:#f0f0f5; }
+    .hero-visual img { display:block; width:100%; height:490px; object-fit:cover; }
+    .hero-copy,.hero-visual { animation:enter .65s ease-out both; }
+    .hero-visual { animation-delay:.1s; }
+    @keyframes enter { from { opacity:0; transform:translateY(14px); } to { opacity:1; transform:translateY(0); } }
+    .facts { display:flex; flex-wrap:wrap; gap:12px 32px; margin:38px 0 0; padding:20px 0 0; border-top:1px solid var(--border); list-style:none; font-size:12px; color:var(--muted); }
+    .facts li { display:flex; align-items:center; gap:8px; }
+    .facts svg { color:var(--primary); }
+    .section-title { margin:0; font-size:clamp(30px,3.5vw,48px); line-height:1.25; letter-spacing:-.05em; font-weight:750; }
+    .section-lead { margin:20px 0 0; color:var(--soft); max-width:660px; font-size:16px; }
+    .band { padding:80px 0; background:var(--surface); }
+    .feature-heading { margin-bottom:32px; }
+    .product-figure { margin:0; }
+    .product-screen { display:block; padding:16px; border-radius:var(--radius-lg); background:var(--surface-2); border:1px solid var(--border); }
+    .product-screen img { display:block; width:100%; height:auto; border-radius:var(--radius); }
+    .product-screen:hover { border-color:var(--primary); }
+    .product-figure figcaption { display:flex; justify-content:space-between; flex-wrap:wrap; gap:8px; padding:14px 0 0; color:var(--muted); font-size:12px; }
+    .features { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:0 56px; margin-top:40px; }
+    .feature { border-top:1px solid var(--border); padding:20px 0; }
+    .feature summary { position:relative; display:flex; align-items:center; gap:16px; padding-right:32px; cursor:pointer; list-style:none; font-size:18px; font-weight:650; letter-spacing:-.02em; }
+    .feature summary::-webkit-details-marker { display:none; }
+    .feature summary::after { content:'+'; position:absolute; right:0; font-size:22px; font-weight:400; color:var(--muted); }
+    .feature[open] summary::after { content:'−'; }
+    .feature p { margin:12px 36px 0 52px; color:var(--soft); font-size:14px; }
+    .tile { display:grid; place-items:center; flex-shrink:0; background:var(--primary-soft); color:var(--primary); font-weight:750; font-style:normal; border-radius:var(--radius-sm); width:36px; height:36px; }
+    .workspaces { padding:88px 0; }
+    .workspace-grid { display:grid; grid-template-columns:minmax(0,.85fr) minmax(0,1.15fr); gap:88px; }
+    .workspace-heading { position:sticky; top:112px; align-self:start; }
+    .workspace-heading p { margin:24px 0 0; color:var(--soft); font-size:16px; max-width:360px; }
+    .workspace-modes { display:grid; gap:28px; }
+    .workspace-modes .card { padding:32px; border:1px solid var(--border); border-radius:var(--radius); background:var(--surface); }
+    .workspace-modes .card:last-child { background:var(--primary-soft); border-color:transparent; }
+    .card h3 { display:flex; align-items:center; gap:12px; margin:0 0 16px; font-size:24px; letter-spacing:-.035em; }
+    .card p { margin:0 0 20px; font-size:15px; color:var(--soft); }
+    .icon-box { width:36px; height:36px; display:grid; place-items:center; border-radius:var(--radius-sm); color:var(--primary); background:var(--primary-soft); flex-shrink:0; }
+    .list { display:grid; gap:8px; padding:0; margin:0; list-style:none; font-size:13px; color:var(--soft); }
+    .list li::before { content:'✓'; margin-right:10px; color:var(--primary); }
+    .arch { padding:72px 0 88px; border-top:1px solid var(--border); }
+    .arch .eyebrow { display:none; }
+    .arch-head { display:grid; gap:28px; }
+    .seg { display:inline-flex; justify-self:start; gap:4px; padding:4px; border:1px solid var(--border); border-radius:var(--radius-sm); background:var(--surface-2); }
+    .seg button { min-height:40px; padding:0 18px; border:0; border-radius:4px; background:transparent; color:var(--muted); font:inherit; font-size:13px; cursor:pointer; }
+    .seg button[aria-selected='true'] { background:var(--surface); color:var(--text); box-shadow:0 1px 4px #53516a18; }
+    .arch-frame { margin-top:24px; max-height:76vh; overflow:auto; overscroll-behavior:contain; border:1px solid var(--border); border-radius:var(--radius); background:#fff; }
+    .arch-frame img { display:block; width:100%; min-width:760px; height:auto; }
+    .arch-frame.zoomed img { width:180%; }
+    .arch-tools { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:16px; margin-top:16px; color:var(--muted); font-size:12px; }
+    .legend { display:flex; flex-wrap:wrap; gap:8px 20px; }
+    .legend i { display:inline-block; width:18px; height:3px; margin-right:6px; vertical-align:middle; }
+    .arch-notes { display:grid; grid-template-columns:1.35fr 1fr 1fr; gap:36px; margin-top:32px; }
+    .arch-notes h3 { font-size:16px; margin-bottom:10px; }
+    .arch-notes p { font-size:13px; color:var(--muted); margin:0; }
+    .dl { padding:0 0 72px; }
+    .dl-panel { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:72px; border-radius:var(--radius-lg); background:var(--primary-soft); padding:56px; }
+    .dl-panel h2 { margin:0 0 20px; font-size:44px; line-height:1.2; letter-spacing:-.055em; }
+    .dl-panel p { color:var(--soft); margin:0 0 28px; font-size:15px; }
+    .dl-panel .btn-lg { max-width:100%; font-size:13px; }
+    .info { margin:0; display:grid; grid-template-columns:86px minmax(0,1fr); gap:16px 12px; font-size:13px; }
+    .info dt { color:var(--muted); padding-top:6px; }
+    .info dd { display:flex; align-items:center; min-height:34px; min-width:0; gap:10px; margin:0; }
+    .info dd>span { min-width:0; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+    .notes { margin-top:22px; padding-top:20px; border-top:1px solid var(--control); font-size:13px; color:var(--soft); white-space:pre-line; }
+    .state { margin-top:16px; padding:14px 16px; border:1px solid currentColor; border-radius:var(--radius-sm); font-size:13px; }
+    .state.warn { color:var(--warn); } .state.fail { color:var(--fail); }
+    footer { border-top:1px solid var(--border); }
+    footer .wrap { display:flex; flex-wrap:wrap; justify-content:space-between; gap:16px; padding-top:28px; padding-bottom:28px; color:var(--muted); font-size:12px; }
+    .skip-link { position:fixed; top:-100px; left:16px; z-index:20; padding:10px 16px; background:var(--surface); color:var(--text); border:2px solid var(--primary); }
+    .skip-link:focus { top:16px; }
+    @media (max-width:1100px) { .wrap { padding:0 32px; } .hero-grid { gap:28px; } .hero h1 { font-size:48px; } .hero-visual img { height:420px; } .workspace-grid { gap:48px; } .dl-panel { padding:40px; gap:36px; } }
+    @media (max-width:768px) {
+      .wrap { padding:0 24px; }
+      .topbar .wrap { min-height:68px; gap:16px; flex-wrap:wrap; padding-top:14px; padding-bottom:14px; }
+      .topnav { order:3; width:100%; margin:0; justify-content:space-between; }
+      .topnav a { padding:4px 0; }
+      .server-pill { margin-left:auto; }
+      .hero { padding:32px 0 40px; }
+      .hero-grid { grid-template-columns:1fr; gap:24px; }
+      .hero-copy { padding:0; }
+      .hero h1 { font-size:clamp(36px,6.5vw,48px); }
+      .hero .lead { margin:22px 0; font-size:16px; }
+      .hero-visual img { height:auto; aspect-ratio:3/2; }
+      .facts { margin-top:24px; gap:8px 20px; }
+      .band,.workspaces,.arch { padding:48px 0; }
+      .product-screen { padding:8px; border-radius:var(--radius); }
+      .product-screen img { border-radius:var(--radius-sm); }
+      .features { grid-template-columns:1fr; margin-top:24px; }
+      .workspace-grid { grid-template-columns:1fr; gap:32px; }
+      .workspace-heading { position:static; }
+      .workspace-heading p { max-width:none; margin-top:16px; }
+      .workspace-modes .card { padding:24px; }
+      .arch-notes { grid-template-columns:1fr; gap:24px; }
+      .dl { padding-bottom:48px; }
+      .dl-panel { grid-template-columns:1fr; padding:28px; gap:36px; }
+      .dl-panel h2 { font-size:34px; }
+      .dl-panel .btn-lg { width:100%; padding:14px; }
+      .info { grid-template-columns:70px minmax(0,1fr); }
     }
-    @media (prefers-color-scheme: dark) {
-      :root {
-        color-scheme: dark;
-        --bg: #0d0d10; --surface: #17171c; --surface-2: #212128; --border: #2c2c35; --control: #3a3a45;
-        --text: #f2f2f5; --soft: #d1d1d8; --muted: #a1a1ab;
-        --primary: #a59cf0; --primary-hover: #c3bcf5; --primary-soft: #26233f; --on-primary: #ffffff;
-        --ok: #4ade80; --ok-soft: #14532d55; --warn: #fbbf24; --warn-soft: #78350f55; --fail: #f87171; --fail-soft: #7f1d1d55;
-      }
-      .btn-primary { background: #5b4bd0 !important; border-color: #5b4bd0 !important; }
-      .arch-frame img { filter: invert(.92) hue-rotate(180deg) contrast(.9); }
-    }
-    * { box-sizing: border-box; }
-    body { margin: 0; line-height: 1.6; word-break: keep-all; -webkit-font-smoothing: antialiased; }
-    a { color: var(--primary); text-underline-offset: 3px; }
-    a:focus-visible, button:focus-visible, summary:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--primary); outline-offset: 3px; border-radius: var(--radius-sm); }
-    code, .mono { font-family: var(--mono); letter-spacing: 0; }
-    .wrap { max-width: 1200px; margin: 0 auto; padding: 0 32px; }
-    [hidden] { display: none !important; }
-    .eyebrow { margin: 0 0 10px; font-size: 13px; font-weight: 700; color: var(--primary); letter-spacing: .02em; }
-    h2.section-title { margin: 0; font-size: 32px; line-height: 1.25; letter-spacing: -.03em; font-weight: 750; }
-    .section-lead { margin: 12px 0 0; max-width: 620px; color: var(--soft); font-size: 16px; }
-    section { scroll-margin-top: 72px; }
-
-    /* 버튼 */
-    .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 40px; padding: 0 16px; border-radius: var(--radius-sm); border: 1px solid var(--control); background: var(--surface); color: var(--text); font: inherit; font-size: 14px; font-weight: 650; text-decoration: none; cursor: pointer; white-space: nowrap; }
-    .btn:hover { background: var(--surface-2); }
-    .btn-primary { border-color: var(--primary); background: var(--primary); color: var(--on-primary); }
-    .btn-primary:hover { background: var(--primary-hover); border-color: var(--primary-hover); }
-    .btn-lg { min-height: 52px; padding: 0 22px; font-size: 15px; border-radius: var(--radius); }
-    .btn-icon { min-height: 30px; padding: 0 10px; font-size: 12px; font-weight: 600; }
-    .btn svg { flex-shrink: 0; }
-
-    /* 상단 */
-    .topbar { position: sticky; top: 0; z-index: 10; background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(8px); border-bottom: 1px solid var(--border); }
-    .topbar .wrap { display: flex; align-items: center; gap: 12px 28px; min-height: 60px; flex-wrap: wrap; }
-    .brand { display: flex; align-items: center; gap: 9px; font-size: 19px; font-weight: 800; letter-spacing: -.03em; color: var(--text); text-decoration: none; }
-    .brand-mark { width: 28px; height: 28px; border-radius: 7px; background: var(--primary); display: grid; place-items: center; }
-    @media (prefers-color-scheme: dark) { .brand-mark { background: #5b4bd0; } }
-    .topnav { display: flex; gap: 2px 20px; flex-wrap: wrap; font-size: 14px; font-weight: 550; margin-right: auto; }
-    .topnav a { color: var(--soft); text-decoration: none; padding: 8px 0; }
-    .topnav a:hover { color: var(--text); }
-    .server-pill { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; color: var(--soft); border: 1px solid var(--border); border-radius: 999px; padding: 4px 11px; font-variant-numeric: tabular-nums; background: var(--surface); }
-    .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); flex-shrink: 0; }
-    .dot.ok { background: var(--ok); } .dot.warn { background: var(--warn); } .dot.fail { background: var(--fail); }
-
-    /* 첫 화면 */
-    .hero { padding: 72px 0 64px; }
-    .hero .wrap { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); gap: 56px; align-items: center; }
-    .hero h1 { margin: 0 0 18px; font-size: clamp(36px, 4.6vw, 54px); line-height: 1.15; letter-spacing: -.04em; font-weight: 800; }
-    .hero h1 em { font-style: normal; color: var(--primary); }
-    .hero .lead { margin: 0 0 30px; color: var(--soft); font-size: 18px; line-height: 1.65; max-width: 470px; }
-    .cta { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
-    .download-big small { display: block; font-size: 12px; font-weight: 500; opacity: .85; }
-    .download-big strong { display: block; line-height: 1.25; }
-    .facts { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 20px 0 0; padding: 0; list-style: none; font-size: 13px; color: var(--muted); }
-    .facts li { display: inline-flex; align-items: center; gap: 6px; }
-    #status { margin: 14px 0 0; font-size: 13px; color: var(--muted); }
-    #compatibility { margin: 10px 0 0; max-width: 460px; font-size: 13px; color: var(--warn); }
-
-    /* 편집 화면 예시 */
-    .mock { border-radius: var(--radius-lg); border: 1px solid var(--border); background: var(--surface); box-shadow: 0 1px 2px rgba(24,24,27,.04), 0 24px 56px -24px rgba(24,24,27,.22); overflow: hidden; }
-    .mock-top { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--border); font-size: 13px; }
-    .mock-top b { font-weight: 700; } .mock-top .sub { color: var(--muted); font-size: 12px; }
-    .mock-top .spacer { flex: 1; }
-    .chip { font-size: 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 2px 9px; color: var(--soft); white-space: nowrap; }
-    .chip-run { background: #5b4bd0; color: #fff; border-color: #5b4bd0; font-weight: 700; }
-    .mock-body { display: flex; min-height: 280px; }
-    .mock-side { width: 118px; flex-shrink: 0; border-right: 1px solid var(--border); padding: 12px 10px; display: grid; gap: 6px; align-content: start; font-size: 12px; color: var(--soft); }
-    .mock-side span { display: flex; align-items: center; gap: 7px; }
-    .tile { width: 20px; height: 20px; border-radius: 5px; display: inline-grid; place-items: center; font-size: 9px; font-weight: 800; flex-shrink: 0; }
-    .t-http { background: #efedfb; color: #5b4bd0; } .t-tcp { background: #dbeafe; color: #2563eb; } .t-if { background: #fef3c7; color: #b45309; } .t-ok { background: #dcfce7; color: #15803d; } .t-wait { background: #ffedd5; color: #c2410c; }
-    .mock-canvas { flex: 1; min-width: 0; overflow-x: auto; background-color: var(--surface-2); background-image: radial-gradient(var(--control) 1px, transparent 1px); background-size: 18px 18px; padding: 32px 20px; display: flex; flex-direction: column; justify-content: center; gap: 18px; }
-    .flow { display: flex; align-items: center; }
-    .node { background: var(--surface); border: 1px solid var(--border); border-radius: 9px; padding: 8px 10px; font-size: 12px; display: flex; gap: 8px; align-items: center; white-space: nowrap; box-shadow: 0 1px 2px rgba(24,24,27,.05); }
-    .node small { display: block; color: var(--muted); font-size: 11px; font-family: var(--mono); }
-    .node.active { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
-    .edge { flex: 1; min-width: 10px; height: 2px; background: var(--ok); }
-    .edge.pending { background: none; border-top: 2px dashed var(--control); }
-    .mock-log { display: flex; flex-wrap: wrap; gap: 4px 16px; padding: 10px 14px; border-top: 1px solid var(--border); font-size: 12px; color: var(--soft); }
-    .mock-log .ok { color: var(--ok); } .mock-log .wait { color: var(--warn); }
-    figcaption { margin-top: 10px; font-size: 12px; color: var(--muted); text-align: right; }
-
-    /* 개인·팀 */
-    .split { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; padding-bottom: 72px; }
-    .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 26px 28px; }
-    .card h3 { display: flex; align-items: center; gap: 10px; margin: 0 0 8px; font-size: 18px; letter-spacing: -.02em; }
-    .card p { margin: 0 0 14px; color: var(--soft); font-size: 15px; }
-    .icon-box { width: 36px; height: 36px; border-radius: 9px; display: grid; place-items: center; background: var(--surface-2); color: var(--text); flex-shrink: 0; }
-    .list { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; font-size: 14px; color: var(--soft); }
-    .list li { display: flex; gap: 9px; align-items: flex-start; }
-    .list li::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--primary); margin-top: 8px; flex-shrink: 0; }
-
-    /* 기능 */
-    .band { background: var(--surface); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); padding: 80px 0; }
-    .features { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1px; margin-top: 40px; background: var(--border); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; }
-    .feature { background: var(--surface); padding: 26px 26px 28px; }
-    .feature h3 { margin: 14px 0 6px; font-size: 16px; letter-spacing: -.015em; }
-    .feature p { margin: 0; font-size: 14px; color: var(--soft); }
-
-    /* 아키텍처 */
-    .arch { padding: 80px 0; }
-    .arch-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 20px; }
-    .seg { display: inline-flex; gap: 2px; padding: 3px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); }
-    .seg button { min-height: 32px; padding: 0 14px; border: 0; border-radius: 4px; background: transparent; color: var(--muted); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
-    .seg button[aria-selected="true"] { background: var(--surface); color: var(--text); box-shadow: 0 0 0 1px var(--border), 0 1px 2px rgba(24,24,27,.06); }
-    .arch-frame { margin-top: 24px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: #fff; overflow: auto; max-height: 76vh; overscroll-behavior: contain; }
-    .arch-frame img { display: block; width: 100%; min-width: 760px; height: auto; transition: width .2s ease; }
-    .arch-frame.zoomed img { width: 180%; }
-    .arch-tools { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; margin-top: 10px; font-size: 13px; color: var(--muted); }
-    .legend { display: flex; flex-wrap: wrap; gap: 6px 18px; }
-    .legend i { display: inline-block; width: 18px; height: 3px; border-radius: 2px; vertical-align: middle; margin-right: 6px; }
-    .arch-notes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin-top: 28px; }
-    .arch-notes .card { padding: 20px 22px; }
-    .arch-notes h3 { font-size: 15px; margin-bottom: 6px; }
-    .arch-notes p { font-size: 14px; margin: 0; }
-
-    /* 다운로드 */
-    .dl { padding: 0 0 88px; }
-    .dl-panel { display: grid; grid-template-columns: minmax(0, .8fr) minmax(0, 1.2fr); gap: 40px; padding: 40px; border-radius: 18px; background: #18181b; color: #f4f4f5; }
-    .dl-panel h2 { margin: 0 0 8px; font-size: 28px; letter-spacing: -.03em; }
-    .dl-panel p { margin: 0 0 24px; color: #a1a1aa; }
-    .dl-panel .btn-primary { background: #5b4bd0; border-color: #5b4bd0; }
-    .dl-panel .btn:not(.btn-primary) { background: #27272a; border-color: #3f3f46; color: #f4f4f5; }
-    .dl-panel .btn:not(.btn-primary):hover { background: #3f3f46; }
-    .info { margin: 0; display: grid; grid-template-columns: 110px minmax(0, 1fr); border-top: 1px solid #3f3f46; font-size: 14px; }
-    .info dt, .info dd { padding: 12px 0; border-bottom: 1px solid #3f3f46; }
-    .info dt { color: #a1a1aa; }
-    .info dd { margin: 0; display: flex; align-items: center; gap: 10px; min-width: 0; }
-    .info dd > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
-    .notes { margin-top: 18px; font-size: 13px; color: #a1a1aa; white-space: pre-line; }
-    .state { display: flex; gap: 10px; align-items: flex-start; margin-top: 16px; padding: 12px 14px; border-radius: var(--radius); font-size: 13px; }
-    .state.warn { background: #422006; color: #fde68a; } .state.fail { background: #450a0a; color: #fecaca; }
-
-    footer { border-top: 1px solid var(--border); }
-    footer .wrap { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px 24px; padding: 24px 32px; font-size: 13px; color: var(--muted); }
-
-    @media (max-width: 960px) {
-      .hero .wrap, .dl-panel { grid-template-columns: minmax(0, 1fr); }
-      .features, .arch-notes { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-    }
-    @media (max-width: 680px) {
-      .wrap { padding: 0 16px; }
-      .hero { padding: 40px 0 48px; } .hero .wrap { gap: 36px; }
-      .split, .features, .arch-notes { grid-template-columns: minmax(0, 1fr); }
-      .mock-side { display: none; }
-      .flow { overflow-x: auto; }
-      h2.section-title { font-size: 26px; }
-      .band, .arch { padding: 56px 0; }
-      .dl-panel { padding: 24px; border-radius: 14px; }
-      .info { grid-template-columns: 88px minmax(0, 1fr); }
-      .topnav { display: none; }
-      .btn-lg { width: 100%; }
-      footer .wrap { padding: 20px 16px; }
-    }
-    @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+    @media (max-width:380px) { .wrap { padding:0 16px; } .brand { font-size:18px; gap:8px; } .server-pill { font-size:11px; } .hero h1 { font-size:32px; } .btn-lg { padding:14px 18px; } .dl-panel { padding:20px; } .card h3 { font-size:21px; } .seg button { padding:0 12px; } }
+    @media (prefers-reduced-motion:reduce) { *,*::before,*::after { animation:none !important; transition:none !important; scroll-behavior:auto !important; } }
   </style>
 </head>
 <body>
+<a class="skip-link" href="#top">본문으로 건너뛰기</a>
 <header class="topbar">
   <div class="wrap">
     <a class="brand" href="#top" aria-label="FlowLink 처음으로">
@@ -190,55 +166,68 @@
   </div>
 </header>
 
-<main id="top">
+<main id="top" tabindex="-1">
   <section class="hero" aria-labelledby="hero-title">
     <div class="wrap">
-      <div>
-        <p class="eyebrow">REST · TCP 워크플로 오케스트레이션</p>
-        <h1 id="hero-title">API 흐름을 그리고,<br><em>바로 검증하세요.</em></h1>
-        <p class="lead">호출 · 분기 · 콜백 대기 · 응답 검증을 캔버스에서 잇고 한 번에 실행합니다. 아직 없는 시스템은 Mock 서버로 먼저 세워 두세요.</p>
+      <div class="hero-grid">
+        <div class="hero-copy">
+          <p class="eyebrow">Windows용 워크플로 도구</p>
+          <h1 id="hero-title"><span>연결부터 검증까지,</span><span class="accent">하나의 흐름으로.</span></h1>
+          <p class="lead">API 호출, 분기, 콜백 대기를 캔버스에서 연결하세요. 만든 흐름을 실행하고 응답까지 검증합니다.</p>
         <div class="cta">
           <a id="download" class="btn btn-primary btn-lg download-big" hidden>
             <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M2 4.4 10.7 3v8H2zm10.2-1.6L22 1.3V11h-9.8zM2 12.5h8.7v8L2 19.1zm10.2 0H22v9.7l-9.8-1.5z"/></svg>
             <span><strong>Windows 앱 다운로드</strong><small id="version">확인 중</small></span>
           </a>
           <button id="retry" class="btn btn-lg" type="button" hidden>다시 확인</button>
-          <a class="btn btn-lg" href="#architecture">구조 보기</a>
+          <a class="text-link" href="#features">기능 살펴보기 <span aria-hidden="true">↗</span></a>
         </div>
         <p id="status" role="status" aria-atomic="true">최신 버전을 확인하는 중…</p>
         <p id="compatibility" hidden>현재 서버와의 호환이 확인되지 않아 자동 업데이트는 꺼집니다. 직접 설치는 가능합니다.</p>
-        <noscript><p class="facts">설치 파일을 확인하려면 브라우저의 JavaScript를 켜고 새로고침하세요.</p></noscript>
+        <noscript><p>설치 파일을 확인하려면 브라우저의 JavaScript를 켜고 새로고침하세요.</p></noscript>
+        </div>
+        <figure class="hero-visual">
+          <img src="./images/download-flow.webp" width="1536" height="1024" alt="연결과 분기를 표현한 바이올렛 유리 노드와 파이프의 입체 일러스트" fetchpriority="high">
+        </figure>
+      </div>
         <ul class="facts" aria-label="설치 안내">
           <li><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="m5 12 4 4 10-10"/></svg>로그인 없이 다운로드</li>
           <li><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="m5 12 4 4 10-10"/></svg>Windows 64비트 · MSI</li>
           <li><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="m5 12 4 4 10-10"/></svg>앱에서 새 버전 알림</li>
         </ul>
-      </div>
-
-      <figure style="margin:0">
-        <div class="mock" role="img" aria-label="워크플로 편집 화면 예시: 시작, 결제 요청, 승인 콜백 대기, 응답 검증 노드가 이어져 있고 실행 로그가 아래에 표시됩니다.">
-          <div class="mock-top"><b>결제 승인 테스트</b><span class="sub">팀 워크스페이스</span><span class="spacer"></span><span class="chip">staging</span><span class="chip chip-run">▶ 실행</span></div>
-          <div class="mock-body">
-            <div class="mock-canvas" aria-hidden="true">
-              <div class="flow">
-                <div class="node"><i class="tile t-ok">▶</i><span>시작</span></div>
-                <div class="edge"></div>
-                <div class="node"><i class="tile t-http">API</i><span>결제 요청<small>POST /payments</small></span></div>
-                <div class="edge"></div>
-                <div class="node active"><i class="tile t-wait">◷</i><span>승인 콜백 대기<small>1:42 남음</small></span></div>
-                <div class="edge pending"></div>
-                <div class="node"><i class="tile t-ok">✓</i><span>응답 검증<small>code == '0000'</small></span></div>
-              </div>
-            </div>
-          </div>
-          <div class="mock-log" aria-hidden="true"><b>실행 로그</b><span class="ok">✓ 시작</span><span class="ok">✓ 결제 요청 · 200 · 84ms</span><span class="wait">◌ 콜백 대기 중</span></div>
-        </div>
-        <figcaption>워크플로 편집 화면 예시</figcaption>
-      </figure>
     </div>
   </section>
 
-  <div class="wrap split">
+  <section class="band" id="features" aria-labelledby="features-title">
+    <div class="wrap">
+      <div class="feature-heading">
+        <h2 class="section-title" id="features-title">흐름이 보이면,<br>검증이 쉬워집니다.</h2>
+        <p class="section-lead">노드를 연결해 시나리오를 만들고, 필요한 요청과 응답을 같은 화면에서 설정하세요.</p>
+      </div>
+      <figure class="product-figure">
+        <a class="product-screen" href="./images/download-editor.png" aria-label="실제 워크플로 편집 화면 크게 보기">
+          <img src="./images/download-editor.png" width="1280" height="800" loading="lazy" alt="FlowLink 실제 편집 화면. 왼쪽 노드 목록, 가운데 연결된 시작과 HTTP 요청, 오른쪽 요청 설정 패널.">
+        </a>
+        <figcaption><span>실제 워크플로 편집 화면</span><span>이미지를 누르면 크게 볼 수 있습니다.</span></figcaption>
+      </figure>
+      <div class="features">
+        <details class="feature"><summary><span class="tile t-http" style="width:34px;height:34px;border-radius:8px;font-size:11px">API</span>워크플로 캔버스</summary><p>HTTP · TCP 전문 · 폼 · 콜백 대기 · 분기 노드를 끌어다 잇고, 앞 노드의 응답 값을 다음 노드에 바로 연결합니다.</p></details>
+        <details class="feature"><summary><span class="tile t-tcp" style="width:34px;height:34px;border-radius:8px;font-size:15px">⇄</span>Mock 서버 (HTTP · TCP)</summary><p>미완성 대상 시스템을 규칙 · 응답 템플릿 · 콜백 발사로 바로 세우고, 들어온 요청을 기록으로 확인합니다.</p></details>
+        <details class="feature"><summary><span class="tile t-if" style="width:34px;height:34px;border-radius:8px;font-size:15px">◇</span>환경 · 시크릿</summary><p>dev / staging / prod를 바꿔 가며 실행하고, 토큰은 시크릿 볼트나 Vault에서 꺼내 씁니다. 로그에는 가려서 남습니다.</p></details>
+        <details class="feature"><summary><span class="tile t-ok" style="width:34px;height:34px;border-radius:8px;font-size:15px">✓</span>실행 이력 · 재실행</summary><p>노드별 요청과 응답을 다시 열어 보고, 이전 실행과 비교하고, 같은 입력으로 다시 돌립니다.</p></details>
+        <details class="feature"><summary><span class="tile t-wait" style="width:34px;height:34px;border-radius:8px;font-size:15px">◷</span>스케줄 · 웹훅 실행</summary><p>cron 일정이나 웹훅 주소로 브라우저 없이 자동 실행하고, 실패하면 팀 메신저로 알립니다.</p></details>
+        <details class="feature"><summary><span class="tile t-http" style="width:34px;height:34px;border-radius:8px;font-size:15px">✦</span>AI 어시스턴트</summary><p>만들고 싶은 흐름을 말로 설명하면 캔버스에 노드를 제안합니다. GitHub Copilot 계정으로 연결합니다.</p></details>
+      </div>
+    </div>
+  </section>
+
+  <section class="workspaces" aria-labelledby="workspace-title">
+    <div class="wrap workspace-grid">
+      <div class="workspace-heading">
+        <h2 class="section-title" id="workspace-title">내 PC에서 시작해,<br>팀으로 이어집니다.</h2>
+        <p>개인 작업은 내 컴퓨터에. 함께 쓰는 흐름은 회사 서버에. 작업에 맞는 공간을 선택하세요.</p>
+      </div>
+      <div class="workspace-modes">
     <div class="card">
       <h3><span class="icon-box" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg></span>개인 작업 · 내 PC</h3>
       <p>설치하면 바로 씁니다. 워크플로·환경·직접 입력한 시크릿은 PC 안에만 저장됩니다.</p>
@@ -249,20 +238,7 @@
       <p>이 서버에 연결하면 팀 워크스페이스를 함께 편집하고, 공용 플러그인과 Vault 시크릿을 씁니다.</p>
       <ul class="list"><li>GitHub 로그인 · 워크스페이스 권한</li><li>실시간 공동 편집과 커서 표시</li><li>IDE에서 쓰는 중앙 MCP</li></ul>
     </div>
-  </div>
-
-  <section class="band" id="features" aria-labelledby="features-title">
-    <div class="wrap">
-      <p class="eyebrow">기능</p>
-      <h2 class="section-title" id="features-title">만들고, 모의하고, 검증까지 한 화면에서.</h2>
-      <div class="features">
-        <div class="feature"><span class="tile t-http" style="width:34px;height:34px;border-radius:8px;font-size:11px">API</span><h3>워크플로 캔버스</h3><p>HTTP · TCP 전문 · 폼 · 콜백 대기 · 분기 노드를 끌어다 잇고, 앞 노드의 응답 값을 다음 노드에 바로 연결합니다.</p></div>
-        <div class="feature"><span class="tile t-tcp" style="width:34px;height:34px;border-radius:8px;font-size:15px">⇄</span><h3>Mock 서버 (HTTP · TCP)</h3><p>미완성 대상 시스템을 규칙 · 응답 템플릿 · 콜백 발사로 바로 세우고, 들어온 요청을 기록으로 확인합니다.</p></div>
-        <div class="feature"><span class="tile t-if" style="width:34px;height:34px;border-radius:8px;font-size:15px">◇</span><h3>환경 · 시크릿</h3><p>dev / staging / prod를 바꿔 가며 실행하고, 토큰은 시크릿 볼트나 Vault에서 꺼내 씁니다. 로그에는 가려서 남습니다.</p></div>
-        <div class="feature"><span class="tile t-ok" style="width:34px;height:34px;border-radius:8px;font-size:15px">✓</span><h3>실행 이력 · 재실행</h3><p>노드별 요청과 응답을 다시 열어 보고, 이전 실행과 비교하고, 같은 입력으로 다시 돌립니다.</p></div>
-        <div class="feature"><span class="tile t-wait" style="width:34px;height:34px;border-radius:8px;font-size:15px">◷</span><h3>스케줄 · 웹훅 실행</h3><p>cron 일정이나 웹훅 주소로 브라우저 없이 자동 실행하고, 실패하면 팀 메신저로 알립니다.</p></div>
-        <div class="feature"><span class="tile t-http" style="width:34px;height:34px;border-radius:8px;font-size:15px">✦</span><h3>AI 어시스턴트</h3><p>만들고 싶은 흐름을 말로 설명하면 캔버스에 노드를 제안합니다. GitHub Copilot 계정으로 연결합니다.</p></div>
-      </div>
+        </div>
     </div>
   </section>
 
@@ -298,7 +274,7 @@
     <div class="wrap">
       <div class="dl-panel">
         <div>
-          <h2 id="dl-title">지금 받아서 시작하세요.</h2>
+          <h2 id="dl-title">다음 흐름은,<br>직접 만들어보세요.</h2>
           <p>이 서버가 크기와 SHA-256을 확인한 설치 파일입니다.</p>
           <a id="download-2" class="btn btn-primary btn-lg" hidden>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>
@@ -309,11 +285,11 @@
         </div>
         <div>
           <dl class="info">
-            <dt>버전</dt><dd><span id="info-version">—</span></dd>
-            <dt>파일 크기</dt><dd><span id="info-size">—</span></dd>
-            <dt>SHA-256</dt><dd><span class="mono" id="info-sha">—</span><button type="button" class="btn btn-icon" data-copy="info-sha" hidden>복사</button></dd>
-            <dt>서버 주소</dt><dd><span class="mono" id="info-server">—</span><button type="button" class="btn btn-icon" data-copy="info-server" hidden>복사</button></dd>
-            <dt>MCP 주소</dt><dd><span class="mono" id="info-mcp">—</span><button type="button" class="btn btn-icon" data-copy="info-mcp" hidden>복사</button></dd>
+            <dt>버전</dt><dd><span id="info-version">-</span></dd>
+            <dt>파일 크기</dt><dd><span id="info-size">-</span></dd>
+            <dt>SHA-256</dt><dd><span class="mono" id="info-sha">-</span><button type="button" class="btn btn-icon" data-copy="info-sha" hidden>복사</button></dd>
+            <dt>서버 주소</dt><dd><span class="mono" id="info-server">-</span><button type="button" class="btn btn-icon" data-copy="info-server" hidden>복사</button></dd>
+            <dt>MCP 주소</dt><dd><span class="mono" id="info-mcp">-</span><button type="button" class="btn btn-icon" data-copy="info-mcp" hidden>복사</button></dd>
           </dl>
           <div class="notes" id="info-notes" hidden></div>
         </div>
@@ -346,7 +322,7 @@
     setTimeout(() => { button.textContent = '복사'; }, 1600);
   });
 
-  const setInfo = (id, value) => { $(id).textContent = value || '—'; const copy = document.querySelector('[data-copy="' + id + '"]'); if (copy) copy.hidden = !value; };
+  const setInfo = (id, value) => { $(id).textContent = value || '-'; const copy = document.querySelector('[data-copy="' + id + '"]'); if (copy) copy.hidden = !value; };
   async function load() {
     for (const id of ['download', 'download-2', 'retry', 'compatibility', 'state-missing', 'state-error', 'info-notes']) $(id).hidden = true;
     $('download').removeAttribute('href'); $('download-2').removeAttribute('href');

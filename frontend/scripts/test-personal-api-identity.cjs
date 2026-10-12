@@ -1,5 +1,5 @@
 // Run: node frontend/scripts/test-personal-api-identity.cjs
-// Executes actual WorkspaceProvider hooks and actual environment WeakMap store without network/MCP.
+// Executes actual WorkspaceProvider hooks and scoped environment store without network/MCP.
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
@@ -13,8 +13,10 @@ const react = {
   createContext: () => ({ Provider: 'provider' }),
   useContext: () => scope,
   useEffect: () => {},
+  useSyncExternalStore: (_subscribe, snapshot) => snapshot(),
   useMemo: (make, deps) => { const i = hookIndex++; if (!hooks[i] || !sameDeps(hooks[i].deps, deps)) hooks[i] = { value: make(), deps }; return hooks[i].value },
   useCallback: (callback, deps) => react.useMemo(() => callback, deps),
+  useRef: initial => { const i = hookIndex++; if (!hooks[i]) hooks[i] = { value: { current: initial } }; return hooks[i].value },
   useState: initial => { const i = hookIndex++; if (!hooks[i]) hooks[i] = { value: typeof initial === 'function' ? initial() : initial }; return [hooks[i].value, value => { hooks[i].value = value }] },
 }
 const localApi = { origin: 'local' }
@@ -32,11 +34,11 @@ const base = {
 }
 function load(file, requires) {
   const exported = {}
-  const code = ts.transpileModule(fs.readFileSync(path.join(__dirname, file), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText
+  const code = ts.transpileModule(fs.readFileSync(path.join(__dirname, file), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText.replaceAll('import.meta.hot', 'undefined')
   vm.runInNewContext(code, { ...base, exports: exported, require: name => requires[name] ?? {} })
   return exported
 }
-const createApi = (transport, workspaceId, resourceBase, expectedLogin) => ({ transport, workspaceId, resourceBase, expectedLogin, environmentsApi: { list: async () => [], put: async () => { throw new Error('offline') }, remove: async () => {} }, workspacesApi: {} })
+const createApi = (transport, workspaceId, resourceBase, expectedLogin) => ({ transport, workspaceId, resourceBase, expectedLogin, environmentsApi: { list: async () => [], put: async () => { throw new Error('offline') }, remove: async () => {} }, runInputApi: { get: async () => ({ vars: {} }), put: async () => {} }, secretsApi: { transport, workspaceId, expectedLogin }, protocolsApi: { transport, workspaceId, expectedLogin }, workspacesApi: {} })
 const routePaths = load('../src/app/routePaths.ts', { 'react-router-dom': require('react-router-dom') })
 const provider = load('../src/app/WorkspaceContext.tsx', {
   react, 'react/jsx-runtime': { jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }) },
@@ -45,9 +47,13 @@ const provider = load('../src/app/WorkspaceContext.tsx', {
   '../api/client': { createApi, localApi, serverApi }, '../auth/AuthContext': { useAuth: () => auth }, '../auth/desktop': { desktopApi: {} }, '../store/editorStore': { useEditorStore: {} }, './routePaths': routePaths,
 })
 const environments = load('../src/lib/environments.ts', { react, '../app/WorkspaceContext': provider, '../components/toast': { toast: () => {} } })
+const inputs = load('../src/lib/runInput.ts', { react, '../app/WorkspaceContext': provider, '../components/toast': { toast: () => {} } })
 const render = () => { hookIndex = 0; const result = provider.WorkspaceProvider({ children: null }); scope = result.props.value; return scope }
 async function run() {
   const first = render()
+  const inputStore = inputs.useRunInputActions()
+  inputStore.loadRunInput('flow'); await Promise.resolve()
+  inputStore.setRunInputVars({ order: 'PC draft' })
   const store = environments.useEnvironment()
   await store.ensureEnvLoaded()
   store.setEnvStore({ active: 'dev', envs: { dev: { URL: 'unsaved-local-value' } } })
@@ -55,13 +61,22 @@ async function run() {
   assert.equal(store.getSaveStatus(), 'error')
   connection = { connected: true, login: 'alice', serverUrl: connection.serverUrl }
   const loggedIn = render()
-  assert.equal(loggedIn.api, first.api, 'server login must preserve personal API identity')
+  assert.equal(loggedIn.api.environmentsApi, first.api.environmentsApi, 'server login preserves personal environment API identity')
+  assert.equal(loggedIn.api.runInputApi, first.api.runInputApi, 'server login preserves personal input API identity')
+  assert.notEqual(loggedIn.api.secretsApi, first.api.secretsApi, 'shared resources follow the new server connection')
+  assert.equal(loggedIn.api.secretsApi.workspaceId, 'public')
+  assert.equal(inputs.useRunInputActions(), inputStore)
+  assert.equal(inputStore.activeInputVars().order, 'PC draft')
   assert.equal(loggedIn.scopeKey, first.scopeKey)
-  assert.equal(environments.useEnvironment(), store, 'personal environment WeakMap store must survive login')
+  assert.equal(environments.useEnvironment(), store, 'personal environment store must survive login')
   assert.equal(store.getEnvStore().envs.dev.URL, 'unsaved-local-value')
   assert.equal(store.getSaveStatus(), 'error')
   connection = { connected: true, login: 'bob', serverUrl: 'https://second.company.test' }
-  assert.equal(render().api, first.api, 'switching account and server must preserve personal API identity')
+  const secondServer = render()
+  assert.equal(secondServer.api.environmentsApi, first.api.environmentsApi, 'switching account and server preserves personal environment API identity')
+  assert.equal(inputs.useRunInputActions(), inputStore, 'shared API changes do not recreate the local run-input store')
+  assert.equal(inputStore.activeInputVars().order, 'PC draft')
+  assert.equal(secondServer.api.secretsApi.expectedLogin, 'bob')
   assert.equal(environments.useEnvironment(), store)
   location.search = '?space=server%3Ateam-id'
   const remote = render()

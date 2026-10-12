@@ -52,17 +52,24 @@ const CodeEditor = forwardRef<CodeEditorHandle, {
   onStatus?: (s: CodeStatus) => void
   completions?: CompletionSource[]
   diagnostics?: EditorDiagnostic[]
-}>(function CodeEditor({ value, onChange, language, sources = [], wrap = true, placeholder, onStatus, completions, diagnostics }, ref) {
+  ariaLabel?: string
+  readOnly?: boolean
+}>(function CodeEditor({ value, onChange, language, sources = [], wrap = true, placeholder, onStatus, completions, diagnostics, ariaLabel, readOnly = false }, ref) {
   const hostRef = useRef<HTMLDivElement>(null)
   const viewRef = useRef<EditorView | null>(null)
+  const docValueRef = useRef(value)
+  const syncingRef = useRef(false)
   const onChangeRef = useRef(onChange); onChangeRef.current = onChange
   const onStatusRef = useRef(onStatus); onStatusRef.current = onStatus
   const sourcesRef = useRef(sources); sourcesRef.current = sources
   const completionsRef = useRef(completions ?? []); completionsRef.current = completions ?? []
   const wrapComp = useRef(new Compartment()).current
+  const themeComp = useRef(new Compartment()).current
+  const accessComp = useRef(new Compartment()).current
+  const label = ariaLabel ?? `${language === 'javascript' ? 'JavaScript' : language === 'text' ? '텍스트' : language.toUpperCase()} 코드 편집기`
 
   const doFormat = (view: EditorView): 'ok' | 'noop' | 'fail' => {
-    if (language === 'text') return 'fail'
+    if (language === 'text' || view.state.readOnly) return 'fail'
     const cur = view.state.doc.toString()
     const out = language === 'javascript' ? formatWithTokens(cur, (s) => beautifyJs(s, { indent_size: 2, preserve_newlines: true, max_preserve_newlines: 1 })) : formatCode(cur, language, (s) => beautifyHtml(s, BEAUTIFY))
     if (out == null) return 'fail'
@@ -74,21 +81,24 @@ const CodeEditor = forwardRef<CodeEditorHandle, {
   useImperativeHandle(ref, () => ({
     format: () => (viewRef.current ? doFormat(viewRef.current) : 'fail'),
     focus: () => viewRef.current?.focus(),
-    insert: (text) => { const v = viewRef.current; if (!v) return; v.dispatch(v.state.replaceSelection(text)); v.focus() },
+    insert: (text) => { const v = viewRef.current; if (!v || v.state.readOnly) return; v.dispatch(v.state.replaceSelection(text)); v.focus() },
   }))
 
   useEffect(() => {
     if (!hostRef.current) return
     const dark = document.documentElement.getAttribute('data-theme') === 'dark'
+    docValueRef.current = value
+    let statusFrame = 0
     // HTML/XML: lezer 파스 트리의 오류 노드를 경고로 표시(템플릿 토큰 {{…}} 이 섞여도 죽지 않는 관대한 체크)
     const treeLinter = linter((view) => {
       const diags: Diagnostic[] = []
-      syntaxTree(view.state).cursor().iterate((n) => {
+      const n = syntaxTree(view.state).cursor()
+      do {
         if (n.type.isError) {
-          diags.push({ from: n.from, to: Math.max(n.to, n.from + 1), severity: 'warning', message: '문법 오류로 보입니다 — 태그/괄호 짝을 확인하세요' })
+          diags.push({ from: n.from, to: Math.min(view.state.doc.length, Math.max(n.to, n.from + 1)), severity: 'warning', message: '문법 오류로 보입니다 — 태그/괄호 짝을 확인하세요' })
         }
-      })
-      return diags.slice(0, 50) // 오류 폭주 방지
+      } while (diags.length < 50 && n.next())
+      return diags
     })
     const langExts =
       language === 'json' ? [json(), linter(jsonParseLinter())]
@@ -118,16 +128,23 @@ const CodeEditor = forwardRef<CodeEditorHandle, {
       extensions: [
         basicSetup,
         wrapComp.of(wrap ? EditorView.lineWrapping : []),
+        themeComp.of(dark ? oneDark : []),
+        accessComp.of([EditorState.readOnly.of(readOnly), EditorView.editable.of(!readOnly), EditorView.contentAttributes.of({ 'aria-label': label })]),
         lintGutter(),
         ...langExts,
         EditorState.languageData.of(() => [{ autocomplete: tokenCompletion }, ...completionsRef.current.map((c) => ({ autocomplete: c }))]),
         // Tab = 들여쓰기(Shift+Tab 내어쓰기) — 편집기 밖으로 포커스가 나가지 않는다(나가려면 Esc 후 Tab)
         keymap.of([indentWithTab, { key: 'Shift-Alt-f', run: (v) => { doFormat(v); return true } }]),
         ...(placeholder ? [cmPlaceholder(placeholder)] : []),
-        ...(dark ? [oneDark] : []),
         EditorView.updateListener.of((u) => {
-          if (u.docChanged) onChangeRef.current(u.state.doc.toString())
-          if (u.docChanged || u.selectionSet) report(u.state)
+          if (u.docChanged) {
+            docValueRef.current = u.state.doc.toString()
+            if (!syncingRef.current) onChangeRef.current(docValueRef.current)
+          }
+          // 커서 상태만 바뀌어도 큰 편집 모달 전체가 키마다 다시 그려지지 않게 모은다.
+          if ((u.docChanged || u.selectionSet) && onStatusRef.current && !statusFrame) {
+            statusFrame = requestAnimationFrame(() => { statusFrame = 0; report(view.state) })
+          }
         }),
         EditorView.theme({
           '&': { height: '100%', fontSize: '13px', backgroundColor: 'var(--fl-surface)' },
@@ -138,10 +155,14 @@ const CodeEditor = forwardRef<CodeEditorHandle, {
       ],
     })
     viewRef.current = view
+    const themeObserver = new MutationObserver(() => view.dispatch({ effects: themeComp.reconfigure(document.documentElement.getAttribute('data-theme') === 'dark' ? oneDark : []) }))
+    themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
     view.focus()
     report(view.state)
     return () => {
       viewRef.current = null
+      themeObserver.disconnect()
+      cancelAnimationFrame(statusFrame)
       view.destroy()
     }
     // value 는 초기 문서로만 사용 — 이후 동기화는 아래 effect 가 담당(재생성 방지)
@@ -151,12 +172,16 @@ const CodeEditor = forwardRef<CodeEditorHandle, {
   // 밖에서 value 가 바뀐 경우(프리셋 버튼 등) 문서를 교체 — 자기 onChange 에는 이미 같아서 no-op
   useEffect(() => {
     const v = viewRef.current
-    if (v && value !== v.state.doc.toString()) {
-      v.dispatch({ changes: { from: 0, to: v.state.doc.length, insert: value } })
+    if (v && value !== docValueRef.current) {
+      // 상위에서 불러온 본문을 다시 사용자 편집으로 보고하면 새 초안이 즉시 dirty가 된다.
+      syncingRef.current = true
+      try { v.dispatch({ changes: { from: 0, to: v.state.doc.length, insert: value } }) }
+      finally { syncingRef.current = false }
     }
   }, [value])
   // 줄바꿈 토글
   useEffect(() => { viewRef.current?.dispatch({ effects: wrapComp.reconfigure(wrap ? EditorView.lineWrapping : []) }) }, [wrap, wrapComp])
+  useEffect(() => { viewRef.current?.dispatch({ effects: accessComp.reconfigure([EditorState.readOnly.of(readOnly), EditorView.editable.of(!readOnly), EditorView.contentAttributes.of({ 'aria-label': label })]) }) }, [readOnly, label, accessComp])
 
   // 서버 컴파일/실행 오류(줄 번호) → 거터. 문서를 고치면 클라이언트 linter 가 다시 돌며 자연히 지워진다.
   useEffect(() => {
@@ -166,7 +191,7 @@ const CodeEditor = forwardRef<CodeEditorHandle, {
       if (d.line < 1 || d.line > v.state.doc.lines) return []
       const ln = v.state.doc.line(d.line)
       const from = Math.min(ln.from + Math.max((d.col ?? 1) - 1, 0), ln.to)
-      return [{ from, to: Math.max(from + 1, ln.to), severity: d.severity ?? 'error', message: d.message }]
+      return [{ from, to: Math.min(v.state.doc.length, Math.max(from + 1, ln.to)), severity: d.severity ?? 'error', message: d.message }]
     })
     v.dispatch(setDiagnostics(v.state, diags))
   }, [diagnostics])

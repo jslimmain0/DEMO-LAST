@@ -9,7 +9,7 @@ import type { ExecutionStatus, ExecutionSummary } from '../api/types'
 
 
 import { AppShellTier1 } from '../app/AppShell'
-import { LogBlock } from '../components/NodeExecutionLog'
+import { LogBlock, outputText } from '../components/NodeExecutionLog'
 import { StatusBadge } from '../components/StatusBadge'
 import { toast } from '../components/toast'
 import { Modal } from '../components/Modal'
@@ -176,8 +176,8 @@ export function Executions() {
 }
 
 // 노드 결과 시그니처(응답+출력) — 이전 실행과 비교용
-function nodeSig(nd: { responseText?: string | null; output?: unknown }): string {
-  return `${nd.responseText ?? ''}::${nd.output == null ? '' : JSON.stringify(nd.output)}`
+function nodeSig(nd: { responseText?: string | null; output?: unknown; outputJson?: string | null }): string {
+  return `${nd.responseText ?? ''}::${outputText(nd) ?? ''}`
 }
 
 // 과거 실행 상세 — 노드별 요청/응답/출력 재열람(에디터 안 열고) + 이전 실행과 비교(응답 diff)
@@ -257,13 +257,13 @@ function ExecutionDetailModal({ execId, onClose }: { execId: string; onClose: ()
                   <div style={{ padding: '0 14px 12px', display: 'grid', gap: 8 }}>
                     <LogBlock title="요청" text={nd.requestText} />
                     <LogBlock title="응답" text={nd.responseText} />
-                    {nd.output != null && <LogBlock title="출력" text={JSON.stringify(nd.output, null, 2)} />}
-                    {!nd.requestText && !nd.responseText && nd.output == null && <span style={{ fontSize: 12, color: 'var(--fl-text-muted)' }}>기록된 상세가 없습니다.</span>}
+                    <LogBlock title="출력" text={outputText(nd)} />
+                    {!nd.requestText && !nd.responseText && !outputText(nd) && <span style={{ fontSize: 12, color: 'var(--fl-text-muted)' }}>기록된 상세가 없습니다.</span>}
                     {changed && p && (
                       <div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: 'var(--fl-text-muted)', margin: '2px 0 4px' }}><AppIcon name="arrowLeft" size={12} />이전 실행</div>
                         <LogBlock title="이전 응답" text={p.responseText} />
-                        {p.output != null && <LogBlock title="이전 출력" text={JSON.stringify(p.output, null, 2)} />}
+                        <LogBlock title="이전 출력" text={outputText(p)} />
                       </div>
                     )}
                   </div>

@@ -82,7 +82,7 @@ class RunStateSnapshotTest {
     @Test
     fun snapshotJsonRoundTripThenResume() {
         val graph = json.mapper().readValue(graphJson, FlowGraph::class.java)
-        val ctx = ExecutionContext()
+        val ctx = ExecutionContext().apply { resourceIdentity = com.flowlink.agent.CentralResourceIdentity("https://central.example", "alice") }
         ctx.putSeed("w1", mapOf("url" to "http://cb.example/relay/x/cb/w1"))
         val st = executor.newRun(graph, ctx, "http://cb.example", "run-1")
 
@@ -101,6 +101,7 @@ class RunStateSnapshotTest {
         assertEquals(snap.ctxValues.keys.toList(), roundTripped.ctxValues.keys.toList())
 
         val st2 = executor.rehydrate(graph, roundTripped)
+        assertEquals(ctx.resourceIdentity, st2.context().resourceIdentity)
         // 복원된 ctx 에서 상류 출력/시드 조회 가능
         @Suppress("UNCHECKED_CAST")
         val setOut = st2.context().raw("v1") as Map<String, Any?>

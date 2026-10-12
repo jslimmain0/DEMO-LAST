@@ -27,10 +27,27 @@ Windows 자동 설정의 개인 작업은 토큰을 발급한 PC에 고정한다
 
 Windows 자동 설정을 지원하지 않는 클라이언트의 표준 OAuth 코드·PKCE 호환 경로는 유지한다. Spring Authorization Server가 처리하며 발급하는 자격도 MCP 전용이다. 이 호환 경로는 Windows 장치 ID 없이 계정에 연결된 현재 PC를 사용한다. `flowlink.desktop.mcp-auto-configure=false`는 IDE 파일 변경을 끄며 트레이를 끈 격리 검증에서는 기본 비활성화한다.
 
-기존 58개 도구 이름과 인자 계약은 `src/main/resources/flowlink-tools.json`에 보존한다. `target`은 개인/서버 저장 공간을 선택하고 `executionAgent`는 호출할 PC/서버 실행 위치를 선택한다. 개인 저장 공간이나 PC 작업은 로그인한 Windows 앱이 온라인이어야 한다. 개인 H2 전체를 중앙 서버로 동기화하지 않고 계정·장치에 묶인 명령 채널을 사용한다.
+기존 58개 도구 이름은 `src/main/resources/flowlink-tools.json`에 유지한다. 저장 위치, 환경 출처, 요청 실행 위치는 다음처럼 구분한다.
+
+| 선택 | 도구·필드 | 의미 |
+|---|---|---|
+| 워크플로·Mock 저장 위치 | `target`·`workspace` | `local`은 내 PC 개인 공간, `server`는 선택한 서버 공간(생략 시 public) |
+| 환경 변수 출처 | `env_*`의 `target`, 실행 도구의 `envSource`·`envName` | 내 PC/local 또는 서버 공통/server의 환경 하나. 같은 이름도 별개이며 자동 병합하지 않음 |
+| 시크릿·프로토콜·플러그인 | `secret_list`·`protocol_*`·`plugin_*`·`transform_preview` | 서버 public 공통 카탈로그. 기존 `target`·`workspace` 인자는 위치를 바꾸지 않으며 새 스키마에서는 광고하지 않음 |
+| HTTP·TCP 요청 출발지 | 노드의 `executionAgent` | `local` PC 또는 `server` 서버. TRANSFORM은 서버에서 흐름의 선택 환경으로 실행 |
+
+`flow_run`·`node_run`·`suite_run`은 선택한 출처의 `envName`과 `input`을 받는다. `node_run`의 `upstream` 계약도 유지한다. 공통 자원을 선택한 흐름에서 `envSource`를 생략하면 `target`을 따르며, 기존 metadata 없는 흐름은 출처 생략 시 이전 workspace 환경 계약을 유지한다. 이름 있는 환경을 찾을 수 없거나 조회가 실패하면 빈 값으로 실행하지 않는다. PC 환경을 선택할 때는 해당 변수 묶음을 고정해 전달하고 서버 시크릿은 공통 값만 사용한다. 서버 환경을 선택하면 서버의 해당 환경 시크릿도 적용한다. 호출자가 `resourceIdentity`·토큰·시크릿 원문을 graph/spec에 넣을 필요는 없다.
+
+예를 들어 `env_put(target="local", name="개발", vars={...})`과 `env_put(target="server", name="개발", vars={...})`은 서로 다른 환경을 저장한다. `flow_run(target="local", id="...", envSource="server", envName="개발")`은 PC에 저장한 흐름을 서버 개발 환경으로 실행한다. 실제 HTTP·TCP 요청 위치는 각 노드 설정을 따른다.
+
+새 `flow_upsert`는 `graph.resourceWorkspaceId="public"`, 새 `mock_upsert`는 `spec.resourceWorkspaceId="public"`을 기본으로 저장한다. 새 Mock의 `spec.envSource` 생략은 `target`을 따르며 PC Mock은 local/server 환경을 선택할 수 있고 서버 Mock은 server 환경을 사용한다. 기존 자료 수정은 명시한 metadata 또는 기존 metadata를 유지하고, metadata 없는 개인·팀 정의를 자동으로 공통 카탈로그에 복사하지 않는다. 전환할 때는 공통 카탈로그의 참조 ID를 확인한다. `execution_rerun`과 버전 복원도 원본 metadata·환경 출처·입력을 복원하며 현재 기본값으로 바꾸지 않는다.
+
+`mock_list`는 `{mocks:[...], sources:[...]}`를 반환한다. `target="server"`는 선택한 서버 공간과 내 PC Mock을, `target="local"`은 내 PC와 서버 public Mock을 함께 조회한다. 각 `mocks` 행의 `target`을 후속 도구에 전달한다. `sources`에는 `target`·`available`과 확인 가능한 `workspaceId`·`httpStatus`·안내가 있어 PC 오프라인이어도 서버 목록을 사용할 수 있다. 두 위치가 모두 실패하면 도구 오류를 반환한다.
+
+개인 저장 공간·PC 환경·PC 호출은 로그인한 Windows 앱이 온라인이어야 한다. 서버 공통 카탈로그 조회·관리는 PC 연결과 무관하다. 개인 H2 전체를 중앙 서버로 동기화하지 않고 계정·장치에 묶인 명령 채널을 사용한다. PC 실행 결과에도 실제 요청 본문을 표시하되 시크릿은 마스킹한다. 실제 통신 값은 그대로 전송하며 서버의 본문 저장 정책과 출력 마스킹 정책은 유지한다. PC가 중앙 전문을 사용할 때 정의만 전달하고 승인 코덱 스크립트는 서버에서 실행한다.
 
 `flow_upsert`로 새 워크플로를 생성하면 기본으로 위에서 아래로 진행하는 컴팩트한 트리 배치를 적용한다. 분기는 좌우로 나누고 합류는 아래에 두며 START와 모든 END는 동일한 x 좌표에 둔다. 좌표만 바꾸며 노드 설정·바인딩·연결·주석은 유지한다. 기존 워크플로 수정은 좌표를 보존한다. `layout="compact-tree"`로 재배치하거나 `layout="preserve"`로 생성 시 입력 좌표를 유지할 수 있다. 이 규칙은 MCP 초기 안내·도구 설명·flow 가이드에도 제공한다.
 
-빌드·모듈 경계는 [backend 안내](../README.md)를 따른다. 검증은 순수 계약/URI 정책/승인 화면, 전용 자격의 REST 발급·갱신·폐기, 임시 JSON 설정 병합과 암호화 수명주기, 패키징 경계를 대상으로 한다. MCP 프로토콜·도구 호출·실제 IDE 등록은 테스트하지 않는다. 역사적 Node MCP 검증 기록은 이 Kotlin 구현의 실연동 검증 결과가 아니다.
+빌드·모듈 경계는 [backend 안내](../README.md)를 따른다. 순수 계약 테스트는 도구 이름·JSON 스키마·출처·URI 정책을 검증한다. [실제 MCP 자원 검증 스크립트](../../scripts/test/mcp-resources.ps1)는 명시적으로 승인된 환경에서 `/mcp`의 도구 목록과 호출을 확인하며 IDE 등록 설정은 변경하지 않는다. 전용 자격의 REST 수명주기·임시 설정 병합·암호화·패키징 검증은 별도다. 역사적 Node MCP 검증 기록은 이 Kotlin 구현의 실연동 검증 결과가 아니다.
 
 설정 형식 근거: [VS Code HTTP 서버 인증 헤더](https://code.visualstudio.com/docs/agents/reference/mcp-configuration#http-and-server-sent-events-sse-servers), [GitHub Copilot MCP 설정](https://docs.github.com/en/copilot/how-tos/provide-context/use-mcp/extend-copilot-chat-with-mcp), [Microsoft APM의 IDE 설정 경로](https://microsoft.github.io/apm/integrations/ide-tool-integration/).

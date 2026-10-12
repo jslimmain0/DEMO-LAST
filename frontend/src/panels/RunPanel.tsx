@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import type { ExecutionDetail } from '../api/types'
 import { StatusBadge } from '../components/StatusBadge'
 import { MethodTag } from '../components/MethodTag'
-import { LogBlock, methodOf } from '../components/NodeExecutionLog'
+import { LogBlock, methodOf, outputText } from '../components/NodeExecutionLog'
 import { duration } from '../lib/format'
 import { AgentBadge } from '../components/AgentSettings'
 import { AppIcon } from '../components/AppIcon'
@@ -21,6 +21,10 @@ export function RunPanel({
   waitStatus = null,
   onStop,
   onClose,
+  onRetry,
+  onNodeSelect,
+  requestError,
+  errorPhase,
   height = 260,
 }: {
   execution: ExecutionDetail | null
@@ -28,6 +32,10 @@ export function RunPanel({
   waitStatus?: WaitStatus | null
   onStop?: () => void
   onClose: () => void
+  onRetry?: () => void
+  onNodeSelect?: (nodeId: string) => void
+  requestError?: string
+  errorPhase?: 'preparing' | 'tracking'
   height?: number
 }) {
   const [openId, setOpenId] = useState<string | null>(null)
@@ -35,6 +43,8 @@ export function RunPanel({
   const matchFilter = (s: string) => filter === 'all'
     || (filter === 'ok' && s === 'SUCCEEDED') || (filter === 'fail' && s === 'FAILED') || (filter === 'skip' && s === 'SKIPPED')
   const visibleNodes = (execution?.nodes ?? []).filter((nd) => matchFilter(nd.status))
+
+  useEffect(() => { setFilter('all'); setOpenId(null) }, [execution?.id])
 
   // 실패 시 첫 실패 노드를 자동으로 펼쳐 실패 지점을 바로 보여준다(긴 그래프에서 손으로 찾을 필요 없이)
   useEffect(() => {
@@ -54,7 +64,8 @@ export function RunPanel({
       lines.push(`\n## [${nd.status}] ${nd.nodeName || nd.nodeId}${nd.executionAgent && !['set', 'if', 'assert', 'switch'].includes(nd.nodeType ?? '') ? ` · ${nd.executionAgent === 'local' ? '내 PC' : '서버'} 에이전트` : ''}${nd.httpStatus != null ? ` · HTTP ${nd.httpStatus}` : ''}${nd.durationMs != null ? ` · ${nd.durationMs}ms` : ''}`)
       if (nd.requestText) lines.push(`요청:\n${nd.requestText}`)
       if (nd.responseText) lines.push(`응답:\n${nd.responseText}`)
-      if (nd.output != null) lines.push(`출력:\n${JSON.stringify(nd.output, null, 2)}`)
+      const output = outputText(nd)
+      if (output != null) lines.push(`출력:\n${output}`)
     }
     const blob = new Blob([lines.join('\n')], { type: 'text/plain;charset=utf-8' })
     const url = URL.createObjectURL(blob)
@@ -75,27 +86,31 @@ export function RunPanel({
         flexDirection: 'column',
       }}
     >
-      <header style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 14px', borderBottom: '1px solid var(--fl-border)' }}>
-        <strong style={{ fontSize: 13, color: 'var(--fl-text)' }}>실행 로그</strong>
+      <header className="fl-run-panel-header">
+        <strong style={{ fontSize: 13, color: 'var(--fl-text)' }}>실행 결과</strong>
         {execution && <StatusBadge status={execution.status} />}
-        {execution?.error && <span style={{ fontSize: 12, color: 'var(--fl-fail)' }}>{execution.error}</span>}
+        {!running && onRetry && <button onClick={onRetry} className="fl-run-panel-action"><AppIcon name="play" size={13} /> 다시 실행</button>}
+        <button onClick={onClose} aria-label="로그 닫기" className="fl-run-panel-close">×</button>
+        <div className="fl-run-panel-tools">
         {running && onStop && (
           <button onClick={onStop} title="실행 중단" style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 5, padding: '4px 10px', border: '1px solid var(--fl-fail)', borderRadius: 'var(--fl-radius-pill)', background: 'transparent', color: 'var(--fl-fail)', cursor: 'pointer', fontSize: 12, fontWeight: 700 }}>
             ⏹ 중단
           </button>
         )}
         {execution && execution.nodes.length > 0 && (
-          <div style={{ marginLeft: running && onStop ? 12 : 'auto', display: 'flex', gap: 2 }}>
+          <div className="fl-run-panel-filters" role="group" aria-label="실행 결과 필터">
             {([['all', '전체'], ['ok', '성공'], ['fail', '실패'], ['skip', '건너뜀']] as const).map(([k, lbl]) => (
-              <button key={k} onClick={() => setFilter(k)} style={{ padding: '3px 8px', fontSize: 12, border: '1px solid var(--fl-border)', borderRadius: 6, cursor: 'pointer', background: filter === k ? 'var(--fl-action-primary-bg)' : 'transparent', color: filter === k ? 'var(--fl-action-primary-ink)' : 'var(--fl-text-muted)' }}>{lbl}</button>
+              <button key={k} onClick={() => setFilter(k)} aria-pressed={filter === k} style={{ padding: '3px 8px', fontSize: 12, border: '1px solid var(--fl-border)', borderRadius: 6, cursor: 'pointer', background: filter === k ? 'var(--fl-action-primary-bg)' : 'transparent', color: filter === k ? 'var(--fl-action-primary-ink)' : 'var(--fl-text-muted)' }}>{lbl}</button>
             ))}
             <button onClick={exportLog} title="실행 로그 전체 내보내기(.txt)" style={{ padding: '3px 8px', fontSize: 12, border: '1px solid var(--fl-border)', borderRadius: 6, cursor: 'pointer', background: 'transparent', color: 'var(--fl-text-muted)' }}>⬇ 내보내기</button>
           </div>
         )}
-        <button onClick={onClose} aria-label="로그 닫기" style={{ marginLeft: execution && execution.nodes.length > 0 ? 8 : (running && onStop ? 0 : 'auto'), border: 'none', background: 'transparent', color: 'var(--fl-text-muted)', cursor: 'pointer', fontSize: 16 }}>×</button>
+        </div>
       </header>
 
-      <div style={{ flex: 1, overflowY: 'auto' }}>
+      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
+        {requestError && <div role="alert" className="fl-run-panel-error"><strong>{errorPhase === 'preparing' ? '실행을 준비하지 못했습니다.' : '실행 상태를 확인해야 합니다.'}</strong><span>{requestError}</span>{errorPhase === 'tracking' && <span>요청이 처리됐을 수 있습니다. 실행 이력에서 상태를 확인하세요.</span>}</div>}
+        {execution?.error && <div role="alert" className="fl-run-panel-error"><strong>실행 실패</strong><span>{execution.error}</span><span>실패한 노드의 요청·응답을 확인하고 노드 설정에서 수정하세요.</span></div>}
         {(running || execution?.pendingAgent) && (
           waitStatus ? (
             <WaitBanner status={waitStatus} />
@@ -111,40 +126,41 @@ export function RunPanel({
                 ? '팝업을 열고 폼을 제출하는 중…'
                 : execution?.pendingClient
                   ? `브라우저(클라이언트)에서 직접 호출 중… — ${execution.pendingClient.method} ${execution.pendingClient.url}`
-                  : '실행 중… (완료되면 결과가 표시됩니다)'}
+                  : !execution ? '실행 준비 중… 환경 확인과 현재 변경 저장을 마치면 시작합니다.' : '실행 중… (완료되면 결과가 표시됩니다)'}
             </div>
           )
         )}
-        {!running && !execution && (
+        {!running && !execution && !requestError && (
           <div style={{ padding: 16, color: 'var(--fl-text-muted)', fontSize: 13 }}>아직 실행하지 않았습니다. ▶ 실행을 눌러보세요.</div>
         )}
         {execution && execution.nodes.length > 0 && visibleNodes.length === 0 && (
-          <div style={{ padding: 16, color: 'var(--fl-text-muted)', fontSize: 13 }}>이 필터에 해당하는 노드가 없습니다.</div>
+          <div style={{ padding: 16, color: 'var(--fl-text-muted)', fontSize: 13 }}>이 필터에 해당하는 노드가 없습니다. <button className="fl-run-panel-action" onClick={() => setFilter('all')}>전체 결과 보기</button></div>
         )}
         {execution && visibleNodes.map((nd) => {
           const open = openId === nd.id
           return (
             <div key={nd.id} style={{ borderBottom: '1px solid var(--fl-border)' }}>
-              <button
+              <div className="fl-run-node-row"><button
                 onClick={() => setOpenId(open ? null : nd.id)}
-                style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '9px 14px', border: 'none', background: 'transparent', color: 'var(--fl-text)', cursor: 'pointer', textAlign: 'left' }}
+                aria-expanded={open}
+                className="fl-run-node-summary"
               >
                 <span style={{ width: 18, color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)', fontSize: 11 }}>{nd.seq}</span>
                 <StatusBadge status={nd.status} />
                 {nd.nodeType === 'http' && nd.httpStatus != null && methodOf(nd.requestText) && <MethodTag method={methodOf(nd.requestText)!} />}
-                <span style={{ fontSize: 13, fontWeight: 500 }}>{nd.nodeName || nd.nodeId}</span>
+                <span className="fl-run-node-name" style={{ fontSize: 13, fontWeight: 500 }}>{nd.nodeName || nd.nodeId}</span>
                 {nd.executionAgent && !['set', 'if', 'assert', 'switch'].includes(nd.nodeType ?? '') && <AgentBadge agent={nd.executionAgent} />}
-                <span style={{ marginLeft: 'auto', display: 'flex', gap: 12, color: 'var(--fl-text-muted)', fontSize: 12, fontFamily: 'var(--fl-font-mono)' }}>
+                <span className="fl-run-node-metrics" style={{ marginLeft: 'auto', display: 'flex', gap: 12, color: 'var(--fl-text-muted)', fontSize: 12, fontFamily: 'var(--fl-font-mono)' }}>
                   {nd.httpStatus != null && <span>{nd.httpStatus}</span>}
                   {nd.durationMs != null && <span>{duration(nd.durationMs)}</span>}
                   <span aria-hidden><AppIcon name={open ? 'chevronDown' : 'chevronRight'} size={13} style={{ color: 'var(--fl-text-muted)', verticalAlign: '-2px' }} /></span>
                 </span>
-              </button>
+              </button>{onNodeSelect && <button className="fl-run-panel-action fl-run-node-edit" onClick={() => onNodeSelect(nd.nodeId)} aria-label={`${nd.nodeName || nd.nodeId} 노드 설정 열기`}>노드 설정</button>}</div>
               {open && (
                 <div style={{ padding: '4px 14px 14px 42px', display: 'grid', gap: 10 }}>
                   <LogBlock title="요청" text={nd.requestText} />
                   <LogBlock title="응답" text={nd.responseText} />
-                  {nd.output != null && <LogBlock title="출력" text={JSON.stringify(nd.output, null, 2)} />}
+                  <LogBlock title="출력" text={outputText(nd)} />
                 </div>
               )}
             </div>

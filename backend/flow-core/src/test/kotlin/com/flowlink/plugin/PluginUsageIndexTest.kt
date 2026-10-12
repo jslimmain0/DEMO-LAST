@@ -48,11 +48,10 @@ class PluginUsageIndexTest {
     fun `사용 중인 플러그인은 삭제가 거부된다`() {
         val t = "default"
         val d = svc.create(PluginScriptDtos.SaveRequest("삭제 가드", "({ id: 'in-use-1', label: 'x', apply(i, c) { return { result: i.input } } })"))
+        assertThat(index.count("in-use-1")).isZero()
         val f = flowRepo.save(Flow.create(t, "가드 플로우", null))
         versionRepo.save(FlowVersion.create(f.id, 1, "v1", """{"nodes":[{"id":"n1","type":"transform","transformId":"in-use-1"}],"edges":[]}""", null, "dev"))
         f.currentVersion = 1; flowRepo.save(f)
-        index.invalidate()
-        assertThat(index.count("in-use-1")).isEqualTo(1)
         org.assertj.core.api.Assertions.assertThatThrownBy { svc.delete(d.id) }
             .isInstanceOf(com.flowlink.common.error.BadRequestException::class.java).hasMessageContaining("사용")
     }

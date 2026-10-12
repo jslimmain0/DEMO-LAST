@@ -54,9 +54,16 @@ class TcpMockRegistry(
         val want = workspace.supportsWorkspace(m.workspaceId) && m.isEnabled && tcp != null && tcp.port != null && !tcp.protocolId.isNullOrBlank()
         if (!want) { runtime.stop(m.id); return }
         validatePort(tcp!!.port!!)
-        val proto = try { protocols.specOf(UUID.fromString(tcp.protocolId!!.trim()), m.tenantId, m.workspaceId) }
+        val proto = try {
+            if (spec!!.resourceWorkspaceId == "public") {
+                val identity = if (workspace.localRuntime) spec.resourceIdentity?.takeIf { it.serverUrl.isNotBlank() } ?: throw BadRequestException("Mock을 저장한 서버 연결 정보가 필요합니다.") else null
+                val previous = com.flowlink.common.tenant.TenantContext.getTenantId()
+                com.flowlink.common.tenant.TenantContext.setTenantId(m.tenantId)
+                try { protocols.spec(tcp.protocolId!!.trim(), null, identity) } finally { com.flowlink.common.tenant.TenantContext.setTenantId(previous) }
+            } else protocols.specOf(UUID.fromString(tcp.protocolId!!.trim()), m.tenantId, m.workspaceId)
+        }
             catch (e: Exception) { throw BadRequestException("TCP Mock 의 프로토콜을 찾을 수 없습니다: ${tcp.protocolId}") }
-        runtime.sync(m.servingSnapshot(), tcp, proto, spec!!.environment)
+        runtime.sync(m.servingSnapshot(), tcp, proto, spec!!.environment, spec)
     }
     fun validatePort(port: Int) {
         val range = if (workspace.localRuntime) 1024..65535 else portStart..portEnd

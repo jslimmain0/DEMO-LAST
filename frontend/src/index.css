@@ -598,6 +598,11 @@ html[data-theme='light'] { --fl-cursor-arrow: url("data:image/svg+xml,%3Csvg%20x
 html[data-theme='light'], html[data-theme='light'] body { cursor: var(--fl-cursor-arrow); }
 html[data-theme='light'] :is(a[href], button:not(:disabled), select:not(:disabled), summary, label[for], [role='button'], [role='tab'], [role='menuitem'], [style*='cursor: pointer'], [style*='cursor: grab'], [draggable='true'], .react-flow__node, .react-flow__handle, .react-flow__edge) { cursor: var(--fl-cursor-hand) !important; }
 html[data-theme='light'] .react-flow__pane:not(.dragging) { cursor: var(--fl-cursor-arrow) !important; }
+/* 텍스트 영역은 시스템 I-beam을 쓰면 흰 포인터가 남으므로 같은 대비로 맞춘다. */
+html[data-theme='light'] { --fl-cursor-text: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cpath d='M8 3h8M12 3v18M8 21h8' fill='none' stroke='%23fff' stroke-width='4' stroke-linecap='round'/%3E%3Cpath d='M8 3h8M12 3v18M8 21h8' fill='none' stroke='%23111' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E") 12 12, text; }
+html[data-theme='light'] :is(input:not([type='checkbox']):not([type='radio']):not([type='button']):not([type='submit']):not([type='reset']):not([type='file']):not([type='color']):not([type='range']):not(:disabled), textarea:not(:disabled), [contenteditable='true'], .fl-token-input, .cm-content) { cursor: var(--fl-cursor-text) !important; caret-color: var(--fl-text); }
+.fl-token-input[contenteditable='false'] .fl-token-chip-x { display: none; }
+html[data-theme='light'] :is(.cm-cursor, .cm-dropCursor) { border-left-color: var(--fl-text); }
 
 /* ── 글자 위계 ───────────────────────────────────────────────
    제목 24 / 섹션 15 / 본문 14 / 보조 12. 굵기는 제목 700, 섹션·이름 650, 본문 400~500. */

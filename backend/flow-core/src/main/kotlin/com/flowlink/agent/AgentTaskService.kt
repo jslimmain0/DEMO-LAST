@@ -68,7 +68,8 @@ class AgentTaskService(
         requireDevice(body.deviceId)
         val request = body.request.copy(crossBoundary = true)
         if (request.node.executionAgent != "server") throw BadRequestException("서버 실행만 위임할 수 있습니다.")
-        if ((request.values.keys + request.seeds.keys).any { it == "env" || it == "secret" })
+        if (request.values.keys.any { it == "env" || it == "secret" } || request.seeds.containsKey("secret") ||
+            (request.seeds.containsKey("env") && (request.envSource != "local" || request.seeds["env"] !is Map<*, *>)))
             throw BadRequestException("환경·시크릿은 서버 에이전트에서 해석해야 합니다.")
         val scope = workspace.resolveId(request.workspaceId ?: "public")
         workspace.requireWrite(username, scope)
@@ -125,7 +126,7 @@ class AgentTaskService(
                     throw BadRequestException("IF 작업의 분기 결과가 올바르지 않습니다.")
                 body.result.copy(value = output, storedValue = output,
                     reqValues = selected(body.result.reqValues, request.allowedRequestKeys),
-                    requestText = "${request.node.type} · ${task.agent} 에이전트",
+                    requestText = if (task.agent == "local") body.result.requestText else "${request.node.type} · ${task.agent} 에이전트",
                     responseText = AgentResultText.response(body.result.value, output, json), branch = if (request.node.type == "if") body.result.branch else null)
             } else body.result
         }

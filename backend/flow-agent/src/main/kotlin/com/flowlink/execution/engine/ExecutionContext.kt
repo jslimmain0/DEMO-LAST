@@ -8,6 +8,8 @@ package com.flowlink.execution.engine
  */
 class ExecutionContext {
     var workspaceId: java.util.UUID? = null
+    var resourceIdentity: com.flowlink.agent.CentralResourceIdentity? = null
+    var expectedProtocolFingerprint: String? = null
 
     private val values = LinkedHashMap<String, Any?>()
     /**

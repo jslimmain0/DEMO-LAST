@@ -27,4 +27,10 @@ data class RunRequest(
     val onlyNodeId: String? = null,
     val agentDependencies: Map<String, Map<String, String>> = emptyMap(),
     val agentEnvironments: Map<String, String> = emptyMap(),
+    @get:com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+    val envSource: String? = null,
+    @get:com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+    val resourceWorkspaceId: String? = null,
+    @get:com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+    val resourceIdentity: com.flowlink.agent.CentralResourceIdentity? = null,
 )

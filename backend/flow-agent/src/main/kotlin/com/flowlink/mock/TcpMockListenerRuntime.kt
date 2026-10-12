@@ -42,7 +42,8 @@ class TcpMockListenerRuntime(
         val socket: ServerSocket,
         @Volatile var tcp: MockSpec.MockTcp,
         @Volatile var protocol: ProtocolSpec,
-        @Volatile var environment: String?        // 환경 스코프({{ 이름@secret }}·{{ 키@env }})
+        @Volatile var environment: String?,        // 환경 스코프({{ 이름@secret }}·{{ 키@env }})
+        @Volatile var spec: MockSpec?,
     )
 
     private val listeners = ConcurrentHashMap<UUID, Listener>() // mock 서버 id → 리스너
@@ -70,7 +71,7 @@ class TcpMockListenerRuntime(
      * 포트 바인딩 실패/다른 mock 과의 충돌·없는 프로토콜은 BadRequestException — 저장 트랜잭션이 롤백된다.
      */
     @Synchronized
-    fun sync(m: MockServingSnapshot, tcp: MockSpec.MockTcp, proto: ProtocolSpec, environment: String?) {
+    fun sync(m: MockServingSnapshot, tcp: MockSpec.MockTcp, proto: ProtocolSpec, environment: String?, spec: MockSpec? = null) {
         val port = tcp.port ?: throw BadRequestException("TCP Mock 포트가 없습니다.")
         val cur = listeners[m.id]
         if (cur != null && cur.port == port) {
@@ -78,6 +79,7 @@ class TcpMockListenerRuntime(
             cur.tcp = tcp // 같은 포트 — 규칙/프로토콜/시크릿 환경만 핫스왑
             cur.protocol = proto
             cur.environment = environment
+            cur.spec = spec
             failures.remove(m.id)
             return
         }
@@ -92,7 +94,7 @@ class TcpMockListenerRuntime(
             throw BadRequestException("TCP 포트 $port 바인딩 실패: ${e.message}") // 기존 리스너 그대로 — 롤백과 정합
         }
         if (cur != null) stop(m.id) // 새 소켓 확보 성공 후에만 기존 포트 리스너 종료
-        val listener = Listener(m.id, m.tenantId, m.workspaceId, port, ss, tcp, proto, environment)
+        val listener = Listener(m.id, m.tenantId, m.workspaceId, port, ss, tcp, proto, environment, spec)
         listeners[m.id] = listener
         failures.remove(m.id)
         Thread({ acceptLoop(listener) }, "tcp-mock-$port").apply {
@@ -139,16 +141,19 @@ class TcpMockListenerRuntime(
         sock.use {
             try {
                 sock.soTimeout = 30_000
-                val tcp = l.tcp // 연결 시작 시점 스냅샷 — 핫스왑이 규칙과 upstream 을 섞지 않게
-                val scope = secretProvider.scope(l.tenantId, l.environment, workspaceId = l.workspaceId)
+                val spec = l.spec
+                val tcp = spec?.tcp ?: l.tcp
+                val environment = if (spec != null) spec.environment else l.environment
+                val scope = secretProvider.scope(l.tenantId, environment, workspaceId = l.workspaceId, spec = spec)
                 val secrets = scope.secrets
                 val masks = SecretMasker.variants(secrets.values)
                 val session = TcpMockSession(
-                    l.protocol, tcp, ProtocolCodec.PluginLookup { transforms.codec(it, l.workspaceId, l.tenantId) }, secrets,
+                    scope.protocol ?: l.protocol, tcp, scope.codecLookup ?: ProtocolCodec.PluginLookup { transforms.codec(it, if (spec?.resourceWorkspaceId == "public") null else l.workspaceId, l.tenantId) }, secrets,
                     { store.seqNext(l.mockId) }, { store.recordTcp(l.mockId, it) },
                     upstreamFactory = { openUpstream(tcp, scope.resolver()) },
                     mask = { s -> SecretMasker.mask(s, masks) ?: s },
                     env = scope.env,
+                    verifyResourceAccess = scope.verifyAccess,
                 )
                 session.serve(sock.getInputStream(), sock.getOutputStream()) {
                     runCatching { sock.setSoLinger(true, 0) }; runCatching { sock.close() }

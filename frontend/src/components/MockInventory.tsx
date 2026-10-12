@@ -1,9 +1,9 @@
 import { AppIcon, type AppIconName } from './AppIcon'
-import { useApi } from '../app/WorkspaceContext'
+import { useWorkspace } from '../app/WorkspaceContext'
 import type { CSSProperties } from 'react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import type { HttpMethod, MockFleet, MockFleetPort, MockFleetServer, MockFleetWorkspace } from '../api/types'
+import type { HttpMethod, MockFleetServer, MockFleetWorkspace } from '../api/types'
 
 import { METHOD_COLOR } from '../canvas/nodeMeta'
 import { relTime } from '../lib/format'
@@ -11,6 +11,7 @@ import { toast } from './toast'
 import { CatalogPagination } from './CatalogPagination'
 import { catalogPage, compareMocks, type MockSort } from '../lib/catalog'
 import { ui } from '../design/ui'
+import { mockLocation, type MockCatalogFleet, type MockCatalogPort } from '../lib/mockCatalog'
 
 export type ServerAction = 'toggle' | 'rename' | 'duplicate' | 'export' | 'delete' | 'fav' | 'copyUrl' | 'move' | 'goFlow'
 export type FleetFilter = 'all' | 'on' | 'off' | 'fail' | 'live' | 'unmatched' | 'fav'
@@ -30,7 +31,7 @@ const kindColorOf = (isTcp: boolean) => (isTcp ? 'var(--fl-cat-tcp)' : 'var(--fl
  *   꺼짐=회색 상태 표시, 접근 불가=이름·포트·상태만. 클릭=편집기, Ctrl/Shift+클릭 또는 선택 모드=선택.
  */
 export function MockInventory({ fleet, host, tenant, match, sort = 'name', pageNumber, pageSize, onPage, onSize, selected, selectMode, favs, canEditGlobal, wsOptions, onOpen, onToggleSelect, onAction, onCreateIn }: {
-  fleet: MockFleet
+  fleet: MockCatalogFleet
   host: string
   tenant?: string | null
   match: ((s: MockFleetServer) => boolean) | null   // null = 전부 표시
@@ -61,7 +62,7 @@ export function MockInventory({ fleet, host, tenant, match, sort = 'name', pageN
     for (const s of fleet.servers) { const a = byWs.get(s.workspaceId) ?? []; a.push(s); byWs.set(s.workspaceId, a) }
     // 켜진 것 → HTTP 먼저 → 포트 → 이름
     for (const a of byWs.values()) a.sort(compareMocks(sort, serverState))
-    const rank = (w: MockFleetWorkspace) => (w.kind === 'PUBLIC' ? 0 : w.kind === 'PERSONAL' ? 1 : 2)
+    const rank = (w: MockFleetWorkspace) => (w.kind === 'PERSONAL' ? 0 : w.kind === 'PUBLIC' ? 1 : 2)
     return [...fleet.workspaces]
       .sort((a, b) => Number(b.mine) - Number(a.mine) || rank(a) - rank(b) || a.name.localeCompare(b.name, 'ko'))
       .filter((w) => w.mine || (byWs.get(w.id)?.length ?? 0) > 0)
@@ -96,7 +97,7 @@ export function MockInventory({ fleet, host, tenant, match, sort = 'name', pageN
     <div className="fl-mock-inventory" style={{ display: 'grid', gap: 14 }}>
       {/* 포트 스트립 — 실제 리스너 기준 */}
       <details style={{ order: 2 }}>
-      <summary style={{ ...meta, cursor: 'pointer', padding: '8px 0' }}>연결 정보 · {host} · 열린 포트 {ports.filter(p => p.state === 'LISTENING').length}개{ports.some(p => p.state === 'FAILED') ? ' · 바인딩 실패 있음' : ''}</summary>
+      <summary style={{ ...meta, cursor: 'pointer', padding: '8px 0' }}>연결 정보 · 열린 포트 {ports.filter(p => p.state === 'LISTENING').length}개{ports.some(p => p.state === 'FAILED') ? ' · 바인딩 실패 있음' : ''}</summary>
       <div style={portRow} aria-label="포트 맵">
         <span style={{ ...meta, fontWeight: 700, color: 'var(--fl-text)', marginRight: 2 }}>포트</span>
         {ports.filter((p) => p.kind === 'HTTP' || p.state !== 'OFF').slice(0, showPorts ? undefined : 8).map((p, i) => (
@@ -116,7 +117,7 @@ export function MockInventory({ fleet, host, tenant, match, sort = 'name', pageN
       {groups.map(({ ws: w, all, shown }) => {
         const readable = w.myRole != null
         const writable = canEditGlobal && (w.myRole === 'OWNER' || w.myRole === 'EDITOR')
-        const isCollapsed = groups.length > 1 && (searching ? shown.length === 0 : (collapsed[w.id] ?? !w.mine))
+        const isCollapsed = w.kind !== 'PERSONAL' && groups.length > 1 && (searching ? shown.length === 0 : (collapsed[w.id] ?? !w.mine))
         const page = catalogPage(shown.length, pageNumber, pageSize)
         const on = all.filter((s) => serverState(s) === 'on').length
         const live = all.filter((s) => s.recentRequests > 0).length
@@ -127,11 +128,11 @@ export function MockInventory({ fleet, host, tenant, match, sort = 'name', pageN
         return (
           <section key={w.id} aria-label={`워크스페이스 ${w.name}`} data-mine={w.mine} style={groups.length === 1 ? groupBoxSolo : { ...groupBox, borderStyle: w.mine ? 'solid' : 'dashed' }}>
             <div style={{ ...groupHead, ...(groups.length === 1 ? { display: 'none' } : {}) }}>
-              <button onClick={() => toggleGroup(w.id, w.mine)} aria-expanded={!isCollapsed} style={chev} title={isCollapsed ? '펼치기' : '접기'}><AppIcon name={isCollapsed ? 'chevronRight' : 'chevronDown'} size={13} style={{ color: 'var(--fl-text-muted)', verticalAlign: '-2px' }} /></button>
+              {w.kind !== 'PERSONAL' && <button onClick={() => toggleGroup(w.id, w.mine)} aria-expanded={!isCollapsed} style={chev} title={isCollapsed ? '펼치기' : '접기'}><AppIcon name={isCollapsed ? 'chevronRight' : 'chevronDown'} size={13} style={{ color: 'var(--fl-text-muted)', verticalAlign: '-2px' }} /></button>}
               <AppIcon name={icon} size={16} />
               <span style={{ fontFamily: 'var(--fl-font-head)', fontWeight: 800, fontSize: 14, color: 'var(--fl-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{w.name}</span>
               <span style={{ ...roleChip, color: roleColor, borderColor: `color-mix(in srgb, ${roleColor} 40%, var(--fl-border))` }}>{(!readable || w.myRole === 'VIEWER') && ''}{roleLabel}</span>
-              <span style={meta}>서버 {searching ? `${shown.length}/${all.length}` : all.length} · 서빙 {on}{live ? ` · 요청 중 ${live}` : ''}</span>
+              <span style={meta}>Mock {searching ? `${shown.length}/${all.length}` : all.length} · 켜짐 {on}{live ? ` · 요청 중 ${live}` : ''}</span>
               {tcpPorts.length > 0 && <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>{tcpPorts.slice(0, 6).map((s) => <span key={s.id} style={{ ...portMini, color: serverState(s) === 'on' ? 'var(--fl-ok)' : serverState(s) === 'fail' ? 'var(--fl-fail)' : 'var(--fl-text-muted)' }}>:{s.tcpPort}</span>)}{tcpPorts.length > 6 && <span style={portMini}>+{tcpPorts.length - 6}</span>}</span>}
               {writable && <button onClick={() => onCreateIn(w.id)} style={{ ...ghostMini, marginLeft: 'auto' }} title="이 워크스페이스에 새 Mock 만들기">+ Mock</button>}
             </div>
@@ -144,12 +145,12 @@ export function MockInventory({ fleet, host, tenant, match, sort = 'name', pageN
                         {selectMode && <span />}<span /><span>Mock 이름 · 연결 주소</span><span>종류 · 상태</span><span>응답 구성</span><span>최근 요청</span><span style={{ textAlign: 'right' }}>작업</span>
                       </div>
                       {shown.slice(page.start, page.end).map((s) => (
-                        <InventoryRow key={s.id} s={s} host={host} tenant={tenant} httpPort={fleet.httpPort} contextPath={fleet.contextPath}
-                          selected={selected.has(s.id)} selectMode={selectMode} fav={favs.has(s.id)} editable={canEditGlobal && s.readable && s.myRole !== 'VIEWER'} wsOptions={wsOptions}
+                        <InventoryRow key={s.id} s={s} tenant={tenant}
+                          selected={selected.has(s.id)} selectMode={selectMode} fav={favs.has(s.id)} editable={canEditGlobal && s.readable && s.myRole !== 'VIEWER'} wsOptions={wsOptions.filter(w => mockLocation(w.id).origin === mockLocation(s.id).origin)}
                           flash={flash === s.id} onOpen={onOpen} onToggleSelect={onToggleSelect} onAction={onAction} />
                       ))}
                     </div>
-                  </div><CatalogPagination label={`${w.name} Mock`} total={shown.length} page={page.page} size={pageSize} onPage={onPage} onSize={onSize} /></>
+                  </div>{shown.length > pageSize && <CatalogPagination label={`${w.name} Mock`} total={shown.length} page={page.page} size={pageSize} onPage={onPage} onSize={onSize} />}</>
             )}
           </section>
         )
@@ -160,12 +161,14 @@ export function MockInventory({ fleet, host, tenant, match, sort = 'name', pageN
 
 // ---------- 행 ----------
 
-function InventoryRow({ s, host, tenant, httpPort, contextPath, selected, selectMode, fav, editable, wsOptions, flash, onOpen, onToggleSelect, onAction }: {
-  s: MockFleetServer; host: string; tenant?: string | null; httpPort: number; contextPath: string
+function InventoryRow({ s, tenant, selected, selectMode, fav, editable, wsOptions, flash, onOpen, onToggleSelect, onAction }: {
+  s: MockFleetServer; tenant?: string | null
   selected: boolean; selectMode: boolean; fav: boolean; editable: boolean; wsOptions: MockFleetWorkspace[]; flash: boolean
   onOpen: (s: MockFleetServer) => void; onToggleSelect: (s: MockFleetServer) => void; onAction: (s: MockFleetServer, action: ServerAction, arg?: string) => void
 }) {
-  const { mockBaseUrl } = useApi()
+  const scope = useWorkspace()
+  const location = mockLocation(s.workspaceId)
+  const { mockBaseUrl } = scope.agentApi(location.origin, location.id)
 
   const [menu, setMenu] = useState(false)
   const [flows, setFlows] = useState(false)
@@ -198,9 +201,9 @@ function InventoryRow({ s, host, tenant, httpPort, contextPath, selected, select
   const kindColor = kindColorOf(isTcp)
   const ledColor = st === 'on' ? 'var(--fl-ok)' : st === 'fail' ? 'var(--fl-fail)' : 'var(--fl-border-strong, #9aa0b2)'
   const readOnly = !s.readable || s.myRole === 'VIEWER'
-  const seg = tenant && tenant !== 'default' ? `${tenant}/${s.slug}` : s.slug
-  const port = isTcp ? (s.tcpPort != null ? `:${s.tcpPort}` : ':—') : `:${httpPort}`
-  const tail = isTcp ? (s.listener?.advertisedAddress ?? host) : `${contextPath}${s.basePath ?? `/mock/${seg}`}`
+  const baseUrl = mockBaseUrl(s.slug, tenant, s.basePath)
+  const port = s.tcpPort != null ? `:${s.tcpPort}` : ':—'
+  const tail = isTcp ? (s.listener?.advertisedAddress ?? new URL(baseUrl).hostname) : baseUrl
   const stateLabel = isTcp ? (st === 'on' ? '리스닝' : st === 'fail' ? '바인딩 실패' : '꺼짐') : (st === 'on' ? '서빙 중' : '꺼짐')
   const usedBy = s.usedBy ?? []
   const act = (action: ServerAction, arg?: string) => { setMenu(false); setFlows(false); menuButton.current?.focus(); onAction(s, action, arg) }
@@ -219,7 +222,7 @@ function InventoryRow({ s, host, tenant, httpPort, contextPath, selected, select
           {fav && <span aria-label="즐겨찾기" style={{ color: 'var(--fl-put, #f5a623)', marginRight: 5 }}>★</span>}{s.name}
         </span>
         <span style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0 }}>
-          <span style={{ ...mono, fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={isTcp ? `${host}${port}` : mockBaseUrl(s.slug, tenant, s.basePath)}>{isTcp ? `${tail}${tail.endsWith(port) ? '' : port}` : `:${httpPort} /${s.slug}`}</span>
+          <span style={{ ...mono, fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={isTcp ? `${tail}${tail.endsWith(port) ? '' : port}` : baseUrl}>{isTcp ? `${tail}${tail.endsWith(port) ? '' : port}` : baseUrl}</span>
           {!isTcp && s.readable && <button className="fl-hover-reveal" style={{ ...ui.icon, width: 22, height: 22, flexShrink: 0 }} aria-label={`${s.name} 주소 복사`} title="주소 복사" onClick={e => { e.stopPropagation(); onAction(s, 'copyUrl') }}><AppIcon name="copy" size={13} /></button>}
         </span>
       </span>
@@ -290,17 +293,23 @@ function InventoryRow({ s, host, tenant, httpPort, contextPath, selected, select
 
 // ---------- 포트 칩 ----------
 
-function PortChip({ p, host, contextPath, tenant, onOpen }: { p: MockFleetPort; host: string; contextPath: string; tenant?: string | null; onOpen: () => void }) {
+function PortChip({ p, host: fallbackHost, contextPath: fallbackPath, tenant, onOpen }: { p: MockCatalogPort; host: string; contextPath: string; tenant?: string | null; onOpen: () => void }) {
+  const scope = useWorkspace()
+  const location = p.workspaceId ? mockLocation(p.workspaceId) : p.origin ? { origin: p.origin, id: p.origin === 'local' ? scope.workspaces.find(w => w.origin === 'local')?.id ?? 'local' : 'public' } : null
+  const host = location ? new URL(scope.agentApi(location.origin, location.id).mockBaseUrl('')).hostname : fallbackHost
+  const contextPath = p.contextPath ?? fallbackPath
+  const label = location?.origin === 'local' ? '내 PC' : location?.origin === 'server' ? '서버' : ''
   const color = p.state === 'LISTENING' ? 'var(--fl-ok)' : p.state === 'FAILED' ? 'var(--fl-fail)' : 'var(--fl-text-muted)'
   const isHttp = p.kind === 'HTTP'
   const title = isHttp
-    ? `HTTP 게이트웨이 — 앱 포트 ${p.port}${contextPath ? ` (${contextPath})` : ''} 에서 켜진 HTTP Mock ${p.count}개를 /mock/{slug}/** 로 서빙`
-    : p.state === 'LISTENING' ? `TCP 리스너 열림 — ${host}:${p.port} · ${p.mockName} (클릭=행으로)` : p.state === 'FAILED' ? `켜져 있지만 리스너가 안 열림 — ${p.error ?? ''}` : `꺼짐 — ${p.mockName}`
+    ? `${label} HTTP 게이트웨이 — ${host}:${p.port}${contextPath}에서 켜진 HTTP Mock ${p.count}개를 서빙`
+    : p.state === 'LISTENING' ? `${label} TCP 리스너 열림 — ${host}:${p.port} · ${p.mockName} (클릭=행으로)` : p.state === 'FAILED' ? `${label} 리스너가 안 열림 — ${p.error ?? ''}` : `${label} 꺼짐 — ${p.mockName}`
   const Tag = isHttp ? 'div' : 'button'
   return (
-    <Tag onClick={isHttp ? undefined : onOpen} title={title} aria-label={`포트 ${p.port} ${p.kind} ${p.state}`} data-state={p.state}
-      style={{ ...portChip, borderStyle: p.state === 'OFF' ? 'dashed' : 'solid', cursor: isHttp ? 'default' : 'pointer', opacity: p.state === 'OFF' ? 0.75 : 1, borderColor: p.state === 'FAILED' ? 'color-mix(in srgb, var(--fl-fail) 50%, var(--fl-border))' : undefined }}>
+    <Tag onClick={isHttp ? undefined : onOpen} title={title} aria-label={`${label} 포트 ${p.port} ${p.kind} ${p.state}`} data-state={p.state}
+      style={{ ...portChip, borderStyle: p.state === 'OFF' ? 'dashed' : 'solid', cursor: isHttp ? 'default' : 'pointer', opacity: p.state === 'OFF' ? 0.75 : 1, borderColor: p.state === 'FAILED' ? 'color-mix(in srgb, var(--fl-fail) 50%, var(--fl-border))' : 'var(--fl-border)' }}>
       <span style={{ ...led, width: 8, height: 8, background: color, boxShadow: p.state === 'LISTENING' ? `0 0 0 3px color-mix(in srgb, ${color} 22%, transparent)` : undefined }} />
+      {label && <span style={kindTag}>{label}</span>}
       <b style={{ fontFamily: 'var(--fl-font-mono)', fontSize: 13, color: 'var(--fl-text)' }}>:{p.port}</b>
       <span style={{ ...kindTag, color: isHttp ? 'var(--fl-cat-http)' : 'var(--fl-cat-tcp)' }}>{p.kind}</span>
       <span style={{ fontSize: 12, color: 'var(--fl-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 160 }}>

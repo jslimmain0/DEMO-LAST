@@ -70,9 +70,9 @@ class McpGraphLayoutTest {
         val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
         val saved = mutableListOf<JsonNode>()
         server.createContext("/api/v1/flows") { exchange ->
-            val body = mapper.readTree(exchange.requestBody)
-            val reply = if (exchange.requestURI.path.endsWith("/versions")) {
-                synchronized(saved) { saved.add(body.path("graph")) }
+            val body = if (exchange.requestMethod == "GET") null else mapper.readTree(exchange.requestBody)
+            val reply = if (exchange.requestMethod == "GET") mapper.writeValueAsString(mapOf("id" to "test-flow", "graph" to graph())) else if (exchange.requestURI.path.endsWith("/versions")) {
+                synchronized(saved) { saved.add(body!!.path("graph")) }
                 "{\"versionNo\":1}"
             } else "{\"id\":\"test-flow\"}"
             val bytes = reply.toByteArray()
@@ -83,17 +83,16 @@ class McpGraphLayoutTest {
         server.start()
         try {
             val tools = McpTools(mapper, McpRestClient(mapper))
-            val invoke = McpTools::class.java.getDeclaredMethod("invoke", String::class.java, ObjectNode::class.java, McpInvocation::class.java).apply { isAccessible = true }
             val scope = McpInvocation("http://127.0.0.1:${server.address.port}", null, workspaceId = "public")
             val create = mapper.createObjectNode().put("name", "test").set<ObjectNode>("graph", graph())
-            invoke.invoke(tools, "flow_upsert", create, scope)
-            assertEquals(McpGraphLayout.forSave(graph(), true, null), saved[0])
+            tools.invoke("flow_upsert", create, scope)
+            assertEquals(McpGraphLayout.forSave(graph(), true, null).deepCopy<ObjectNode>().put("resourceWorkspaceId", "public"), saved[0])
             val edit = mapper.createObjectNode().put("id", "test-flow").set<ObjectNode>("graph", graph())
-            invoke.invoke(tools, "flow_upsert", edit, scope)
+            tools.invoke("flow_upsert", edit, scope)
             assertEquals(graph(), saved[1])
             edit.put("layout", "compact-tree")
-            invoke.invoke(tools, "flow_upsert", edit, scope)
-            assertEquals(saved[0], saved[2])
+            tools.invoke("flow_upsert", edit, scope)
+            assertEquals(McpGraphLayout.forSave(graph(), false, "compact-tree"), saved[2])
         } finally { server.stop(0) }
     }
 }

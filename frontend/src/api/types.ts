@@ -176,6 +176,7 @@ export interface PaletteGroup {
 }
 
 export interface FlowGraph {
+  resourceWorkspaceId?: 'public'
   version?: number
   name?: string
   nodes: GraphNode[]
@@ -321,6 +322,9 @@ export interface AgentTargetDiagnostics {
 export interface AgentInspection { runtime: 'local' | 'server'; ready: boolean; issues: string[]; dependencyHashes?: Record<string, string>; targetDiagnostics?: AgentTargetDiagnostics }
 
 export interface RunRequest {
+  envSource?: 'local' | 'server'
+  resourceWorkspaceId?: 'public'
+  resourceIdentity?: { serverUrl: string; login: string | null }
   agentEnvironments?: Record<string, string>
   agentDependencies?: Record<string, Record<string, string>>
   input?: Record<string, unknown>
@@ -524,6 +528,9 @@ export interface MockServerSpec {
   tcp?: MockTcpSpec | null
   codec?: MockCodecSpec | null
   environment?: string | null // 시크릿 스코프({{ 이름@secret }} — 공통 + 이 환경 오버레이). 없으면 공통만
+  resourceWorkspaceId?: 'public'
+  envSource?: 'local' | 'server'
+  resourceIdentity?: { serverUrl: string; login: string | null } // 저장 시 백엔드가 고정한 연결 정보
 }
 
 // CUSTOM=레거시(HTTP·TCP 둘 다) · HTTP=경로/응답 · TCP=소켓 전문

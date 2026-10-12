@@ -1,4 +1,4 @@
-import { useApi, useWorkspace } from '../app/WorkspaceContext'
+import { useCentralApi, useWorkspace } from '../app/WorkspaceContext'
 // frontend/src/components/ProtocolEditor.tsx — 프로토콜(고정길이 전문 규격) 편집기.
 // 기본(인코딩) · 프레이밍(길이 필드/형식/포함 여부/분기 필드) · 헤더 표 · 전문 표(탭·표 붙여넣기) ·
 // 메시지 플러그인 체인 · 미리보기(백엔드 조립). 저장 전까지는 전부 로컬 spec 편집.
@@ -22,12 +22,14 @@ import { toast } from './toast'
 import { ResourceScopeNote } from './ResourceScopeNote'
 import { useUnsavedNavigation } from './UnsavedNavigation'
 import { ui } from '../design/ui'
+import { relTime } from '../lib/format'
 
 const ENCODINGS = ['EUC-KR', 'MS949', 'UTF-8', 'US-ASCII']
 
 export function ProtocolEditor({ detail, canEdit, onSaved }: { detail: ProtocolDetail; canEdit: boolean; onSaved: () => void }) {
-  const { adminApi, codecsApi, protocolsApi } = useApi()
+  const { adminApi, codecsApi, protocolsApi } = useCentralApi()
   const scope = useWorkspace()
+  const pluginsAllowed = true
 
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
@@ -44,7 +46,7 @@ export function ProtocolEditor({ detail, canEdit, onSaved }: { detail: ProtocolD
   const [aiOpen, setAiOpen] = useState(false)
   const [messageSearch, setMessageSearch] = useState('')
   const { isGuest } = useAuth()
-  const aiMe = useQuery({ queryKey: ['admin', 'me'], queryFn: adminApi.me, staleTime: 30_000 })
+  const aiMe = useQuery({ queryKey: ['admin', 'me', 'central', scope.remoteKey], queryFn: adminApi.me, enabled: scope.connected, staleTime: 30_000 })
   const aiPending = aiMe.data?.myStatus === 'PENDING'
   const ro = !canEdit
 
@@ -54,7 +56,7 @@ export function ProtocolEditor({ detail, canEdit, onSaved }: { detail: ProtocolD
   const patchMsg = (p: Partial<{ key: string; label: string; fields: ProtocolField[] }>) =>
     patch({ messages: spec.messages.map((m) => (m.key === tab ? { ...m, ...p } : m)) })
 
-  const codecs = useQuery({ queryKey: ['codecs'], queryFn: codecsApi.list, enabled: scope.current.origin === 'server', staleTime: 300_000 })
+  const codecs = useQuery({ queryKey: ['codecs', 'central', scope.remoteKey], queryFn: codecsApi.list, enabled: scope.connected, staleTime: 300_000 })
   const codecList = useMemo(() => codecs.data ?? [], [codecs.data])
 
   const save = useMutation({
@@ -88,6 +90,7 @@ export function ProtocolEditor({ detail, canEdit, onSaved }: { detail: ProtocolD
   saveRef.current = () => { if (canEdit && dirty && !save.isPending) save.mutate() }
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
+      if (e.isComposing || e.keyCode === 229) return
       if ((e.ctrlKey || e.metaKey) && (e.code === 'KeyS' || e.key === 's')) { e.preventDefault(); saveRef.current() }
     }
     window.addEventListener('keydown', h)
@@ -96,7 +99,7 @@ export function ProtocolEditor({ detail, canEdit, onSaved }: { detail: ProtocolD
   // ?add=KEY — Mock 전문 로그의 "이 코드로 본문 정의 만들기" 진입: 없는 전문이면 빈 정의를 만들고 그 탭으로
   useEffect(() => {
     const add = searchParams.get('add')
-    if (!add) return
+    if (!add || !canEdit) return
     setSpecRaw((cur) => {
       if (cur.messages.some((m) => m.key === add)) return cur
       setDirty(true)
@@ -107,7 +110,7 @@ export function ProtocolEditor({ detail, canEdit, onSaved }: { detail: ProtocolD
     next.delete('add')
     next.set('space', `${scope.current.origin}:${scope.current.id}`)
     navigateSaved(`/protocols/${detail.id}?${next}`, { replace: true })
-  }, [searchParams, navigateSaved, detail.id, scope.current.origin, scope.current.id])
+  }, [searchParams, navigateSaved, detail.id, scope.current.origin, scope.current.id, canEdit])
   // 미저장 이탈 경고
   useEffect(() => {
     if (!dirty) return
@@ -147,13 +150,14 @@ export function ProtocolEditor({ detail, canEdit, onSaved }: { detail: ProtocolD
       {errors.length > 0 && <div style={{ ...banner, borderColor: 'var(--fl-fail)', color: 'var(--fl-fail)' }}>{errors.map((m, i) => <div key={i}>⚠ {m}</div>)}</div>}
 
       <div style={{ padding: '4px 20px 60px', display: 'grid', gap: 18 }}>
-        <ResourceScopeNote />
+        <ResourceScopeNote central />
+        <span style={{ fontSize: 12, color: 'var(--fl-text-muted)' }} title={detail.updatedAt ?? detail.createdAt}>최근 저장 {relTime(detail.updatedAt ?? detail.createdAt)}</span>
         {/* ① 기본 */}
         <section style={section}>
           <div style={secTitle}>기본</div>
           <label style={row}>
             <span style={lbl}>인코딩</span>
-            <select value={spec.encoding} disabled={ro} onChange={(e) => patch({ encoding: e.target.value })} style={sel}>
+            <select aria-label="프로토콜 인코딩" value={spec.encoding} disabled={ro} onChange={(e) => patch({ encoding: e.target.value })} style={sel}>
               {ENCODINGS.map((e) => <option key={e} value={e}>{e}</option>)}
             </select>
             <span style={hint}>한글이 들어가는 사내 전문은 보통 EUC-KR 입니다.</span>
@@ -165,7 +169,7 @@ export function ProtocolEditor({ detail, canEdit, onSaved }: { detail: ProtocolD
           <div style={secTitle}>프레이밍</div>
           <label style={row}>
             <span style={lbl}>길이 필드</span>
-            <select value={spec.lengthField} disabled={ro || !lengthFields.length} onChange={(e) => patch({ lengthField: e.target.value })} style={sel}>
+            <select aria-label="길이 필드" value={spec.lengthField} disabled={ro || !lengthFields.length} onChange={(e) => patch({ lengthField: e.target.value })} style={sel}>
               {!lengthFields.some((f) => f.name === spec.lengthField) && <option value={spec.lengthField}>{spec.lengthField || '(없음)'}</option>}
               {lengthFields.map((f) => <option key={f.name} value={f.name}>{f.name} ({f.len}B)</option>)}
             </select>
@@ -173,7 +177,7 @@ export function ProtocolEditor({ detail, canEdit, onSaved }: { detail: ProtocolD
           </label>
           <label style={row}>
             <span style={lbl}>길이 형식</span>
-            <select value={spec.lengthFormat} disabled={ro} onChange={(e) => patch({ lengthFormat: e.target.value as ProtocolSpec['lengthFormat'] })} style={sel}>
+            <select aria-label="길이 형식" value={spec.lengthFormat} disabled={ro} onChange={(e) => patch({ lengthFormat: e.target.value as ProtocolSpec['lengthFormat'] })} style={sel}>
               <option value="ascii-decimal">ascii-decimal (0057)</option>
               <option value="binary">binary (00 39)</option>
             </select>
@@ -200,7 +204,7 @@ export function ProtocolEditor({ detail, canEdit, onSaved }: { detail: ProtocolD
           </div>
           <label style={row}>
             <span style={lbl}>분기 필드</span>
-            <select value={spec.discriminator} disabled={ro} onChange={(e) => patch({ discriminator: e.target.value })} style={sel}>
+            <select aria-label="분기 필드" value={spec.discriminator} disabled={ro} onChange={(e) => patch({ discriminator: e.target.value })} style={sel}>
               <option value="">(없음 — request/response)</option>
               {!!spec.discriminator && !spec.header.some((f) => f.name === spec.discriminator) && <option value={spec.discriminator}>{spec.discriminator} (헤더에 없음)</option>}
               {spec.header.map((f) => <option key={f.name} value={f.name}>{f.name}</option>)}
@@ -212,7 +216,7 @@ export function ProtocolEditor({ detail, canEdit, onSaved }: { detail: ProtocolD
         {/* ③ 헤더 */}
         <section style={section}>
           <div style={secTitle}>헤더 <span style={{ ...mono, color: 'var(--fl-text-muted)', fontWeight: 400 }}>{headerLen} bytes</span></div>
-          <FieldTable fields={spec.header} onChange={(header) => patch({ header })} baseOffset={0} codecs={codecList} pluginsAllowed={scope.current.origin === 'server'} readOnly={ro} lengthField={spec.lengthField} />
+          <FieldTable fields={spec.header} onChange={(header) => patch({ header })} baseOffset={0} codecs={codecList} pluginsAllowed={pluginsAllowed} readOnly={ro} lengthField={spec.lengthField} />
         </section>
 
         {/* ④ 전문 */}
@@ -268,7 +272,7 @@ export function ProtocolEditor({ detail, canEdit, onSaved }: { detail: ProtocolD
                   })}>삭제</button>
                 )}
               </div>
-              <FieldTable key={msg.key} fields={msg.fields} onChange={(fields) => patchMsg({ fields })} baseOffset={headerLen} codecs={codecList} pluginsAllowed={scope.current.origin === 'server'} readOnly={ro}
+              <FieldTable key={msg.key} fields={msg.fields} onChange={(fields) => patchMsg({ fields })} baseOffset={headerLen} codecs={codecList} pluginsAllowed={pluginsAllowed} readOnly={ro}
                 lengthField={spec.lengthField} reservedNames={spec.header.map((f) => f.name)} />
               <div style={{ ...mono, fontSize: 12, color: 'var(--fl-text-muted)', marginTop: 8 }}>본문 {bodyLen} / 전체 {headerLen + bodyLen} bytes</div>
             </>
@@ -276,7 +280,7 @@ export function ProtocolEditor({ detail, canEdit, onSaved }: { detail: ProtocolD
         </section>
 
         {/* ⑤ 메시지 플러그인 */}
-        {scope.current.origin === 'server' ? <MessagePlugins spec={spec} patch={patch} codecs={codecList} readOnly={ro} /> : (spec.messagePlugins?.length ?? 0) > 0 && <section style={section}><p>플러그인은 공용·팀 공간에서만 사용할 수 있습니다.</p><button disabled={ro} onClick={() => patch({ messagePlugins: [] })}>기존 메시지 플러그인 제거</button></section>}
+        {pluginsAllowed ? <MessagePlugins spec={spec} patch={patch} codecs={codecList} readOnly={ro} /> : (spec.messagePlugins?.length ?? 0) > 0 && <section style={section}><p>플러그인은 공용·팀 공간에서만 사용할 수 있습니다.</p><button disabled={ro} onClick={() => patch({ messagePlugins: [] })}>기존 메시지 플러그인 제거</button></section>}
 
         {/* ⑥ 미리보기 */}
         <PreviewSection spec={spec} tab={tab} />
@@ -334,11 +338,11 @@ function MessagePlugins({ spec, patch, codecs, readOnly }: { spec: ProtocolSpec;
 
 /** ⑥ 백엔드 조립 미리보기 — 저장 없이 현재 편집 중 spec 으로. */
 function PreviewSection({ spec, tab }: { spec: ProtocolSpec; tab: string }) {
-  const { activeEnvName, prepareForRun } = useEnvironment()
-  const envStore = useEnvStore()
+  const { activeEnvName, prepareForRun } = useEnvironment('server')
+  const envStore = useEnvStore('server')
   const { scopeKey } = useWorkspace()
 
-  const { protocolsApi } = useApi()
+  const { protocolsApi } = useCentralApi()
 
   const [key, setKey] = useState(tab)
   const [values, setValues] = useState<Record<string, string>>({})
@@ -458,13 +462,13 @@ const dirtyBadge: CSSProperties = { fontSize: 12, fontWeight: 700, color: 'var(-
 const banner: CSSProperties = { margin: '10px 20px 0', padding: '8px 12px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', fontSize: 13, display: 'grid', gap: 3 }
 const section: CSSProperties = { padding: 14, border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius)', background: 'var(--fl-surface)' }
 const secTitle: CSSProperties = { fontSize: 13, fontWeight: 700, marginBottom: 10, display: 'flex', alignItems: 'baseline', gap: 8 }
-const row: CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }
+const row: CSSProperties = { display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 8, minWidth: 0 }
 const radioRow: CSSProperties = { display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }
 const lbl: CSSProperties = { fontSize: 12, color: 'var(--fl-text-muted)', minWidth: 72 }
 const hint: CSSProperties = { fontSize: 12, color: 'var(--fl-text-muted)' }
 const mono: CSSProperties = { fontFamily: 'var(--fl-font-mono)' }
-const input: CSSProperties = { padding: '6px 9px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', color: 'var(--fl-text)', fontSize: 13 }
-const sel: CSSProperties = { padding: '6px 8px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', color: 'var(--fl-text)', fontSize: 13, cursor: 'pointer' }
+const input: CSSProperties = { padding: '6px 9px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', color: 'var(--fl-text)', fontSize: 13, minWidth: 0, maxWidth: '100%', boxSizing: 'border-box' }
+const sel: CSSProperties = { padding: '6px 8px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', color: 'var(--fl-text)', fontSize: 13, cursor: 'pointer', minWidth: 0, maxWidth: '100%' }
 const tabBtn: CSSProperties = { ...ui.secondary }
 const tabOn: CSSProperties = { background: 'var(--fl-action-primary-bg)', color: 'var(--fl-action-primary-ink)', borderColor: 'var(--fl-primary)' }
 const primaryBtn: CSSProperties = { ...ui.primary }

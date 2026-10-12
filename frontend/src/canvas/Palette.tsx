@@ -13,7 +13,8 @@ import './node-visuals.css'
 import { AppIcon } from '../components/AppIcon'
 
 export function Palette({ width = 200, onCollapse }: { width?: number; onCollapse?: () => void }) {
-  const pluginsAllowed = useWorkspace().current.origin === 'server'
+  useWorkspace()
+  const pluginsAllowed = true
   const addNode = useEditorStore((s) => s.addNode)
   const addNodeFromTemplate = useEditorStore((s) => s.addNodeFromTemplate)
   const palette = useEditorStore((s) => s.palette)

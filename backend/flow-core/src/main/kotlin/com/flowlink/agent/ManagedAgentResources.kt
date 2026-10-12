@@ -17,6 +17,8 @@ class ManagedAgentResources(
     private val secretService: SecretService,
     private val mocks: MockServerService,
     private val protocols: ProtocolService,
+    private val central: org.springframework.beans.factory.ObjectProvider<com.flowlink.common.host.LocalServerResources>,
+    private val json: com.flowlink.common.json.JsonService,
 ) : AgentResources {
     override val localRuntime: Boolean get() = workspace.localRuntime
     override fun workspaceScope(reference: String?): UUID? {
@@ -31,4 +33,18 @@ class ManagedAgentResources(
         AgentMockTarget(it.baseUrl, it.tcpHost, it.tcpPort)
     }
     override fun protocolFingerprint(reference: String, scope: UUID?) = protocols.fingerprint(reference, scope)
+    override fun centralEnvironment(name: String?, identity: CentralResourceIdentity) = central.getObject().environment(name, identity)
+    override fun centralSecrets(name: String?, keys: Set<String>, identity: CentralResourceIdentity) = central.getObject().secrets(name, keys, identity)
+    override fun centralProtocolFingerprint(reference: String, identity: CentralResourceIdentity) = central.getObject().protocolFingerprint(reference, identity)
+    override fun centralProtocolSecretKeys(reference: String, identity: CentralResourceIdentity): Set<String> {
+        val keys = linkedSetOf<String>()
+        fun visit(value: com.fasterxml.jackson.databind.JsonNode) {
+            if (value.isTextual) {
+                val matcher = com.flowlink.execution.engine.TokenResolver.tokenPattern().matcher(value.asText())
+                while (matcher.find()) if (matcher.group(3) == "secret") keys.add(matcher.group(1))
+            } else if (value.isContainerNode) value.elements().forEachRemaining(::visit)
+        }
+        visit(json.mapper().valueToTree(central.getObject().protocolSpec(reference, identity)))
+        return keys
+    }
 }

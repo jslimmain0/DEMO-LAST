@@ -127,13 +127,12 @@ export const PluginRunPanel = memo(function PluginRunPanel({ source, scriptId, c
   const out = result?.bytesB64 ? b64.dec(result.bytesB64) : null
 
   return (
-    <aside className="fl-plugin-run-panel" style={panel} aria-label="실행 패널">
+    <aside className="fl-plugin-run-panel" style={panel} aria-label="테스트 입력과 결과">
       <div className="fl-plugin-run-heading">
         <div className="fl-plugin-run-heading-info">
-        <strong style={{ fontSize: 13, whiteSpace: 'nowrap' }}>▶ 실행해 보기</strong>
+        <strong style={{ fontSize: 13, whiteSpace: 'nowrap' }}>테스트 입력</strong>
         {meta && <span style={mono} title={`${meta.id} · ${meta.kind}`}>{meta.id} · {meta.kind}</span>}
         </div>
-        <button onClick={() => void run()} disabled={!canRun || !connected || environmentStatus !== 'ready' || busy} style={runBtn} title="Ctrl+Enter">{busy ? '실행 중…' : '▶ 테스트'}</button>
       </div>
       <label style={{ display: 'grid', gap: 5 }}><span style={{ ...hint, fontWeight: 600 }}>테스트 환경 · 서버</span><select aria-label="테스트 환경 · 서버" style={input} value={envName ?? ''} disabled={!canRun || !connected || environmentStatus !== 'ready' || busy} onChange={event => { environmentStore.setActiveEnv(event.target.value || null); setResult(null); setRunErr(null) }}><option value="">공통 시크릿만</option>{Object.keys(envStore.envs).sort((a, b) => a.localeCompare(b, 'ko')).map(name => <option key={name} value={name}>{name}</option>)}</select></label>
       {!connected ? <p style={hint} role="status">서버 연결 필요</p> : environmentStatus === 'loading' ? <p style={hint} role="status">서버 환경을 불러오는 중…</p> : environmentStatus === 'error' ? <p style={{ ...hint, color: 'var(--fl-fail)' }} role="alert">서버 환경을 불러오지 못했습니다. <button style={input} onClick={() => void environmentStore.ensureEnvLoaded().catch(() => {})}>다시 불러오기</button></p> : null}
@@ -175,6 +174,10 @@ export const PluginRunPanel = memo(function PluginRunPanel({ source, scriptId, c
           <div style={hint}><code>{'{{'}</code> 로 시크릿·환경 변수 토큰을 넣을 수 있습니다. {envName ? `서버 · ${envName}` : '서버 · 공통 시크릿'} 기준으로 값을 사용합니다. 입력과 결과는 승인 화면에 샘플로 보이며, 파라미터(키·IV 등) 값은 저장하지 않습니다.</div>
         </div>
       )}
+      <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+        <span style={{ ...hint, flex: '1 1 180px' }}>현재 코드와 위의 입력으로 테스트합니다. 저장·승인 전에도 실행할 수 있습니다.</span>
+        <button onClick={() => void run()} disabled={!canRun || !connected || environmentStatus !== 'ready' || busy} style={runBtn} title="Ctrl+Enter">{busy ? '실행 중…' : '테스트 실행'}</button>
+      </div>
       {runErr && <div style={{ ...hint, color: 'var(--fl-fail)' }}>✕ {runErr}</div>}
       {result && (
         <div ref={resultRef} className="fl-plugin-run-result" style={{ display: 'grid', gap: 6, minHeight: 0, flexShrink: 0 }}>

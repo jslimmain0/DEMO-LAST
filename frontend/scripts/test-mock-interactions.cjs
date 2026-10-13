@@ -290,7 +290,51 @@ async function testEditorHeadersAndReplay() {
     addressButton.props.onClick(); await settle()
     assert.equal(copied.at(-1), expected, 'header clipboard and displayed address must agree')
     if (kind === 'HTTP') httpTree = tree
+    if (kind === 'HTTP') assert.equal(field(tree, '연결 세션'), undefined, 'HTTP navigation must not offer TCP sessions')
   }
+  const permissions = modules['../auth/AuthContext'].usePermissions
+  const originalScopeKey = scope.scopeKey
+  try {
+    for (const origin of ['local', 'server']) for (const canEdit of [true, false]) {
+      modules['../auth/AuthContext'].usePermissions = () => ({ canEdit })
+      scope.current = { origin, id: origin === 'local' ? 'local' : 'public', name: origin }
+      scope.scopeKey = `${origin}:sessions-location`
+      detailResult = { data: { id: 'same-id', name: 'TCP 배치 검증', slug: 'same-slug', workspaceId: scope.current.id, kind: 'TCP', enabled: true,
+        spec: { tcp: { port: 19000, protocolId: 'p', rules: [{ id: 'rule-a', then: { mode: 'mock', fields: { value: 'A001' } } }] } } } }
+      const render = renderer(MockServerEditor)
+      render(); let tree = render()
+      assert.equal(walk(tree, node => node.type === 'tcp-rule').length, 1, 'initial rule selection is preserved')
+      assert.equal(walk(tree, node => node.type === 'tcp-sessions').length, 0, 'session polling is mounted only in its own menu')
+      const writesBefore = writes.length, savesBefore = specWrites.length, navigationsBefore = navigations.length
+      field(tree, '연결 세션').props.onClick(); tree = render()
+      const sessionPanel = walk(tree, node => node.type === 'tcp-sessions')[0]
+      assert.equal(sessionPanel.props.readOnly, !canEdit)
+      assert.equal(sessionPanel.props.mockId, 'same-id')
+      assert.equal(field(tree, '연결 세션').props['aria-current'], 'page')
+      assert.equal(walk(tree, node => node.type === 'tcp-connection').length, 0)
+      assert.equal(walk(tree, node => node.type === 'tcp-rule').length, 0)
+      assert.equal(button(tree, '저장').props.disabled, true, 'menu navigation does not dirty the Mock')
+      sessionPanel.props.onOpenConnection(); tree = render()
+      assert.equal(field(tree, '연결 설정').props['aria-current'], 'page')
+      assert.equal(walk(tree, node => node.type === 'tcp-sessions').length, 0)
+      const connection = walk(tree, node => node.type === 'tcp-connection')[0]
+      assert.equal(connection.props.readOnly, !canEdit)
+      if (canEdit) {
+        connection.props.onChange({ port: 19001 }); tree = render()
+        field(tree, '연결 세션').props.onClick(); tree = render()
+        assert.equal(button(tree, '저장').props.disabled, false)
+        walk(tree, node => node.type === 'tcp-sessions')[0].props.onOpenConnection(); tree = render()
+        assert.equal(walk(tree, node => node.type === 'tcp-connection')[0].props.tcp.port, 19001, 'draft port survives sessions round trip')
+      }
+      assert.equal(writes.length, writesBefore, 'menu switches never change runtime state')
+      assert.equal(specWrites.length, savesBefore, 'menu switches never persist drafts')
+      assert.equal(navigations.length, navigationsBefore, 'menu switches preserve URL and selected execution space')
+    }
+  } finally {
+    modules['../auth/AuthContext'].usePermissions = permissions
+    scope.scopeKey = originalScopeKey
+  }
+  console.log('PASS: TCP sessions have independent navigation; local/server permissions, default rule, dirty draft and selected space survive menu switches')
   detailResult = { isError: true, error: new Error('server unavailable'), refetch: () => { retries++ } }
   let tree = renderer(MockServerEditor)()
   assert.match(text(walk(tree, node => node.props?.role === 'alert')[0]), /Mock을 불러오지 못했습니다.*server unavailable/)

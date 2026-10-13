@@ -121,6 +121,20 @@ async function run() {
   find(tree, element => element.type === 'button' && text(element).includes('요청 미리보기')).props.onClick(); tree = renderDocked()
   const requestPreview = find(tree, element => element.type === 'pre' && typeof element.props.children === 'string' && element.props.children.startsWith('POST ')).props.children
   assert.deepEqual(JSON.parse(requestPreview.split('\n\n')[1]), { customer: { age: 42 }, active: false }, 'request preview respects nested paths and JSON value types')
+  const dockedElements = walk(tree, () => true)
+  const indexOf = predicate => dockedElements.findIndex(predicate)
+  const configIndex = indexOf(element => element.props?.['aria-label'] === '메서드')
+  const previewIndex = indexOf(element => element.type === 'button' && text(element).includes('요청 미리보기'))
+  const testIndex = indexOf(element => element.type === 'button' && text(element) === '이 노드 테스트')
+  const toolsIndex = indexOf(element => element.type === 'summary' && text(element) === '노드 정보·연결')
+  assert.ok(configIndex < previewIndex && previewIndex < testIndex && testIndex < toolsIndex, 'docked authoring follows settings → request preview → single test → node tools')
+  order.length = 0
+  await button(tree, '이 노드 테스트').props.onClick(); tree = renderDocked()
+  assert.deepEqual(order, ['prepare', 'save', 'run'], 'relocated test keeps save-before-run and uses the same single execution handler')
+  const action = find(tree, element => element.props?.className === 'fl-node-test-action')
+  const actionElements = walk(action, () => true)
+  assert.ok(actionElements.findIndex(element => element.type === 'button' && text(element) === '이 노드 테스트') < actionElements.findIndex(element => element.props?.className === 'fl-node-test-result'), 'the returned result stays immediately below the test action')
+  assert.match(text(action), /성공/)
   renderDocked.unmount()
 
   fields = [{ id: 'otp', key: 'otp', type: 'string', label: '인증번호' }]

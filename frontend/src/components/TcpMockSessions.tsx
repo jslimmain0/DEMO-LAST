@@ -19,7 +19,7 @@ function countdown(ms: number): string {
 const timestamp = (iso: string) => new Date(iso).toLocaleTimeString('ko-KR', { hour12: false })
 const stateLabel = { starting: '연결 준비 중', waiting: '다음 요청 대기', processing: '요청 처리 중' }
 
-export function TcpMockSessions({ mockId, readOnly }: { mockId: string; readOnly?: boolean }) {
+export function TcpMockSessions({ mockId, readOnly, onOpenConnection }: { mockId: string; readOnly?: boolean; onOpenConnection?: () => void }) {
   const scope = useWorkspace()
   const { mocksApi } = useApi()
   const qc = useQueryClient()
@@ -85,8 +85,11 @@ export function TcpMockSessions({ mockId, readOnly }: { mockId: string; readOnly
   return (
     <section aria-label="연결된 TCP 세션" style={panel}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-        <h2 style={{ fontFamily: 'var(--fl-font-head)', fontSize: 16, margin: 0 }}>연결된 세션 {ready && sessions.data && !sessions.isError ? <span style={{ color: 'var(--fl-text-muted)', fontWeight: 500 }}>{sessions.data.length}</span> : null}</h2>
-        <button type="button" style={{ ...ui.mini, marginLeft: 'auto' }} aria-label="TCP 세션 새로고침" disabled={!ready || sessions.isFetching || extend.isPending} onClick={() => { setError(null); void sessions.refetch() }}>{sessions.isFetching ? '조회 중…' : '새로고침'}</button>
+        <h2 style={{ fontFamily: 'var(--fl-font-head)', fontSize: 16, margin: 0 }}>연결 세션 {ready && sessions.data && !sessions.isError ? <span style={{ color: 'var(--fl-text-muted)', fontWeight: 500 }}>{sessions.data.length}</span> : null}</h2>
+        <div style={{ marginLeft: 'auto', display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+          {onOpenConnection && <button type="button" style={ui.mini} onClick={onOpenConnection}>연결 설정 보기</button>}
+          <button type="button" style={ui.mini} aria-label="TCP 세션 새로고침" disabled={!ready || sessions.isFetching || extend.isPending} onClick={() => { setError(null); void sessions.refetch() }}>{sessions.isFetching ? '조회 중…' : '새로고침'}</button>
+        </div>
       </div>
       <p style={hint}>이 Mock이 받은 TCP 연결입니다. 다음 요청을 기다리는 연결의 기한을 1분씩 늘릴 수 있습니다. 데이터가 오가면 기본 유휴시간으로 돌아갑니다.</p>
       {error && <p role="alert" style={{ ...hint, color: 'var(--fl-fail)' }}>{error}</p>}
@@ -125,6 +128,6 @@ export function TcpMockSessions({ mockId, readOnly }: { mockId: string; readOnly
   )
 }
 
-const panel: CSSProperties = { marginTop: 12, padding: 18, border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius)', background: 'var(--fl-surface)' }
+const panel: CSSProperties = { padding: 18, border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius)', background: 'var(--fl-surface)' }
 const hint: CSSProperties = { fontSize: 12, color: 'var(--fl-text-muted)', lineHeight: 1.6, marginTop: 6 }
 const sessionRow: CSSProperties = { display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', padding: 12, border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)' }

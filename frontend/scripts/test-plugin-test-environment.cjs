@@ -95,6 +95,9 @@ async function run() {
   assert.equal(prevented, 1); assert.equal(stopped, 1)
   assert.equal(sent.at(-1).source, 'source', 'Ctrl+Enter sends exact source without an inserted blank line')
   meta.inputs = [{ key: 'text', label: '테스트 입력' }]
+  const ordered = walk(render(), () => true)
+  assert.ok(ordered.findIndex(node => node.props?.ariaLabel === '입력 text') < ordered.findIndex(node => node.type === 'button' && node.props.title === 'Ctrl+Enter'), 'actual execution belongs after test inputs')
+  assert.equal(text(ordered.find(node => node.type === 'button' && node.props.title === 'Ctrl+Enter')), '테스트 실행')
   effects.length = 0; tree = render()
   const samplePersistence = effects.find(effect => String(effect).includes('const timer') && String(effect).includes('JSON.stringify(sampleRef.current)'))
   const cancelSave = samplePersistence()

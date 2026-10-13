@@ -46,13 +46,14 @@ const EMPTY_TCP: MockTcpSpec = { port: 9091, protocolId: null, upstream: null, t
 type NavSel =
   | { kind: 'route'; id: string }   // HTTP 라우트
   | { kind: 'conn' }                // TCP 연결(포트·프로토콜·upstream)
+  | { kind: 'sessions' }            // TCP 연결 현황·대기 기한 연장
   | { kind: 'rule'; id: string }    // TCP 규칙
   | { kind: 'codec' } | { kind: 'settings' } | { kind: 'overview' }
 
 /**
  * Mock 편집기 — **HTTP 는 HTTP 만, TCP 는 TCP 만**(섞이지 않음). 좌 목록 | 우 상세 | 하단 트래픽 패널.
  * - HTTP: 좌 라우트 목록(메서드·경로·히트) · 본문·헤더 코덱 · 설정 · 개요. 우 = 라우트 상세(예상 요청·규칙·필드 ◈ 코덱).
- * - TCP: 좌 연결(포트·프로토콜·upstream) · 규칙 목록(조건 요약·히트) · 설정. 우 = 규칙 상세(조건·mock/proxy·응답 필드·장애 주입). 전문 규격은 프로토콜(/protocols)이 소유.
+ * - TCP: 좌 연결 설정 · 연결 세션 · 규칙 목록(조건 요약·히트) · 설정. 전문 규격은 프로토콜(/protocols)이 소유.
  * - CUSTOM(레거시, HTTP+TCP 혼합): HTTP 편집기로 열리고 상단 안내 + [TCP Mock 으로 분리].
  * 헤더: 이름 인라인·미저장 표시·자동 저장·Ctrl+S·버전·⋯ 도구·✨ AI.
  */
@@ -414,8 +415,11 @@ export function MockServerEditor() {
               )}
               {isTcp && (
                 <>
-                  <button onClick={() => setNav({ kind: 'conn' })} style={{ ...navItem, ...(nav.kind === 'conn' ? navActive : null) }}>
-                    <AppIcon name="link" size={14} /><span style={{ flex: 1 }}>연결</span><span style={metaMono}>:{tcp.port ?? '?'} · {proto.data?.name ?? (tcp.protocolId ? '…' : '프로토콜 없음')}</span>
+                  <button type="button" aria-label="연결 설정" aria-current={nav.kind === 'conn' ? 'page' : undefined} onClick={() => setNav({ kind: 'conn' })} style={{ ...navItem, ...(nav.kind === 'conn' ? navActive : null) }}>
+                    <AppIcon name="link" size={14} /><span style={{ flex: 1 }}>연결 설정</span><span style={{ ...metaMono, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '48%' }} title={`:${tcp.port ?? '?'} · ${proto.data?.name ?? (tcp.protocolId ? '…' : '프로토콜 없음')}`}>:{tcp.port ?? '?'}</span>
+                  </button>
+                  <button type="button" aria-label="연결 세션" aria-current={nav.kind === 'sessions' ? 'page' : undefined} onClick={() => setNav({ kind: 'sessions' })} style={{ ...navItem, ...(nav.kind === 'sessions' ? navActive : null) }}>
+                    <AppIcon name="arrows" size={14} /><span style={{ flex: 1 }}>연결 세션</span>
                   </button>
                   <div style={divider} />
                   <div style={navHead}>
@@ -462,7 +466,7 @@ export function MockServerEditor() {
                   onChange={(nr) => setRoute(selRoute.id, nr)} onRemove={() => removeRoute(selRoute.id)} onDup={() => dupRoute(selRoute.id)} onUp={() => moveRoute(selRoute.id, -1)} onDown={() => moveRoute(selRoute.id, 1)}
                   onServerCodec={(codec) => mutate((s) => ({ ...s, codec }))} onGoCodec={() => setNav({ kind: 'codec' })} />
               )}
-              {isTcp && tcpLints.length > 0 && (
+              {isTcp && (nav.kind === 'conn' || nav.kind === 'rule') && tcpLints.length > 0 && (
                 <div style={{ ...legacyBanner, display: 'block' }} role="note">
                   <b style={{ fontSize: 13 }}>⚠ 규칙 경고 {tcpLints.length}건</b>
                   <ul style={{ margin: '4px 0 0', paddingLeft: 18, fontSize: 12, lineHeight: 1.6 }}>{tcpLints.slice(0, 8).map((m, i) => <li key={i}>{m}</li>)}</ul>
@@ -479,9 +483,9 @@ export function MockServerEditor() {
                     </div>
                   )}
                   <TcpConnPanel tcp={tcp} spec={protoSpec} sources={sourcesFor()} address={tcpAddress} savedAddress={savedTcpAddress} readOnly={!canEdit} onChange={setTcp} />
-                  <TcpMockSessions key={`${scope.scopeKey}:${id}`} mockId={id} readOnly={!canEdit} />
                 </>
               )}
+              {isTcp && nav.kind === 'sessions' && <TcpMockSessions key={`${scope.scopeKey}:${id}`} mockId={id} readOnly={!canEdit} onOpenConnection={() => setNav({ kind: 'conn' })} />}
               {nav.kind === 'rule' && selRule && (
                 <TcpRuleDetail key={selRule.id} rule={selRule} index={tcpRules.findIndex((r) => r.id === selRule.id)} total={tcpRules.length}
                   spec={protoSpec} secrets={secretNames} envKeys={envKeyList} readOnly={!canEdit}

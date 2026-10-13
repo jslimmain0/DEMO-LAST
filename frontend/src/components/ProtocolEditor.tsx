@@ -3,7 +3,7 @@ import { useCentralApi, useWorkspace } from '../app/WorkspaceContext'
 // 기본(인코딩) · 프레이밍(길이 필드/형식/포함 여부/분기 필드) · 헤더 표 · 전문 표(탭·표 붙여넣기) ·
 // 메시지 플러그인 체인 · 미리보기(백엔드 조립). 저장 전까지는 전부 로컬 spec 편집.
 import { useMutation, useQuery } from '@tanstack/react-query'
-import type { CSSProperties } from 'react'
+import type { CSSProperties, RefObject } from 'react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 
@@ -45,6 +45,7 @@ export function ProtocolEditor({ detail, canEdit, onSaved }: { detail: ProtocolD
   const [pasting, setPasting] = useState(false)
   const [aiOpen, setAiOpen] = useState(false)
   const [messageSearch, setMessageSearch] = useState('')
+  const previewSelect = useRef<HTMLSelectElement>(null)
   const { isGuest } = useAuth()
   const aiMe = useQuery({ queryKey: ['admin', 'me', 'central', scope.remoteKey], queryFn: adminApi.me, enabled: scope.connected, staleTime: 30_000 })
   const aiPending = aiMe.data?.myStatus === 'PENDING'
@@ -140,6 +141,7 @@ export function ProtocolEditor({ detail, canEdit, onSaved }: { detail: ProtocolD
           style={{ ...nameInput, ...(ro ? { cursor: 'default' } : null) }} />
         {dirty && <span style={dirtyBadge}>● 미저장</span>}
         <span style={{ flex: 1 }} />
+        <button type="button" style={ghostBtn} disabled={!spec.messages.length} title={!spec.messages.length ? '미리볼 전문을 먼저 추가하세요.' : '미리보기 입력으로 이동합니다. 저장·전송 없이 확인하려면 아래에서 조립을 누르세요.'} onClick={() => { previewSelect.current?.scrollIntoView({ block: 'center' }); previewSelect.current?.focus({ preventScroll: true }) }}>전문 미리보기</button>
         {canEdit && <button onClick={() => save.mutate()} disabled={!dirty || save.isPending} style={{ ...primaryBtn, ...(dirty ? null : { opacity: 0.5 }) }} title="Ctrl+S">{save.isPending ? '저장 중…' : '저장'}</button>}
         {canEdit && <button onClick={() => duplicate.mutate()} disabled={duplicate.isPending} style={ghostBtn}>복제</button>}
         {canEdit && <button onClick={() => setAiOpen((v) => !v)} style={{ ...ghostBtn, border: '1px solid var(--fl-primary)', color: 'var(--fl-primary)' }} title="명세서 표를 붙여넣거나 말로 설명하면 프로토콜을 만들어 줍니다">✨ AI</button>}
@@ -295,7 +297,7 @@ export function ProtocolEditor({ detail, canEdit, onSaved }: { detail: ProtocolD
         {pluginsAllowed ? <MessagePlugins spec={spec} patch={patch} codecs={codecList} readOnly={ro} /> : (spec.messagePlugins?.length ?? 0) > 0 && <section style={section}><p>플러그인은 공용·팀 공간에서만 사용할 수 있습니다.</p><button disabled={ro} onClick={() => patch({ messagePlugins: [] })}>기존 메시지 플러그인 제거</button></section>}
 
         {/* ⑥ 미리보기 */}
-        <PreviewSection spec={spec} tab={tab} />
+        <PreviewSection spec={spec} tab={tab} selectionRef={previewSelect} />
       </div>
 
       {pasting && msg && (
@@ -412,7 +414,7 @@ function MessagePlugins({ spec, patch, codecs, readOnly }: { spec: ProtocolSpec;
 }
 
 /** ⑥ 백엔드 조립 미리보기 — 저장 없이 현재 편집 중 spec 으로. */
-function PreviewSection({ spec, tab }: { spec: ProtocolSpec; tab: string }) {
+function PreviewSection({ spec, tab, selectionRef }: { spec: ProtocolSpec; tab: string; selectionRef?: RefObject<HTMLSelectElement | null> }) {
   const { activeEnvName, prepareForRun } = useEnvironment('server')
   const envStore = useEnvStore('server')
   const { scopeKey } = useWorkspace()
@@ -454,7 +456,7 @@ function PreviewSection({ spec, tab }: { spec: ProtocolSpec; tab: string }) {
       <div style={secTitle}>미리보기</div>
       <form onSubmit={e => { e.preventDefault(); if (key && !preview.isPending) preview.mutate(signature) }}>
       <div style={{ ...row, marginBottom: 10 }}>
-        <select aria-label="미리보기 전문" value={key} onChange={(e) => { setKey(e.target.value); setFrameDirection(previewDirection(e.target.value)) }} style={sel}>
+        <select ref={selectionRef} aria-label="미리보기 전문" value={key} onChange={(e) => { setKey(e.target.value); setFrameDirection(previewDirection(e.target.value)) }} style={sel}>
           {spec.messages.map((m) => <option key={m.key} value={m.key}>{m.key}{m.label ? ` · ${m.label}` : ''}</option>)}
         </select>
         <label style={row}><span style={lbl}>미리보기 방향</span><select aria-label="미리보기 방향" style={sel} value={frameDirection} onChange={e => setFrameDirection(e.target.value as 'send' | 'recv')}>

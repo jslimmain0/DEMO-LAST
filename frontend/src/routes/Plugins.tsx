@@ -235,7 +235,7 @@ function CentralPlugins() {
 
         {/* ── 우 편집기 ── */}
         <div className="fl-plugin-detail">
-          <div className="fl-plugin-workspace-tools"><button style={ghostBtn} aria-expanded={listOpen} onClick={() => setListOpen(!listOpen)}><AppIcon name="list" size={15} />{listOpen ? '목록 접기' : '플러그인 목록'}</button>{visibleDraft && <><button style={panelOpen && panel === 'run' ? primaryBtn : ghostBtn} aria-expanded={panelOpen && panel === 'run'} onClick={() => { setPanel('run'); setPanelOpen(!(panelOpen && panel === 'run')) }}><AppIcon name="play" size={15} />테스트 실행</button><button style={panelOpen && panel === 'ref' ? primaryBtn : ghostBtn} aria-expanded={panelOpen && panel === 'ref'} onClick={() => { setPanel('ref'); setPanelOpen(!(panelOpen && panel === 'ref')) }}>API 참고</button><span>Ctrl+S 저장 · Ctrl+Enter 테스트</span></>}</div>
+          <div className="fl-plugin-workspace-tools"><button style={ghostBtn} aria-expanded={listOpen} onClick={() => setListOpen(!listOpen)}><AppIcon name="list" size={15} />{listOpen ? '목록 접기' : '플러그인 목록'}</button></div>
           {id && detail.isLoading && !visibleDraft ? <div role="status" style={empty}>플러그인을 불러오는 중…</div>
           : id && detail.isError && !visibleDraft ? <div role="alert" style={empty}><p>{apiErrorMessage(detail.error, '플러그인을 불러오지 못했습니다.')}</p><button style={ghostBtn} onClick={() => void detail.refetch()}>다시 불러오기</button></div>
           : !visibleDraft ? (
@@ -260,8 +260,10 @@ function CentralPlugins() {
                   {d && <UsagesChip id={d.id} count={d.usages} />}
                   {d?.live && <button style={ghostBtn} onClick={() => setShowDiff((v) => !v)}>{showDiff ? '편집으로' : '승인본과 비교'}</button>}
                   {canEdit && <button style={{ ...primaryBtn, opacity: dirty ? 1 : 0.55 }} disabled={!dirty || save.isPending || transition.isPending} onClick={() => save.mutate()} title="Ctrl+S"><AppIcon name="save" size={16} />{save.isPending ? '저장 중…' : '저장'}</button>}
-                  {canEdit && d && (status === 'DRAFT' || status === 'REJECTED' || (status === 'APPROVED' && d.dirty)) && !dirty && (
-                    <button style={okBtn} disabled={transition.isPending || save.isPending} onClick={() => { if (dirtyRef.current) { toast('변경 내용을 먼저 저장하세요.', 'error'); return } transition.mutate({ op: 'submit', targetId: id! }) }}>승인 요청</button>
+                  <button style={panelOpen && panel === 'run' ? primaryBtn : ghostBtn} aria-expanded={panelOpen && panel === 'run'} title="테스트 입력과 결과 패널 열기 · 실제 실행은 패널에서 합니다." onClick={() => { setPanel('run'); setPanelOpen(!(panelOpen && panel === 'run')) }}>테스트 패널</button>
+                  <button style={panelOpen && panel === 'ref' ? primaryBtn : ghostBtn} aria-expanded={panelOpen && panel === 'ref'} onClick={() => { setPanel('ref'); setPanelOpen(!(panelOpen && panel === 'ref')) }}>API 참고</button>
+                  {canEdit && (!d || status === 'DRAFT' || status === 'REJECTED' || (status === 'APPROVED' && (d.dirty || dirty))) && (
+                    <button style={okBtn} disabled={!d || dirty || transition.isPending || save.isPending} title={!d || dirty ? '변경 내용을 먼저 저장한 뒤 승인 요청하세요.' : '저장된 초안과 테스트 샘플을 검토받습니다.'} onClick={() => { if (dirtyRef.current) { toast('변경 내용을 먼저 저장하세요.', 'error'); return } transition.mutate({ op: 'submit', targetId: id! }) }}>승인 요청</button>
                   )}
                   {canEdit && status === 'PENDING' && <button style={ghostBtn} disabled={transition.isPending || save.isPending} onClick={() => transition.mutate({ op: 'withdraw', targetId: id! })}>철회</button>}
                   {isAdmin && status === 'PENDING' && (
@@ -273,6 +275,7 @@ function CentralPlugins() {
                   {canEdit && d && <button style={dangerBtn} disabled={transition.isPending || save.isPending || d.usages > 0} title={d.usages > 0 ? `사용 중(${d.usages}곳)이라 삭제할 수 없습니다` : '삭제'}
                     onClick={() => setAsk({ title: `'${d.name}' 삭제`, message: d.live ? '승인본도 함께 사라지고 서빙이 중단됩니다.' : undefined, confirmLabel: '삭제', danger: true, onConfirm: () => transition.mutate({ op: 'remove', targetId: id! }) })}>삭제</button>}
                 </div>
+                {canEdit && dirty && <p style={{ color: 'var(--fl-text-muted)', fontSize: 12, margin: 0, lineHeight: 1.6 }}>현재 코드로 테스트할 수 있습니다. 승인 요청은 변경 내용을 저장한 뒤 진행하세요.</p>}
                 {actionError && <p role="alert" style={{ color: 'var(--fl-fail)', fontSize: 12, margin: 0, lineHeight: 1.6, overflowWrap: 'anywhere' }}>{actionError} 입력은 유지됩니다. 수정 후 다시 시도하세요.</p>}
                 {detail.isError && <p role="alert" style={{ color: 'var(--fl-fail)', fontSize: 12, margin: 0 }}>저장된 상태를 다시 확인하지 못했습니다. 편집 중인 입력은 유지됩니다. <button style={ghostBtn} onClick={() => void detail.refetch()}>다시 불러오기</button></p>}
               </header>
@@ -295,7 +298,7 @@ function CentralPlugins() {
                 </div>
                 <div className="fl-plugin-support" style={{ display: panelOpen ? 'grid' : 'none', gridTemplateRows: 'auto minmax(0, 1fr)', minHeight: 0, minWidth: 0 }}>
                   <div role="tablist" style={tabs}>
-                    <button role="tab" aria-selected={panel === 'run'} style={{ ...tab, ...(panel === 'run' ? tabOn : null) }} onClick={() => setPanel('run')}>▶ 실행</button>
+                    <button role="tab" aria-selected={panel === 'run'} style={{ ...tab, ...(panel === 'run' ? tabOn : null) }} onClick={() => setPanel('run')}>테스트 입력·결과</button>
                     <button role="tab" aria-selected={panel === 'ref'} style={{ ...tab, ...(panel === 'ref' ? tabOn : null) }} onClick={() => setPanel('ref')}>API 참고</button>
                     <button style={tab} aria-label="보조 패널 닫기" onClick={() => setPanelOpen(false)}><AppIcon name="close" size={16} /></button>
                   </div>

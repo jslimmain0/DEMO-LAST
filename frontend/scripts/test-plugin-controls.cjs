@@ -49,7 +49,7 @@ effects.find(effect => String(effect).includes('setDraft({ id: d.id'))()
 tree = render()
 let group = walk(tree, node => node.props?.['aria-label'] === '플러그인 작업')[0]
 assert.ok(group, 'mutation actions remain in an accessible header group after wrapping layout')
-assert.deepEqual(walk(group, node => node.type === 'button').map(text).map(value => value.trim()), ['승인본과 비교', '저장', '철회', '✓ 승인', '반려', '삭제'])
+assert.deepEqual(walk(group, node => node.type === 'button').map(text).map(value => value.trim()), ['승인본과 비교', '저장', '테스트 패널', 'API 참고', '철회', '✓ 승인', '반려', '삭제'])
 button(group, '✓ 승인').props.onClick(); button(group, '철회').props.onClick()
 assert.equal(mutations[0].op, 'approve'); assert.equal(mutations[1].op, 'withdraw')
 button(group, '반려').props.onClick(); tree = render()
@@ -68,20 +68,27 @@ assert.equal(button(tree, '플러그인 목록').props['aria-expanded'], false, 
 button(tree, '플러그인 목록').props.onClick(); tree = render()
 assert.equal(button(tree, '목록 접기').props['aria-expanded'], true)
 button(tree, '목록 접기').props.onClick(); tree = render()
-button(tree, '테스트 실행').props.onClick(); tree = render()
-assert.equal(button(tree, '테스트 실행').props['aria-expanded'], true)
+const beforePanelOpen = mutations.length
+button(tree, '테스트 패널').props.onClick(); tree = render()
+assert.equal(button(tree, '테스트 패널').props['aria-expanded'], true)
+assert.equal(mutations.length, beforePanelOpen, 'opening test inputs never saves, approves or executes the plugin')
+assert.ok(button(walk(tree, node => node.props?.['aria-label'] === '플러그인 작업')[0], '테스트 패널'), 'test panel access stays with the selected plugin actions')
 walk(tree, node => node.props?.['aria-label'] === '보조 패널 닫기')[0].props.onClick(); tree = render()
-assert.equal(button(tree, '테스트 실행').props['aria-expanded'], false, 'closing support restores code without losing reopen control')
+assert.equal(button(tree, '테스트 패널').props['aria-expanded'], false, 'closing support restores code without losing reopen control')
 savePending = true; tree = render()
 for (const label of ['저장 중…', '철회', '✓ 승인', '반려', '삭제']) assert.equal(button(tree, label).props.disabled, true, `saving blocks concurrent ${label}`)
 savePending = false
 detail.status = 'DRAFT'; detail.live = false; permitted = false; admin = false
 tree = render(); group = walk(tree, node => node.props?.['aria-label'] === '플러그인 작업')[0]
-assert.equal(walk(group, node => node.type === 'button').length, 0, 'layout preserves read-only mutation permissions')
+assert.deepEqual(walk(group, node => node.type === 'button').map(text), ['테스트 패널', 'API 참고'], 'viewer can discover support panels while mutation actions stay unavailable')
 assert.equal(walk(tree, node => node.type === 'code-editor')[0].props.readOnly, true)
 console.log('PASS: pending/live admin action handlers and confirmations survive wrapping; narrow list/support can close and reopen; viewer remains read-only')
 permitted = admin = true
 tree = render()
+walk(tree, node => node.props?.['aria-label'] === '플러그인 이름')[0].props.onChange({ target: { value: '변경한 초안' } })
+tree = render()
+assert.equal(button(tree, '승인 요청').props.disabled, true, 'approval stays discoverable while saving is required')
+assert.match(button(tree, '승인 요청').props.title, /먼저 저장/)
 const saveOptions = mutationOptions[0], transitionOptions = mutationOptions[1]
 const selected = saveOptions.onMutate()
 saveOptions.onError(new Error('문법 오류'), undefined, selected)

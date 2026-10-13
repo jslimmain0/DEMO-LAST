@@ -43,7 +43,7 @@ function fixture() {
   })
   return {
     ...exported, query, scope, toasts, writes, invalidations, reply,
-    render: (readOnly = false) => { index = 0; return exported.TcpMockSessions({ mockId: 'same-mock-id', readOnly }) },
+    render: (readOnly = false, onOpenConnection) => { index = 0; return exported.TcpMockSessions({ mockId: 'same-mock-id', readOnly, onOpenConnection }) },
     get options() { return queryOptions }, get mutation() { return mutation },
     tick: ms => { clock += ms; timers.forEach(callback => callback()) },
     pauseCancellation: () => { const pause = deferred(); cancellation = pause.promise; return pause },
@@ -80,6 +80,18 @@ test('TCP Mock 세션: 서버 남은시간 기준 카운트다운, 대기/처리
   assert.match(text(tree), /현재 연결된 세션이 없습니다/)
   f.scope.loading = true; assert.match(text(f.render()), /실행 위치를 확인하는 중/)
   assert.equal(f.options.enabled, false)
+  f.unmount()
+})
+
+test('TCP Mock 세션: 독립 화면에서 연결 설정으로 이동하는 액션은 조회·연장 요청을 만들지 않는다', () => {
+  const f = fixture(); let opened = 0
+  const tree = f.render(true, () => { opened++ })
+  const action = walk(tree, node => node.type === 'button' && text(node) === '연결 설정 보기')[0]
+  assert.equal(action.props.disabled, undefined, 'viewers can inspect connection settings')
+  action.props.onClick()
+  assert.equal(opened, 1)
+  assert.equal(f.writes.length, 0)
+  assert.equal(f.invalidations.length, 0)
   f.unmount()
 })
 

@@ -793,7 +793,7 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
     </div>
   ) : null
 
-  // ▶ 이 노드만 실행 + 결과 — 도킹 상단용(모달 워크벤치는 URL 바의 ▶ 실행 + 오른쪽 응답 패널로 대체)
+  // TCP 모달 워크벤치 — 오른쪽 응답 칼럼의 실행·결과 영역.
   const singleRunBlock = SINGLE_RUNNABLE.has(node.type) && canEdit ? (
     <div style={{ marginTop: 10 }}>
       {upstreamInputs}
@@ -850,12 +850,6 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
       <div className="fl-node-settings-content" style={{ padding: modal ? '20px 28px' : '16px 18px', overflowY: 'auto', flex: 1, minHeight: 0, minWidth: 0, boxSizing: 'border-box', ...(modal ? { width: '100%', maxWidth: modalColW, margin: '0 auto' } : null) }}>
         {!canEdit && <p role="status" style={{ ...hintP, marginTop: 0 }}>읽기 전용입니다. 설정과 실행 결과를 확인하거나 복사할 수 있습니다.</p>}
         <AgentSettings node={node} update={patch => update(id, patch)} disabled={!canEdit} />
-        {!twoCol && SINGLE_RUNNABLE.has(node.type) && canEdit && <div className="fl-node-test-action">
-          <button type="button" onClick={runSingle} disabled={singleRunning} style={wbRunBtn} title="현재 입력을 저장한 뒤 이 노드만 실행합니다. 결과는 이 버튼 아래에 표시됩니다.">{singleRunning ? '테스트 중…' : '이 노드 테스트'}</button>
-          <span>현재 설정을 저장하고 실행합니다.</span>
-          {upstreamInputs && <div className="fl-node-test-result">{upstreamInputs}</div>}
-          {runResultBox && <div className="fl-node-test-result">{runResultBox}</div>}
-        </div>}
         {unreachable && (
           <div style={{ marginTop: 10, padding: '8px 10px', border: '1px solid var(--fl-put)', borderRadius: 'var(--fl-radius-sm)', background: 'color-mix(in srgb, var(--fl-put) 12%, transparent)', fontSize: 12, color: 'var(--fl-text)', lineHeight: 1.5 }}>
             ⚠ <b>시작(START)에 연결되어 있지 않습니다.</b> 이 노드는 실행 시 <b>건너뜁니다</b> — 위쪽 노드에서 핸들(●)을 끌어 연결하세요.
@@ -1576,6 +1570,13 @@ export function PropertyPanel({ width = 360, modal = false, onExpand, onCloseMod
         {(node.type === 'start' || node.type === 'end') && (
           <p style={{ fontSize: 13, color: 'var(--fl-text-muted)', marginTop: 14 }}>이 노드는 추가 설정이 없습니다.</p>
         )}
+
+        {!twoCol && SINGLE_RUNNABLE.has(node.type) && canEdit && <div className="fl-node-test-action">
+          {upstreamInputs && <div className="fl-node-test-result">{upstreamInputs}</div>}
+          <button type="button" onClick={runSingle} disabled={singleRunning} style={wbRunBtn} title="현재 입력을 저장한 뒤 이 노드만 실행합니다. 결과는 이 버튼 아래에 표시됩니다.">{singleRunning ? '테스트 중…' : '이 노드 테스트'}</button>
+          <span>현재 설정을 저장하고 실행합니다.</span>
+          {runResultBox && <div className="fl-node-test-result">{runResultBox}</div>}
+        </div>}
 
         {/* 모달(큰 화면)에선 풀폭 알약 대신 우측 정렬 컴팩트 버튼 — 화면 비율에 맞게 */}
         <details key={id} className="fl-editor-node-tools">

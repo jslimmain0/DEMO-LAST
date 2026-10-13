@@ -75,6 +75,20 @@ tree = renderEditor()
 assert.equal(tree.props.style.minWidth, 0)
 assert.ok(walk(tree, node => node.props?.style?.gridTemplateColumns === 'minmax(0, 1fr)').length, 'field table width is contained by the editor grid')
 const previewNode = walk(tree, node => typeof node.type === 'function' && node.type.name === 'PreviewSection')[0]
+const previewShortcut = walk(tree, node => node.type === 'button' && text(node) === '전문 미리보기')[0]
+assert.ok(previewShortcut, 'the preview shortcut is available next to the protocol save controls')
+assert.equal(previewShortcut.props.disabled, false)
+const jumps = []
+previewNode.props.selectionRef.current = { scrollIntoView: options => jumps.push(['scroll', options]), focus: options => jumps.push(['focus', options]) }
+previewShortcut.props.onClick()
+assert.deepEqual(JSON.parse(JSON.stringify(jumps)), [['scroll', { block: 'center' }], ['focus', { preventScroll: true }]])
+assert.equal(previewCalls.length, 0, 'the shortcut only navigates; it does not assemble, save or send')
+const readOnlyEditor = renderer(protocol.ProtocolEditor, { detail: { id: 'wire', name: 'wire', spec }, canEdit: false, onSaved() {} })()
+assert.equal(walk(readOnlyEditor, node => node.type === 'button' && text(node) === '전문 미리보기')[0].props.disabled, false, 'read-only access retains the existing preview capability')
+const emptyEditor = renderer(protocol.ProtocolEditor, { detail: { id: 'wire', name: 'wire', spec: { ...spec, messages: [] } }, canEdit: true, onSaved() {} })()
+const emptyShortcut = walk(emptyEditor, node => node.type === 'button' && text(node) === '전문 미리보기')[0]
+assert.equal(emptyShortcut.props.disabled, true)
+assert.match(emptyShortcut.props.title, /전문을 먼저 추가/)
 mutation = { isPending: false, mutate: signature => previewCalls.push(signature) }
 const renderPreview = renderer(previewNode.type, previewNode.props)
 tree = renderPreview()
@@ -94,4 +108,7 @@ assert.equal(byLabel(tree, 'value 값').props.value, 'PONG')
 assert.doesNotMatch(text(tree), /미리보기 실패/, 'editing invalidates an earlier error without discarding the new value')
 mutation.data = { signature: previewCalls.at(-1), result: { total: 4, errors: [], warnings: [], fields: [], text: 'PING', hex: '50 49 4E 47' } }
 assert.match(text(renderPreview()), /다시 조립해 최신 결과/)
+previewShortcut.props.onClick()
+assert.equal(byLabel(renderPreview(), 'value 값').props.value, 'PONG', 'jumping to preview preserves the edited preview values')
+assert.equal(previewCalls.length, 2, 'repeated jumps never start a preview request')
 console.log('PASS: narrow protocol grid contains field scroll; explicit field errors and unique names; actual binary byte counts; Enter preview preserves edits and invalidates stale feedback')

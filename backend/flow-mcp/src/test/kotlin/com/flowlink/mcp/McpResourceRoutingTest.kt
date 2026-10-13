@@ -52,6 +52,19 @@ class McpResourceRoutingTest {
     private fun json(value: String): JsonNode = mapper.readTree(value)
     private fun args(value: String = "{}") = json(value) as ObjectNode
 
+    @Test fun `authoring guide separates preview test save and approval without performing them`() {
+        for (topic in listOf("flow", "protocol", "mock", "plugin")) {
+            requests.clear()
+            val guide = tools.invoke("flowlink_guide", args("""{"topic":"$topic"}"""), server) as String
+            for (action in listOf("연결 설정", "연결 세션", "protocol_preview", "flow_upsert", "node_run", "execution_get", "plugin_script_try", "plugin_script_upsert", "plugin_script_submit")) {
+                assertTrue(guide.contains(action), "$topic $action")
+            }
+            assertEquals(listOf("GET"), requests.map { it.method })
+            assertEquals("/schemas", requests.single().path)
+            assertEquals("server", requests.single().context.target)
+        }
+    }
+
     @Test fun `central tool scopes ignore legacy PC team selectors without a PC lookup`() {
         for (name in listOf("protocol_list", "protocol_upsert", "secret_list", "plugin_list", "plugin_script_try", "transform_preview")) {
             val scope = tools.scopeFor(name, args("""{"target":"local","workspace":"old-private"}"""), server)

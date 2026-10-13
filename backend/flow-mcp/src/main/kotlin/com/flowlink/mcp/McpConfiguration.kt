@@ -45,7 +45,7 @@ class McpConfiguration {
         val props = Properties().apply { McpConfiguration::class.java.getResourceAsStream("/flowlink-release.properties")?.use { load(it) } }
         return McpServer.sync(transport).jsonMapper(JacksonMcpJsonMapper(mapper))
             .serverInfo("flowlink", props.getProperty("version", "unknown"))
-            .instructions("FlowLink 중앙 MCP. $RESOURCE_GUIDE $TCP_GUIDE UNKNOWN 결과를 자동 재실행하지 마세요. ${McpGraphLayout.GUIDE}")
+            .instructions("FlowLink 중앙 MCP. $RESOURCE_GUIDE $TCP_GUIDE $AUTHORING_GUIDE UNKNOWN 결과를 자동 재실행하지 마세요. ${McpGraphLayout.GUIDE}")
             .capabilities(McpSchema.ServerCapabilities.builder().tools(false).build())
             .requestTimeout(Duration.ofMinutes(20)).tools(McpTools(mapper, rest).specifications()).build()
     }
@@ -109,6 +109,7 @@ class McpConfiguration {
     }
 
     companion object {
+        const val AUTHORING_GUIDE = "TCP Mock 화면의 연결 설정은 protocol_upsert·mock_upsert, 연결 세션 조회·연장은 mock_tcp_sessions에 대응합니다. 프로토콜 상단 전문 미리보기는 protocol_preview로 저장·전송 없이 조립합니다. 화면의 이 노드 테스트는 현재 설정을 먼저 저장하지만 MCP node_run은 저장된 노드만 실행합니다. 수정 graph를 flow_upsert로 저장한 뒤 node_run을 호출하고 요청·응답은 execution_get으로 확인하세요. 플러그인의 테스트 패널 열기는 실행이 아닙니다. plugin_script_try는 입력 생략 시 컴파일·메타만 조회하고 입력을 주면 현재 source를 저장·승인 전에 시험합니다. 승인 요청은 plugin_script_upsert로 초안을 저장한 뒤 그 id로 plugin_script_submit을 호출합니다."
         const val TCP_GUIDE = "TCP framing/responseFraming·transport는 프로토콜 spec 설정입니다. 길이 필드·고정 길이·구분자, 실행 중 연결 유지·고정 ACK는 flowlink_guide(protocol)을 확인하세요. 응답 경계 미리보기는 protocol_preview(frameDirection=recv), 연결 재사용 검증은 동일 흐름의 TCP 노드 두 개를 flow_run으로 실행합니다. 별도 node_run/mock_send 호출은 연결을 공유하지 않습니다. mock_tcp_sessions(action=list)로 Mock의 현재 연결을 조회하고 action=extend·sessionId·extendMs로 대기 중 유휴 기한만 연장합니다. 상대 앱에 전문을 보내지 않으며 다음 데이터 활동은 프로토콜의 기본 유휴 제한을 다시 적용합니다."
         const val RESOURCE_GUIDE = "target/workspace는 워크플로·Mock 저장 위치, envSource는 내 PC/local 또는 서버/server 환경 출처, executionAgent는 HTTP/TCP 요청 출발지입니다. 시크릿·프로토콜·플러그인은 서버 공통(public) 카탈로그이며 공통 자원을 선택한 PC 흐름도 참조할 수 있습니다. 새 흐름과 Mock은 public metadata를 기본으로 저장하고 기존 metadata 없는 자료·재실행은 원래 계약을 보존합니다. 내 PC 환경과 서버의 같은 이름 환경을 자동 병합하지 않습니다. TRANSFORM은 서버에서 흐름의 선택 환경으로 실행합니다. 개인 작업·PC 환경·PC 호출은 로그인한 온라인 Windows 앱이 필요합니다. Mock 목록은 서버와 내 PC를 함께 표시하며 오프라인 위치는 unavailable로 구분합니다."
         const val MAX_REQUEST_BYTES = 8L * 1024 * 1024

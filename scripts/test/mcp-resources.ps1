@@ -178,6 +178,7 @@ try {
     $mcpBearer = [string]$issued.data.accessToken; $mcpTokenId = [string]$issued.data.tokenId; $sensitive.Add($mcpBearer)
     $initialized = Rpc initialize @{ protocolVersion = $script:protocolVersion; capabilities = @{}; clientInfo = @{ name = 'flowlink-resource-smoke'; version = '1' } }
     Assert ($initialized.serverInfo.name -eq 'flowlink' -and $initialized.protocolVersion) 'MCP initialize 실패'
+    Assert ($initialized.instructions -match '연결 세션' -and $initialized.instructions -match 'plugin_script_try' -and $initialized.instructions -match '저장된 노드') 'MCP 초기 안내에 화면·테스트·저장 작업 순서가 없습니다.'
     $script:protocolVersion = [string]$initialized.protocolVersion
     Initialized-Notification
     $catalog = Rpc 'tools/list'
@@ -189,6 +190,9 @@ try {
     Assert ($sessionTool.Count -eq 1 -and ($sessionTool[0].inputSchema.properties.action.enum -join ',') -eq 'list,extend' -and $sessionTool[0].inputSchema.properties.extendMs.minimum -eq 1000 -and $sessionTool[0].inputSchema.properties.extendMs.maximum -eq 3600000 -and !$sessionTool[0].annotations.readOnlyHint -and !$sessionTool[0].annotations.idempotentHint) 'MCP Mock 연결 조회·연장 계약이 없습니다.'
     $guide = Tool flowlink_guide @{ topic = 'flow' }
     Assert ($guide -match 'envSource|환경 출처|서버 공통') 'MCP 실행 가이드에 최신 자원 계약이 없습니다.'
+    Assert ($guide -match '연결 설정' -and $guide -match '연결 세션' -and $guide -match 'execution_get' -and $guide -match 'plugin_script_upsert') 'MCP 가이드에 화면별 기능과 저장·실행·승인 요청 동선이 없습니다.'
+    Assert ($sessionTool[0].description -match '연결 세션') 'MCP 세션 도구 안내가 화면 메뉴와 일치하지 않습니다.'
+    Checked 'authoring instructions + screen action mapping + saved-node and plugin test order'
     Checked 'initialize + tools/list 59 + session extension schema + guide'
     $protocolGuide = Tool flowlink_guide @{ topic = 'protocol' }
     Assert ($protocolGuide -match 'responseFraming' -and $protocolGuide -match 'idleTimeoutMs' -and $protocolGuide -match 'requestAckHex') 'MCP 프로토콜 가이드에 TCP 요청/응답 경계·연결 유지·ACK 계약이 없습니다.'

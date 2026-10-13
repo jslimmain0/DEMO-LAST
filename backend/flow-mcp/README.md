@@ -1,5 +1,15 @@
 # 중앙 MCP
 
+화면과 MCP는 같은 작업 순서를 따른다. 초기 연결 안내와 `flowlink_guide`에도 아래 구분을 제공한다.
+
+| 화면 기능 | MCP 작업 |
+|---|---|
+| TCP Mock · 연결 설정 | `protocol_upsert`로 전문 규격을, `mock_upsert`로 리스너·프로토콜 참조를 저장 |
+| TCP Mock · 연결 세션 | `mock_tcp_sessions(action="list")` 조회 후 해당 `sessionId`로 `action="extend"`. 정의 저장이나 전문 전송 없음 |
+| 프로토콜 · 전문 미리보기 | `protocol_preview`로 현재 `spec`·값을 저장·전송 없이 조립 |
+| 노드 · 입력 → 미리보기 → 테스트 → 결과 | 화면은 테스트 버튼에서 현재 설정을 먼저 저장. MCP는 수정 graph를 `flow_upsert`로 저장한 뒤 `node_run`, 요청·응답은 `execution_get`으로 확인 |
+| 플러그인 · 테스트 패널 → 테스트 실행 → 저장 → 승인 요청 | 패널 열기는 실행하지 않음. `plugin_script_try`는 입력 생략 시 컴파일·메타만 조회하고 입력을 주면 현재 소스를 저장·승인 전에 시험. `plugin_script_upsert`로 초안을 저장한 뒤 반환 `id`로 `plugin_script_submit` 요청 |
+
 `protocol_upsert`의 `spec`은 요청 `framing`·응답 `responseFraming`(길이 필드/고정 바이트/HEX 종료자), `transport`(실행 중 연결 유지·유휴 제한·고정 ACK)를 지원한다. PC와 서버의 노드·Mock·프록시는 같은 정의를 사용하며 기존 옵션이 없는 명세는 이전 동작을 유지한다. 상세 규칙과 제한은 [TCP 연결과 수신 경계](../README.md#tcp-연결과-수신-경계-2026-10-13)를 따른다. 기존 MCP 도구 이름과 인증·IDE 설정은 유지한다.
 
 `protocol_preview`는 `frameDirection: send | recv`로 요청/응답 경계를 선택하고, `direction: send | recv`로 코덱 컨텍스트 방향을 선택한다. 응답 길이만 검사하려면 `frameDirection=recv`를 사용한다. 두 인자 생략은 기존 송신 동작을 유지하며 미리보기는 네트워크로 전송하지 않는다. 실제 ACK 교환은 `mock_send`, 연결 유지 검증은 같은 실행의 TCP 노드 두 개를 `flow_run`으로 수행한다. 별도 `mock_send`·`node_run` 호출끼리는 연결을 공유하지 않는다.

@@ -55,7 +55,7 @@
   {
     "name": "flowlink_guide",
     "title": "규격 가이드",
-    "description": "워크플로(flow/nodes)·프로토콜(protocol)·Mock(mock) JSON 규격과 에이전트 규약(rules)을 읽습니다. 저장 위치와 환경 출처는 local/server를 구분하며 시크릿·프로토콜·플러그인은 서버 공통(public) 하나입니다. 만들기 전에 해당 topic을 읽고 변환·코덱 id는 plugin_list에서 확인하세요. plugin은 JS 플러그인 규격과 fl 헬퍼입니다.",
+    "description": "워크플로(flow/nodes)·프로토콜(protocol)·Mock(mock) JSON 규격과 에이전트 규약(rules)을 읽습니다. 화면 기능에 대응하는 MCP 도구와 입력·미리보기·저장·실행·승인 요청 순서도 안내합니다. 저장 위치와 환경 출처는 local/server를 구분하며 시크릿·프로토콜·플러그인은 서버 공통(public) 하나입니다. 만들기 전에 해당 topic을 읽고 변환·코덱 id는 plugin_list에서 확인하세요. plugin은 JS 플러그인 규격과 fl 헬퍼입니다.",
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
@@ -393,7 +393,7 @@
   {
     "name": "protocol_preview",
     "title": "전문 조립 미리보기",
-    "description": "서버 공통(public) 프로토콜 id/name 또는 spec과 전문 key·values로 전송 없이 바이트를 조립합니다. frameDirection=send는 요청 경계, recv는 응답 경계이며 direction은 코덱 컨텍스트 방향입니다. 둘 다 생략하면 기존 송신 동작입니다. environment는 서버 공통 환경입니다. hex·텍스트·필드의 시크릿을 가리고 검증 오류를 반환합니다. 실제 전송은 node_run, 연결 재사용은 동일 흐름의 TCP 노드 두 개를 flow_run으로 확인하세요. 기존 target/workspace 인자는 위치를 바꾸지 않습니다.",
+    "description": "화면의 전문 미리보기에 대응하며 서버 공통(public) 프로토콜 id/name 또는 현재 spec과 전문 key·values로 저장·전송 없이 바이트를 조립합니다. frameDirection=send는 요청 경계, recv는 응답 경계이며 direction은 코덱 컨텍스트 방향입니다. 둘 다 생략하면 기존 송신 동작입니다. environment는 서버 공통 환경입니다. hex·텍스트·필드의 시크릿을 가리고 검증 오류를 반환합니다. 실제 전송은 node_run, 연결 재사용은 동일 흐름의 TCP 노드 두 개를 flow_run으로 확인하세요. 기존 target/workspace 인자는 위치를 바꾸지 않습니다.",
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
@@ -662,7 +662,7 @@
   {
     "name": "mock_tcp_sessions",
     "title": "TCP Mock 연결 조회·유휴 기한 연장",
-    "description": "선택 target/workspace의 TCP Mock에 연결된 소켓을 slug로 조회합니다. action=list(기본)는 id·remoteAddress·remotePort·connectedAt·lastActivityAt·idleTimeoutMs·state(starting/waiting/processing)·expiresAt·remainingMs·receivedMessages 배열을 반환합니다. action=extend는 먼저 목록에서 얻은 sessionId가 필요하며 현재 waiting 기한에 extendMs(기본 60000, 1000~3600000ms)를 더합니다. 결과 기한이 현재부터 1시간을 넘거나 starting/processing이면 HTTP 400, 종료·알 수 없는 세션은 404입니다. 상대 앱에 전문을 보내지 않고 Mock 측 대기 기한만 바꿉니다. 다음 데이터 활동은 프로토콜의 기본 유휴 제한을 다시 적용합니다. 조회는 Mock 읽기 권한, 연장은 쓰기 권한이 필요합니다. Mock 중지·설정 변경·앱 재시작 시 연결은 사라지며 DB에 저장하지 않습니다.",
+    "description": "화면의 연결 세션 메뉴에 대응하며 선택 target/workspace의 TCP Mock에 연결된 소켓을 slug로 조회합니다. 리스너·프로토콜의 연결 설정은 protocol_upsert·mock_upsert로 저장합니다. action=list(기본)는 id·remoteAddress·remotePort·connectedAt·lastActivityAt·idleTimeoutMs·state(starting/waiting/processing)·expiresAt·remainingMs·receivedMessages 배열을 반환합니다. action=extend는 먼저 목록에서 얻은 sessionId가 필요하며 현재 waiting 기한에 extendMs(기본 60000, 1000~3600000ms)를 더합니다. 결과 기한이 현재부터 1시간을 넘거나 starting/processing이면 HTTP 400, 종료·알 수 없는 세션은 404입니다. 상대 앱에 전문을 보내지 않고 Mock 측 대기 기한만 바꿉니다. 다음 데이터 활동은 프로토콜의 기본 유휴 제한을 다시 적용합니다. 조회는 Mock 읽기 권한, 연장은 쓰기 권한이 필요합니다. Mock 중지·설정 변경·앱 재시작 시 연결은 사라지며 DB에 저장하지 않습니다.",
     "annotations": {
       "readOnlyHint": false,
       "destructiveHint": false,
@@ -1517,7 +1517,7 @@
   {
     "name": "node_run",
     "title": "노드 하나만 실행",
-    "description": "저장된 노드 하나를 실제 실행하고 이력을 남깁니다. envSource+envName은 실행 환경 하나를 선택하며 신규 공통 자원 흐름의 출처 생략은 target, 기존 metadata 없는 흐름은 이전 workspace 계약을 유지합니다. HTTP/TCP는 노드 executionAgent를 따르며 공통 TRANSFORM은 서버 public에서 같은 흐름 환경으로 실행합니다. input={{ 키@input }}, upstream={소스노드ID:{키:값}}로 상류 출력을 넣습니다. UNKNOWN이나 시간 초과에는 재호출하지 말고 execution_get으로 확인하세요.",
+    "description": "저장된 노드 하나를 실제 실행하고 이력을 남깁니다. 화면의 이 노드 테스트와 달리 현재 편집을 자동 저장하지 않습니다. 수정 graph는 flow_upsert로 먼저 저장하고, 실행 후 요청·응답은 execution_get으로 확인하세요. envSource+envName은 실행 환경 하나를 선택하며 신규 공통 자원 흐름의 출처 생략은 target, 기존 metadata 없는 흐름은 이전 workspace 계약을 유지합니다. HTTP/TCP는 노드 executionAgent를 따르며 공통 TRANSFORM은 서버 public에서 같은 흐름 환경으로 실행합니다. input={{ 키@input }}, upstream={소스노드ID:{키:값}}로 상류 출력을 넣습니다. UNKNOWN이나 시간 초과에는 재호출하지 말고 execution_get으로 확인하세요.",
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
@@ -1893,7 +1893,7 @@
   {
     "name": "plugin_script_try",
     "title": "스크립트 플러그인 시험 실행(저장 없음)",
-    "description": "서버 공통(public) 자원입니다. PC 온라인 여부와 관계없이 같은 카탈로그를 사용하며 기존 target/workspace 인자는 공통 자원 위치를 바꾸지 않습니다. 소스를 샌드박스에서 1회 실행한다 — 저장하지 않으며 컴파일 검사를 겸한다(오류는 \"N행 M열: …\"). 입력을 안 주면 컴파일만(메타). transform: inputs·config · fieldCodec: value + fn(encode|decode) + direction(send|recv) (+message) · messageCodec: bytesB64 + fn. 입력·config 의 {{ 이름@secret }}·{{ 키@env }} 는 environment(환경 이름)로 서버가 푼다. 작성 규격과 fl.* 함수는 flowlink_guide(plugin).",
+    "description": "서버 공통(public) 자원입니다. PC 온라인 여부와 관계없이 같은 카탈로그를 사용하며 기존 target/workspace 인자는 공통 자원 위치를 바꾸지 않습니다. 현재 source를 저장·승인 전에 샌드박스에서 시험할 수 있습니다. 입력을 안 주면 컴파일·메타 조회만 하며 실행하지 않습니다(화면의 테스트 패널 열기). 입력을 주면 1회 실행합니다(테스트 실행). 저장하지 않으며 오류는 \"N행 M열: …\"입니다. transform: inputs·config · fieldCodec: value + fn(encode|decode) + direction(send|recv) (+message) · messageCodec: bytesB64 + fn. 입력·config 의 {{ 이름@secret }}·{{ 키@env }} 는 environment(환경 이름)로 서버가 푼다. 작성 규격과 fl.* 함수는 flowlink_guide(plugin).",
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
@@ -1961,7 +1961,7 @@
   {
     "name": "plugin_script_upsert",
     "title": "스크립트 플러그인 초안 저장(생성/갱신)",
-    "description": "서버 공통(public) 자원입니다. PC 온라인 여부와 관계없이 같은 카탈로그를 사용하며 기존 target/workspace 인자는 공통 자원 위치를 바꾸지 않습니다. 서버가 컴파일해 통과하면 초안으로 저장한다(오류면 \"N행 M열: …\"). id(uuid·플러그인 id·이름)를 주면 갱신, 없으면 생성. 초안은 레지스트리에 오르지 않는다 → plugin_script_try 로 검증 → plugin_script_submit 으로 승인 요청 → 관리자가 화면(/admin)에서 승인해야 TRANSFORM 노드·코덱에서 쓸 수 있다. 승인본이 있는 플러그인은 새 초안이 승인될 때까지 승인본이 계속 서빙된다.",
+    "description": "서버 공통(public) 자원입니다. PC 온라인 여부와 관계없이 같은 카탈로그를 사용하며 기존 target/workspace 인자는 공통 자원 위치를 바꾸지 않습니다. 현재 source는 plugin_script_try로 저장·승인 전에 검증할 수 있습니다. 서버가 컴파일해 통과하면 초안으로 저장한다(오류면 \"N행 M열: …\"). id(uuid·플러그인 id·이름)를 주면 갱신, 없으면 생성. 초안은 레지스트리에 오르지 않는다. 저장 후 반환 id로 plugin_script_submit 승인 요청 → 관리자가 화면(/admin)에서 승인해야 TRANSFORM 노드·코덱에서 쓸 수 있다. 승인본이 있는 플러그인은 새 초안이 승인될 때까지 승인본이 계속 서빙된다.",
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
@@ -1984,7 +1984,7 @@
   {
     "name": "plugin_script_submit",
     "title": "스크립트 플러그인 승인 요청 / 철회",
-    "description": "서버 공통(public) 자원입니다. PC 온라인 여부와 관계없이 같은 카탈로그를 사용하며 기존 target/workspace 인자는 공통 자원 위치를 바꾸지 않습니다. 초안(DRAFT·REJECTED, 또는 승인본과 다른 초안)을 승인 요청(→PENDING)하거나 요청을 철회(→DRAFT). 승인·반려는 관리자만, 화면에서.",
+    "description": "서버 공통(public) 자원입니다. PC 온라인 여부와 관계없이 같은 카탈로그를 사용하며 기존 target/workspace 인자는 공통 자원 위치를 바꾸지 않습니다. plugin_script_upsert로 먼저 저장한 초안의 id가 필요합니다. 미저장 source를 승인 요청하지 않습니다. 초안(DRAFT·REJECTED, 또는 승인본과 다른 초안)을 승인 요청(→PENDING)하거나 요청을 철회(→DRAFT). 승인·반려는 관리자만, 화면에서.",
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",

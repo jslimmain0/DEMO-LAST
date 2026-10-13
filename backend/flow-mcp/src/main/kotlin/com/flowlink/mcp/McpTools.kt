@@ -89,7 +89,7 @@ class McpTools(private val mapper: ObjectMapper, private val rest: McpRestClient
                 val topic = a.path("topic").asText()
                 val selected = if (topic == "all") schemas else schemas.path(if (topic == "nodes") "flow" else topic)
                 val layoutGuide = if (topic in setOf("all", "nodes", "flow")) "\n\n${McpGraphLayout.GUIDE}" else ""
-                return render(selected) + layoutGuide + "\n\nMCP는 중앙 서버에만 있습니다. ${McpConfiguration.RESOURCE_GUIDE} pendingAgent UNKNOWN은 재실행하지 말고 결과를 확인하세요. FORM은 실제 사용자 화면 작업이 필요하며 MCP는 팝업 성공을 가장하지 않습니다."
+                return render(selected) + layoutGuide + "\n\nMCP는 중앙 서버에만 있습니다. ${McpConfiguration.RESOURCE_GUIDE} ${McpConfiguration.TCP_GUIDE} pendingAgent UNKNOWN은 재실행하지 말고 결과를 확인하세요. FORM은 실제 사용자 화면 작업이 필요하며 MCP는 팝업 성공을 가장하지 않습니다."
             }
             "workspace_list" -> return get("/workspaces")
             "workspace_get" -> return mapOf("workspace" to workspace(c, c.workspaceId), "folders" to folders(c), "flows" to get("/flows"), "mocks" to get("/mock-servers"))
@@ -117,7 +117,7 @@ class McpTools(private val mapper: ObjectMapper, private val rest: McpRestClient
                     val p = named(get("/protocols"), a.text("protocolId") ?: a.text("name") ?: "", listOf("id", "name"), "프로토콜")
                     get("/protocols/${p.path("id").asText()}").path("spec")
                 }
-                return api("POST", "/protocols/preview", fields("key", "values", "environment").apply { set<JsonNode>("spec", spec); if (!has("values")) set<JsonNode>("values", mapper.createObjectNode()) })
+                return api("POST", "/protocols/preview", fields("key", "values", "environment", "direction", "frameDirection").apply { set<JsonNode>("spec", spec); if (!has("values")) set<JsonNode>("values", mapper.createObjectNode()) })
             }
             "protocol_delete" -> { api("DELETE", "/protocols/${protocol().path("id").asText()}"); return "삭제됨" }
             "mock_list" -> return mockList(c, a.text("workspace"))

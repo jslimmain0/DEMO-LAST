@@ -2,6 +2,8 @@
 
 `protocol_upsert`의 `spec`은 요청 `framing`·응답 `responseFraming`(길이 필드/고정 바이트/HEX 종료자), `transport`(실행 중 연결 유지·유휴 제한·고정 ACK)를 지원한다. PC와 서버의 노드·Mock·프록시는 같은 정의를 사용하며 기존 옵션이 없는 명세는 이전 동작을 유지한다. 상세 규칙과 제한은 [TCP 연결과 수신 경계](../README.md#tcp-연결과-수신-경계-2026-10-13)를 따른다. MCP 도구 이름이나 인증·IDE 설정은 변경하지 않는다.
 
+`protocol_preview`는 `frameDirection: send | recv`로 요청/응답 경계를 선택하고, `direction: send | recv`로 코덱 컨텍스트 방향을 선택한다. 응답 길이만 검사하려면 `frameDirection=recv`를 사용한다. 두 인자 생략은 기존 송신 동작을 유지하며 미리보기는 네트워크로 전송하지 않는다. 실제 ACK 교환은 `mock_send`, 연결 유지 검증은 같은 실행의 TCP 노드 두 개를 `flow_run`으로 수행한다. 별도 `mock_send`·`node_run` 호출끼리는 연결을 공유하지 않는다.
+
 `flow-mcp`는 `flow-server`가 로드하는 Kotlin 라이브러리다. 같은 Tomcat의 `/mcp`에서 Streamable HTTP를 제공한다. 별도 Node 프로세스·18090 포트·PC stdio MCP는 사용하지 않는다. Windows MSI에는 Java 런타임과 개인 앱을 포함하며 Node/MCP 소스는 포함하지 않는다. Node/npm은 프론트엔드를 빌드하는 개발 PC에만 필요하다.
 
 사내 서버의 HTTPS 주소 하나를 `FLOWLINK_PUBLIC_URL`로 지정하면 화면·API와 `/mcp`가 같은 주소를 사용한다. `FLOWLINK_MCP_ENABLED=false`로 중앙 MCP를 끌 수 있다. 개인 앱에는 이 라이브러리와 MCP SDK가 들어가지 않는다.

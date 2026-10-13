@@ -87,7 +87,9 @@ transform: {"id":"t1","type":"transform","cat":"transform","x":700,"y":180,"tran
    transformId 는 승인된 변환 플러그인 id 만(plugin_list). 암복호화·해시·서명·마스킹은 손으로 계산하지 말고 이 노드로 한다.
    필요한 플러그인이 없으면 만들어 승인 요청하고(plugin_script_upsert→try→submit), 알고리즘·키 출처를 모르면 사용자에게 물어라.
 tcp: {"id":"tc1","type":"tcp","cat":"tcp","x":480,"y":180,"tcpHost":"127.0.0.1","tcpPort":9600,"tcpTimeoutMs":5000,"protocolId":"<프로토콜 id>","tcpMessage":"0210","tcpValues":{"계좌번호":"1122334567890"},"tcpResponseMessage":"0211","outputs":[{"key":"응답코드","type":"string"}]}
-   protocolId 는 사용자가 알려준 프로토콜 id 만 — 모르면 tcp 노드를 만들지 말고 "프로토콜 화면에서 먼저 정의" 하라고 답하라. 출력 키 = 응답 전문의 헤더+본문 필드 이름.
+   protocolId는 프로토콜 조회·저장 응답에서 확인한 id만 사용한다. 모르면 규격을 확인하고 먼저 정의하며 id를 지어내지 않는다. 출력 키 = 응답 전문의 헤더+본문 필드 이름.
+   framing/responseFraming(길이 필드·고정 길이·HEX 종료자), transport(connection="once"|"execution", idleTimeoutMs, 고정 ACK)는 노드가 아니라 protocol spec에 설정한다(flowlink_guide(protocol)). 길이·ACK 규격을 추측하지 않는다.
+   연결 유지 검증은 같은 흐름의 같은 실행 위치·목적지·프로토콜 TCP 노드 두 개를 연결해 flow_run으로 한다. 별도 node_run/mock_send 호출끼리는 연결을 공유하지 않는다. 유휴 기본30초이며 완료·취소·만료·실패 시 연결을 닫고 자동 재전송하지 않는다. 동적 ACK·heartbeat·서버 Push·재시작 후 연결 복원은 지원하지 않는다.
 note: {"id":"n1","type":"note","cat":"note","x":300,"y":360,"noteText":"메모","noteColor":"yellow"}   // 실행 제외
 group: {"id":"g1","type":"group","cat":"group","x":220,"y":140,"groupW":396,"groupH":264,"noteColor":"gray"}   // 표시용 박스
 

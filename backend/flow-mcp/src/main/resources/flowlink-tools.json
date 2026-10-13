@@ -333,7 +333,7 @@
   {
     "name": "protocol_list",
     "title": "프로토콜 목록",
-    "description": "서버 공통(public) 자원입니다. PC 온라인 여부와 관계없이 같은 카탈로그를 사용하며 기존 target/workspace 인자는 공통 자원 위치를 바꾸지 않습니다. 저장된 고정길이 전문 프로토콜 목록(id·이름·인코딩·전문 수).",
+    "description": "서버 공통(public) 자원입니다. PC 온라인 여부와 관계없이 같은 카탈로그를 사용하며 기존 target/workspace 인자는 공통 자원 위치를 바꾸지 않습니다. 저장된 TCP 전문 프로토콜 목록(id·이름·인코딩·전문 수).",
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
@@ -360,7 +360,7 @@
   {
     "name": "protocol_upsert",
     "title": "프로토콜 생성/갱신",
-    "description": "서버 공통(public) 자원입니다. PC 온라인 여부와 관계없이 같은 카탈로그를 사용하며 기존 target/workspace 인자는 공통 자원 위치를 바꾸지 않습니다. 이름이 있으면 갱신, 없으면 생성. spec 은 flowlink_guide(protocol) 규격(JSON 객체 또는 JSON 문자열). 검증 실패는 서버 메시지로 돌려준다.",
+    "description": "서버 공통(public) 자원입니다. PC 온라인 여부와 관계없이 같은 카탈로그를 사용하며 기존 target/workspace 인자는 공통 자원 위치를 바꾸지 않습니다. 이름이 있으면 갱신, 없으면 생성. spec은 flowlink_guide(protocol) 규격(JSON 객체 또는 JSON 문자열)입니다. framing/responseFraming은 요청·응답별 length/fixed/delimiter 경계, lengthAdjustment는 전체=선언+보정, lengthFormat은 ascii-decimal/ascii-hex/binary입니다. transport.connection=execution은 동일 실행에서 연결 유지, idleTimeoutMs는 유휴 제한, requestAckHex/responseAckHex는 고정 ACK 4-way입니다. 기존 옵션 없는 명세에 기본값을 임의로 추가하지 않으며 검증 실패는 서버 메시지로 반환합니다.",
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
@@ -393,7 +393,7 @@
   {
     "name": "protocol_preview",
     "title": "전문 조립 미리보기",
-    "description": "서버 공통(public) 프로토콜 id/name 또는 spec과 전문 key·values로 전송 없이 바이트를 조립합니다. environment는 서버 공통 환경입니다. hex·텍스트·필드의 시크릿을 가리고 검증 오류를 반환합니다. 실제 전송 위치와 환경 출처 검증은 저장한 TCP 노드의 node_run으로 확인하세요. 기존 target/workspace 인자는 위치를 바꾸지 않습니다.",
+    "description": "서버 공통(public) 프로토콜 id/name 또는 spec과 전문 key·values로 전송 없이 바이트를 조립합니다. frameDirection=send는 요청 경계, recv는 응답 경계이며 direction은 코덱 컨텍스트 방향입니다. 둘 다 생략하면 기존 송신 동작입니다. environment는 서버 공통 환경입니다. hex·텍스트·필드의 시크릿을 가리고 검증 오류를 반환합니다. 실제 전송은 node_run, 연결 재사용은 동일 흐름의 TCP 노드 두 개를 flow_run으로 확인하세요. 기존 target/workspace 인자는 위치를 바꾸지 않습니다.",
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
@@ -429,6 +429,16 @@
           "additionalProperties": {
             "type": "string"
           }
+        },
+        "direction": {
+          "type": "string",
+          "enum": ["send", "recv"],
+          "description": "코덱 컨텍스트 방향. 생략=send. 응답 경계만 검사하려면 이 값 대신 frameDirection=recv를 지정합니다."
+        },
+        "frameDirection": {
+          "type": "string",
+          "enum": ["send", "recv"],
+          "description": "요청(send)/응답(recv) 경계 선택. 생략하면 direction을 따릅니다. 코덱 컨텍스트 방향을 바꾸지 않습니다."
         },
         "environment": {
           "type": "string",
@@ -609,7 +619,7 @@
   {
     "name": "mock_send",
     "title": "TCP Mock 에 전문 보내기",
-    "description": "TCP Mock 리스너로 전문을 실제 소켓으로 보내고 프로토콜로 디코딩한 응답을 돌려준다(key=요청 전문 키, values=필드 값).",
+    "description": "TCP Mock 리스너로 전문을 실제 소켓으로 한 번 보내고 프로토콜의 요청·응답 경계와 고정 ACK로 응답을 해석합니다(key=요청 전문 키, values=필드 값). 호출마다 연결을 종료하므로 연결 유지 검증은 동일 흐름에 TCP 노드 두 개를 두고 flow_run으로 하세요.",
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",

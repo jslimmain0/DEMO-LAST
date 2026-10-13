@@ -81,6 +81,7 @@ mock_list는 mocks/sources로 내 PC와 서버를 함께 보여준다. source.av
    HTTP 는 mock_upsert(type=HTTP) → HTTP 노드 baseUrl 을 mock base URL 로.
 4. 만든 뒤 반드시 실행·확인한다. 워크플로는 flow_run(실패 시 execution_get / mock_log 로 원인). Mock 은 HTTP=http_request 로
    그 mock 의 base URL+경로를 호출해 응답을 보고, TCP=mock_send 로 전문을 보낸다. wait 콜백·웹훅도 http_request 로 쏜다.
+   TCP 연결·길이 경계·고정 ACK는 protocol spec에 설정한다(flowlink_guide(protocol)). 연결 유지 검증은 같은 실행 위치·목적지·프로토콜의 TCP 노드 두 개를 한 흐름에 넣어 flow_run으로 하며 별도 node_run/mock_send 호출끼리는 연결을 공유하지 않는다.
    **curl·파이썬·셸로 직접 쏘지 말고 http_request/mock_send 를 써라**(그게 이 서버에 붙어 있는 경로다). 결과는 "돌아가는 초안 + 확인 목록(메모)".
 5. 워크플로에는 START 와 END 가 있어야 하고, 검증은 assert 노드(예: {{ 응답코드@노드 }} == '0000')로 남긴다.
 6. 암복호화·해시·서명·마스킹은 **플러그인**으로 한다(직접 계산한 값을 전문에 박지 마라). 붙는 자리: 프로토콜 필드 하나=`Field.plugin`(fieldCodec) ·

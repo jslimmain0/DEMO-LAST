@@ -182,9 +182,15 @@ try {
     Initialized-Notification
     $catalog = Rpc 'tools/list'
     Assert (@($catalog.tools).Count -eq 58) 'MCP 도구 목록은 58개여야 합니다.'
+    $previewTool = @($catalog.tools | Where-Object name -eq 'protocol_preview')
+    $frameDirections = @($previewTool[0].inputSchema.properties.frameDirection.enum | Sort-Object)
+    Assert ($previewTool.Count -eq 1 -and ($frameDirections -join ',') -eq 'recv,send' -and 'frameDirection' -notin $previewTool[0].inputSchema.required) 'MCP 전문 미리보기의 선택적 요청/응답 프레임 방향이 없습니다.'
     $guide = Tool flowlink_guide @{ topic = 'flow' }
     Assert ($guide -match 'envSource|환경 출처|서버 공통') 'MCP 실행 가이드에 최신 자원 계약이 없습니다.'
     Checked 'initialize + tools/list 58 + guide'
+    $protocolGuide = Tool flowlink_guide @{ topic = 'protocol' }
+    Assert ($protocolGuide -match 'responseFraming' -and $protocolGuide -match 'idleTimeoutMs' -and $protocolGuide -match 'requestAckHex') 'MCP 프로토콜 가이드에 TCP 요청/응답 경계·연결 유지·ACK 계약이 없습니다.'
+    Checked 'optional preview frameDirection enum + TCP protocol guide'
 
     $envName = 'mcp-shared-env'
     $null = Tool env_put @{ target = 'local'; name = $envName; vars = @{ ORIGIN = 'pc-marker' } }
@@ -215,6 +221,56 @@ try {
     $preview = Tool transform_preview @{ target = 'local'; workspace = $pcSpace; id = 'mcp-central-transform'; inputs = @{ input = 'wire' }; config = @{ prefix = 'central' } }
     Assert ($preview.outputs.result -eq 'central|wire') 'target local 공통 변환 실행 실패'
     Checked 'common protocol/secret/plugin tools route to server public'
+
+    $tcpSpec = @{ encoding = 'UTF-8'; discriminator = 'type'; header = @(@{ name = 'type'; len = 4; type = 'ascii' })
+        framing = @{ mode = 'fixed'; fixedLength = 14 }; responseFraming = @{ mode = 'fixed'; fixedLength = 8 }
+        transport = @{ connection = 'execution'; idleTimeoutMs = 30000; requestAckHex = '06'; responseAckHex = '06' }
+        messages = @(@{ key = 'REQ1:request'; fields = @(@{ name = 'value'; len = 10; type = 'ascii' }) }, @{ key = 'RES1:response'; fields = @(@{ name = 'result'; len = 4; type = 'ascii' }) }) }
+    $tcpProtocol = Tool protocol_upsert @{ target = 'local'; name = 'mcp-tcp-fixed'; spec = $tcpSpec }
+    $tcpStored = Tool protocol_get @{ target = 'local'; id = $tcpProtocol.id }
+    Assert ($tcpStored.spec.framing.fixedLength -eq 14 -and $tcpStored.spec.responseFraming.fixedLength -eq 8 -and $tcpStored.spec.transport.connection -eq 'execution' -and $tcpStored.spec.transport.idleTimeoutMs -eq 30000 -and $tcpStored.spec.transport.requestAckHex -eq '06' -and $tcpStored.spec.transport.responseAckHex -eq '06') 'MCP 저장·조회가 TCP 옵션을 보존하지 않습니다.'
+    $tcpPreviewSend = Tool protocol_preview @{ protocolId = $tcpProtocol.id; key = 'REQ1:request'; values = @{ value = 'A001' }; frameDirection = 'send' }
+    $tcpPreviewRecv = Tool protocol_preview @{ protocolId = $tcpProtocol.id; key = 'RES1:response'; values = @{ result = 'A001' }; frameDirection = 'recv' }
+    $tcpPreviewDefault = Tool protocol_preview @{ protocolId = $tcpProtocol.id; key = 'REQ1:request'; values = @{ value = 'A001' } }
+    Assert ($tcpPreviewSend.total -eq 14 -and @($tcpPreviewSend.errors).Count -eq 0 -and $tcpPreviewRecv.total -eq 8 -and @($tcpPreviewRecv.errors).Count -eq 0 -and $tcpPreviewDefault.total -eq 14 -and @($tcpPreviewDefault.errors).Count -eq 0) 'MCP 명시적 요청/응답 프레임 또는 기존 기본 SEND 조립이 잘못됐습니다.'
+    Checked 'TCP options round-trip + request 14B / response 8B preview + default SEND'
+
+    $tcpPort = Free-Port
+    $tcpMock = Tool mock_upsert @{ target = 'local'; name = 'MCP PC fixed TCP'; slug = 'mcp-tcp-fixed'; type = 'TCP'; enabled = $true
+        spec = @{ routes = @(); tcp = @{ port = $tcpPort; protocolId = $tcpProtocol.id; timeoutMs = 3000; rules = @(@{ id = 'echo'; when = @(); then = @{ mode = 'mock'; fields = @{ type = 'RES1'; result = '{{req.value}}' } } }) } } }
+    $tcpSent = Tool mock_send @{ target = 'local'; slug = $tcpMock.slug; key = 'REQ1:request'; values = @{ value = 'A001' } }
+    Assert ($tcpSent.request.total -eq 14 -and $tcpSent.response.bytes -eq 8 -and $tcpSent.response.body.result -eq 'A001') 'MCP mock_send의 실제 TCP 요청/응답 길이 또는 해석 결과가 잘못됐습니다.'
+    $null = Tool mock_clear_log @{ target = 'local'; slug = $tcpMock.slug }
+    Checked 'PC TCP Mock actual fixed 14B / 8B 4-way exchange'
+
+    $tcpNode = @{ type = 'tcp'; executionAgent = 'local'; agentMock = $tcpMock.slug; protocolId = $tcpProtocol.id; tcpHost = '127.0.0.1'; tcpPort = $tcpPort; tcpTimeoutMs = 3000
+        tcpMessage = 'REQ1:request'; tcpResponseMessage = 'RES1:response'; agentOutputs = @('type', 'result'); outputs = @(@{ key = 'result' }) }
+    $tcpFirst = $tcpNode.Clone(); $tcpFirst.id = 'first'; $tcpFirst.tcpValues = @{ value = 'A001' }
+    $tcpSecond = $tcpNode.Clone(); $tcpSecond.id = 'second'; $tcpSecond.tcpValues = @{ value = 'B002' }
+    $tcpNodes = @(@{ id = 'start'; type = 'start' }, $tcpFirst, @{ id = 'hold1'; type = 'input'; waitFields = @(@{ key = 'go'; type = 'string' }) }, $tcpSecond, @{ id = 'hold2'; type = 'input'; waitFields = @(@{ key = 'go'; type = 'string' }) }, @{ id = 'end'; type = 'end' })
+    $tcpEdges = @(); for ($i = 1; $i -lt $tcpNodes.Count; $i++) { $tcpEdges += @{ from = $tcpNodes[$i - 1].id; to = $tcpNodes[$i].id } }
+    $tcpFlow = Tool flow_upsert @{ target = 'local'; name = 'MCP retained TCP'; graph = @{ nodes = $tcpNodes; edges = $tcpEdges } }
+    $tcpRun = Tool flow_run @{ target = 'local'; id = $tcpFlow.flowId; timeoutSec = 45 }
+    Assert ($tcpRun.execution.pendingInput.nodeId -eq 'hold1') 'MCP 첫 TCP 노드 이후 입력 대기에 도달하지 못했습니다.'
+    $tcpFirstPorts = @(Get-NetTCPConnection -OwningProcess $pc.process.Id -RemotePort $tcpPort -State Established -ErrorAction SilentlyContinue | Select-Object -ExpandProperty LocalPort)
+    Assert ($tcpFirstPorts.Count -eq 1) '격리 PC의 첫 TCP 요청에 유지 연결이 없습니다.'
+    $tcpHeld = Tool execution_resume @{ target = 'local'; id = $tcpRun.execution.id; values = @{ go = 'continue' }; timeoutSec = 45 }
+    Assert ($tcpHeld.execution.pendingInput.nodeId -eq 'hold2') 'MCP 두 번째 TCP 노드 이후 입력 대기에 도달하지 못했습니다.'
+    $tcpSecondPorts = @(Get-NetTCPConnection -OwningProcess $pc.process.Id -RemotePort $tcpPort -State Established -ErrorAction SilentlyContinue | Select-Object -ExpandProperty LocalPort)
+    Assert ($tcpSecondPorts.Count -eq 1 -and $tcpSecondPorts[0] -eq $tcpFirstPorts[0]) 'MCP 두 TCP 노드가 같은 실제 연결을 재사용하지 않습니다.'
+    $tcpLogs = @(Tool mock_log @{ target = 'local'; slug = $tcpMock.slug; limit = 20 })
+    Assert (@($tcpLogs | Where-Object { $_.dir -eq 'in' -and $_.key -eq 'REQ1' }).Count -eq 2 -and @($tcpLogs | Where-Object note -eq '요청 ACK').Count -eq 2 -and @($tcpLogs | Where-Object note -eq '응답 ACK').Count -eq 2) 'MCP TCP 노드의 실제 요청 두 개 또는 4-way ACK 로그가 없습니다.'
+    $tcpDone = Tool execution_resume @{ target = 'local'; id = $tcpRun.execution.id; values = @{ go = 'finish' }; timeoutSec = 45 }
+    $tcpOutputs = @($tcpDone.execution.nodes | Where-Object nodeId -in @('first', 'second') | ForEach-Object { $_.output.result })
+    Assert ($tcpDone.execution.status -eq 'SUCCEEDED' -and ($tcpOutputs -join ',') -eq 'A001,B002') 'MCP TCP 두 요청의 워크플로 결과가 잘못됐습니다.'
+    $deadline = [DateTime]::UtcNow.AddSeconds(6)
+    do {
+        $tcpOpen = @(Get-NetTCPConnection -OwningProcess $pc.process.Id -RemotePort $tcpPort -State Established -ErrorAction SilentlyContinue)
+        if (!$tcpOpen.Count) { break }
+        Start-Sleep -Milliseconds 100
+    } while ([DateTime]::UtcNow -lt $deadline)
+    Assert ($tcpOpen.Count -eq 0) 'MCP 워크플로 완료 후 유지 TCP 연결이 남습니다.'
+    Checked 'MCP flow_run/resume reuses physical TCP port + two 4-way requests + completion closes socket'
 
     $slug = 'mcp-echo'
     $echoSpec = @{ environment = $envName; routes = @(@{ id = 'echo-route'; method = 'POST'; path = '/echo'; rules = @(@{ id = 'echo-rule'; when = @(); status = 200; contentType = 'json'; body = '{"origin":"{{body.origin}}","token":"{{body.token}}"}' }) }) }

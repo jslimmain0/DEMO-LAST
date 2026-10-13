@@ -43,6 +43,19 @@ class McpContractTest {
         assertTrue(valid("plugin_script_submit", mapOf("id" to "a", "action" to "withdraw")))
     }
 
+    @Test fun `TCP preview directions are optional and validate explicit wire and codec choices`() {
+        val required = catalog.getValue("protocol_preview").path("inputSchema").path("required").map { it.asText() }
+        assertEquals(listOf("key"), required)
+        assertTrue(valid("protocol_preview", mapOf("key" to "request")))
+        for (field in listOf("direction", "frameDirection")) {
+            assertEquals(listOf("send", "recv"), catalog.getValue("protocol_preview").path("inputSchema").path("properties").path(field).path("enum").map { it.asText() })
+            assertTrue(valid("protocol_preview", mapOf("key" to "custom", field to "recv")))
+            assertFalse(valid("protocol_preview", mapOf("key" to "custom", field to "other")))
+        }
+        assertTrue(catalog.getValue("protocol_upsert").path("description").asText().contains("responseFraming"))
+        assertTrue(catalog.getValue("mock_send").path("description").asText().contains("호출마다 연결을 종료"))
+    }
+
     @Test fun `common catalogue removes advertised location but accepts legacy extras`() {
         val central = catalog.keys.filter { it.startsWith("protocol_") || it.startsWith("plugin_") || it in setOf("secret_list", "transform_preview") }
         for (name in central) {

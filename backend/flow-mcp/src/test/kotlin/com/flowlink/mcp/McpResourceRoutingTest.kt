@@ -57,6 +57,26 @@ class McpResourceRoutingTest {
         assertEquals("public", tools.scopeFor("env_list", args("""{"target":"server","workspace":"team"}"""), server).workspaceId)
     }
 
+    @Test fun `TCP spec options and explicit preview directions reach REST without adding legacy defaults`() {
+        val spec = json("""{"framing":{"mode":"fixed","fixedLength":14},"responseFraming":{"mode":"fixed","fixedLength":8},
+            "transport":{"connection":"execution","idleTimeoutMs":30000,"requestAckHex":"06","responseAckHex":"06"}}""")
+        val scope = tools.scopeFor("protocol_upsert", args(), server)
+        tools.invoke("protocol_upsert", args("""{"name":"new"}""").apply { set<JsonNode>("spec", spec) }, scope)
+        assertEquals(spec, requests.last().body!!.path("spec"))
+        assertEquals("public", requests.last().context.workspaceId)
+        requests.clear()
+        val preview = args("""{"key":"custom","values":{"result":"A001"},"direction":"send","frameDirection":"recv","environment":"same"}""")
+            .apply { set<JsonNode>("spec", spec) }
+        tools.invoke("protocol_preview", preview, scope)
+        val body = requests.single().body!!
+        assertEquals(spec, body.path("spec")); assertEquals("send", body.path("direction").asText())
+        assertEquals("recv", body.path("frameDirection").asText()); assertEquals("same", body.path("environment").asText())
+        requests.clear(); preview.remove(listOf("direction", "frameDirection", "values"))
+        tools.invoke("protocol_preview", preview, scope)
+        assertFalse(requests.single().body!!.has("direction")); assertFalse(requests.single().body!!.has("frameDirection"))
+        assertEquals(mapper.createObjectNode(), requests.single().body!!.path("values"))
+    }
+
     @Test fun `same named PC source reaches server proxy with exact snapshot and only node metadata`() {
         tools.invoke("node_run", args("""{"flowId":"flow","nodeId":"t","envName":"same","envSource":"local","input":{"order":7},"upstream":{"before":{"amount":17}}}"""), server)
         val run = requests.single { it.path.endsWith("/runs") }

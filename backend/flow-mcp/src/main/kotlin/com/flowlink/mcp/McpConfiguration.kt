@@ -45,7 +45,7 @@ class McpConfiguration {
         val props = Properties().apply { McpConfiguration::class.java.getResourceAsStream("/flowlink-release.properties")?.use { load(it) } }
         return McpServer.sync(transport).jsonMapper(JacksonMcpJsonMapper(mapper))
             .serverInfo("flowlink", props.getProperty("version", "unknown"))
-            .instructions("FlowLink 중앙 MCP. $RESOURCE_GUIDE UNKNOWN 결과를 자동 재실행하지 마세요. ${McpGraphLayout.GUIDE}")
+            .instructions("FlowLink 중앙 MCP. $RESOURCE_GUIDE $TCP_GUIDE UNKNOWN 결과를 자동 재실행하지 마세요. ${McpGraphLayout.GUIDE}")
             .capabilities(McpSchema.ServerCapabilities.builder().tools(false).build())
             .requestTimeout(Duration.ofMinutes(20)).tools(McpTools(mapper, rest).specifications()).build()
     }
@@ -109,6 +109,7 @@ class McpConfiguration {
     }
 
     companion object {
+        const val TCP_GUIDE = "TCP framing/responseFraming·transport는 프로토콜 spec 설정입니다. 길이 필드·고정 길이·구분자, 실행 중 연결 유지·고정 ACK는 flowlink_guide(protocol)을 확인하세요. 응답 경계 미리보기는 protocol_preview(frameDirection=recv), 연결 재사용 검증은 동일 흐름의 TCP 노드 두 개를 flow_run으로 실행합니다. 별도 node_run/mock_send 호출은 연결을 공유하지 않습니다."
         const val RESOURCE_GUIDE = "target/workspace는 워크플로·Mock 저장 위치, envSource는 내 PC/local 또는 서버/server 환경 출처, executionAgent는 HTTP/TCP 요청 출발지입니다. 시크릿·프로토콜·플러그인은 서버 공통(public) 카탈로그이며 공통 자원을 선택한 PC 흐름도 참조할 수 있습니다. 새 흐름과 Mock은 public metadata를 기본으로 저장하고 기존 metadata 없는 자료·재실행은 원래 계약을 보존합니다. 내 PC 환경과 서버의 같은 이름 환경을 자동 병합하지 않습니다. TRANSFORM은 서버에서 흐름의 선택 환경으로 실행합니다. 개인 작업·PC 환경·PC 호출은 로그인한 온라인 Windows 앱이 필요합니다. Mock 목록은 서버와 내 PC를 함께 표시하며 오프라인 위치는 unavailable로 구분합니다."
         const val MAX_REQUEST_BYTES = 8L * 1024 * 1024
         const val MAX_REGISTRATION_BYTES = 64L * 1024

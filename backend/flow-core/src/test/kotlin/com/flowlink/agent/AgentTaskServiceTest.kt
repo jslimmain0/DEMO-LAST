@@ -118,6 +118,25 @@ class AgentTaskServiceTest {
         assertThat(stored.requestText).isEqualTo("private-request")
     }
 
+    @Test fun `server HTTP completion preserves masked request headers and body on the PC`() {
+        Mockito.`when`(workspace.localRuntime).thenReturn(true)
+        Mockito.`when`(executor.runtime).thenReturn("local")
+        val request = request("server").copy(crossBoundary = true)
+        create(request)
+        val claim = tasks.claim(request.taskId, AgentClaim("device-1"))
+        val sent = "POST https://synthetic.example/echo\nContent-Type: application/json\nAuthorization: Bearer ••••••\n\n{\"amount\":42,\"token\":\"••••••\"}"
+        val result = NodeResult.okHttp(200, sent, "unpermitted-response",
+            mapOf("amount" to 42, "ok" to true, "secret" to "must-not-pass"),
+            mapOf("orderId" to "order-42", "extra" to "must-not-pass"))
+        tasks.complete(request.taskId, AgentCompletion("device-1", claim.claimToken!!, result, 5))
+        val stored = tasks.result(request.taskId)!!.result
+        assertThat(stored.requestText).isEqualTo(sent)
+        assertThat(stored.value).isEqualTo(mapOf("amount" to 42, "ok" to true))
+        assertThat(stored.storedValue).isEqualTo(stored.value)
+        assertThat(stored.reqValues).isEqualTo(mapOf("orderId" to "order-42"))
+        assertThat(mapper.writeValueAsString(stored)).doesNotContain("must-not-pass", "unpermitted-response")
+    }
+
     @Test fun `장치와 계정 lease를 강제하고 외부 결과를 허용 키로 제한한다`() {
         val request = request("local")
         create(request)

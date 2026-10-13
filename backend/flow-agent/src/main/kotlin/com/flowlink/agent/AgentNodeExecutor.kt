@@ -148,7 +148,7 @@ class AgentNodeExecutor(
                 @Suppress("UNCHECKED_CAST")
                 val req = masked(selected(raw.reqValues, request.allowedRequestKeys)) as? Map<String, Any?>
                 raw.copy(value = value, storedValue = value, reqValues = req,
-                    requestText = if (runtime == "local") SecretMasker.mask(raw.requestText, masks) else "${node.type} · $runtime 에이전트 · ${node.name.orEmpty()}",
+                    requestText = SecretMasker.mask(raw.requestText, masks),
                     responseText = if (raw.ok) AgentResultText.response(raw.value, value, json) else "노드 실행 실패 · 상태 ${raw.httpStatus ?: "확인 불가"} · 허용 출력 ${json.toJson(value)}")
             } else raw.copy(storedValue = masked(raw.storedValue), requestText = SecretMasker.mask(raw.requestText, masks), responseText = SecretMasker.mask(raw.responseText, masks))
         } catch (e: Exception) {

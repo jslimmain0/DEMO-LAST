@@ -23,6 +23,20 @@ class SecretMaskerTest {
     }
 
     @Test
+    fun `한글 URL 인코딩은 지원 문자셋에서 가리고 손실 변형은 제외한다`() {
+        for (name in listOf("UTF-8", "EUC-KR", "MS949")) {
+            val charset = java.nio.charset.Charset.forName(name)
+            val secret = "한글 키+/="
+            val text = "token=" + java.net.URLEncoder.encode(secret, charset)
+            assertThat(SecretMasker.mask(text, SecretMasker.variants(listOf(secret)))).isEqualTo("token=••••••")
+        }
+        val extended = "똠"
+        val ms949 = java.net.URLEncoder.encode(extended, java.nio.charset.Charset.forName("MS949"))
+        assertThat(SecretMasker.mask("token=$ms949", SecretMasker.variants(listOf(extended)))).isEqualTo("token=••••••")
+        assertThat(SecretMasker.mask("token=%3F", SecretMasker.variants(listOf("🔐")))).isEqualTo("token=%3F")
+    }
+
+    @Test
     fun `JSON 이스케이프 변형도 마스킹한다`() {
         val masks = SecretMasker.variants(listOf("say \"hi\"\nnow"))
         val json = """{"token":"say \"hi\"\nnow"}"""

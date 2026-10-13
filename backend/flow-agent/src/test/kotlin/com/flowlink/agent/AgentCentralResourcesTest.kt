@@ -128,7 +128,7 @@ class AgentCentralResourcesTest {
         server.verify()
     }
 
-    @Test fun `server execution with PC environment uses common secret and server environment uses its overlay`() {
+    @Test fun `server requests remain visible with either environment source while secrets and unselected responses stay masked`() {
         for (source in listOf("local", "server")) {
             val resources = resources(false)
             `when`(resources.secrets(null, null)).thenReturn(mapOf("TOKEN" to "common-secret"))
@@ -138,12 +138,20 @@ class AgentCentralResourcesTest {
             val expectedOrigin = if (source == "local") "pc" else "central"
             val expectedSecret = if (source == "local") "common-secret" else "server-dev-secret"
             server.expect(requestTo("https://$expectedOrigin.test")).andExpect(header("Authorization", expectedSecret))
-                .andRespond(withSuccess("ok", MediaType.TEXT_PLAIN))
-            val n = node("""{"id":"n","type":"http","executionAgent":"server","baseUrl":"https://{{ ORIGIN@env }}.test","headersRaw":true,"rawHeaders":"Authorization: {{ TOKEN@secret }}","respType":"text"}""")
+                .andExpect(content().string("server-request-32100 $expectedSecret"))
+                .andRespond(withSuccess("hidden server response", MediaType.TEXT_PLAIN))
+            val n = node("""{"id":"n","type":"http","executionAgent":"server","method":"POST","baseUrl":"https://{{ ORIGIN@env }}.test","headersRaw":true,"rawHeaders":"Authorization: {{ TOKEN@secret }}","bodyType":"raw","rawBody":"server-request-32100 {{ TOKEN@secret }}","respType":"text"}""")
             val request = AgentNodeRequest(UUID.randomUUID(), UUID.randomUUID(), n, workspaceId = "owner", envName = "dev",
-                resourceWorkspaceId = "public", envSource = source, allowedOutputs = listOf("body"),
+                resourceWorkspaceId = "public", envSource = source, allowedOutputs = listOf("httpStatus"),
                 seeds = if (source == "local") mapOf("env" to mapOf("ORIGIN" to "pc")) else emptyMap())
-            assertTrue(realExecutor(resources, rest.build()).execute(request).result.ok)
+            val result = realExecutor(resources, rest.build()).execute(request).result
+            assertTrue(result.ok, result.responseText)
+            assertTrue(result.requestText.orEmpty().contains("POST https://$expectedOrigin.test"))
+            assertTrue(result.requestText.orEmpty().contains("Authorization"))
+            assertTrue(result.requestText.orEmpty().contains("server-request-32100"))
+            assertFalse(result.toString().contains(expectedSecret))
+            assertFalse(result.responseText.orEmpty().contains("hidden server response"))
+            assertEquals(mapOf("httpStatus" to 200), result.value)
             verify(resources).secrets(if (source == "local") null else "dev", null)
             verify(resources, never()).secrets("dev", owner)
             server.verify()

@@ -2,6 +2,7 @@ package com.flowlink.execution.engine
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import java.net.URLEncoder
+import java.nio.charset.Charset
 
 /**
  * 시크릿 마스킹 규칙의 단일 소스 — 캡처/응답 텍스트에서 시크릿 값을 `••••••` 로 치환한다.
@@ -12,6 +13,7 @@ import java.net.URLEncoder
 object SecretMasker {
 
     private val mapper = ObjectMapper()
+    private val urlCharsets = listOf("UTF-8", "EUC-KR", "MS949").mapNotNull { runCatching { Charset.forName(it) }.getOrNull() }
 
     /** 시크릿 값 + 인코딩 변형(URL 인코딩·JSON 이스케이프) 마스킹 후보 — 긴 값 우선 정렬, 공백 제외. */
     @JvmStatic
@@ -20,7 +22,10 @@ object SecretMasker {
         for (v in values) {
             if (v.isBlank()) continue
             out.add(v)
-            try { out.add(URLEncoder.encode(v, Charsets.UTF_8)) } catch (_: Exception) {}
+            // 표현할 수 없는 문자를 '?'로 바꾼 손실 변형은 마스킹 후보에 넣지 않는다.
+            for (charset in urlCharsets) try {
+                if (charset.newEncoder().canEncode(v)) out.add(URLEncoder.encode(v, charset))
+            } catch (_: Exception) {}
             // JSON 이스케이프형 — writeValueAsString("v") 의 양끝 따옴표 제거
             try {
                 val j = mapper.writeValueAsString(v)

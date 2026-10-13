@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { ExecutionDetail } from '../api/types'
 import { StatusBadge } from '../components/StatusBadge'
 import { MethodTag } from '../components/MethodTag'
@@ -6,6 +6,7 @@ import { LogBlock, methodOf, outputText } from '../components/NodeExecutionLog'
 import { duration } from '../lib/format'
 import { AgentBadge } from '../components/AgentSettings'
 import { AppIcon } from '../components/AppIcon'
+import { toast } from '../components/toast'
 
 /** wait(콜백 대기) 진행 상태 — Editor 실행 루프가 채운다. */
 export interface WaitStatus {
@@ -113,7 +114,7 @@ export function RunPanel({
         {execution?.error && <div role="alert" className="fl-run-panel-error"><strong>실행 실패</strong><span>{execution.error}</span><span>실패한 노드의 요청·응답을 확인하고 노드 설정에서 수정하세요.</span></div>}
         {(running || execution?.pendingAgent) && (
           waitStatus ? (
-            <WaitBanner status={waitStatus} />
+            <WaitBanner key={`${execution?.id}:${waitStatus.nodeId}:${waitStatus.receiveUrl}`} status={waitStatus} />
           ) : (
             <div role="status" aria-live="polite" style={{ padding: 16, color: 'var(--fl-text-muted)', fontSize: 13 }}>
               {execution?.pendingAgent
@@ -145,12 +146,12 @@ export function RunPanel({
                 aria-expanded={open}
                 className="fl-run-node-summary"
               >
-                <span style={{ width: 18, color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)', fontSize: 11 }}>{nd.seq}</span>
+                <span style={{ width: 18, color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)', fontVariantNumeric: 'tabular-nums', fontSize: 11 }}>{nd.seq}</span>
                 <StatusBadge status={nd.status} />
                 {nd.nodeType === 'http' && nd.httpStatus != null && methodOf(nd.requestText) && <MethodTag method={methodOf(nd.requestText)!} />}
                 <span className="fl-run-node-name" style={{ fontSize: 13, fontWeight: 500 }}>{nd.nodeName || nd.nodeId}</span>
                 {nd.executionAgent && !['set', 'if', 'assert', 'switch'].includes(nd.nodeType ?? '') && <AgentBadge agent={nd.executionAgent} />}
-                <span className="fl-run-node-metrics" style={{ marginLeft: 'auto', display: 'flex', gap: 12, color: 'var(--fl-text-muted)', fontSize: 12, fontFamily: 'var(--fl-font-mono)' }}>
+                <span className="fl-run-node-metrics" style={{ marginLeft: 'auto', display: 'flex', gap: 12, color: 'var(--fl-text-muted)', fontSize: 12, fontFamily: 'var(--fl-font-mono)', fontVariantNumeric: 'tabular-nums' }}>
                   {nd.httpStatus != null && <span>{nd.httpStatus}</span>}
                   {nd.durationMs != null && <span>{duration(nd.durationMs)}</span>}
                   <span aria-hidden><AppIcon name={open ? 'chevronDown' : 'chevronRight'} size={13} style={{ color: 'var(--fl-text-muted)', verticalAlign: '-2px' }} /></span>
@@ -171,74 +172,99 @@ export function RunPanel({
   )
 }
 
-/** 콜백 대기 배너 — 실시간 카운트다운(0.3초 갱신) + 수신 URL(클릭 전체선택·복사) + 테스트 콜백. */
+/** 콜백 대기 배너 — 기한 표시 + 수신 URL 복사 + 테스트 콜백. */
 function WaitBanner({ status }: { status: WaitStatus }) {
   const [now, setNow] = useState(() => Date.now())
   const [testBody, setTestBody] = useState('{ "resultCode": "0000", "tid": "TEST-1" }')
   const [testState, setTestState] = useState<'idle' | 'sending' | 'ok' | 'err'>('idle')
+  const [testError, setTestError] = useState<string | null>(null)
+  const active = useRef(true)
+  const request = useRef<AbortController | null>(null)
   useEffect(() => {
-    const t = setInterval(() => setNow(Date.now()), 300)
-    return () => clearInterval(t)
+    active.current = true
+    const t = setInterval(() => setNow(Date.now()), 1000)
+    return () => { active.current = false; clearInterval(t); request.current?.abort() }
   }, [])
   const remain = Math.max(0, Math.ceil((status.deadline - now) / 1000))
 
   // 테스트 콜백 — 외부 시스템 없이 수신 URL 로 샘플 콜백을 직접 쏴 대기 노드를 진행시킨다.
   // 수신 URL 에서 경로(/relay/…)만 뽑아 동일 오리진으로 POST(vite 프록시·단일 jar 양쪽 동작).
   const sendTest = async () => {
-    if (!status.receiveUrl) return
+    if (!status.receiveUrl || request.current || testState === 'ok' || Date.now() >= status.deadline) return
+    const controller = new AbortController()
+    request.current = controller
     let path = status.receiveUrl
     try { path = new URL(status.receiveUrl).pathname + (new URL(status.receiveUrl).search || '') } catch { /* 상대경로면 그대로 */ }
-    setTestState('sending')
+    setTestState('sending'); setTestError(null)
     try {
       const isJson = testBody.trim().startsWith('{') || testBody.trim().startsWith('[')
       const res = await fetch(/^https?:\/\//.test(status.receiveUrl) ? status.receiveUrl : path, {
         method: 'POST',
         headers: { 'Content-Type': isJson ? 'application/json' : 'application/x-www-form-urlencoded' },
         body: testBody,
+        signal: controller.signal,
       })
-      setTestState(res.ok ? 'ok' : 'err')
-    } catch { setTestState('err') }
-    setTimeout(() => setTestState('idle'), 2500)
+      if (!active.current) return
+      if (!res.ok) throw new Error(`테스트 콜백을 받지 못했습니다 (HTTP ${res.status}). 수신 URL과 대기 상태를 확인하세요.`)
+      setTestState('ok')
+    } catch (error) {
+      if (!active.current) return
+      setTestState('err')
+      setTestError(error instanceof Error && error.message.startsWith('테스트 콜백') ? error.message : '테스트 콜백의 전송 결과를 확인하지 못했습니다. 실행 상태를 확인한 뒤 다시 보내세요.')
+    } finally { if (request.current === controller) request.current = null }
+  }
+  const copyUrl = async () => {
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error('clipboard unavailable')
+      await navigator.clipboard.writeText(status.receiveUrl ?? '')
+      if (active.current) toast('콜백 수신 URL을 복사했습니다.', 'ok')
+    } catch { if (active.current) toast('복사하지 못했습니다. 수신 URL을 직접 선택해서 복사하세요.', 'error') }
   }
 
   return (
-    <div role="status" aria-live="polite" style={{ padding: '14px 16px', display: 'grid', gap: 8 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--fl-waiting)', fontWeight: 700 }}>
+    <div style={{ padding: '14px 16px', display: 'grid', gap: 8 }}>
+      <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8, fontSize: 13, color: 'var(--fl-waiting)', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
         <span className="fl-wait-dot" aria-hidden />
-        {status.nodeName || status.nodeId} — 대기 중 ({remain}초 남음)
+        {status.nodeName || status.nodeId} — {remain > 0 ? `대기 중 (${remain}초 남음)` : '대기 기한 종료 · 실행 상태 확인 중'}
       </div>
       {status.receiveUrl && (
         <>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ fontSize: 12, color: 'var(--fl-text-muted)', flexShrink: 0 }}>이 URL로 콜백을 보내면 진행됩니다:</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 12, color: 'var(--fl-text-muted)' }}>콜백 수신 URL</span>
             <input
               readOnly
+              aria-label="콜백 수신 URL"
               value={status.receiveUrl}
               onFocus={(e) => e.currentTarget.select()}
               style={{ flex: 1, minWidth: 0, padding: '5px 8px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', color: 'var(--fl-text)', fontFamily: 'var(--fl-font-mono)', fontSize: 12 }}
             />
             <button
-              onClick={() => { void navigator.clipboard?.writeText(status.receiveUrl ?? '').catch(() => {}) }}
+              onClick={() => void copyUrl()}
               title="수신 URL 복사"
+              aria-label="콜백 수신 URL 복사"
               style={{ flexShrink: 0, width: 28, height: 28, border: '1px solid var(--fl-border)', borderRadius: 6, background: 'var(--fl-surface)', color: 'var(--fl-primary)', cursor: 'pointer' }}
             >⧉</button>
           </div>
           {/* 테스트 콜백 — 외부 게이트웨이 없이 이 대기를 진행시켜 흐름을 검증 */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
             <span title="JSON 또는 a=1&b=2 형식. 콜백 본문의 키가 이 노드 출력이 됩니다." style={{ fontSize: 12, color: 'var(--fl-text-muted)', flexShrink: 0 }}>테스트 콜백:</span>
             <input
+              aria-label="테스트 콜백 본문"
+              disabled={testState === 'sending'}
               value={testBody}
-              onChange={(e) => setTestBody(e.target.value)}
+              onChange={(e) => { setTestBody(e.target.value); if (testState !== 'sending') { setTestState('idle'); setTestError(null) } }}
+              onKeyDown={(e) => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) { e.preventDefault(); void sendTest() } }}
               placeholder='{ "resultCode": "0000" } 또는 a=1&b=2'
               style={{ flex: 1, minWidth: 0, padding: '5px 8px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface)', color: 'var(--fl-text)', fontFamily: 'var(--fl-font-mono)', fontSize: 12 }}
             />
             <button
               onClick={sendTest}
-              disabled={testState === 'sending'}
+              disabled={testState === 'sending' || testState === 'ok' || remain === 0}
               title="이 대기 노드에 샘플 콜백을 보내 진행시킵니다(외부 시스템 불필요)."
               style={{ flexShrink: 0, padding: '5px 10px', border: '1px solid var(--fl-primary)', borderRadius: 6, background: testState === 'ok' ? 'var(--fl-ok)' : 'transparent', color: testState === 'ok' ? '#fff' : 'var(--fl-primary)', cursor: 'pointer', fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap' }}
-            >{testState === 'sending' ? '보내는 중…' : testState === 'ok' ? '✓ 전송' : testState === 'err' ? '✕ 실패' : '보내기'}</button>
+            >{testState === 'sending' ? '보내는 중…' : testState === 'ok' ? '✓ 전달 완료' : testState === 'err' ? '다시 보내기' : '보내기'}</button>
           </div>
+          {testError && <div role="alert" style={{ fontSize: 12, lineHeight: 1.6, color: 'var(--fl-fail)', overflowWrap: 'anywhere' }}>{testError}</div>}
         </>
       )}
     </div>

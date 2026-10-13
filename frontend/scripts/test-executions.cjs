@@ -9,11 +9,11 @@ const designUi = (() => { const out = {}; require('node:vm').runInNewContext(req
 const states = []
 let cursor = 0, response = [], mutations = [], requestError = null, retries = 0
 const jsx = (type, props) => ({ type, props })
-const scope = { current: { id: 'team', origin: 'server', name: '팀' }, workspaces: [{ id: 'team', name: '팀', kind: 'TEAM' }], select: () => {} }
+const scope = { scopeKey: 'server:team', current: { id: 'team', origin: 'server', name: '팀' }, workspaces: [{ id: 'team', name: '팀', kind: 'TEAM' }], select: () => {} }
 const apiError = {}
 vm.runInNewContext(ts.transpileModule(fs.readFileSync(path.join(__dirname, '../src/lib/apiError.ts'), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText, { exports: apiError })
 const modules = {
-  react: { useState: initial => { const index = cursor++; if (!(index in states)) states[index] = initial; return [states[index], value => { states[index] = typeof value === 'function' ? value(states[index]) : value }] } },
+  react: { useState: initial => { const index = cursor++; if (!(index in states)) states[index] = typeof initial === 'function' ? initial() : initial; return [states[index], value => { states[index] = typeof value === 'function' ? value(states[index]) : value }] }, useRef: initial => { const index = cursor++; return states[index] ??= { current: initial } }, useEffect() {} },
   'react/jsx-runtime': { jsx, jsxs: jsx },
   '@tanstack/react-query': { useQuery: () => ({ data: response, isLoading: false, isError: !!requestError, error: requestError, refetch: () => { retries++ } }), useMutation: () => ({ mutate: id => mutations.push(id), isPending: false }), useQueryClient: () => ({}) },
   '../app/WorkspaceContext': { useApi: () => ({ runsApi: {} }), useWorkspace: () => scope },
@@ -58,7 +58,9 @@ assert.equal(mutations.length, 0, 'reading a result never reruns it')
 states[4] = null
 const rerun = walk(rows[0], node => node.type === 'button' && text(node).includes('재실행'))[0]
 assert.equal(click(rerun, rows[0]), true)
-assert.deepEqual(mutations, ['failed-a'])
+assert.equal(mutations.length, 1)
+assert.equal(mutations[0].id, 'failed-a')
+assert.equal(mutations[0].scopeKey, 'server:team')
 assert.equal(states[4], null, 'rerun click does not also open result details')
 const edit = walk(rows[0], node => node.type === 'link')[0]
 assert.equal(click(edit, rows[0]), true)

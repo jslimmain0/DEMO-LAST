@@ -3,7 +3,7 @@ import { AppIcon } from '../components/AppIcon'
 import { useApi, useWorkspace } from '../app/WorkspaceContext'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { CSSProperties } from 'react'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import type { ExecutionStatus, ExecutionSummary } from '../api/types'
 
@@ -45,11 +45,16 @@ export function Executions() {
   const [range, setRange] = useState<string>('all')
   const [q, setQ] = useState('')
   const [openExec, setOpenExec] = useState<string | null>(null)
+  const [rerunError, setRerunError] = useState<string | null>(null)
+  const activeScope = useRef<string | null>(scope.scopeKey)
+  activeScope.current = scope.scopeKey
+  useEffect(() => { setOpenExec(null); setRerunError(null) }, [scope.scopeKey])
+  useEffect(() => { activeScope.current = scope.scopeKey; return () => { activeScope.current = null } }, [scope.scopeKey])
 
   const rangeMs = RANGES.find(([k]) => k === range)?.[2] ?? null
   // 서버측 status/기간/워크스페이스 필터 + limit. from 은 쿼리 실행 시점 기준(키에는 range 코드만 넣어 매 렌더 재요청 방지).
   const { data, isLoading, isError, error, refetch } = useQuery({
-    queryKey: ['executions', 'list', limit, filter, range, wsId],
+    queryKey: ['executions', 'list', limit, filter, range, wsId, scope.scopeKey],
     queryFn: () => runsApi.list({
       limit,
       status: filter === 'all' ? undefined : filter,
@@ -59,9 +64,19 @@ export function Executions() {
   })
   const all = data ?? []
   const reRun = useMutation({
-    mutationFn: (execId: string) => runsApi.rerun(execId),
-    onSuccess: () => { toast('같은 조건으로 재실행을 시작했습니다.', 'ok'); qc.invalidateQueries({ queryKey: ['executions', 'list'] }) },
-    onError: () => toast('재실행에 실패했습니다.', 'error'),
+    mutationFn: ({ id }: { id: string; scopeKey: string }) => runsApi.rerun(id),
+    onMutate: ({ scopeKey }) => { if (activeScope.current === scopeKey) setRerunError(null) },
+    onSuccess: (execution, { scopeKey }) => {
+      if (activeScope.current !== scopeKey) return
+      toast('같은 조건으로 재실행을 시작했습니다.', 'ok')
+      setOpenExec(execution.id)
+      void qc.invalidateQueries({ queryKey: ['executions', 'list'] })
+    },
+    onError: (error, { scopeKey }) => {
+      if (activeScope.current !== scopeKey) return
+      const message = apiErrorMessage(error, '재실행 요청에 실패했습니다.')
+      setRerunError(message); toast(message, 'error')
+    },
   })
   const query = q.trim().toLowerCase()
   // status/기간은 서버가 필터 → 여기선 이름 검색만(서버는 flowId 로만 필터하므로 이름은 클라 측)
@@ -130,8 +145,13 @@ export function Executions() {
             <div style={emptyBox}>
               <div style={{ fontFamily: 'var(--fl-font-head)', fontWeight: 600, fontSize: 16, letterSpacing: '-.02em' }}>아직 실행 이력이 없습니다</div>
               <div style={{ color: 'var(--fl-text-muted)', fontSize: 13, lineHeight: 1.6, marginTop: 6 }}>워크플로를 열어 <b><AppIcon name="play" size={12} /> 실행</b>하면 여기에 기록됩니다.</div>
+              <Link to="/" style={{ ...ghostBtn, display: 'inline-flex', marginTop: 14, textDecoration: 'none' }}>워크플로 목록 열기</Link>
             </div>
           )}
+          {rerunError && <div role="alert" style={{ ...errorBox, marginBottom: 14 }}>
+            <div style={{ flex: 1, minWidth: 0, fontSize: 13, lineHeight: 1.6, overflowWrap: 'anywhere' }}><strong>재실행 요청 오류</strong><br />{rerunError}<br /><span style={{ color: 'var(--fl-text-muted)' }}>새 요청을 보내기 전에 실행 이력에서 처리 상태를 확인하세요.</span></div>
+            <button type="button" style={ghostBtn} onClick={() => { void refetch() }}>이력 새로고침</button>
+          </div>}
 
           {data && !isLoading && !isError && !initialEmpty && rows.length === 0 && (
             <div style={{ ...emptyBox, fontSize: 13 }}>
@@ -156,7 +176,7 @@ export function Executions() {
                     <span style={metaText}>{TRIGGER_LABEL[e.trigger] ?? e.trigger}</span>
                     {el && <span style={metaText}>{el}</span>}
                     <span title={e.startedAt ? new Date(e.startedAt).toLocaleString('ko-KR') : undefined} style={{ ...metaText, minWidth: 56, textAlign: 'right' }}>{relTime(e.startedAt)}</span>
-                    <button onClick={(ev) => { ev.stopPropagation(); reRun.mutate(e.id) }} disabled={reRun.isPending} aria-label={`${e.flowName ?? '워크플로'} 같은 조건으로 재실행`} title="같은 조건(원본 버전+입력)으로 다시 실행" style={{ ...metaText, display: 'inline-flex', alignItems: 'center', gap: 5, color: 'var(--fl-text-soft)', background: 'transparent', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', padding: '3px 9px', cursor: 'pointer', fontWeight: 600 }}><AppIcon name="refresh" size={13} />재실행</button>
+                    <button onClick={(ev) => { ev.stopPropagation(); reRun.mutate({ id: e.id, scopeKey: scope.scopeKey }) }} disabled={reRun.isPending || scope.current.myRole === 'VIEWER' || ['RUNNING', 'WAITING'].includes(e.status)} aria-label={`${e.flowName ?? '워크플로'} 같은 조건으로 재실행`} title={['RUNNING', 'WAITING'].includes(e.status) ? '진행 중인 실행은 상세에서 이어보기·중단을 확인하세요.' : scope.current.myRole === 'VIEWER' ? '재실행하려면 편집 권한이 필요합니다.' : '같은 조건(원본 버전+입력)으로 다시 실행'} style={{ ...metaText, display: 'inline-flex', alignItems: 'center', gap: 5, color: 'var(--fl-text-soft)', background: 'transparent', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', padding: '3px 9px', cursor: 'pointer', fontWeight: 600 }}><AppIcon name="refresh" size={13} />{reRun.isPending && reRun.variables?.id === e.id ? '재실행 중…' : '재실행'}</button>
                     <Link to={`/flows/${e.flowId}`} onClick={(ev) => ev.stopPropagation()} title="에디터 열기" style={{ ...metaText, display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--fl-primary)', textDecoration: 'none', fontWeight: 600 }}>편집<AppIcon name="arrowRight" size={13} /></Link>
                   </div>
                 </div>
@@ -170,7 +190,7 @@ export function Executions() {
           )}
         </div>
       </div>
-      {openExec && <ExecutionDetailModal execId={openExec} onClose={() => setOpenExec(null)} />}
+      {openExec && <ExecutionDetailModal key={`${scope.scopeKey}:${openExec}`} execId={openExec} onClose={() => setOpenExec(null)} />}
     </AppShellTier1>
   )
 }
@@ -185,25 +205,34 @@ function ExecutionDetailModal({ execId, onClose }: { execId: string; onClose: ()
   const { runsApi } = useApi()
   const scope = useWorkspace()
 
-  const { data, isLoading, isError, refetch } = useQuery({ queryKey: ['execution', execId], queryFn: () => runsApi.get(execId), refetchInterval: q => ['RUNNING', 'WAITING'].includes(q.state.data?.status ?? '') ? 1000 : false })
-  const cancel = useMutation({ mutationFn: () => runsApi.resume(execId, { nodeId: data?.pendingAgent?.nodeId, aborted: true, error: '사용자가 실행을 중단했습니다.' }), onSuccess: () => { void refetch() }, onError: () => toast('중단 요청에 실패했습니다. 연결 상태를 확인하세요.', 'error') })
+  const { data, isLoading, isError, error, refetch } = useQuery({ queryKey: ['execution', execId, scope.scopeKey], queryFn: () => runsApi.get(execId), refetchInterval: q => ['RUNNING', 'WAITING'].includes(q.state.data?.status ?? '') ? 1000 : false })
+  const active = useRef(true)
+  const [cancelError, setCancelError] = useState<string | null>(null)
+  useEffect(() => { active.current = true; return () => { active.current = false } }, [])
+  const cancel = useMutation({
+    mutationFn: () => runsApi.resume(execId, { nodeId: data?.pendingAgent?.nodeId, aborted: true, error: '사용자가 실행을 중단했습니다.' }),
+    onMutate: () => { if (active.current) setCancelError(null) },
+    onSuccess: () => { if (active.current) void refetch() },
+    onError: failure => { if (active.current) { const message = apiErrorMessage(failure, '중단 요청에 실패했습니다.'); setCancelError(message); toast(message, 'error') } },
+  })
   const [openNode, setOpenNode] = useState<string | null>(null)
   const [compare, setCompare] = useState(false)
 
   // 같은 플로우의 '이 실행 직전' 실행을 찾아 그 상세를 가져온다(비교 켤 때만).
   const flowRuns = useQuery({
-    queryKey: ['exec-flow-runs', data?.flowId],
+    queryKey: ['exec-flow-runs', data?.flowId, scope.scopeKey],
     queryFn: () => runsApi.list({ flowId: data!.flowId, limit: 30 }),
     enabled: compare && !!data?.flowId,
   })
   const prevId = flowRuns.data?.find((r) => r.id !== execId && (!data?.startedAt || (r.startedAt && r.startedAt < data.startedAt)))?.id
-  const prev = useQuery({ queryKey: ['execution', prevId], queryFn: () => runsApi.get(prevId as string), enabled: !!prevId })
+  const prev = useQuery({ queryKey: ['execution', prevId, scope.scopeKey], queryFn: () => runsApi.get(prevId as string), enabled: compare && !!prevId })
   const prevByNode = new Map((prev.data?.nodes ?? []).map((n) => [n.nodeId, n]))
   return (
     <Modal onClose={onClose} ariaLabel="실행 상세" zIndex={300} width={720} maxWidth="100%" maxHeight="85vh">
         <header style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 10, padding: '14px 16px', borderBottom: '1px solid var(--fl-border)' }}>
           <strong style={{ fontFamily: 'var(--fl-font-head)', fontSize: 16 }}>실행 상세</strong>
           {data && <StatusBadge status={data.status} />}
+          {data?.startedAt && <span style={metaText}>{new Date(data.startedAt).toLocaleString('ko-KR', { hour12: false })}</span>}
           {data?.error && <span style={{ fontSize: 12, color: 'var(--fl-fail)', overflowWrap: 'anywhere' }}>{data.error}</span>}
           <button
             onClick={() => setCompare((v) => !v)}
@@ -218,18 +247,20 @@ function ExecutionDetailModal({ execId, onClose }: { execId: string; onClose: ()
             <AgentBadge agent={data.pendingAgent.agent} /> {data.pendingAgent.nodeName || data.pendingAgent.nodeId} · {data.pendingAgent.status === 'UNKNOWN' ? '결과 확인 필요 — 요청이 처리됐을 수 있어 자동 재실행하지 않습니다.' : '에이전트 작업 대기·처리 중'}
             {data.pendingAgent.error && <p>{data.pendingAgent.error}</p>}
             {scope.current.myRole !== 'VIEWER' && <button onClick={() => cancel.mutate()} disabled={cancel.isPending} style={{ ...ghostBtn, marginLeft: 8 }}>실행 중단</button>}
+            {cancelError && <p role="alert" style={{ color: 'var(--fl-fail)', overflowWrap: 'anywhere' }}>{cancelError}</p>}
           </div>}
           {data && ['RUNNING', 'WAITING'].includes(data.status) && <p style={{ padding: '0 16px', fontSize: 12 }}><Link to={`/flows/${data.flowId}?execution=${encodeURIComponent(data.id)}`}>에디터에서 이 실행 이어보기 →</Link></p>}
           {isLoading && <div style={{ padding: 20, color: 'var(--fl-text-muted)', fontSize: 13 }}>불러오는 중…</div>}
           {isError && (
             <div style={{ padding: 20, display: 'flex', alignItems: 'center', gap: 12 }}>
-              <span style={{ fontSize: 13, color: 'var(--fl-fail)' }}>실행 상세를 불러오지 못했습니다.</span>
+              <span role="alert" style={{ fontSize: 13, color: 'var(--fl-fail)', overflowWrap: 'anywhere' }}>실행 상세를 불러오지 못했습니다. {apiErrorMessage(error, '연결 상태와 접근 권한을 확인하세요.')}</span>
               <button onClick={() => refetch()} style={{ ...ghostBtn, padding: '6px 12px' }}>다시 시도</button>
             </div>
           )}
           {compare && (
             <div style={{ padding: '8px 14px', fontSize: 12, color: 'var(--fl-text-muted)', background: 'var(--fl-surface-2)', borderBottom: '1px solid var(--fl-border)' }}>
-              {prev.data ? <>직전 실행({relTime(prev.data.startedAt ?? '')})과 응답 비교 — 노드별 <b style={{ color: 'var(--fl-put)' }}>변경</b>/동일 표시</>
+              {flowRuns.isError || prev.isError ? <div role="alert" style={{ color: 'var(--fl-fail)', lineHeight: 1.6 }}>이전 실행을 불러오지 못했습니다. {apiErrorMessage(flowRuns.error ?? prev.error, '연결 상태를 확인하세요.')} <button type="button" onClick={() => { if (flowRuns.isError) void flowRuns.refetch(); else void prev.refetch() }} style={{ ...ghostBtn, padding: '4px 8px' }}>비교 다시 시도</button></div>
+                : prev.data ? <>직전 실행({relTime(prev.data.startedAt ?? '')})과 응답 비교 — 노드별 <b style={{ color: 'var(--fl-put)' }}>변경</b>/동일 표시</>
                 : flowRuns.isLoading || prev.isLoading ? '이전 실행을 찾는 중…'
                 : '비교할 이전 실행이 없습니다.'}
             </div>

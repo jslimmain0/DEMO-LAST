@@ -130,6 +130,7 @@ let exportedBlob
 const modules = {
   react, 'react/jsx-runtime': { jsx, jsxs: jsx }, '../components/StatusBadge': { StatusBadge: 'badge' }, '../components/MethodTag': { MethodTag: 'method' },
   '../lib/format': { duration: value => `${value}ms`, relTime: () => '이전' }, '../components/AgentSettings': { AgentBadge: 'agent' }, '../components/AppIcon': { AppIcon: 'icon' },
+  './toast': { toast() {} }, '../components/toast': { toast() {} },
 }
 function load(file, extra = '') {
   const exported = {}

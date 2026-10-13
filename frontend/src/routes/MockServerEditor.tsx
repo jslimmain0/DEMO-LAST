@@ -166,7 +166,30 @@ export function MockServerEditor() {
     setNote(remainsDirty ? '버전은 반영됐습니다. 이름 변경을 저장하세요.' : '저장됨 — 선택한 버전을 반영했습니다.')
     invalidate()
   }
-  const toggle = useMutation({ mutationFn: () => mocksApi.update(id, { enabled: !detail.data?.enabled }), onSuccess: invalidate })
+  const toggleBusy = useRef(false)
+  const toggle = useMutation({
+    mutationFn: async () => {
+      const mockId = id, enabled = !detail.data?.enabled
+      if (enabled && !(await ensureSaved())) throw new Error('설정을 저장하지 못해 Mock을 켜지 않았습니다.')
+      if (!activeRef.current || draftRef.current.id !== mockId) throw new Error('선택한 Mock이 변경되었습니다.')
+      await mocksApi.update(mockId, { enabled })
+      return { mockId, enabled }
+    },
+    onSuccess: ({ mockId, enabled }) => {
+      if (!activeRef.current || draftRef.current.id !== mockId) return
+      invalidate()
+      void qc.invalidateQueries({ queryKey: ['mock-tcp-sessions'] })
+      toast(enabled ? 'Mock을 켰습니다.' : detail.data?.kind === 'TCP' ? 'Mock을 껐습니다. 연결된 세션은 종료됩니다.' : 'Mock을 껐습니다.', 'ok')
+      setNote(null)
+    },
+    onError: error => {
+      if (!activeRef.current || draftRef.current.id !== id) return
+      if (error instanceof Error && error.message === '설정을 저장하지 못해 Mock을 켜지 않았습니다.') return
+      setNote(apiErrorMessage(error, 'Mock 상태 변경 실패'))
+    },
+    onSettled: () => { toggleBusy.current = false },
+  })
+  const toggleMock = () => { if (!toggleBusy.current && !save.isPending) { toggleBusy.current = true; toggle.mutate() } }
   const reset = useMutation({ mutationFn: () => mocksApi.reset(id), onSuccess: () => { toast('상태·요청 기록을 초기화했습니다.', 'ok'); qc.invalidateQueries({ queryKey: ['mock-requests', id] }); qc.invalidateQueries({ queryKey: ['mock-state', id] }) } })
   const duplicate = useMutation({
     mutationFn: async () => {
@@ -185,9 +208,10 @@ export function MockServerEditor() {
   const mutate = useCallback((fn: (s: MockServerSpec) => MockServerSpec) => { setSpec((s) => fn(s)); setDirty(true); setNote(null) }, [])
   const d = detail.data
   const base = d ? mockBaseUrl(d.slug, me?.tenant, d.basePath) : ''
-  const tcpHost = d?.listener?.advertisedAddress ?? (base ? new URL(base).hostname : window.location.hostname)
-  const tcpPort = `:${spec.tcp?.port ?? 9091}`
-  const tcpAddress = `${tcpHost}${tcpHost.endsWith(tcpPort) ? '' : tcpPort}`
+  const tcpHost = d?.listener?.advertisedAddress?.replace(/:\d+$/, '') ?? (base ? new URL(base).hostname : window.location.hostname)
+  const hostForAddress = tcpHost.includes(':') && !tcpHost.startsWith('[') ? `[${tcpHost}]` : tcpHost
+  const tcpAddress = `${hostForAddress}:${spec.tcp?.port ?? 9091}`
+  const savedTcpAddress = `${hostForAddress}:${d?.spec?.tcp?.port ?? d?.tcpPort ?? 9091}`
   const kind = d?.kind ?? 'HTTP'
   const isTcp = kind === 'TCP'
   const isHttp = !isTcp
@@ -205,7 +229,7 @@ export function MockServerEditor() {
 
   // 테스트/트래픽 액션은 저장된 mock 을 호출하므로 미저장 편집이 있으면 먼저 저장(권한 없으면 거절)
   const ensureSaved = async (): Promise<boolean> => {
-    if (!dirty) return true
+    if (!draftRef.current.dirty) return true
     if (!canEdit) { toast('미저장 편집이 있습니다 — 먼저 저장하세요(테스트는 저장된 mock 을 호출합니다).', 'error'); return false }
     try {
       await save.mutateAsync()
@@ -216,7 +240,7 @@ export function MockServerEditor() {
 
   // Ctrl+S 저장(입력 중에도) · Esc 메뉴 닫기
   const saveRef = useRef<() => void>(() => {})
-  useEffect(() => { saveRef.current = () => { if (dirty && canEdit && !save.isPending) save.mutate() } }, [dirty, canEdit, save])
+  useEffect(() => { saveRef.current = () => { if (dirty && canEdit && !save.isPending && !toggle.isPending) save.mutate() } }, [dirty, canEdit, save, toggle.isPending])
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && (e.code === 'KeyS' || e.key === 's')) { e.preventDefault(); saveRef.current() }
@@ -234,10 +258,10 @@ export function MockServerEditor() {
   }, [dirty])
   // 자동 저장 — dirty 후 1.5초 debounce(워크플로 편집기와 동일)
   useEffect(() => {
-    if (!autosave || !canEdit || !dirty || save.isPending) return
+    if (!autosave || !canEdit || !dirty || save.isPending || toggle.isPending) return
     const t = setTimeout(() => saveRef.current(), 1500)
     return () => clearTimeout(t)
-  }, [autosave, canEdit, dirty, spec, name, save.isPending])
+  }, [autosave, canEdit, dirty, spec, name, save.isPending, toggle.isPending])
   useEffect(() => { if (!note?.startsWith('저장됨')) return; const t = setTimeout(() => setNote(null), 2500); return () => clearTimeout(t) }, [note])
   const leave = () => navigate(returnToList.to, { state: returnToList.state })
 
@@ -319,20 +343,20 @@ export function MockServerEditor() {
           <header style={hdr}>
             <button onClick={leave} title="Mock 목록으로" aria-label="목록으로" style={{ ...ghostBtn, padding: '6px 10px' }}>←</button>
             <input value={name} onChange={(e) => { setName(e.target.value); setDirty(true) }} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === 'Escape') (e.target as HTMLInputElement).blur() }}
-              disabled={!canEdit} aria-label="이름" style={{ ...input, fontSize: 16, fontWeight: 700, minWidth: 200, maxWidth: 360, background: 'transparent', border: '1px solid transparent' }} />
+              disabled={!canEdit} aria-label="이름" style={{ ...input, fontSize: 16, fontWeight: 700, minWidth: 0, width: 240, flex: '1 1 180px', maxWidth: 360, background: 'transparent', border: '1px solid transparent' }} />
             <span style={{ ...badge, background: isTcp ? 'var(--fl-cat-tcp)' : 'var(--fl-cat-generic)', color: badgeInk }}>{legacyMixed ? 'HTTP Mock · 레거시(TCP 혼합)' : isTcp ? 'TCP Mock' : 'HTTP Mock'}</span>
             <AgentBadge agent={scope.current.origin} label={scope.current.origin === 'local' ? '내 PC' : `서버 · ${scope.current.name}`} />
-            <button style={{ ...miniBtn, color: d.enabled ? 'var(--fl-ok)' : 'var(--fl-text-muted)', opacity: canEdit ? 1 : 0.5 }} disabled={!canEdit} onClick={() => toggle.mutate()} title={d.enabled ? (isTcp ? '리스너 열림 — 클릭하면 닫음' : '서빙 중 — 클릭하면 끔') : '꺼짐 — 클릭하면 켬'}>{d.enabled ? (isTcp ? '● 리스너 열림' : '● 서빙 중') : '○ 꺼짐'}</button>
+            <button style={{ ...miniBtn, color: d.enabled ? 'var(--fl-ok)' : 'var(--fl-text-muted)' }} disabled={!canEdit || toggle.isPending || save.isPending} onClick={toggleMock} title={!canEdit ? '편집 권한이 필요합니다.' : save.isPending ? '설정 저장을 기다려 주세요.' : d.enabled ? (isTcp ? '중지하면 연결된 세션도 종료됩니다.' : '클릭하면 서빙을 중지합니다.') : '미저장 설정을 저장한 뒤 Mock을 켭니다.'}>{toggle.isPending ? '상태 변경 중…' : d.enabled ? (isTcp ? '● 리스너 열림' : '● 서빙 중') : '○ 꺼짐'}</button>
             {isHttp && (
               <button onClick={() => { void navigator.clipboard?.writeText(base).then(() => toast('base URL 복사됨', 'ok')).catch(() => {}) }} title={`base URL 복사 — ${base}`} style={{ ...miniBtn, fontFamily: 'var(--fl-font-mono)', fontSize: 12, maxWidth: 320, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{base} ⧉</button>
             )}
             {isTcp && (
-              <button onClick={() => { void navigator.clipboard?.writeText(tcpAddress).then(() => toast('주소 복사됨', 'ok')).catch(() => {}) }} title={`TCP 주소 복사 — ${tcpAddress}`} style={{ ...miniBtn, fontFamily: 'var(--fl-font-mono)', fontSize: 12 }}>{tcpAddress} ⧉</button>
+              <button onClick={() => { void navigator.clipboard?.writeText(savedTcpAddress).then(() => toast('주소 복사됨', 'ok')).catch(() => toast('주소를 복사하지 못했습니다. 연결 화면에서 선택해 복사하세요.', 'error')) }} title={`TCP 주소 복사 — ${savedTcpAddress}`} style={{ ...miniBtn, fontFamily: 'var(--fl-font-mono)', fontSize: 12, maxWidth: '100%', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{savedTcpAddress} ⧉</button>
             )}
             <span style={{ fontSize: 12, color: dirty ? 'var(--fl-put, #f5a623)' : note?.startsWith('저장됨') ? 'var(--fl-ok)' : 'var(--fl-text-muted)', fontWeight: dirty || note?.startsWith('저장됨') ? 700 : 500 }} role="status">
               {save.isPending ? '저장 중…' : dirty ? (autosave ? '● 미저장 (자동 저장 대기)' : '● 미저장') : note?.startsWith('저장됨') ? '✓ 저장됨' : `v${d.currentVersion ?? 0} · ${relTime(d.updatedAt ?? '') || '방금'}`}
             </span>
-            {note && !note.startsWith('저장됨') && <span style={{ fontSize: 12, color: 'var(--fl-fail)' }}>{note}</span>}
+            {note && !note.startsWith('저장됨') && <span role={save.isError || toggle.isError ? 'alert' : 'status'} style={{ fontSize: 12, color: save.isError || toggle.isError ? 'var(--fl-fail)' : 'var(--fl-text-muted)', overflowWrap: 'anywhere' }}>{note}</span>}
             <div style={{ marginLeft: 'auto', display: 'flex', gap: 6, position: 'relative', alignItems: 'center' }}>
               <button onClick={() => setVersionsOpen(true)} style={ghostBtn} title="버전 기록 — 저장마다 쌓인 정의 스냅샷 열람·비교·복원">버전</button>
               <button onClick={() => setToolsOpen((v) => !v)} style={ghostBtn} aria-label="도구 메뉴" aria-expanded={toolsOpen}>⋯ 도구</button>
@@ -352,7 +376,7 @@ export function MockServerEditor() {
                 </>
               )}
               {canEdit && isHttp && <button style={{ ...ghostBtn, border: '1px solid var(--fl-primary)', color: 'var(--fl-primary)' }} title="AI 로 mock 만들기/고치기 (TCP 전문 규격은 프로토콜 화면의 AI 로)" onClick={() => setAiOpen((v) => !v)}>✨ AI</button>}
-              <button style={{ ...primaryBtn, opacity: dirty && canEdit ? 1 : 0.55 }} disabled={!dirty || save.isPending || !canEdit} title={canEdit ? '저장 (Ctrl+S)' : 'viewer 역할은 저장할 수 없습니다'} onClick={() => save.mutate()}>저장</button>
+              <button style={{ ...primaryBtn, opacity: dirty && canEdit ? 1 : 0.55 }} disabled={!dirty || save.isPending || toggle.isPending || !canEdit} title={!canEdit ? 'viewer 역할은 저장할 수 없습니다' : toggle.isPending ? 'Mock 상태 변경을 기다려 주세요.' : '저장 (Ctrl+S)'} onClick={() => save.mutate()}>저장</button>
             </div>
           </header>
 
@@ -450,11 +474,11 @@ export function MockServerEditor() {
                   {!d.enabled && (
                     <div style={{ ...legacyBanner, marginBottom: 12 }} role="note">
                       <span style={{ fontSize: 16 }}>○</span>
-                      <span style={{ flex: 1, fontSize: 13 }}><b>리스너가 꺼져 있습니다</b>(복제본은 포트 충돌을 막으려 꺼서 만듭니다). 포트를 확인하고 켜세요.</span>
-                      {canEdit && <button style={{ ...primaryBtn, padding: '6px 12px', fontSize: 12 }} onClick={() => toggle.mutate()}>리스너 켜기</button>}
+                      <span style={{ flex: 1, fontSize: 13 }}><b>리스너가 꺼져 있습니다.</b> {canEdit ? '포트와 프로토콜을 확인한 뒤 리스너를 켜세요. 미저장 설정은 먼저 저장합니다.' : '편집 권한이 있는 사용자가 리스너를 켜면 외부 앱이 연결할 수 있습니다.'}</span>
+                      {canEdit && <button style={{ ...primaryBtn, padding: '6px 12px', fontSize: 12 }} disabled={toggle.isPending || save.isPending} onClick={toggleMock}>{toggle.isPending ? '켜는 중…' : '리스너 켜기'}</button>}
                     </div>
                   )}
-                  <TcpConnPanel tcp={tcp} spec={protoSpec} sources={sourcesFor()} address={tcpAddress} readOnly={!canEdit} onChange={setTcp} />
+                  <TcpConnPanel tcp={tcp} spec={protoSpec} sources={sourcesFor()} address={tcpAddress} savedAddress={savedTcpAddress} readOnly={!canEdit} onChange={setTcp} />
                   <TcpMockSessions key={`${scope.scopeKey}:${id}`} mockId={id} readOnly={!canEdit} />
                 </>
               )}
@@ -561,7 +585,7 @@ export function MockServerEditor() {
           </div>
 
           {/* ── 하단 트래픽 패널 ── */}
-          <TrafficPanel id={id} canEdit={canEdit} base={base} spec={spec} onSpec={mutate} journal={journal} open={trafficOpen}
+          <TrafficPanel key={`${scope.scopeKey}:${id}`} id={id} canEdit={canEdit} base={base} spec={spec} onSpec={mutate} journal={journal} open={trafficOpen}
             onToggle={() => setTrafficOpen((v) => { try { localStorage.setItem('fl:mock:traffic', v ? '0' : '1') } catch { /* */ } return !v })}
             tab={trafficTab} onTab={setTrafficTab}
             routeFilter={selRoute} ensureSaved={ensureSaved} isTcp={isTcp} protocolId={tcp.protocolId} protoSpec={protoSpec}

@@ -88,7 +88,7 @@ export function TcpMockSessions({ mockId, readOnly }: { mockId: string; readOnly
         <h2 style={{ fontFamily: 'var(--fl-font-head)', fontSize: 16, margin: 0 }}>연결된 세션 {ready && sessions.data && !sessions.isError ? <span style={{ color: 'var(--fl-text-muted)', fontWeight: 500 }}>{sessions.data.length}</span> : null}</h2>
         <button type="button" style={{ ...ui.mini, marginLeft: 'auto' }} aria-label="TCP 세션 새로고침" disabled={!ready || sessions.isFetching || extend.isPending} onClick={() => { setError(null); void sessions.refetch() }}>{sessions.isFetching ? '조회 중…' : '새로고침'}</button>
       </div>
-      <p style={hint}>이 Mock이 받은 TCP 연결입니다. 1분 연장은 현재 대기 기한에만 적용됩니다. 데이터가 오가면 기본 유휴시간으로 돌아갑니다.</p>
+      <p style={hint}>이 Mock이 받은 TCP 연결입니다. 다음 요청을 기다리는 연결의 기한을 1분씩 늘릴 수 있습니다. 데이터가 오가면 기본 유휴시간으로 돌아갑니다.</p>
       {error && <p role="alert" style={{ ...hint, color: 'var(--fl-fail)' }}>{error}</p>}
       {!ready ? <p role="status" style={hint}>{scope.current.origin === 'server' && !scope.connected ? '서버에 연결하면 세션을 조회할 수 있습니다.' : '실행 위치를 확인하는 중…'}</p>
         : sessions.isError ? <p role="alert" style={{ ...hint, color: 'var(--fl-fail)' }}>세션을 불러오지 못했습니다. {apiErrorMessage(sessions.error, '세션 조회 실패')} 최신 상태를 확인하려면 새로고침하세요.</p>
@@ -98,6 +98,7 @@ export function TcpMockSessions({ mockId, readOnly }: { mockId: string; readOnly
                 const remaining = sessionRemainingMs(session, sessions.dataUpdatedAt, now)
                 const address = `${session.remoteAddress.includes(':') ? `[${session.remoteAddress}]` : session.remoteAddress}:${session.remotePort}`
                 const canExtend = !readOnly && session.state === 'waiting' && remaining != null && remaining > 0 && remaining <= 3540000 && !extend.isPending
+                const disabledReason = readOnly ? '편집 권한이 필요합니다.' : extend.isPending ? (extending === session.id ? '서버에서 연장을 확인하는 중입니다.' : '진행 중인 연장이 끝나면 사용할 수 있습니다.') : session.state !== 'waiting' ? '다음 요청을 기다릴 때 연장할 수 있습니다.' : remaining === 0 ? '기한이 지나 종료 여부를 확인하고 있습니다.' : remaining != null && remaining > 3540000 ? '남은 기한은 최대 1시간입니다. 1분을 추가하려면 잠시 기다리세요.' : ''
                 return <article key={session.id} aria-label={`TCP 세션 ${session.id}`} style={sessionRow}>
                   <div style={{ flex: '1 1 280px', minWidth: 0, display: 'grid', gap: 5 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -105,15 +106,17 @@ export function TcpMockSessions({ mockId, readOnly }: { mockId: string; readOnly
                       <span style={{ fontSize: 12, color: session.state === 'waiting' ? 'var(--fl-ok)' : 'var(--fl-text-muted)' }}>{stateLabel[session.state]}</span>
                       <span title={session.id} style={{ fontSize: 11, color: 'var(--fl-text-muted)' }}>#{session.id.slice(0, 8)}</span>
                     </div>
-                    <div style={{ ...hint, margin: 0, display: 'flex', gap: '4px 14px', flexWrap: 'wrap' }}>
+                    <div style={{ ...hint, margin: 0, display: 'flex', gap: '4px 14px', flexWrap: 'wrap', fontVariantNumeric: 'tabular-nums' }}>
                       <span title={new Date(session.connectedAt).toLocaleString('ko-KR')}>연결 {timestamp(session.connectedAt)}</span>
                       <span title={new Date(session.lastActivityAt).toLocaleString('ko-KR')}>마지막 활동 {timestamp(session.lastActivityAt)}</span>
                       <span>수신 전문 {session.receivedMessages}개</span>
+                      <span>기본 유휴 {countdown(session.idleTimeoutMs)}</span>
                     </div>
+                    {disabledReason && <p style={{ ...hint, margin: 0 }}>{disabledReason}</p>}
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 12, flex: '0 0 auto', maxWidth: '100%', flexWrap: 'wrap' }}>
                     <span style={{ fontSize: 12, fontVariantNumeric: 'tabular-nums', minWidth: 88, textAlign: 'right' }}>{remaining == null ? session.state === 'starting' ? '연결 준비 중' : '처리 후 대기 시작' : remaining === 0 ? '종료 확인 중' : `${countdown(remaining)} 남음`}</span>
-                    <button type="button" style={{ ...ui.mini, minWidth: 83 }} aria-label={`세션 ${session.id} 1분 연장`} disabled={!canExtend} title={readOnly ? '연장하려면 편집 권한이 필요합니다.' : session.state !== 'waiting' ? '다음 요청을 기다리는 연결만 연장할 수 있습니다.' : remaining != null && remaining > 3540000 ? '1분을 더하면 최대 대기 시간 1시간을 넘습니다.' : '현재 대기 기한에 1분 추가 · 지금부터 최대 1시간'} onClick={() => { if (!extendBusy.current) extend.mutate(session.id) }}>{extending === session.id ? '연장 중…' : '+1분 연장'}</button>
+                    <button type="button" style={{ ...ui.mini, minWidth: 83 }} aria-label={`세션 ${session.id} 1분 연장`} disabled={!canExtend} title={disabledReason || '현재 대기 기한에 1분 추가 · 지금부터 최대 1시간'} onClick={() => { if (!extendBusy.current) extend.mutate(session.id) }}>{extending === session.id ? '연장 중…' : '+1분 연장'}</button>
                   </div>
                 </article>
               })}</div>}

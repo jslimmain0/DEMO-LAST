@@ -129,7 +129,7 @@ export function ProtocolEditor({ detail, canEdit, onSaved }: { detail: ProtocolD
   const oddKeys = !spec.discriminator && spec.messages.some((m) => m.key !== 'request' && m.key !== 'response')
 
   return (
-    <div style={{ height: '100%', overflowY: 'auto' }}>
+    <div style={{ height: '100%', overflowY: 'auto', minWidth: 0, width: '100%', boxSizing: 'border-box' }}>
       {aiOpen && (isGuest || aiPending
         ? <AssistantLoginGate reason={isGuest ? 'guest' : 'pending'} variant="overlay" onClose={() => setAiOpen(false)} />
         : <ProtocolAssistantPanel spec={spec} onClose={() => setAiOpen(false)}
@@ -150,9 +150,9 @@ export function ProtocolEditor({ detail, canEdit, onSaved }: { detail: ProtocolD
       </div>
 
       {ro && <div style={{ ...banner, background: 'var(--fl-surface-2)', color: 'var(--fl-text-muted)' }}>읽기 전용 — 편집 권한이 없습니다.</div>}
-      {errors.length > 0 && <div style={{ ...banner, borderColor: 'var(--fl-fail)', color: 'var(--fl-fail)' }}>{errors.map((m, i) => <div key={i}>⚠ {m}</div>)}</div>}
+      {errors.length > 0 && <div role="alert" style={{ ...banner, borderColor: 'var(--fl-fail)', color: 'var(--fl-fail)' }}>{errors.map((m, i) => <div key={i}>⚠ {m}</div>)}</div>}
 
-      <div style={{ padding: '4px 20px 60px', display: 'grid', gap: 18 }}>
+      <div style={{ padding: '4px 20px 60px', display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', minWidth: 0, gap: 18 }}>
         <ResourceScopeNote central />
         <span style={{ fontSize: 12, color: 'var(--fl-text-muted)' }} title={detail.updatedAt ?? detail.createdAt}>최근 저장 {relTime(detail.updatedAt ?? detail.createdAt)}</span>
         {/* ① 기본 */}
@@ -328,12 +328,12 @@ export function TransportEditor({ spec, patch, readOnly }: { spec: ProtocolSpec;
         <option value="execution">이 실행에서 연결 유지</option>
       </select>
     </label>
-    <p style={{ ...hint, margin: 0 }}>{connection === 'execution' ? '같은 실행에서 대상 주소와 프로토콜이 같은 TCP 노드가 연결을 재사용합니다. 실행이 끝나면 종료합니다.' : '응답과 ACK 처리가 끝나면 연결을 종료합니다.'}</p>
-    {connection === 'execution' && <label style={row}>
+    <p style={{ ...hint, margin: 0 }}>{connection === 'execution' ? '같은 실행에서 대상 주소와 프로토콜이 같은 TCP 노드가 연결을 재사용합니다. 실행이 끝나면 종료합니다.' : 'TCP 노드는 응답과 ACK 처리가 끝나면 연결을 종료합니다.'} Mock은 이 설정과 관계없이 같은 연결에서 다음 요청을 받습니다.</p>
+    <label style={row}>
       <span style={lbl}>유휴 연결 제한(초)</span>
       <input aria-label="유휴 연결 제한 초" style={{ ...input, width: 145 }} type="number" min={1} max={3600} step={0.001} value={transport.idleTimeoutMs === 0 ? '' : (transport.idleTimeoutMs ?? 30_000) / 1000} readOnly={readOnly} onChange={e => patch({ transport: { ...transport, idleTimeoutMs: Math.round(Number(e.target.value) * 1000) } })} />
-      <span style={hint}>1~3,600초 · 다음 요청 없이 이 시간이 지나면 연결을 종료합니다.</span>
-    </label>}
+      <span style={hint}>1~3,600초 · Mock과 연결을 유지하는 TCP 노드에 적용합니다. 다음 요청 없이 이 시간이 지나면 연결을 종료합니다.</span>
+    </label>
     <details open={!!transport.requestAckHex || !!transport.responseAckHex}>
       <summary style={{ cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>고정 ACK · 4-way 통신</summary>
       <div style={{ display: 'grid', gap: 8, marginTop: 8 }}>
@@ -434,8 +434,8 @@ function PreviewSection({ spec, tab }: { spec: ProtocolSpec; tab: string }) {
   const mounted = useRef(false)
   useEffect(() => { mounted.current = true; return () => { mounted.current = false } }, [])
   const preview = useMutation({
-    mutationFn: async () => {
-      const snapshot = signature
+    mutationFn: async (attempt: string = signature) => {
+      const snapshot = attempt
       const current = () => mounted.current && target.current === snapshot
       try {
         await prepareForRun()
@@ -452,6 +452,7 @@ function PreviewSection({ spec, tab }: { spec: ProtocolSpec; tab: string }) {
   return (
     <section style={section}>
       <div style={secTitle}>미리보기</div>
+      <form onSubmit={e => { e.preventDefault(); if (key && !preview.isPending) preview.mutate(signature) }}>
       <div style={{ ...row, marginBottom: 10 }}>
         <select aria-label="미리보기 전문" value={key} onChange={(e) => { setKey(e.target.value); setFrameDirection(previewDirection(e.target.value)) }} style={sel}>
           {spec.messages.map((m) => <option key={m.key} value={m.key}>{m.key}{m.label ? ` · ${m.label}` : ''}</option>)}
@@ -459,26 +460,28 @@ function PreviewSection({ spec, tab }: { spec: ProtocolSpec; tab: string }) {
         <label style={row}><span style={lbl}>미리보기 방향</span><select aria-label="미리보기 방향" style={sel} value={frameDirection} onChange={e => setFrameDirection(e.target.value as 'send' | 'recv')}>
           <option value="send">요청 전문</option><option value="recv">응답 전문</option>
         </select></label>
-        <button onClick={() => preview.mutate()} disabled={preview.isPending} style={primaryBtn}>{preview.isPending ? '조립 중…' : '조립'}</button>
-        {preview.isError && <span style={{ fontSize: 12, color: 'var(--fl-fail)' }}>⚠ {apiErrorMessage(preview.error)}</span>}
+        <button type="submit" disabled={!key || preview.isPending} title={!key ? '조립할 전문을 먼저 선택하세요.' : '저장·전송 없이 현재 입력으로 조립합니다. 입력 후 Enter로도 조립할 수 있습니다.'} style={primaryBtn}>{preview.isPending ? '조립 중…' : '조립'}</button>
+        {preview.isError && preview.variables === signature && <span role="alert" style={{ fontSize: 12, color: 'var(--fl-fail)' }}>⚠ {apiErrorMessage(preview.error)}</span>}
       </div>
-      <p style={{ ...hint, margin: '0 0 10px' }}>선택한 방향의 요청·응답 경계 설정으로 조립합니다. 전문 키가 response 또는 :response로 끝나면 응답을 먼저 선택합니다.</p>
+      <p style={{ ...hint, margin: '0 0 10px' }}>저장·전송 없이 현재 입력으로 조립합니다. 값 입력 후 Enter를 누르세요. 선택한 방향의 경계 설정을 사용하며, 전문 키가 response 또는 :response로 끝나면 응답을 먼저 선택합니다.</p>
       {(fields.length > 5 || fieldSearch) && <input type="search" aria-label="미리보기 필드 검색" value={fieldSearch} onChange={e => setFieldSearch(e.target.value)} placeholder={`필드 이름 검색 · ${fields.length}개`} style={{ ...input, width: 'min(420px, 100%)', marginBottom: 8, boxSizing: 'border-box' }} />}
       <div style={{ display: 'grid', gap: 5, maxWidth: 880, maxHeight: 320, overflowY: 'auto', padding: 2 }}>
         {fields.filter(f => f.name.toLocaleLowerCase().includes(fieldSearch.trim().toLocaleLowerCase())).map((f) => {
           const auto = f.type === 'length'
           const e = errOf(f.name)
           return (
-            <label key={f.name} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <label key={f.name} style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', minWidth: 0 }}>
               <span title={f.name} style={{ ...lbl, width: '35%', minWidth: 0, overflowWrap: 'anywhere', fontFamily: 'var(--fl-font-mono)', fontSize: 12 }}>{f.name}</span>
-              <input aria-label={`${f.name} 값`} value={auto ? '' : values[f.name] ?? ''} disabled={auto} placeholder={auto ? '자동' : `${f.len}B`}
+              <input aria-label={`${f.name} 값`} aria-invalid={!!e} value={auto ? '' : values[f.name] ?? ''} disabled={auto} placeholder={auto ? '자동' : `${f.len}B`}
                 onChange={(ev) => setValues({ ...values, [f.name]: ev.target.value })} style={{ ...input, flex: 1, minWidth: 0 }} />
-              {e && <span style={{ fontSize: 12, color: 'var(--fl-fail)' }}>⚠ {e}</span>}
+              {e && <span role="alert" style={{ fontSize: 12, color: 'var(--fl-fail)', flexBasis: '100%' }}>⚠ {e}</span>}
             </label>
           )
         })}
         {fieldSearch && !fields.some(f => f.name.toLocaleLowerCase().includes(fieldSearch.trim().toLocaleLowerCase())) && <p role="status" style={hint}>일치하는 필드가 없습니다.</p>}
       </div>
+      </form>
+      {preview.data && !result && <p role="status" style={hint}>입력이나 전문 설정이 바뀌었습니다. 다시 조립해 최신 결과를 확인하세요.</p>}
       {result && (
         <div style={{ marginTop: 12, display: 'grid', gap: 8 }}>
           <div style={{ ...mono, fontSize: 13, fontWeight: 700 }}>총 {result.total}B</div>
@@ -492,7 +495,9 @@ function PreviewSection({ spec, tab }: { spec: ProtocolSpec; tab: string }) {
               </div>
             ))}
           </div>
+          <div style={{ ...hint, fontWeight: 600 }}>HEX · 조립된 바이트</div>
           <pre style={pre}>{result.hex}</pre>
+          <div style={{ ...hint, fontWeight: 600 }}>텍스트 · 제어문자는 표시용으로 변환될 수 있습니다.</div>
           <pre style={pre}>{result.text}</pre>
         </div>
       )}
@@ -540,13 +545,13 @@ const topBar: CSSProperties = { position: 'sticky', top: 0, zIndex: 2, display: 
 const nameInput: CSSProperties = { padding: '6px 10px', border: '1px solid transparent', borderRadius: 'var(--fl-radius-sm)', background: 'transparent', color: 'var(--fl-text)', fontSize: 18, fontWeight: 700, fontFamily: 'var(--fl-font-head)', minWidth: 150, flex: '1 1 240px' }
 const dirtyBadge: CSSProperties = { fontSize: 12, fontWeight: 700, color: 'var(--fl-warn, #b8860b)' }
 const banner: CSSProperties = { margin: '10px 20px 0', padding: '8px 12px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', fontSize: 13, display: 'grid', gap: 3 }
-const section: CSSProperties = { padding: 14, border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius)', background: 'var(--fl-surface)' }
+const section: CSSProperties = { padding: 14, minWidth: 0, border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius)', background: 'var(--fl-surface)' }
 const secTitle: CSSProperties = { fontSize: 13, fontWeight: 700, marginBottom: 10, display: 'flex', alignItems: 'baseline', gap: 8 }
 const row: CSSProperties = { display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 8, minWidth: 0 }
 const radioRow: CSSProperties = { display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }
 const lbl: CSSProperties = { fontSize: 12, color: 'var(--fl-text-muted)', minWidth: 72 }
-const hint: CSSProperties = { fontSize: 12, color: 'var(--fl-text-muted)' }
-const mono: CSSProperties = { fontFamily: 'var(--fl-font-mono)' }
+const hint: CSSProperties = { fontSize: 12, color: 'var(--fl-text-muted)', lineHeight: 1.6, overflowWrap: 'anywhere' }
+const mono: CSSProperties = { fontFamily: 'var(--fl-font-mono)', fontVariantNumeric: 'tabular-nums' }
 const input: CSSProperties = { padding: '6px 9px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', color: 'var(--fl-text)', fontSize: 13, minWidth: 0, maxWidth: '100%', boxSizing: 'border-box' }
 const sel: CSSProperties = { padding: '6px 8px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', color: 'var(--fl-text)', fontSize: 13, cursor: 'pointer', minWidth: 0, maxWidth: '100%' }
 const tabBtn: CSSProperties = { ...ui.secondary }

@@ -2,6 +2,7 @@ import { PageHeader } from '../components/PageHeader'
 import { AppIcon } from '../components/AppIcon'
 import { useCentralApi, useWorkspace } from '../app/WorkspaceContext'
 import { useUnsavedNavigation } from '../components/UnsavedNavigation'
+import { registerEscapeClose } from '../components/useEscapeClose'
 // 스크립트 플러그인 — 좌 목록 | 우 편집기(CodeMirror JS) + 실행 패널 + 상태 바. 초안 저장 → 승인 요청 → 관리자 승인 후 레지스트리.
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { CSSProperties } from 'react'
@@ -47,6 +48,8 @@ function CentralPlugins() {
 
   const { id } = useParams()
   const [sp] = useSearchParams()
+  const selection = id ?? `new:${sp.get('new') ?? ''}`
+  const selectionRef = useRef(selection); selectionRef.current = selection
   const navigate = useNavigate()
   const qc = useQueryClient()
   const { canEdit: permitted } = usePermissions()
@@ -72,6 +75,7 @@ function CentralPlugins() {
   const [draft, setDraft] = useState<Draft | null>(null)
   const [dirty, setDirty] = useState(false)
   const [diag, setDiag] = useState<EditorDiagnostic[]>([])
+  const [actionError, setActionError] = useState<string | null>(null)
   const [ask, setAsk] = useState<AskSpec | null>(null)
   const [showDiff, setShowDiff] = useState(false)
   const [listOpen, setListOpen] = useState(() => !window.matchMedia('(max-width:900px)').matches)
@@ -99,7 +103,7 @@ function CentralPlugins() {
   const newKind = sp.get('new')
   useEffect(() => {
     const src = (newKind && PLUGIN_TEMPLATES[newKind as PluginKind]?.source) || PLUGIN_EXAMPLES.find((x) => x.key === newKind)?.source
-    if (src) { setDraft({ id: null, name: '', source: src }); setDirty(true); setDiag([]) }
+    if (src) { setDraft({ id: null, name: '', source: src }); setDirty(true); setDiag([]); setActionError(null) }
   }, [newKind])
   useEffect(() => {
     const d = detail.data
@@ -107,26 +111,29 @@ function CentralPlugins() {
     const cur = draftRef.current
     // 같은 플러그인을 편집 중(dirty)이면 서버 재조회로 초안을 덮지 않는다 — 다른 플러그인으로 바뀌었거나 깨끗할 때만 재수화
     if (cur && cur.id === d.id && dirtyRef.current) return
-    setDraft({ id: d.id, name: d.name, source: d.source }); setDirty(false); setDiag([]); setShowDiff(false)
+    setDraft({ id: d.id, name: d.name, source: d.source }); setDirty(false); setDiag([]); setShowDiff(false); setActionError(null)
   }, [detail.data])
 
   const invalidate = () => { void qc.invalidateQueries({ queryKey: ['plugins', 'scripts'] }); void qc.invalidateQueries({ queryKey: ['admin', 'me'] }); void qc.invalidateQueries({ queryKey: ['transforms'] }); void qc.invalidateQueries({ queryKey: ['codecs'] }) }
   const onApiError = (e: unknown) => {
     const se = scriptError(e)
+    setActionError(se ? `${se.line ? `${se.line}행: ` : ''}${se.message}` : apiErrorMessage(e))
     if (se) { setDiag(se.line ? [{ line: se.line, col: se.col ?? undefined, message: se.message }] : []); toast(`${se.line ? `${se.line}행: ` : ''}${se.message}`, 'error') }
     else toast(apiErrorMessage(e), 'error')
   }
 
   const save = useMutation({
+    onMutate: () => { setActionError(null); return selectionRef.current },
     mutationFn: async () => {
       const d = draftRef.current!
       const snapshot = structuredClone(d)
+      const selected = selectionRef.current
       const saved = snapshot.id ? await pluginsApi.update(snapshot.id, { name: snapshot.name || undefined, source: snapshot.source }) : await pluginsApi.create({ name: snapshot.name || undefined, source: snapshot.source })
-      return { saved, snapshot }
+      return { saved, snapshot, selected }
     },
-    onSuccess: ({ saved, snapshot }) => {
+    onSuccess: ({ saved, snapshot, selected }) => {
       const current = draftRef.current
-      if (!activeRef.current || !current || current.id !== snapshot.id) return
+      if (!activeRef.current || !current || current.id !== snapshot.id || selectionRef.current !== selected) return
       const unchanged = current.name === snapshot.name && current.source === snapshot.source
       dirtyRef.current = !unchanged
       setDirty(!unchanged); setDiag([]); invalidate(); toast(unchanged ? '저장됨(초안)' : '이전 변경은 저장됐습니다. 추가 편집을 저장하세요.', 'ok')
@@ -136,26 +143,28 @@ function CentralPlugins() {
       }
       else void qc.invalidateQueries({ queryKey: ['plugins', 'scripts', saved.id] })
     },
-    onError: onApiError,
+    onError: (e, _variables, selected) => { if (activeRef.current && selectionRef.current === selected) onApiError(e) },
   })
   const { navigateSaved } = useUnsavedNavigation({ dirty, saving: save.isPending, label: '플러그인 소스' })
   const transition = useMutation({
-    mutationFn: ({ op, note }: { op: 'submit' | 'withdraw' | 'approve' | 'reject' | 'remove'; note?: string }) =>
-      op === 'submit' ? pluginsApi.submit(id!) : op === 'withdraw' ? pluginsApi.withdraw(id!) : op === 'approve' ? pluginsApi.approve(id!)
-      : op === 'reject' ? pluginsApi.reject(id!, note ?? '') : pluginsApi.remove(id!).then(() => null),
-    onSuccess: (_r, v) => {
+    onMutate: () => { setActionError(null); return selectionRef.current },
+    mutationFn: ({ op, note, targetId }: { op: 'submit' | 'withdraw' | 'approve' | 'reject' | 'remove'; note?: string; targetId: string }) =>
+      op === 'submit' ? pluginsApi.submit(targetId) : op === 'withdraw' ? pluginsApi.withdraw(targetId) : op === 'approve' ? pluginsApi.approve(targetId)
+      : op === 'reject' ? pluginsApi.reject(targetId, note ?? '') : pluginsApi.remove(targetId).then(() => null),
+    onSuccess: (_r, v, selected) => {
       invalidate()
+      if (!activeRef.current || selectionRef.current !== selected || draftRef.current?.id !== v.targetId) return
       if (v.op === 'remove') { setDirty(false); toast('삭제됨', 'ok'); navigateSaved(`/plugins${spaceQuery}`) }
       else { toast({ submit: '승인 요청함', withdraw: '철회함', approve: '승인됨 — 즉시 서빙', reject: '반려함' }[v.op], 'ok'); void qc.invalidateQueries({ queryKey: ['plugins', 'scripts', id] }) }
     },
-    onError: onApiError,
+    onError: (e, _variables, selected) => { if (activeRef.current && selectionRef.current === selected) onApiError(e) },
   })
 
   // Ctrl+S 저장(편집기 안에서도) · 미저장 이탈 경고
   useEffect(() => {
-    const h = (e: KeyboardEvent) => { if (e.isComposing || e.keyCode === 229) return; if ((e.ctrlKey || e.metaKey) && e.code === 'KeyS') { e.preventDefault(); if (dirtyRef.current && canEdit && !save.isPending) save.mutate() } }
+    const h = (e: KeyboardEvent) => { if (e.isComposing || e.keyCode === 229) return; if ((e.ctrlKey || e.metaKey) && e.code === 'KeyS') { e.preventDefault(); if (dirtyRef.current && canEdit && !save.isPending && !transition.isPending && !ask && (!id || draftRef.current?.id === id)) save.mutate() } }
     window.addEventListener('keydown', h); return () => window.removeEventListener('keydown', h)
-  }, [dirty, canEdit, save])
+  }, [dirty, canEdit, save, transition.isPending, id, ask])
   useEffect(() => {
     if (!dirty) return
     const h = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = '' }
@@ -181,6 +190,7 @@ function CentralPlugins() {
       : (a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? ''))
   }, [list.data, q, statusFilter, sort])
   const d = detail.data
+  const visibleDraft = draft && (id ? draft.id === id : !!newKind) ? draft : null
   const status: PluginScriptStatus | null = d?.status ?? null
   const openNew = (kind: string) => navigate(`/plugins${spaceQuery}&new=${encodeURIComponent(kind)}`)
   const select = useCallback((pid: string) => { navigate(`/plugins/${pid}${spaceQuery}`); if (window.matchMedia('(max-width:900px)').matches) setListOpen(false) }, [navigate, spaceQuery])
@@ -225,8 +235,10 @@ function CentralPlugins() {
 
         {/* ── 우 편집기 ── */}
         <div className="fl-plugin-detail">
-          <div className="fl-plugin-workspace-tools"><button style={ghostBtn} aria-expanded={listOpen} onClick={() => setListOpen(!listOpen)}><AppIcon name="list" size={15} />{listOpen ? '목록 접기' : '플러그인 목록'}</button>{draft && <><button style={panelOpen && panel === 'run' ? primaryBtn : ghostBtn} aria-expanded={panelOpen && panel === 'run'} onClick={() => { setPanel('run'); setPanelOpen(!(panelOpen && panel === 'run')) }}><AppIcon name="play" size={15} />테스트 실행</button><button style={panelOpen && panel === 'ref' ? primaryBtn : ghostBtn} aria-expanded={panelOpen && panel === 'ref'} onClick={() => { setPanel('ref'); setPanelOpen(!(panelOpen && panel === 'ref')) }}>API 참고</button><span>Ctrl+S 저장 · Ctrl+Enter 테스트</span></>}</div>
-          {!draft ? (
+          <div className="fl-plugin-workspace-tools"><button style={ghostBtn} aria-expanded={listOpen} onClick={() => setListOpen(!listOpen)}><AppIcon name="list" size={15} />{listOpen ? '목록 접기' : '플러그인 목록'}</button>{visibleDraft && <><button style={panelOpen && panel === 'run' ? primaryBtn : ghostBtn} aria-expanded={panelOpen && panel === 'run'} onClick={() => { setPanel('run'); setPanelOpen(!(panelOpen && panel === 'run')) }}><AppIcon name="play" size={15} />테스트 실행</button><button style={panelOpen && panel === 'ref' ? primaryBtn : ghostBtn} aria-expanded={panelOpen && panel === 'ref'} onClick={() => { setPanel('ref'); setPanelOpen(!(panelOpen && panel === 'ref')) }}>API 참고</button><span>Ctrl+S 저장 · Ctrl+Enter 테스트</span></>}</div>
+          {id && detail.isLoading && !visibleDraft ? <div role="status" style={empty}>플러그인을 불러오는 중…</div>
+          : id && detail.isError && !visibleDraft ? <div role="alert" style={empty}><p>{apiErrorMessage(detail.error, '플러그인을 불러오지 못했습니다.')}</p><button style={ghostBtn} onClick={() => void detail.refetch()}>다시 불러오기</button></div>
+          : !visibleDraft ? (
             <div style={empty}>
               <div style={{ fontFamily: 'var(--fl-font-head)', fontWeight: 700, fontSize: 18 }}>스크립트 플러그인</div>
               <p style={{ maxWidth: 560, margin: '8px 0 0', fontSize: 14, lineHeight: 1.65 }}>
@@ -237,7 +249,7 @@ function CentralPlugins() {
             <>
               <header className="fl-plugin-heading" style={hdr}>
                 <div className="fl-plugin-heading-info">
-                <input value={draft.name} onChange={(e) => { const next = { ...draftRef.current!, name: e.target.value }; draftRef.current = next; dirtyRef.current = true; setDraft(next); setDirty(true) }} placeholder={d?.meta?.label || '플러그인 이름'} aria-label="플러그인 이름" disabled={!canEdit}
+                <input value={visibleDraft.name} onChange={(e) => { const next = { ...draftRef.current!, name: e.target.value }; draftRef.current = next; dirtyRef.current = true; setDraft(next); setDirty(true) }} placeholder={d?.meta?.label || '플러그인 이름'} aria-label="플러그인 이름" disabled={!canEdit || transition.isPending}
                   onKeyDown={(e) => { if (e.key === 'Enter' || e.key === 'Escape') (e.target as HTMLInputElement).blur() }} style={nameInput} />
                 {d && <span style={metaMono}>#{d.pluginId} · {kindLabel(d.kind)}</span>}
                 {status && <StatusPill status={status} live={!!d?.live} dirtyLive={!!d?.dirty} />}
@@ -247,28 +259,30 @@ function CentralPlugins() {
                 <div className="fl-plugin-actions" role="group" aria-label="플러그인 작업">
                   {d && <UsagesChip id={d.id} count={d.usages} />}
                   {d?.live && <button style={ghostBtn} onClick={() => setShowDiff((v) => !v)}>{showDiff ? '편집으로' : '승인본과 비교'}</button>}
-                  {canEdit && <button style={{ ...primaryBtn, opacity: dirty ? 1 : 0.55 }} disabled={!dirty || save.isPending} onClick={() => save.mutate()} title="Ctrl+S"><AppIcon name="save" size={16} /> 저장</button>}
+                  {canEdit && <button style={{ ...primaryBtn, opacity: dirty ? 1 : 0.55 }} disabled={!dirty || save.isPending || transition.isPending} onClick={() => save.mutate()} title="Ctrl+S"><AppIcon name="save" size={16} />{save.isPending ? '저장 중…' : '저장'}</button>}
                   {canEdit && d && (status === 'DRAFT' || status === 'REJECTED' || (status === 'APPROVED' && d.dirty)) && !dirty && (
-                    <button style={okBtn} disabled={transition.isPending} onClick={() => { if (dirtyRef.current) { toast('변경 내용을 먼저 저장하세요.', 'error'); return } transition.mutate({ op: 'submit' }) }}>승인 요청</button>
+                    <button style={okBtn} disabled={transition.isPending || save.isPending} onClick={() => { if (dirtyRef.current) { toast('변경 내용을 먼저 저장하세요.', 'error'); return } transition.mutate({ op: 'submit', targetId: id! }) }}>승인 요청</button>
                   )}
-                  {canEdit && status === 'PENDING' && <button style={ghostBtn} disabled={transition.isPending} onClick={() => transition.mutate({ op: 'withdraw' })}>철회</button>}
+                  {canEdit && status === 'PENDING' && <button style={ghostBtn} disabled={transition.isPending || save.isPending} onClick={() => transition.mutate({ op: 'withdraw', targetId: id! })}>철회</button>}
                   {isAdmin && status === 'PENDING' && (
                     <>
-                      <button style={okBtn} disabled={transition.isPending} onClick={() => transition.mutate({ op: 'approve' })}>✓ 승인</button>
-                      <button style={dangerBtn} disabled={transition.isPending} onClick={() => setAsk({ title: '반려 사유', input: { label: '사유', placeholder: '무엇을 고쳐야 하는지' }, confirmLabel: '반려', danger: true, onConfirm: (v) => transition.mutate({ op: 'reject', note: v }) })}>반려</button>
+                      <button style={okBtn} disabled={transition.isPending || save.isPending} onClick={() => transition.mutate({ op: 'approve', targetId: id! })}>✓ 승인</button>
+                      <button style={dangerBtn} disabled={transition.isPending || save.isPending} onClick={() => setAsk({ title: '반려 사유', input: { label: '사유', placeholder: '무엇을 고쳐야 하는지' }, confirmLabel: '반려', danger: true, onConfirm: (v) => transition.mutate({ op: 'reject', note: v, targetId: id! }) })}>반려</button>
                     </>
                   )}
-                  {canEdit && d && <button style={dangerBtn} disabled={transition.isPending || d.usages > 0} title={d.usages > 0 ? `사용 중(${d.usages}곳)이라 삭제할 수 없습니다` : '삭제'}
-                    onClick={() => setAsk({ title: `'${d.name}' 삭제`, message: d.live ? '승인본도 함께 사라지고 서빙이 중단됩니다.' : undefined, confirmLabel: '삭제', danger: true, onConfirm: () => transition.mutate({ op: 'remove' }) })}>삭제</button>}
+                  {canEdit && d && <button style={dangerBtn} disabled={transition.isPending || save.isPending || d.usages > 0} title={d.usages > 0 ? `사용 중(${d.usages}곳)이라 삭제할 수 없습니다` : '삭제'}
+                    onClick={() => setAsk({ title: `'${d.name}' 삭제`, message: d.live ? '승인본도 함께 사라지고 서빙이 중단됩니다.' : undefined, confirmLabel: '삭제', danger: true, onConfirm: () => transition.mutate({ op: 'remove', targetId: id! }) })}>삭제</button>}
                 </div>
+                {actionError && <p role="alert" style={{ color: 'var(--fl-fail)', fontSize: 12, margin: 0, lineHeight: 1.6, overflowWrap: 'anywhere' }}>{actionError} 입력은 유지됩니다. 수정 후 다시 시도하세요.</p>}
+                {detail.isError && <p role="alert" style={{ color: 'var(--fl-fail)', fontSize: 12, margin: 0 }}>저장된 상태를 다시 확인하지 못했습니다. 편집 중인 입력은 유지됩니다. <button style={ghostBtn} onClick={() => void detail.refetch()}>다시 불러오기</button></p>}
               </header>
               <div className="fl-plugin-stage" data-panel-open={panelOpen}>
                 <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', minHeight: 0, borderRight: '1px solid var(--fl-border)' }}>
                   {showDiff && d?.liveSource ? (
-                    <PluginDiffView before={d.liveSource} after={draft.source} />
+                    <PluginDiffView before={d.liveSource} after={visibleDraft.source} />
                   ) : (
-                    <Suspense fallback={<textarea value={draft.source} readOnly style={{ flex: 1, fontFamily: 'var(--fl-font-mono)', fontSize: 13, padding: 14, border: 'none' }} />}>
-                      <CodeEditorLazy ref={editorRef} value={draft.source} language="javascript" completions={completions} diagnostics={diag} wrap={wrap} readOnly={!canEdit} ariaLabel="플러그인 소스 코드"
+                    <Suspense fallback={<textarea value={visibleDraft.source} aria-label="플러그인 소스 코드 불러오는 중" readOnly style={{ flex: 1, fontFamily: 'var(--fl-font-mono)', fontSize: 13, padding: 14, border: 'none' }} />}>
+                      <CodeEditorLazy ref={editorRef} value={visibleDraft.source} language="javascript" completions={completions} diagnostics={diag} wrap={wrap} readOnly={!canEdit || transition.isPending} ariaLabel="플러그인 소스 코드"
                         onChange={changeSource} />
                     </Suspense>
                   )}
@@ -305,7 +319,7 @@ function CentralPlugins() {
 
 function ListItem({ p, on, onClick }: { p: PluginScriptSummary; on: boolean; onClick: () => void }) {
   return (
-    <button onClick={onClick} style={{ ...item, ...(on ? itemOn : null) }}>
+    <button onClick={onClick} aria-pressed={on} style={{ ...item, ...(on ? itemOn : null) }}>
       <span style={{ display: 'flex', gap: 6, alignItems: 'flex-start', minWidth: 0 }}>
         <span style={{ fontSize: 13, fontWeight: 600, flex: 1, minWidth: 0, overflowWrap: 'anywhere', lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }} title={p.name}>{p.name}</span>
         <StatusPill status={p.status} live={p.live} dirtyLive={p.dirty} small />
@@ -329,19 +343,22 @@ function StatusPill({ status, live, dirtyLive, small }: { status: PluginScriptSt
 /** 사용처 N — 클릭하면 목록 팝오버(항목 클릭 = 해당 화면). */
 function UsagesChip({ id, count }: { id: string; count: number }) {
   const { pluginsApi } = useCentralApi()
-
+  const { remoteKey } = useWorkspace()
   const [open, setOpen] = useState(false)
+  const trigger = useRef<HTMLButtonElement>(null)
   const navigate = useNavigate()
-  const refs = useQuery({ queryKey: ['plugins', 'scripts', id, 'usages'], queryFn: () => pluginsApi.usages(id), enabled: open })
+  const refs = useQuery({ queryKey: ['plugins', 'scripts', id, 'central', remoteKey, 'usages'], queryFn: () => pluginsApi.usages(id), enabled: open })
+  useEffect(() => { if (open) return registerEscapeClose(() => { setOpen(false); trigger.current?.focus() }) }, [open])
   return (
     <span style={{ position: 'relative' }}>
-      <button style={{ ...ghostBtn, opacity: count ? 1 : 0.6 }} onClick={() => setOpen((v) => !v)} title="이 플러그인을 쓰는 워크플로·Mock·프로토콜">사용처 {count}</button>
+      <button ref={trigger} aria-expanded={open} style={{ ...ghostBtn, opacity: count ? 1 : 0.6 }} onClick={() => setOpen((v) => !v)} title="이 플러그인을 쓰는 워크플로·Mock·프로토콜">사용처 {count}</button>
       {open && (
-        <div role="menu" className="fl-plugin-usages-popover" style={pop} onMouseLeave={() => setOpen(false)}>
+        <div role="region" aria-label="플러그인 사용처" className="fl-plugin-usages-popover" style={pop}>
           {refs.isLoading && <div style={muted}>불러오는 중…</div>}
+          {refs.isError && <div role="alert" style={muted}>사용처를 불러오지 못했습니다. <button style={ghostBtn} onClick={() => void refs.refetch()}>다시 불러오기</button></div>}
           {refs.data?.length === 0 && <div style={muted}>사용처 없음</div>}
           {refs.data?.map((r, index) => (
-            <button key={`${r.kind}-${r.id}-${index}`} disabled={!r.id} style={{ ...item, ...(!r.id ? { cursor: 'default', color: 'var(--fl-text-muted)' } : {}) }} onClick={() => { if (r.id) navigate(r.kind === 'flow' ? `/flows/${r.id}` : r.kind === 'mock' ? `/mocks/${r.id}` : `/protocols/${r.id}`) }}>
+            <button key={`${r.kind}-${r.id}-${index}`} disabled={!r.id} style={{ ...item, ...(!r.id ? { cursor: 'default', color: 'var(--fl-text-muted)' } : {}) }} onClick={() => { if (r.id) { setOpen(false); navigate(r.kind === 'flow' ? `/flows/${r.id}` : r.kind === 'mock' ? `/mocks/${r.id}` : `/protocols/${r.id}`) } }}>
               <span style={{ fontSize: 13 }}>{r.kind === 'flow' ? '▤' : r.kind === 'mock' ? '◈' : '⫶'} {r.name}</span>
             </button>
           ))}

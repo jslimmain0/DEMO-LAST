@@ -1,4 +1,6 @@
 import type { HttpMethod, NodeExecutionView } from '../api/types'
+import { useState } from 'react'
+import { toast } from './toast'
 
 /** 실시간 응답의 파싱된 출력과 실행 이력의 원문 출력을 모두 표시한다. */
 export function outputText(node: Pick<NodeExecutionView, 'output' | 'outputJson'>): string | null {
@@ -10,15 +12,25 @@ export function outputText(node: Pick<NodeExecutionView, 'output' | 'outputJson'
  * 쓰도록 통합. 복사 버튼·스타일을 한 곳에서 관리(이전엔 RunPanel 에만 복사가 있었음).
  */
 export function LogBlock({ title, text }: { title: string; text: string | null | undefined }) {
+  const [wrap, setWrap] = useState(true)
   if (!text) return null
+  const copy = async () => {
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error('clipboard unavailable')
+      await navigator.clipboard.writeText(text)
+      toast(`${title}을 복사했습니다.`, 'ok')
+    } catch { toast('복사하지 못했습니다. 본문을 직접 선택해서 복사하세요.', 'error') }
+  }
   return (
-    <div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+    <div style={{ minWidth: 0 }}>
+      <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 4 }}>
         <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--fl-text-muted)' }}>{title}</div>
-        <button onClick={() => { void navigator.clipboard?.writeText(text).catch(() => {}) }} title={`${title} 복사`}
+        <button type="button" onClick={() => setWrap(value => !value)} aria-label={`${title} 본문 줄바꿈`} aria-pressed={wrap}
+          style={{ fontSize: 11, padding: '1px 7px', border: '1px solid var(--fl-border)', borderRadius: 6, background: wrap ? 'var(--fl-surface-2)' : 'transparent', color: 'var(--fl-text-muted)', cursor: 'pointer' }}>줄바꿈</button>
+        <button type="button" onClick={() => void copy()} aria-label={`${title} 복사`} title={`${title} 복사`}
           style={{ fontSize: 11, padding: '1px 7px', border: '1px solid var(--fl-border)', borderRadius: 6, background: 'transparent', color: 'var(--fl-text-muted)', cursor: 'pointer' }}>복사</button>
       </div>
-      <pre style={{ margin: 0, padding: 10, background: 'var(--fl-surface-2)', color: 'var(--fl-text)', borderRadius: 'var(--fl-radius-sm)', fontFamily: 'var(--fl-font-mono)', fontSize: 12, whiteSpace: 'pre-wrap', wordBreak: 'break-all', maxHeight: 200, overflow: 'auto' }}>{text}</pre>
+      <pre tabIndex={0} aria-label={`${title} 본문`} style={{ margin: 0, padding: 10, background: 'var(--fl-surface-2)', color: 'var(--fl-text)', borderRadius: 'var(--fl-radius-sm)', fontFamily: 'var(--fl-font-mono)', fontSize: 12, lineHeight: 1.6, whiteSpace: wrap ? 'pre-wrap' : 'pre', overflowWrap: wrap ? 'anywhere' : 'normal', maxHeight: 240, minWidth: 0, maxWidth: '100%', overflow: 'auto' }}>{text}</pre>
     </div>
   )
 }

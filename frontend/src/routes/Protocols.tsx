@@ -62,7 +62,7 @@ export function Protocols() {
   return (
     <AppShellTier1>
       <div className="fl-protocol-workbench">
-        <aside style={listPane}>
+        <aside style={listPane} aria-label="프로토콜 목록">
           <PageHeader title="프로토콜" count={list.data?.length ?? 0} description="서버 · 공통 자원" />
           <input ref={searchRef} value={q} onChange={(e) => setQ(e.target.value)} placeholder="검색 ( / )" aria-label="프로토콜 검색"
             onKeyDown={(e) => { if (e.key === 'Escape' && q) { e.stopPropagation(); setQ('') } }} style={search} />
@@ -74,10 +74,10 @@ export function Protocols() {
           <div style={{ overflowY: 'auto', display: 'grid', gap: 3, alignContent: 'start' }}>
             {!scope.connected && <div style={muted} role="status">서버에 연결하면 공통 프로토콜을 볼 수 있습니다.</div>}
             {list.isLoading && <div style={muted}>불러오는 중…</div>}
-            {list.isError && <div style={{ ...muted, color: 'var(--fl-fail)' }}>목록을 불러오지 못했습니다.</div>}
+            {list.isError && <div role="alert" style={{ ...muted, color: 'var(--fl-fail)' }}>목록을 불러오지 못했습니다. <button style={ui.ghost} onClick={() => void list.refetch()}>다시 불러오기</button></div>}
             {list.data && !items.length && <div style={muted}>{q ? '일치하는 프로토콜이 없습니다.' : '아직 프로토콜이 없습니다.'}</div>}
             {items.map((p) => (
-              <button key={p.id} onClick={() => navigate(`/protocols/${p.id}`)} style={{ ...item, ...(p.id === id ? itemOn : null) }}>
+              <button key={p.id} aria-pressed={p.id === id} onClick={() => navigate(`/protocols/${p.id}`)} style={{ ...item, ...(p.id === id ? itemOn : null) }}>
                 <span style={{ fontSize: 13, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</span>
                 <span style={{ fontSize: 11, color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)' }}>{p.encoding} · 전문 {p.messageCount}</span>
               </button>
@@ -95,10 +95,13 @@ export function Protocols() {
             </div>
           ) : detail.isLoading ? (
             <div style={empty}>불러오는 중…</div>
-          ) : detail.isError ? (
-            <div style={{ ...empty, color: 'var(--fl-fail)' }}>{apiErrorMessage(detail.error)}</div>
+          ) : detail.isError && !detail.data ? (
+            <div role="alert" style={{ ...empty, color: 'var(--fl-fail)' }}><p>{apiErrorMessage(detail.error)}</p><button style={ui.secondary} onClick={() => void detail.refetch()}>다시 불러오기</button></div>
           ) : detail.data ? (
-            <ProtocolEditor key={`${scope.remoteKey.replace(/:(?:true|false)$/, '')}:${detail.data.id}`} detail={detail.data} canEdit={canEdit} onSaved={invalidate} />
+            <div style={{ display: 'grid', gridTemplateRows: 'auto minmax(0, 1fr)', height: '100%', minHeight: 0 }}>
+              <div>{detail.isError && <p role="alert" style={{ color: 'var(--fl-fail)', fontSize: 12, margin: 0, padding: '10px 16px', lineHeight: 1.6 }}>저장된 상태를 다시 확인하지 못했습니다. 편집 중인 입력은 유지됩니다. <button style={ui.ghost} onClick={() => void detail.refetch()}>다시 불러오기</button></p>}</div>
+              <ProtocolEditor key={`${scope.remoteKey.replace(/:(?:true|false)$/, '')}:${detail.data.id}`} detail={detail.data} canEdit={canEdit} onSaved={invalidate} />
+            </div>
           ) : null}
         </div>
       </div>
@@ -106,8 +109,8 @@ export function Protocols() {
   )
 }
 
-const listPane: CSSProperties = { display: 'grid', gridTemplateRows: 'auto auto auto 1fr', gap: 8, padding: '18px 14px', borderRight: '1px solid var(--fl-border)', background: 'var(--fl-surface)', minHeight: 0 }
-const search: CSSProperties = { padding: '7px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', color: 'var(--fl-text)', fontSize: 13 }
+const listPane: CSSProperties = { display: 'grid', gridTemplateRows: 'auto auto auto 1fr', gap: 8, padding: '18px 14px', borderRight: '1px solid var(--fl-border)', background: 'var(--fl-surface)', minHeight: 0, minWidth: 0 }
+const search: CSSProperties = { padding: '7px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', color: 'var(--fl-text)', fontSize: 13, minWidth: 0, width: '100%', boxSizing: 'border-box' }
 const primaryBtn: CSSProperties = { ...ui.primary }
 const item: CSSProperties = { display: 'grid', gap: 2, textAlign: 'left', padding: '8px 10px', border: '1px solid transparent', borderRadius: 'var(--fl-radius-sm)', background: 'transparent', color: 'var(--fl-text)', cursor: 'pointer', minWidth: 0 }
 const itemOn: CSSProperties = { background: 'var(--fl-surface-2)', borderColor: 'var(--fl-border)' }

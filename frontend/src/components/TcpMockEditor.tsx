@@ -3,7 +3,7 @@ import { useApi } from '../app/WorkspaceContext'
 // 전문 레이아웃은 여기서 정의하지 않는다 — 프로토콜(/protocols)이 소유하고 Mock 은 "그 규격을 쓰는 리스너"일 뿐.
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { CSSProperties } from 'react'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import type { MockTcpCond, MockTcpFault, MockTcpRuleSpec, MockTcpSpec, ProtocolField, ProtocolSpec, TcpLogEntry, TcpSendResult } from '../api/types'
 
@@ -57,14 +57,14 @@ export function tcpRuleSummary(rule: MockTcpRuleSpec, spec: ProtocolSpec | undef
 
 // ---------- 연결 ----------
 
-export function TcpConnPanel({ tcp, spec, sources, address, readOnly, onChange }: { tcp: MockTcpSpec; spec?: ProtocolSpec; sources: BindableSource[]; address: string; readOnly?: boolean; onChange: (patch: Partial<MockTcpSpec>) => void }) {
+export function TcpConnPanel({ tcp, spec, sources, address, savedAddress, readOnly, onChange }: { tcp: MockTcpSpec; spec?: ProtocolSpec; sources: BindableSource[]; address: string; savedAddress?: string; readOnly?: boolean; onChange: (patch: Partial<MockTcpSpec>) => void }) {
   const { protocolsApi } = useApi()
 
   const protos = useQuery({ queryKey: ['protocols'], queryFn: protocolsApi.list, staleTime: 15_000 })
   return (
     <section style={panel}>
       <h2 style={h2}>연결 <span style={{ fontWeight: 400, fontSize: 12, color: 'var(--fl-text-muted)' }}>(포트 · 프로토콜 · 실서버)</span></h2>
-      <p style={hint}>저장하면 백엔드가 이 포트에 리스너를 엽니다(모든 인터페이스 — 사내망 전제, 포트 충돌 시 저장 400). 전문 규격은 <b>프로토콜</b>이 소유합니다 — 여기서는 어떤 규격을 쓸지만 고릅니다.</p>
+      <p style={hint}>포트와 프로토콜을 고른 뒤 저장하세요. 리스너가 켜져 있으면 바로 적용됩니다. 설정을 변경하면 기존 연결은 종료됩니다.</p>
       {!tcp.protocolId && (
         <div style={warnBanner} role="note"><span>⚠</span><span>프로토콜을 골라야 리스너가 열립니다 — 전문을 어떻게 자르고 응답할지 알 수 없습니다.</span></div>
       )}
@@ -72,8 +72,9 @@ export function TcpConnPanel({ tcp, spec, sources, address, readOnly, onChange }
         <b>선택한 프로토콜의 TCP 송수신</b>
         <span>요청 · {framingSummary(spec)}</span>
         <span>응답 · {framingSummary(spec, true)}</span>
-        <span>TCP 노드 · {transportSummary(spec)}</span>
-        <span style={hint}>Mock은 연결이 열린 동안 다음 요청을 받습니다. 경계·ACK 설정은 프로토콜 관리에서 변경하세요.</span>
+        <span>기본 유휴시간 · {(spec.transport?.idleTimeoutMs ?? 30000) / 1000}초</span>
+        <span>노드의 연결 방식 · {transportSummary(spec)}</span>
+        <span style={{ color: 'var(--fl-text-muted)' }}>외부 앱은 같은 연결로 요청을 반복할 수 있습니다. 유휴시간·전문 경계·ACK는 프로토콜 관리에서 변경하세요.</span>
       </div>}
       <div style={{ display: 'grid', gap: 12, marginTop: 12, maxWidth: 620 }}>
         <div style={row}>
@@ -84,9 +85,9 @@ export function TcpConnPanel({ tcp, spec, sources, address, readOnly, onChange }
         </div>
         <div style={row}>
           <span style={{ ...lbl, minWidth: 96 }}>프로토콜</span>
-          <select style={{ ...input, minWidth: 220 }} value={tcp.protocolId ?? ''} disabled={readOnly} aria-label="프로토콜"
+          <select style={{ ...input, width: 220, flex: '1 1 180px', minWidth: 0, maxWidth: '100%' }} value={tcp.protocolId ?? ''} disabled={readOnly || protos.isPending} aria-label="프로토콜"
             onChange={(e) => onChange({ protocolId: e.target.value || null })}>
-            <option value="">— 선택 —</option>
+            <option value="">{protos.isPending ? '프로토콜 불러오는 중…' : '— 선택 —'}</option>
             {(protos.data ?? []).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
             {tcp.protocolId && !protos.data?.some(p => p.id === tcp.protocolId) && <option value={tcp.protocolId}>{tcp.protocolId} · 서버 공통 자원에서 존재 확인 필요</option>}
           </select>
@@ -94,9 +95,9 @@ export function TcpConnPanel({ tcp, spec, sources, address, readOnly, onChange }
         </div>
         <div style={row}>
           <span style={{ ...lbl, minWidth: 96 }}>실서버(upstream)</span>
-          <span style={{ display: 'flex', width: 220 }}>
+          <span style={{ display: 'flex', width: 220, flex: '1 1 180px', minWidth: 0, maxWidth: '100%' }}>
             <TokenInput ariaLabel="upstream host:port" value={tcp.upstream ?? ''} sources={sources} readOnly={readOnly} placeholder="10.20.3.14:9600"
-              onChange={(v) => onChange({ upstream: v.trim() || null })} />
+              onChange={(v) => onChange({ upstream: v || null })} />
           </span>
           <span style={meta}>proxy 규칙이 넘길 실서버 — 비워 두면 mock 응답만</span>
         </div>
@@ -108,9 +109,10 @@ export function TcpConnPanel({ tcp, spec, sources, address, readOnly, onChange }
         </div>
         <div style={row}>
           <span style={{ ...lbl, minWidth: 96 }}>리스닝 주소</span>
-          <input readOnly value={address} onFocus={(e) => e.currentTarget.select()} aria-label="리스닝 주소" style={{ ...input, width: 220, fontFamily: 'var(--fl-font-mono)' }} />
-          <span style={meta}>워크플로 TCP 노드의 대상</span>
+          <input readOnly value={address} onFocus={(e) => e.currentTarget.select()} aria-label="리스닝 주소" style={{ ...input, width: 220, flex: '1 1 180px', minWidth: 0, maxWidth: '100%', fontFamily: 'var(--fl-font-mono)' }} />
+          <span style={meta}>{savedAddress && savedAddress !== address ? '새 주소 · 저장 후 적용' : '외부 앱·워크플로 TCP 노드의 대상'}</span>
         </div>
+        {savedAddress && savedAddress !== address && <p role="status" style={{ ...hint, margin: 0, overflowWrap: 'anywhere' }}>현재 저장된 주소는 <code>{savedAddress}</code>입니다. 상단 주소 복사는 저장된 주소를 사용합니다.</p>}
       </div>
       {protos.isError && <p role="alert" style={hint}>서버 공통 프로토콜을 불러오지 못했습니다. {apiErrorMessage(protos.error, '프로토콜 조회 실패')} <button type="button" style={miniBtn} onClick={() => void protos.refetch()}>다시 불러오기</button></p>}
     </section>
@@ -173,7 +175,7 @@ export function TcpRuleDetail({ rule, index, total, spec, secrets, envKeys, read
             </select>
             {c.op === 'exists'
               ? <span style={{ flex: 1, minWidth: 100, fontSize: 12, color: 'var(--fl-text-muted)' }}>(값 없음)</span>
-              : <div style={{ flex: 1, minWidth: 100 }}><TokenInput ariaLabel={`조건 ${i + 1} 값`} value={c.value ?? ''} sources={sources} placeholder="값 또는 { } 데이터 삽입"
+              : <div style={{ flex: 1, minWidth: 100 }}><TokenInput readOnly={readOnly} ariaLabel={`조건 ${i + 1} 값`} value={c.value ?? ''} sources={sources} placeholder="값 또는 { } 데이터 삽입"
                   onChange={(v) => setCond(i, { value: v })} /></div>}
             {!readOnly && <button style={{ ...miniBtn, color: 'var(--fl-fail)' }} onClick={() => onChange({ when: conds.filter((_, ci) => ci !== i) })} aria-label={`조건 ${i + 1} 삭제`}>×</button>}
           </div>
@@ -187,7 +189,7 @@ export function TcpRuleDetail({ rule, index, total, spec, secrets, envKeys, read
           <span style={boxTitle}>⬆ 어떻게 응답할까</span>
           <div style={seg}>
             {(['mock', 'proxy'] as const).map((m) => (
-              <button key={m} disabled={readOnly} onClick={() => setMode(m)} style={{ ...segBtn, background: mode === m ? 'var(--fl-action-primary-bg)' : 'transparent', color: mode === m ? 'var(--fl-action-primary-ink)' : 'var(--fl-text-muted)' }}>
+              <button key={m} aria-pressed={mode === m} disabled={readOnly} onClick={() => setMode(m)} style={{ ...segBtn, background: mode === m ? 'var(--fl-action-primary-bg)' : 'transparent', color: mode === m ? 'var(--fl-action-primary-ink)' : 'var(--fl-text-muted)' }}>
                 {m === 'mock' ? 'Mock 응답' : '실서버로 통과(proxy)'}
               </button>
             ))}
@@ -202,7 +204,7 @@ export function TcpRuleDetail({ rule, index, total, spec, secrets, envKeys, read
             {spec?.discriminator ? (
               <div style={row}>
                 <span style={{ ...lbl, minWidth: 70 }}>응답 전문</span>
-                <select style={{ ...input, minWidth: 220 }} value={respKey} disabled={readOnly || !spec} aria-label="응답 전문" onChange={(e) => setRespKey(e.target.value)}>
+                <select style={{ ...input, width: 220, flex: '1 1 160px', minWidth: 0, maxWidth: '100%' }} value={respKey} disabled={readOnly || !spec} aria-label="응답 전문" onChange={(e) => setRespKey(e.target.value)}>
                   <option value="">— 고르세요 —</option>
                   {(spec ? responseKeyOptions(spec) : []).map((m) => <option key={m.key} value={m.key}>{m.label}</option>)}
                 </select>
@@ -252,8 +254,8 @@ export function TcpRuleDetail({ rule, index, total, spec, secrets, envKeys, read
 
       {!readOnly && (
         <div style={{ display: 'flex', gap: 6, marginTop: 12, justifyContent: 'flex-end', borderTop: '1px solid var(--fl-border)', paddingTop: 10 }}>
-          <button style={miniBtn} onClick={() => onMove(-1)} disabled={index === 0} title="위로 (위에서부터 첫 매칭)">▲</button>
-          <button style={miniBtn} onClick={() => onMove(1)} disabled={index === total - 1} title="아래로">▼</button>
+          <button style={miniBtn} onClick={() => onMove(-1)} disabled={index === 0} aria-label="규칙 위로 이동" title="위로 (위에서부터 첫 매칭)">▲</button>
+          <button style={miniBtn} onClick={() => onMove(1)} disabled={index === total - 1} aria-label="규칙 아래로 이동" title="아래로">▼</button>
           <button style={miniBtn} onClick={onDup}>복제</button>
           <button style={{ ...miniBtn, color: 'var(--fl-fail)' }} onClick={onDelete}>삭제</button>
         </div>
@@ -271,12 +273,12 @@ function FieldValueRow({ f, kind, spec, value, disc, readOnly, sources, warn, on
   return (
     <div style={{ ...row, border: `1px solid ${warn ? 'var(--fl-fail)' : 'var(--fl-border)'}`, borderRadius: 'var(--fl-radius-sm)', padding: '5px 8px', alignItems: 'center' }}>
       <span style={{ fontSize: 12, fontWeight: 600, width: 130, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={f.name}>{f.name}</span>
-      <span style={{ ...meta, width: 92 }}>{f.type} {f.len}B{bytes != null ? ` · ${bytes}` : ''}</span>
+      <span style={{ ...meta, width: 92, fontVariantNumeric: 'tabular-nums' }}>{f.type} {bytes == null ? '?' : bytes}/{f.len} B</span>
       {disc ? (
         <code style={{ ...code, flex: 1 }}>{value || '(응답 전문 미선택)'}</code>
       ) : (
-        <div style={{ flex: 1, minWidth: 160, ...(readOnly ? { pointerEvents: 'none', opacity: 0.7 } : null) }} aria-disabled={readOnly}>
-          <TokenInput ariaLabel={`${f.name} 값`} value={value} sources={sources} placeholder={kind === 'header' ? '비우면 요청 에코' : '비우면 빈 값(패딩)'} onChange={onChange} />
+        <div style={{ flex: '1 1 160px', minWidth: 0 }}>
+          <TokenInput readOnly={readOnly} ariaLabel={`${f.name} 값`} value={value} sources={sources} placeholder={kind === 'header' ? '비우면 요청 에코' : '비우면 빈 값(패딩)'} onChange={onChange} />
         </div>
       )}
       {warn && <span style={{ fontSize: 11, color: 'var(--fl-fail)', maxWidth: 220 }}>{warn}</span>}
@@ -313,7 +315,7 @@ export function TcpLogPanel({ mockId, protocolId, canEdit, onMakeRule }: { mockI
       <div style={{ display: 'flex', gap: 6, alignItems: 'center', padding: '4px 12px' }}>
         <div style={seg}>
           {([['all', '전체'], ['mock', 'mock'], ['proxy', 'proxy'], ['warn', '⚠']] as const).map(([k, label]) => (
-            <button key={k} onClick={() => setFilter(k)} style={{ ...segBtn, background: filter === k ? 'var(--fl-action-primary-bg)' : 'transparent', color: filter === k ? 'var(--fl-action-primary-ink)' : 'var(--fl-text-muted)' }}>{label}</button>
+            <button key={k} aria-label={k === 'warn' ? '경고·오류 로그' : `${label} 로그`} aria-pressed={filter === k} onClick={() => setFilter(k)} style={{ ...segBtn, background: filter === k ? 'var(--fl-action-primary-bg)' : 'transparent', color: filter === k ? 'var(--fl-action-primary-ink)' : 'var(--fl-text-muted)' }}>{label}</button>
           ))}
         </div>
         <span style={meta}>{rows.length}건</span>
@@ -321,7 +323,9 @@ export function TcpLogPanel({ mockId, protocolId, canEdit, onMakeRule }: { mockI
         {canEdit && (log.data?.length ?? 0) > 0 && <button style={{ ...miniBtn, padding: '3px 8px' }} disabled={clear.isPending} onClick={() => clear.mutate()}>지우기</button>}
       </div>
       <div style={{ flex: 1, overflowY: 'auto', padding: '0 12px 10px' }}>
-        {rows.length === 0 ? (
+        {log.isError ? <p role="alert" style={{ ...hint, color: 'var(--fl-fail)' }}>전문 로그를 불러오지 못했습니다. {apiErrorMessage(log.error, '로그 조회 실패')} <button type="button" style={miniBtn} disabled={log.isFetching} onClick={() => void log.refetch()}>다시 불러오기</button></p>
+          : log.isPending ? <p role="status" style={hint}>전문 로그를 불러오는 중…</p>
+          : rows.length === 0 ? (
           <div style={{ ...meta, padding: '8px 0' }}>{log.data?.length ? '필터에 맞는 전문이 없습니다.' : '아직 전문이 없습니다 — 워크플로 TCP 노드나 아래 [보내보기]로 이 포트에 전문을 보내면 여기에 쌓입니다.'}</div>
         ) : (
           <div style={{ display: 'grid', gap: 3 }}>{rows.map((e, i) => { const k = keys[i]; return <LogRow key={k} e={e} open={open === k} protocolId={protocolId} onToggle={() => setOpen(open === k ? null : k)} onMakeRule={onMakeRule} /> })}</div>
@@ -340,7 +344,7 @@ function LogRow({ e, open, protocolId, onToggle, onMakeRule }: { e: TcpLogEntry;
   const undefinedMsg = e.dir === 'in' && !!e.note?.includes('본문 스키마 없음')
   return (
     <div style={{ border: '1px solid var(--fl-border)', borderRadius: 6, overflow: 'hidden', background: bg }}>
-      <button onClick={onToggle} style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '5px 10px', background: 'transparent', border: 'none', cursor: 'pointer', textAlign: 'left', color: 'var(--fl-text)' }}>
+      <button type="button" aria-expanded={open} onClick={onToggle} style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '5px 10px', background: 'transparent', border: 'none', cursor: 'pointer', textAlign: 'left', color: 'var(--fl-text)' }}>
         <span style={{ ...meta, minWidth: 74 }}>{hhmmss(e.at)}</span>
         <span style={{ fontSize: 13, fontWeight: 800, color: e.dir === 'in' ? 'var(--fl-text)' : 'var(--fl-text-muted)' }} title={e.dir === 'in' ? '수신' : '송신'}>{e.dir === 'in' ? '→' : '←'}</span>
         <span style={{ ...tag, color: srcColor, borderColor: srcColor }}>[{e.source}]</span>
@@ -381,40 +385,49 @@ export function TcpSendPanel({ mockId, spec, ensureSaved }: { mockId: string; sp
   const [values, setValues] = useState<Record<string, string>>({})
   const [result, setResult] = useState<TcpSendResult | null>(null)
   const [err, setErr] = useState<string | null>(null)
+  const active = useRef(true)
+  const busy = useRef(false)
+  useEffect(() => { active.current = true; return () => { active.current = false } }, [])
   const sel = key || keys[0]?.key || ''
   const msg = spec?.messages.find((m) => m.key === sel)
   const offsets = spec && msg ? withOffsets(spec.header, msg.fields) : []
   const headerRows = spec ? withOffsets([], spec.header).map((off, i) => ({ f: spec.header[i], off })).filter(({ f }) => f.type !== 'length' && f.name !== spec.discriminator) : []
   const send = useMutation({
     mutationFn: async () => {
+      busy.current = true
+      setErr(null)
       if (!(await ensureSaved())) throw new Error('미저장 편집이 있습니다 — 먼저 저장하세요.')
+      if (!active.current) throw new Error('선택한 Mock이 변경되었습니다.')
       return mocksApi.tcpSend(mockId, { key: sel, values })
     },
-    onSuccess: (r) => { setResult(r); setErr(null); void qc.invalidateQueries({ queryKey: ['mock-tcp-log', mockId] }) },
-    onError: (e) => { setResult(null); setErr(apiErrorMessage(e, '전송 실패')) },
+    onSuccess: (r) => { if (active.current) { setResult(r); setErr(null); void qc.invalidateQueries({ queryKey: ['mock-tcp-log', mockId] }) } },
+    onError: (e) => { if (active.current) setErr(apiErrorMessage(e, '전송 실패')) },
+    onSettled: () => { busy.current = false },
   })
   if (!spec) return <div style={{ ...meta, padding: 12 }}>연결에서 프로토콜을 먼저 고르세요.</div>
   return (
-    <div style={{ flex: 1, overflowY: 'auto', padding: '6px 12px 10px', display: 'grid', gap: 10, gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', alignItems: 'start' }}>
+    <div className="fl-mock-sendbox" style={{ flex: 1, overflowY: 'auto', padding: '6px 12px 10px', display: 'grid', gap: 10, gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', alignItems: 'start' }}>
       <div style={{ display: 'grid', gap: 6 }}>
         <div style={row}>
-          <select style={{ ...input, flex: 1 }} value={sel} aria-label="보낼 전문" onChange={(e) => { setKey(e.target.value); setValues({}); setResult(null) }}>
+          <select style={{ ...input, flex: 1, minWidth: 0 }} value={sel} disabled={send.isPending} aria-label="보낼 전문" onChange={(e) => { setKey(e.target.value); setValues({}); setResult(null); setErr(null) }}>
             {keys.map((m) => <option key={m.key} value={m.key}>{m.label}</option>)}
           </select>
-          <button style={primaryBtn} disabled={!sel || send.isPending} onClick={() => send.mutate()}>▶ 보내기</button>
+          <button type="button" style={{ ...primaryBtn, flexShrink: 0 }} disabled={!sel || send.isPending} onClick={() => { if (!busy.current) { busy.current = true; send.mutate() } }}>{send.isPending ? '전송 중…' : '▶ 보내기'}</button>
         </div>
-        {err && <div style={{ fontSize: 12, color: 'var(--fl-fail)' }}>{err}</div>}
+        {err && <div role="alert" style={{ fontSize: 12, color: 'var(--fl-fail)', overflowWrap: 'anywhere' }}>{err} 입력한 값은 유지됩니다. 확인 후 다시 보내세요.</div>}
+        {send.isPending && <div role="status" style={hint}>설정을 저장한 뒤 전문을 전송하고 있습니다. 응답을 기다리는 동안 입력은 잠깁니다.</div>}
         <div style={meta}>값은 템플릿 없이 그대로 전송됩니다.</div>
         {headerRows.map(({ f, off }) => (
-          <FieldRow key={`h-${f.name}`} f={f} offset={off} value={values[f.name] ?? ''} encoding={spec.encoding} sources={[]} canEdit hint="헤더" onChange={(v) => setValues({ ...values, [f.name]: v })} />
+          <FieldRow key={`h-${f.name}`} f={f} offset={off} value={values[f.name] ?? ''} encoding={spec.encoding} sources={[]} canEdit={!send.isPending} hint="헤더" onChange={(v) => setValues({ ...values, [f.name]: v })} />
         ))}
         {(msg?.fields ?? []).map((f, i) => (
-          <FieldRow key={f.name} f={f} offset={offsets[i]} value={values[f.name] ?? ''} encoding={spec.encoding} sources={[]} canEdit onChange={(v) => setValues({ ...values, [f.name]: v })} />
+          <FieldRow key={f.name} f={f} offset={offsets[i]} value={values[f.name] ?? ''} encoding={spec.encoding} sources={[]} canEdit={!send.isPending} onChange={(v) => setValues({ ...values, [f.name]: v })} />
         ))}
       </div>
       <div style={{ display: 'grid', gap: 6 }}>
         <div style={{ ...boxTitle, display: 'flex', gap: 8, alignItems: 'center' }}>
           응답
+          {result && (send.isPending || err) && <span style={meta}>이전 전송 결과</span>}
           {result && <><code style={code}>{result.response.key ?? '(디코딩 실패)'}</code><span style={meta}>{result.elapsedMs}ms · {result.response.bytes}B{result.response.partial ? ` · 부분 수신 ${result.response.chunks.join('+')}` : ''}</span></>}
         </div>
         {!result ? <div style={{ ...meta, border: '1px dashed var(--fl-border)', borderRadius: 6, padding: 12 }}>전문을 보내면 요청 조립 결과와 응답이 여기에 표시됩니다.</div> : (

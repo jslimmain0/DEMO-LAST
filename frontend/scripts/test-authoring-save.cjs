@@ -78,7 +78,7 @@ async function plugin() {
   const draftRef = { current: { id: null, name: 'Plugin', source: 'A' } }, dirtyRef = { current: true }
   const request = deferred(); let dirty = true, navigation
   const save = options('routes/Plugins.tsx', {
-    draftRef, dirtyRef, activeRef: { current: true }, spaceQuery: '?space=local%3Apc', pluginsApi: { create: async () => { await request.promise; return { id: 'created' } } },
+    draftRef, dirtyRef, selectionRef: { current: 'new:transform' }, activeRef: { current: true }, spaceQuery: '?space=local%3Apc', pluginsApi: { create: async () => { await request.promise; return { id: 'created' } } },
     setDirty: value => { dirty = value }, setDiag: () => {}, invalidate: () => {}, toast: () => {}, setDraft: value => { draftRef.current = value },
     navigateSaved: (to, opts) => { navigation = { to, opts } }, qc: { invalidateQueries: () => {} }, onApiError: () => {},
   })

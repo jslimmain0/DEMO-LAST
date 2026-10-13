@@ -107,8 +107,9 @@ export function TcpRequestPanel({ node, update, sources, canEdit, preview, previ
           )}
           {canEdit && (
             <div style={{ marginTop: 10, borderTop: '1px dashed var(--fl-border)', paddingTop: 10 }}>
-              <button onClick={onPreview} style={singleBtn} title="전송 없이 조립해 바이트를 확인합니다(상류 바인딩은 빈 값)">전문 미리보기</button>
-              {previewErr && <p style={{ fontSize: 12, color: 'var(--fl-fail)', marginTop: 6 }}>미리보기 실패: {previewErr}</p>}
+              <button type="button" onClick={onPreview} disabled={!msg || !resources.available || protos.isError || proto.isError} style={singleBtn} title={!msg ? '송신 전문을 먼저 고르세요.' : '전송 없이 조립해 바이트를 확인합니다(상류 바인딩은 빈 값)'}>전문 미리보기</button>
+              {!msg && <p style={{ fontSize: 12, color: 'var(--fl-text-muted)' }}>송신 전문을 고르면 값을 입력하고 조립 결과를 확인할 수 있습니다.</p>}
+              {previewErr && <p role="alert" style={{ fontSize: 12, color: 'var(--fl-fail)', marginTop: 6 }}>미리보기 실패: {previewErr}</p>}
               {preview && <PreviewBox p={preview} />}
             </div>
           )}
@@ -132,21 +133,23 @@ function HostPortInput({ node, update, canEdit }: { node: GraphNode; update: Upd
 
 export function FieldRow({ f, offset, value, encoding, sources, canEdit, err, onChange, hint }: { f: ProtocolField; offset: number; value: string; encoding: string; sources: BindableSource[]; canEdit: boolean; err?: string; onChange: (v: string) => void; hint?: string }) {
   const hasToken = value.includes('{{')
-  const bytes = hasToken ? null : byteLen(value, encoding)
+  const hex = value.replace(/[\s:]/g, '')
+  const invalidHex = f.type === 'binary' && !hasToken && (hex.length % 2 !== 0 || /[^0-9a-fA-F]/.test(hex))
+  const bytes = hasToken || invalidHex ? null : f.type === 'binary' ? hex.length / 2 : byteLen(value, encoding)
   const over = bytes != null && bytes > f.len
   const nonAscii = (f.type === 'ascii' || f.type === 'numeric') && !hasToken && [...value].some((c) => c.charCodeAt(0) > 0x7f)
   const nonDigit = f.type === 'numeric' && !hasToken && /[^0-9]/.test(value)
-  const warn = err ?? (over ? `⚠ ${bytes}/${f.len} B 초과 — 전송 전 차단됩니다` : nonAscii ? '⚠ ascii 필드에 한글/비ASCII' : nonDigit ? '⚠ numeric 필드에 숫자 아닌 문자' : null)
+  const warn = err ?? (invalidHex ? 'HEX 두 자리씩 입력하세요. 예: 0A FF' : over ? `⚠ ${bytes}/${f.len} B 초과 — 값을 줄이거나 프로토콜의 필드 길이를 늘리세요. 초과하면 조립·전송이 차단됩니다.` : nonAscii ? '⚠ ascii 필드에 한글/비ASCII' : nonDigit ? '⚠ numeric 필드에 숫자 아닌 문자' : null)
   return (
     <div style={{ border: `1px solid ${warn ? 'var(--fl-fail)' : 'var(--fl-border)'}`, borderRadius: 'var(--fl-radius-sm)', padding: '6px 8px' }}>
-      <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 4, fontSize: 12 }}>
+      <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', minWidth: 0, marginBottom: 4, fontSize: 12 }}>
         <span style={offBadge}>@{offset}</span>
-        <span style={{ fontWeight: 600, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.name}{hint ? <span style={{ color: 'var(--fl-text-muted)', fontWeight: 400 }}> · {hint}</span> : null}</span>
+        <span title={f.name} style={{ fontWeight: 600, flex: '1 1 100px', minWidth: 0, overflowWrap: 'anywhere' }}>{f.name}{hint ? <span style={{ color: 'var(--fl-text-muted)', fontWeight: 400 }}> · {hint}</span> : null}</span>
         <span style={{ color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)' }}>{f.type} {padOf(f)}</span>
-        <span style={{ fontFamily: 'var(--fl-font-mono)', color: over ? 'var(--fl-fail)' : 'var(--fl-text-muted)' }}>{bytes ?? '?'}/{f.len} B</span>
+        <span style={{ fontFamily: 'var(--fl-font-mono)', fontVariantNumeric: 'tabular-nums', color: over ? 'var(--fl-fail)' : 'var(--fl-text-muted)' }}>{bytes ?? '?'}/{f.len} B</span>
       </div>
       <TokenInput readOnly={!canEdit} ariaLabel={`필드 ${f.name}`} value={value} onChange={next => { if (canEdit) onChange(next) }} sources={sources} placeholder={f.type === 'binary' ? 'hex — 예: 0A FF' : '값 또는 { } 로 데이터 삽입'} />
-      {warn && <div style={{ fontSize: 11, color: 'var(--fl-fail)', marginTop: 3 }}>{warn}</div>}
+      {warn && <div role="alert" style={{ fontSize: 11, color: 'var(--fl-fail)', marginTop: 3 }}>{warn}</div>}
     </div>
   )
 }
@@ -155,7 +158,8 @@ export function FieldRow({ f, offset, value, encoding, sources, canEdit, err, on
 export function PreviewBox({ p }: { p: ProtocolPreview }) {
   return (
     <div style={{ marginTop: 8, border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', background: 'var(--fl-surface-2)', padding: 8 }}>
-      {p.errors.length > 0 ? <div style={{ color: 'var(--fl-fail)', fontSize: 12 }}>{p.errors.map((e, i) => <div key={i}>{e.field ? `${e.field}: ` : ''}{e.message}</div>)}</div> : (
+      {(p.warnings ?? []).map((warning, i) => <p key={i} style={{ margin: '0 0 6px', fontSize: 12, color: 'var(--fl-warn, #b8860b)', overflowWrap: 'anywhere' }}>{warning}</p>)}
+      {p.errors.length > 0 ? <div role="alert" style={{ color: 'var(--fl-fail)', fontSize: 12 }}>{p.errors.map((e, i) => <div key={i}>{e.field ? `${e.field}: ` : ''}{e.message}</div>)}</div> : (
         <>
           <div style={{ fontSize: 12, color: 'var(--fl-text-muted)', marginBottom: 6, fontFamily: 'var(--fl-font-mono)' }}><b style={{ color: 'var(--fl-text)' }}>총 {p.total}B</b></div>
           <div style={{ display: 'grid', gap: 2, marginBottom: 6 }}>

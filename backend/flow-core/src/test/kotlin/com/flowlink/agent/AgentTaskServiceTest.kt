@@ -85,9 +85,10 @@ class AgentTaskServiceTest {
         assertThat(claim.request).isNull() // 서버 환경·명세를 PC에 보낼 이유가 없다.
         assertThat(tasks.get(request.taskId).claimToken).isNull()
         val entered = CountDownLatch(1); val release = CountDownLatch(1)
-        Mockito.`when`(executor.execute(request)).thenAnswer {
+        Mockito.`when`(executor.execute(Mockito.eq(request) ?: request, Mockito.eq(listOf("task", "dev", "device-1")) ?: emptyList(), Mockito.any<() -> Boolean>() ?: { true })).thenAnswer {
             assertThat(Thread.currentThread().isVirtual).isTrue()
             assertThat(TenantContext.getTenantId()).isEqualTo(TenantContext.DEFAULT_TENANT)
+            assertThat(it.getArgument<() -> Boolean>(2).invoke()).isTrue()
             entered.countDown(); release.await(4, TimeUnit.SECONDS)
             AgentNodeResult(NodeResult.ok(200, null, null, mapOf("amount" to 42)), 1)
         }
@@ -102,7 +103,36 @@ class AgentTaskServiceTest {
         } finally { release.countDown() }
         awaitStatus(request.taskId, "SUCCEEDED")
         tasks.execute(request.taskId, lease)
-        Mockito.verify(executor, Mockito.times(1)).execute(request)
+        Mockito.verify(executor, Mockito.times(1)).execute(Mockito.eq(request) ?: request, Mockito.eq(listOf("task", "dev", "device-1")) ?: emptyList(), Mockito.any<() -> Boolean>() ?: { true })
+    }
+
+    @Test fun `송신 직전 상태 검사는 준비 중 취소된 작업의 송신을 거부한다`() {
+        val request = request("server"); create(request)
+        val claim = tasks.claim(request.taskId, AgentClaim("device-1"))
+        val entered = CountDownLatch(1); val release = CountDownLatch(1); val checked = CountDownLatch(1)
+        Mockito.`when`(executor.execute(Mockito.eq(request) ?: request, Mockito.eq(listOf("task", "dev", "device-1")) ?: emptyList(), Mockito.any<() -> Boolean>() ?: { true })).thenAnswer {
+            entered.countDown(); release.await(4, TimeUnit.SECONDS)
+            assertThat(it.getArgument<() -> Boolean>(2).invoke()).isFalse(); checked.countDown()
+            AgentNodeResult(NodeResult.fail(0, null, "보내지 않음"), 0)
+        }
+        tasks.execute(request.taskId, AgentLease("device-1", claim.claimToken!!))
+        assertThat(entered.await(3, TimeUnit.SECONDS)).isTrue()
+        try { tasks.cancelExecution(request.executionId) } finally { release.countDown() }
+        assertThat(checked.await(3, TimeUnit.SECONDS)).isTrue()
+        assertThat(tasks.get(request.taskId).status).isEqualTo("ACKED")
+    }
+
+    @Test fun `위임 TCP 연결 종료는 원래 계정과 장치만 정리한다`() {
+        val request = request("server")
+        tasks.delegate(AgentDelegation("device-1", request))
+        tasks.closeTcpDelegations(request.executionId, AgentClaim("device-other"))
+        Mockito.verify(executor, Mockito.never()).closeTcpExecution(request.executionId, listOf("task", "dev", "device-1"))
+        Mockito.`when`(workspace.currentUsername()).thenReturn("other")
+        tasks.closeTcpDelegations(request.executionId, AgentClaim("device-1"))
+        Mockito.verify(executor, Mockito.never()).closeTcpExecution(request.executionId, listOf("task", "dev", "device-1"))
+        Mockito.`when`(workspace.currentUsername()).thenReturn("dev")
+        tasks.closeTcpDelegations(request.executionId, AgentClaim("device-1"))
+        Mockito.verify(executor).closeTcpExecution(request.executionId, listOf("task", "dev", "device-1"))
     }
 
     @Test fun `PC HTTP completion keeps the permitted text body readable on the server`() {

@@ -32,8 +32,10 @@ Respond with ONE JSON object and nothing else — no markdown fences, no prose o
 Field:   {"name":"계좌번호","len":13,"type":"ascii","pad":"right/space"}
 Message: {"key":"0210","label":"잔액조회 요청","fields":[Field...]}
 - encoding: EUC-KR(기본, 한글 1자=2바이트) | MS949 | UTF-8 | US-ASCII. len 은 항상 **바이트**.
-- lengthField: 헤더에 있는 type=length 필드의 이름(필수). lengthFormat: ascii-decimal("0057") | binary(00 39). endian 은 binary 만.
+- lengthField: 길이 필드 수신일 때 헤더의 type=length 필드 이름(필수). lengthFormat: ascii-decimal("0057") | ascii-hex("0039") | binary(1/2/4/8바이트). endian 은 binary 만.
 - includesSelf: 길이값에 길이 필드 자신을 포함하면 true(전체 길이), 아니면 false(전체 − 길이필드 len). 모르면 false.
+- framing/responseFraming: {mode:"length",lengthAdjustment:6} | {mode:"fixed",fixedLength:128} | {mode:"delimiter",delimiterHex:"0D0A"}. 요청/응답을 따로 지정하며 responseFraming 생략은 요청 기준 상속이다. lengthAdjustment가 있으면 전체=선언+보정이고 includesSelf보다 우선한다. fixed/delimiter는 길이 필드 없이 사용할 수 있다. 종료자는 본문에 포함될 수 없고 wire에 추가한다.
+- transport: {connection:"once"|"execution",idleTimeoutMs:30000,requestAckHex:"06",responseAckHex:"06"}. 동일 실행/목적지/전문 버전에서만 재사용, 유휴 기본30초(1초~1시간). ACK 둘 다 있으면 요청→요청ACK→응답→응답ACK, 고정HEX만 지원한다. 동적 ACK/heartbeat/서버Push를 지원한다고 추측하지 말고 정확한 규격을 요청한다. 이전 설정이 없는 명세에 새 기본값을 임의로 넣지 않는다.
 - discriminator: 본문 표를 고르는 헤더 필드(보통 거래코드). 분기가 없으면 "" 이고 messages 키는 "request"/"response".
 - header: 모든 전문 앞에 똑같이 붙는 공통 부분만(길이·거래코드·전문구분·기관코드…). 요청에만/응답에만 있는 필드는 본문으로.
 - messages: 거래코드마다 하나. 요청 전문과 응답 전문은 키가 다르면 각각("0210"/"0211"), 같은 거래코드로 주고받으면 "0210:request"/"0210:response".

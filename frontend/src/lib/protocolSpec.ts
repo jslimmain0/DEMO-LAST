@@ -1,5 +1,5 @@
 // frontend/src/lib/protocolSpec.ts — 프로토콜 순수 헬퍼(오프셋·바이트 근사·붙여넣기 파서·Mock 규칙 린트). 백엔드 ProtocolSpec/ProtocolCodec 미러.
-import type { FieldPad, FieldType, MockTcpSpec, ProtocolField, ProtocolSpec } from '../api/types'
+import type { FieldPad, FieldType, MockTcpSpec, ProtocolField, ProtocolFraming, ProtocolSpec } from '../api/types'
 
 export const FIELD_TYPES: FieldType[] = ['string', 'ascii', 'numeric', 'length', 'binary']
 export const FIELD_PADS: FieldPad[] = ['right/space', 'left/zero', 'left/space', 'none']
@@ -30,6 +30,55 @@ export function lengthNumbers(spec: ProtocolSpec, key: string): { total: number;
   const total = tableLen(spec.header) + (msg ? tableLen(msg.fields) : 0)
   const lf = spec.header.find((f) => f.name === spec.lengthField)
   return { total, bodyOnly: total - (lf ? Number(lf.len) || 0 : 0), withSelf: total }
+}
+
+export function framingOf(spec: ProtocolSpec, response = false): ProtocolFraming {
+  return (response ? spec.responseFraming ?? spec.framing : spec.framing) ?? { mode: 'length' }
+}
+
+/** 백엔드의 옵션 비교와 맞추되 원본 명세에는 쓰지 않는다. */
+export const tcpOption = (value: string | undefined, fallback: string): string => value?.trim().toLowerCase() || fallback
+
+export const previewDirection = (key: string): 'send' | 'recv' => key.trim() === 'response' || key.trim().endsWith(':response') ? 'recv' : 'send'
+
+export function framingSummary(spec: ProtocolSpec, response = false): string {
+  const frame = framingOf(spec, response)
+  const mode = tcpOption(frame.mode, 'length')
+  if (mode === 'fixed') return `고정 ${frame.fixedLength ?? '?'} B`
+  if (mode === 'delimiter') return `끝 구분자 ${frame.delimiterHex?.trim() || '(미입력)'} HEX`
+  const lengthFormat = tcpOption(spec.lengthFormat, 'ascii-decimal')
+  const format = lengthFormat === 'binary' ? `바이너리 · ${tcpOption(spec.endian, 'big') === 'little' ? 'little' : 'big'} endian` : lengthFormat === 'ascii-hex' ? 'ASCII 16진수' : 'ASCII 10진수'
+  const basis = frame.lengthAdjustment == null ? (spec.includesSelf ? '길이 필드 포함' : '길이 필드 제외') : `전체 = 길이 값 ${frame.lengthAdjustment < 0 ? '−' : '+'} ${Math.abs(frame.lengthAdjustment)} B`
+  return `${spec.lengthField || '(길이 필드 미지정)'} · ${format} · ${basis}`
+}
+
+export function transportSummary(spec: ProtocolSpec): string {
+  const connection = tcpOption(spec.transport?.connection, 'once') === 'execution' ? `이 실행에서 연결 재사용 · 유휴 ${(spec.transport?.idleTimeoutMs ?? 30_000) / 1000}초` : '요청마다 연결'
+  const ack = [spec.transport?.requestAckHex?.trim() && '요청 ACK 수신', spec.transport?.responseAckHex?.trim() && '응답 ACK 송신'].filter(Boolean).join(' · ')
+  return `${connection}${ack ? ` · ${ack}` : ' · ACK 없음'}`
+}
+
+/** 입력 형식만 먼저 알린다. 전문 조립 후의 실제 바이트 검증은 백엔드가 수행한다. */
+export function validateTcpSettings(spec: ProtocolSpec): string[] {
+  const errors: string[] = []
+  const checkHex = (value: string | undefined, max: number, name: string, required: boolean) => {
+    if (!value?.trim()) { if (required) errors.push(`${name}: HEX 바이트를 입력하세요. 예: 0D 0A`); return }
+    const compact = value.replace(/[\s:]/g, '')
+    if (!/^(?:[0-9a-fA-F]{2})+$/.test(compact)) errors.push(`${name}: HEX 두 자리씩 입력하세요. 예: 06 또는 0D 0A`)
+    else if (compact.length / 2 > max) errors.push(`${name}: ${max} B 이하여야 합니다.`)
+  }
+  for (const [name, frame] of [['요청 경계', spec.framing], ['응답 경계', spec.responseFraming]] as const) {
+    if (!frame) continue
+    const mode = tcpOption(frame.mode, 'length')
+    if (mode === 'fixed' && (!Number.isInteger(frame.fixedLength) || frame.fixedLength! < Math.max(1, tableLen(spec.header)) || frame.fixedLength! > 1_048_576)) errors.push(`${name}: 고정 길이를 헤더 이상, 1~1,048,576 B 정수로 입력하세요.`)
+    if (mode === 'delimiter') checkHex(frame.delimiterHex, 64, `${name} 구분자`, true)
+    if (mode === 'length' && frame.lengthAdjustment != null && (!Number.isInteger(frame.lengthAdjustment) || Math.abs(frame.lengthAdjustment) > 1_048_576)) errors.push(`${name}: 길이 보정은 −1,048,576~1,048,576 B 정수여야 합니다.`)
+  }
+  checkHex(spec.transport?.requestAckHex, 1024, '요청 ACK', false)
+  checkHex(spec.transport?.responseAckHex, 1024, '응답 ACK', false)
+  const idle = spec.transport?.idleTimeoutMs
+  if (idle != null && (!Number.isInteger(idle) || idle < 1000 || idle > 3_600_000)) errors.push('유휴 연결 제한: 1~3,600초 범위여야 합니다.')
+  return errors
 }
 
 const TYPE_ALIAS: Record<string, FieldType> = {

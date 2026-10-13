@@ -138,6 +138,7 @@ class AgentTaskService(
         if (task.status !in TERMINAL && task.status != "ACKED") {
             task.status = "UNKNOWN"; task.error = "요청의 처리 결과를 확인할 수 없습니다. 자동 재실행하지 않습니다."
             task.updatedAt = Instant.now()
+            executor.invalidateTcpExecution(task.executionId, listOf("task", task.username, task.deviceId))
         }
         view(task)
     }!!
@@ -166,7 +167,20 @@ class AgentTaskService(
         repo.findByExecutionId(id).filter { !it.delegation }.forEach {
             val task = load(it.id); task.status = "ACKED"; task.requestData = null; task.resultData = null; task.updatedAt = Instant.now()
         }
-    } }
+    }; closeTcpExecution(id) }
+
+    fun closeTcpExecution(id: UUID) {
+        repo.findByExecutionId(id).filter { !it.delegation && it.tenantId == TenantContext.getTenantId() }
+            .forEach { executor.closeTcpExecution(id, listOf("task", it.username, it.deviceId)) }
+    }
+
+    fun closeTcpDelegations(id: UUID, body: AgentClaim) = tx.execute {
+        requireDevice(body.deviceId)
+        val own = repo.findByExecutionId(id).filter { it.delegation && it.tenantId == TenantContext.getTenantId() && it.username == workspace.currentUsername() && it.deviceId == body.deviceId }
+        own.forEach(::authorize)
+        own.forEach { executor.closeTcpExecution(id, listOf("task", it.username, it.deviceId)) }
+        mapOf("closed" to true)
+    }
     fun startServerTask(id: UUID) = updateGate.work { startServerTaskAllowed(id) }
     private fun startServerTaskAllowed(id: UUID) { tx.execute {
         val task = load(id)
@@ -203,11 +217,18 @@ class AgentTaskService(
             TenantContext.setTenantId(tenant)
             try {
                 val request = tx.execute { load(id).let { if (it.status == "RUNNING") decodeRequest(it) else null } } ?: return@execute
-                val outcome = executor.execute(request)
-                tx.execute { finish(load(id), outcome) }
+                val task = tx.execute { load(id) }!!
+                val outcome = executor.execute(request, listOf("task", task.username, task.deviceId)) {
+                    repo.findById(id).orElse(null)?.status == "RUNNING"
+                }
+                tx.execute { load(id).let { current ->
+                    if (current.status == "ACKED") executor.closeTcpExecution(current.executionId, listOf("task", current.username, current.deviceId))
+                    finish(current, outcome)
+                } }
             } catch (_: Exception) {
                 tx.execute { load(id).let {
-                    if (it.status == "RUNNING") { it.status = "UNKNOWN"; it.error = "에이전트 결과 저장을 확인할 수 없습니다. 자동 재실행하지 않습니다." }
+                    if (it.status == "RUNNING") { it.status = "UNKNOWN"; it.error = "에이전트 결과 저장을 확인할 수 없습니다. 자동 재실행하지 않습니다."
+                        executor.invalidateTcpExecution(it.executionId, listOf("task", it.username, it.deviceId)) }
                 } }
             } finally { TenantContext.clear() }
         } } catch (_: RejectedExecutionException) {
@@ -225,6 +246,7 @@ class AgentTaskService(
             task.durationMs = outcome.durationMs.coerceAtLeast(0)
             if (outcome.result.uncertain) {
                 task.status = "UNKNOWN"; task.error = "외부 요청의 처리 여부를 확인할 수 없습니다. 자동 재실행하지 않습니다."
+                executor.invalidateTcpExecution(task.executionId, listOf("task", task.username, task.deviceId))
                 return
             }
             task.resultData = crypto.encrypt(json.toJson(outcome.result))
@@ -284,6 +306,7 @@ class AgentTaskService(
 @RestController
 @RequestMapping("/api/v1/agent")
 class AgentTaskController(private val service: AgentTaskService) {
+    @PostMapping("/executions/{id}/tcp-close") fun closeTcp(@PathVariable id: UUID, @RequestBody body: AgentClaim) = service.closeTcpDelegations(id, body)
     @PostMapping("/delegations") fun delegate(@RequestBody body: AgentDelegation) = service.delegate(body)
     @GetMapping("/tasks/{id}") fun get(@PathVariable id: UUID) = service.get(id)
     @PostMapping("/tasks/{id}/claim") fun claim(@PathVariable id: UUID, @RequestBody body: AgentClaim) = service.claim(id, body)

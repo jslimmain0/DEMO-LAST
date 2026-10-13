@@ -19,7 +19,7 @@ import org.springframework.stereotype.Component
 @Component
 class TcpNodeExecutor(private val tokens: TokenResolver, private val protocols: ProtocolResources) {
 
-    class Built(val spec: ProtocolSpec, val encoded: ProtocolCodec.Encoded, val values: LinkedHashMap<String, String>, val host: String, val port: Int, val timeoutMs: Int, val reqText: String, val plugins: ProtocolCodec.PluginLookup)
+    class Built(val spec: ProtocolSpec, val encoded: ProtocolCodec.Encoded, val values: LinkedHashMap<String, String>, val host: String, val port: Int, val timeoutMs: Int, val reqText: String, val plugins: ProtocolCodec.PluginLookup, val fingerprint: String)
 
     fun build(node: GraphNode, ctx: ExecutionContext): Built {
         tokens.requireResourceReferences(node, ctx)
@@ -30,6 +30,7 @@ class TcpNodeExecutor(private val tokens: TokenResolver, private val protocols: 
         if (ctx.expectedProtocolFingerprint != null && snapshot.fingerprint != ctx.expectedProtocolFingerprint)
             throw IllegalArgumentException("전문·코덱 버전이 실행 계획과 다릅니다. 다시 실행하세요.")
         val spec = snapshot.spec
+        spec.validate().takeIf { it.isNotEmpty() }?.let { throw IllegalArgumentException(it.joinToString(" · ")) }
         val key = node.tcpMessage?.trim()?.takeIf { it.isNotEmpty() } ?: throw IllegalArgumentException("전문(거래코드)을 선택하세요.")
         val host = tokens.resolveTokens(node.tcpHost ?: "", ctx).trim()
         val port = EndpointResolver.port(node, ctx) ?: node.tcpPort ?: 0
@@ -44,7 +45,7 @@ class TcpNodeExecutor(private val tokens: TokenResolver, private val protocols: 
             throw IllegalArgumentException("전문 조립 중 오류: ${e.message ?: e}", e)
         }
         val reqText = "TCP $host:$port · $key · ${spec.charset().name()} · ${enc.bytes.size}B\n" + table(enc.fields) + "\n" + TcpBytes.printable(enc.bytes, spec.charset())
-        return Built(spec, enc, values, host, port, if ((node.tcpTimeoutMs ?: 0) <= 0) 5000 else node.tcpTimeoutMs!!, reqText, plugins)
+        return Built(spec, enc, values, host, port, if ((node.tcpTimeoutMs ?: 0) <= 0) 5000 else node.tcpTimeoutMs!!, reqText, plugins, snapshot.fingerprint ?: com.flowlink.protocol.ProtocolFingerprint.of(spec, emptyMap()))
     }
 
     /** 전송 없이 조립 — 검증/조립 실패는 errors 로(속성 패널이 필드 옆에 표시). */
@@ -62,17 +63,25 @@ class TcpNodeExecutor(private val tokens: TokenResolver, private val protocols: 
         }
         if (b.host.isBlank()) return NodeResult.fail(0, b.reqText, "⚠ 호스트가 없습니다.")
         return try {
-            val x = TcpClient.exchange(b.host, b.port, b.timeoutMs, b.encoded.bytes, b.spec)
+            if (!ctx.canSendTcp()) throw com.flowlink.protocol.TcpSessionRegistry.NotSentException(com.flowlink.protocol.TcpSessionRegistry.SEND_CANCELLED)
+            val retained = b.spec.transport?.connectionOr() == "execution"
+            val session = if (retained) ctx.tcpSessions.exchange(ctx.tcpSessionScope, b.host, b.port, b.timeoutMs, b.encoded.bytes, b.spec, b.fingerprint, ctx.canSendTcp) else null
+            val x = session?.exchange ?: TcpClient.exchange(b.host, b.port, b.timeoutMs, b.encoded.bytes, b.spec, ctx.canSendTcp)
             val d = ProtocolCodec.decode(b.spec, x.response.bytes, Direction.RECV, b.plugins, resolve = { tokens.resolveTokens(it, ctx) })
             val out = LinkedHashMap<String, Any?>()
             out.putAll(d.header)
             if (d.body != null) out.putAll(d.body) else out["body"] = TcpBytes.decodeEscaped(d.rawBody, b.spec.charset())
             val sb = StringBuilder("응답 ${x.response.bytes.size}B · ${x.elapsedMs}ms")
+            if (retained) sb.append(if (session!!.reused) " · 같은 실행의 TCP 연결 재사용" else " · 실행용 TCP 연결 생성")
+            x.requestAck?.let { sb.append("\n요청 ACK 수신 HEX ").append(TcpBytes.hexDump(it)) }
+            x.responseAck?.let { sb.append("\n응답 ACK 전송 HEX ").append(TcpBytes.hexDump(it)) }
             if (d.messageKey == null) sb.append(" · 정의되지 않은 전문 '${d.disc ?: ""}' — 본문 raw(body)")
             if (x.response.partial) sb.append(" · 부분 수신 ${x.response.chunks.joinToString("+")}B")
             for (w in d.warnings) sb.append("\n⚠ ").append(w)
             sb.append('\n').append(table(d.fields)).append('\n').append(TcpBytes.printable(x.response.bytes, b.spec.charset()))
             NodeResult(true, null, b.reqText, sb.toString(), out, out, LinkedHashMap<String, Any?>(b.values), null)
+        } catch (e: com.flowlink.protocol.TcpSessionRegistry.NotSentException) {
+            NodeResult.fail(0, b.reqText, e.message)
         } catch (e: Framer.FrameException) {
             NodeResult.fail(0, b.reqText, "⚠ 응답 프레이밍 실패: ${e.message}" + (e.raw?.let { "\nHEX " + TcpBytes.hexDump(it) } ?: "")).copy(uncertain = true)
         } catch (e: Exception) {

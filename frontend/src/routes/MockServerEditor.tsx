@@ -453,7 +453,7 @@ export function MockServerEditor() {
                       {canEdit && <button style={{ ...primaryBtn, padding: '6px 12px', fontSize: 12 }} onClick={() => toggle.mutate()}>리스너 켜기</button>}
                     </div>
                   )}
-                  <TcpConnPanel tcp={tcp} sources={sourcesFor()} address={tcpAddress} readOnly={!canEdit} onChange={setTcp} />
+                  <TcpConnPanel tcp={tcp} spec={protoSpec} sources={sourcesFor()} address={tcpAddress} readOnly={!canEdit} onChange={setTcp} />
                 </>
               )}
               {nav.kind === 'rule' && selRule && (

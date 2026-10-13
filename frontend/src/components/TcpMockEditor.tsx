@@ -12,7 +12,7 @@ import type { BindableSource } from '../binding/upstream'
 import { apiErrorMessage } from '../lib/apiError'
 import { toast } from './toast'
 import { relTime } from '../lib/format'
-import { byteLen, lintTcpRules, requestKeys, withOffsets } from '../lib/protocolSpec'
+import { byteLen, framingSummary, lintTcpRules, requestKeys, transportSummary, withOffsets } from '../lib/protocolSpec'
 import { tcpMockSources } from '../lib/mockSources'
 import { FieldRow, PreviewBox } from '../panels/TcpNodePanel'
 import { ui } from '../design/ui'
@@ -57,7 +57,7 @@ export function tcpRuleSummary(rule: MockTcpRuleSpec, spec: ProtocolSpec | undef
 
 // ---------- 연결 ----------
 
-export function TcpConnPanel({ tcp, sources, address, readOnly, onChange }: { tcp: MockTcpSpec; sources: BindableSource[]; address: string; readOnly?: boolean; onChange: (patch: Partial<MockTcpSpec>) => void }) {
+export function TcpConnPanel({ tcp, spec, sources, address, readOnly, onChange }: { tcp: MockTcpSpec; spec?: ProtocolSpec; sources: BindableSource[]; address: string; readOnly?: boolean; onChange: (patch: Partial<MockTcpSpec>) => void }) {
   const { protocolsApi } = useApi()
 
   const protos = useQuery({ queryKey: ['protocols'], queryFn: protocolsApi.list, staleTime: 15_000 })
@@ -68,6 +68,13 @@ export function TcpConnPanel({ tcp, sources, address, readOnly, onChange }: { tc
       {!tcp.protocolId && (
         <div style={warnBanner} role="note"><span>⚠</span><span>프로토콜을 골라야 리스너가 열립니다 — 전문을 어떻게 자르고 응답할지 알 수 없습니다.</span></div>
       )}
+      {spec && <div style={{ ...box, display: 'grid', gap: 4, marginTop: 12, fontSize: 12, lineHeight: 1.6 }}>
+        <b>선택한 프로토콜의 TCP 송수신</b>
+        <span>요청 · {framingSummary(spec)}</span>
+        <span>응답 · {framingSummary(spec, true)}</span>
+        <span>TCP 노드 · {transportSummary(spec)}</span>
+        <span style={hint}>Mock은 연결이 열린 동안 다음 요청을 받습니다. 경계·ACK 설정은 프로토콜 관리에서 변경하세요.</span>
+      </div>}
       <div style={{ display: 'grid', gap: 12, marginTop: 12, maxWidth: 620 }}>
         <div style={row}>
           <span style={{ ...lbl, minWidth: 96 }}>포트</span>

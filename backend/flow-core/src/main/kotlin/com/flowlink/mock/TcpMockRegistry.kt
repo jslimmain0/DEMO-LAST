@@ -63,7 +63,13 @@ class TcpMockRegistry(
             } else protocols.specOf(UUID.fromString(tcp.protocolId!!.trim()), m.tenantId, m.workspaceId)
         }
             catch (e: Exception) { throw BadRequestException("TCP Mock 의 프로토콜을 찾을 수 없습니다: ${tcp.protocolId}") }
-        runtime.sync(m.servingSnapshot(), tcp, proto, spec!!.environment, spec)
+        val liveTcp = if (!workspace.localRuntime && spec!!.resourceWorkspaceId == "public") {
+            val previous = com.flowlink.common.tenant.TenantContext.getTenantId()
+            com.flowlink.common.tenant.TenantContext.setTenantId(m.tenantId)
+            try { tcp.copy(protocolId = protocols.resolveId(tcp.protocolId!!, null).toString()) }
+            finally { com.flowlink.common.tenant.TenantContext.setTenantId(previous) }
+        } else tcp
+        runtime.sync(m.servingSnapshot(), liveTcp, proto, spec!!.environment, spec)
     }
     fun validatePort(port: Int) {
         val range = if (workspace.localRuntime) 1024..65535 else portStart..portEnd

@@ -15,6 +15,16 @@ class ProtocolFingerprintTest {
             plugin = ProtocolSpec.PluginRef("field", linkedMapOf("z" to "last", "a" to "first")))))),
         messagePlugins = listOf(ProtocolSpec.PluginRef("message", linkedMapOf("suffix" to "B", "prefix" to "A"))))
 
+    @Test fun `전송 옵션 없는 기존 명세는 추가 전 fingerprint를 유지한다`() {
+        assertEquals("3261904084a5c0463a8e86c18dc8d66c0eedf49c8b7cb2a304754e2fc4c18e1c",
+            ProtocolFingerprint.of(spec, mapOf("field" to "field-v1", "message" to "message-v1")))
+        val json = jacksonObjectMapper().setSerializationInclusion(JsonInclude.Include.ALWAYS).valueToTree<com.fasterxml.jackson.databind.JsonNode>(spec)
+        assertEquals(false, json.has("framing"))
+        assertEquals(false, json.has("responseFraming"))
+        assertEquals(false, json.has("transport"))
+        assertNotEquals(ProtocolFingerprint.of(spec, emptyMap()), ProtocolFingerprint.of(spec.copy(transport = ProtocolSpec.Transport("execution")), emptyMap()))
+    }
+
     @Test fun `서로 다른 호스트 JSON 순서 null 생략과 pretty 출력도 같은 전문 버전을 만든다`() {
         val first = jacksonObjectMapper().configure(SerializationFeature.INDENT_OUTPUT, true)
             .configure(MapperFeature.SORT_PROPERTIES_ALPHABETICALLY, false).setSerializationInclusion(JsonInclude.Include.NON_NULL)

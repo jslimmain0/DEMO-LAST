@@ -12,7 +12,7 @@ function load(file, modules) {
 }
 const agents = load('components/AgentSettings.tsx',{...base,'../lib/executionAgentSelection':load('lib/executionAgentSelection.ts',{})})
 let list = {isSuccess:true,data:[{id:'wire',name:'전문'}]}, detail = {}, queries = []
-const panel = load('panels/TcpNodePanel.tsx',{...base,'../components/AgentSettings':agents,'@tanstack/react-query':{useQuery:q=>{queries.push(q);return q.queryKey.at(-1)==='protocols'?list:detail}}})
+const panel = load('panels/TcpNodePanel.tsx',{...base,'../lib/protocolSpec':load('lib/protocolSpec.ts',{}),'../components/AgentSettings':agents,'@tanstack/react-query':{useQuery:q=>{queries.push(q);return q.queryKey.at(-1)==='protocols'?list:detail}}})
 const node = {type:'tcp',executionAgent:'server',protocolId:'wire',tcpValues:{amount:'keep'}}
 const render = () => { queries=[];return panel.TcpRequestPanel({node,update(){},sources:[],canEdit:true,preview:null,previewErr:null,onPreview(){}}) }
 function walk(n, pred, out=[]) {if(Array.isArray(n)) n.forEach(x=>walk(x,pred,out));else if(n&&typeof n==='object'){if(pred(n))out.push(n);walk(n.props?.children,pred,out)}return out}
@@ -21,6 +21,7 @@ const select = tree=>walk(tree,n=>n.type==='select'&&n.props['aria-label']==='�
 let tree = render()
 assert.equal(queries[0].queryFn(),'server:public');assert.match(text(tree),/서버 · 공통 자원/);assert.equal(select(tree).props.disabled,false)
 node.executionAgent='local';tree=render();assert.equal(queries[0].queryFn(),'server:public');assert.match(text(tree),/서버 · 공통 자원/)
+detail={data:{spec:{encoding:'UTF-8',header:[],messages:[],framing:{mode:'fixed',fixedLength:12},responseFraming:{mode:'delimiter',delimiterHex:'0D 0A'},transport:{connection:'execution',requestAckHex:'06'}}}};tree=render();assert.match(text(tree),/요청 · 고정/);assert.match(text(tree),/응답 · 끝 구분자/);assert.match(text(tree),/이 실행에서 연결 재사용/);detail={}
 list={isSuccess:true,data:[]};detail={isError:true,error:{}};tree=render();assert.match(text(tree),/기존 프로토콜이 서버 공통 목록에 없습니다/);assert.doesNotMatch(text(tree),/접근 권한 없음/);assert.equal(walk(tree,n=>n.type==='link')[0].props.to,'/protocols?space=server%3Ateam');assert.equal(select(tree).props.value,'wire');assert.equal(node.tcpValues.amount,'keep');detail={}
 list={isPending:true};tree=render();assert.equal(select(tree).props.disabled,true);assert.match(text(tree),/불러오는 중/)
 list={isError:true,error:{}};tree=render();assert.match(text(tree),/접근 권한 없음/);assert.equal(select(tree).props.disabled,true)

@@ -194,7 +194,8 @@ class FlowExecutor(
     fun execute(state: RunState, recorder: NodeRecorder): Outcome = drive(state, recorder)
 
     /** DB 트랜잭션 안에서 결과와 다음 체크포인트를 함께 확정한다. */
-    fun resumeAgent(st: RunState, result: NodeResult, durationMs: Long, recorder: NodeRecorder): Outcome {
+    fun resumeAgent(st: RunState, result: NodeResult, durationMs: Long, recorder: NodeRecorder): Outcome = tcpLifecycle(st) { resumeAgentNode(st, result, durationMs, recorder) }
+    private fun resumeAgentNode(st: RunState, result: NodeResult, durationMs: Long, recorder: NodeRecorder): Outcome {
         val node = st.agentRequest?.node ?: throw IllegalStateException("대기 중인 에이전트 작업이 없습니다.")
         val id = st.pendingNodeId ?: throw IllegalStateException("대기 노드가 없습니다.")
         st.ctx.putOutput(id, result.value)
@@ -214,7 +215,8 @@ class FlowExecutor(
      * form → 팝업 submit 확인 후 즉시 진행, wait → 수신 콜백 본문이 노드 출력이 되고,
      * client HTTP → 브라우저가 돌려준 응답이 결과가 된다.
      */
-    fun resume(st: RunState, input: ResumeInput?, durationMs: Long, recorder: NodeRecorder): Outcome {
+    fun resume(st: RunState, input: ResumeInput?, durationMs: Long, recorder: NodeRecorder): Outcome = tcpLifecycle(st) { resumeNode(st, input, durationMs, recorder) }
+    private fun resumeNode(st: RunState, input: ResumeInput?, durationMs: Long, recorder: NodeRecorder): Outcome {
         val pid = st.pendingNodeId ?: return drive(st, recorder) // 중단 상태가 아니면 방어적으로 계속 진행
         val node = st.byId[pid]!!
         val et = node.effectiveType()
@@ -250,7 +252,12 @@ class FlowExecutor(
         return drive(st, recorder)
     }
 
-    private fun drive(st: RunState, recorder: NodeRecorder): Outcome {
+    private fun tcpLifecycle(st: RunState, action: () -> Outcome): Outcome = try {
+        action().also { if (!it.isPending()) st.ctx.closeTcpConnections() }
+    } catch (failure: Throwable) { st.ctx.closeTcpConnections(); throw failure }
+
+    private fun drive(st: RunState, recorder: NodeRecorder): Outcome = tcpLifecycle(st) { driveNodes(st, recorder) }
+    private fun driveNodes(st: RunState, recorder: NodeRecorder): Outcome {
         // 실행할 노드가 있는데 활성 시작점(START)이 하나도 없으면 명확히 실패시킨다 —
         // START 없는 그래프에서 떠 있는 노드가 멋대로 실행되지 않도록(재개 중엔 active 가 채워져 있어 무해).
         if (st.active.isEmpty() && st.index == 0 && st.order.any { st.byId[it] != null }) {
@@ -536,7 +543,7 @@ class FlowExecutor(
             processNode(node, ctx)
         } catch (e: Exception) {
             NodeResult.fail(0, "", "⚠ " + (e.message ?: e.toString()))
-        }
+        } finally { ctx.closeTcpConnections() }
     }
 
     /** TCP 요청 전문 미리보기(전송 없음) — 상류 바인딩은 빈 컨텍스트라 리터럴/토큰만 해석. */

@@ -7,6 +7,12 @@ package com.flowlink.execution.engine
  * <p>키 규약: 노드 출력은 {@code nodeId}, 요청값은 {@code "req:" + nodeId}.
  */
 class ExecutionContext {
+    var tcpSessions = com.flowlink.protocol.TcpSessionRegistry()
+    var tcpSessionScope = com.flowlink.protocol.TcpSessionRegistry.Scope(java.util.UUID.randomUUID(), "", emptyList(), null, null, null)
+    var borrowedTcpSessions = false
+    var canSendTcp: () -> Boolean = { true }
+    fun closeTcpConnections() { if (!borrowedTcpSessions) tcpSessions.close() }
+
     var workspaceId: java.util.UUID? = null
     var resourceIdentity: com.flowlink.agent.CentralResourceIdentity? = null
     var expectedProtocolFingerprint: String? = null

@@ -1,6 +1,7 @@
 package com.flowlink.protocol
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties
+import com.fasterxml.jackson.annotation.JsonInclude
 import com.flowlink.common.tcp.TcpBytes
 import java.nio.charset.Charset
 import java.util.Locale
@@ -16,14 +17,32 @@ enum class Direction(val key: String) { SEND("request"), RECV("response") }
 data class ProtocolSpec(
     val encoding: String? = null,          // 기본 EUC-KR
     val lengthField: String? = null,       // 헤더의 length 타입 필드 이름
-    val lengthFormat: String? = null,      // ascii-decimal(기본) | binary
+    val lengthFormat: String? = null,      // ascii-decimal(기본) | ascii-hex | binary
     val endian: String? = null,            // big(기본) | little — binary 일 때만
     val includesSelf: Boolean? = null,     // 길이값에 길이 필드 자신 포함(true=전체, false=전체-길이필드len)
     val discriminator: String? = null,     // 본문 표를 고르는 헤더 필드. 비면 request/response
     val header: List<Field>? = null,
     val messages: List<Message>? = null,   // 순서 있음(UI 탭)
     val messagePlugins: List<PluginRef>? = null,
+    @get:JsonInclude(JsonInclude.Include.NON_NULL) val framing: Framing? = null,
+    @get:JsonInclude(JsonInclude.Include.NON_NULL) val responseFraming: Framing? = null,
+    @get:JsonInclude(JsonInclude.Include.NON_NULL) val transport: Transport? = null,
 ) {
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    data class Framing(
+        val mode: String? = null,
+        val lengthAdjustment: Int? = null,
+        val fixedLength: Int? = null,
+        val delimiterHex: String? = null,
+    ) {
+        fun modeOr(): String = mode?.trim()?.lowercase(Locale.ROOT)?.takeIf { it.isNotEmpty() } ?: "length"
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    data class Transport(val connection: String? = null, val requestAckHex: String? = null, val responseAckHex: String? = null, val idleTimeoutMs: Int? = null) {
+        fun connectionOr(): String = connection?.trim()?.lowercase(Locale.ROOT)?.takeIf { it.isNotEmpty() } ?: "once"
+    }
+
     @JsonIgnoreProperties(ignoreUnknown = true)
     data class Field(
         val name: String? = null,
@@ -43,7 +62,7 @@ data class ProtocolSpec(
     data class Message(val key: String? = null, val label: String? = null, val fields: List<Field>? = null) {
         fun keyOrEmpty(): String = key?.trim().orEmpty()
         fun fieldsOrEmpty(): List<Field> = fields ?: emptyList()
-        fun bodyLen(): Int = fieldsOrEmpty().sumOf { it.lenOrZero() }
+        fun bodyLen(): Int = fieldsOrEmpty().sumOf { it.lenOrZero().toLong() }.coerceIn(0, Int.MAX_VALUE.toLong()).toInt()
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
@@ -54,7 +73,13 @@ data class ProtocolSpec(
     fun charset(): Charset = TcpBytes.charset(encoding, Charset.forName("EUC-KR"))
     fun headerOrEmpty(): List<Field> = header ?: emptyList()
     fun messagesOrEmpty(): List<Message> = messages ?: emptyList()
-    fun headerLen(): Int = headerOrEmpty().sumOf { it.lenOrZero() }
+    fun headerLen(): Int = headerOrEmpty().sumOf { it.lenOrZero().toLong() }.coerceIn(0, Int.MAX_VALUE.toLong()).toInt()
+    fun framingFor(direction: Direction): Framing? = if (direction == Direction.RECV) responseFraming ?: framing else framing
+    fun framingMode(direction: Direction): String = framingFor(direction)?.modeOr() ?: "length"
+    fun lengthAdjustment(direction: Direction): Int = framingFor(direction)?.lengthAdjustment
+        ?: if (includesSelf == true) 0 else lengthFieldDef()?.lenOrZero() ?: 0
+    fun delimiterBytes(direction: Direction): ByteArray? = framingFor(direction)?.delimiterHex?.let(TcpBytes::hexToBytes)
+    fun lengthFormatOr(): String = lengthFormat?.trim()?.lowercase(Locale.ROOT)?.takeIf { it.isNotEmpty() } ?: "ascii-decimal"
     fun isBinaryLength(): Boolean = (lengthFormat ?: "").trim().lowercase(Locale.ROOT) == "binary"
     fun isLittleEndian(): Boolean = (endian ?: "").trim().lowercase(Locale.ROOT) == "little"
     fun hasDiscriminator(): Boolean = !discriminator.isNullOrBlank()
@@ -74,18 +99,45 @@ data class ProtocolSpec(
     }
     /** 전문 키의 discriminator 값 — `"0210:response"` → `"0210"`. */
     fun discValueOf(key: String): String = key.trim().substringBefore(':')
-    fun totalLen(key: String): Int = headerLen() + (message(key)?.bodyLen() ?: 0)
+    fun totalLen(key: String): Int = (headerLen().toLong() + (message(key)?.bodyLen() ?: 0)).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
 
     fun validate(): List<String> {
         val errs = ArrayList<String>()
         val lf = lengthField?.trim().orEmpty()
-        if (lf.isEmpty()) errs += "길이 필드(lengthField)를 지정하세요."
-        else {
+        val requiresLength = listOf(Direction.SEND, Direction.RECV).any { framingMode(it) == "length" }
+        if (lf.isEmpty() && requiresLength) errs += "길이 필드(lengthField)를 지정하세요."
+        else if (lf.isNotEmpty()) {
             val def = lengthFieldDef()
             if (def == null) errs += "헤더에 길이 필드 '$lf' 가 없습니다."
             else {
                 if (def.typeOr() != "length") errs += "길이 필드 '$lf' 의 타입은 length 여야 합니다."
-                if (isBinaryLength() && def.lenOrZero() !in setOf(1, 2, 4)) errs += "binary 길이 필드의 len 은 1, 2, 4 중 하나여야 합니다."
+                if (isBinaryLength() && def.lenOrZero() !in setOf(1, 2, 4, 8)) errs += "binary 길이 필드의 len 은 1, 2, 4, 8 중 하나여야 합니다."
+            }
+        }
+        if (lengthFormatOr() !in setOf("ascii-decimal", "ascii-hex", "binary")) errs += "길이 형식은 ascii-decimal, ascii-hex, binary 중 하나여야 합니다."
+        if (!endian.isNullOrBlank() && endian.trim().lowercase(Locale.ROOT) !in setOf("big", "little")) errs += "바이트 순서는 big 또는 little 이어야 합니다."
+        if (headerLen() > MAX_MESSAGE) errs += "헤더 길이가 상한(${MAX_MESSAGE}B)을 넘습니다."
+        for (direction in listOf(Direction.SEND, Direction.RECV)) {
+            val frame = framingFor(direction) ?: continue
+            val where = if (direction == Direction.SEND) "요청" else "응답"
+            when (frame.modeOr()) {
+                "length" -> if (frame.lengthAdjustment != null && frame.lengthAdjustment !in -MAX_MESSAGE..MAX_MESSAGE) errs += "$where 길이 보정은 -${MAX_MESSAGE}~${MAX_MESSAGE}B 범위여야 합니다."
+                "fixed" -> if (frame.fixedLength == null || frame.fixedLength !in maxOf(1, headerLen())..MAX_MESSAGE) errs += "$where 고정 길이는 헤더 이상, 1~${MAX_MESSAGE}B 범위여야 합니다."
+                "delimiter" -> {
+                    val delimiter = delimiterBytes(direction)
+                    if (delimiter == null || delimiter.size !in 1..64) errs += "$where 구분자는 1~64바이트 HEX 형식이어야 합니다."
+                }
+                else -> errs += "$where 프레이밍은 length, fixed, delimiter 중 하나여야 합니다."
+            }
+        }
+        transport?.let {
+            if (it.connectionOr() !in setOf("once", "execution")) errs += "연결 방식은 once 또는 execution 이어야 합니다."
+            if (it.idleTimeoutMs != null && it.idleTimeoutMs !in 1000..3_600_000) errs += "유휴 연결 제한은 1,000~3,600,000ms 범위여야 합니다."
+            for ((name, hex) in listOf("요청 ACK" to it.requestAckHex, "응답 ACK" to it.responseAckHex)) {
+                if (!hex.isNullOrBlank()) {
+                    val bytes = TcpBytes.hexToBytes(hex)
+                    if (bytes == null || bytes.size !in 1..1024) errs += "$name 는 1~1024바이트 HEX 형식이어야 합니다."
+                }
             }
         }
         if (hasDiscriminator() && headerOrEmpty().none { it.nameOrEmpty() == discriminator!!.trim() }) errs += "헤더에 분기 필드 '${discriminator!!.trim()}' 가 없습니다."
@@ -103,7 +155,7 @@ data class ProtocolSpec(
                 val n = f.nameOrEmpty()
                 if (n.isNotEmpty() && n in headerNames) errs += "전문 $k: '$n' 은 헤더 필드와 이름이 겹칩니다."
             }
-            if (headerLen() + m.bodyLen() > MAX_MESSAGE) errs += "전문 $k 총 길이가 상한(${MAX_MESSAGE}B)을 넘습니다."
+            if (headerLen().toLong() + m.bodyLen() > MAX_MESSAGE) errs += "전문 $k 총 길이가 상한(${MAX_MESSAGE}B)을 넘습니다."
         }
         return errs
     }

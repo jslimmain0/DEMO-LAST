@@ -105,10 +105,12 @@ class DesktopDispatcher(
     }
 
     private fun drive(entry: Entry) {
-        if (entry.remote && !connected(entry)) return
+        if ((entry.remote || entry.delegated) && !connected(entry)) { executor.invalidateTcpExecution(entry.executionId); return }
         val detail = if (entry.remote) remote(entry, "GET", "/api/v1/executions/${entry.executionId}")
             else mapper.valueToTree<JsonNode>(executions.get(entry.executionId))
         if (detail.path("status").asText() in setOf("SUCCEEDED", "FAILED", "CANCELLED")) {
+            executor.closeTcpExecution(entry.executionId)
+            if (!entry.remote && connected(entry)) remote(entry, "POST", "/api/v1/agent/executions/${entry.executionId}/tcp-close", mapper.valueToTree(AgentClaim(session.deviceId)))
             if (entry.delegated && !ackDelegation(entry)) return
             journal.remove(entry.key); return
         }
@@ -117,6 +119,7 @@ class DesktopDispatcher(
             journal.put(entry.copy(phase = Phase.UNKNOWN, message = "작업 결과를 기록하지 못했습니다. 자동 재실행하지 않습니다.")); return
         }
         if (entry.phase == Phase.UNKNOWN) {
+            executor.closeTcpExecution(entry.executionId)
             val taskId = entry.taskId?.let(UUID::fromString) ?: return
             if (entry.delegated) { continueDelegation(entry, taskId, null); return }
             if (entry.claimToken != null) originUnknown(entry, taskId, entry.claimToken)
@@ -152,7 +155,11 @@ class DesktopDispatcher(
         check(request.executionId == entry.executionId && request.taskId.toString() == entry.taskId) { "작업 명세의 실행 ID가 다릅니다." }
         // 이 기록이 디스크에 확정된 이후에만 부작용이 있는 노드를 호출한다.
         journal.put(entry.copy(phase = Phase.EXECUTING))
-        val outcome = try { executor.execute(request) } catch (_: Exception) {
+        val outcome = try { executor.execute(request, listOf("desktop", entry.serverUrl, entry.login.orEmpty())) {
+            if (!connected(entry)) false else remote(entry, "GET", "/api/v1/executions/${entry.executionId}").let {
+                it.path("status").asText() == "WAITING" && it.path("pendingAgent").path("taskId").asText() == request.taskId.toString()
+            }
+        } } catch (_: Exception) {
             journal.put(entry.copy(phase = Phase.UNKNOWN, message = "로컬 작업 결과를 확인할 수 없습니다. 자동 재실행하지 않습니다."))
             return
         }

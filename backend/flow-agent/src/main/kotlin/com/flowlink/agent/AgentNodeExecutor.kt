@@ -15,6 +15,15 @@ class AgentNodeExecutor(
     private val json: JsonService, private val tokens: TokenResolver,
     private val transforms: TransformRegistry,
 ) {
+    private val tcpSessions = com.flowlink.protocol.TcpSessionRegistry()
+    private val tcpCleanup = java.util.concurrent.Executors.newSingleThreadScheduledExecutor { Thread(it, "tcp-session-idle").apply { isDaemon = true } }.apply {
+        scheduleWithFixedDelay({ tcpSessions.expireIdle() }, 5, 5, java.util.concurrent.TimeUnit.SECONDS)
+    }
+    fun closeTcpExecution(id: java.util.UUID, owner: List<String>? = null) = tcpSessions.closeExecution(id, com.flowlink.common.tenant.TenantContext.getTenantId(), owner)
+    fun invalidateTcpExecution(id: java.util.UUID, owner: List<String>? = null) = tcpSessions.invalidateExecution(id, com.flowlink.common.tenant.TenantContext.getTenantId(), owner)
+    @jakarta.annotation.PreDestroy
+    fun closeTcpSessions() { tcpCleanup.shutdownNow(); tcpSessions.close() }
+
     val runtime: String get() = if (resources.localRuntime) "local" else "server"
 
     private fun ownerResources(node: GraphNode) = node.usesWorkflowContext() || node.reqMode == "client" || node.effectiveType() in setOf(NodeType.FORM, NodeType.INPUT, NodeType.WAIT)
@@ -89,7 +98,7 @@ class AgentNodeExecutor(
         }
     }
 
-    fun execute(request: AgentNodeRequest): AgentNodeResult {
+    fun execute(request: AgentNodeRequest, sessionOwner: List<String> = emptyList(), canSendTcp: () -> Boolean = { true }): AgentNodeResult {
         val started = System.nanoTime()
         val knownSecrets = linkedSetOf<String>()
         val result = try {
@@ -113,6 +122,11 @@ class AgentNodeExecutor(
                 throw BadRequestException("전문·플러그인 버전이 실행 계획과 다릅니다. 자원을 확인한 후 다시 실행하세요.")
             val env = environment(scope.owner, request.envName, request.envSource, request.resourceIdentity, snapshot)
             val ctx = ExecutionContext().apply {
+                tcpSessions = this@AgentNodeExecutor.tcpSessions
+                borrowedTcpSessions = true
+                this.canSendTcp = canSendTcp
+                tcpSessionScope = com.flowlink.protocol.TcpSessionRegistry.Scope(request.executionId, com.flowlink.common.tenant.TenantContext.getTenantId(), sessionOwner,
+                    request.workspaceId, request.resourceIdentity?.serverUrl, request.resourceIdentity?.login)
                 workspaceId = scope.resource
                 resourceIdentity = scope.identity
                 expectedProtocolFingerprint = request.dependencyHashes["protocol"]
@@ -149,11 +163,13 @@ class AgentNodeExecutor(
                 val req = masked(selected(raw.reqValues, request.allowedRequestKeys)) as? Map<String, Any?>
                 raw.copy(value = value, storedValue = value, reqValues = req,
                     requestText = SecretMasker.mask(raw.requestText, masks),
-                    responseText = if (raw.ok) AgentResultText.response(raw.value, value, json) else "노드 실행 실패 · 상태 ${raw.httpStatus ?: "확인 불가"} · 허용 출력 ${json.toJson(value)}")
+                    responseText = if (raw.ok) AgentResultText.response(raw.value, value, json) else com.flowlink.protocol.TcpSessionRegistry.safeFailure(raw.responseText)
+                        ?: "노드 실행 실패 · 상태 ${raw.httpStatus ?: "확인 불가"} · 허용 출력 ${json.toJson(value)}")
             } else raw.copy(storedValue = masked(raw.storedValue), requestText = SecretMasker.mask(raw.requestText, masks), responseText = SecretMasker.mask(raw.responseText, masks))
         } catch (e: Exception) {
             NodeResult.fail(null, "에이전트 준비 확인", SecretMasker.mask(e.message ?: "노드 실행을 준비하지 못했습니다.", SecretMasker.variants(knownSecrets)))
         }
+        if (!result.ok || result.uncertain) invalidateTcpExecution(request.executionId, sessionOwner)
         return AgentNodeResult(result, (System.nanoTime() - started) / 1_000_000)
     }
 }

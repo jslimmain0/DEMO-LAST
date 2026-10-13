@@ -20,6 +20,47 @@ import java.util.concurrent.atomic.AtomicInteger
 class DesktopDispatcherTest {
     @TempDir lateinit var directory: Path
 
+    @Test fun `취소된 PC 실행은 서버 위임의 ACK 대기보다 먼저 TCP 연결을 닫는다`() {
+        val mapper = jacksonObjectMapper().findAndRegisterModules(); val id = UUID.randomUUID(); val taskId = UUID.randomUUID()
+        val closed = java.util.concurrent.CountDownLatch(1)
+        DesktopSession(directory.toString(), 18180).use { session ->
+            val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+            server.createContext("/api/v1/") { exchange ->
+                val response: Any = when(exchange.requestURI.path) {
+                    "/api/v1/distribution" -> mapOf("mcpUrl" to "")
+                    "/api/v1/auth/github/device/start" -> mapOf("sessionId" to "login")
+                    "/api/v1/auth/github/device/poll" -> mapOf("status" to "ready", "token" to "synthetic-jwt", "login" to "tester")
+                    "/api/v1/agent/executions/$id/tcp-close" -> {
+                        assertThat(mapper.readTree(exchange.requestBody).path("deviceId").asText()).isEqualTo(session.deviceId)
+                        closed.countDown(); mapOf("closed" to true)
+                    }
+                    "/api/v1/agent/tasks/$taskId" -> AgentTaskView(taskId, id, "tcp", "server", "RUNNING", session.deviceId)
+                    else -> error("Unexpected test request")
+                }
+                val bytes = mapper.writeValueAsBytes(response); exchange.sendResponseHeaders(200, bytes.size.toLong()); exchange.responseBody.use { it.write(bytes) }
+            }
+            server.start()
+            val base = "http://127.0.0.1:${server.address.port}"
+            val connection = DesktopConnection(session, mapper, ApplicationEventPublisher { _ -> })
+            val journal = DesktopDispatchJournal(session, mapper)
+            val executions = Mockito.mock(ExecutionService::class.java)
+            val detail = com.flowlink.execution.dto.ExecutionDetail(id, UUID.randomUUID(), UUID.randomUUID(), com.flowlink.core.domain.ExecutionStatus.CANCELLED,
+                com.flowlink.core.domain.TriggerType.MANUAL, "tester", java.time.Instant.now(), java.time.Instant.now(), null, emptyList(), null, null, null, null)
+            Mockito.`when`(executions.get(id)).thenReturn(detail)
+            val dispatcher = DesktopDispatcher(session, connection, journal, executions, Mockito.mock(AgentTaskService::class.java), Mockito.mock(AgentNodeExecutor::class.java), mapper)
+            try {
+                connection.configure(base); connection.start(); connection.poll()
+                val entry = DesktopDispatchJournal.Entry(id, false, base, "tester", taskId = taskId.toString(), delegated = true)
+                journal.put(entry)
+                // 한 주기를 동기로 검증해 임시 파일 정리와 백그라운드 journal 쓰기가 겹치지 않게 한다.
+                DesktopDispatcher::class.java.getDeclaredMethod("drive", DesktopDispatchJournal.Entry::class.java)
+                    .apply { isAccessible = true }.invoke(dispatcher, entry)
+                assertThat(closed.await(3, java.util.concurrent.TimeUnit.SECONDS)).isTrue()
+                assertThat(journal.all()).isNotEmpty() // RUNNING 작업은 ACK 정리를 기다리며 연결만 즉시 닫는다.
+            } finally { dispatcher.close(); server.stop(0) }
+        }
+    }
+
     @Test fun `브라우저 없이 실행하고 결과 ACK 유실에는 결과만 재전달한다`() {
         val mapper = jacksonObjectMapper()
         val id = UUID.randomUUID()
@@ -55,17 +96,18 @@ class DesktopDispatcherTest {
                 exchange.responseBody.use { it.write(body) }
             }
             server.start()
+            val base = "http://127.0.0.1:${server.address.port}"
             val connection = DesktopConnection(session, mapper, ApplicationEventPublisher { _ -> })
             val journal = DesktopDispatchJournal(session, mapper)
             val executor = Mockito.mock(AgentNodeExecutor::class.java)
-            Mockito.`when`(executor.execute(request)).thenAnswer {
+            Mockito.`when`(executor.execute(Mockito.eq(request) ?: request, Mockito.eq(listOf("desktop", base, "tester")) ?: emptyList(), Mockito.any<() -> Boolean>() ?: { true })).thenAnswer {
                 assertThat(Thread.currentThread().isVirtual).isTrue()
+                assertThat(it.getArgument<() -> Boolean>(2).invoke()).isTrue()
                 AgentNodeResult(NodeResult.ok(200, null, null, mapOf("amount" to 42)), 5)
             }
             val dispatcher = DesktopDispatcher(session, connection, journal, Mockito.mock(ExecutionService::class.java),
                 Mockito.mock(AgentTaskService::class.java), executor, mapper)
             try {
-                val base = "http://127.0.0.1:${server.address.port}"
                 connection.configure(base); connection.start(); connection.poll()
                 dispatcher.remoteStarted(DesktopRemoteRunStarted(id, base, "tester"))
                 dispatcher.start()
@@ -73,7 +115,8 @@ class DesktopDispatcherTest {
                 while (journal.all().isNotEmpty() && System.nanoTime() < end) Thread.sleep(25)
                 assertThat(journal.all()).isEmpty()
                 assertThat(results.get()).isEqualTo(2)
-                Mockito.verify(executor, Mockito.times(1)).execute(request)
+                Mockito.verify(executor, Mockito.times(1)).execute(Mockito.eq(request) ?: request, Mockito.eq(listOf("desktop", base, "tester")) ?: emptyList(), Mockito.any<() -> Boolean>() ?: { true })
+                Mockito.verify(executor).closeTcpExecution(id)
                 assertThat(Files.exists(directory.resolve("db"))).isFalse()
                 assertThat(Files.readString(directory.resolve("dispatch-journal.enc"))).doesNotContain("private-claim", "private-jwt")
             } finally { dispatcher.close(); server.stop(0) }

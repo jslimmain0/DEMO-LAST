@@ -9,6 +9,7 @@ import com.flowlink.protocol.Direction
 import com.flowlink.protocol.Framer
 import com.flowlink.protocol.ProtocolCodec
 import com.flowlink.protocol.ProtocolSpec
+import com.flowlink.protocol.TcpClient
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
@@ -45,19 +46,21 @@ class TcpMockSession(
     fun serve(input: InputStream, output: OutputStream, onReset: () -> Unit) {
         try {
             while (true) {
-                val frame = try { Framer.readFrame(input, spec) ?: return } catch (e: Framer.FrameException) {
+                val frame = try { Framer.readFrame(input, spec, Direction.SEND) ?: return } catch (e: Framer.FrameException) {
                     val raw = e.raw ?: ByteArray(0)
                     log(entry("in", "none", null, emptyMap(), raw, null, null, e.message, "error")); return
                 }
-                if (!handleFrame(frame, output, onReset)) return
+                if (!handleFrame(frame, input, output, onReset)) return
             }
+        } catch (e: IOException) {
+            log(entry("in", "none", null, emptyMap(), ByteArray(0), null, null, "TCP 연결 종료: ${e.message}", "error"))
         } finally {
             upstream?.let { runCatching { it.close() } }; upstream = null
         }
     }
 
     /** 프레임 하나 처리. false = 연결을 끊어야 함(reset). */
-    fun handleFrame(frame: Framer.Frame, output: OutputStream, onReset: () -> Unit): Boolean {
+    private fun handleFrame(frame: Framer.Frame, input: InputStream, output: OutputStream, onReset: () -> Unit): Boolean {
         try { verifyResourceAccess() } catch (_: Exception) {
             log(entry("in", "none", null, emptyMap(), frame.bytes, frame.chunks, null, "중앙 Mock 연결 계정을 확인하지 못해 연결을 종료합니다.", "error", frame.partial))
             return false
@@ -74,6 +77,10 @@ class TcpMockSession(
         if (decoded.messageKey == null) notes += "본문 스키마 없음 — raw ${decoded.rawBody.size} B"
         if (rule == null) notes += "매칭 규칙 없음 — 응답 없음"
         log(entry("in", source, decoded.disc ?: decoded.messageKey, values, frame.bytes, frame.chunks, rule?.id, notes.joinToString(" · ").ifEmpty { null }, if (rule == null || decoded.warnings.isNotEmpty()) "warn" else "info", frame.partial))
+        TcpClient.ackBytes(spec.transport?.requestAckHex)?.let {
+            output.write(it); output.flush()
+            log(entry("out", source, null, emptyMap(), it, null, rule?.id, "요청 ACK", "info"))
+        }
         if (rule == null) return true
         // 응답을 만들기 전에 끊는 장애부터 — then 이 없거나 upstream 이 죽어도 drop/reset 은 그대로 동작해야 한다
         val f = rule.fault
@@ -85,8 +92,13 @@ class TcpMockSession(
         }
         if (rule.then == null) { log(entry("out", source, null, emptyMap(), ByteArray(0), null, rule.id, "then 없음 — 응답 없음", "warn")); return true }
         val resp = if (rule.isProxy()) proxy(frame, rule) else mockResponse(rule, decoded)
-        resp ?: return true
-        return writeWithFault(resp, rule, output, onReset, source)
+        resp ?: return !rule.isProxy()
+        if (!writeWithFault(resp, rule, output, onReset, source)) return false
+        TcpClient.ackBytes(spec.transport?.responseAckHex)?.let {
+            val received = TcpClient.readAck(input, it, "응답 ACK")
+            log(entry("in", source, null, emptyMap(), received, null, rule.id, "응답 ACK", "info"))
+        }
+        return true
     }
 
     // ---------- 규칙 ----------
@@ -121,7 +133,7 @@ class TcpMockSession(
         val msg = spec.lookup(disc, Direction.RECV) ?: run {
             log(entry("out", "mock", disc, fields, ByteArray(0), null, rule.id, "응답 전문 '${disc ?: Direction.RECV.key}' 정의가 없습니다.", "error")); return null
         }
-        val enc = try { ProtocolCodec.encode(spec, msg.keyOrEmpty(), fields, Direction.SEND, plugins, lenient = true, resolve = resolve) } catch (e: ProtocolCodec.ProtocolException) {
+        val enc = try { ProtocolCodec.encode(spec, msg.keyOrEmpty(), fields, Direction.SEND, plugins, lenient = true, resolve = resolve, frameDirection = Direction.RECV) } catch (e: ProtocolCodec.ProtocolException) {
             log(entry("out", "mock", disc, fields, ByteArray(0), null, rule.id, e.message, "error")); return null
         } catch (e: Exception) {
             log(entry("out", "mock", disc, fields, ByteArray(0), null, rule.id, "처리 오류: ${e.message ?: e}", "error")); return null
@@ -138,8 +150,10 @@ class TcpMockSession(
             log(entry("out", "proxy", null, emptyMap(), ByteArray(0), null, rule.id, "upstream 연결 실패/미지정(${tcp.upstream ?: "없음"})", "error")); return null
         }
         return try {
-            up.output.write(frame.bytes); up.output.flush()
-            val r = Framer.readFrame(up.input, spec) ?: throw IOException("upstream 이 응답 없이 연결을 닫았습니다.")
+            val exchange = TcpClient.exchange(up.input, up.output, frame.bytes, spec)
+            exchange.requestAck?.let { log(entry("in", "proxy", null, emptyMap(), it, null, rule.id, "upstream 요청 ACK", "info")) }
+            exchange.responseAck?.let { log(entry("out", "proxy", null, emptyMap(), it, null, rule.id, "upstream 응답 ACK", "info")) }
+            val r = exchange.response
             val d = runCatching { ProtocolCodec.decode(spec, r.bytes, Direction.RECV, plugins, resolve = resolve) }.getOrNull()
             log(entry("out", "proxy", d?.disc ?: d?.messageKey, d?.values() ?: emptyMap(), r.bytes, r.chunks, rule.id, d?.warnings?.joinToString(" · ")?.ifEmpty { null }, if (d == null || d.warnings.isNotEmpty()) "warn" else "info", r.partial))
             r.bytes
@@ -158,15 +172,19 @@ class TcpMockSession(
         if (delay > 0) sleeper(delay.toLong())
         var b = bytes
         if (f?.corruptLength == true) {
-            // binary 길이 필드는 +7 이 표현 범위를 넘을 수 있다 — 그땐 원본 그대로 보내고 경고만 남긴다.
-            val declared = ProtocolCodec.declaredLength(spec, b.size) + 7
-            try {
-                b = ProtocolCodec.withLength(spec, b, declared)
-                log(entry("out", source, null, emptyMap(), b, null, rule.id, "corrupt-length — 길이 필드에 $declared", "warn"))
-            } catch (e: ProtocolCodec.ProtocolException) {
-                log(entry("out", source, null, emptyMap(), b, null, rule.id, "corrupt-length 불가: ${e.message}", "warn"))
-            } catch (e: Exception) {
-                log(entry("out", source, null, emptyMap(), b, null, rule.id, "처리 오류: ${e.message ?: e}", "error"))
+            if (spec.framingMode(Direction.RECV) != "length" || spec.lengthFieldDef() == null) {
+                log(entry("out", source, null, emptyMap(), ByteArray(0), null, rule.id, "corrupt-length 불가 — 응답이 길이 필드 프레이밍을 사용하지 않습니다.", "warn"))
+            } else {
+                // binary 길이 필드는 +7 이 표현 범위를 넘을 수 있다 — 그땐 원본 그대로 보내고 경고만 남긴다.
+                val declared = ProtocolCodec.declaredLength(spec, b.size, Direction.RECV) + 7
+                try {
+                    b = ProtocolCodec.withLength(spec, b, declared)
+                    log(entry("out", source, null, emptyMap(), b, null, rule.id, "corrupt-length — 길이 필드에 $declared", "warn"))
+                } catch (e: ProtocolCodec.ProtocolException) {
+                    log(entry("out", source, null, emptyMap(), b, null, rule.id, "corrupt-length 불가: ${e.message}", "warn"))
+                } catch (e: Exception) {
+                    log(entry("out", source, null, emptyMap(), b, null, rule.id, "처리 오류: ${e.message ?: e}", "error"))
+                }
             }
         }
         val split = f?.splitAt

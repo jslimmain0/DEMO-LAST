@@ -7,11 +7,11 @@ import type { CSSProperties } from 'react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 
-import type { CodecInfo, PluginRef, ProtocolDetail, ProtocolField, ProtocolSpec } from '../api/types'
+import type { CodecInfo, PluginRef, ProtocolDetail, ProtocolField, ProtocolFraming, ProtocolSpec } from '../api/types'
 import { useAuth } from '../auth/AuthContext'
 import { AssistantLoginGate } from './AssistantLoginGate'
 import { ProtocolAssistantPanel } from './ProtocolAssistantPanel'
-import { fieldsOf, lengthNumbers, parsePastedTable, splitPasted, tableLen } from '../lib/protocolSpec'
+import { fieldsOf, framingOf, lengthNumbers, parsePastedTable, previewDirection, splitPasted, tableLen, tcpOption, validateTcpSettings } from '../lib/protocolSpec'
 import { apiErrorMessage } from '../lib/apiError'
 import { AskDialog } from './AskDialog'
 import type { AskSpec } from './AskDialog'
@@ -62,6 +62,8 @@ export function ProtocolEditor({ detail, canEdit, onSaved }: { detail: ProtocolD
   const save = useMutation({
     mutationFn: async () => {
       const snapshot = structuredClone(draftRef.current)
+      const invalid = validateTcpSettings(snapshot.spec)
+      if (invalid.length) throw new Error(invalid.join('\n'))
       await protocolsApi.update(detail.id, snapshot)
       return snapshot
     },
@@ -123,6 +125,7 @@ export function ProtocolEditor({ detail, canEdit, onSaved }: { detail: ProtocolD
   const bodyLen = msg ? tableLen(msg.fields) : 0
   const nums = lengthNumbers(spec, tab)
   const lengthFields = spec.header.filter((f) => f.type === 'length')
+  const usesLength = [framingOf(spec), framingOf(spec, true)].some(frame => tcpOption(frame.mode, 'length') === 'length')
   const oddKeys = !spec.discriminator && spec.messages.some((m) => m.key !== 'request' && m.key !== 'response')
 
   return (
@@ -166,23 +169,31 @@ export function ProtocolEditor({ detail, canEdit, onSaved }: { detail: ProtocolD
 
         {/* ② 프레이밍 */}
         <section style={section}>
-          <div style={secTitle}>프레이밍</div>
+          <div style={secTitle}>TCP 송수신</div>
+          <TransportEditor spec={spec} patch={patch} readOnly={ro} />
+        </section>
+        <section style={section}>
+          <div style={secTitle}>{usesLength ? '길이 필드와 전문 구분' : '전문 구분'}</div>
+          {usesLength && <>
+          <p style={hint}>길이 필드 방식에 사용하는 설정입니다. 고정 길이·끝 구분자 방식은 길이 필드 없이도 사용할 수 있습니다.</p>
           <label style={row}>
             <span style={lbl}>길이 필드</span>
             <select aria-label="길이 필드" value={spec.lengthField} disabled={ro || !lengthFields.length} onChange={(e) => patch({ lengthField: e.target.value })} style={sel}>
               {!lengthFields.some((f) => f.name === spec.lengthField) && <option value={spec.lengthField}>{spec.lengthField || '(없음)'}</option>}
+              {!!spec.lengthField && <option value="">(없음)</option>}
               {lengthFields.map((f) => <option key={f.name} value={f.name}>{f.name} ({f.len}B)</option>)}
             </select>
-            {!lengthFields.length && <span style={{ ...hint, color: 'var(--fl-warn, #b8860b)' }}>헤더에 length 타입 필드를 추가하세요.</span>}
+            {!lengthFields.length && <span style={{ ...hint, color: 'var(--fl-warn, #b8860b)' }}>길이 필드 방식에는 헤더의 length 타입 필드가 필요합니다.</span>}
           </label>
           <label style={row}>
             <span style={lbl}>길이 형식</span>
-            <select aria-label="길이 형식" value={spec.lengthFormat} disabled={ro} onChange={(e) => patch({ lengthFormat: e.target.value as ProtocolSpec['lengthFormat'] })} style={sel}>
+            <select aria-label="길이 형식" value={tcpOption(spec.lengthFormat, 'ascii-decimal')} disabled={ro} onChange={(e) => patch({ lengthFormat: e.target.value as ProtocolSpec['lengthFormat'] })} style={sel}>
               <option value="ascii-decimal">ascii-decimal (0057)</option>
+              <option value="ascii-hex">ascii-hex (0039)</option>
               <option value="binary">binary (00 39)</option>
             </select>
-            {spec.lengthFormat === 'binary' && (
-              <select aria-label="엔디안" value={spec.endian ?? 'big'} disabled={ro} onChange={(e) => patch({ endian: e.target.value as 'big' | 'little' })} style={sel}>
+            {tcpOption(spec.lengthFormat, 'ascii-decimal') === 'binary' && (
+              <select aria-label="엔디안" value={tcpOption(spec.endian, 'big')} disabled={ro} onChange={(e) => patch({ endian: e.target.value as 'big' | 'little' })} style={sel}>
                 <option value="big">big endian</option>
                 <option value="little">little endian</option>
               </select>
@@ -191,7 +202,7 @@ export function ProtocolEditor({ detail, canEdit, onSaved }: { detail: ProtocolD
           <div style={{ ...row, alignItems: 'flex-start' }}>
             <span style={lbl}>길이 값</span>
             <div style={{ display: 'grid', gap: 4 }}>
-              <div style={{ fontSize: 12, color: 'var(--fl-text-muted)' }}>전문길이 필드에 들어갈 값 (기준: 현재 탭 전문 {tab || '—'})</div>
+              <div style={{ fontSize: 12, color: 'var(--fl-text-muted)' }}>길이 보정을 비워 둔 경우의 기본값 (현재 전문 {tab || '—'})</div>
               <label style={radioRow}>
                 <input type="radio" name="includesSelf" checked={!spec.includesSelf} disabled={ro} onChange={() => patch({ includesSelf: false })} />
                 <b style={mono}>{nums.bodyOnly}</b> <span style={hint}>(전문길이 필드 제외)</span>
@@ -202,6 +213,7 @@ export function ProtocolEditor({ detail, canEdit, onSaved }: { detail: ProtocolD
               </label>
             </div>
           </div>
+          </>}
           <label style={row}>
             <span style={lbl}>분기 필드</span>
             <select aria-label="분기 필드" value={spec.discriminator} disabled={ro} onChange={(e) => patch({ discriminator: e.target.value })} style={sel}>
@@ -295,6 +307,69 @@ export function ProtocolEditor({ detail, canEdit, onSaved }: { detail: ProtocolD
   )
 }
 
+/** 요청과 응답의 경계·연결·ACK를 프로토콜 한 곳에서 정의한다. */
+export function TransportEditor({ spec, patch, readOnly }: { spec: ProtocolSpec; patch: (p: Partial<ProtocolSpec>) => void; readOnly: boolean }) {
+  const setFrame = (response: boolean, value: ProtocolFraming) => patch(response ? { responseFraming: value } : { framing: value })
+  const transport = spec.transport ?? {}
+  const connection = tcpOption(transport.connection, 'once')
+  const invalid = validateTcpSettings(spec)
+  return <div style={{ display: 'grid', gap: 14 }}>
+    <p style={{ ...hint, margin: 0 }}>한 전문의 끝을 어디서 판단할지 정하세요. 요청과 응답의 길이 방식이 다르면 응답을 따로 설정할 수 있습니다.</p>
+    <FrameControls label="요청" frame={framingOf(spec)} readOnly={readOnly} onChange={value => setFrame(false, value)} />
+    <label style={radioRow}>
+      <input type="checkbox" checked={!spec.responseFraming} disabled={readOnly} onChange={e => patch({ responseFraming: e.target.checked ? undefined : { ...framingOf(spec) } })} />
+      응답 경계는 요청과 동일
+    </label>
+    {spec.responseFraming && <FrameControls label="응답" frame={spec.responseFraming} readOnly={readOnly} onChange={value => setFrame(true, value)} />}
+    <label style={row}>
+      <span style={lbl}>연결 방식</span>
+      <select aria-label="TCP 연결 방식" style={sel} value={connection} disabled={readOnly} onChange={e => patch({ transport: { ...transport, connection: e.target.value as 'once' | 'execution' } })}>
+        <option value="once">요청마다 연결하고 종료</option>
+        <option value="execution">이 실행에서 연결 유지</option>
+      </select>
+    </label>
+    <p style={{ ...hint, margin: 0 }}>{connection === 'execution' ? '같은 실행에서 대상 주소와 프로토콜이 같은 TCP 노드가 연결을 재사용합니다. 실행이 끝나면 종료합니다.' : '응답과 ACK 처리가 끝나면 연결을 종료합니다.'}</p>
+    {connection === 'execution' && <label style={row}>
+      <span style={lbl}>유휴 연결 제한(초)</span>
+      <input aria-label="유휴 연결 제한 초" style={{ ...input, width: 145 }} type="number" min={1} max={3600} step={0.001} value={transport.idleTimeoutMs === 0 ? '' : (transport.idleTimeoutMs ?? 30_000) / 1000} readOnly={readOnly} onChange={e => patch({ transport: { ...transport, idleTimeoutMs: Math.round(Number(e.target.value) * 1000) } })} />
+      <span style={hint}>1~3,600초 · 다음 요청 없이 이 시간이 지나면 연결을 종료합니다.</span>
+    </label>}
+    <details open={!!transport.requestAckHex || !!transport.responseAckHex}>
+      <summary style={{ cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>고정 ACK · 4-way 통신</summary>
+      <div style={{ display: 'grid', gap: 8, marginTop: 8 }}>
+        <p style={{ ...hint, margin: 0 }}>요청 전송 → 요청 ACK 수신 → 응답 수신 → 응답 ACK 전송 순서입니다. 규격에 없는 ACK는 비워 두세요.</p>
+        <label style={row}><span style={lbl}>요청 ACK</span><input aria-label="요청 ACK 기대값 HEX" style={{ ...input, width: 220, fontFamily: 'var(--fl-font-mono)' }} value={transport.requestAckHex ?? ''} placeholder="예: 06" readOnly={readOnly} onChange={e => patch({ transport: { ...transport, requestAckHex: e.target.value || undefined } })} /><span style={hint}>서버에서 받을 정확한 바이트 · HEX · 최대 1,024 B</span></label>
+        <label style={row}><span style={lbl}>응답 ACK</span><input aria-label="응답 ACK 송신값 HEX" style={{ ...input, width: 220, fontFamily: 'var(--fl-font-mono)' }} value={transport.responseAckHex ?? ''} placeholder="예: 06" readOnly={readOnly} onChange={e => patch({ transport: { ...transport, responseAckHex: e.target.value || undefined } })} /><span style={hint}>응답을 받은 뒤 보낼 바이트 · HEX · 최대 1,024 B</span></label>
+      </div>
+    </details>
+    {invalid.length > 0 && <div role="alert" style={{ fontSize: 12, color: 'var(--fl-fail)', lineHeight: 1.7 }}>{invalid.map(message => <div key={message}>{message}</div>)}</div>}
+  </div>
+}
+
+function FrameControls({ label, frame, readOnly, onChange }: { label: string; frame: ProtocolFraming; readOnly: boolean; onChange: (value: ProtocolFraming) => void }) {
+  const mode = tcpOption(frame.mode, 'length')
+  return <fieldset style={{ margin: 0, padding: '10px 12px', minWidth: 0, border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)' }}>
+    <legend style={{ fontSize: 13, fontWeight: 600 }}>{label} 경계</legend>
+    <div style={{ display: 'grid', gap: 8 }}>
+      <label style={row}><span style={lbl}>경계 방식</span><select aria-label={`${label} 경계 방식`} style={sel} value={mode} disabled={readOnly} onChange={e => onChange({ ...frame, mode: e.target.value as ProtocolFraming['mode'] })}>
+        <option value="length">길이 필드</option><option value="fixed">고정 바이트 수</option><option value="delimiter">끝 구분자</option>
+      </select></label>
+      {mode === 'length' && <>
+        <label style={row}><span style={lbl}>길이 보정(B)</span><input aria-label={`${label} 길이 보정 바이트`} style={{ ...input, width: 145 }} type="number" min={-1048576} max={1048576} step={1} value={frame.lengthAdjustment ?? ''} placeholder="기본 포함/제외" readOnly={readOnly} onChange={e => onChange({ ...frame, lengthAdjustment: e.target.value === '' ? undefined : Number(e.target.value) })} /><span style={hint}>선택 · 전체 수신 바이트 = 길이 필드 값 + 보정</span></label>
+        <p style={{ ...hint, margin: 0 }}>비워 두면 아래의 길이 필드 포함/제외 설정을 사용합니다. 예: 6 B 접두부를 제외한 길이 값이면 +6, 전체 길이 값이면 0.</p>
+      </>}
+      {mode === 'fixed' && <>
+        <label style={row}><span style={lbl}>고정 길이(B)</span><input aria-label={`${label} 고정 길이 바이트`} style={{ ...input, width: 145 }} type="number" min={1} max={1048576} step={1} value={frame.fixedLength ?? ''} placeholder="예: 128" readOnly={readOnly} onChange={e => onChange({ ...frame, fixedLength: e.target.value === '' ? undefined : Number(e.target.value) })} /><span style={hint}>1~1,048,576 B · 헤더 + 코덱 적용 후 본문</span></label>
+        <p style={{ ...hint, margin: 0 }}>지정한 바이트 수를 정확히 받을 때까지 기다립니다. 전송 전문도 이 길이와 일치해야 하며, 문자 수가 아닌 바이트 수입니다.</p>
+      </>}
+      {mode === 'delimiter' && <>
+        <label style={row}><span style={lbl}>끝 구분자(HEX)</span><input aria-label={`${label} 끝 구분자 HEX`} style={{ ...input, width: 220, fontFamily: 'var(--fl-font-mono)' }} value={frame.delimiterHex ?? ''} placeholder="예: 0D 0A" readOnly={readOnly} onChange={e => onChange({ ...frame, delimiterHex: e.target.value })} /><span style={hint}>1~64 B · HEX 두 자리씩</span></label>
+        <p style={{ ...hint, margin: 0 }}>송신 끝에 자동으로 붙이고 수신 후 제거합니다. 전문 안에 같은 바이트가 나오면 먼저 끝나므로 본문에 없는 구분자를 사용하세요.</p>
+      </>}
+    </div>
+  </fieldset>
+}
+
 /** ⑤ 본문 전체에 순서대로 적용되는 메시지 코덱 체인. */
 function MessagePlugins({ spec, patch, codecs, readOnly }: { spec: ProtocolSpec; patch: (p: Partial<ProtocolSpec>) => void; codecs: CodecInfo[]; readOnly: boolean }) {
   const list = spec.messagePlugins ?? []
@@ -345,14 +420,15 @@ function PreviewSection({ spec, tab }: { spec: ProtocolSpec; tab: string }) {
   const { protocolsApi } = useCentralApi()
 
   const [key, setKey] = useState(tab)
+  const [frameDirection, setFrameDirection] = useState<'send' | 'recv'>(() => previewDirection(tab))
   const [values, setValues] = useState<Record<string, string>>({})
   const [fieldSearch, setFieldSearch] = useState('')
-  useEffect(() => { setKey(tab) }, [tab])
+  useEffect(() => { setKey(tab); setFrameDirection(previewDirection(tab)) }, [tab])
   // 전문이 바뀌면 값은 비운다 — 이름이 같아도 다른 전문의 값이 따라오면 안 된다
   useEffect(() => { setValues({}); setFieldSearch('') }, [key])
   const fields = fieldsOf(spec, key)
   // 현재 전문에 있는(길이 자동 제외) 필드만 보낸다 — 전문을 바꾸면 남아 있던 값이 따라가지 않게
-  const signature = JSON.stringify([scopeKey, spec, key, values, envStore.active, envStore.envs[envStore.active ?? '']])
+  const signature = JSON.stringify([scopeKey, spec, key, frameDirection, values, envStore.active, envStore.envs[envStore.active ?? '']])
   const target = useRef(signature)
   target.current = signature
   const mounted = useRef(false)
@@ -364,7 +440,7 @@ function PreviewSection({ spec, tab }: { spec: ProtocolSpec; tab: string }) {
       try {
         await prepareForRun()
         if (!current()) return undefined
-        const result = await protocolsApi.preview({ spec, key, environment: activeEnvName(), values: Object.fromEntries(fields.filter((f) => f.type !== 'length').map((f) => [f.name, values[f.name] ?? ''])) })
+        const result = await protocolsApi.preview({ spec, key, frameDirection, environment: activeEnvName(), values: Object.fromEntries(fields.filter((f) => f.type !== 'length').map((f) => [f.name, values[f.name] ?? ''])) })
         return current() ? { signature: snapshot, result } : undefined
       } catch (error) { if (current()) throw error; return undefined }
     },
@@ -377,12 +453,16 @@ function PreviewSection({ spec, tab }: { spec: ProtocolSpec; tab: string }) {
     <section style={section}>
       <div style={secTitle}>미리보기</div>
       <div style={{ ...row, marginBottom: 10 }}>
-        <select aria-label="미리보기 전문" value={key} onChange={(e) => setKey(e.target.value)} style={sel}>
+        <select aria-label="미리보기 전문" value={key} onChange={(e) => { setKey(e.target.value); setFrameDirection(previewDirection(e.target.value)) }} style={sel}>
           {spec.messages.map((m) => <option key={m.key} value={m.key}>{m.key}{m.label ? ` · ${m.label}` : ''}</option>)}
         </select>
+        <label style={row}><span style={lbl}>미리보기 방향</span><select aria-label="미리보기 방향" style={sel} value={frameDirection} onChange={e => setFrameDirection(e.target.value as 'send' | 'recv')}>
+          <option value="send">요청 전문</option><option value="recv">응답 전문</option>
+        </select></label>
         <button onClick={() => preview.mutate()} disabled={preview.isPending} style={primaryBtn}>{preview.isPending ? '조립 중…' : '조립'}</button>
         {preview.isError && <span style={{ fontSize: 12, color: 'var(--fl-fail)' }}>⚠ {apiErrorMessage(preview.error)}</span>}
       </div>
+      <p style={{ ...hint, margin: '0 0 10px' }}>선택한 방향의 요청·응답 경계 설정으로 조립합니다. 전문 키가 response 또는 :response로 끝나면 응답을 먼저 선택합니다.</p>
       {(fields.length > 5 || fieldSearch) && <input type="search" aria-label="미리보기 필드 검색" value={fieldSearch} onChange={e => setFieldSearch(e.target.value)} placeholder={`필드 이름 검색 · ${fields.length}개`} style={{ ...input, width: 'min(420px, 100%)', marginBottom: 8, boxSizing: 'border-box' }} />}
       <div style={{ display: 'grid', gap: 5, maxWidth: 880, maxHeight: 320, overflowY: 'auto', padding: 2 }}>
         {fields.filter(f => f.name.toLocaleLowerCase().includes(fieldSearch.trim().toLocaleLowerCase())).map((f) => {

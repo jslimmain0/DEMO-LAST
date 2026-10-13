@@ -221,7 +221,7 @@ const protocolsApi = {
   update: (id: string, body: { name?: string; spec?: import('./types').ProtocolSpec }) => http.put<import('./types').ProtocolDetail>(`/protocols/${id}`, body).then((r) => r.data),
   remove: (id: string) => http.delete(`/protocols/${id}`).then(() => undefined),
   // 편집 중 spec 으로 조립 미리보기(저장 없음) — 검증 실패는 errors 로 온다
-  preview: (body: { spec: import('./types').ProtocolSpec; key: string; values: Record<string, string>; direction?: 'send' | 'recv'; environment?: string | null }) =>
+  preview: (body: { spec: import('./types').ProtocolSpec; key: string; values: Record<string, string>; direction?: 'send' | 'recv'; frameDirection?: 'send' | 'recv'; environment?: string | null }) =>
     http.post<import('./types').ProtocolPreview>('/protocols/preview', body).then((r) => r.data),
 }
 

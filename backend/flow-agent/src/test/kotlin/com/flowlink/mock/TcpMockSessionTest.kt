@@ -159,4 +159,34 @@ class TcpMockSessionTest {
         assertThat(logs.last().level).isEqualTo("error")
         assertThat(logs.last().note).contains("계정").doesNotContain("secret-password")
     }
+
+    @Test fun `4-way ACK는 전문과 분리하고 잘못된 응답 ACK 뒤의 요청은 실행하지 않는다`() {
+        val protocol = spec.copy(transport = ProtocolSpec.Transport("execution", "06", "06"))
+        val rules = listOf(MockTcpRule("r", then = mock("거래코드" to "9001", "응답코드" to "0000")))
+        fun connection() = TcpMockSession(protocol, MockTcp(9600, "p", rules = rules), ProtocolCodec.NO_PLUGINS,
+            emptyMap(), { 1L }, { logs.add(it) }, { null })
+        val (response, _) = run(connection(), req + byteArrayOf(6) + req + byteArrayOf(6))
+        assertThat(response).hasSize(26)
+        assertThat(response[0]).isEqualTo(6.toByte())
+        assertThat(response[13]).isEqualTo(6.toByte())
+        assertThat(logs.count { it.note == "요청 ACK" }).isEqualTo(2)
+        assertThat(logs.count { it.note == "응답 ACK" }).isEqualTo(2)
+        logs.clear()
+        val (bad, _) = run(connection(), req + byteArrayOf(21) + req)
+        assertThat(bad).hasSize(13)
+        assertThat(logs.count { it.dir == "in" && it.key == "0210" }).isEqualTo(1)
+        assertThat(logs.last().level).isEqualTo("error")
+        assertThat(logs.last().note).contains("응답 ACK")
+    }
+
+    @Test fun `ACK 로그에도 기존 시크릿 마스킹이 적용된다`() {
+        val protocol = spec.copy(transport = ProtocolSpec.Transport("execution", "4142", null))
+        val s = TcpMockSession(protocol, MockTcp(9600, "p", rules = listOf(MockTcpRule("r", then = mock("거래코드" to "9001", "응답코드" to "0000")))),
+            ProtocolCodec.NO_PLUGINS, emptyMap(), { 1L }, { logs.add(it) }, { null }, mask = { it.replace("AB", "••••") })
+        run(s)
+        val ack = logs.first { it.note?.contains("요청 ACK") == true }
+        assertThat(ack.text).isEqualTo("••••")
+        assertThat(ack.hex).isEmpty()
+        assertThat(ack.note).contains("hex 생략")
+    }
 }

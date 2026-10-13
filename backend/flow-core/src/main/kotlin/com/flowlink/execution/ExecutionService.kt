@@ -123,7 +123,7 @@ class ExecutionService(
     private val scheduler: ScheduledExecutorService =
         Executors.newScheduledThreadPool(1) { r ->
             Thread(r, "wait-timeout").apply { isDaemon = true }
-        }
+        }.apply { scheduleWithFixedDelay({ suspensions.values.forEach { it.state.context().tcpSessions.expireIdle() } }, 5, 5, TimeUnit.SECONDS) }
 
     /** 실행/재개 연속 실행 전용 워커 풀 — 큐 초과 제출은 429(TooManyRequests) 거절. */
     private val worker = com.flowlink.execution.config.BoundedVirtualExecutor(
@@ -131,7 +131,7 @@ class ExecutionService(
     )
 
     @jakarta.annotation.PreDestroy
-    fun close() { worker.shutdownNow(); scheduler.shutdownNow() }
+    fun close() { worker.shutdownNow(); scheduler.shutdownNow(); suspensions.values.forEach { it.state.context().closeTcpConnections() } }
 
     /**
      * 중단된 실행의 재개 상태. [future] 는 wait 노드의 타임아웃 자동 재개 예약(콜백 수신/재개 시 취소).
@@ -430,6 +430,7 @@ class ExecutionService(
                 afterCommit { worker.execute { withTenant(execution.tenantId) { agentTasks.startServerTask(pending.taskId) } } }
             }
         } else {
+            afterCommit { agentTasks.closeTcpExecution(execution.id) }
             suspensionRepo.deleteByExecutionId(execution.id)
             callbackInbox.clear(execution.id)
             if (execution.status == ExecutionStatus.FAILED) afterCommit {

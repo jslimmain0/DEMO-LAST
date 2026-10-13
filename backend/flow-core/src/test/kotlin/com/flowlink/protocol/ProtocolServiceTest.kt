@@ -62,4 +62,23 @@ class ProtocolServiceTest {
         assertThatThrownBy { service.create("x", json.readTree(specJson)) }.isInstanceOf(ForbiddenException::class.java)
         assertThat(service.list()).isNotNull
     }
+
+    @Test fun `미리보기 응답 경계는 기존 코덱 방향을 바꾸지 않고 선택한다`() {
+        val spec = json.readTree("""{"encoding":"UTF-8","framing":{"mode":"fixed","fixedLength":14},
+            "responseFraming":{"mode":"fixed","fixedLength":8},"discriminator":"code",
+            "header":[{"name":"code","len":4,"type":"ascii"}],
+            "messages":[{"key":"REQ1","fields":[{"name":"value","len":10,"type":"ascii"}]},
+                        {"key":"RES1","fields":[{"name":"value","len":4,"type":"ascii"}]}]}""")
+        val request = ProtocolDtos.PreviewRequest(spec, "REQ1", mapOf("value" to "ABCDEFGHIJ"))
+        assertThat(service.preview(request).total).isEqualTo(14)
+        val response = request.copy(key = "RES1", values = mapOf("value" to "A001"))
+        assertThat(service.preview(response).errors).hasSize(1)
+        val result = service.preview(response.copy(frameDirection = "recv"))
+        assertThat(result.errors).isEmpty()
+        assertThat(result.text).isEqualTo("RES1A001")
+        assertThat(result.total).isEqualTo(8)
+        assertThat(service.preview(response.copy(direction = "recv")).total).isEqualTo(8)
+        assertThatThrownBy { service.preview(response.copy(frameDirection = "other")) }
+            .isInstanceOf(BadRequestException::class.java)
+    }
 }

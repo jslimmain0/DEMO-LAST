@@ -9,7 +9,7 @@ import type { GraphNode, NodeOutput, ProtocolField, ProtocolPreview, ProtocolSpe
 
 import { TokenInput } from '../binding/TokenInput'
 import type { BindableSource } from '../binding/upstream'
-import { byteLen, fieldsOf, messageKeys, padOf, requestKeys, tableLen, withOffsets } from '../lib/protocolSpec'
+import { byteLen, fieldsOf, framingSummary, messageKeys, padOf, requestKeys, tableLen, transportSummary, withOffsets } from '../lib/protocolSpec'
 import { ui } from '../design/ui'
 import { relTime } from '../lib/format'
 import './node-settings.css'
@@ -80,6 +80,13 @@ export function TcpRequestPanel({ node, update, sources, canEdit, preview, previ
         : protos.isSuccess && !protos.data?.length ? <p role="status">서버 공통 프로토콜이 없습니다. 관리 화면에서 먼저 만드세요.</p> : null}
       {spec && (
         <>
+          <div style={{ display: 'grid', gap: 4, margin: '10px 0', padding: '8px 10px', border: '1px solid var(--fl-border)', borderRadius: 'var(--fl-radius-sm)', fontSize: 12, lineHeight: 1.6 }}>
+            <b>TCP 송수신 설정</b>
+            <span>요청 · {framingSummary(spec)}</span>
+            <span>응답 · {framingSummary(spec, true)}</span>
+            <span>{transportSummary(spec)}</span>
+            <span style={{ color: 'var(--fl-text-muted)' }}>변경은 위의 프로토콜 관리에서 적용합니다.</span>
+          </div>
           <label style={label}>전문 (송신)</label>
           <select aria-label="송신 전문" style={field} value={node.tcpMessage ?? ''} disabled={!canEdit} onChange={(e) => update({ tcpMessage: e.target.value, tcpValues: {} })}>
             <option value="">— 전문을 고르세요 —</option>
@@ -94,7 +101,7 @@ export function TcpRequestPanel({ node, update, sources, canEdit, preview, previ
                 <FieldRow key={f.name} f={f} offset={offsets[i]} value={values[f.name] ?? ''} encoding={spec.encoding} sources={sources} canEdit={canEdit} err={errFor(f.name)} onChange={(v) => setValue(f.name, v)} />
               ))}
               <div style={{ fontSize: 11, color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)' }}>
-                {spec.lengthField}·{spec.discriminator || '(분기 없음)'} 자동 · 헤더 {tableLen(spec.header)} + 본문 {tableLen(msg.fields)} = {tableLen(spec.header) + tableLen(msg.fields)} B
+                {[spec.lengthField, spec.discriminator].filter(Boolean).join('·') || '(자동 헤더 없음)'} 자동 · 헤더 {tableLen(spec.header)} + 본문 {tableLen(msg.fields)} = {tableLen(spec.header) + tableLen(msg.fields)} B (코덱 적용 전)
               </div>
             </div>
           )}

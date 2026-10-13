@@ -41,6 +41,60 @@ class TcpMockE2eTest {
         json.readTree("""{"tcp":{"port":$port,"protocolId":"$pid","upstream":${upstream?.let { "\"$it\"" } ?: "null"},"timeoutMs":2000,"rules":[$rules]}}""")
 
     @Test
+    fun `길이 필드 없는 4-way Mock 유지 연결은 정의 교체와 중지 시 즉시 닫힌다`() {
+        val protocolJson = """{"encoding":"UTF-8","header":[],
+            "framing":{"mode":"fixed","fixedLength":4},"responseFraming":{"mode":"fixed","fixedLength":6},
+            "transport":{"connection":"execution","requestAckHex":"06","responseAckHex":"06"},
+            "messages":[{"key":"request","fields":[{"name":"value","len":4,"type":"ascii"}]},
+                        {"key":"response","fields":[{"name":"result","len":6,"type":"ascii"}]}]}"""
+        val p = protocols.create("e2e-유지-고정", json.readTree(protocolJson))
+        val spec = protocols.specOf(p.id)
+        val port = registry.pickFreePort(19700)
+        val m = mocks.create(CreateMockServerRequest("유지-고정", "e2e-tcp-keep-fixed", "TCP", null))
+        var deleted = false
+        try {
+            mocks.updateSpec(m.id, tcpSpec(port, p.id.toString(), null,
+                """{"id":"r","then":{"mode":"mock","fields":{"result":"{{req.value}}"}}}"""))
+            TcpClient.Session("127.0.0.1", port, 2000).use { session ->
+                repeat(2) {
+                    val result = session.exchange("PING".toByteArray(), spec)
+                    assertThat(ProtocolCodec.decode(spec, result.response.bytes, Direction.RECV).body!!["result"]).isEqualTo("PING")
+                }
+                mocks.updateSpec(m.id, tcpSpec(port, p.id.toString(), null,
+                    """{"id":"r","then":{"mode":"mock","fields":{"result":"CHANGED"}}}"""))
+                assertThatThrownBy { session.exchange("PING".toByteArray(), spec) }.isInstanceOf(java.io.IOException::class.java)
+                assertThat(session.isClosed).isTrue()
+            }
+            TcpClient.Session("127.0.0.1", port, 2000).use { session ->
+                val changed = session.exchange("PING".toByteArray(), spec)
+                assertThat(ProtocolCodec.decode(spec, changed.response.bytes, Direction.RECV).body!!["result"]).isEqualTo("CHANGE")
+                protocols.update(p.id, null, json.readTree(protocolJson.replace("\"fixedLength\":6", "\"fixedLength\":7").replace("\"len\":6", "\"len\":7")))
+                assertThatThrownBy { session.exchange("PING".toByteArray(), spec) }.isInstanceOf(java.io.IOException::class.java)
+            }
+            val updatedSpec = protocols.specOf(p.id)
+            val namedSpec = json.readTree("""{"resourceWorkspaceId":"public","tcp":{"port":$port,"protocolId":"${p.name}","rules":[{"id":"r","then":{"mode":"mock","fields":{"result":"CHANGED"}}}]}}""")
+            mocks.updateSpec(m.id, namedSpec)
+            TcpClient.Session("127.0.0.1", port, 2000).use { session ->
+                assertThat(session.exchange("PING".toByteArray(), updatedSpec).response.bytes).hasSize(7)
+                protocols.update(p.id, null, json.readTree(protocolJson.replace("\"fixedLength\":6", "\"fixedLength\":8").replace("\"len\":6", "\"len\":8")))
+                assertThatThrownBy { session.exchange("PING".toByteArray(), updatedSpec) }.isInstanceOf(java.io.IOException::class.java)
+            }
+            val finalSpec = protocols.specOf(p.id)
+            TcpClient.Session("127.0.0.1", port, 2000).use { session ->
+                assertThat(session.exchange("PING".toByteArray(), finalSpec).response.bytes).hasSize(8)
+                mocks.delete(m.id)
+                deleted = true
+                assertThat(registry.listeningPort(m.id)).isNull()
+                assertThatThrownBy { session.exchange("PING".toByteArray(), finalSpec) }.isInstanceOf(java.io.IOException::class.java)
+                assertThat(session.isClosed).isTrue()
+            }
+        } finally {
+            if (!deleted) mocks.delete(m.id)
+            protocols.delete(p.id)
+        }
+    }
+
+    @Test
     fun `mock 응답 → proxy 통과 → 장애 주입 → tcp-send·tcp-log`() {
         val p = protocols.create("e2e-원장계", json.readTree(specJson))
         val spec = protocols.specOf(p.id)

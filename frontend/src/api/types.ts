@@ -612,16 +612,31 @@ export type FieldPad = 'left/zero' | 'right/space' | 'left/space' | 'none'
 export interface PluginRef { id: string; config?: Record<string, string> }
 export interface ProtocolField { name: string; len: number; type: FieldType; pad?: FieldPad; plugin?: PluginRef | null }
 export interface ProtocolMessage { key: string; label?: string; fields: ProtocolField[] }
+export interface ProtocolFraming {
+  mode?: 'length' | 'fixed' | 'delimiter'
+  lengthAdjustment?: number
+  fixedLength?: number
+  delimiterHex?: string
+}
+export interface ProtocolTransport {
+  connection?: 'once' | 'execution'
+  idleTimeoutMs?: number
+  requestAckHex?: string
+  responseAckHex?: string
+}
 export interface ProtocolSpec {
   encoding: string
   lengthField: string
-  lengthFormat: 'ascii-decimal' | 'binary'
+  lengthFormat: 'ascii-decimal' | 'ascii-hex' | 'binary'
   endian?: 'big' | 'little'
   includesSelf: boolean
   discriminator: string          // '' = 분기 없음(request/response 키)
   header: ProtocolField[]
   messages: ProtocolMessage[]
   messagePlugins?: PluginRef[]
+  framing?: ProtocolFraming
+  responseFraming?: ProtocolFraming
+  transport?: ProtocolTransport
 }
 export interface ProtocolSummary { id: string; name: string; encoding: string; messageCount: number; updatedAt: string | null }
 export interface ProtocolDetail { id: string; name: string; spec: ProtocolSpec; createdAt: string; updatedAt: string | null }

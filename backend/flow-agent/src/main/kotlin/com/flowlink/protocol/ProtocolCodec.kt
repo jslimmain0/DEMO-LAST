@@ -11,6 +11,7 @@ import java.io.ByteArrayOutputStream
 import java.nio.charset.Charset
 import java.nio.charset.StandardCharsets
 import java.util.LinkedHashMap
+import java.util.Locale
 
 /**
  * 전문 조립/해석 엔진(순수). 송신: 값 → FieldCodec.encode → 문자셋 → 패딩 → 본문 결합 → MessageCodec.encode → 길이 계산 + 헤더.
@@ -40,20 +41,28 @@ object ProtocolCodec {
 
     // ---------- 길이 ----------
 
-    fun declaredLength(spec: ProtocolSpec, total: Int): Int =
-        if (spec.includesSelf == true) total else total - (spec.lengthFieldDef()?.lenOrZero() ?: 0)
+    fun declaredLength(spec: ProtocolSpec, total: Int, direction: Direction = Direction.SEND): Int =
+        checkedLength(total.toLong() - spec.lengthAdjustment(direction))
 
-    fun totalFromDeclared(spec: ProtocolSpec, declared: Int): Int =
-        if (spec.includesSelf == true) declared else declared + (spec.lengthFieldDef()?.lenOrZero() ?: 0)
+    fun totalFromDeclared(spec: ProtocolSpec, declared: Int, direction: Direction = Direction.SEND): Int =
+        checkedLength(declared.toLong() + spec.lengthAdjustment(direction))
+
+    private fun checkedLength(value: Long): Int {
+        if (value !in 0L..Int.MAX_VALUE.toLong()) throw ProtocolException(null, "길이 계산 결과가 범위를 벗어났습니다: $value")
+        return value.toInt()
+    }
 
     /** 헤더 바이트에서 길이값. ascii 는 패딩 제거 후 정수, binary 는 endian. 실패 시 원본 바이트를 담은 예외. */
     fun parseLength(spec: ProtocolSpec, headerBytes: ByteArray): Int {
         val lf = spec.lengthFieldDef() ?: throw ProtocolException(null, "길이 필드 정의가 없습니다.")
         val off = spec.lengthFieldOffset()
+        if (off < 0 || lf.lenOrZero() !in 1..ProtocolSpec.MAX_MESSAGE || off.toLong() + lf.lenOrZero() > ProtocolSpec.MAX_MESSAGE)
+            throw ProtocolException(lf.nameOrEmpty(), "길이 필드 위치 또는 크기가 전문 상한을 벗어났습니다.")
+        if (spec.isBinaryLength() && lf.lenOrZero() !in setOf(1, 2, 4, 8)) throw ProtocolException(lf.nameOrEmpty(), "binary 길이 필드는 1, 2, 4, 8바이트여야 합니다.")
         if (headerBytes.size < off + lf.lenOrZero()) throw ProtocolException(lf.nameOrEmpty(), "헤더가 길이 필드까지 오지 않았습니다(${headerBytes.size}B).")
         val slice = headerBytes.copyOfRange(off, off + lf.lenOrZero())
         val n = if (spec.isBinaryLength()) binaryToInt(slice, spec.isLittleEndian())
-        else trimPad(String(slice, StandardCharsets.US_ASCII), lf.padOr()).trim().toIntOrNull()
+        else trimPad(String(slice, StandardCharsets.US_ASCII), lf.padOr()).trim().toIntOrNull(if (spec.lengthFormatOr() == "ascii-hex") 16 else 10)
             ?: throw ProtocolException(lf.nameOrEmpty(), "길이 필드에 '${TcpBytes.printable(slice, StandardCharsets.US_ASCII)}' 가 왔다 (hex ${TcpBytes.hexDump(slice)})")
         if (n < 0) throw ProtocolException(lf.nameOrEmpty(), "길이값이 음수입니다: $n")
         return n
@@ -71,11 +80,13 @@ object ProtocolCodec {
 
     private fun lengthBytes(spec: ProtocolSpec, lf: Field, declared: Int): ByteArray {
         if (spec.isBinaryLength()) {
-            val max = (1L shl (8 * lf.lenOrZero())) - 1
+            if (lf.lenOrZero() !in setOf(1, 2, 4, 8)) throw ProtocolException(lf.nameOrEmpty(), "binary 길이 필드는 1, 2, 4, 8바이트여야 합니다.")
+            val max = if (lf.lenOrZero() >= 4) Int.MAX_VALUE.toLong() else (1L shl (8 * lf.lenOrZero())) - 1
             if (declared < 0 || declared > max) throw ProtocolException(lf.nameOrEmpty(), "전문 길이 $declared 가 binary 길이 필드 ${lf.lenOrZero()}바이트 범위를 넘습니다.")
             return intToBinary(declared, lf.lenOrZero(), spec.isLittleEndian())
         }
-        val s = declared.toString()
+        if (declared < 0) throw ProtocolException(lf.nameOrEmpty(), "전문 길이는 음수일 수 없습니다: $declared")
+        val s = declared.toString(if (spec.lengthFormatOr() == "ascii-hex") 16 else 10).uppercase(Locale.ROOT)
         if (s.length > lf.lenOrZero()) throw ProtocolException(lf.nameOrEmpty(), "전문 길이 $declared 가 길이 필드 ${lf.lenOrZero()}자리를 넘습니다.")
         return pad(s.toByteArray(StandardCharsets.US_ASCII), lf.lenOrZero(), lf.padOr(), false)
     }
@@ -83,8 +94,10 @@ object ProtocolCodec {
     private fun binaryToInt(b: ByteArray, little: Boolean): Int {
         var v = 0L
         val idx = if (little) b.indices.reversed() else b.indices
-        for (i in idx) v = (v shl 8) or (b[i].toLong() and 0xFF)
-        if (v > Int.MAX_VALUE) throw ProtocolException(null, "길이값이 너무 큽니다: $v")
+        for (i in idx) {
+            v = (v shl 8) or (b[i].toLong() and 0xFF)
+            if (v > Int.MAX_VALUE) throw ProtocolException(null, "길이값이 너무 큽니다: $v")
+        }
         return v.toInt()
     }
 
@@ -126,8 +139,10 @@ object ProtocolCodec {
     fun encode(
         spec: ProtocolSpec, key: String, values: Map<String, String>, dir: Direction = Direction.SEND,
         plugins: PluginLookup = NO_PLUGINS, lenient: Boolean = false, resolve: (String) -> String = { it },
+        frameDirection: Direction = dir,
     ): Encoded {
         val msg = spec.message(key) ?: throw ProtocolException(null, "정의되지 않은 전문: $key")
+        if (spec.headerLen().toLong() + msg.bodyLen() > ProtocolSpec.MAX_MESSAGE) throw ProtocolException(null, "전문 길이가 상한(${ProtocolSpec.MAX_MESSAGE}B)을 넘습니다.")
         val cs = spec.charset()
         val all = LinkedHashMap<String, String>(values)
         if (spec.hasDiscriminator()) {
@@ -149,14 +164,15 @@ object ProtocolCodec {
             val mc = plugins.find(id) as? MessageCodec ?: throw ProtocolException(null, "메시지 플러그인 '$id' 을 찾을 수 없습니다(MessageCodec).")
             bodyBytes = mc.encode(bodyBytes, CodecCtx(null, all, p.configOrEmpty().resolved(resolve), dir.name.lowercase()))
         }
-        val total = spec.headerLen() + bodyBytes.size
+        val total = checkedLength(spec.headerLen().toLong() + bodyBytes.size)
+        if (total > ProtocolSpec.MAX_MESSAGE) throw ProtocolException(null, "전문 길이가 상한(${ProtocolSpec.MAX_MESSAGE}B)을 넘습니다.")
         val head = ByteArrayOutputStream()
         val headSlices = ArrayList<FieldSlice>()
         offset = 0
         for (f in spec.headerOrEmpty()) {
             val n = f.nameOrEmpty()
             if (f.typeOr() == "length") {
-                val declared = declaredLength(spec, total)
+                val declared = declaredLength(spec, total, frameDirection)
                 val b = lengthBytes(spec, f, declared)
                 head.write(b); headSlices.add(FieldSlice(n, offset, f.lenOrZero(), b.size, declared.toString()))
             } else {
@@ -168,7 +184,25 @@ object ProtocolCodec {
         val out = ByteArray(total)
         System.arraycopy(head.toByteArray(), 0, out, 0, spec.headerLen())
         System.arraycopy(bodyBytes, 0, out, spec.headerLen(), bodyBytes.size)
-        return Encoded(out, headSlices + slices, warnings)
+        val bytes = when (spec.framingMode(frameDirection)) {
+            "length" -> out
+            "fixed" -> {
+                val fixed = spec.framingFor(frameDirection)?.fixedLength
+                if (fixed != total) throw ProtocolException(null, "고정 전문 길이 불일치 — 설정 ${fixed ?: 0}B, 조립 ${total}B")
+                out
+            }
+            "delimiter" -> {
+                val delimiter = spec.delimiterBytes(frameDirection)
+                if (delimiter == null || delimiter.size !in 1..64) throw ProtocolException(null, "구분자는 1~64바이트 HEX 형식이어야 합니다.")
+                if (total + delimiter.size > ProtocolSpec.MAX_MESSAGE) throw ProtocolException(null, "구분자를 포함한 전문 길이가 상한(${ProtocolSpec.MAX_MESSAGE}B)을 넘습니다.")
+                val wire = out + delimiter
+                if ((0 until out.size).any { off -> delimiter.indices.all { wire[off + it] == delimiter[it] } })
+                    throw ProtocolException(null, "전문 안에 종료 구분자가 포함되어 있습니다. 길이 또는 고정 길이 프레이밍을 사용하세요.")
+                wire
+            }
+            else -> throw ProtocolException(null, "지원하지 않는 프레이밍: ${spec.framingMode(frameDirection)}")
+        }
+        return Encoded(bytes, headSlices + slices, warnings)
     }
 
     private fun encodeField(
@@ -207,22 +241,34 @@ object ProtocolCodec {
     fun decode(spec: ProtocolSpec, frame: ByteArray, dir: Direction = Direction.RECV, plugins: PluginLookup = NO_PLUGINS, resolve: (String) -> String = { it }): Decoded {
         val cs = spec.charset()
         val hl = spec.headerLen()
-        if (frame.size < hl) throw ProtocolException(null, "전문(${frame.size}B)이 헤더 길이(${hl}B)보다 짧습니다.")
+        if (frame.size > ProtocolSpec.MAX_MESSAGE || hl > ProtocolSpec.MAX_MESSAGE) throw ProtocolException(null, "전문 길이가 상한(${ProtocolSpec.MAX_MESSAGE}B)을 넘습니다.")
+        val payload = if (spec.framingMode(dir) == "delimiter") {
+            val delimiter = spec.delimiterBytes(dir)
+            if (delimiter == null || delimiter.size !in 1..64) throw ProtocolException(null, "구분자는 1~64바이트 HEX 형식이어야 합니다.")
+            if (frame.size < delimiter.size || !delimiter.indices.all { frame[frame.size - delimiter.size + it] == delimiter[it] })
+                throw ProtocolException(null, "전문이 지정된 종료 구분자로 끝나지 않습니다.")
+            frame.copyOf(frame.size - delimiter.size)
+        } else frame
+        if (payload.size < hl) throw ProtocolException(null, "전문(${payload.size}B)이 헤더 길이(${hl}B)보다 짧습니다.")
         val warnings = ArrayList<String>()
         val header = LinkedHashMap<String, String>()
         val slices = ArrayList<FieldSlice>()
         var offset = 0
         for (f in spec.headerOrEmpty()) {
-            val slice = frame.copyOfRange(offset, offset + f.lenOrZero())
-            val v = if (f.typeOr() == "length") parseLength(spec, frame).toString() else decodeField(f, slice, cs, header, plugins, dir, resolve)
+            val slice = payload.copyOfRange(offset, offset + f.lenOrZero())
+            val v = if (f.typeOr() == "length") parseLength(spec, payload).toString() else decodeField(f, slice, cs, header, plugins, dir, resolve)
             header[f.nameOrEmpty()] = v
             slices.add(FieldSlice(f.nameOrEmpty(), offset, f.lenOrZero(), slice.size, v))
             offset += f.lenOrZero()
         }
-        val declared = parseLength(spec, frame)
-        val expectTotal = totalFromDeclared(spec, declared)
-        if (expectTotal != frame.size) warnings += "길이 필드 불일치 — 선언 $declared(전체 ${expectTotal}B), 실제 ${frame.size}B"
-        var body = frame.copyOfRange(hl, frame.size)
+        if (spec.framingMode(dir) == "length") {
+            val declared = parseLength(spec, payload)
+            val expectTotal = totalFromDeclared(spec, declared, dir)
+            if (expectTotal != payload.size) warnings += "길이 필드 불일치 — 선언 $declared(전체 ${expectTotal}B), 실제 ${payload.size}B"
+        } else if (spec.framingMode(dir) == "fixed" && spec.framingFor(dir)?.fixedLength != payload.size) {
+            warnings += "고정 길이 불일치 — 설정 ${spec.framingFor(dir)?.fixedLength ?: 0}B, 실제 ${payload.size}B"
+        }
+        var body = payload.copyOfRange(hl, payload.size)
         for (p in (spec.messagePlugins ?: emptyList()).asReversed()) {
             val id = p.id?.trim().orEmpty(); if (id.isEmpty()) continue
             val mc = plugins.find(id) as? MessageCodec ?: throw ProtocolException(null, "메시지 플러그인 '$id' 을 찾을 수 없습니다(MessageCodec).")

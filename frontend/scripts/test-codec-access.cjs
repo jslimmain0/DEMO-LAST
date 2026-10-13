@@ -96,3 +96,29 @@ assert.equal(prevented, 0, 'protocol save shortcut yields to unfinished Korean c
 listeners.get('keydown')(saveKey)
 assert.equal(prevented, 1, 'physical Ctrl+S remains available after composition completes')
 console.log('PASS: protocol controls are named/read-only; add-message deep link respects editing permission and still works for editors')
+const spacedDetail = structuredClone(detail)
+spacedDetail.spec.lengthFormat = ' BINARY '
+spacedDetail.spec.endian = ' LITTLE '
+const spacedBefore = JSON.stringify(spacedDetail)
+const spacedTree = ProtocolEditor({ detail: spacedDetail, canEdit: true, onSaved() {} })
+assert.equal(walk(spacedTree, node => node.props?.['aria-label'] === '길이 형식')[0].props.value, 'binary')
+assert.equal(walk(spacedTree, node => node.props?.['aria-label'] === '엔디안')[0].props.value, 'little')
+assert.equal(JSON.stringify(spacedDetail), spacedBefore, 'backend-valid padded/capitalized options display without rewriting source')
+const fixedDetail = structuredClone(detail)
+fixedDetail.spec.framing = { mode: 'fixed', fixedLength: 14 }
+fixedDetail.spec.responseFraming = { mode: 'fixed', fixedLength: 8 }
+fixedDetail.spec.lengthField = 'preserved-length'
+fixedDetail.spec.lengthFormat = 'binary'
+fixedDetail.spec.endian = 'little'
+fixedDetail.spec.includesSelf = true
+const fixedBefore = JSON.stringify(fixedDetail)
+const fixedTree = ProtocolEditor({ detail: fixedDetail, canEdit: true, onSaved() {} })
+assert.equal(walk(fixedTree, node => ['길이 필드', '길이 형식', '엔디안'].includes(node.props?.['aria-label'])).length, 0, 'fixed requests and responses hide inactive length options')
+assert.equal(walk(fixedTree, node => node.type === 'input' && node.props.name === 'includesSelf').length, 0)
+assert.equal(walk(fixedTree, node => node.props?.['aria-label'] === '분기 필드').length, 1, 'discriminator remains configurable with any framing')
+assert.match(text(fixedTree), /전문 구분/)
+assert.doesNotMatch(text(fixedTree), /길이 필드와 전문 구분/)
+assert.equal(JSON.stringify(fixedDetail), fixedBefore, 'hiding length options preserves all previously stored values')
+assert.equal(walk(readOnly, node => node.type === 'input' && node.props.name === 'includesSelf').length, 2, 'legacy length framing retains include/exclude radios')
+const responseLengthTree = ProtocolEditor({ detail: { ...fixedDetail, spec: { ...fixedDetail.spec, responseFraming: { mode: 'length' } } }, canEdit: true, onSaved() {} })
+assert.equal(walk(responseLengthTree, node => node.props?.['aria-label'] === '길이 형식').length, 1, 'response-only length framing also reveals shared length settings')

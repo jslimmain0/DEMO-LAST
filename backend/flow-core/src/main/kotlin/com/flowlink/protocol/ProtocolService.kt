@@ -185,9 +185,15 @@ class ProtocolService(
         val key = req.key?.trim().orEmpty()
         if (key.isEmpty()) return ProtocolDtos.PreviewResult(0, "", "", emptyList(), listOf(ProtocolDtos.PreviewError(null, "전문(key)을 고르세요.")))
         val dir = if ((req.direction ?: "send").equals("recv", ignoreCase = true)) Direction.RECV else Direction.SEND
+        val frameDir = when (req.frameDirection?.trim()?.lowercase(java.util.Locale.ROOT)) {
+            null -> dir
+            "send" -> Direction.SEND
+            "recv" -> Direction.RECV
+            else -> throw BadRequestException("미리보기 방향은 send 또는 recv여야 합니다.")
+        }
         val values = scopes.scope(tenant(), req.environment, cached = false, workspaceId = wsId)
         return try {
-            val e = ProtocolCodec.encode(spec, key, req.values ?: emptyMap(), dir, plugins(wsId), resolve = values.resolver())
+            val e = ProtocolCodec.encode(spec, key, req.values ?: emptyMap(), dir, plugins(wsId), resolve = values.resolver(), frameDirection = frameDir)
             val bytes = values.maskBytes(e.bytes)
             ProtocolDtos.PreviewResult(e.bytes.size, TcpBytes.hexDump(bytes), TcpBytes.printable(bytes, spec.charset()), e.fields.map { it.copy(value = values.mask(it.value)) }, emptyList(), e.warnings.map(values::mask))
         } catch (e: ProtocolCodec.ProtocolException) {

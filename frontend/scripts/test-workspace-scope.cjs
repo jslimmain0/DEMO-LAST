@@ -45,6 +45,18 @@ async function run() {
   assert.equal(team.mockBaseUrl('same', null, '/mock/ws/other-team/same'), 'https://flow.company/flowlink/mock/ws/other-team/same')
   assert.equal(personal.mockBaseUrl('orders'), 'http://localhost:18180/flowlink/mock/ws/personal-id/orders')
   assert.equal(team.resourceUrl('/hooks/run'), 'https://flow.company/flowlink/hooks/run')
+  requests.length = 0
+  await personal.mocksApi.tcpSessions('same-id')
+  await team.mocksApi.extendTcpSession('same-id', 'session/remote', 60000)
+  assert.equal(requests[0].baseURL, local.defaults.baseURL)
+  assert.equal(requests[0].url, '/mock-servers/same-id/tcp-sessions')
+  assert.equal(requests[0].params.workspaceId, 'personal-id')
+  assert.equal(requests[1].baseURL, remote.defaults.baseURL)
+  assert.equal(requests[1].url, '/mock-servers/same-id/tcp-sessions/session%2Fremote/extend')
+  assert.equal(requests[1].params.workspaceId, 'team-id')
+  assert.equal(requests[1].headers.get('X-FlowLink-Account'), 'alice')
+  assert.equal(requests[1].headers.get('X-FlowLink-Server'), 'https://flow.company/flowlink')
+  assert.equal(JSON.parse(requests[1].data).extendMs, 60000)
   const managedRequests = []
   const managed = exportsObject.createApi(axios.create({ adapter: async config => {
     managedRequests.push(config)

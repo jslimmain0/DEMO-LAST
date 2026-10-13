@@ -261,6 +261,7 @@ async function testEditorHeadersAndReplay() {
     '../components/AssistantLoginGate': { AssistantLoginGate: 'login-gate' }, '../components/MockAssistantPanel': { MockAssistantPanel: 'assistant' },
     '../components/MockCodecEditor': { MockCodecEditor: 'codec' }, '../components/MockRouteEditor': { RouteCard: 'route-card' },
     '../components/TcpMockEditor': { TcpConnPanel: 'tcp-connection', TcpLogPanel: 'tcp-log', TcpRuleDetail: 'tcp-rule', TcpSendPanel: 'tcp-send', tcpRuleSummary: () => '' },
+    '../components/TcpMockSessions': { TcpMockSessions: 'tcp-sessions' },
     '../components/MockVersionHistoryDialog': { MockVersionHistoryDialog: 'versions' }, '../components/Modal': { Modal: 'modal' },
     '../components/UnsavedNavigation': { useUnsavedNavigation() {} }, '../components/AgentSettings': { AgentBadge: 'agent-badge' },
     '../lib/contrast': { useReadableInk: () => '#fff' }, '../lib/ids': { newId: () => 'new-id' },

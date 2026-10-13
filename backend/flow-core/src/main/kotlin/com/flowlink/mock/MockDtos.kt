@@ -214,6 +214,8 @@ object MockDtos {
     /** 보내보기 요청 — 이 Mock 의 프로토콜에서 전문(key)을 고르고 필드 값을 채워 실제 리스너 포트로 쏜다. */
     data class TcpSendRequest(val key: String? = null, val values: Map<String, String>? = null)
 
+    data class TcpSessionExtendRequest(val extendMs: Int = 60_000)
+
     /** 수신 전문 해석 결과 — 헤더/본문 값 + 원문(텍스트·hex·바이트수·부분수신 chunks) + 경고. */
     data class DecodedView(
         val key: String?,

@@ -18,6 +18,7 @@ class McpResourceRoutingTest {
     private var exists = true
     private var pcError: RuntimeException? = null
     private var serverError: RuntimeException? = null
+    private var sessionError: RuntimeException? = null
     private var environments = true
     private val server = McpInvocation("http://127.0.0.1:18080", "Bearer synthetic", "server", "team")
     private val local = server.copy(target = "local", workspaceId = "pc")
@@ -26,6 +27,7 @@ class McpResourceRoutingTest {
             val request = Request(call.getArgument(0), call.getArgument(1), call.getArgument(2), call.getArgument(3), call.getArgument(5), call.getArgument(6))
             requests += request
             if (request.context.target == "local") pcError?.let { throw it } else serverError?.let { throw it }
+            if (request.path.contains("/tcp-sessions")) sessionError?.let { throw it }
             when {
                 request.path == "/workspaces" -> json(if (request.context.target == "local") """[{"id":"pc","kind":"PERSONAL"}]""" else """[{"id":"public","kind":"PUBLIC"},{"id":"team","kind":"TEAM"}]""")
                 request.path == "/environments" -> json(if (!environments) "[]" else if (request.context.target == "local") """[{"name":"same","vars":{"ORIGIN":"PC","PC_ONLY":"yes"}}]""" else """[{"name":"same","vars":{"ORIGIN":"SERVER","SERVER_ONLY":"yes"}}]""")
@@ -40,6 +42,8 @@ class McpResourceRoutingTest {
                 request.path == "/mock-servers" && request.method == "POST" -> json("""{"id":"mock"}""")
                 request.path == "/mock-servers/mock" -> mapper.createObjectNode().apply { put("id", "mock"); set<JsonNode>("spec", savedSpec) }
                 request.path == "/mock-servers/fleet" -> json(if (request.context.target == "local") """{"servers":[{"id":"same-id","workspaceId":"pc"}]}""" else """{"servers":[{"id":"same-id","workspaceId":"public"}]}""")
+                request.path == "/mock-servers/mock/tcp-sessions" -> json("""[{"id":"7a9cbbd6-38ce-494e-8a2b-04c647a6e478","state":"waiting","remainingMs":25000,"receivedMessages":2}]""")
+                request.path.endsWith("/extend") -> json("""{"id":"7a9cbbd6-38ce-494e-8a2b-04c647a6e478","state":"waiting","remainingMs":85000,"receivedMessages":2}""")
                 else -> mapper.createObjectNode()
             }
         }
@@ -88,6 +92,65 @@ class McpResourceRoutingTest {
         assertEquals(7, run.body.path("input").path("order").asInt())
         assertEquals(17, run.body.path("upstream").path("before").path("amount").asInt())
         assertFalse(run.body.has("resourceIdentity")); assertFalse(run.body.has("agentDeviceId")); assertFalse(run.body.has("clientExecutionId"))
+    }
+
+    @Test fun `TCP session list resolves Mock slug in selected PC or server workspace`() {
+        for (scope in listOf(local, server)) {
+            requests.clear()
+            val result = mapper.valueToTree<JsonNode>(tools.invoke("mock_tcp_sessions", args("""{"slug":"same"}"""), scope))
+            assertEquals("waiting", result.path(0).path("state").asText())
+            assertEquals(2, result.path(0).path("receivedMessages").asInt())
+            assertEquals(listOf("/mock-servers", "/mock-servers/mock/tcp-sessions"), requests.map { it.path })
+            assertTrue(requests.all { it.method == "GET" && it.context == scope && it.body == null })
+        }
+        assertEquals("pc", tools.scopeFor("mock_tcp_sessions", args("""{"target":"local"}"""), server).workspaceId)
+        assertEquals("team", tools.scopeFor("mock_tcp_sessions", args("""{"workspace":"team"}"""), server).workspaceId)
+    }
+
+    @Test fun `TCP session extension forwards only selected ID and duration without reconnecting`() {
+        val id = "7a9cbbd6-38ce-494e-8a2b-04c647a6e478"
+        val input = args("""{"slug":"same","action":"extend","sessionId":"$id"}""")
+        for (duration in listOf<Long?>(null, 1000, 3600000)) {
+            requests.clear()
+            if (duration == null) input.remove("extendMs") else input.put("extendMs", duration)
+            val result = mapper.valueToTree<JsonNode>(tools.invoke("mock_tcp_sessions", input, local))
+            assertEquals(id, result.path("id").asText())
+            assertEquals(85000, result.path("remainingMs").asInt())
+            assertEquals(listOf("GET", "POST"), requests.map { it.method })
+            assertEquals("/mock-servers/mock/tcp-sessions/$id/extend", requests.last().path)
+            assertEquals(1, requests.last().body!!.size())
+            assertEquals(duration ?: 60000L, requests.last().body!!.path("extendMs").asLong())
+            assertTrue(requests.all { it.context == local })
+        }
+    }
+
+    @Test fun `TCP session invalid actions IDs and extension bounds reject before REST`() {
+        val base = """"slug":"same","action":"extend","sessionId":"7a9cbbd6-38ce-494e-8a2b-04c647a6e478""""
+        val invalid = listOf(
+            """{"slug":"same","action":"close"}""", """{"slug":"same","action":"extend"}""",
+            """{"slug":"same","action":"extend","sessionId":"../other"}""",
+            "{$base,\"extendMs\":999}", "{$base,\"extendMs\":3600001}",
+            "{$base,\"extendMs\":1000.5}", "{$base,\"extendMs\":\"60000\"}", "{$base,\"extendMs\":9223372036854775808}"
+        )
+        for (input in invalid) {
+            requests.clear()
+            assertThrows(IllegalArgumentException::class.java) { tools.invoke("mock_tcp_sessions", args(input), server) }
+            assertTrue(requests.isEmpty(), input)
+        }
+    }
+
+    @Test fun `TCP session permission expired or processing errors propagate without fallback or retry`() {
+        val input = args("""{"slug":"same","action":"extend","sessionId":"7a9cbbd6-38ce-494e-8a2b-04c647a6e478"}""")
+        for (status in listOf(400, 403, 404)) {
+            requests.clear(); sessionError = McpApiException(status, "synthetic session error")
+            val failure = assertThrows(McpApiException::class.java) { tools.invoke("mock_tcp_sessions", input, local) }
+            assertEquals(status, failure.status)
+            assertEquals(listOf("GET", "POST"), requests.map { it.method })
+            assertTrue(requests.all { it.context.target == "local" })
+        }
+        sessionError = null; exists = false; requests.clear()
+        assertThrows(IllegalArgumentException::class.java) { tools.invoke("mock_tcp_sessions", input, server) }
+        assertEquals(listOf("GET"), requests.map { it.method })
     }
 
     @Test fun `central protocol deletion rejects private IDs before DELETE and accepts listed public IDs`() {

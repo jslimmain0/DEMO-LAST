@@ -22,6 +22,7 @@ return the FULL intended spec. When they only ask a question, return spec=null.
 - protocol_preview의 environment는 서버 공통 환경이다. 실제 흐름의 내 PC/서버 환경 선택은 flow_run/node_run의 envSource+envName으로 한다.
 - protocol_preview의 frameDirection="send"|"recv"는 요청/응답 수신 경계를 선택한다. direction은 코덱 ctx 방향이며 기존 기본은 send다. 응답 경계만 바꾸려면 frameDirection="recv"를 명시하고 코덱 방향은 규격에 맞춰 별도로 선택한다.
 - 연결 유지 검증은 같은 흐름에 같은 실행 위치·목적지·프로토콜의 TCP 노드 두 개를 연결하고 flow_run으로 한다. 별도 node_run이나 mock_send 호출끼리는 연결을 공유하지 않는다.
+- 외부 앱이 TCP Mock에 연결한 수신 세션은 mock_tcp_sessions로 조회한다. action="extend"와 조회한 sessionId로 현재 대기 기한만 연장하며 새 데이터를 보내거나 정의를 저장하지 않는다. 처리 중·이미 종료된 세션은 연장할 수 없고 새 송수신 이후 기본 유휴 시간으로 돌아간다.
 - 기존 개인·팀 프로토콜 정의는 자동 이동/복사하지 않는다. 기존 metadata 없는 흐름을 바꿀 때는 원래 자원 스코프를 보존하고 공통 전환 시 참조 id를 확인한다.
 
 ## OUTPUT CONTRACT (STRICT)

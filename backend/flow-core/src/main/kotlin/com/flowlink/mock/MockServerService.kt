@@ -572,6 +572,21 @@ class MockServerService(
     @Transactional
     fun clearTcpLog(id: UUID) { find(id); store.clearTcpLog(id) } // 런타임 변형 = 쓰기 게이트
 
+    @Transactional(readOnly = true)
+    fun tcpSessions(id: UUID): List<TcpMockListenerRuntime.SessionView> {
+        val m = findReadable(id)
+        if (parseSpec(m.specJson).tcp == null) throw BadRequestException("TCP Mock이 아닙니다.")
+        return tcpRegistry.sessions(id)
+    }
+
+    /** 정의를 저장하거나 소켓에 전문을 보내지 않고, 선택한 수신 연결의 대기 기한만 연장한다. */
+    fun extendTcpSession(id: UUID, sessionId: UUID, extendMs: Int): TcpMockListenerRuntime.SessionView {
+        val m = find(id)
+        if (parseSpec(m.specJson).tcp == null) throw BadRequestException("TCP Mock이 아닙니다.")
+        if (extendMs !in 1_000..3_600_000) throw BadRequestException("연장 시간은 1초~1시간이어야 합니다.")
+        return tcpRegistry.extendSession(id, sessionId, extendMs)
+    }
+
     /**
      * 보내보기 — 프로토콜로 요청 전문을 조립해 **실제 리스너 포트**로 1회 왕복하고 응답을 해석해 돌려준다.
      * (규칙 매칭·장애 주입·프록시까지 그대로 타므로 편집기에서 "진짜 되는지"를 확인할 수 있다.)

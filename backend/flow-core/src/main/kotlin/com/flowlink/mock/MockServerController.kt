@@ -100,6 +100,13 @@ class MockServerController(private val service: MockServerService) {
     @ResponseStatus(HttpStatus.NO_CONTENT)
     fun clearTcpLog(@PathVariable id: UUID) = service.clearTcpLog(id)
 
+    @GetMapping("/{id}/tcp-sessions")
+    fun tcpSessions(@PathVariable id: UUID) = service.tcpSessions(id)
+
+    @PostMapping("/{id}/tcp-sessions/{sessionId}/extend")
+    fun extendTcpSession(@PathVariable id: UUID, @PathVariable sessionId: UUID,
+                         @RequestBody req: MockDtos.TcpSessionExtendRequest) = service.extendTcpSession(id, sessionId, req.extendMs)
+
     /** 보내보기 — 프로토콜로 전문을 조립해 이 Mock 의 리스너 포트로 실제 왕복(규칙·장애 주입 그대로). */
     @PostMapping("/{id}/tcp-send")
     fun tcpSend(@PathVariable id: UUID, @RequestBody req: MockDtos.TcpSendRequest): MockDtos.TcpSendResult =

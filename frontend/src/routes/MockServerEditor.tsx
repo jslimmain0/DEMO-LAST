@@ -16,6 +16,7 @@ import { MockAssistantPanel } from '../components/MockAssistantPanel'
 import { MockCodecEditor } from '../components/MockCodecEditor'
 import { RouteCard } from '../components/MockRouteEditor'
 import { TcpConnPanel, TcpLogPanel, TcpRuleDetail, TcpSendPanel, tcpRuleSummary } from '../components/TcpMockEditor'
+import { TcpMockSessions } from '../components/TcpMockSessions'
 import { MockExportDialog, MockReplaceSpecDialog } from '../components/MockTransferDialog'
 import { MockVersionHistoryDialog } from '../components/MockVersionHistoryDialog'
 import { Modal } from '../components/Modal'
@@ -454,6 +455,7 @@ export function MockServerEditor() {
                     </div>
                   )}
                   <TcpConnPanel tcp={tcp} spec={protoSpec} sources={sourcesFor()} address={tcpAddress} readOnly={!canEdit} onChange={setTcp} />
+                  <TcpMockSessions key={`${scope.scopeKey}:${id}`} mockId={id} readOnly={!canEdit} />
                 </>
               )}
               {nav.kind === 'rule' && selRule && (

@@ -600,6 +600,19 @@ export interface MockServerDetail extends MockServerSummary {
   currentVersion?: number
 }
 
+export interface TcpMockSession {
+  id: string
+  remoteAddress: string
+  remotePort: number
+  connectedAt: string
+  lastActivityAt: string
+  idleTimeoutMs: number
+  state: 'starting' | 'waiting' | 'processing'
+  expiresAt: string | null
+  remainingMs: number | null
+  receivedMessages: number
+}
+
 // Mock AI 어시스턴트 — 자연어로 mock spec 생성/수정 (플로우 어시스턴트의 mock 판, Copilot 자격 공유)
 export interface MockAssistantChatRequest { messages: AssistantMessage[]; spec?: MockServerSpec | null; mockId?: string; model?: string }
 export interface MockAssistantChatResponse { reply: string; spec: MockServerSpec | null; stub: boolean; model: string }

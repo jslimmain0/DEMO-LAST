@@ -1,6 +1,7 @@
 package com.flowlink.mock
 
 import com.flowlink.common.error.BadRequestException
+import com.flowlink.common.error.NotFoundException
 import com.flowlink.execution.engine.SecretMasker
 import com.flowlink.protocol.ProtocolCodec
 import com.flowlink.protocol.ProtocolSpec
@@ -45,12 +46,35 @@ class TcpMockListenerRuntime(
         @Volatile var environment: String?,        // 환경 스코프({{ 이름@secret }}·{{ 키@env }})
         @Volatile var spec: MockSpec?,
     ) {
-        val connections: MutableSet<Socket> = ConcurrentHashMap.newKeySet()
+        val connections = ConcurrentHashMap<UUID, TcpMockConnection>()
     }
 
     private val listeners = ConcurrentHashMap<UUID, Listener>() // mock 서버 id → 리스너
     /** 기동 시 바인딩 실패(포트 선점 등) — 저장 시점 실패는 400 으로 롤백되지만 재기동 실패는 조용해서 서버 현황에 빨간불로 노출한다. */
     private val failures = ConcurrentHashMap<UUID, String>()
+
+    data class SessionView(
+        val id: UUID, val remoteAddress: String, val remotePort: Int,
+        val connectedAt: Instant, val lastActivityAt: Instant, val idleTimeoutMs: Int,
+        val state: String, val expiresAt: Instant?, val remainingMs: Long?, val receivedMessages: Long,
+    )
+
+    fun sessions(mockId: UUID): List<SessionView> {
+        val listener = listeners[mockId] ?: return emptyList()
+        return listener.connections.values.mapNotNull { connection ->
+            connection.view().also { if (it == null) listener.connections.remove(connection.id, connection) }
+        }.sortedBy { it.connectedAt }
+    }
+
+    fun extendSession(mockId: UUID, sessionId: UUID, extendMs: Int): SessionView {
+        if (extendMs !in 1000..3_600_000) throw BadRequestException("연장 시간은 1,000~3,600,000ms 범위여야 합니다.")
+        val listener = listeners[mockId] ?: throw NotFoundException("TCP Mock 연결을 찾을 수 없습니다.")
+        val connection = listener.connections[sessionId] ?: throw NotFoundException("TCP Mock 연결을 찾을 수 없습니다.")
+        return try { connection.extend(extendMs) } catch (e: NotFoundException) {
+            listener.connections.remove(sessionId, connection)
+            throw e
+        }
+    }
 
     /** 실제로 열려 있는 리스너 포트(없으면 null) — spec 의 port 와 달리 "지금 소켓이 바인딩돼 있는가". */
     fun listeningPort(id: UUID): Int? = listeners[id]?.takeIf { !it.socket.isClosed }?.port
@@ -61,8 +85,7 @@ class TcpMockListenerRuntime(
     fun recordFailure(id: UUID, message: String) { failures[id] = message }
     fun onProtocolChanged(id: UUID, spec: ProtocolSpec) {
         for (l in listeners.values) if (l.tcp.protocolId?.trim() == id.toString() && l.protocol != spec) {
-            l.protocol = spec
-            closeConnections(l)
+            synchronized(l) { l.protocol = spec; closeConnections(l) }
         }
     }
 
@@ -80,13 +103,15 @@ class TcpMockListenerRuntime(
         val port = tcp.port ?: throw BadRequestException("TCP Mock 포트가 없습니다.")
         val cur = listeners[m.id]
         if (cur != null && cur.port == port) {
-            val changed = cur.workspaceId != m.workspaceId || cur.tcp != tcp || cur.protocol != proto || cur.environment != environment || cur.spec != spec
-            cur.workspaceId = m.workspaceId
-            cur.tcp = tcp // 같은 포트 — 규칙/프로토콜/시크릿 환경만 핫스왑
-            cur.protocol = proto
-            cur.environment = environment
-            cur.spec = spec
-            if (changed) closeConnections(cur)
+            synchronized(cur) {
+                val changed = cur.workspaceId != m.workspaceId || cur.tcp != tcp || cur.protocol != proto || cur.environment != environment || cur.spec != spec
+                cur.workspaceId = m.workspaceId
+                cur.tcp = tcp // 같은 포트 — 규칙/프로토콜/시크릿 환경만 핫스왑
+                cur.protocol = proto
+                cur.environment = environment
+                cur.spec = spec
+                if (changed) closeConnections(cur)
+            }
             failures.remove(m.id)
             return
         }
@@ -121,9 +146,9 @@ class TcpMockListenerRuntime(
     }
 
     private fun closeConnections(listener: Listener) {
-        listener.connections.toList().forEach { socket ->
-            runCatching { socket.close() }
-            listener.connections.remove(socket)
+        synchronized(listener) {
+            listener.connections.values.forEach { it.close() }
+            listener.connections.clear()
         }
     }
 
@@ -144,9 +169,12 @@ class TcpMockListenerRuntime(
             } catch (e: IOException) {
                 return // close() 로 인한 정상 종료
             }
-            l.connections.add(sock)
-            if (l.socket.isClosed) { runCatching { sock.close() }; l.connections.remove(sock); return }
-            Thread({ serve(l, sock) }, "tcp-mock-conn").apply {
+            val connection = TcpMockConnection(sock)
+            synchronized(l) {
+                if (l.socket.isClosed) { connection.close(); return }
+                l.connections[connection.id] = connection
+            }
+            Thread({ serve(l, connection) }, "tcp-mock-conn").apply {
                 isDaemon = true
                 start()
             }
@@ -154,7 +182,8 @@ class TcpMockListenerRuntime(
     }
 
     /** 연결 하나 — 세션에 위임(프레이밍 규약이라 같은 연결로 여러 전문). */
-    private fun serve(l: Listener, sock: Socket) {
+    private fun serve(l: Listener, connection: TcpMockConnection) {
+        val sock = connection.socket
         try { sock.use {
             try {
                 sock.soTimeout = 30_000
@@ -162,7 +191,7 @@ class TcpMockListenerRuntime(
                 val tcp = spec?.tcp ?: l.tcp
                 val environment = if (spec != null) spec.environment else l.environment
                 val scope = secretProvider.scope(l.tenantId, environment, workspaceId = l.workspaceId, spec = spec)
-                sock.soTimeout = (scope.protocol ?: l.protocol).transport?.idleTimeoutMs ?: 30_000
+                connection.configure((scope.protocol ?: l.protocol).transport?.idleTimeoutMs ?: 30_000)
                 val secrets = scope.secrets
                 val masks = SecretMasker.variants(secrets.values)
                 val session = TcpMockSession(
@@ -172,16 +201,18 @@ class TcpMockListenerRuntime(
                     mask = { s -> SecretMasker.mask(s, masks) ?: s },
                     env = scope.env,
                     verifyResourceAccess = scope.verifyAccess,
+                    onWaiting = connection::waiting,
+                    onFrame = connection::received,
                 )
-                session.serve(sock.getInputStream().buffered(), sock.getOutputStream()) {
+                session.serve(connection.input(), connection.output()) {
                     runCatching { sock.setSoLinger(true, 0) }; runCatching { sock.close() }
                 }
             } catch (e: SocketTimeoutException) {
                 store.recordTcp(l.mockId, MockRuntimeStore.TcpLogEntry(
-                    Instant.now(), "in", "none", null, emptyMap(), "", "", 0, null, null, "유휴 30초 경과 — 연결 종료", "warn",
+                    Instant.now(), "in", "none", null, emptyMap(), "", "", 0, null, null, "유휴 기한 경과 — 연결 종료", "warn",
                 ))
             } catch (e: Exception) { /* 상대 종료/소켓 오류 — 연결만 닫는다 */ }
-        } } finally { l.connections.remove(sock) }
+        } } finally { connection.close(); l.connections.remove(connection.id, connection) }
     }
 
     /** [resolve] — upstream 주소의 `{{ 키@env }}`·`{{ 이름@secret }}`(환경마다 다른 실서버)를 이 Mock 의 환경으로 푼다. */

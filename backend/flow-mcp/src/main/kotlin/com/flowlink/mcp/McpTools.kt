@@ -141,6 +141,19 @@ class McpTools(private val mapper: ObjectMapper, private val rest: McpRestClient
                 return get(path)
             }
             "mock_send" -> return api("POST", "${mockPath()}/tcp-send", fields("key", "values"))
+            "mock_tcp_sessions" -> {
+                val action = a.path("action").asText("list")
+                require(action in setOf("list", "extend")) { "action은 list 또는 extend여야 합니다" }
+                if (action == "list") return get("${mockPath()}/tcp-sessions")
+                val sessionId = requireNotNull(a.text("sessionId")) { "연장할 sessionId가 필요합니다. 먼저 list로 연결을 조회하세요" }
+                require(sessionId.matches(Regex("[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"))) { "sessionId는 조회 결과의 UUID여야 합니다" }
+                val extendMs = if (!a.has("extendMs")) 60000L else {
+                    require(a.path("extendMs").isIntegralNumber && a.path("extendMs").canConvertToLong()) { "extendMs는 정수여야 합니다" }
+                    a.path("extendMs").asLong()
+                }
+                require(extendMs in 1000L..3600000L) { "extendMs는 1000~3600000ms여야 합니다" }
+                return api("POST", "${mockPath()}/tcp-sessions/$sessionId/extend", mapOf("extendMs" to extendMs))
+            }
             "mock_log" -> {
                 val m = mock(); val tcp = m.path("kind").asText() == "TCP"
                 val logs = get("/mock-servers/${m.path("id").asText()}/${if (tcp) "tcp-log" else "requests"}")

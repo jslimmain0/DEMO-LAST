@@ -29,6 +29,8 @@ class TcpMockRegistry(
     private val log = LoggerFactory.getLogger(javaClass)
     fun listeningPort(id: UUID) = runtime.listeningPort(id)
     fun bindFailure(id: UUID) = runtime.bindFailure(id)
+    fun sessions(id: UUID) = runtime.sessions(id)
+    fun extendSession(id: UUID, sessionId: UUID, extendMs: Int) = runtime.extendSession(id, sessionId, extendMs)
     fun stop(id: UUID) = runtime.stop(id)
     fun stopAll() = runtime.stopAll()
     fun effectiveBindAddress() = if (workspace.localRuntime) "127.0.0.1" else runtime.effectiveBindAddress()

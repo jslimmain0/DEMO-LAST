@@ -7,6 +7,7 @@ export function createMockFeatures(state) {
   const triggers = []
   const running = new Map()
   const logs = new Map()
+  const tcpSessions = new Map()
   let skills = { instructions: '프론트 테스트용 AI 응답입니다.', user: [] }
   let oauth = false
   let model = 'mock-model'
@@ -112,6 +113,30 @@ export function createMockFeatures(state) {
     if (resource === 'mock-servers' && id === 'fleet' && method === 'GET') return { workspaces: workspaces.map(w => ({ ...w, mine: true })), servers: mocks.map(m => ({ ...mockSummary(m), readable: true, myRole: 'OWNER', listening: m.enabled, usedBy: [] })), ports: mocks.filter(m => m.enabled).map(m => ({ port: m.spec.tcp?.port ?? 5174, kind: m.kind === 'TCP' ? 'TCP' : 'HTTP', state: 'LISTENING', mockId: m.id, workspaceId: m.workspaceId, readable: true, count: 1 })), httpPort: 5174, contextPath: '', generatedAt: now() }
     if (resource === 'mock-servers' && id && !['fleet', 'usages', 'slug-check'].includes(id)) {
       const item = find(mocks, id, workspaceId)
+      if (action === 'tcp-sessions') {
+        if (!item.spec.tcp) fail(400, 'TCP Mock이 아닙니다.')
+        if (!item.enabled) { tcpSessions.delete(id); if (method === 'GET') return []; fail(404, '연결이 종료되었습니다.') }
+        if (!tcpSessions.has(id)) {
+          const idleTimeoutMs = protocols.find(p => p.id === item.spec.tcp.protocolId)?.spec.transport?.idleTimeoutMs ?? 30000
+          tcpSessions.set(id, [
+            { id: `${origin}-waiting-demo`, remoteAddress: '127.0.0.1', remotePort: 53001, connectedAt: new Date(Date.now() - 90000).toISOString(), lastActivityAt: now(), idleTimeoutMs, state: 'waiting', expiresAt: new Date(Date.now() + idleTimeoutMs).toISOString(), receivedMessages: 20 },
+            { id: `${origin}-processing-demo`, remoteAddress: '::1', remotePort: 53002, connectedAt: now(), lastActivityAt: now(), idleTimeoutMs, state: 'processing', expiresAt: null, receivedMessages: 1 },
+          ])
+        }
+        const list = tcpSessions.get(id).filter(session => !session.expiresAt || Date.parse(session.expiresAt) > Date.now())
+        tcpSessions.set(id, list)
+        const view = session => ({ ...session, remainingMs: session.expiresAt ? Math.max(0, Date.parse(session.expiresAt) - Date.now()) : null })
+        if (!no && method === 'GET') return list.map(view)
+        if (no && path.endsWith('/extend') && method === 'POST') {
+          const session = list.find(session => session.id === no)
+          if (!session) fail(404, '연결이 종료되었습니다.')
+          if (session.state !== 'waiting') fail(400, '대기 중인 연결만 연장할 수 있습니다.')
+          if (!Number.isInteger(body.extendMs) || body.extendMs < 1000 || body.extendMs > 3600000) fail(400, '연장 시간은 1초~1시간이어야 합니다.')
+          if (Date.parse(session.expiresAt) - Date.now() + body.extendMs > 3600000) fail(400, '연장 후 남은 대기 시간은 최대 1시간입니다.')
+          session.expiresAt = new Date(Date.parse(session.expiresAt) + body.extendMs).toISOString()
+          return view(session)
+        }
+      }
       if (['requests', 'tcp-log'].includes(action)) { if (method === 'GET') return logs.get(id) ?? []; if (method === 'DELETE') { logs.delete(id); return {} } }
       if (action === 'reset' && method === 'POST') { logs.delete(id); return {} }
       if (action === 'codec-try' && method === 'POST') return { result: body.message, headers: body.headers ?? {}, fields: {}, steps: [] }

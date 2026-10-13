@@ -1,8 +1,10 @@
 # 중앙 MCP
 
-`protocol_upsert`의 `spec`은 요청 `framing`·응답 `responseFraming`(길이 필드/고정 바이트/HEX 종료자), `transport`(실행 중 연결 유지·유휴 제한·고정 ACK)를 지원한다. PC와 서버의 노드·Mock·프록시는 같은 정의를 사용하며 기존 옵션이 없는 명세는 이전 동작을 유지한다. 상세 규칙과 제한은 [TCP 연결과 수신 경계](../README.md#tcp-연결과-수신-경계-2026-10-13)를 따른다. MCP 도구 이름이나 인증·IDE 설정은 변경하지 않는다.
+`protocol_upsert`의 `spec`은 요청 `framing`·응답 `responseFraming`(길이 필드/고정 바이트/HEX 종료자), `transport`(실행 중 연결 유지·유휴 제한·고정 ACK)를 지원한다. PC와 서버의 노드·Mock·프록시는 같은 정의를 사용하며 기존 옵션이 없는 명세는 이전 동작을 유지한다. 상세 규칙과 제한은 [TCP 연결과 수신 경계](../README.md#tcp-연결과-수신-경계-2026-10-13)를 따른다. 기존 MCP 도구 이름과 인증·IDE 설정은 유지한다.
 
 `protocol_preview`는 `frameDirection: send | recv`로 요청/응답 경계를 선택하고, `direction: send | recv`로 코덱 컨텍스트 방향을 선택한다. 응답 길이만 검사하려면 `frameDirection=recv`를 사용한다. 두 인자 생략은 기존 송신 동작을 유지하며 미리보기는 네트워크로 전송하지 않는다. 실제 ACK 교환은 `mock_send`, 연결 유지 검증은 같은 실행의 TCP 노드 두 개를 `flow_run`으로 수행한다. 별도 `mock_send`·`node_run` 호출끼리는 연결을 공유하지 않는다.
+
+`mock_tcp_sessions(target="local"|"server", workspace?, slug, action="list")`는 TCP Mock의 현재 연결을 조회한다. 반환 배열에는 연결별 `id`, 상대 주소·포트, 연결·마지막 활동 시각, 기본 유휴 제한, `state`(`starting`·`waiting`·`processing`), 대기 기한·남은 시간, 수신 전문 수가 있다. `action="extend", sessionId="조회한 id", extendMs=60000`으로 `waiting` 연결의 현재 기한에 시간을 더한다. `extendMs`는 1000~3600000ms이고 연장 후 기한은 현재부터 최대 1시간이다. 처리·시작 중 연장과 상한 초과는 400, 종료·알 수 없는 세션은 404다. 연장은 상대 앱에 전문을 보내지 않으며 다음 데이터 활동부터 기본 유휴 제한을 적용한다. 조회는 읽기 권한, 연장은 쓰기 권한을 요구한다. 연결은 DB에 저장하지 않으며 Mock 중지·설정 변경·앱 재시작 시 사라진다.
 
 `flow-mcp`는 `flow-server`가 로드하는 Kotlin 라이브러리다. 같은 Tomcat의 `/mcp`에서 Streamable HTTP를 제공한다. 별도 Node 프로세스·18090 포트·PC stdio MCP는 사용하지 않는다. Windows MSI에는 Java 런타임과 개인 앱을 포함하며 Node/MCP 소스는 포함하지 않는다. Node/npm은 프론트엔드를 빌드하는 개발 PC에만 필요하다.
 
@@ -31,7 +33,7 @@ Windows 자동 설정의 개인 작업은 토큰을 발급한 PC에 고정한다
 
 Windows 자동 설정을 지원하지 않는 클라이언트의 표준 OAuth 코드·PKCE 호환 경로는 유지한다. Spring Authorization Server가 처리하며 발급하는 자격도 MCP 전용이다. 이 호환 경로는 Windows 장치 ID 없이 계정에 연결된 현재 PC를 사용한다. `flowlink.desktop.mcp-auto-configure=false`는 IDE 파일 변경을 끄며 트레이를 끈 격리 검증에서는 기본 비활성화한다.
 
-기존 58개 도구 이름은 `src/main/resources/flowlink-tools.json`에 유지한다. 저장 위치, 환경 출처, 요청 실행 위치는 다음처럼 구분한다.
+기존 58개 도구 이름을 유지하고 `mock_tcp_sessions`를 추가해 총 59개다. 카탈로그는 `src/main/resources/flowlink-tools.json`에 있다. 저장 위치, 환경 출처, 요청 실행 위치는 다음처럼 구분한다.
 
 | 선택 | 도구·필드 | 의미 |
 |---|---|---|

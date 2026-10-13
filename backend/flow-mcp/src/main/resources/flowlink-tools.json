@@ -660,6 +660,59 @@
     }
   },
   {
+    "name": "mock_tcp_sessions",
+    "title": "TCP Mock 연결 조회·유휴 기한 연장",
+    "description": "선택 target/workspace의 TCP Mock에 연결된 소켓을 slug로 조회합니다. action=list(기본)는 id·remoteAddress·remotePort·connectedAt·lastActivityAt·idleTimeoutMs·state(starting/waiting/processing)·expiresAt·remainingMs·receivedMessages 배열을 반환합니다. action=extend는 먼저 목록에서 얻은 sessionId가 필요하며 현재 waiting 기한에 extendMs(기본 60000, 1000~3600000ms)를 더합니다. 결과 기한이 현재부터 1시간을 넘거나 starting/processing이면 HTTP 400, 종료·알 수 없는 세션은 404입니다. 상대 앱에 전문을 보내지 않고 Mock 측 대기 기한만 바꿉니다. 다음 데이터 활동은 프로토콜의 기본 유휴 제한을 다시 적용합니다. 조회는 Mock 읽기 권한, 연장은 쓰기 권한이 필요합니다. Mock 중지·설정 변경·앱 재시작 시 연결은 사라지며 DB에 저장하지 않습니다.",
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": false
+    },
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "target": {
+          "description": "Mock 위치: local=로그인한 온라인 Windows 앱, server=공용·팀. 생략=server.",
+          "type": "string",
+          "enum": ["local", "server"],
+          "default": "server"
+        },
+        "workspace": {
+          "description": "선택 target의 워크스페이스 이름 또는 id. 생략=local 개인 공간 / server 공용",
+          "type": "string"
+        },
+        "slug": {
+          "type": "string",
+          "minLength": 1
+        },
+        "action": {
+          "type": "string",
+          "enum": ["list", "extend"],
+          "default": "list"
+        },
+        "sessionId": {
+          "description": "action=extend에 필수. 현재 list 결과의 id를 사용하며 종료된 세션을 다시 연결하지 않습니다.",
+          "type": "string",
+          "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+        },
+        "extendMs": {
+          "description": "현재 대기 기한에 더할 밀리초. 연장 후 기한은 현재부터 최대 1시간입니다.",
+          "type": "integer",
+          "minimum": 1000,
+          "maximum": 3600000,
+          "default": 60000
+        }
+      },
+      "required": ["slug"],
+      "allOf": [{
+        "if": {"properties": {"action": {"const": "extend"}}, "required": ["action"]},
+        "then": {"required": ["sessionId"]}
+      }]
+    }
+  },
+  {
     "name": "mock_log",
     "title": "Mock 트래픽 로그",
     "description": "TCP Mock 은 전문 로그(→/← · [mock]/[proxy]/[none] · 필드 · 부분 수신 · 경고), HTTP Mock 은 요청 기록. 최신순 limit 개.",

@@ -13,6 +13,7 @@ import com.flowlink.protocol.TcpClient
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
+import java.net.SocketTimeoutException
 import java.time.Instant
 import java.util.Locale
 import java.util.regex.Pattern
@@ -34,6 +35,8 @@ class TcpMockSession(
     private val sleeper: (Long) -> Unit = { Thread.sleep(it) },
     private val env: Map<String, String> = emptyMap(),
     private val verifyResourceAccess: () -> Unit = {},
+    private val onWaiting: () -> Unit = {},
+    private val onFrame: () -> Unit = {},
 ) {
     /** 코덱 파라미터 안의 `{{ 이름@secret }}`·`{{ 키@env }}` — 이 Mock 의 환경 스코프로 푼다. */
     private val resolve: (String) -> String = MockSecretProvider.Scope(secrets, env).resolver()
@@ -46,12 +49,16 @@ class TcpMockSession(
     fun serve(input: InputStream, output: OutputStream, onReset: () -> Unit) {
         try {
             while (true) {
+                onWaiting()
                 val frame = try { Framer.readFrame(input, spec, Direction.SEND) ?: return } catch (e: Framer.FrameException) {
                     val raw = e.raw ?: ByteArray(0)
                     log(entry("in", "none", null, emptyMap(), raw, null, null, e.message, "error")); return
                 }
+                onFrame()
                 if (!handleFrame(frame, input, output, onReset)) return
             }
+        } catch (_: SocketTimeoutException) {
+            log(entry("in", "none", null, emptyMap(), ByteArray(0), null, null, "유휴 기한 경과 — 연결 종료", "warn"))
         } catch (e: IOException) {
             log(entry("in", "none", null, emptyMap(), ByteArray(0), null, null, "TCP 연결 종료: ${e.message}", "error"))
         } finally {

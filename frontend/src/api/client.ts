@@ -206,6 +206,9 @@ const mocksApi = {
   // TCP 전문 로그 — 리스너가 주고받은 전문(수신/송신, mock·proxy·none)
   tcpLog: (id: string) => http.get<import('./types').TcpLogEntry[]>(`/mock-servers/${id}/tcp-log`).then((r) => r.data),
   clearTcpLog: (id: string) => http.delete(`/mock-servers/${id}/tcp-log`).then(() => undefined),
+  tcpSessions: (id: string) => http.get<import('./types').TcpMockSession[]>(`/mock-servers/${id}/tcp-sessions`).then((r) => r.data),
+  extendTcpSession: (id: string, sessionId: string, extendMs: number) =>
+    http.post<import('./types').TcpMockSession>(`/mock-servers/${id}/tcp-sessions/${encodeURIComponent(sessionId)}/extend`, { extendMs }).then((r) => r.data),
   // 보내보기 — 저장된 mock 의 리스너로 전문을 조립해 보내고 응답을 프로토콜로 디코딩
   tcpSend: (id: string, body: { key: string; values: Record<string, string> }) =>
     http.post<import('./types').TcpSendResult>(`/mock-servers/${id}/tcp-send`, body).then((r) => r.data),

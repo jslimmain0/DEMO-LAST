@@ -17,11 +17,11 @@ class McpContractTest {
     }
 
     @Test fun `legacy catalogue remains complete and scopes are distinct`() {
-        assertEquals(58, catalog.size)
+        assertEquals(59, catalog.size)
         assertEquals(setOf(
             "flowlink_status", "flowlink_update_status", "flowlink_guide", "workspace_list", "workspace_get", "workspace_export", "workspace_import",
             "folder_list", "folder_create", "folder_update", "folder_delete", "protocol_list", "protocol_get", "protocol_upsert", "protocol_preview", "protocol_delete",
-            "mock_list", "mock_get", "mock_upsert", "mock_send", "mock_log", "mock_delete", "mock_versions", "mock_version", "mock_state", "mock_reset", "mock_clear_log", "mock_usages", "codec_try",
+            "mock_list", "mock_get", "mock_upsert", "mock_send", "mock_tcp_sessions", "mock_log", "mock_delete", "mock_versions", "mock_version", "mock_state", "mock_reset", "mock_clear_log", "mock_usages", "codec_try",
             "flow_list", "flow_get", "flow_upsert", "flow_update", "flow_delete", "flow_versions", "flow_version", "flow_run", "execution_get", "execution_list", "execution_resume", "execution_rerun", "node_run", "suite_run",
             "env_list", "env_put", "env_rename", "env_delete", "flow_run_input", "secret_list", "plugin_list", "transform_preview", "plugin_script_list", "plugin_script_get", "plugin_script_try", "plugin_script_upsert", "plugin_script_submit", "plugin_script_wait", "http_request"
         ), catalog.keys)
@@ -66,6 +66,29 @@ class McpContractTest {
         }
         assertTrue(valid("protocol_list", mapOf("target" to "local", "workspace" to "legacy-team")))
         assertTrue(valid("secret_list", mapOf("target" to "local", "workspace" to "legacy-team")))
+    }
+
+    @Test fun `Mock TCP sessions schema distinguishes list from bounded extension`() {
+        val name = "mock_tcp_sessions"
+        val session = "7a9cbbd6-38ce-494e-8a2b-04c647a6e478"
+        val list = mapOf("slug" to "tcp-mock")
+        val extend = list + mapOf("action" to "extend", "sessionId" to session)
+        assertTrue(valid(name, list))
+        assertTrue(valid(name, list + mapOf("target" to "local", "workspace" to "pc", "action" to "list")))
+        assertTrue(valid(name, extend))
+        assertTrue(valid(name, extend + ("extendMs" to 1000)))
+        assertTrue(valid(name, extend + ("extendMs" to 3600000)))
+        assertFalse(valid(name, list + ("action" to "extend")))
+        assertFalse(valid(name, list + ("action" to "close")))
+        assertFalse(valid(name, extend + ("sessionId" to "../other")))
+        for (value in listOf<Any>(999, 3600001, 1000.5, "60000")) assertFalse(valid(name, extend + ("extendMs" to value)))
+        val properties = catalog.getValue(name).path("inputSchema").path("properties")
+        assertEquals("list", properties.path("action").path("default").asText())
+        assertEquals(60000, properties.path("extendMs").path("default").asInt())
+        assertFalse(catalog.getValue(name).path("annotations").path("readOnlyHint").asBoolean())
+        assertFalse(catalog.getValue(name).path("annotations").path("idempotentHint").asBoolean())
+        assertTrue(catalog.getValue(name).path("description").asText().contains("HTTP 400"))
+        assertTrue(McpConfiguration.TCP_GUIDE.contains("mock_tcp_sessions"))
     }
 
     @Test fun `environment tools expose independent local and server sources`() {

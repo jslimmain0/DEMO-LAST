@@ -181,13 +181,15 @@ try {
     $script:protocolVersion = [string]$initialized.protocolVersion
     Initialized-Notification
     $catalog = Rpc 'tools/list'
-    Assert (@($catalog.tools).Count -eq 58) 'MCP 도구 목록은 58개여야 합니다.'
+    Assert (@($catalog.tools).Count -eq 59) 'MCP 도구 목록은 59개여야 합니다.'
     $previewTool = @($catalog.tools | Where-Object name -eq 'protocol_preview')
     $frameDirections = @($previewTool[0].inputSchema.properties.frameDirection.enum | Sort-Object)
     Assert ($previewTool.Count -eq 1 -and ($frameDirections -join ',') -eq 'recv,send' -and 'frameDirection' -notin $previewTool[0].inputSchema.required) 'MCP 전문 미리보기의 선택적 요청/응답 프레임 방향이 없습니다.'
+    $sessionTool = @($catalog.tools | Where-Object name -eq 'mock_tcp_sessions')
+    Assert ($sessionTool.Count -eq 1 -and ($sessionTool[0].inputSchema.properties.action.enum -join ',') -eq 'list,extend' -and $sessionTool[0].inputSchema.properties.extendMs.minimum -eq 1000 -and $sessionTool[0].inputSchema.properties.extendMs.maximum -eq 3600000 -and !$sessionTool[0].annotations.readOnlyHint -and !$sessionTool[0].annotations.idempotentHint) 'MCP Mock 연결 조회·연장 계약이 없습니다.'
     $guide = Tool flowlink_guide @{ topic = 'flow' }
     Assert ($guide -match 'envSource|환경 출처|서버 공통') 'MCP 실행 가이드에 최신 자원 계약이 없습니다.'
-    Checked 'initialize + tools/list 58 + guide'
+    Checked 'initialize + tools/list 59 + session extension schema + guide'
     $protocolGuide = Tool flowlink_guide @{ topic = 'protocol' }
     Assert ($protocolGuide -match 'responseFraming' -and $protocolGuide -match 'idleTimeoutMs' -and $protocolGuide -match 'requestAckHex') 'MCP 프로토콜 가이드에 TCP 요청/응답 경계·연결 유지·ACK 계약이 없습니다.'
     Checked 'optional preview frameDirection enum + TCP protocol guide'
@@ -254,10 +256,22 @@ try {
     Assert ($tcpRun.execution.pendingInput.nodeId -eq 'hold1') 'MCP 첫 TCP 노드 이후 입력 대기에 도달하지 못했습니다.'
     $tcpFirstPorts = @(Get-NetTCPConnection -OwningProcess $pc.process.Id -RemotePort $tcpPort -State Established -ErrorAction SilentlyContinue | Select-Object -ExpandProperty LocalPort)
     Assert ($tcpFirstPorts.Count -eq 1) '격리 PC의 첫 TCP 요청에 유지 연결이 없습니다.'
+    $tcpSessions = @(Tool mock_tcp_sessions @{ target = 'local'; slug = $tcpMock.slug })
+    $tcpSession = @($tcpSessions | Where-Object remotePort -eq $tcpFirstPorts[0])
+    Assert ($tcpSession.Count -eq 1 -and $tcpSession[0].state -eq 'waiting' -and $tcpSession[0].receivedMessages -eq 1 -and $tcpSession[0].remainingMs -gt 0) 'MCP 목록에서 실제 Mock의 대기 연결을 확인하지 못했습니다.'
+    $tcpExtended = Tool mock_tcp_sessions @{ target = 'local'; slug = $tcpMock.slug; action = 'extend'; sessionId = $tcpSession[0].id; extendMs = 60000 }
+    Assert ($tcpExtended.id -eq $tcpSession[0].id -and $tcpExtended.remotePort -eq $tcpFirstPorts[0] -and $tcpExtended.state -eq 'waiting' -and $tcpExtended.receivedMessages -eq 1 -and $tcpExtended.remainingMs -gt ($tcpSession[0].remainingMs + 45000)) 'MCP 유휴 연장이 연결을 바꾸거나 현재 기한을 늘리지 않았습니다.'
+    $tcpDeadlineDelta = ([DateTimeOffset]::Parse($tcpExtended.expiresAt) - [DateTimeOffset]::Parse($tcpSession[0].expiresAt)).TotalMilliseconds
+    Assert ([Math]::Abs($tcpDeadlineDelta - 60000) -lt 100) 'MCP 연장이 현재 Mock 유휴 기한에 지정 시간을 더하지 않았습니다.'
+    Checked 'MCP TCP session list matches actual socket + 60s idle extension sends no extra message'
     $tcpHeld = Tool execution_resume @{ target = 'local'; id = $tcpRun.execution.id; values = @{ go = 'continue' }; timeoutSec = 45 }
     Assert ($tcpHeld.execution.pendingInput.nodeId -eq 'hold2') 'MCP 두 번째 TCP 노드 이후 입력 대기에 도달하지 못했습니다.'
     $tcpSecondPorts = @(Get-NetTCPConnection -OwningProcess $pc.process.Id -RemotePort $tcpPort -State Established -ErrorAction SilentlyContinue | Select-Object -ExpandProperty LocalPort)
     Assert ($tcpSecondPorts.Count -eq 1 -and $tcpSecondPorts[0] -eq $tcpFirstPorts[0]) 'MCP 두 TCP 노드가 같은 실제 연결을 재사용하지 않습니다.'
+    $tcpAfterRequest = @(Tool mock_tcp_sessions @{ target = 'local'; slug = $tcpMock.slug; action = 'list' })
+    $tcpResetSession = @($tcpAfterRequest | Where-Object id -eq $tcpSession[0].id)
+    Assert ($tcpResetSession.Count -eq 1 -and $tcpResetSession[0].receivedMessages -eq 2 -and $tcpResetSession[0].remainingMs -gt 0 -and $tcpResetSession[0].remainingMs -le 30000) 'MCP 연장 후 다음 요청이 같은 연결의 기본 유휴 제한으로 돌아오지 않았습니다.'
+    Checked 'MCP next request retains session ID and resets normal idle deadline'
     $tcpLogs = @(Tool mock_log @{ target = 'local'; slug = $tcpMock.slug; limit = 20 })
     Assert (@($tcpLogs | Where-Object { $_.dir -eq 'in' -and $_.key -eq 'REQ1' }).Count -eq 2 -and @($tcpLogs | Where-Object note -eq '요청 ACK').Count -eq 2 -and @($tcpLogs | Where-Object note -eq '응답 ACK').Count -eq 2) 'MCP TCP 노드의 실제 요청 두 개 또는 4-way ACK 로그가 없습니다.'
     $tcpDone = Tool execution_resume @{ target = 'local'; id = $tcpRun.execution.id; values = @{ go = 'finish' }; timeoutSec = 45 }
@@ -270,6 +284,8 @@ try {
         Start-Sleep -Milliseconds 100
     } while ([DateTime]::UtcNow -lt $deadline)
     Assert ($tcpOpen.Count -eq 0) 'MCP 워크플로 완료 후 유지 TCP 연결이 남습니다.'
+    $tcpClosedSessions = @(Tool mock_tcp_sessions @{ target = 'local'; slug = $tcpMock.slug })
+    Assert (@($tcpClosedSessions | Where-Object id -eq $tcpSession[0].id).Count -eq 0) 'MCP Mock 연결 목록에 종료된 연결이 남습니다.'
     Checked 'MCP flow_run/resume reuses physical TCP port + two 4-way requests + completion closes socket'
 
     $slug = 'mcp-echo'
@@ -344,7 +360,7 @@ try {
             $cleanupPassed = $false
         } finally { $run.process.Dispose() }
     }
-    $result = @{ passed = $passed -and $cleanupPassed; mcpProtocolTested = $true; expectedToolCount = 58; negotiatedProtocolVersion = $script:protocolVersion; checks = @($checks); failurePhase = if ($passed) { $null } else { $stage }; failureReason = $failureReason; cleanupPassed = $cleanupPassed; serverPort = $serverPort; pcPort = $pcPort; isolatedDirectory = $lab; userDataTouched = $false; ideAutoConfigure = $false }
+    $result = @{ passed = $passed -and $cleanupPassed; mcpProtocolTested = $true; expectedToolCount = 59; negotiatedProtocolVersion = $script:protocolVersion; checks = @($checks); failurePhase = if ($passed) { $null } else { $stage }; failureReason = $failureReason; cleanupPassed = $cleanupPassed; serverPort = $serverPort; pcPort = $pcPort; isolatedDirectory = $lab; userDataTouched = $false; ideAutoConfigure = $false }
     [IO.File]::WriteAllText((Join-Path $lab 'results.json'), ($result | ConvertTo-Json -Depth 8), $utf8)
 }
 Assert ($passed -and $cleanupPassed) "MCP resource smoke 실패. 비밀값을 지운 results/log를 확인하세요: $lab"

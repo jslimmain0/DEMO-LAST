@@ -91,6 +91,52 @@ class FlHelpersTest {
         assertThatThrownBy { run("{ x: fl.des.encrypt('a', '12345678', '0000000000000000') }") }.isInstanceOf(ScriptError::class.java).hasMessageContaining("IV").hasMessageContaining("8")
     }
 
+    @Test fun `잘못된 Base64 원문과 Vault 암호문은 값을 노출하지 않는 형식 안내로`() {
+        for (input in listOf("synthetic-plain!not-base64", "vault:v1:synthetic-ciphertext")) for (url in listOf(false, true)) {
+            assertThatThrownBy { run("{ x: fl.b64.dec(c.input, { url: $url }) }", mapOf("input" to input)) }
+                .isInstanceOf(ScriptError::class.java).hasMessageContaining("Base64")
+                .hasMessageContaining("평문·Hex").hasMessageContaining("{{ 이름@secret }}").hasMessageNotContaining(input)
+        }
+        assertThat(run("{ invalid: fl.jwt.verify('a.payload.invalid:signature', 'synthetic-key') }")["invalid"]).isEqualTo("false")
+    }
+
+    @Test fun `암호문 Base64 형식 오류도 원문 없이 안내한다`() {
+        val (priv, _) = rsaPem()
+        for (input in listOf("synthetic-plain!not-base64", "vault:v1:synthetic-ciphertext")) for (format in listOf("b64", "b64url")) {
+            for (call in listOf("fl.aes.decrypt(c.input, '$K', '$IV', { out: '$format' })",
+                "fl.des.decrypt(c.input, '12345678', null, { mode: 'ECB', out: '$format' })",
+                "fl.rsa.decrypt(c.priv, c.input, { out: '$format' })")) {
+                assertThatThrownBy { run("{ x: $call }", mapOf("input" to input, "priv" to priv)) }
+                    .isInstanceOf(ScriptError::class.java).hasMessageContaining("Base64")
+                    .hasMessageContaining("평문·Hex").hasMessageContaining("{{ 이름@secret }}").hasMessageNotContaining(input)
+            }
+        }
+    }
+
+    @Test fun `정상 Base64는 패딩 유무와 URL 형식 및 UTF8 바이트를 그대로 보존한다`() {
+        val r = run("""{
+            padded: fl.b64.dec('aGk='), unpadded: fl.b64.dec(' aGk '),
+            korean: fl.b64.dec(fl.b64.enc('한글').replace(/=+$/, '')),
+            bytes: fl.hex.enc(fl.b64.dec('/wA', { as: 'bytes' })),
+            urlBytes: fl.hex.enc(fl.b64.dec('_wA', { url: true, as: 'bytes' })),
+            urlText: fl.b64.dec('aGk', { url: true }),
+        }""")
+        assertThat(r["padded"]).isEqualTo("hi"); assertThat(r["unpadded"]).isEqualTo("hi")
+        assertThat(r["korean"]).isEqualTo("한글"); assertThat(r["bytes"]).isEqualTo("ff00")
+        assertThat(r["urlBytes"]).isEqualTo("ff00"); assertThat(r["urlText"]).isEqualTo("hi")
+    }
+
+    @Test fun `암호문 인코딩과 문자열 및 Base64 바이트 키의 정상 동작을 유지한다`() {
+        val r = run("""{
+            noPadding: fl.aes.decrypt(fl.aes.encrypt('한글', '$K', '$IV').replace(/=+$/, ''), '$K', '$IV'),
+            url: fl.aes.decrypt(fl.aes.encrypt('한글', '$K', '$IV', { out: 'b64url' }), '$K', '$IV', { out: 'b64url' }),
+            hex: fl.aes.decrypt(fl.aes.encrypt('한글', '$K', '$IV', { out: 'hex' }), '$K', '$IV', { out: 'hex' }),
+            byteKey: fl.des.encrypt('sample', fl.b64.dec('MTIzNDU2Nzg', { as: 'bytes' }), null, { mode: 'ECB' }) === fl.des.encrypt('sample', '12345678', null, { mode: 'ECB' }),
+        }""")
+        assertThat(r["noPadding"]).isEqualTo("한글"); assertThat(r["url"]).isEqualTo("한글")
+        assertThat(r["hex"]).isEqualTo("한글"); assertThat(r["byteKey"]).isEqualTo("true")
+    }
+
     @Test fun `매니페스트 - 모든 fl 함수가 문서화돼 있다`() {
         val paths = FlApi.MANIFEST.map { it.path }
         assertThat(paths).contains(

@@ -7,6 +7,7 @@ import com.flowlink.common.error.NotFoundException
 import com.flowlink.common.tenant.TenantContext
 import com.flowlink.core.domain.Secret
 import com.flowlink.core.repository.SecretRepository
+import com.flowlink.execution.engine.StateCrypto
 import org.slf4j.LoggerFactory
 import org.springframework.boot.context.event.ApplicationReadyEvent
 import org.springframework.context.event.EventListener
@@ -64,6 +65,8 @@ class SecretService(
         val n = name.trim()
         if (!NAME.matches(n)) throw BadRequestException("시크릿 이름은 영문/숫자/._- 만 허용합니다.")
         if (value.isEmpty()) throw BadRequestException("시크릿 값이 비어 있습니다.")
+        if (RoutingCrypto.isTransitFormat(value) && crypto is StateCrypto)
+            throw BadRequestException("이 서버에는 Vault Transit 복호화가 설정되어 있지 않습니다. Vault 연결·Transit 키 설정을 확인한 뒤 암호문을 등록하세요. 일반 원문은 Base64로 바꾸지 않고 입력할 수 있습니다.")
         val env = normalizeEnv(environment)
         // 이미 Vault에서 암호화한 값은 이중 암호화하지 않고 그대로 보관한다.
         val enc = if (RoutingCrypto.isTransitFormat(value)) value else crypto.encrypt(value)

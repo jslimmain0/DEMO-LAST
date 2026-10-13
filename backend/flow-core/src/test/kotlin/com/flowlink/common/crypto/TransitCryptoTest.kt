@@ -30,6 +30,22 @@ class TransitCryptoTest {
     private fun b64(s: String): String = Base64.getEncoder().encodeToString(s.toByteArray(Charsets.UTF_8))
 
     @Test
+    fun `non Base64 plaintext survives the Vault transport encoding exactly once`() {
+        val plain = "일반 원문! not-base64: %\n"
+        val builder = RestClient.builder()
+        val server = MockRestServiceServer.bindTo(builder).build()
+        server.expect(requestTo("http://vault.test:8200/v1/transit/encrypt/flowlink-kek"))
+            .andExpect(jsonPath("$.plaintext").value(b64(plain)))
+            .andRespond(withSuccess("""{"data":{"ciphertext":"vault:v1:synthetic"}}""", MediaType.APPLICATION_JSON))
+        server.expect(requestTo("http://vault.test:8200/v1/transit/decrypt/flowlink-kek"))
+            .andExpect(jsonPath("$.ciphertext").value("vault:v1:synthetic"))
+            .andRespond(withSuccess("""{"data":{"plaintext":"${b64(plain)}"}}""", MediaType.APPLICATION_JSON))
+        val crypto = TransitCrypto(props(), com.flowlink.secret.StaticTokenSource("synthetic-token"), builder)
+        assertThat(crypto.decrypt(crypto.encrypt(plain))).isEqualTo(plain)
+        server.verify()
+    }
+
+    @Test
     fun `encrypt 는 transit encrypt 엔드포인트에 base64 평문을 보내고 ciphertext 를 돌려준다`() {
         val builder = RestClient.builder()
         val server = MockRestServiceServer.bindTo(builder).build()

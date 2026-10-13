@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import type { SecretView } from '../api/client'
 import { useEnvStore } from '../lib/environments'
+import { apiErrorMessage } from '../lib/apiError'
 import { Modal } from './Modal'
 import { AskDialog, type AskSpec } from './AskDialog'
 import { toast } from './toast'
@@ -57,7 +58,7 @@ function SecretEditorPanel({ onClose, onDraftChange, compact = false }: { onClos
   const save = useMutation({
     mutationFn: () => secretsApi.put(name.trim(), value, environment || null),
     onSuccess: () => { if (!activeEditor.current) return; toast(selected ? '시크릿 값을 교체했습니다.' : '시크릿을 추가했습니다.', 'ok'); reset(); void qc.invalidateQueries({ queryKey: ['secrets'] }) },
-    onError: () => { if (activeEditor.current) toast('시크릿 저장 실패. 입력값을 확인하고 다시 저장하세요.', 'error') },
+    onError: (error) => { if (activeEditor.current) toast(apiErrorMessage(error, '시크릿을 저장하지 못했습니다. 입력값을 확인하고 다시 저장하세요.'), 'error') },
   })
   const remove = useMutation({ mutationFn: (item: SecretView) => secretsApi.remove(item.name, item.environment), onSuccess: () => { if (!activeEditor.current) return; reset(); toast('시크릿을 삭제했습니다.', 'ok'); void qc.invalidateQueries({ queryKey: ['secrets'] }) } })
   useUnsavedNavigation({ dirty: false, saving: save.isPending || remove.isPending, label: '시크릿 저장' })
@@ -94,12 +95,12 @@ function SecretEditorPanel({ onClose, onDraftChange, compact = false }: { onClos
         <label style={label}>환경<select disabled={readOnly || !!selected || save.isPending} value={environment} onChange={event => setEnvironment(event.target.value)} aria-label="시크릿 환경" style={{ ...input, width: '100%' }}><option value="">공통</option>{names.map(item => <option key={item}>{item}</option>)}</select></label>
         <label style={label}>이름<input disabled={!!selected || save.isPending} aria-label="시크릿 이름" value={name} onChange={event => setName(event.target.value)} autoComplete="off" placeholder="API_TOKEN" style={{ ...input, width: '100%' }} /></label>
         <label style={label}>{selected ? '교체할 새 값' : '저장할 값'}<textarea disabled={readOnly || save.isPending} aria-label="새 시크릿 값" value={value} onChange={event => setValue(event.target.value)} autoComplete="off" spellCheck={false} rows={4} style={{ ...input, width: '100%', resize: 'vertical', fontFamily: 'var(--fl-font-mono)', ...(!reveal ? { WebkitTextSecurity: 'disc' } as CSSProperties : {}) }} /></label>
-        <p style={{ ...hint, marginTop: 8 }}>일반 값은 암호화해 저장합니다. <code>vault:</code>로 시작하는 Vault 암호문은 입력한 그대로 저장하며, 실행 시 해당 Vault 키로 복호화합니다.</p>
+        <p style={{ ...hint, marginTop: 8 }}>일반 값은 Base64로 바꾸지 않고 입력하세요. 암호화해 저장합니다. <code>vault:</code>로 시작하는 Vault 암호문은 서버의 Vault Transit과 해당 키(KEK) 설정이 있어야 등록·실행할 수 있습니다.</p>
         {value.startsWith('vault:') && <p role="status" style={{ ...hint, marginTop: 6 }}>Vault 암호문으로 감지했습니다. 다시 암호화하지 않고 저장합니다.</p>}
         <button disabled={readOnly} style={button} aria-pressed={reveal} onClick={() => setReveal(!reveal)}>{reveal ? '입력값 숨기기' : '입력값 확인'}</button>
         {name && !validName && <p role="alert" style={{ ...hint, color: 'var(--fl-fail)', marginTop: 10 }}>이름은 영문·숫자·점·밑줄·하이픈만 사용할 수 있습니다.</p>}
         {!selected && existing && <p role="alert" style={{ ...hint, color: 'var(--fl-fail)', marginTop: 10 }}>이 환경에 같은 이름이 있습니다. 목록에서 선택해 값을 교체하세요.</p>}
-        {(save.isError || remove.isError) && <p role="alert" style={{ color: 'var(--fl-fail)', fontSize: 12 }}>저장하지 못했습니다. 입력은 유지됩니다. 다시 시도하세요.</p>}
+        {(save.isError || remove.isError) && <p role="alert" style={{ color: 'var(--fl-fail)', fontSize: 12 }}>{apiErrorMessage(save.isError ? save.error : remove.error, save.isError ? '시크릿을 저장하지 못했습니다.' : '시크릿을 삭제하지 못했습니다.')} 입력은 유지됩니다.</p>}
         <div style={{ display: 'flex', gap: 8, marginTop: 18 }}><button style={{ ...button, background: 'var(--fl-action-primary-bg)', color: 'var(--fl-action-primary-ink)', borderColor: 'var(--fl-action-primary-bg)' }} disabled={readOnly || !validName || !value || save.isPending || query.isLoading || query.isError || (!selected && existing)} onClick={() => save.mutate()}>{save.isPending ? '저장 중…' : selected ? '새 값으로 교체' : '시크릿 저장'}</button>{selected && <button disabled={readOnly || remove.isPending || save.isPending} style={button} onClick={() => setAsk({ title: '시크릿 삭제', message: `${selected.environment ?? '공통'} / ${selected.name}을 삭제하면 이 값을 사용하는 실행이 실패할 수 있습니다.`, danger: true, confirmLabel: '삭제', onConfirm: () => remove.mutate(selected) })}>삭제</button>}</div>
         {selected && <div style={{ marginTop: 20 }}><code style={{ fontSize: 12, overflowWrap: 'anywhere' }}>{`{{ ${selected.name}@secret }}`}</code><button style={{ ...button, marginTop: 8 }} onClick={() => void navigator.clipboard.writeText(`{{ ${selected.name}@secret }}`).then(() => toast('바인딩 토큰을 복사했습니다.', 'ok')).catch(() => toast('복사하지 못했습니다.', 'error'))}>바인딩 토큰 복사</button></div>}
         {compact && <p style={{ ...hint, marginTop: 16 }}>저장된 값은 다시 표시되지 않습니다. 값을 바꾸려면 새 값을 입력하세요.</p>}

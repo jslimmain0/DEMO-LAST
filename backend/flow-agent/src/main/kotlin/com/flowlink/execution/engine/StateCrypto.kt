@@ -1,5 +1,6 @@
 package com.flowlink.execution.engine
 
+import com.flowlink.common.error.BadRequestException
 import java.security.MessageDigest
 import java.security.SecureRandom
 import java.util.Base64
@@ -32,6 +33,7 @@ class StateCrypto(secret: String = DEV_SECRET) : com.flowlink.common.crypto.Cryp
 
     /** 복호화 — 키 불일치/변조 시 AEADBadTagException 등 예외를 그대로 던진다(호출부가 실패 처리). */
     override fun decrypt(encoded: String): String {
+        if (encoded.startsWith("vault:")) throw BadRequestException("Vault Transit 암호문을 복호화하려면 Vault Transit 설정이 필요합니다. 일반 Base64 또는 API 전송용 Base64와 다른 형식입니다.")
         val raw = Base64.getDecoder().decode(encoded)
         require(raw.size > IV_LEN) { "암호문이 너무 짧습니다" }
         val cipher = Cipher.getInstance(TRANSFORM)

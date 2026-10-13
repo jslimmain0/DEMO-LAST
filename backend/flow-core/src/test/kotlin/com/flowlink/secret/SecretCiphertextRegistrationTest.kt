@@ -2,10 +2,13 @@ package com.flowlink.secret
 
 import com.flowlink.common.crypto.CryptoProvider
 import com.flowlink.common.crypto.RoutingCrypto
+import com.flowlink.common.error.BadRequestException
 import com.flowlink.common.tenant.TenantContext
 import com.flowlink.core.domain.Secret
 import com.flowlink.core.repository.SecretRepository
+import com.flowlink.execution.engine.StateCrypto
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase
@@ -66,6 +69,25 @@ class SecretCiphertextRegistrationTest {
         assertThat(stored.environment).isEqualTo("prod")
         assertThat(stored.encValue).isEqualTo("vault:v2:replacement")
         assertThat(crypto.encrypted).isEmpty()
+    }
+
+    @Test
+    fun `disabled Transit rejects ciphertext without inserting or replacing a usable secret`() {
+        val service = SecretService(repo, StateCrypto("synthetic-storage-key"))
+        service.put("TOKEN", "원문은 Base64가 아니어도 됩니다!", null)
+        em.flush(); em.clear()
+        val before = repo.findAll().single().encValue
+
+        for (name in listOf("TOKEN", "NEW_TOKEN")) {
+            assertThatThrownBy { service.put(name, "vault:v1:synthetic-ciphertext", null) }
+                .isInstanceOf(BadRequestException::class.java)
+                .hasMessageContaining("Vault Transit")
+                .hasMessageNotContaining("synthetic-ciphertext")
+        }
+        em.flush(); em.clear()
+        assertThat(repo.findAll()).hasSize(1)
+        assertThat(repo.findAll().single().encValue).isEqualTo(before)
+        assertThat(service.activeSecrets(null)).containsEntry("TOKEN", "원문은 Base64가 아니어도 됩니다!")
     }
 
     @Test

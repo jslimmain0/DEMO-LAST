@@ -46,7 +46,7 @@ object FlHelpers {
     fun build(logs: MutableList<String>): ProxyObject = obj(
         "b64" to obj(
             "enc" to fn { a -> val o = opt(a, 1); if (flag(o, "url")) b64url(bytesArg(a, 0, cs(o))) else b64(bytesArg(a, 0, cs(o))) },
-            "dec" to fn { a -> val o = opt(a, 1); out(if (flag(o, "url")) b64urlDec(str(a, 0)) else Base64.getDecoder().decode(str(a, 0).trim()), o) },
+            "dec" to fn { a -> val o = opt(a, 1); out(b64Dec(str(a, 0), flag(o, "url")), o) },
         ),
         "hex" to obj("enc" to fn { a -> hex(bytesArg(a, 0, cs(opt(a, 1)))) }, "dec" to fn { a -> out(HexFormat.of().parseHex(str(a, 0).trim()), opt(a, 1)) }),
         "hash" to obj(
@@ -315,7 +315,12 @@ object FlHelpers {
     private fun u8(b: ByteArray): Any = ProxyArray.fromList(b.map { (it.toInt() and 0xff) as Any })
     private fun b64(b: ByteArray) = Base64.getEncoder().encodeToString(b)
     private fun b64url(b: ByteArray) = Base64.getUrlEncoder().withoutPadding().encodeToString(b)
-    private fun b64urlDec(s: String): ByteArray = Base64.getUrlDecoder().decode(s.trim())
+    private fun b64Dec(s: String, url: Boolean = false): ByteArray = try {
+        (if (url) Base64.getUrlDecoder() else Base64.getDecoder()).decode(s.trim())
+    } catch (_: IllegalArgumentException) {
+        throw ScriptError(null, null, "fl: 입력은 ${if (url) "URL-safe Base64" else "Base64"} 형식이어야 합니다. 평문·Hex 형식인지 확인하세요. vault: 암호문은 시크릿에 등록한 뒤 {{ 이름@secret }}로 참조하세요.")
+    }
+    private fun b64urlDec(s: String): ByteArray = b64Dec(s, true)
     private fun hex(b: ByteArray) = HexFormat.of().formatHex(b)
     private fun encoded(b: ByteArray, o: Value?, def: String): String = when (optStr(o, "out", def)) {
         "hex" -> hex(b); "b64" -> b64(b); "b64url" -> b64url(b)
@@ -324,7 +329,7 @@ object FlHelpers {
     private fun decodeEncoded(s: String, o: Value?, def: String): ByteArray = when (optStr(o, "out", def)) {
         "hex" -> HexFormat.of().parseHex(s.trim())
         "b64url" -> b64urlDec(s)
-        else -> Base64.getDecoder().decode(s.trim())
+        else -> b64Dec(s)
     }
     /** dec 계열 출력 — `{ as: 'bytes' }` 면 바이트 배열, 기본은 텍스트(charset 옵션). */
     private fun out(b: ByteArray, o: Value?): Any = if (optStr(o, "as", "text") == "bytes") u8(b) else String(b, cs(o))

@@ -73,7 +73,7 @@ export function createDesktopMock(factory) {
       fail(501, `아직 구현되지 않은 Desktop Mock API: ${action}`)
     }
     if (apiPath.startsWith('/auth/github/device/')) return apiPath.endsWith('/start') ? { sessionId: 'mock-session', userCode: 'MOCK-CODE', verificationUri: `${BASE}/__mock`, intervalSec: 1, expiresIn: 900 } : { status: 'ready', token: 'mock-token', login: scenario.account }
-    if (method !== 'GET' && ['viewer', 'pending'].includes(scenario.role) && !path.startsWith('/relay/')) fail(403, 'Mock: 읽기 전용 계정은 변경할 수 없습니다.')
+    if (method !== 'GET' && ['viewer', 'pending'].includes(scenario.role) && !path.startsWith('/relay/') && !['/protocols/preview', '/protocols/validate', '/mock-servers/preview', '/mock-servers/validate'].includes(apiPath)) fail(403, 'Mock: 읽기 전용 계정은 변경할 수 없습니다.')
     if (method !== 'GET' && (apiPath.startsWith('/admin/') || /\/plugins\/scripts\/[^/]+\/(approve|reject)$/.test(apiPath)) && scenario.role !== 'admin') fail(403, 'Mock: 관리자 권한이 필요합니다.')
     let host = remoteRequest || scenario.runtime === 'server' ? remote : local
     let rewritten = rawUrl

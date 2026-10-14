@@ -24,7 +24,7 @@ import java.util.UUID
  */
 @RestController
 @RequestMapping("/api/v1")
-class ExecutionController(private val service: ExecutionService) {
+class ExecutionController(private val service: ExecutionService, private val mockTrials: com.flowlink.mock.MockTrialStore? = null) {
 
     /** 수동 실행. (Phase 1: 동기 — 완료된 결과를 반환) */
     @PostMapping("/flows/{flowId}/runs")
@@ -68,7 +68,7 @@ class ExecutionController(private val service: ExecutionService) {
     ): ExecutionDetail = service.resume(id, req)
 
     @GetMapping("/executions/{id}")
-    fun get(@PathVariable id: UUID): ExecutionDetail = service.get(id)
+    fun get(@PathVariable id: UUID): Any = mockTrials?.get(id) ?: service.get(id)
 
     /**
      * 실행 이력 조회. 파라미터가 없으면 최근순(기존 동작), status/flowId/from/to/offset 중 하나라도 있으면 필터 조회.

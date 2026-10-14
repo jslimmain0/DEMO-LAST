@@ -27,7 +27,27 @@ data class ProtocolSpec(
     @get:JsonInclude(JsonInclude.Include.NON_NULL) val framing: Framing? = null,
     @get:JsonInclude(JsonInclude.Include.NON_NULL) val responseFraming: Framing? = null,
     @get:JsonInclude(JsonInclude.Include.NON_NULL) val transport: Transport? = null,
+    @get:JsonInclude(JsonInclude.Include.NON_NULL) val schemaVersion: Int? = null,
+    @get:JsonInclude(JsonInclude.Include.NON_NULL) val transactions: List<Transaction>? = null,
+    @get:JsonInclude(JsonInclude.Include.NON_NULL) val ackMessages: List<AckMessage>? = null,
 ) {
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    data class Transaction(val key: String? = null, val `when`: List<Selection>? = null,
+        val requestMessage: String? = null, val responseMessage: String? = null,
+        val framing: Framing? = null, val responseFraming: Framing? = null,
+        val requestAck: Ack? = null, val responseAck: Ack? = null)
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    data class Selection(val field: String? = null, val op: String? = null, val value: String? = null)
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    data class Ack(val send: AckSend? = null, val receive: AckReceive? = null, val timeoutMs: Int? = null)
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    data class AckSend(val kind: String? = null, val hex: String? = null, val messageKey: String? = null, val values: Map<String, String>? = null)
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    data class AckReceive(val kind: String? = null, val hex: String? = null, val lengthBytes: Int? = null, val messageKey: String? = null, val expected: Map<String, String>? = null)
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    data class AckMessage(val key: String? = null, val encoding: String? = null, val fields: List<Field>? = null) {
+        fun length(): Int = fields.orEmpty().sumOf { it.lenOrZero().toLong() }.coerceIn(0, Int.MAX_VALUE.toLong()).toInt()
+    }
     @JsonIgnoreProperties(ignoreUnknown = true)
     data class Framing(
         val mode: String? = null,
@@ -50,12 +70,14 @@ data class ProtocolSpec(
         val type: String? = null,          // length | string | ascii | numeric | binary
         val pad: String? = null,           // left/zero | right/space | left/space | none
         val plugin: PluginRef? = null,
+        @get:JsonInclude(JsonInclude.Include.NON_NULL) val endian: String? = null,
+        @get:JsonInclude(JsonInclude.Include.NON_NULL) val signed: Boolean? = null,
     ) {
         fun nameOrEmpty(): String = name?.trim().orEmpty()
         fun lenOrZero(): Int = len ?: 0
         fun typeOr(): String = (type ?: "string").trim().lowercase(Locale.ROOT).ifEmpty { "string" }
         fun padOr(): String = pad?.trim()?.lowercase(Locale.ROOT)?.takeIf { it.isNotEmpty() }
-            ?: when (typeOr()) { "numeric", "length" -> "left/zero"; "binary" -> "none"; else -> "right/space" }
+            ?: when (typeOr()) { "numeric", "length" -> "left/zero"; "binary", "integer" -> "none"; else -> "right/space" }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
@@ -102,6 +124,12 @@ data class ProtocolSpec(
     fun totalLen(key: String): Int = (headerLen().toLong() + (message(key)?.bodyLen() ?: 0)).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
 
     fun validate(): List<String> {
+        if (schemaVersion != null && schemaVersion != 1 && schemaVersion != 2) return listOf("지원하지 않는 schemaVersion입니다.")
+        if (schemaVersion == 2 || transactions != null || ackMessages != null) return ProtocolCompiler.errors(this).map { "${it.path}: ${it.message}" }
+        return validateLegacy()
+    }
+
+    internal fun validateLegacy(): List<String> {
         val errs = ArrayList<String>()
         val lf = lengthField?.trim().orEmpty()
         val requiresLength = listOf(Direction.SEND, Direction.RECV).any { framingMode(it) == "length" }
@@ -147,7 +175,7 @@ data class ProtocolSpec(
             val k = m.keyOrEmpty()
             if (k.isEmpty()) { errs += "전문 키가 비었습니다."; continue }
             if (!keys.add(k)) errs += "전문 키 중복: $k"
-            if (!hasDiscriminator() && discValueOf(k) !in setOf("request", "response")) errs += "분기 필드 없이 전문 키는 request/response 만 가능합니다: $k"
+            if (schemaVersion != 2 && !hasDiscriminator() && discValueOf(k) !in setOf("request", "response")) errs += "분기 필드 없이 전문 키는 request/response 만 가능합니다: $k"
             errs += checkTable("전문 $k", m.fieldsOrEmpty())
             // 헤더+본문을 한 맵으로 합쳐 쓰므로(템플릿·조건·출력) 같은 이름이면 어느 값인지 모호해진다
             val headerNames = headerOrEmpty().mapTo(HashSet()) { it.nameOrEmpty() }
@@ -167,16 +195,17 @@ data class ProtocolSpec(
             val n = f.nameOrEmpty()
             if (n.isEmpty()) { errs += "$where: 이름 없는 필드가 있습니다."; continue }
             if (!names.add(n)) errs += "$where: 필드 이름 중복 '$n'"
-            if (f.lenOrZero() <= 0) errs += "$where: '$n' 길이는 1 이상이어야 합니다."
+            if (f.lenOrZero() !in 1..MAX_MESSAGE) errs += "$where: '$n' 길이는 1~${MAX_MESSAGE}B 범위여야 합니다."
             if (f.typeOr() !in TYPES) errs += "$where: '$n' 타입 '${f.typeOr()}' 은 지원하지 않습니다(length/string/ascii/numeric/binary)."
             if (f.padOr() !in PADS) errs += "$where: '$n' 패딩 '${f.padOr()}' 은 지원하지 않습니다(left/zero, right/space, left/space, none)."
+            if (f.typeOr() == "integer" && (f.lenOrZero() !in setOf(1, 2, 4, 8) || f.endian !in setOf("big", "little") || f.signed == null)) errs += "$where: '$n' integer는 길이 1/2/4/8, endian, signed를 명시하세요."
         }
         return errs
     }
 
     companion object {
         const val MAX_MESSAGE = 1 shl 20
-        val TYPES = setOf("length", "string", "ascii", "numeric", "binary")
-        val PADS = setOf("left/zero", "right/space", "left/space", "none")
+        val TYPES = setOf("length", "string", "ascii", "numeric", "binary", "integer")
+        val PADS = setOf("left/zero", "right/space", "left/space", "none", "right/nul", "left/nul")
     }
 }

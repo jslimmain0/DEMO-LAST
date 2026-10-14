@@ -19,6 +19,7 @@ const modules = {
   './AppIcon': { AppIcon: 'icon' }, '../binding/BindingPicker': {}, '../binding/TokenInput': { TokenInput: 'token-input' },
   '../canvas/nodeMeta': { METHOD_COLOR: {} }, '../lib/tokenGrammar': {}, '../lib/ids': {},
   './BigTextEditor': {}, './FieldCodecButton': {}, './icons': {}, './MockCodecEditor': {}, '../design/ui': { ui: {} },
+  './ProtocolTransactionsEditor': { ProtocolTransactionsEditor: 'transactions' }, './ProtocolPlanPreview': { ProtocolPlanPreview: 'v2-preview', ProtocolValidationPanel: 'validation' },
 }
 function load(file) {
   const exported = {}

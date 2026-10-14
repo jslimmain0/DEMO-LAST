@@ -13,4 +13,5 @@ class ProtocolController(private val service: ProtocolService) {
     @PutMapping("/{id}") fun update(@PathVariable id: UUID, @RequestBody req: ProtocolDtos.SaveRequest): ProtocolDtos.Detail = service.update(id, req.name, req.spec)
     @DeleteMapping("/{id}") @ResponseStatus(HttpStatus.NO_CONTENT) fun delete(@PathVariable id: UUID) = service.delete(id)
     @PostMapping("/preview") fun preview(@RequestBody req: ProtocolDtos.PreviewRequest, @RequestParam(required = false) workspaceId: String?): ProtocolDtos.PreviewResult = service.preview(req, workspaceId)
+    @PostMapping("/validate") fun validate(@RequestBody req: ProtocolDtos.SaveRequest): ProtocolDtos.CompilationReport = service.validate(req.spec)
 }

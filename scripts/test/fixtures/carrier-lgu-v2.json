@@ -1,0 +1,642 @@
+{
+  "protocolSpec": {
+    "transport": {
+      "idleTimeoutMs": 60000,
+      "connection": "execution"
+    },
+    "header": [
+      {
+        "type": "ascii",
+        "name": "code",
+        "len": 2
+      },
+      {
+        "type": "ascii",
+        "name": "tid",
+        "len": 9
+      },
+      {
+        "type": "ascii",
+        "name": "phone",
+        "len": 12,
+        "pad": "right/nul"
+      },
+      {
+        "type": "ascii",
+        "name": "reserved",
+        "len": 52
+      }
+    ],
+    "schemaVersion": 2,
+    "messages": [
+      {
+        "key": "F1:request",
+        "fields": [
+          {
+            "type": "ascii",
+            "name": "payload",
+            "len": 62
+          }
+        ]
+      },
+      {
+        "key": "F1:response",
+        "fields": [
+          {
+            "type": "ascii",
+            "name": "result",
+            "len": 2
+          },
+          {
+            "type": "ascii",
+            "name": "echoTid",
+            "len": 9
+          },
+          {
+            "type": "ascii",
+            "name": "body",
+            "len": 184
+          }
+        ]
+      },
+      {
+        "key": "G1:request",
+        "fields": [
+          {
+            "type": "ascii",
+            "name": "payload",
+            "len": 549
+          }
+        ]
+      },
+      {
+        "key": "G1:response",
+        "fields": [
+          {
+            "type": "ascii",
+            "name": "result",
+            "len": 2
+          },
+          {
+            "type": "ascii",
+            "name": "echoTid",
+            "len": 9
+          },
+          {
+            "type": "ascii",
+            "name": "body",
+            "len": 180
+          }
+        ]
+      },
+      {
+        "key": "H1:request",
+        "fields": [
+          {
+            "type": "ascii",
+            "name": "payload",
+            "len": 188
+          }
+        ]
+      },
+      {
+        "key": "H1:response",
+        "fields": [
+          {
+            "type": "ascii",
+            "name": "result",
+            "len": 2
+          },
+          {
+            "type": "ascii",
+            "name": "echoTid",
+            "len": 9
+          },
+          {
+            "type": "ascii",
+            "name": "body",
+            "len": 43
+          }
+        ]
+      },
+      {
+        "key": "V1:request",
+        "fields": [
+          {
+            "type": "ascii",
+            "name": "payload",
+            "len": 168
+          }
+        ]
+      },
+      {
+        "key": "V1:response",
+        "fields": [
+          {
+            "type": "ascii",
+            "name": "result",
+            "len": 2
+          },
+          {
+            "type": "ascii",
+            "name": "echoTid",
+            "len": 9
+          },
+          {
+            "type": "ascii",
+            "name": "body",
+            "len": 182
+          }
+        ]
+      },
+      {
+        "key": "Y1:request",
+        "fields": [
+          {
+            "type": "ascii",
+            "name": "payload",
+            "len": 169
+          }
+        ]
+      },
+      {
+        "key": "Y1:response",
+        "fields": [
+          {
+            "type": "ascii",
+            "name": "result",
+            "len": 2
+          },
+          {
+            "type": "ascii",
+            "name": "echoTid",
+            "len": 9
+          },
+          {
+            "type": "ascii",
+            "name": "body",
+            "len": 42
+          }
+        ]
+      },
+      {
+        "key": "M1:request",
+        "fields": [
+          {
+            "type": "ascii",
+            "name": "payload",
+            "len": 168
+          }
+        ]
+      },
+      {
+        "key": "M1:response",
+        "fields": [
+          {
+            "type": "ascii",
+            "name": "result",
+            "len": 2
+          },
+          {
+            "type": "ascii",
+            "name": "echoTid",
+            "len": 9
+          },
+          {
+            "type": "ascii",
+            "name": "body",
+            "len": 182
+          }
+        ]
+      },
+      {
+        "key": "Z1:request",
+        "fields": [
+          {
+            "type": "ascii",
+            "name": "payload",
+            "len": 66
+          }
+        ]
+      },
+      {
+        "key": "Z1:response",
+        "fields": [
+          {
+            "type": "ascii",
+            "name": "result",
+            "len": 2
+          },
+          {
+            "type": "ascii",
+            "name": "echoTid",
+            "len": 9
+          },
+          {
+            "type": "ascii",
+            "name": "body",
+            "len": 42
+          }
+        ]
+      },
+      {
+        "key": "W1:request",
+        "fields": [
+          {
+            "type": "ascii",
+            "name": "payload",
+            "len": 312
+          }
+        ]
+      },
+      {
+        "key": "W1:response",
+        "fields": [
+          {
+            "type": "ascii",
+            "name": "result",
+            "len": 2
+          },
+          {
+            "type": "ascii",
+            "name": "echoTid",
+            "len": 9
+          },
+          {
+            "type": "ascii",
+            "name": "body",
+            "len": 171
+          }
+        ]
+      },
+      {
+        "key": "X1:request",
+        "fields": [
+          {
+            "type": "ascii",
+            "name": "payload",
+            "len": 189
+          }
+        ]
+      },
+      {
+        "key": "X1:response",
+        "fields": [
+          {
+            "type": "ascii",
+            "name": "result",
+            "len": 2
+          },
+          {
+            "type": "ascii",
+            "name": "echoTid",
+            "len": 9
+          },
+          {
+            "type": "ascii",
+            "name": "body",
+            "len": 44
+          }
+        ]
+      }
+    ],
+    "encoding": "EUC-KR",
+    "transactions": [
+      {
+        "requestAck": null,
+        "requestMessage": "F1:request",
+        "when": [
+          {
+            "op": "eq",
+            "field": "code",
+            "value": "F1"
+          }
+        ],
+        "responseMessage": "F1:response",
+        "key": "F1",
+        "responseAck": null,
+        "framing": {
+          "mode": "fixed",
+          "fixedLength": 137
+        },
+        "responseFraming": {
+          "mode": "fixed",
+          "fixedLength": 270
+        }
+      },
+      {
+        "requestAck": null,
+        "requestMessage": "G1:request",
+        "when": [
+          {
+            "op": "eq",
+            "field": "code",
+            "value": "G1"
+          }
+        ],
+        "responseMessage": "G1:response",
+        "key": "G1",
+        "responseAck": {
+          "send": {
+            "kind": "message",
+            "values": {
+              "phone": "{{req.phone}}",
+              "filler": "00",
+              "prefix": "00  ",
+              "version": "V001",
+              "tid": "{{req.tid}}"
+            },
+            "messageKey": "ack"
+          },
+          "timeoutMs": 1000,
+          "receive": {
+            "kind": "length-only",
+            "lengthBytes": 30
+          }
+        },
+        "framing": {
+          "mode": "fixed",
+          "fixedLength": 624
+        },
+        "responseFraming": {
+          "mode": "fixed",
+          "fixedLength": 266
+        }
+      },
+      {
+        "requestAck": null,
+        "requestMessage": "H1:request",
+        "when": [
+          {
+            "op": "eq",
+            "field": "code",
+            "value": "H1"
+          }
+        ],
+        "responseMessage": "H1:response",
+        "key": "H1",
+        "responseAck": {
+          "send": {
+            "kind": "message",
+            "values": {
+              "phone": "{{req.phone}}",
+              "filler": "00",
+              "prefix": "00  ",
+              "version": "V001",
+              "tid": "{{req.tid}}"
+            },
+            "messageKey": "ack"
+          },
+          "timeoutMs": 1000,
+          "receive": {
+            "kind": "length-only",
+            "lengthBytes": 30
+          }
+        },
+        "framing": {
+          "mode": "fixed",
+          "fixedLength": 263
+        },
+        "responseFraming": {
+          "mode": "fixed",
+          "fixedLength": 129
+        }
+      },
+      {
+        "requestAck": null,
+        "requestMessage": "V1:request",
+        "when": [
+          {
+            "op": "eq",
+            "field": "code",
+            "value": "V1"
+          }
+        ],
+        "responseMessage": "V1:response",
+        "key": "V1",
+        "responseAck": null,
+        "framing": {
+          "mode": "fixed",
+          "fixedLength": 243
+        },
+        "responseFraming": {
+          "mode": "fixed",
+          "fixedLength": 268
+        }
+      },
+      {
+        "requestAck": null,
+        "requestMessage": "Y1:request",
+        "when": [
+          {
+            "op": "eq",
+            "field": "code",
+            "value": "Y1"
+          }
+        ],
+        "responseMessage": "Y1:response",
+        "key": "Y1",
+        "responseAck": null,
+        "framing": {
+          "mode": "fixed",
+          "fixedLength": 244
+        },
+        "responseFraming": {
+          "mode": "fixed",
+          "fixedLength": 128
+        }
+      },
+      {
+        "requestAck": null,
+        "requestMessage": "M1:request",
+        "when": [
+          {
+            "op": "eq",
+            "field": "code",
+            "value": "M1"
+          }
+        ],
+        "responseMessage": "M1:response",
+        "key": "M1",
+        "responseAck": null,
+        "framing": {
+          "mode": "fixed",
+          "fixedLength": 243
+        },
+        "responseFraming": {
+          "mode": "fixed",
+          "fixedLength": 268
+        }
+      },
+      {
+        "requestAck": null,
+        "requestMessage": "Z1:request",
+        "when": [
+          {
+            "op": "eq",
+            "field": "code",
+            "value": "Z1"
+          }
+        ],
+        "responseMessage": "Z1:response",
+        "key": "Z1",
+        "responseAck": null,
+        "framing": {
+          "mode": "fixed",
+          "fixedLength": 141
+        },
+        "responseFraming": {
+          "mode": "fixed",
+          "fixedLength": 128
+        }
+      },
+      {
+        "requestAck": null,
+        "requestMessage": "W1:request",
+        "when": [
+          {
+            "op": "eq",
+            "field": "code",
+            "value": "W1"
+          }
+        ],
+        "responseMessage": "W1:response",
+        "key": "W1",
+        "responseAck": {
+          "send": {
+            "kind": "message",
+            "values": {
+              "phone": "{{req.phone}}",
+              "filler": "00",
+              "prefix": "00  ",
+              "version": "V001",
+              "tid": "{{req.tid}}"
+            },
+            "messageKey": "ack"
+          },
+          "timeoutMs": 1000,
+          "receive": {
+            "kind": "length-only",
+            "lengthBytes": 30
+          }
+        },
+        "framing": {
+          "mode": "fixed",
+          "fixedLength": 387
+        },
+        "responseFraming": {
+          "mode": "fixed",
+          "fixedLength": 257
+        }
+      },
+      {
+        "requestAck": null,
+        "requestMessage": "X1:request",
+        "when": [
+          {
+            "op": "eq",
+            "field": "code",
+            "value": "X1"
+          }
+        ],
+        "responseMessage": "X1:response",
+        "key": "X1",
+        "responseAck": {
+          "send": {
+            "kind": "message",
+            "values": {
+              "phone": "{{req.phone}}",
+              "filler": "00",
+              "prefix": "00  ",
+              "version": "V001",
+              "tid": "{{req.tid}}"
+            },
+            "messageKey": "ack"
+          },
+          "timeoutMs": 1000,
+          "receive": {
+            "kind": "length-only",
+            "lengthBytes": 30
+          }
+        },
+        "framing": {
+          "mode": "fixed",
+          "fixedLength": 264
+        },
+        "responseFraming": {
+          "mode": "fixed",
+          "fixedLength": 130
+        }
+      }
+    ],
+    "ackMessages": [
+      {
+        "fields": [
+          {
+            "type": "ascii",
+            "name": "prefix",
+            "len": 4,
+            "pad": "none"
+          },
+          {
+            "type": "ascii",
+            "name": "tid",
+            "len": 9,
+            "pad": "right/nul"
+          },
+          {
+            "type": "ascii",
+            "name": "version",
+            "len": 4,
+            "pad": "none"
+          },
+          {
+            "type": "ascii",
+            "name": "phone",
+            "len": 12,
+            "pad": "right/nul"
+          },
+          {
+            "type": "binary",
+            "name": "filler",
+            "len": 1,
+            "pad": "none"
+          }
+        ],
+        "key": "ack",
+        "encoding": "EUC-KR"
+      }
+    ]
+  },
+  "mockSpec": {
+    "tcp": {
+      "protocolId": "<replace with saved protocol id>",
+      "port": 59041,
+      "rules": [
+        {
+          "then": {
+            "mode": "mock",
+            "fields": {
+              "body": "SYNTHETIC FIXTURE",
+              "result": "00",
+              "echoTid": "{{req.tid}}"
+            }
+          },
+          "id": "synthetic-success",
+          "when": []
+        }
+      ]
+    },
+    "routes": []
+  },
+  "request": {
+    "values": {
+      "phone": "01000000000",
+      "reserved": "",
+      "payload": "SYNTHETIC",
+      "tid": "000000001"
+    },
+    "transactionKey": "G1"
+  },
+  "name": "SYNTHETIC LGU nine trades"
+}

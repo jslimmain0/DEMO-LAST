@@ -17,6 +17,7 @@ const DEFAULT_PORTS = [{ id: '1', label: '1' }, { id: '2', label: '2' }]
  */
 export function SwitchNode({ data, selected }: NodeProps) {
   const n = asGraphNode(data)
+  const vertical = useEditorStore(s => s.layoutDirection === 'TB')
   const update = useEditorStore((s) => s.updateNodeData)
   const runState = useEditorStore((s) => s.runView?.nodeStates[n.id])
   const running = runState === 'running'
@@ -27,7 +28,7 @@ export function SwitchNode({ data, selected }: NodeProps) {
   const updateNodeInternals = useUpdateNodeInternals()
   useEffect(() => {
     updateNodeInternals(n.id)
-  }, [ports.length, n.id, updateNodeInternals])
+  }, [ports.length, n.id, vertical, updateNodeInternals])
   const borderColor = running
     ? 'var(--fl-running)'
     : runState === 'failed'
@@ -48,10 +49,11 @@ export function SwitchNode({ data, selected }: NodeProps) {
         borderRadius: 'var(--fl-radius)',
         boxShadow: selected ? 'var(--fl-shadow-lg)' : 'var(--fl-shadow)',
         fontFamily: 'var(--fl-font-ui)',
+        position: 'relative',
         opacity: runState === 'skipped' ? 0.55 : 1,
       }}
     >
-      <Handle type="target" position={Position.Left} className="fl-handle" style={{ borderColor: accent }} />
+      <Handle type="target" position={vertical ? Position.Top : Position.Left} className="fl-handle" style={{ borderColor: accent }} />
 
       <div className="fl-task-header">
         <NodeTypeIcon type="switch" size={36} />
@@ -115,17 +117,18 @@ export function SwitchNode({ data, selected }: NodeProps) {
               >
                 {on ? '▶ ' : ''}{p.label || p.id}
               </span>
-              <Handle
+              {!vertical && <Handle
                 id={p.id}
                 type="source"
                 position={Position.Right}
                 className="fl-handle"
                 style={{ top: '50%', borderColor: on ? accent : 'var(--fl-border)' }}
-              />
+              />}
             </div>
           )
         })}
       </div>
+      {vertical && ports.map((p, i) => <Handle key={p.id} id={p.id} type="source" position={Position.Bottom} className="fl-handle" title={p.label || p.id} style={{ left: `${100 * (i + 1) / (ports.length + 1)}%`, borderColor: p.id === active ? accent : 'var(--fl-border)' }} />)}
     </div>
   )
 }

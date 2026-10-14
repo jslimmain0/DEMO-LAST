@@ -14,6 +14,7 @@ import './node-visuals.css'
 
 export function NodeCard({ data, selected }: NodeProps) {
   const n = asGraphNode(data)
+  const vertical = useEditorStore(s => s.layoutDirection === 'TB')
   const resources = useNodeResources(n)
   const { protocolsApi } = resources.api
   const collapsed = !!n.collapsed
@@ -62,17 +63,18 @@ export function NodeCard({ data, selected }: NodeProps) {
     style={{ flexShrink: 0, width: 18, height: 18, padding: 0, border: 'none', background: 'transparent', color: 'var(--fl-text-muted)', cursor: 'pointer' }}
   ><AppIcon name={collapsed ? 'chevronRight' : 'chevronDown'} size={12} /></button>
 
-  if (isStart || isEnd) return <div className="fl-editor-terminal" style={{ width: TERMINAL_W, opacity: runState === 'skipped' ? .55 : 1 }}>
+  if (isStart || isEnd) return <div className="fl-editor-terminal" style={{ width: TERMINAL_W, position: 'relative', opacity: runState === 'skipped' ? .55 : 1 }}>
     <div className={`fl-terminal-orb${selected ? ' fl-editor-node--selected' : ''}${running ? ' fl-node-running' : ''}`}
       title={showUnreachable ? '미연결 — 실행 시 건너뜁니다' : n.name ?? typeLabel(n.type)}
       style={{ color: isStart ? 'var(--fl-ok)' : 'var(--fl-text-soft)', borderStyle: showUnreachable ? 'dashed' : 'solid', borderColor: selected || runState || waiting || showUnreachable ? borderColor : isStart ? 'var(--fl-ok)' : 'var(--fl-control-border)' }}>
-      {!isStart && <Handle type="target" position={Position.Left} className="fl-handle" />}
+      {!isStart && <Handle type="target" position={vertical ? Position.Top : Position.Left} className="fl-handle" />}
       <AppIcon name={isStart ? 'play' : 'stop'} size={24} />
       <span className="fl-terminal-status"><RunBadge state={waiting ? 'waiting' : runState} waitingLabel={waitingLabel} /></span>
-      {!isEnd && <Handle type="source" id="out" position={Position.Right} className="fl-handle" />}
+      {!isEnd && !vertical && <Handle type="source" id="out" position={Position.Right} className="fl-handle" />}
     </div>
     <div className="fl-terminal-label"><span title={n.name ?? typeLabel(n.type)}>{n.name ?? typeLabel(n.type)}</span>{collapseButton}</div>
     {!collapsed && showUnreachable && <div style={{ color: 'var(--fl-put)', fontSize: 10, textAlign: 'center' }}>⚠ 미연결</div>}
+    {!isEnd && vertical && <Handle type="source" id="out" position={Position.Bottom} className="fl-handle" />}
   </div>
 
   const subtitle = waiting ? `${waitingLabel}…` : running ? '실행 중…' : runState === 'skipped' ? '건너뜀' : showUnreachable ? '⚠ 미연결'
@@ -91,7 +93,7 @@ export function NodeCard({ data, selected }: NodeProps) {
         opacity: runState === 'skipped' ? 0.55 : 1,
       }}
     >
-      <Handle type="target" position={Position.Left} className="fl-handle" />
+      <Handle type="target" position={vertical ? Position.Top : Position.Left} className="fl-handle" />
 
       <div className="fl-task-header">
         <NodeTypeIcon type={n.type} size={36} />
@@ -127,7 +129,7 @@ export function NodeCard({ data, selected }: NodeProps) {
         </>}
       </div>}
 
-      <Handle type="source" id="out" position={Position.Right} className="fl-handle" />
+      <Handle type="source" id="out" position={vertical ? Position.Bottom : Position.Right} className="fl-handle" />
     </div>
   )
 }

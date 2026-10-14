@@ -7,6 +7,7 @@ import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from
 import { Link, useLocation } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import { SettingsDialog } from '../components/SettingsDialog'
+import { DesktopUpdateNotice } from '../components/DesktopUpdateNotice'
 import { desktopApi } from '../auth/desktop'
 import { ServerInstallCard } from '../components/ServerInstallCard'
 import { getTheme, toggleTheme, type Theme } from '../design/theme'
@@ -32,6 +33,7 @@ export function AppShellTier1({ children, sidebarExtra }: { children: ReactNode;
   const location = useLocation()
   const [theme, setTheme] = useState<Theme>(getTheme())
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [settingsTab, setSettingsTab] = useState<'connection' | 'runtime' | 'update' | undefined>()
   const [sideW, setSideW] = useState(() => {
     try { const value = Number(localStorage.getItem(SIDEBAR_KEY)); return value >= SIDEBAR_MIN && value <= SIDEBAR_MAX ? value : SIDEBAR_DEFAULT } catch { return SIDEBAR_DEFAULT }
   })
@@ -81,17 +83,18 @@ export function AppShellTier1({ children, sidebarExtra }: { children: ReactNode;
         {!desktop && runtime?.kind === 'server' && <ServerInstallCard compact />}
       </div>
       <div className="fl-sidebar-footer">
+        <DesktopUpdateNotice onOpen={() => { setSettingsTab('update'); setSettingsOpen(true) }} />
         <div className="fl-shell-connection" role="status" aria-label={`회사 서버 · ${connectionStatus}`} title={`회사 서버 · ${connectionStatus}`}>
           <span className="fl-shell-status-dot" data-connected={scope.connected && !scope.remoteError} aria-hidden /><span>회사 서버</span><small>{connectionStatus}</small>
         </div>
         {desktop ? <div className="fl-shell-account"><span>{scope.connected ? accountName : '내 PC에서 작업 중'}</span>{scope.connected ? <button onClick={logout} aria-label="서버 로그아웃" title="서버 로그아웃"><AppIcon name="logout" size={16} /></button> : <button onClick={() => void desktopApi.login()} className="fl-shell-login">로그인</button>}</div>
           : authEnabled && me && <div className="fl-shell-account"><span>{accountName}{serverAdmin.data?.myStatus === 'PENDING' && <small>승인 대기 중</small>}</span>{isGuest ? <button onClick={requestLogin} className="fl-shell-login">로그인</button> : <button onClick={logout} aria-label="로그아웃" title="로그아웃"><AppIcon name="logout" size={16} /></button>}</div>}
-        <div className="fl-sidebar-preferences"><button onClick={() => setSettingsOpen(true)} aria-label="설정"><AppIcon name="settings" size={17} /><span>설정</span></button><button onClick={() => setTheme(toggleTheme())} aria-label={theme === 'dark' ? '라이트 모드로 전환' : '다크 모드로 전환'}><AppIcon name={theme === 'dark' ? 'sun' : 'moon'} size={17} /><span>{theme === 'dark' ? '라이트' : '다크'}</span></button></div>
+        <div className="fl-sidebar-preferences"><button onClick={() => { setSettingsTab(undefined); setSettingsOpen(true) }} aria-label="설정"><AppIcon name="settings" size={17} /><span>설정</span></button><button onClick={() => setTheme(toggleTheme())} aria-label={theme === 'dark' ? '라이트 모드로 전환' : '다크 모드로 전환'}><AppIcon name={theme === 'dark' ? 'sun' : 'moon'} size={17} /><span>{theme === 'dark' ? '라이트' : '다크'}</span></button></div>
       </div>
     </aside>
     <div className="fl-app-sidebar-handle"><ResizeHandle axis="x" sign={1} size={sideW} min={SIDEBAR_MIN} max={SIDEBAR_MAX} defaultSize={SIDEBAR_DEFAULT} onResize={setSideW} onResizeEnd={saveSideW} ariaLabel="사이드바 너비" /></div>
     <main id="main" className="fl-app-main" style={{ flex: 1, minWidth: 0 }}>{children}</main>
-    {settingsOpen && <SettingsDialog onClose={() => setSettingsOpen(false)} />}
+    {settingsOpen && <SettingsDialog initialTab={settingsTab} onClose={() => setSettingsOpen(false)} />}
   </div>
 }
 

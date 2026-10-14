@@ -12,12 +12,12 @@ import { ui } from '../design/ui'
 import { AppIcon } from './AppIcon'
 
 /** 개인 연결과 런타임 공통 설정은 저장 대상과 편집 권한이 다르다. */
-export function SettingsDialog({ onClose }: { onClose: () => void }) {
+export function SettingsDialog({ onClose, initialTab }: { onClose: () => void; initialTab?: 'connection' | 'runtime' | 'update' }) {
   const { settingsApi, adminApi } = useApi()
   const scope = useWorkspace()
   const { desktop } = useAuth()
   const qc = useQueryClient()
-  const [tab, setTab] = useState<'connection' | 'runtime' | 'update'>(desktop ? 'connection' : 'runtime')
+  const [tab, setTab] = useState<'connection' | 'runtime' | 'update'>(initialTab ?? (desktop ? 'connection' : 'runtime'))
   const runtimeLabel = scope.current.origin === 'local' ? '내 PC 실행 설정' : '서버 공통 설정'
   const connection = useQuery({ queryKey: ['desktop', 'connection'], queryFn: desktopApi.connection, enabled: !!desktop, refetchInterval: desktop ? 3000 : false })
   const mcp = useQuery({ queryKey: ['desktop', 'mcp'], queryFn: desktopApi.mcpStatus, enabled: !!desktop && tab === 'connection', refetchInterval: desktop && tab === 'connection' ? 3000 : false })
@@ -78,7 +78,7 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
       <section style={section} aria-label="회사 서버">
         <div style={row}><h3 style={{ ...heading, margin: 0 }}>회사 서버</h3>{savedServer && !editingServer && <button style={button} disabled={!connection.isSuccess} onClick={() => setEditingServer(true)}>서버 변경</button>}</div>
         {savedServer && <p style={hint}><code style={code}>{savedServer}</code></p>}
-        {!editingServer && savedServer && <p style={hint}>저장된 연결 정보를 사용합니다. 앱 업데이트 후에도 유지됩니다.</p>}
+        {!editingServer && savedServer && <p style={hint}>서버 주소는 앱 업데이트 후에도 유지됩니다. 업데이트 설치가 완료되면 회사 계정으로 다시 로그인해야 합니다.</p>}
         {(editingServer || (!savedServer && connection.isSuccess)) && <div style={{ marginTop: 12 }}>
           <label style={label} htmlFor="desktop-server">{savedServer ? '변경할 서버 주소' : '회사 서버 주소'}</label>
           <input id="desktop-server" style={input} value={server} placeholder="https://flowlink.company.com" disabled={!connection.isSuccess || saveServer.isPending} onChange={e => setServerDraft(e.target.value)} />

@@ -20,6 +20,42 @@ class TcpClientTest {
             ProtocolSpec.Message("response", fields = listOf(ProtocolSpec.Field("value", 4, "ascii")))))
     private val request = "0008PING".toByteArray()
 
+    @Test fun `CJH 선언 400 200에 보정50 및 KPNC 고정450 250은 독립 바이트 클라이언트와 왕복한다`() {
+        for (adjusted in listOf(true, false)) {
+            val headerBytes = if (adjusted) 6 else 0
+            val protocol = ProtocolSpec(encoding = "UTF-8", lengthField = if (adjusted) "length" else null,
+                header = if (adjusted) listOf(ProtocolSpec.Field("length", 6, "length")) else emptyList(),
+                framing = if (adjusted) ProtocolSpec.Framing("length", lengthAdjustment = 50) else ProtocolSpec.Framing("fixed", fixedLength = 450),
+                responseFraming = if (adjusted) ProtocolSpec.Framing("length", lengthAdjustment = 50) else ProtocolSpec.Framing("fixed", fixedLength = 250),
+                messages = listOf(ProtocolSpec.Message("request", fields = listOf(ProtocolSpec.Field("value", 450 - headerBytes, "ascii"))),
+                    ProtocolSpec.Message("response", fields = listOf(ProtocolSpec.Field("value", 250 - headerBytes, "ascii")))))
+            val encoded = ProtocolCodec.encode(protocol, "request", mapOf("value" to "A".repeat(450 - headerBytes)), Direction.SEND)
+            val expectedRequest = ((if (adjusted) "000400" else "") + "A".repeat(450 - headerBytes)).toByteArray()
+            val response = ((if (adjusted) "000200" else "") + "B".repeat(250 - headerBytes)).toByteArray()
+            ServerSocket(0).use { server ->
+                server.soTimeout = 3000
+                val complete = CompletableFuture<Boolean>()
+                val worker = thread(isDaemon = true) {
+                    try {
+                        server.accept().use { socket ->
+                            socket.soTimeout = 3000
+                            assertThat(socket.getInputStream().readNBytes(450)).isEqualTo(expectedRequest)
+                            socket.getOutputStream().write(response, 0, 50); socket.getOutputStream().flush()
+                            socket.getOutputStream().write(response, 50, 200); socket.getOutputStream().flush()
+                            complete.complete(true)
+                        }
+                    } catch (e: Throwable) { complete.completeExceptionally(e) }
+                }
+                try {
+                    val result = TcpClient.exchange("127.0.0.1", server.localPort, 2000, encoded.bytes, protocol)
+                    assertThat(result.response.bytes).isEqualTo(response)
+                    assertThat(ProtocolCodec.decode(protocol, result.response.bytes, Direction.RECV).body?.get("value")).isEqualTo("B".repeat(250 - headerBytes))
+                    assertThat(complete.get(4, TimeUnit.SECONDS)).isTrue()
+                } finally { server.close(); worker.join(1000) }
+            }
+        }
+    }
+
     @Test fun `연결 직후 실행이 취소되면 요청 바이트를 보내지 않고 소켓을 닫는다`() {
         ServerSocket(0).use { server ->
             server.soTimeout = 3000

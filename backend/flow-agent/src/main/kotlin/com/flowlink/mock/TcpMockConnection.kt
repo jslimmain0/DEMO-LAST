@@ -22,6 +22,18 @@ internal class TcpMockConnection(val socket: Socket) {
     private var receivedMessages = 0L
     private var closed = false
     @Volatile private var expired = false
+    private var phase: String? = null
+    private var transactionKey: String? = null
+    private var expectedBytes: Int? = null
+    private var accumulatedBytes = 0
+    private var ackDeadline: Long? = null
+
+    @Synchronized fun phase(phase: String, transactionKey: String?, expectedBytes: Int?, actualBytes: Int) {
+        if (this.phase != phase || this.transactionKey != transactionKey) accumulatedBytes = actualBytes
+        this.phase = phase; this.transactionKey = transactionKey; this.expectedBytes = expectedBytes
+        if (actualBytes > 0) accumulatedBytes = actualBytes
+    }
+    @Synchronized fun ackTimeout(timeoutMs: Int?) { ackDeadline = timeoutMs?.let { System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(it.toLong()) } }
 
     @Synchronized fun configure(timeoutMs: Int) { idleTimeoutMs = timeoutMs; resetDeadline() }
     @Synchronized fun waiting() { if (!closed) { state = "waiting"; resetDeadline() } }
@@ -39,7 +51,7 @@ internal class TcpMockConnection(val socket: Socket) {
         return TcpMockListenerRuntime.SessionView(id, socket.inetAddress.hostAddress, socket.port,
             connectedAt, lastActivityAt, idleTimeoutMs, state,
             remainingNanos?.let { Instant.now().plusNanos(it) },
-            remainingNanos?.let { TimeUnit.NANOSECONDS.toMillis(it) }, receivedMessages)
+            remainingNanos?.let { TimeUnit.NANOSECONDS.toMillis(it) }, receivedMessages, phase, transactionKey, accumulatedBytes, expectedBytes)
     }
 
     @Synchronized fun extend(extendMs: Int): TcpMockListenerRuntime.SessionView {
@@ -58,7 +70,9 @@ internal class TcpMockConnection(val socket: Socket) {
     @Synchronized private fun readTimeout(): Int {
         if (expired) throw idleExpired()
         if (closed || socket.isClosed) throw IOException("TCP 연결이 종료되었습니다.")
-        val remaining = deadline - System.nanoTime()
+        val now = System.nanoTime()
+        if (ackDeadline != null && ackDeadline!! <= now) throw SocketTimeoutException("ACK 수신 제한 시간 경과")
+        val remaining = minOf(deadline, ackDeadline ?: Long.MAX_VALUE) - now
         if (remaining <= 0) {
             expire()
             throw idleExpired()
@@ -70,7 +84,7 @@ internal class TcpMockConnection(val socket: Socket) {
     private fun idleExpired() = SocketTimeoutException("유휴 기한 경과 — 연결 종료")
 
     fun input(): InputStream = object : InputStream() {
-        private val delegate = socket.getInputStream()
+        private val delegate = socket.getInputStream().buffered()
         private val single = ByteArray(1)
         override fun read(): Int = if (read(single, 0, 1) < 0) -1 else single[0].toInt() and 0xff
         override fun read(bytes: ByteArray, offset: Int, length: Int): Int {
@@ -80,11 +94,11 @@ internal class TcpMockConnection(val socket: Socket) {
                 val count = try { delegate.read(bytes, offset, length) }
                     catch (_: SocketTimeoutException) { continue }
                     catch (e: IOException) { if (expired) throw idleExpired(); throw e }
-                if (count > 0) activity()
+                if (count > 0) synchronized(this@TcpMockConnection) { accumulatedBytes += count; activity() }
                 return count
             }
         }
-    }.buffered()
+    }
 
     fun output(): OutputStream = object : OutputStream() {
         private val delegate = socket.getOutputStream()

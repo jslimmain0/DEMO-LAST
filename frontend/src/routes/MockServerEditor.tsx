@@ -17,6 +17,7 @@ import { MockCodecEditor } from '../components/MockCodecEditor'
 import { RouteCard } from '../components/MockRouteEditor'
 import { TcpConnPanel, TcpLogPanel, TcpRuleDetail, TcpSendPanel, tcpRuleSummary } from '../components/TcpMockEditor'
 import { TcpMockSessions } from '../components/TcpMockSessions'
+import { MockPlanPreview } from '../components/MockPlanPreview'
 import { MockExportDialog, MockReplaceSpecDialog } from '../components/MockTransferDialog'
 import { MockVersionHistoryDialog } from '../components/MockVersionHistoryDialog'
 import { Modal } from '../components/Modal'
@@ -47,6 +48,7 @@ type NavSel =
   | { kind: 'route'; id: string }   // HTTP 라우트
   | { kind: 'conn' }                // TCP 연결(포트·프로토콜·upstream)
   | { kind: 'sessions' }            // TCP 연결 현황·대기 기한 연장
+  | { kind: 'preview' }
   | { kind: 'rule'; id: string }    // TCP 규칙
   | { kind: 'codec' } | { kind: 'settings' } | { kind: 'overview' }
 
@@ -67,9 +69,9 @@ export function MockServerEditor() {
   const returnToList = useCatalogReturn('mocks')
   const catalog = useCatalogNavigation('mocks')
   const { canEdit: canEditGlobal } = usePermissions()
-  const { me, isGuest } = useAuth()
-  const aiMe = useQuery({ queryKey: ['admin', 'me'], queryFn: adminApi.me, staleTime: 30_000 })
-  const aiPending = aiMe.data?.myStatus === 'PENDING'
+  const { me, isGuest, desktop } = useAuth()
+  const aiMe = useQuery({ queryKey: ['admin', 'me'], queryFn: adminApi.me, enabled: !desktop, staleTime: 30_000 })
+  const aiPending = !desktop && aiMe.data?.myStatus === 'PENDING'
   const badgeInk = useReadableInk('var(--fl-cat-generic)')
   const detail = useQuery({ queryKey: ['mock-server', id], queryFn: () => mocksApi.get(id), enabled: !!id, retry: false })
   const wss = useQuery({ queryKey: ['workspaces'], queryFn: workspacesApi.list })
@@ -446,6 +448,7 @@ export function MockServerEditor() {
                   </div>
                 </>
               )}
+              <button aria-label="검증 · 미리보기" aria-current={nav.kind === 'preview' ? 'page' : undefined} onClick={() => { setNav({ kind: 'preview' }); setTrafficOpen(false) }} style={{ ...navItem, ...(nav.kind === 'preview' ? navActive : null) }}><AppIcon name="search" size={14} /><span style={{ flex: 1 }}>검증 · 미리보기</span></button>
               <button onClick={() => setNav({ kind: 'settings' })} style={{ ...navItem, ...(nav.kind === 'settings' ? navActive : null) }}>
                 <AppIcon name="settings" size={14} /><span style={{ flex: 1 }}>설정</span>{spec.environment && <span style={metaMono}>{spec.environment}</span>}
               </button>
@@ -470,7 +473,7 @@ export function MockServerEditor() {
                 <div style={{ ...legacyBanner, display: 'block' }} role="note">
                   <b style={{ fontSize: 13 }}>⚠ 규칙 경고 {tcpLints.length}건</b>
                   <ul style={{ margin: '4px 0 0', paddingLeft: 18, fontSize: 12, lineHeight: 1.6 }}>{tcpLints.slice(0, 8).map((m, i) => <li key={i}>{m}</li>)}</ul>
-                  <div style={{ fontSize: 12, color: 'var(--fl-text-muted)', marginTop: 4 }}>저장은 막지 않습니다 — 응답이 비거나 잘릴 수 있습니다.</div>
+                  <div style={{ fontSize: 12, color: 'var(--fl-text-muted)', marginTop: 4 }}>{protoSpec?.schemaVersion === 2 ? '저장 전에 거래·응답 필드를 확인하세요. v2의 누락·길이 오류는 저장·전송을 차단합니다.' : '저장은 막지 않습니다 — 응답이 비거나 잘릴 수 있습니다.'}</div>
                 </div>
               )}
               {nav.kind === 'conn' && (
@@ -486,6 +489,7 @@ export function MockServerEditor() {
                 </>
               )}
               {isTcp && nav.kind === 'sessions' && <TcpMockSessions key={`${scope.scopeKey}:${id}`} mockId={id} readOnly={!canEdit} onOpenConnection={() => setNav({ kind: 'conn' })} />}
+              {nav.kind === 'preview' && <MockPlanPreview key={`${scope.scopeKey}:${id}:${tcp.protocolId}`} id={id} slug={d.slug} type={isTcp ? 'TCP' : 'HTTP'} spec={resourceSpec(spec)} protocol={proto.isError ? undefined : protoSpec} readOnly={!canEdit} onAddRule={rule => { setTcp({ rules: [rule, ...tcpRules] }); setNav({ kind: 'rule', id: rule.id }); toast(autosave ? '규칙 초안을 추가했습니다. 자동 저장됩니다.' : '규칙 초안을 추가했습니다. 확인 후 저장하세요.', 'ok') }} />}
               {nav.kind === 'rule' && selRule && (
                 <TcpRuleDetail key={selRule.id} rule={selRule} index={tcpRules.findIndex((r) => r.id === selRule.id)} total={tcpRules.length}
                   spec={protoSpec} secrets={secretNames} envKeys={envKeyList} readOnly={!canEdit}

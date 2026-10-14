@@ -140,6 +140,7 @@ function load(file, extra = '') {
 }
 const logs = load('components/NodeExecutionLog.tsx')
 modules['../components/NodeExecutionLog'] = logs
+modules['../components/TcpTransferSteps'] = load('components/TcpTransferSteps.tsx')
 const { RunPanel } = load('panels/RunPanel.tsx')
 async function resultsAndRecovery() {
   let props = {

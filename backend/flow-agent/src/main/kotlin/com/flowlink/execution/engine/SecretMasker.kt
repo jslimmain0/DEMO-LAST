@@ -12,6 +12,19 @@ import java.nio.charset.Charset
  */
 object SecretMasker {
 
+    private val secretReference = Regex("@secret\\b|\\bsecret\\.", RegexOption.IGNORE_CASE)
+    const val DERIVED_ERROR = "시크릿을 사용하는 전문 처리에 실패했습니다. 코덱과 필드 설정을 확인하세요."
+
+    /** 코덱이 값을 바꾸면 원문 치환으로 추적할 수 없어 표시·로그를 통째로 숨긴다. */
+    @JvmStatic
+    fun hasSecretReference(vararg values: Any?): Boolean = values.any { it != null && secretReference.containsMatchIn(it.toString()) }
+
+    @JvmStatic
+    fun usesSecrets(secrets: Collection<String>, vararg values: Any?): Boolean {
+        val masks = variants(secrets)
+        return hasSecretReference(*values) || values.any { it != null && mask(it.toString(), masks) != it.toString() }
+    }
+
     private val mapper = ObjectMapper()
     private val urlCharsets = listOf("UTF-8", "EUC-KR", "MS949").mapNotNull { runCatching { Charset.forName(it) }.getOrNull() }
 

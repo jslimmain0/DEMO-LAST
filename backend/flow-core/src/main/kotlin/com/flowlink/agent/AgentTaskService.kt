@@ -37,6 +37,7 @@ class AgentTaskService(
     private val executions: com.flowlink.core.repository.ExecutionRepository,
     private val checkpoints: com.flowlink.core.repository.ExecutionSuspensionRepository,
     private val updateGate: com.flowlink.common.lifecycle.RuntimeUpdateGate = com.flowlink.common.lifecycle.RuntimeUpdateGate(),
+    private val protocols: com.flowlink.protocol.ProtocolResources? = null,
 ) {
     private val tx = TransactionTemplate(txManager)
     private val rejectionTx = TransactionTemplate(txManager).apply {
@@ -96,11 +97,44 @@ class AgentTaskService(
 
     fun claim(id: UUID, body: AgentClaim): AgentTaskView = tx.execute {
         val task = load(id); authorize(task); device(task, body.deviceId)
+        if (task.status !in setOf("PENDING", "CLAIMED")) return@execute view(task, lease = true)
         if (!hasActiveCheckpoint(task)) return@execute view(task, lease = true)
+        if (task.agent == "local") {
+            val request = decodeRequest(task)
+            if (request.node.type.equals("tcp", true)) {
+                val failure = capabilityFailure(request, body.runtimeCapabilities)
+                if (failure != null) {
+                    task.status = "CLAIMED"; task.error = failure
+                    finish(task, AgentNodeResult(NodeResult.fail(400, null, failure), 0))
+                    return@execute view(task)
+                }
+            }
+        }
         if (task.claimToken == null) task.claimToken = UUID.randomUUID().toString()
         if (task.status == "PENDING") task.status = "CLAIMED"
         view(task, lease = true, packet = true)
     }!!
+
+    private fun capabilityFailure(request: AgentNodeRequest, reported: AgentRuntimeCapabilities?): String? {
+        val plan = try {
+            val reference = request.node.protocolId?.takeIf { it.isNotBlank() } ?: return null
+            val scope = if (request.resourceWorkspaceId == "public") null else workspace.resolveId(request.workspaceId)
+            val captured = protocols?.snapshot(reference, scope, request.resourceIdentity)
+                ?: return "CAPABILITY_UNKNOWN: PC 전문 지원을 확인하지 못했습니다. 요청은 전송하지 않았습니다."
+            if (request.dependencyHashes["protocol"]?.let { it != captured.fingerprint } == true)
+                return "DEFINITION_CHANGED: 실행 계획의 전문·승인 코덱 버전이 변경됐습니다. 요청은 전송하지 않았습니다."
+            com.flowlink.protocol.ProtocolCompiler.compile(captured.spec)
+        } catch (_: Exception) { return "INVALID_SCHEMA: 실행할 전문·승인 코덱 버전을 확인하지 못했습니다. 요청은 전송하지 않았습니다." }
+        if (plan.schemaVersion != 2 && plan.requiredCapabilities.isEmpty()) return null
+        val code = when {
+            reported == null || reported.schemaVersions.isEmpty() -> "CAPABILITY_UNKNOWN"
+            plan.schemaVersion !in reported.schemaVersions -> "UNSUPPORTED_CAPABILITY"
+            else -> plan.requiredCapabilities.firstNotNullOfOrNull { feature -> when (reported.features[feature]) {
+                "supported" -> null; "unsupported" -> "UNSUPPORTED_CAPABILITY"; else -> "CAPABILITY_UNKNOWN"
+            } }
+        }
+        return code?.let { "$it: 이 PC가 필요한 v2 전문 기능을 지원하는지 확인하세요. 앱을 업데이트한 뒤 새 실행을 시작하세요. 요청은 전송하지 않았습니다." }
+    }
 
     fun execute(id: UUID, body: AgentLease): AgentTaskView = tx.execute {
         val task = load(id); authorize(task); lease(task, body)
@@ -112,26 +146,41 @@ class AgentTaskService(
     fun complete(id: UUID, body: AgentCompletion): AgentTaskView = tx.execute {
         val task = load(id); authorize(task); lease(task, AgentLease(body.deviceId, body.claimToken))
         if (!workspace.localRuntime && task.agent != "local") throw ForbiddenException("서버 작업의 결과는 서버 실행기가 기록합니다.")
+        if (task.status == "UNKNOWN" && task.resultData != null) return@execute view(task)
         val result = if (task.status in TERMINAL || task.status == "ACKED") body.result else {
             if (json.toJson(body.result).toByteArray(Charsets.UTF_8).size > 21 * 1024 * 1024)
                 throw BadRequestException("에이전트 결과는 21MB 이하여야 합니다.")
             val request = decodeRequest(task)
             if (request.crossBoundary) {
-                fun selected(value: Any?, keys: List<String>): Map<String, Any?> {
-                    val ctx = ExecutionContext().apply { putOutput("result", value) }
-                    return keys.associateWith { tokens.resolveTokenObject(it, false, "result", ctx) }
-                }
                 val output = selected(body.result.value, request.allowedOutputs)
                 if (request.node.type == "if" && body.result.ok && body.result.branch !in setOf("true", "false"))
                     throw BadRequestException("IF 작업의 분기 결과가 올바르지 않습니다.")
-                body.result.copy(value = output, storedValue = output,
+                val diagnostics = tcpDiagnostics(request, body.result)
+                val stored = if (diagnostics == null) output else if (body.result.uncertain) diagnostics else
+                    selected(body.result.storedValue, request.allowedOutputs) + mapOf("_tcpTransport" to diagnostics["_tcpTransport"])
+                body.result.copy(value = output, storedValue = stored,
                     reqValues = selected(body.result.reqValues, request.allowedRequestKeys),
-                    responseText = AgentResultText.response(body.result.value, output, json), branch = if (request.node.type == "if") body.result.branch else null)
+                    responseText = if (diagnostics == null) AgentResultText.response(body.result.value, output, json) else json.toJson(stored), branch = if (request.node.type == "if") body.result.branch else null)
             } else body.result
         }
         finish(task, AgentNodeResult(result, body.durationMs))
         view(task)
     }!!
+
+    private fun selected(value: Any?, keys: List<String>): Map<String, Any?> {
+        val ctx = ExecutionContext().apply { putOutput("result", value) }
+        return keys.filterNot { it == "_tcpTransport" || it.startsWith("_tcpTransport.") }.associateWith { tokens.resolveTokenObject(it, false, "result", ctx) }
+    }
+
+    private fun tcpDiagnostics(request: AgentNodeRequest, result: NodeResult): Map<String, Any?>? {
+        if (!request.node.type.equals("tcp", true)) return null
+        val stored = result.storedValue as? Map<*, *> ?: return null
+        val meta = com.flowlink.protocol.TcpTransportDiagnostics.sanitize(stored["_tcpTransport"], request.dependencyHashes["protocol"], json) ?: return null
+        val fields = stored["responseFields"] ?: stored
+        val response = if (request.crossBoundary) selected(fields, request.allowedOutputs) else
+            (fields as? Map<*, *>)?.entries?.filter { it.key is String && it.key != "_tcpTransport" }?.associate { it.key as String to it.value }.orEmpty()
+        return mapOf("responseFields" to response, "_tcpTransport" to meta)
+    }
 
     fun unknown(id: UUID, body: AgentUnknown): AgentTaskView = tx.execute {
         val task = load(id); authorize(task); lease(task, AgentLease(body.deviceId, body.claimToken))
@@ -154,7 +203,8 @@ class AgentTaskService(
     /** 아래 메서드는 실행 소유 서비스 전용이며 사용자·워크스페이스는 실행 시작 시 검증한다. */
     fun pending(id: UUID): PendingAgent = tx.execute {
         val t = load(id)
-        PendingAgent(t.id, t.nodeId, t.nodeName, t.agent, t.status, t.error, t.deviceId)
+        PendingAgent(t.id, t.nodeId, t.nodeName, t.agent, t.status, t.error, t.deviceId,
+            if (t.status == "UNKNOWN" && t.resultData != null) decodeResult(t).storedValue as? Map<String, Any?> else null)
     }!!
     fun result(id: UUID): AgentNodeResult? = tx.execute {
         val t = load(id)
@@ -246,6 +296,10 @@ class AgentTaskService(
             task.durationMs = outcome.durationMs.coerceAtLeast(0)
             if (outcome.result.uncertain) {
                 task.status = "UNKNOWN"; task.error = "외부 요청의 처리 여부를 확인할 수 없습니다. 자동 재실행하지 않습니다."
+                val diagnostics = tcpDiagnostics(decodeRequest(task), outcome.result)
+                if (diagnostics != null) task.resultData = crypto.encrypt(json.toJson(outcome.result.copy(value = null, storedValue = diagnostics,
+                    requestText = null, responseText = json.toJson(diagnostics), reqValues = null)))
+                task.updatedAt = Instant.now()
                 executor.invalidateTcpExecution(task.executionId, listOf("task", task.username, task.deviceId))
                 return
             }
@@ -292,7 +346,7 @@ class AgentTaskService(
         t.id, t.executionId, t.nodeId, t.agent, t.status, t.deviceId, t.error,
         if (packet && t.requestData != null && t.agent != executor.runtime) decodeRequest(t) else null,
         if (lease) t.claimToken else null,
-        if (t.resultData != null && t.delegation) decodeResult(t) else null, t.durationMs,
+        if (t.resultData != null && (t.delegation || t.status == "UNKNOWN")) decodeResult(t) else null, t.durationMs,
     )
     private fun afterCommit(action: () -> Unit) {
         if (TransactionSynchronizationManager.isSynchronizationActive()) TransactionSynchronizationManager.registerSynchronization(object : TransactionSynchronization {

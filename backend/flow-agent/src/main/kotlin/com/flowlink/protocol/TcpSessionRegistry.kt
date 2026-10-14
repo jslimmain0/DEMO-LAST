@@ -22,7 +22,7 @@ class TcpSessionRegistry(private val idleMs: Long = 30_000, private val maxEntri
     private val closedRuns = LinkedHashMap<ClosedRun, Long>()
     private var closed = false
 
-    fun exchange(scope: Scope, host: String, port: Int, timeoutMs: Int, request: ByteArray, spec: ProtocolSpec, fingerprint: String, canSend: () -> Boolean = { true }): Result {
+    fun exchange(scope: Scope, host: String, port: Int, timeoutMs: Int, request: ByteArray, spec: ProtocolSpec, fingerprint: String, canSend: () -> Boolean = { true }, plugins: ProtocolCodec.PluginLookup = ProtocolCodec.NO_PLUGINS, resolve: (String) -> String = { it }): Result {
         val key = Key(scope, host, port, fingerprint)
         val (entry, reused) = synchronized(entries) {
             expireIdleLocked()
@@ -39,7 +39,7 @@ class TcpSessionRegistry(private val idleMs: Long = 30_000, private val maxEntri
             }
         }
         synchronized(entry) {
-            try { return Result(entry.session.exchange(request, spec, timeoutMs, canSend), reused) }
+            try { return Result(entry.session.exchange(request, spec, timeoutMs, canSend, plugins, resolve), reused) }
             finally { entry.touched = System.nanoTime(); entry.uses.decrementAndGet() }
         }
     }

@@ -43,7 +43,7 @@ class ManagedMockScopeLoader(private val secrets: SecretService, private val env
                 val environmentScope: java.util.UUID? = null
                 if (!environments.exists(environment, environmentScope)) throw BadRequestException("선택한 환경이 없습니다: $environment")
                 val protocol = spec.tcp?.protocolId?.takeIf { it.isNotBlank() }?.let { protocols?.getObject()?.snapshot(it, null, null) }
-                return MockSecretProvider.Scope(secrets.activeSecrets(secretEnv, null), environments.vars(environment, environmentScope), codecLookup = protocol?.plugins, protocol = protocol?.spec)
+                return MockSecretProvider.Scope(secrets.activeSecrets(secretEnv, null), environments.vars(environment, environmentScope), codecLookup = protocol?.plugins, protocol = protocol?.spec, protocolFingerprint = protocol?.fingerprint)
             }
             fun identity() = spec.resourceIdentity?.takeIf { it.serverUrl.isNotBlank() } ?: throw BadRequestException("Mock을 저장한 서버 연결 정보가 필요합니다.")
             fun server() = central?.getObject() ?: throw BadRequestException("중앙 Mock 연결이 준비되지 않았습니다.")
@@ -75,7 +75,7 @@ class ManagedMockScopeLoader(private val secrets: SecretService, private val env
                 }
             }
             verify()
-            return MockSecretProvider.Scope(values, variables, transformLookup = { proxy.find(it) }, codecLookup = protocol?.plugins, protocol = protocol?.spec, verifyAccess = verify)
+            return MockSecretProvider.Scope(values, variables, transformLookup = { proxy.find(it) }, codecLookup = protocol?.plugins, protocol = protocol?.spec, verifyAccess = verify, protocolFingerprint = protocol?.fingerprint)
         } finally { TenantContext.setTenantId(previous) }
     }
 }

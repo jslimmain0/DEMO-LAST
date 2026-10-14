@@ -24,7 +24,7 @@ const modules = {
   react, 'react/jsx-runtime': { jsx, jsxs: jsx }, 'react-router-dom': { useNavigate: () => () => {}, useSearchParams: () => [new URLSearchParams()] },
   '@tanstack/react-query': { useQuery: () => ({ data: [] }), useMutation: () => mutation },
   '../app/WorkspaceContext': { useWorkspace: () => ({ scopeKey: 'local:pc', current: { origin: 'local', id: 'pc' }, connected: true }), useCentralApi: () => ({ adminApi: {}, codecsApi: {}, protocolsApi: {} }) },
-  '../auth/AuthContext': { useAuth: () => ({}) }, '../lib/environments': { useEnvironment: () => ({ activeEnvName: () => null, prepareForRun: async () => {} }), useEnvStore: () => ({ envs: {} }) },
+  '../auth/AuthContext': { useAuth: () => ({}) }, '../lib/environments': { useEnvironment: () => ({ activeEnvName: () => null, ensureEnvLoaded: async () => {} }), useEnvStore: () => ({ envs: {} }) },
   '../lib/apiError': { apiErrorMessage: error => error.message }, './UnsavedNavigation': { useUnsavedNavigation: () => ({ navigateSaved() {} }) },
   '../lib/format': { relTime: () => '' },
   '../design/ui': { ui: {} }, '../lib/vaultSources': { useVaultSources: () => [] }, '../binding/TokenInput': { TokenInput: 'token-input' },

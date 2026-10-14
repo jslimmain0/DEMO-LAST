@@ -117,6 +117,7 @@ const modules = {
   '../app/AppShell': { AppShellTier1: 'shell' }, '../components/AskDialog': { AskDialog: 'ask' },
   '../components/MockTransferDialog': { MockImportDialog: 'import', MockExportDialog: 'export' },
   '../components/MockNavigator': { MockNavigator: 'navigator' }, '../components/ResourceLocationBar': { ResourceLocationBar: 'location-bar' },
+  '../components/MockPlanPreview': { MockPlanPreview: 'mock-preview' },
   '../components/toast': { toast: message => toasts.push(message) }, './toast': { toast: message => toasts.push(message) }, '../lib/apiError': { apiErrorMessage: error => error.message },
   '../canvas/nodeMeta': { METHOD_COLOR: {} }, '../lib/format': { relTime: () => '' }, './CatalogPagination': { CatalogPagination: 'pagination' },
   '../design/ui': { ui: {} },

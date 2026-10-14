@@ -36,6 +36,7 @@ try {
 finally {
     if ($restartAllowed -and (Test-Path -LiteralPath $launcher -PathType Leaf)) {
         try { Start-Process -FilePath $launcher -WorkingDirectory (Split-Path -Parent $launcher) -WindowStyle Hidden | Out-Null }
-        catch { Write-Result 'restart-failed' '앱을 다시 열지 못했습니다. 바로가기로 실행하세요.' }
+        # 설치 성공 영수증은 보존한다. 직접 재실행해도 새 앱에서 로그아웃 처리를 완료해야 한다.
+        catch { '앱을 다시 열지 못했습니다. 바로가기로 실행하세요.' | Set-Content -LiteralPath (Join-Path (Split-Path -Parent $requestPath) 'restart-error.txt') -Encoding UTF8 }
     }
 }

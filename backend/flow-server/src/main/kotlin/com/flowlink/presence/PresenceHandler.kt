@@ -88,6 +88,7 @@ class PresenceHandler(private val mapper: ObjectMapper) : TextWebSocketHandler()
                 out.put("t", "graph")
                 out.set<JsonNode>("nodes", msg.path("nodes"))
                 out.set<JsonNode>("edges", msg.path("edges"))
+                msg.path("layoutDirection").asText().takeIf { it in setOf("TB", "LR") }?.let { out.put("layoutDirection", it) }
             }
             else -> return   // 미지의 타입은 무시(전방 호환)
         }

@@ -90,6 +90,15 @@ try {
     Require ($agent.baseUrl -eq $desktop.Base) '개인 session 포트가 launcher와 다릅니다.'
     $config = (Request $desktop '/api/v1/auth/config' $agent.token).Body | ConvertFrom-Json
     Require ($config.runtime.kind -eq 'local') 'desktop launcher가 개인 runtime이 아닙니다.'
+    foreach ($path in @('/api/v1/assistant/config', '/api/v1/assistant/oauth/status')) {
+        Require ((Request $server $path).Status -eq 404) "중앙 서버에 개인 AI 실행 경로가 등록됐습니다: $path"
+        Require ((Request $desktop $path $agent.token).Status -eq 200) "개인 AI 경로를 사용할 수 없습니다: $path"
+    }
+    Require ((Request $server '/api/v1/schemas').Status -eq 200) '중앙 MCP가 읽는 공유 스키마가 없어졌습니다.'
+    $aiSample = Request $desktop '/api/v1/assistant/chat' $agent.token 'POST' @{ messages = @(@{role='user';content='HTTP API 요청 샘플'}) }
+    Require ($aiSample.Status -eq 200) '서버 연결 없는 개인 AI 샘플 생성 실패'
+    $aiSampleBody = $aiSample.Body | ConvertFrom-Json
+    Require ($aiSampleBody.stub -and @($aiSampleBody.graph.nodes | Where-Object type -eq 'assert').Count -eq 0) '기본 샘플에 불필요한 검증 노드가 생성됐습니다.'
     $screen = Request $desktop '/plugins' $agent.token
     Require ($screen.Status -eq 200 -and $screen.Body -match '<div id="root">') 'desktop에 작업 프론트의 딥링크가 없습니다.'
     Require ((Request $desktop '/api/v1/auth/github/device/poll?session=module-boundary' $agent.token).Status -eq 404) 'desktop에 중앙 로그인 발급 API가 등록됐습니다.'

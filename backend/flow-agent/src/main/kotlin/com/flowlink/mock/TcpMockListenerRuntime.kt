@@ -57,6 +57,7 @@ class TcpMockListenerRuntime(
         val id: UUID, val remoteAddress: String, val remotePort: Int,
         val connectedAt: Instant, val lastActivityAt: Instant, val idleTimeoutMs: Int,
         val state: String, val expiresAt: Instant?, val remainingMs: Long?, val receivedMessages: Long,
+        val phase: String? = null, val transactionKey: String? = null, val accumulatedBytes: Int = 0, val expectedBytes: Int? = null,
     )
 
     fun sessions(mockId: UUID): List<SessionView> {
@@ -84,6 +85,7 @@ class TcpMockListenerRuntime(
 
     fun recordFailure(id: UUID, message: String) { failures[id] = message }
     fun onProtocolChanged(id: UUID, spec: ProtocolSpec) {
+        if (spec.schemaVersion == 2) com.flowlink.protocol.ProtocolCompiler.compile(spec)
         for (l in listeners.values) if (l.tcp.protocolId?.trim() == id.toString() && l.protocol != spec) {
             synchronized(l) { l.protocol = spec; closeConnections(l) }
         }
@@ -100,6 +102,7 @@ class TcpMockListenerRuntime(
      */
     @Synchronized
     fun sync(m: MockServingSnapshot, tcp: MockSpec.MockTcp, proto: ProtocolSpec, environment: String?, spec: MockSpec? = null) {
+        if (proto.schemaVersion == 2) com.flowlink.protocol.ProtocolCompiler.compile(proto)
         val port = tcp.port ?: throw BadRequestException("TCP Mock 포트가 없습니다.")
         val cur = listeners[m.id]
         if (cur != null && cur.port == port) {
@@ -203,6 +206,8 @@ class TcpMockListenerRuntime(
                     verifyResourceAccess = scope.verifyAccess,
                     onWaiting = connection::waiting,
                     onFrame = connection::received,
+                    onPhase = connection::phase,
+                    ackTimeout = connection::ackTimeout,
                 )
                 session.serve(connection.input(), connection.output()) {
                     runCatching { sock.setSoLinger(true, 0) }; runCatching { sock.close() }

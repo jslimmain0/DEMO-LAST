@@ -155,13 +155,17 @@ class AgentNodeExecutor(
             if (request.crossBoundary) {
                 fun selected(value: Any?, keys: List<String>): Map<String, Any?> {
                     val source = ExecutionContext().apply { putOutput("result", value) }
-                    return keys.associateWith { tokens.resolveTokenObject(it, false, "result", source) }
+                    return keys.filterNot { it == "_tcpTransport" || it.startsWith("_tcpTransport.") }.associateWith { tokens.resolveTokenObject(it, false, "result", source) }
                 }
                 @Suppress("UNCHECKED_CAST")
-                val value = masked(selected(raw.value, request.allowedOutputs)) as Map<String, Any?>
+                val value = masked(selected(if (node.nodeType() == NodeType.TCP && raw.ok) raw.storedValue else raw.value, request.allowedOutputs)) as Map<String, Any?>
                 @Suppress("UNCHECKED_CAST")
                 val req = masked(selected(raw.reqValues, request.allowedRequestKeys)) as? Map<String, Any?>
-                raw.copy(value = value, storedValue = value, reqValues = req,
+                val stored = raw.storedValue as? Map<*, *>
+                val transport = com.flowlink.protocol.TcpTransportDiagnostics.sanitize(stored?.get("_tcpTransport"), request.dependencyHashes["protocol"], json)
+                val safeStored = if (transport == null) value else if (raw.ok) value + mapOf("_tcpTransport" to transport) else mapOf(
+                    "responseFields" to masked(selected(stored?.get("responseFields"), request.allowedOutputs)), "_tcpTransport" to transport)
+                raw.copy(value = value, storedValue = safeStored, reqValues = req,
                     requestText = SecretMasker.mask(raw.requestText, masks),
                     responseText = if (raw.ok) AgentResultText.response(raw.value, value, json) else com.flowlink.protocol.TcpSessionRegistry.safeFailure(raw.responseText)
                         ?: "노드 실행 실패 · 상태 ${raw.httpStatus ?: "확인 불가"} · 허용 출력 ${json.toJson(value)}")

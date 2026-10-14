@@ -1,6 +1,6 @@
 # FlowLink — 프로젝트 가이드 (유지보수용)
 
-> **현재 구조 (2026-10-13)**: `backend/flow-agent`, `backend/flow-core`, `backend/flow-server`, `backend/flow-desktop`, `backend/flow-mcp` 다섯 Gradle 모듈이다.
+> **현재 구조 (2026-10-14)**: `backend/flow-agent`, `backend/flow-core`, `backend/flow-server`, `backend/flow-desktop`, `backend/flow-mcp` 다섯 Gradle 모듈이다.
 > 아래 과거 `backend/src`·`runtime/server-app/desktop-app` 경로와 배포 설명보다 [backend/README.md](backend/README.md)를 우선한다.
 > `flow-agent`에는 호출·Mock·콜백 수신과 순수 실행 계약만 두고 JPA·관리 서비스 의존을 금지한다.
 > desktop과 server는 공통 워크플로·환경·JPA 저장·관리·실행 조정을 소유한 `flow-core`에 의존한다. desktop은 server 모듈에 의존하지 않으며 Oracle 드라이버·중앙 MCP·MCP SDK가 없다.
@@ -10,6 +10,11 @@
 > 기존 개인 환경·프로토콜·직접 입력 시크릿과 H2 암호화 키는 보존한다. `resourceWorkspaceId: public`을 지정하지 않은 기존 저장 명세·API는 이전 공간별 실행 계약을 유지한다. DB 스키마 변경이나 기존 자원의 자동 이관은 없다.
 > `flow-mcp`는 서버 JVM에서 로드하는 중앙 Kotlin MCP 라이브러리이다. Windows 설치 구현·자료·업데이트 helper는 `backend/flow-desktop/installer/`에 둔다.
 > 중앙 서버 기능은 `ServerFeatures`, Windows 기능은 `DesktopConfiguration`에서 명시적으로 등록한다. 개인 DB 위치·암호화 키와 기존 실행 API는 유지한다.
+> AI 대화·Copilot·개인 지침·대화 이력은 desktop에서만 등록한다. server에는 MCP용 `SchemaController`만 남긴다. 서버 자원을 편집할 때에도 AI API는 PC를 사용하며 기존 서버 자격을 자동 복사하지 않는다.
+> TCP v2는 명시적 `schemaVersion: 2`와 공통 `ProtocolCompiler`를 사용한다. 거래별 프레이밍·ACK·binary 정수·NUL을 v1로 조용히 축소하지 않는다. PC 작업 패킷을 전달하기 전에 실제 실행기 지원 기능과 전문 fingerprint를 확인한다. UNKNOWN은 재전송·자동 재개하지 않고 마스킹한 부분 응답·단계 진단만 보존한다.
+> MCP는 기존 59개 이름과 `mock_preview`로 총 60개다. 새 흐름은 `layoutDirection: TB`로 배치하고 기존 좌표를 보존한다. ASSERT는 명시된 업무 인수 조건에만 최소 사용하며 HTTP 상태·프레임·ACK 검사를 노드로 반복하지 않는다.
+> Mock 단독 TCP 시험 이력은 메모리 최근 1000건·JSON 합계 32MB이며 재시작 후 소실된다. 워크플로 DB 실행 목록과 구분한다. 시크릿을 쓰는 전문은 코덱 변환값도 캡처·미리보기·로그에서 숨기며 실제 전송과 내부 바인딩은 유지한다.
+> 업데이트 알림은 설치를 자동 실행하지 않는다. commit·성공 종료 코드·요청/결과/현재 버전이 일치할 때 다음 기동 전에 회사 로그인만 한 번 해제한다. 과거 버전의 검증된 성공 기록은 무시하고, 취소·실패에서는 로그인·개인 DB·키·Copilot 연결을 보존한다.
 > 빌드: `backend/`에서 `./gradlew :flow-agent:jar :flow-core:jar :flow-mcp:jar :flow-server:bootJar :flow-desktop:bootJar`. 서버 Docker·MSI는 각각 server·desktop JAR를 사용한다.
 > MCP 프로토콜·도구 호출·IDE 등록 검증은 사용자의 명시적인 변경 지시 전까지 수행하지 않는다.
 

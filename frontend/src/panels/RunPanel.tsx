@@ -1,12 +1,21 @@
 import { useEffect, useRef, useState } from 'react'
-import type { ExecutionDetail } from '../api/types'
+import type { ExecutionDetail, TcpTransferStep } from '../api/types'
 import { StatusBadge } from '../components/StatusBadge'
 import { MethodTag } from '../components/MethodTag'
 import { LogBlock, methodOf, outputText } from '../components/NodeExecutionLog'
+import { TcpTransferSteps } from '../components/TcpTransferSteps'
 import { duration } from '../lib/format'
 import { AgentBadge } from '../components/AgentSettings'
 import { AppIcon } from '../components/AppIcon'
 import { toast } from '../components/toast'
+
+function storedTcpSteps(value: unknown): TcpTransferStep[] {
+  try {
+    const output = typeof value === 'string' ? JSON.parse(value) : value
+    const steps = output?._tcpTransport?.steps
+    return Array.isArray(steps) ? steps : []
+  } catch { return [] }
+}
 
 /** wait(콜백 대기) 진행 상태 — Editor 실행 루프가 채운다. */
 export interface WaitStatus {
@@ -128,6 +137,13 @@ export function RunPanel({
                 : execution?.pendingClient
                   ? `브라우저(클라이언트)에서 직접 호출 중… — ${execution.pendingClient.method} ${execution.pendingClient.url}`
                   : !execution ? '실행 준비 중… 환경 확인과 현재 변경 저장을 마치면 시작합니다.' : '실행 중… (완료되면 결과가 표시됩니다)'}
+              {execution?.pendingAgent?.status === 'UNKNOWN' && execution.pendingAgent.diagnostics && (
+                <div style={{ display: 'grid', gap: 10, marginTop: 12, color: 'var(--fl-text)', minWidth: 0 }}>
+                  <span style={{ fontSize: 12, color: 'var(--fl-text-muted)' }}>이미 받은 응답은 보존했습니다. 아래 내용만으로 전체 처리가 완료됐다고 판단할 수 없습니다.</span>
+                  <TcpTransferSteps steps={execution.pendingAgent.diagnostics._tcpTransport.steps} />
+                  <LogBlock title="이미 받은 응답" text={JSON.stringify(execution.pendingAgent.diagnostics.responseFields, null, 2)} />
+                </div>
+              )}
             </div>
           )
         )}
@@ -159,6 +175,7 @@ export function RunPanel({
               </button>{onNodeSelect && <button className="fl-run-panel-action fl-run-node-edit" onClick={() => onNodeSelect(nd.nodeId)} aria-label={`${nd.nodeName || nd.nodeId} 노드 설정 열기`}>노드 설정</button>}</div>
               {open && (
                 <div style={{ padding: '4px 14px 14px 42px', display: 'grid', gap: 10 }}>
+                  <TcpTransferSteps steps={storedTcpSteps(nd.output ?? nd.outputJson)} />
                   <LogBlock title="요청" text={nd.requestText} />
                   <LogBlock title="응답" text={nd.responseText} />
                   <LogBlock title="출력" text={outputText(nd)} />

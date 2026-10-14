@@ -29,7 +29,7 @@ class McpTools(private val mapper: ObjectMapper, private val rest: McpRestClient
                 val validation = validator.validate(schema, arguments)
                 require(validation.valid()) { "입력 형식이 올바르지 않습니다: ${validation.errorMessage()}" }
                 val args = mapper.valueToTree<ObjectNode>(arguments)
-                for (key in listOf("graph", "spec", "bundle", "codec")) if (args.path(key).isTextual) {
+                for (key in listOf("graph", "spec", "bundle", "codec", "protocolSpec")) if (args.path(key).isTextual) {
                     val value = try { mapper.readTree(args.path(key).asText()) } catch (ex: Exception) { throw IllegalArgumentException("$key JSON 파싱 실패: ${ex.message}") }
                     require(value.isObject) { "$key 는 JSON 객체여야 합니다" }
                     args.set<JsonNode>(key, value)
@@ -43,7 +43,8 @@ class McpTools(private val mapper: ObjectMapper, private val rest: McpRestClient
                     403 -> "\n→ 이 작업의 권한이나 관리자 승인을 확인하세요. flowlink_status로 상태를 확인할 수 있습니다."
                     else -> ""
                 }
-                McpSchema.CallToolResult("⚠ ${(ex as? McpApiException)?.let { "HTTP ${it.status}: " } ?: ""}${ex.message ?: "요청 처리 실패"}$hint", true)
+                val details = (ex as? McpApiException)?.response?.takeIf { it.has("errors") || it.has("code") }?.let { "\n${render(it)}" }.orEmpty()
+                McpSchema.CallToolResult("⚠ ${(ex as? McpApiException)?.let { "HTTP ${it.status}: " } ?: ""}${ex.message ?: "요청 처리 실패"}$details$hint", true)
             }
         }
     }
@@ -81,9 +82,11 @@ class McpTools(private val mapper: ObjectMapper, private val rest: McpRestClient
                 val mode = cfg.path("mode").asText(if (cfg.path("enabled").asBoolean()) "github" else "none")
                 val me = if (mode == "github" && c.authorization != null) rest.api(c.copy(target = "server", workspaceId = null), "GET", "/admin/me") else null
                 return mapOf("transport" to "http /mcp (중앙 서버)", "target" to c.target, "auth" to cfg, "account" to me,
+                    "capabilities" to mapOf("server" to runtimeCapabilities(c, "server"), "local" to runtimeCapabilities(c, "local")),
                     "안내" to "target은 저장 공간이고 executionAgent는 요청 출발지입니다. 개인 자료는 온라인 Windows 앱에서 해당 요청만 전달합니다. HTTP/TCP는 선택한 에이전트가 실행합니다.")
             }
-            "flowlink_update_status" -> return mapOf("release" to rest.api(c.copy(target = "server", workspaceId = null), "GET", "/distribution"), "안내" to "PC 설치 버전은 이 서버 연결에서 확인되지 않습니다. Windows 앱의 업데이트 창에서 확인·설치하세요.")
+            "flowlink_update_status" -> return mapOf("release" to rest.api(c.copy(target = "server", workspaceId = null), "GET", "/distribution"),
+                "local" to runtimeCapabilities(c, "local"), "안내" to "release는 배포 버전이며 local.installedVersion은 온라인 PC가 직접 보고한 버전입니다. 미연결·unknown을 최신으로 추정하지 않습니다. 설치는 Windows 앱에서 시작하세요.")
             "flowlink_guide" -> {
                 val schemas = rest.api(c.copy(target = "server", workspaceId = null), "GET", "/schemas")
                 val topic = a.path("topic").asText()
@@ -108,16 +111,20 @@ class McpTools(private val mapper: ObjectMapper, private val rest: McpRestClient
             "protocol_list" -> return get("/protocols")
             "protocol_get" -> return get("/protocols/${protocol().path("id").asText()}")
             "protocol_upsert" -> {
+                val checked = api("POST", "/protocols/validate", fields("spec"))
+                if (!checked.path("valid").asBoolean()) throw McpApiException(400, "프로토콜 검증 실패", checked)
+                if (a.path("dryRun").asBoolean()) return checked
                 val matches = get("/protocols").filter { it.path("name").asText() == a.path("name").asText() }
                 require(matches.size <= 1) { "프로토콜 이름이 겹칩니다" }
                 return if (matches.isEmpty()) api("POST", "/protocols", fields("name", "spec")) else api("PUT", "/protocols/${matches.first().path("id").asText()}", fields("spec"))
             }
             "protocol_preview" -> {
+                require(listOf("spec", "protocolId", "name").count { a.hasNonNull(it) } <= 1) { "spec/protocolId/name 중 하나만 선택하세요" }
                 val spec = if (a.hasNonNull("spec")) a.path("spec") else {
                     val p = named(get("/protocols"), a.text("protocolId") ?: a.text("name") ?: "", listOf("id", "name"), "프로토콜")
                     get("/protocols/${p.path("id").asText()}").path("spec")
                 }
-                return api("POST", "/protocols/preview", fields("key", "values", "environment", "direction", "frameDirection").apply { set<JsonNode>("spec", spec); if (!has("values")) set<JsonNode>("values", mapper.createObjectNode()) })
+                return api("POST", "/protocols/preview", fields("key", "values", "environment", "direction", "frameDirection", "action", "phase", "transactionKey", "requestFields", "responseFields", "bytesB64").apply { set<JsonNode>("spec", spec); if (!has("values")) set<JsonNode>("values", mapper.createObjectNode()) })
             }
             "protocol_delete" -> { api("DELETE", "/protocols/${protocol().path("id").asText()}"); return "삭제됨" }
             "mock_list" -> return mockList(c, a.text("workspace"))
@@ -133,14 +140,29 @@ class McpTools(private val mapper: ObjectMapper, private val rest: McpRestClient
                     if (spec.path("resourceWorkspaceId").asText() == "public" && !spec.hasNonNull("envSource")) spec.put("envSource", c.target)
                 }
                 spec.text("envSource")?.let { require(it in setOf("local", "server") && (c.target == "local" || it == "server")) { "서버 Mock은 서버 환경만 사용할 수 있습니다. PC Mock은 local/server를 선택하세요" } }
-                spec.remove("resourceIdentity") // Native saving pins its actual connection; never use the MCP loopback origin.
-                val m = matches.singleOrNull() ?: api("POST", "/mock-servers", fields("name", "slug", "type").apply { if (!has("name")) put("name", a.path("slug").asText()) })
-                val path = "/mock-servers/${m.path("id").asText()}"
-                api("PUT", "$path/spec", mapper.createObjectNode().apply { set<JsonNode>("spec", spec); put("note", "mcp") })
-                if (a.hasNonNull("name") || a.hasNonNull("enabled")) api("PATCH", path, fields("name", "enabled"))
-                return get(path)
+                require(!spec.hasNonNull("resourceIdentity")) { "resourceIdentity는 서버 소유 metadata입니다" }
+                val body = fields("name", "slug", "type", "enabled").apply { set<JsonNode>("spec", spec); put("workspaceId", c.workspaceId) }
+                val checked = api("POST", "/mock-servers/validate", body)
+                if (!checked.path("valid").asBoolean()) throw McpApiException(400, "Mock 검증 실패", checked)
+                if (a.path("dryRun").asBoolean()) return checked
+                return api("POST", "/mock-servers/upsert", body)
             }
-            "mock_send" -> return api("POST", "${mockPath()}/tcp-send", fields("key", "values"))
+            "mock_preview" -> return api("POST", "/mock-servers/preview", fields("slug", "spec", "type", "protocolSpec", "environment", "request").apply { put("workspaceId", c.workspaceId) })
+            "mock_send" -> {
+                val detail = get(mockPath())
+                val protocolId = detail.path("spec").path("tcp").path("protocolId").asText()
+                var v2 = a.hasNonNull("transactionKey")
+                if (protocolId.isNotBlank()) {
+                    val p = rest.api(c.copy(target = "server", workspaceId = "public"), "GET", "/protocols")
+                        .firstOrNull { it.path("id").asText() == protocolId || it.path("name").asText() == protocolId }
+                    v2 = v2 || p?.path("schemaVersion")?.asInt() == 2
+                    requireCapabilities(c, c.target, p?.path("requiredCapabilities")?.map { it.asText() }.orEmpty().ifEmpty { if (v2) listOf("transactionFraming") else emptyList() })
+                }
+                val trialId = java.util.UUID.randomUUID().toString()
+                return try { api("POST", "/mock-servers/${detail.path("id").asText()}/tcp-send", fields("key", "values", "transactionKey").apply { put("executionId", trialId) }) }
+                catch (ex: McpApiException) { if (ex.status in 400..499 || !v2) throw ex else throw IllegalStateException("전송 결과가 불명확합니다. execution_get(id=$trialId)로 조회하고 자동 재전송하지 마세요.", ex) }
+                catch (ex: Exception) { throw IllegalStateException(if (v2) "전송 결과가 불명확합니다. execution_get(id=$trialId)로 조회하고 자동 재전송하지 마세요." else "전송 결과가 불명확합니다. mock_log를 확인하고 자동 재전송하지 마세요.", ex) }
+            }
             "mock_tcp_sessions" -> {
                 val action = a.path("action").asText("list")
                 require(action in setOf("list", "extend")) { "action은 list 또는 extend여야 합니다" }
@@ -282,8 +304,34 @@ class McpTools(private val mapper: ObjectMapper, private val rest: McpRestClient
         return rest.api(c.copy(target = location, workspaceId = if (location == c.target) c.workspaceId else null), "POST", "/agent/http-request", body)
     }
 
+    private fun runtimeCapabilities(c: McpInvocation, target: String): JsonNode = try {
+        rest.api(c.copy(target = target, workspaceId = null), "GET", "/runtime/capabilities")
+    } catch (e: Exception) {
+        mapper.valueToTree(mapOf("available" to false, "installedVersion" to null, "schemaVersions" to emptyList<Int>(),
+            "features" to listOf("transactionFraming", "transactionAck", "ackLengthOnly", "ackMessageTemplates", "ackFieldValidation", "binaryIntegers", "mockPreview").associateWith { "unknown" },
+            "code" to if ((e as? McpApiException)?.status == 503) "LOCAL_AGENT_OFFLINE" else "CAPABILITY_UNKNOWN", "checkedAt" to java.time.Instant.now().toString()))
+    }
+
+    private fun requireCapabilities(c: McpInvocation, target: String, required: List<String>) {
+        if (required.isEmpty()) return
+        val reported = runtimeCapabilities(c, target)
+        for (feature in required) {
+            val state = reported.path("features").path(feature).asText("unknown")
+            require(state == "supported") { "${if (state == "unsupported") "UNSUPPORTED_CAPABILITY" else "CAPABILITY_UNKNOWN"}: $target 실행기의 $feature 지원을 확인하세요. 요청은 전송하지 않았습니다." }
+        }
+    }
+
     private fun startRun(c: McpInvocation, flowId: String, body: ObjectNode): JsonNode {
         val graph = runGraph(c, flowId)
+        val tcpNodes = graph.path("nodes").filter { it.path("type").asText().equals("tcp", true) }
+        if (tcpNodes.isNotEmpty() && graph.path("resourceWorkspaceId").asText() == "public") {
+            val protocols = rest.api(c.copy(target = "server", workspaceId = "public"), "GET", "/protocols")
+            for (node in tcpNodes) {
+                val reference = node.path("protocolId").asText()
+                val protocol = protocols.firstOrNull { it.path("id").asText() == reference || it.path("name").asText() == reference }
+                requireCapabilities(c, node.path("executionAgent").asText(c.target), protocol?.path("requiredCapabilities")?.map { it.asText() }.orEmpty())
+            }
+        }
         if (body.hasNonNull("envSource") || graph.path("resourceWorkspaceId").asText() == "public") {
             val source = body.text("envSource") ?: c.target
             require(source in setOf("local", "server")) { "envSource는 local 또는 server여야 합니다" }

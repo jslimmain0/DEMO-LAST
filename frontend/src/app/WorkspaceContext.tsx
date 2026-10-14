@@ -97,8 +97,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const ownedApi = useMemo(() => createApi(currentTransport, current.id, currentResourceBase, currentLogin), [currentTransport, current.id, currentResourceBase, currentLogin])
   const api = useMemo(() => {
     const owned = ownedApi
-    return { ...owned, secretsApi: remote.secretsApi, protocolsApi: remote.protocolsApi, pluginsApi: remote.pluginsApi, transformsApi: remote.transformsApi, codecsApi: remote.codecsApi }
-  }, [ownedApi, remote])
+    return { ...owned, assistantApi: desktop ? local.assistantApi : owned.assistantApi, secretsApi: remote.secretsApi, protocolsApi: remote.protocolsApi, pluginsApi: remote.pluginsApi, transformsApi: remote.transformsApi, codecsApi: remote.codecsApi }
+  }, [ownedApi, remote, desktop, local])
   // Each workspace owns a cache. Old async responses and invalidations cannot reach a newly selected workspace.
   const centralIdentity = useRef(remoteKey)
   centralIdentity.current = remoteKey

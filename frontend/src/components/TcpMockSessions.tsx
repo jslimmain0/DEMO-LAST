@@ -5,6 +5,7 @@ import type { TcpMockSession } from '../api/types'
 import { ui } from '../design/ui'
 import { apiErrorMessage } from '../lib/apiError'
 import { toast } from './toast'
+import { tcpPhaseLabel } from './TcpTransferSteps'
 
 function sessionRemainingMs(session: TcpMockSession, updatedAt: number, now: number): number | null {
   if (session.state !== 'waiting' || session.remainingMs == null) return null
@@ -109,6 +110,15 @@ export function TcpMockSessions({ mockId, readOnly, onOpenConnection }: { mockId
                       <span style={{ fontSize: 12, color: session.state === 'waiting' ? 'var(--fl-ok)' : 'var(--fl-text-muted)' }}>{stateLabel[session.state]}</span>
                       <span title={session.id} style={{ fontSize: 11, color: 'var(--fl-text-muted)' }}>#{session.id.slice(0, 8)}</span>
                     </div>
+                    {session.phase && <div style={{ ...hint, margin: 0, display: 'flex', gap: '4px 12px', flexWrap: 'wrap' }}>
+                      {session.transactionKey && <code>거래 {session.transactionKey}</code>}
+                      <span>{tcpPhaseLabel(session.phase)}</span>
+                      <span style={{ fontFamily: 'var(--fl-font-mono)' }}>{session.accumulatedBytes ?? session.actualBytes ?? 0}{session.expectedBytes != null ? ` / ${session.expectedBytes}` : ''} B</span>
+                      {session.validationMode && <span>{session.validationMode}</span>}
+                      {session.status && <span>{session.status}</span>}
+                      {session.durationMs != null && <span>{session.durationMs}ms</span>}
+                      {session.errorCode && <code style={{ color: 'var(--fl-fail)' }}>{session.errorCode}</code>}
+                    </div>}
                     <div style={{ ...hint, margin: 0, display: 'flex', gap: '4px 14px', flexWrap: 'wrap', fontVariantNumeric: 'tabular-nums' }}>
                       <span title={new Date(session.connectedAt).toLocaleString('ko-KR')}>연결 {timestamp(session.connectedAt)}</span>
                       <span title={new Date(session.lastActivityAt).toLocaleString('ko-KR')}>마지막 활동 {timestamp(session.lastActivityAt)}</span>

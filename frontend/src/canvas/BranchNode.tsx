@@ -11,6 +11,7 @@ import './node-visuals.css'
 // IF 분기 노드 — true/false 두 source 핸들. fromPort='true'|'false' 라운드트립.
 export function BranchNode({ data, selected }: NodeProps) {
   const n = asGraphNode(data)
+  const vertical = useEditorStore(s => s.layoutDirection === 'TB')
   const waitingId = useEditorStore((s) => s.waitingNodeId)
   const runState = useEditorStore((s) => s.runView?.nodeStates[n.id])
   const waiting = waitingId === n.id || runState === 'waiting'
@@ -38,7 +39,7 @@ export function BranchNode({ data, selected }: NodeProps) {
         opacity: runState === 'skipped' ? 0.55 : 1,
       }}
     >
-      <Handle type="target" position={Position.Left} className="fl-handle" style={{ borderColor: 'var(--fl-cat-if)' }} />
+      <Handle type="target" position={vertical ? Position.Top : Position.Left} className="fl-handle" style={{ borderColor: 'var(--fl-cat-if)' }} />
 
       <div className="fl-task-header">
         <NodeTypeIcon type="if" size={36} />
@@ -52,10 +53,10 @@ export function BranchNode({ data, selected }: NodeProps) {
       </div>
       <div className="fl-task-footer"><NodeAgentBadge node={n} /></div>
 
-      <div style={{ position: 'absolute', right: -6, top: '34%', fontSize: 9, fontWeight: 700, color: 'var(--fl-ok)' }}>T</div>
-      <div style={{ position: 'absolute', right: -6, top: '64%', fontSize: 9, fontWeight: 700, color: 'var(--fl-fail)' }}>F</div>
-      <Handle id="true" type="source" position={Position.Right} className="fl-handle" style={{ top: '38%', borderColor: 'var(--fl-ok)' }} />
-      <Handle id="false" type="source" position={Position.Right} className="fl-handle" style={{ top: '68%', borderColor: 'var(--fl-fail)' }} />
+      {!vertical && <div style={{ position: 'absolute', right: -6, top: '34%', fontSize: 9, fontWeight: 700, color: 'var(--fl-ok)' }}>T</div>}
+      {!vertical && <div style={{ position: 'absolute', right: -6, top: '64%', fontSize: 9, fontWeight: 700, color: 'var(--fl-fail)' }}>F</div>}
+      <Handle id="true" type="source" position={vertical ? Position.Bottom : Position.Right} className="fl-handle" title="T · 조건이 참일 때" style={{ ...(vertical ? { left: '33%' } : { top: '38%' }), borderColor: 'var(--fl-ok)' }} />
+      <Handle id="false" type="source" position={vertical ? Position.Bottom : Position.Right} className="fl-handle" title="F · 조건이 거짓일 때" style={{ ...(vertical ? { left: '67%' } : { top: '68%' }), borderColor: 'var(--fl-fail)' }} />
     </div>
   )
 }

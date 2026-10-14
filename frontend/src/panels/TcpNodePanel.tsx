@@ -43,9 +43,11 @@ export function TcpRequestPanel({ node, update, sources, canEdit, preview, previ
   const values = node.tcpValues ?? {}
   const setValue = (name: string, v: string) => update({ tcpValues: { ...values, [name]: v } })
   const msg = spec?.messages.find((m) => m.key === node.tcpMessage)
+  const transaction = spec?.schemaVersion === 2 ? spec.transactions?.find(item => item.requestMessage === node.tcpMessage) : undefined
   const offsets = spec && msg ? withOffsets(spec.header, msg.fields) : []
   // 헤더 필드는 전문 맨 앞 — 자체 오프셋(길이/구분자는 자동 채움이라 편집 목록에서 제외)
-  const headerRows = spec ? withOffsets([], spec.header).map((off, i) => ({ f: spec.header[i], off })).filter(({ f }) => f.type !== 'length' && f.name !== spec.discriminator) : []
+  const autoHeaders = new Set(transaction?.when.map(condition => condition.field) ?? [])
+  const headerRows = spec ? withOffsets([], spec.header).map((off, i) => ({ f: spec.header[i], off })).filter(({ f }) => f.type !== 'length' && f.name !== spec.discriminator && !autoHeaders.has(f.name)) : []
   const errFor = (name: string) => preview?.errors.find((e) => e.field === name)?.message
   return (
     <>
@@ -88,12 +90,19 @@ export function TcpRequestPanel({ node, update, sources, canEdit, preview, previ
             <span style={{ color: 'var(--fl-text-muted)' }}>변경은 위의 프로토콜 관리에서 적용합니다.</span>
           </div>
           <label style={label}>전문 (송신)</label>
-          <select aria-label="송신 전문" style={field} value={node.tcpMessage ?? ''} disabled={!canEdit} onChange={(e) => update({ tcpMessage: e.target.value, tcpValues: {} })}>
+          <select aria-label="송신 전문" style={field} value={node.tcpMessage ?? ''} disabled={!canEdit} onChange={(e) => {
+            const key = e.target.value
+            if (spec.schemaVersion !== 2) { update({ tcpMessage: key, tcpValues: {} }); return }
+            const selected = spec.transactions?.find(item => item.requestMessage === key)
+            const conditions = Object.fromEntries(selected?.when.map(condition => [condition.field, condition.value]) ?? [])
+            update({ tcpMessage: key, tcpValues: Object.fromEntries(fieldsOf(spec, key).filter(item => item.type !== 'length').map(item => [item.name, conditions[item.name] ?? ''])), tcpResponseMessage: selected?.responseMessage, outputs: outputsFor(spec, selected?.responseMessage) })
+          }}>
             <option value="">— 전문을 고르세요 —</option>
             {requestKeys(spec).map((m) => <option key={m.key} value={m.key}>{m.label}</option>)}
           </select>
           {msg && (
             <div style={{ display: 'grid', gap: 6, marginTop: 6 }}>
+              {transaction && <p style={{ fontSize: 12, color: 'var(--fl-text-muted)', margin: 0 }}>거래 <b>{transaction.key}</b> · {transaction.when.map(condition => `${condition.field}=${condition.value}`).join(' · ')} 자동</p>}
               {headerRows.map(({ f, off }) => (
                 <FieldRow key={'h-' + f.name} f={f} offset={off} value={values[f.name] ?? ''} encoding={spec.encoding} sources={sources} canEdit={canEdit} err={errFor(f.name)} onChange={(v) => setValue(f.name, v)} hint="헤더" />
               ))}
@@ -131,24 +140,35 @@ function HostPortInput({ node, update, canEdit }: { node: GraphNode; update: Upd
   )
 }
 
+export function integerValueError(field: ProtocolField, value: string): string | null {
+  if (field.type !== 'integer' || value.includes('{{') || field.plugin) return null
+  if (![1, 2, 4, 8].includes(field.len) || !field.endian || field.signed == null) return '프로토콜에서 정수 길이·바이트 순서·부호를 지정하세요.'
+  if (!/^[+-]?[0-9]+$/.test(value)) return '10진 정수 문자열을 입력하세요. 예: 130'
+  const number = BigInt(value), bits = BigInt(field.len * 8)
+  const min = field.signed ? -(1n << (bits - 1n)) : 0n
+  const max = (1n << (bits - (field.signed ? 1n : 0n))) - 1n
+  return number < min || number > max ? `${field.len} B ${field.signed ? '부호 있는' : '부호 없는'} 정수 범위를 넘었습니다.` : null
+}
+
 export function FieldRow({ f, offset, value, encoding, sources, canEdit, err, onChange, hint }: { f: ProtocolField; offset: number; value: string; encoding: string; sources: BindableSource[]; canEdit: boolean; err?: string; onChange: (v: string) => void; hint?: string }) {
   const hasToken = value.includes('{{')
   const hex = value.replace(/[\s:]/g, '')
   const invalidHex = f.type === 'binary' && !hasToken && (hex.length % 2 !== 0 || /[^0-9a-fA-F]/.test(hex))
-  const bytes = hasToken || invalidHex ? null : f.type === 'binary' ? hex.length / 2 : byteLen(value, encoding)
+  const integerError = integerValueError(f, value)
+  const bytes = hasToken || invalidHex ? null : f.type === 'integer' ? f.len : f.type === 'binary' ? hex.length / 2 : byteLen(value, encoding)
   const over = bytes != null && bytes > f.len
   const nonAscii = (f.type === 'ascii' || f.type === 'numeric') && !hasToken && [...value].some((c) => c.charCodeAt(0) > 0x7f)
   const nonDigit = f.type === 'numeric' && !hasToken && /[^0-9]/.test(value)
-  const warn = err ?? (invalidHex ? 'HEX 두 자리씩 입력하세요. 예: 0A FF' : over ? `⚠ ${bytes}/${f.len} B 초과 — 값을 줄이거나 프로토콜의 필드 길이를 늘리세요. 초과하면 조립·전송이 차단됩니다.` : nonAscii ? '⚠ ascii 필드에 한글/비ASCII' : nonDigit ? '⚠ numeric 필드에 숫자 아닌 문자' : null)
+  const warn = err ?? integerError ?? (invalidHex ? 'HEX 두 자리씩 입력하세요. 예: 0A FF' : over ? `⚠ ${bytes}/${f.len} B 초과 — 값을 줄이거나 프로토콜의 필드 길이를 늘리세요. 초과하면 조립·전송이 차단됩니다.` : nonAscii ? '⚠ ascii 필드에 한글/비ASCII' : nonDigit ? '⚠ numeric 필드에 숫자 아닌 문자' : null)
   return (
     <div style={{ border: `1px solid ${warn ? 'var(--fl-fail)' : 'var(--fl-border)'}`, borderRadius: 'var(--fl-radius-sm)', padding: '6px 8px' }}>
       <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', minWidth: 0, marginBottom: 4, fontSize: 12 }}>
         <span style={offBadge}>@{offset}</span>
         <span title={f.name} style={{ fontWeight: 600, flex: '1 1 100px', minWidth: 0, overflowWrap: 'anywhere' }}>{f.name}{hint ? <span style={{ color: 'var(--fl-text-muted)', fontWeight: 400 }}> · {hint}</span> : null}</span>
         <span style={{ color: 'var(--fl-text-muted)', fontFamily: 'var(--fl-font-mono)' }}>{f.type} {padOf(f)}</span>
-        <span style={{ fontFamily: 'var(--fl-font-mono)', fontVariantNumeric: 'tabular-nums', color: over ? 'var(--fl-fail)' : 'var(--fl-text-muted)' }}>{bytes ?? '?'}/{f.len} B</span>
+        <span style={{ fontFamily: 'var(--fl-font-mono)', fontVariantNumeric: 'tabular-nums', color: over ? 'var(--fl-fail)' : 'var(--fl-text-muted)' }}>{f.type === 'integer' ? `${f.len} B 고정 · ${f.endian ?? '?'} endian · ${f.signed ? 'signed' : 'unsigned'}` : `${bytes ?? '?'}/${f.len} B`}</span>
       </div>
-      <TokenInput readOnly={!canEdit} ariaLabel={`필드 ${f.name}`} value={value} onChange={next => { if (canEdit) onChange(next) }} sources={sources} placeholder={f.type === 'binary' ? 'hex — 예: 0A FF' : '값 또는 { } 로 데이터 삽입'} />
+      <TokenInput readOnly={!canEdit} ariaLabel={`필드 ${f.name}`} value={value} onChange={next => { if (canEdit) onChange(next) }} sources={sources} placeholder={f.type === 'binary' ? 'hex — 예: 0A FF' : f.type === 'integer' ? '10진 정수 문자열 · 8 B도 문자열로 유지' : '값 또는 { } 로 데이터 삽입'} />
       {warn && <div role="alert" style={{ fontSize: 11, color: 'var(--fl-fail)', marginTop: 3 }}>{warn}</div>}
     </div>
   )
@@ -182,18 +202,19 @@ export function TcpResponsePanel({ node, update, canEdit }: { node: GraphNode; u
   const proto = useProtocol(node.protocolId || undefined, node)
   const spec = proto.data?.spec
   if (!spec) return <p style={{ fontSize: 12, color: 'var(--fl-text-muted)' }}>프로토콜을 먼저 고르세요.</p>
-  const outs = outputsFor(spec, node.tcpResponseMessage || undefined)
+  const transaction = spec.schemaVersion === 2 ? spec.transactions?.find(item => item.requestMessage === node.tcpMessage) : undefined
+  const outs = outputsFor(spec, transaction?.responseMessage ?? node.tcpResponseMessage ?? undefined)
   return (
     <>
       <label style={label}>응답 전문 (출력 키 기준)</label>
-      <select aria-label="응답 전문" style={field} value={node.tcpResponseMessage ?? ''} disabled={!canEdit} onChange={(e) => update({ tcpResponseMessage: e.target.value, outputs: outputsFor(spec, e.target.value || undefined) })}>
+      {spec.schemaVersion === 2 ? <div aria-label="거래 응답 전문" style={field}>{transaction?.responseMessage ?? '송신 전문을 먼저 고르세요.'}</div> : <select aria-label="응답 전문" style={field} value={node.tcpResponseMessage ?? ''} disabled={!canEdit} onChange={(e) => update({ tcpResponseMessage: e.target.value, outputs: outputsFor(spec, e.target.value || undefined) })}>
         <option value="">— 헤더 필드만 —</option>
         {messageKeys(spec).map((m) => <option key={m.key} value={m.key}>{m.label}</option>)}
-      </select>
+      </select>}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 6 }}>
         {outs.map((o) => <span key={o.key} style={chip}>{o.key}</span>)}
       </div>
-      <p style={{ fontSize: 12, color: 'var(--fl-text-muted)', marginTop: 8 }}>실행 시 실제 응답의 {spec.discriminator || '방향'}으로 표를 고릅니다. 정의되지 않은 전문이면 헤더 + <code>body</code>(raw) 로 출력됩니다.</p>
+      <p style={{ fontSize: 12, color: 'var(--fl-text-muted)', marginTop: 8 }}>{spec.schemaVersion === 2 ? '선택한 거래가 응답 전문과 ACK 단계를 결정합니다. 잘못된 길이·ACK는 전송 실패로 표시됩니다.' : <>실행 시 실제 응답의 {spec.discriminator || '방향'}으로 표를 고릅니다. 정의되지 않은 전문이면 헤더 + <code>body</code>(raw) 로 출력됩니다.</>}</p>
     </>
   )
 }

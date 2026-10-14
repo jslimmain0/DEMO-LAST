@@ -12,6 +12,7 @@ import java.nio.charset.Charset
 import java.nio.charset.StandardCharsets
 import java.util.LinkedHashMap
 import java.util.Locale
+import java.math.BigInteger
 
 /**
  * 전문 조립/해석 엔진(순수). 송신: 값 → FieldCodec.encode → 문자셋 → 패딩 → 본문 결합 → MessageCodec.encode → 길이 계산 + 헤더.
@@ -116,7 +117,7 @@ object ProtocolCodec {
     private fun pad(raw: ByteArray, len: Int, pad: String, binary: Boolean): ByteArray {
         if (raw.size >= len) return raw
         val out = ByteArray(len)
-        val fill: Byte = if (binary) 0 else if (pad == "left/zero") '0'.code.toByte() else ' '.code.toByte()
+        val fill: Byte = if (binary || pad.endsWith("/nul")) 0 else if (pad == "left/zero") '0'.code.toByte() else ' '.code.toByte()
         val left = pad.startsWith("left")
         java.util.Arrays.fill(out, fill)
         System.arraycopy(raw, 0, out, if (left) len - raw.size else 0, raw.size)
@@ -127,6 +128,8 @@ object ProtocolCodec {
         "right/space" -> s.trimEnd(' ')
         "left/space" -> s.trimStart(' ')
         "left/zero" -> s.trimStart('0').ifEmpty { if (s.isEmpty()) "" else "0" }
+        "right/nul" -> s.trimEnd('\u0000')
+        "left/nul" -> s.trimStart('\u0000')
         else -> s
     }
 
@@ -154,7 +157,7 @@ object ProtocolCodec {
         val body = ByteArrayOutputStream()
         var offset = spec.headerLen()
         for (f in msg.fieldsOrEmpty()) {
-            val r = encodeField(f, all[f.nameOrEmpty()] ?: "", offset, cs, all, plugins, lenient, dir, resolve)
+            val r = encodeField(f, all[f.nameOrEmpty()] ?: "", offset, cs, all, plugins, lenient && spec.schemaVersion != 2, dir, resolve)
             body.write(r.first); slices.add(r.second); r.second.warn?.let { warnings += it }
             offset += f.lenOrZero()
         }
@@ -176,7 +179,7 @@ object ProtocolCodec {
                 val b = lengthBytes(spec, f, declared)
                 head.write(b); headSlices.add(FieldSlice(n, offset, f.lenOrZero(), b.size, declared.toString()))
             } else {
-                val r = encodeField(f, all[n] ?: "", offset, cs, all, plugins, lenient, dir, resolve)
+                val r = encodeField(f, all[n] ?: "", offset, cs, all, plugins, lenient && spec.schemaVersion != 2, dir, resolve)
                 head.write(r.first); headSlices.add(r.second); r.second.warn?.let { warnings += it }
             }
             offset += f.lenOrZero()
@@ -219,6 +222,7 @@ object ProtocolCodec {
         }
         val binary = type == "binary"
         var raw: ByteArray = when (type) {
+            "integer" -> integerBytes(f, v)
             "binary" -> TcpBytes.hexToBytes(v) ?: throw ProtocolException(name, "'$name' 값이 hex 형식이 아닙니다: '$v'")
             "ascii", "length" -> { v.firstOrNull { it.code > 0x7F }?.let { throw ProtocolException(name, "ascii 필드 '$name' 에 비ASCII 문자('$it')가 있습니다.") }; v.toByteArray(StandardCharsets.US_ASCII) }
             "numeric" -> { if (v.any { it !in '0'..'9' }) throw ProtocolException(name, "numeric 필드 '$name' 에 숫자가 아닌 문자가 있습니다: '$v'"); v.toByteArray(StandardCharsets.US_ASCII) }
@@ -238,12 +242,12 @@ object ProtocolCodec {
 
     // ---------- decode ----------
 
-    fun decode(spec: ProtocolSpec, frame: ByteArray, dir: Direction = Direction.RECV, plugins: PluginLookup = NO_PLUGINS, resolve: (String) -> String = { it }): Decoded {
+    fun decode(spec: ProtocolSpec, frame: ByteArray, dir: Direction = Direction.RECV, plugins: PluginLookup = NO_PLUGINS, resolve: (String) -> String = { it }, messageKey: String? = null, frameDirection: Direction = dir): Decoded {
         val cs = spec.charset()
         val hl = spec.headerLen()
         if (frame.size > ProtocolSpec.MAX_MESSAGE || hl > ProtocolSpec.MAX_MESSAGE) throw ProtocolException(null, "전문 길이가 상한(${ProtocolSpec.MAX_MESSAGE}B)을 넘습니다.")
-        val payload = if (spec.framingMode(dir) == "delimiter") {
-            val delimiter = spec.delimiterBytes(dir)
+        val payload = if (spec.framingMode(frameDirection) == "delimiter") {
+            val delimiter = spec.delimiterBytes(frameDirection)
             if (delimiter == null || delimiter.size !in 1..64) throw ProtocolException(null, "구분자는 1~64바이트 HEX 형식이어야 합니다.")
             if (frame.size < delimiter.size || !delimiter.indices.all { frame[frame.size - delimiter.size + it] == delimiter[it] })
                 throw ProtocolException(null, "전문이 지정된 종료 구분자로 끝나지 않습니다.")
@@ -261,12 +265,12 @@ object ProtocolCodec {
             slices.add(FieldSlice(f.nameOrEmpty(), offset, f.lenOrZero(), slice.size, v))
             offset += f.lenOrZero()
         }
-        if (spec.framingMode(dir) == "length") {
+        if (spec.framingMode(frameDirection) == "length") {
             val declared = parseLength(spec, payload)
-            val expectTotal = totalFromDeclared(spec, declared, dir)
+            val expectTotal = totalFromDeclared(spec, declared, frameDirection)
             if (expectTotal != payload.size) warnings += "길이 필드 불일치 — 선언 $declared(전체 ${expectTotal}B), 실제 ${payload.size}B"
-        } else if (spec.framingMode(dir) == "fixed" && spec.framingFor(dir)?.fixedLength != payload.size) {
-            warnings += "고정 길이 불일치 — 설정 ${spec.framingFor(dir)?.fixedLength ?: 0}B, 실제 ${payload.size}B"
+        } else if (spec.framingMode(frameDirection) == "fixed" && spec.framingFor(frameDirection)?.fixedLength != payload.size) {
+            warnings += "고정 길이 불일치 — 설정 ${spec.framingFor(frameDirection)?.fixedLength ?: 0}B, 실제 ${payload.size}B"
         }
         var body = payload.copyOfRange(hl, payload.size)
         for (p in (spec.messagePlugins ?: emptyList()).asReversed()) {
@@ -275,7 +279,7 @@ object ProtocolCodec {
             body = mc.decode(body, CodecCtx(null, header, p.configOrEmpty().resolved(resolve), dir.name.lowercase()))
         }
         val disc = if (spec.hasDiscriminator()) header[spec.discriminator!!.trim()] else null
-        val msg = spec.lookup(disc, dir) ?: return Decoded(header, disc, null, null, body, slices, warnings)
+        val msg = (messageKey?.let(spec::message) ?: spec.lookup(disc, dir)) ?: return Decoded(header, disc, null, null, body, slices, warnings)
         val map = LinkedHashMap<String, String>()
         val all = LinkedHashMap<String, String>(header)
         offset = 0
@@ -289,12 +293,18 @@ object ProtocolCodec {
             offset += f.lenOrZero()
         }
         if (body.size > offset) warnings += "본문에 정의보다 ${body.size - offset}B 가 더 있습니다."
+        if (spec.schemaVersion == 2 && warnings.isNotEmpty()) throw ProtocolException(null, warnings.joinToString(" · "))
         return Decoded(header, disc, msg.keyOrEmpty(), map, body, slices, warnings)
     }
 
     private fun decodeField(f: Field, slice: ByteArray, cs: Charset, message: Map<String, String>, plugins: PluginLookup, dir: Direction, resolve: (String) -> String): String {
         val type = f.typeOr()
         var v = when (type) {
+            "integer" -> {
+                if (slice.size != f.lenOrZero()) throw ProtocolException(f.nameOrEmpty(), "integer 필드 길이가 다릅니다.")
+                val bytes = if (f.endian == "little") slice.reversedArray() else slice
+                (if (f.signed == true) BigInteger(bytes) else BigInteger(1, bytes)).toString()
+            }
             "binary" -> TcpBytes.hexDump(slice)
             "ascii", "numeric" -> trimPad(TcpBytes.decodeEscaped(slice, StandardCharsets.US_ASCII), f.padOr())
             else -> trimPad(TcpBytes.decodeEscaped(slice, cs), f.padOr())
@@ -304,5 +314,43 @@ object ProtocolCodec {
             v = fc.decode(v, CodecCtx(FieldInfo(f.nameOrEmpty(), f.lenOrZero(), type, f.padOr()), message, f.plugin.configOrEmpty().resolved(resolve), dir.name.lowercase()))
         }
         return v
+    }
+
+    private fun integerBytes(f: Field, value: String): ByteArray {
+        if (f.lenOrZero() !in setOf(1, 2, 4, 8) || f.endian !in setOf("big", "little") || f.signed == null)
+            throw ProtocolException(f.nameOrEmpty(), "integer는 1/2/4/8바이트, endian, signed를 명시하세요.")
+        if (!value.matches(Regex("[+-]?[0-9]+"))) throw ProtocolException(f.nameOrEmpty(), "integer 값은 10진 정수 문자열이어야 합니다.")
+        val number = value.toBigInteger()
+        val bits = f.lenOrZero() * 8
+        val min = if (f.signed == true) BigInteger.ONE.shiftLeft(bits - 1).negate() else BigInteger.ZERO
+        val max = BigInteger.ONE.shiftLeft(if (f.signed == true) bits - 1 else bits).subtract(BigInteger.ONE)
+        if (number < min || number > max) throw ProtocolException(f.nameOrEmpty(), "integer 값이 ${f.lenOrZero()}바이트 범위를 벗어났습니다.")
+        val raw = number.toByteArray()
+        val bytes = ByteArray(f.lenOrZero()) { if (number.signum() < 0) 0xff.toByte() else 0 }
+        val count = minOf(raw.size, bytes.size)
+        raw.copyInto(bytes, bytes.size - count, raw.size - count)
+        return if (f.endian == "little") bytes.reversedArray() else bytes
+    }
+
+    fun encodeFields(fields: List<Field>, values: Map<String, String>, encoding: String, plugins: PluginLookup = NO_PLUGINS, dir: Direction = Direction.SEND, resolve: (String) -> String = { it }): Encoded {
+        val out = ByteArrayOutputStream()
+        val slices = fields.map { field ->
+            val value = values[field.nameOrEmpty()] ?: throw ProtocolException(field.nameOrEmpty(), "필수 필드 '${field.nameOrEmpty()}'가 없습니다.")
+            val (bytes, slice) = encodeField(field, value, out.size(), TcpBytes.charset(encoding, Charset.forName("EUC-KR")), values, plugins, false, dir, resolve)
+            out.write(bytes); slice
+        }
+        return Encoded(out.toByteArray(), slices, emptyList())
+    }
+
+    fun decodeFields(fields: List<Field>, bytes: ByteArray, encoding: String, plugins: PluginLookup = NO_PLUGINS, dir: Direction = Direction.RECV, resolve: (String) -> String = { it }): Pair<LinkedHashMap<String, String>, List<FieldSlice>> {
+        if (fields.sumOf { it.lenOrZero() } != bytes.size) throw ProtocolException(null, "필드 배열과 바이트 길이가 다릅니다.")
+        val values = LinkedHashMap<String, String>()
+        var offset = 0
+        val slices = fields.map { field ->
+            val value = decodeField(field, bytes.copyOfRange(offset, offset + field.lenOrZero()), TcpBytes.charset(encoding, Charset.forName("EUC-KR")), values, plugins, dir, resolve)
+            values[field.nameOrEmpty()] = value
+            FieldSlice(field.nameOrEmpty(), offset, field.lenOrZero(), field.lenOrZero(), value).also { offset += field.lenOrZero() }
+        }
+        return values to slices
     }
 }

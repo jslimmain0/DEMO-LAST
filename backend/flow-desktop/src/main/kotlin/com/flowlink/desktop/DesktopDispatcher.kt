@@ -110,7 +110,7 @@ class DesktopDispatcher(
             else mapper.valueToTree<JsonNode>(executions.get(entry.executionId))
         if (detail.path("status").asText() in setOf("SUCCEEDED", "FAILED", "CANCELLED")) {
             executor.closeTcpExecution(entry.executionId)
-            if (!entry.remote && connected(entry)) remote(entry, "POST", "/api/v1/agent/executions/${entry.executionId}/tcp-close", mapper.valueToTree(AgentClaim(session.deviceId)))
+            if (!entry.remote && connected(entry)) remote(entry, "POST", "/api/v1/agent/executions/${entry.executionId}/tcp-close", mapper.valueToTree(AgentClaim(session.deviceId, AgentRuntimeCapabilities(com.flowlink.protocol.ProtocolCapabilities.schemaVersions, com.flowlink.protocol.ProtocolCapabilities.features))))
             if (entry.delegated && !ackDelegation(entry)) return
             journal.remove(entry.key); return
         }
@@ -177,7 +177,7 @@ class DesktopDispatcher(
         }
         var current = entry
         if (delegated.status in setOf("PENDING", "CLAIMED")) {
-            delegated = remoteTask(entry, "POST", "/api/v1/agent/tasks/$taskId/claim", mapper.valueToTree(AgentClaim(session.deviceId)))
+            delegated = remoteTask(entry, "POST", "/api/v1/agent/tasks/$taskId/claim", mapper.valueToTree(AgentClaim(session.deviceId, AgentRuntimeCapabilities(com.flowlink.protocol.ProtocolCapabilities.schemaVersions, com.flowlink.protocol.ProtocolCapabilities.features))))
             val token = delegated.claimToken ?: return
             current = entry.copy(remoteClaimToken = token).also(journal::put)
             delegated = remoteTask(current, "POST", "/api/v1/agent/tasks/$taskId/execute", mapper.valueToTree(AgentLease(session.deviceId, token)))
@@ -210,7 +210,7 @@ class DesktopDispatcher(
             catch (failure: DesktopRemoteException) { if (failure.status == 404) return true else throw failure }
         if (task.status == "RUNNING") return false
         val token = entry.remoteClaimToken ?: remoteTask(entry, "POST", "/api/v1/agent/tasks/$taskId/claim",
-            mapper.valueToTree(AgentClaim(session.deviceId))).claimToken ?: return false
+            mapper.valueToTree(AgentClaim(session.deviceId, AgentRuntimeCapabilities(com.flowlink.protocol.ProtocolCapabilities.schemaVersions, com.flowlink.protocol.ProtocolCapabilities.features)))).claimToken ?: return false
         remote(entry, "POST", "/api/v1/agent/tasks/$taskId/ack", mapper.valueToTree(AgentLease(session.deviceId, token)))
         return true
     }
@@ -218,8 +218,8 @@ class DesktopDispatcher(
     private fun originGet(entry: Entry, id: UUID): AgentTaskView = if (entry.remote)
         remoteTask(entry, "GET", "/api/v1/agent/tasks/$id") else tasks.get(id)
     private fun originClaim(entry: Entry, id: UUID): AgentTaskView = if (entry.remote)
-        remoteTask(entry, "POST", "/api/v1/agent/tasks/$id/claim", mapper.valueToTree(AgentClaim(session.deviceId)))
-        else tasks.claim(id, AgentClaim(session.deviceId))
+        remoteTask(entry, "POST", "/api/v1/agent/tasks/$id/claim", mapper.valueToTree(AgentClaim(session.deviceId, AgentRuntimeCapabilities(com.flowlink.protocol.ProtocolCapabilities.schemaVersions, com.flowlink.protocol.ProtocolCapabilities.features))))
+        else tasks.claim(id, AgentClaim(session.deviceId, AgentRuntimeCapabilities(com.flowlink.protocol.ProtocolCapabilities.schemaVersions, com.flowlink.protocol.ProtocolCapabilities.features)))
     private fun originExecute(entry: Entry, id: UUID, token: String) {
         val body = AgentLease(session.deviceId, token)
         if (entry.remote) remote(entry, "POST", "/api/v1/agent/tasks/$id/execute", mapper.valueToTree(body)) else tasks.execute(id, body)

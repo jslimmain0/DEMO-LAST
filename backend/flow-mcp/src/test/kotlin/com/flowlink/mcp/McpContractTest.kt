@@ -17,11 +17,11 @@ class McpContractTest {
     }
 
     @Test fun `legacy catalogue remains complete and scopes are distinct`() {
-        assertEquals(59, catalog.size)
+        assertEquals(60, catalog.size)
         assertEquals(setOf(
             "flowlink_status", "flowlink_update_status", "flowlink_guide", "workspace_list", "workspace_get", "workspace_export", "workspace_import",
             "folder_list", "folder_create", "folder_update", "folder_delete", "protocol_list", "protocol_get", "protocol_upsert", "protocol_preview", "protocol_delete",
-            "mock_list", "mock_get", "mock_upsert", "mock_send", "mock_tcp_sessions", "mock_log", "mock_delete", "mock_versions", "mock_version", "mock_state", "mock_reset", "mock_clear_log", "mock_usages", "codec_try",
+            "mock_list", "mock_get", "mock_upsert", "mock_preview", "mock_send", "mock_tcp_sessions", "mock_log", "mock_delete", "mock_versions", "mock_version", "mock_state", "mock_reset", "mock_clear_log", "mock_usages", "codec_try",
             "flow_list", "flow_get", "flow_upsert", "flow_update", "flow_delete", "flow_versions", "flow_version", "flow_run", "execution_get", "execution_list", "execution_resume", "execution_rerun", "node_run", "suite_run",
             "env_list", "env_put", "env_rename", "env_delete", "flow_run_input", "secret_list", "plugin_list", "transform_preview", "plugin_script_list", "plugin_script_get", "plugin_script_try", "plugin_script_upsert", "plugin_script_submit", "plugin_script_wait", "http_request"
         ), catalog.keys)
@@ -45,8 +45,13 @@ class McpContractTest {
 
     @Test fun `TCP preview directions are optional and validate explicit wire and codec choices`() {
         val required = catalog.getValue("protocol_preview").path("inputSchema").path("required").map { it.asText() }
-        assertEquals(listOf("key"), required)
+        assertTrue(required.isEmpty())
         assertTrue(valid("protocol_preview", mapOf("key" to "request")))
+        assertFalse(valid("protocol_preview", emptyMap()))
+        assertTrue(valid("protocol_preview", mapOf("transactionKey" to "auth", "phase" to "responseAck", "action" to "parse", "bytesB64" to "AA==")))
+        assertFalse(valid("protocol_preview", mapOf("transactionKey" to "auth", "phase" to "responseAck", "frameDirection" to "recv")))
+        assertFalse(valid("protocol_preview", mapOf("transactionKey" to "auth", "action" to "parse")))
+        assertFalse(valid("protocol_preview", mapOf("transactionKey" to "auth", "bytesB64" to "AA==")))
         for (field in listOf("direction", "frameDirection")) {
             assertEquals(listOf("send", "recv"), catalog.getValue("protocol_preview").path("inputSchema").path("properties").path(field).path("enum").map { it.asText() })
             assertTrue(valid("protocol_preview", mapOf("key" to "custom", field to "recv")))

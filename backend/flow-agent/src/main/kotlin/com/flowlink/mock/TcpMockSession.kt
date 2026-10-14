@@ -2,7 +2,6 @@ package com.flowlink.mock
 
 import com.flowlink.common.tcp.TcpBytes
 import com.flowlink.mock.MockSpec.MockTcp
-import com.flowlink.mock.MockSpec.MockTcpCond
 import com.flowlink.mock.MockSpec.MockTcpFault
 import com.flowlink.mock.MockSpec.MockTcpRule
 import com.flowlink.protocol.Direction
@@ -10,13 +9,13 @@ import com.flowlink.protocol.Framer
 import com.flowlink.protocol.ProtocolCodec
 import com.flowlink.protocol.ProtocolSpec
 import com.flowlink.protocol.TcpClient
+import com.flowlink.protocol.ProtocolCompiler
+import com.flowlink.execution.engine.SecretMasker
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
 import java.net.SocketTimeoutException
 import java.time.Instant
-import java.util.Locale
-import java.util.regex.Pattern
 
 /**
  * TCP Mock 연결 1개의 처리 — 스트림만 의존하는 순수 세션(리스너·테스트 공용).
@@ -37,6 +36,8 @@ class TcpMockSession(
     private val verifyResourceAccess: () -> Unit = {},
     private val onWaiting: () -> Unit = {},
     private val onFrame: () -> Unit = {},
+    private val onPhase: (String, String?, Int?, Int) -> Unit = { _, _, _, _ -> },
+    private val ackTimeout: (Int?) -> Unit = {},
 ) {
     /** 코덱 파라미터 안의 `{{ 이름@secret }}`·`{{ 키@env }}` — 이 Mock 의 환경 스코프로 푼다. */
     private val resolve: (String) -> String = MockSecretProvider.Scope(secrets, env).resolver()
@@ -44,9 +45,11 @@ class TcpMockSession(
 
     private var upstream: Upstream? = null
     private val cs = spec.charset()
+    private var secretDerived = SecretMasker.usesSecrets(secrets.values, spec, tcp)
 
     /** 연결 하나 — EOF/프레임 오류/reset 까지 프레임을 처리한다. onReset 은 RST 로 끊을 때 호출. */
     fun serve(input: InputStream, output: OutputStream, onReset: () -> Unit) {
+        if (spec.schemaVersion == 2) { serveV2(input, output, onReset); return }
         try {
             while (true) {
                 onWaiting()
@@ -64,6 +67,93 @@ class TcpMockSession(
         } finally {
             upstream?.let { runCatching { it.close() } }; upstream = null
         }
+    }
+
+    private fun serveV2(input: InputStream, output: OutputStream, onReset: () -> Unit) {
+        val plan = ProtocolCompiler.compile(spec)
+        var phase = "REQUEST"
+        var transaction: ProtocolSpec.Transaction? = null
+        var expected: Int? = null
+        var actual = 0
+        var phaseStart = System.nanoTime()
+        var ruleId: String? = null
+        var phaseBytes = ByteArray(0)
+        fun begin(next: String, length: Int? = null) {
+            phase = next; expected = length; actual = 0; phaseBytes = ByteArray(0); phaseStart = System.nanoTime()
+            onPhase(phase, transaction?.key, expected, actual)
+        }
+        fun record(dir: String, status: String, fields: Map<String, String> = emptyMap(), mode: String? = null, code: String? = null) {
+            log(entry(dir, "mock", transaction?.key, fields, phaseBytes, null, ruleId, if (code != null) "$phase: $code" else phase, if (status == "FAILED") "error" else "info").copy(
+                transactionKey = transaction?.key, phase = phase, role = "mock", direction = if (dir == "in") "RECEIVE" else if (dir == "out") "SEND" else null,
+                expectedBytes = expected, actualBytes = actual, validationMode = mode, errorCode = code, durationMs = (System.nanoTime() - phaseStart) / 1_000_000, status = status))
+            onPhase(phase, transaction?.key, expected, actual)
+        }
+        try {
+            while (true) {
+                transaction = null; ruleId = null
+                onWaiting(); begin("REQUEST")
+                val frame = Framer.readFrame(input, spec, Direction.SEND) { key, size ->
+                    transaction = key?.let(plan::transaction); expected = size
+                    onPhase("REQUEST", key, size, spec.headerLen())
+                } ?: return
+                onFrame(); actual = frame.bytes.size; phaseBytes = frame.bytes
+                val selected = frame.transactionKey?.let(plan::transaction) ?: plan.select(ProtocolCompiler.header(spec, frame.bytes, plugins, resolve))
+                transaction = selected
+                expected = plan.effectiveSpec(selected).framing?.fixedLength
+                verifyResourceAccess()
+                val request = ProtocolCompiler.parse(spec, frame.bytes, transactionKey = selected.key, plugins = plugins, resolve = resolve)
+                val rule = TcpMockRules.match(tcp.rulesOrEmpty(), request.values, resolve)
+                    ?: throw ProtocolCompiler.ProtocolFailure("NO_MATCHING_RULE", "tcp.rules", "매칭되는 Mock 업무 규칙이 없습니다.")
+                ruleId = rule.id; record("in", "SUCCEEDED", request.values)
+                val requestAck = selected.requestAck
+                begin("REQUEST_ACK", requestAck?.let { ProtocolCompiler.ackLength(spec, it) })
+                if (requestAck == null) record("none", "SKIPPED") else {
+                    phaseBytes = ProtocolCompiler.assembleAck(spec, requestAck, request.values, emptyMap(), plugins, resolve).bytes
+                    output.write(phaseBytes); output.flush(); actual = phaseBytes.size
+                    record("out", "SUCCEEDED", mode = requestAck.send?.kind)
+                }
+                begin("RESPONSE", plan.effectiveSpec(selected).responseFraming?.fixedLength)
+                val fault = rule.fault
+                if (fault?.drop == true || fault?.reset == true) {
+                    if ((fault.delayMs ?: 0) > 0) sleeper(fault.delayMs!!.toLong())
+                    record("out", "FAILED", code = if (fault.drop == true) "FAULT_DROP" else "FAULT_RESET")
+                    if (fault.reset == true) { onReset(); return }
+                    if (spec.transport?.connectionOr() != "execution") return
+                    continue
+                }
+                val response: ByteArray
+                val responseFields: Map<String, String>
+                if (rule.isProxy()) {
+                    val upstream = upstream ?: upstreamFactory()?.also { upstream = it } ?: throw IOException("upstream 연결 실패")
+                    val exchange = TcpClient.exchange(upstream.input, upstream.output, frame.bytes, spec, plugins = plugins, resolve = resolve)
+                    response = exchange.response.bytes
+                    responseFields = ProtocolCompiler.parse(spec, response, transactionKey = selected.key, phase = "response", requestFields = request.values, plugins = plugins, resolve = resolve).values
+                } else {
+                    val headerNames = spec.headerOrEmpty().map { it.nameOrEmpty() }.toSet()
+                    val fields = TcpMockRules.responseFields(request.values.filterKeys { it in headerNames }, rule.thenFields(), MockContext(seq = seq(), secrets = secrets, tcpFields = request.values, env = env), true)
+                    val encoded = ProtocolCompiler.assemble(spec, values = fields, transactionKey = selected.key, phase = "response", requestFields = request.values, plugins = plugins, resolve = resolve)
+                    response = encoded.bytes; responseFields = encoded.values
+                }
+                phaseBytes = response
+                if (!writeWithFault(response, rule, output, onReset, "mock", plan.effectiveSpec(selected))) return
+                actual = response.size; record("out", "SUCCEEDED", responseFields)
+                val responseAck = selected.responseAck
+                begin("RESPONSE_ACK", responseAck?.let { ProtocolCompiler.ackLength(spec, it) })
+                if (responseAck == null) record("none", "SKIPPED") else {
+                    ackTimeout(responseAck.timeoutMs)
+                    try { phaseBytes = TcpClient.receiveAck(input, spec, responseAck, request.values, responseFields, plugins, resolve); actual = phaseBytes.size }
+                    finally { ackTimeout(null) }
+                    record("in", "SUCCEEDED", mode = responseAck.receive?.kind)
+                }
+                begin("COMPLETE"); record("none", "SUCCEEDED")
+                if (spec.transport?.connectionOr() != "execution") return
+            }
+        } catch (e: Exception) {
+            if (e is TcpClient.AckException) { actual = e.bytes.size; phaseBytes = e.bytes; expected = e.expectedBytes }
+            if (e is Framer.FrameException) { phaseBytes = e.raw ?: ByteArray(0); actual = phaseBytes.size; expected = e.expectedBytes ?: expected }
+            val code = when (e) { is TcpClient.AckException -> e.code; is ProtocolCompiler.ProtocolFailure -> e.code; is SocketTimeoutException -> if (phase.endsWith("ACK")) "ACK_TIMEOUT" else "FRAME_TIMEOUT"; is Framer.FrameException -> e.code ?: "FRAME_LENGTH_MISMATCH"; else -> "TRANSPORT_ERROR" }
+            record(if (phase == "REQUEST" || phase == "RESPONSE_ACK") "in" else "out", "FAILED", mode = if (phase == "RESPONSE_ACK") transaction?.responseAck?.receive?.kind else null, code = code)
+        } finally { upstream?.let { runCatching { it.close() } }; upstream = null; ackTimeout(null) }
     }
 
     /** 프레임 하나 처리. false = 연결을 끊어야 함(reset). */
@@ -111,24 +201,7 @@ class TcpMockSession(
     // ---------- 규칙 ----------
 
     private fun match(rules: List<MockTcpRule>, values: Map<String, String>): MockTcpRule? =
-        rules.firstOrNull { r -> r.whenOrEmpty().all { pass(it, values) } }
-
-    private fun pass(c: MockTcpCond, values: Map<String, String>): Boolean {
-        val field = c.field?.trim().orEmpty()
-        if (field.isEmpty()) return true // 편집 중 미완성 조건
-        val actual = values[field]?.trim() ?: return false
-        val v = resolve(c.value ?: "") // 비교값의 `{{ 이름@secret }}`·`{{ 키@env }}`
-        return when (c.op?.lowercase(Locale.ROOT) ?: "eq") {
-            "eq" -> actual == v.trim()
-            "ne" -> actual != v.trim()
-            "contains" -> actual.contains(v)
-            "startswith" -> actual.startsWith(v.trim())
-            "endswith" -> actual.endsWith(v.trim())
-            "regex" -> try { Pattern.compile(v).matcher(actual).find() } catch (e: Exception) { false }
-            "exists" -> actual.isNotEmpty()
-            else -> actual == v.trim()
-        }
-    }
+        TcpMockRules.match(rules, values, resolve)
 
     // ---------- mock 응답 ----------
 
@@ -173,19 +246,19 @@ class TcpMockSession(
 
     // ---------- 장애 주입 + 전송 ----------
 
-    private fun writeWithFault(bytes: ByteArray, rule: MockTcpRule, output: OutputStream, onReset: () -> Unit, source: String): Boolean {
+    private fun writeWithFault(bytes: ByteArray, rule: MockTcpRule, output: OutputStream, onReset: () -> Unit, source: String, protocol: ProtocolSpec = spec): Boolean {
         val f: MockTcpFault? = rule.fault
         val delay = f?.delayMs ?: 0
         if (delay > 0) sleeper(delay.toLong())
         var b = bytes
         if (f?.corruptLength == true) {
-            if (spec.framingMode(Direction.RECV) != "length" || spec.lengthFieldDef() == null) {
+            if (protocol.framingMode(Direction.RECV) != "length" || protocol.lengthFieldDef() == null) {
                 log(entry("out", source, null, emptyMap(), ByteArray(0), null, rule.id, "corrupt-length 불가 — 응답이 길이 필드 프레이밍을 사용하지 않습니다.", "warn"))
             } else {
                 // binary 길이 필드는 +7 이 표현 범위를 넘을 수 있다 — 그땐 원본 그대로 보내고 경고만 남긴다.
-                val declared = ProtocolCodec.declaredLength(spec, b.size, Direction.RECV) + 7
+                val declared = ProtocolCodec.declaredLength(protocol, b.size, Direction.RECV) + 7
                 try {
-                    b = ProtocolCodec.withLength(spec, b, declared)
+                    b = ProtocolCodec.withLength(protocol, b, declared)
                     log(entry("out", source, null, emptyMap(), b, null, rule.id, "corrupt-length — 길이 필드에 $declared", "warn"))
                 } catch (e: ProtocolCodec.ProtocolException) {
                     log(entry("out", source, null, emptyMap(), b, null, rule.id, "corrupt-length 불가: ${e.message}", "warn"))
@@ -212,14 +285,16 @@ class TcpMockSession(
         // 큰 전문은 앞부분만 로그에 싣는다(행 200개 × 전문 크기가 힙을 먹지 않게) — bytes 는 실제 크기 그대로.
         val shown = if (bytes.size > MockRuntimeStore.BODY_CAP) bytes.copyOf(MockRuntimeStore.BODY_CAP) else bytes
         val raw = TcpBytes.decodeEscaped(shown, cs).map { if (it.code < 0x20) '.' else it }.joinToString("")
-        val text = mask(raw)
+        secretDerived = secretDerived || SecretMasker.usesSecrets(secrets.values, fields, raw)
+        val conceal = secretDerived || (level == "error" && secrets.isNotEmpty() && ProtocolCompiler.pluginRefs(spec).isNotEmpty())
+        val text = if (conceal) "***" else mask(raw)
         val hidden = text != raw // 시크릿이 전문에 실려 있었다 — hex 로 원문이 새지 않게 통째로 뺀다
         val notes = ArrayList<String>()
-        note?.let { notes += mask(it) }
+        note?.let { notes += if (conceal) "시크릿 참조가 있어 상세 내용을 숨겼습니다." else mask(it) }
         if (shown.size < bytes.size) notes += "앞 ${MockRuntimeStore.BODY_CAP}B만 표시(전체 ${bytes.size}B)"
         if (hidden) notes += "hex 생략(시크릿 마스킹)"
         return MockRuntimeStore.TcpLogEntry(
-            Instant.now(), dir, source, key, fields.mapValues { mask(it.value) },
+            Instant.now(), dir, source, key, fields.mapValues { if (conceal) "***" else mask(it.value) },
             text, if (hidden) "" else TcpBytes.hexDump(shown), bytes.size, chunks, ruleId,
             notes.joinToString(" · ").ifEmpty { null }, level, partial,
         )

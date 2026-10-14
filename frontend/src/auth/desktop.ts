@@ -11,6 +11,7 @@ export interface DesktopUpdateStatus {
   totalBytes: number
   message: string
   releaseNotes: string | null
+  loginRequired?: boolean
 }
 export interface DesktopConnection { serverUrl: string; mcpUrl: string; login: string | null; connected: boolean }
 export interface DesktopMcpStatus { phase: string; message: string; clients: { label: string; configured: boolean; message: string }[]; pendingRevocations: number }

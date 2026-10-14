@@ -103,6 +103,7 @@ export function AssistantSidePanel<T>({ title, intro, placeholder, request, summ
         ) : null}
         <button onClick={onClose} aria-label="닫기" style={xBtn}>×</button>
       </header>
+      <p style={{ margin: 0, padding: '6px 12px', fontSize: 11, color: 'var(--fl-text-muted)', borderBottom: '1px solid var(--fl-border)' }}>이 PC에서 실행 · 개인 Copilot 연결 사용</p>
 
       {connected && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderBottom: '1px solid var(--fl-border)', background: 'var(--fl-surface-2)' }}>

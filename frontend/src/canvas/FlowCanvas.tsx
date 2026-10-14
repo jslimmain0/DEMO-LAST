@@ -1,5 +1,5 @@
 import { useWorkspace } from '../app/WorkspaceContext'
-import { Background, ControlButton, Controls, MiniMap, ReactFlow, SelectionMode, getViewportForBounds, useReactFlow } from '@xyflow/react'
+import { Background, ControlButton, Controls, MiniMap, ReactFlow, SelectionMode, getViewportForBounds, useReactFlow, useUpdateNodeInternals } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import type { CSSProperties, DragEvent } from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -60,6 +60,9 @@ export function FlowCanvas({ onExpandProps }: { onExpandProps?: () => void } = {
   const scope = useWorkspace()
 
   const nodes = useEditorStore((s) => s.nodes)
+  const layoutDirection = useEditorStore(s => s.layoutDirection)
+  const updateNodeInternals = useUpdateNodeInternals()
+  useEffect(() => { updateNodeInternals(useEditorStore.getState().nodes.map(n => n.id)) }, [layoutDirection, updateNodeInternals])
   const edges = useEditorStore((s) => s.edges)
   const waitingNodeId = useEditorStore((s) => s.waitingNodeId)
   const runView = useEditorStore((s) => s.runView)

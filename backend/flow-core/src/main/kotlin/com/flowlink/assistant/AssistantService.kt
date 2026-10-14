@@ -210,7 +210,7 @@ class AssistantService(
             has(q, "tcp", "소켓", "socket", "전문") ->
                 "고정길이 TCP 전문을 보내고 응답을 잘라 쓰는 샘플 플로우입니다." to STUB_TCP
             has(q, "http", "api", "호출", "요청", "get", "post", "rest") ->
-                "REST API 를 호출해 응답 상태를 검증하는 샘플 플로우입니다." to STUB_HTTP
+                "REST API를 호출하고 응답을 확인하는 샘플 플로우입니다." to STUB_HTTP
             else ->
                 "간단한 시작 → HTTP 호출 → 끝 샘플 플로우입니다. 원하는 흐름을 더 구체적으로 말해 주세요." to STUB_HTTP
         }
@@ -264,12 +264,10 @@ class AssistantService(
         {"name":"HTTP 호출 샘플","nodes":[
           {"id":"start1","name":"시작","type":"start","cat":"start","x":40,"y":180},
           {"id":"http1","name":"API 호출","type":"http","cat":"generic","x":260,"y":180,"method":"GET","baseUrl":"http://localhost:18080/mock/demo","path":"/ping","bodyType":"json","respType":"json","reqMode":"server","charset":"UTF-8","fields":{"params":[],"headers":[],"body":[]},"outputs":[{"key":"data","type":"object"}]},
-          {"id":"assert1","name":"상태 검증","type":"assert","cat":"assert","x":480,"y":180,"condition":"{{ httpStatus@http1 }} == 200"},
-          {"id":"end1","name":"끝","type":"end","cat":"end","x":700,"y":180}
+          {"id":"end1","name":"끝","type":"end","cat":"end","x":480,"y":180}
         ],"edges":[
           {"id":"e1","from":"start1","to":"http1"},
-          {"id":"e2","from":"http1","to":"assert1"},
-          {"id":"e3","from":"assert1","to":"end1"}
+          {"id":"e2","from":"http1","to":"end1"}
         ]}
         """.trimIndent()
 
@@ -317,12 +315,10 @@ class AssistantService(
         {"name":"TCP 전문 샘플","nodes":[
           {"id":"start1","name":"시작","type":"start","cat":"start","x":40,"y":180},
           {"id":"tcp1","name":"전문 전송","type":"tcp","cat":"tcp","x":260,"y":180,"tcpHost":"127.0.0.1","tcpPort":9000,"tcpTimeoutMs":5000,"protocolId":"","tcpMessage":"0210","tcpValues":{"계좌번호":"1122334567890"},"tcpResponseMessage":"0211","outputs":[{"key":"응답코드","type":"string"},{"key":"잔액","type":"string"}]},
-          {"id":"assert1","name":"결과 검증","type":"assert","cat":"assert","x":480,"y":180,"condition":"{{ 응답코드@tcp1 }} == '0000'"},
-          {"id":"end1","name":"끝","type":"end","cat":"end","x":700,"y":180}
+          {"id":"end1","name":"끝","type":"end","cat":"end","x":480,"y":180}
         ],"edges":[
           {"id":"e1","from":"start1","to":"tcp1"},
-          {"id":"e2","from":"tcp1","to":"assert1"},
-          {"id":"e3","from":"assert1","to":"end1"}
+          {"id":"e2","from":"tcp1","to":"end1"}
         ]}
         """.trimIndent()
     }

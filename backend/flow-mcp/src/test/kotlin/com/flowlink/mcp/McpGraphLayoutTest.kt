@@ -26,6 +26,7 @@ class McpGraphLayoutTest {
         val source = graph(); val original = source.deepCopy<JsonNode>()
         val result = McpGraphLayout.forSave(source, true, null)
         val nodes = result.path("nodes").associateBy { it.path("id").asText() }
+        assertEquals("TB", result.path("layoutDirection").asText())
         assertEquals(nodes.getValue("start").path("x"), nodes.getValue("end").path("x"))
         assertEquals(nodes.getValue("a").path("y"), nodes.getValue("b").path("y"))
         assertTrue(nodes.getValue("a").path("x").asInt() < nodes.getValue("b").path("x").asInt())
@@ -55,7 +56,7 @@ class McpGraphLayoutTest {
     @Test fun `linear workflows use one column and multiple ends remain aligned without overlap`() {
         val source = mapper.readTree("""{"nodes":[{"id":"s","type":"start"},{"id":"a","type":"set"},{"id":"e1","type":"end"},{"id":"e2","type":"end"}],"edges":[{"from":"s","to":"a"},{"from":"a","to":"e1"},{"from":"a","to":"e2"}]}""")
         val result = McpGraphLayout.forSave(source, true, null)
-        assertEquals(1, result.path("nodes").map { it.path("x").asInt() }.distinct().size)
+        assertEquals(1, result.path("nodes").map { it.path("x").asInt() + if (it.path("type").asText() in setOf("start", "end")) 30 else 115 }.distinct().size)
         assertEquals(4, result.path("nodes").map { it.path("y").asInt() }.distinct().size)
     }
 
@@ -64,6 +65,24 @@ class McpGraphLayoutTest {
         assertSame(cycle, McpGraphLayout.forSave(cycle, true, null))
         val duplicate = mapper.readTree("""{"nodes":[{"id":"a","type":"start"},{"id":"a","type":"end"}],"edges":[]}""")
         assertSame(duplicate, McpGraphLayout.forSave(duplicate, true, null))
+    }
+
+    @Test fun `branch ports keep their visual order even when input nodes and edges are reversed`() {
+        val source = graph().deepCopy<ObjectNode>()
+        source.set<JsonNode>("nodes", mapper.valueToTree(source.path("nodes").reversed()))
+        source.set<JsonNode>("edges", mapper.valueToTree(source.path("edges").reversed()))
+        val result = McpGraphLayout.forSave(source, true, null).path("nodes").associateBy { it.path("id").asText() }
+        assertTrue(result.getValue("a").path("x").asInt() < result.getValue("b").path("x").asInt())
+        assertEquals(result.getValue("if").path("x"), result.getValue("merge").path("x"))
+        assertEquals(result.getValue("if").path("x").asInt() + 85, result.getValue("start").path("x").asInt())
+    }
+
+    @Test fun `a single branch lane remains straight while the other branch takes more steps`() {
+        val source = mapper.readTree("""{"nodes":[{"id":"s","type":"start"},{"id":"if","type":"if"},{"id":"a","type":"http"},{"id":"a2","type":"http"},{"id":"b","type":"http"},{"id":"join","type":"set"},{"id":"e","type":"end"}],"edges":[{"from":"s","to":"if"},{"from":"if","to":"a","fromPort":"true"},{"from":"if","to":"b","fromPort":"false"},{"from":"a","to":"a2"},{"from":"a2","to":"join"},{"from":"b","to":"join"},{"from":"join","to":"e"}]}""")
+        val result = McpGraphLayout.forSave(source, true, null).path("nodes").associateBy { it.path("id").asText() }
+        assertEquals(result.getValue("a").path("x"), result.getValue("a2").path("x"))
+        assertTrue(result.getValue("join").path("x").asInt() in result.getValue("a").path("x").asInt()..result.getValue("b").path("x").asInt())
+        assertTrue(result.values.all { it.path("x").asInt() >= 44 })
     }
 
     @Test fun `MCP save forwards arranged coordinates to REST for creates and preserves edits`() {

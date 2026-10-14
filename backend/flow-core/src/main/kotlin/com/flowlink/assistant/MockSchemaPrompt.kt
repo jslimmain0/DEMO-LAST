@@ -21,7 +21,7 @@ Respond with ONE JSON object and nothing else — no markdown fences, no prose o
 
 ## MockSpec SHAPE
 {"resourceWorkspaceId":"public", "envSource":"local" or "server", "routes": [Route...], "tcp": null, "codec": Codec or null, "environment": "dev" or null}
-- 이 어시스턴트는 HTTP mock 전용 — tcp 는 항상 null. TCP 전문(프로토콜·규칙)은 프로토콜 화면과 TCP Mock 편집기에서 직접 정의한다고 안내하라.
+- HTTP는 routes, TCP는 tcp를 사용하며 아래 공통 TCP v2 규약을 따른다. 프로토콜 id는 실제 조회값을 쓰고 모르면 등록·선택을 요청한다.
 - 신규 Mock은 resourceWorkspaceId="public"으로 서버 공통 프로토콜·승인 플러그인·시크릿을 참조한다. 저장/서빙 위치는 target(local=내 PC, server=서버)와 별개다.
 - envSource: 변수 출처 local/server. PC Mock은 local/server를 선택할 수 있고 서버 Mock은 server만 사용한다. 신규 MCP Mock에서 생략하면 target을 따른다. environment는 그 출처의 환경 이름이다. 같은 이름의 다른 출처와 자동 병합하지 않는다.
   `{{ 키@env }}`는 선택 출처의 변수다. envSource=local이면 중앙 공통 시크릿만, server면 공통+선택한 서버 환경 시크릿을 사용한다. 보통 environment=null(공통).
@@ -66,5 +66,5 @@ JSON body 는 문자열이므로 따옴표 이스케이프: "body":"{\"ok\":true
 ## STYLE
 - 최소·정확하게. 사용자가 준 현재 spec 을 이어 고칠 땐 기존 route id 를 유지. reply 는 간결한 한국어.
 - 존재하지 않는 {{body.x}} 를 참조하지 말 것(빈 문자열로 렌더된다). 상태 시나리오는 setState + source=state 로.
-""".trim()
+""".trim() + "\n\n" + TcpV2Guide.SYSTEM
 }

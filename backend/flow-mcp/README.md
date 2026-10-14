@@ -2,6 +2,16 @@
 
 화면과 MCP는 같은 작업 순서를 따른다. 초기 연결 안내와 `flowlink_guide`에도 아래 구분을 제공한다.
 
+`flowlink_status.capabilities`는 서버와 연결된 PC에서 직접 보고한 설치 버전·지원 schemaVersion·기능·한도를 분리한다. 오프라인/구형 PC의 미확인 기능은 `unknown`이며 필요한 v2 요청은 전송 전에 거절한다. `flowlink_update_status.release`는 배포 버전, `local.installedVersion`은 실제 PC 보고이며 둘을 혼동하지 않는다.
+
+v2 프로토콜은 `transactions`와 독립 `ackMessages`를 보존한다. 거래별 요청/응답 경계·ACK 송신/수신, binary integer(1/2/4/8B)·NUL 패딩을 공통 컴파일러로 확인한다. `protocol_upsert`와 `mock_upsert`의 `dryRun=true`는 저장·버전·리스너 없이 검증한다. 활성화는 기존 `enabled` 계약을 따르며 리스너 포트 교체는 새 포트를 확보한 후 기존 포트를 닫는다.
+
+`protocol_preview`는 `action=assemble|parse`, `transactionKey`, `phase=request|requestAck|response|responseAck`, `requestFields`, `responseFields`, `bytesB64`를 지원한다. ACK 단계는 거래 키가 필수이고 frameDirection을 함께 주지 않는다. `parse`는 정확히 한 개의 완전한 프레임을 받는다. 출력의 text/HEX/Base64/필드는 모두 시크릿을 가린다.
+
+`mock_preview`는 저장 slug 또는 미저장 전체 spec+type과 합성 request를 받아 실제와 같은 규칙·응답·ACK 계획을 보여준다. HTTP는 method/path/headers/query/body, TCP는 key/values 또는 bytesB64다. 선택 `protocolSpec`은 이 미리보기에서만 사용한다. state/hits/seq는 읽은 snapshot과 virtualSeq를 표시하며 저장·네트워크·콜백·카운터 변경은 없다. 완전한 HTTP/TCP 예시는 `flowlink_guide(mock)`와 실제 JSON Schema에서 확인한다.
+
+v2 `mock_send`는 실제 1회 요청이며 거래·단계·전송 결과·executionId를 반환한다. 이미 받은 응답은 마지막 ACK 실패 때도 보존한다. 시험 이력은 메모리 최근 1000건·JSON 합계 32MB로 앱 재시작 후 조회할 수 없으며 DB 워크플로 이력과 별도다. UNKNOWN은 해당 executionId로 `execution_get`을 조회하고 자동 재전송하지 않는다. 실제 앱/통신사 업무 전체 호환성을 시험 성공으로 추정하지 않는다.
+
 | 화면 기능 | MCP 작업 |
 |---|---|
 | TCP Mock · 연결 설정 | `protocol_upsert`로 전문 규격을, `mock_upsert`로 리스너·프로토콜 참조를 저장 |
@@ -43,7 +53,7 @@ Windows 자동 설정의 개인 작업은 토큰을 발급한 PC에 고정한다
 
 Windows 자동 설정을 지원하지 않는 클라이언트의 표준 OAuth 코드·PKCE 호환 경로는 유지한다. Spring Authorization Server가 처리하며 발급하는 자격도 MCP 전용이다. 이 호환 경로는 Windows 장치 ID 없이 계정에 연결된 현재 PC를 사용한다. `flowlink.desktop.mcp-auto-configure=false`는 IDE 파일 변경을 끄며 트레이를 끈 격리 검증에서는 기본 비활성화한다.
 
-기존 58개 도구 이름을 유지하고 `mock_tcp_sessions`를 추가해 총 59개다. 카탈로그는 `src/main/resources/flowlink-tools.json`에 있다. 저장 위치, 환경 출처, 요청 실행 위치는 다음처럼 구분한다.
+기존 59개 도구 이름을 유지하고 전송 없는 `mock_preview`를 추가해 총 60개다. 카탈로그는 `src/main/resources/flowlink-tools.json`에 있다. 저장 위치, 환경 출처, 요청 실행 위치는 다음처럼 구분한다.
 
 | 선택 | 도구·필드 | 의미 |
 |---|---|---|
@@ -62,7 +72,7 @@ Windows 자동 설정을 지원하지 않는 클라이언트의 표준 OAuth 코
 
 개인 저장 공간·PC 환경·PC 호출은 로그인한 Windows 앱이 온라인이어야 한다. 서버 공통 카탈로그 조회·관리는 PC 연결과 무관하다. 개인 H2 전체를 중앙 서버로 동기화하지 않고 계정·장치에 묶인 명령 채널을 사용한다. PC 실행 결과에도 실제 요청 본문을 표시하되 시크릿은 마스킹한다. 실제 통신 값은 그대로 전송하며 서버의 본문 저장 정책과 출력 마스킹 정책은 유지한다. PC가 중앙 전문을 사용할 때 정의만 전달하고 승인 코덱 스크립트는 서버에서 실행한다.
 
-`flow_upsert`로 새 워크플로를 생성하면 기본으로 위에서 아래로 진행하는 컴팩트한 트리 배치를 적용한다. 분기는 좌우로 나누고 합류는 아래에 두며 START와 모든 END는 동일한 x 좌표에 둔다. 좌표만 바꾸며 노드 설정·바인딩·연결·주석은 유지한다. 기존 워크플로 수정은 좌표를 보존한다. `layout="compact-tree"`로 재배치하거나 `layout="preserve"`로 생성 시 입력 좌표를 유지할 수 있다. 이 규칙은 MCP 초기 안내·도구 설명·flow 가이드에도 제공한다.
+`flow_upsert`로 새 워크플로를 생성하면 기본으로 위에서 아래로 진행하는 컴팩트한 트리 배치와 `graph.layoutDirection="TB"`를 적용한다. 분기는 좌우에 유지하고 합류는 가운데 아래에 두며 START와 END의 시각 중심을 정렬한다. 노드 설정·바인딩·연결·주석은 유지한다. 기존 워크플로 수정은 좌표와 방향을 보존한다. `layout="compact-tree"`로 재배치하거나 `layout="preserve"`로 생성 시 입력 좌표를 유지할 수 있다. assert는 사용자 명시 업무 성공·독립 인수 조건에만 최소한으로 두며 모든 HTTP200·빈값·전송·프레임·ACK 검사를 노드로 반복하지 않는다. 기존 명시 assert는 보존한다.
 
 빌드·모듈 경계는 [backend 안내](../README.md)를 따른다. 순수 계약 테스트는 도구 이름·JSON 스키마·출처·URI 정책을 검증한다. [실제 MCP 자원 검증 스크립트](../../scripts/test/mcp-resources.ps1)는 명시적으로 승인된 환경에서 `/mcp`의 도구 목록과 호출을 확인하며 IDE 등록 설정은 변경하지 않는다. 전용 자격의 REST 수명주기·임시 설정 병합·암호화·패키징 검증은 별도다. 역사적 Node MCP 검증 기록은 이 Kotlin 구현의 실연동 검증 결과가 아니다.
 

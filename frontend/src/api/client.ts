@@ -210,8 +210,10 @@ const mocksApi = {
   extendTcpSession: (id: string, sessionId: string, extendMs: number) =>
     http.post<import('./types').TcpMockSession>(`/mock-servers/${id}/tcp-sessions/${encodeURIComponent(sessionId)}/extend`, { extendMs }).then((r) => r.data),
   // 보내보기 — 저장된 mock 의 리스너로 전문을 조립해 보내고 응답을 프로토콜로 디코딩
-  tcpSend: (id: string, body: { key: string; values: Record<string, string> }) =>
+  tcpSend: (id: string, body: { key?: string; transactionKey?: string; values: Record<string, string> }) =>
     http.post<import('./types').TcpSendResult>(`/mock-servers/${id}/tcp-send`, body).then((r) => r.data),
+  validate: (spec: import('./types').MockServerSpec) => http.post<import('./types').CompilationReport>('/mock-servers/validate', { spec, workspaceId, environment: spec.environment }).then(r => r.data),
+  preview: (body: import('./types').MockPreviewRequest) => http.post<import('./types').MockPreviewResult>('/mock-servers/preview', { ...body, workspaceId }).then(r => r.data),
   // 코덱 시험(HTTP) — 미저장 코덱 + 샘플 전문 → 단계별 입력/출력(서버가 실제 시크릿으로 계산, 결과는 마스킹)
   codecTry: (id: string, body: { codec: import('./types').MockCodecSpec; environment?: string | null; side: 'request' | 'response'; message: string; headers?: Record<string, string>; contentType?: string }) =>
     http.post<import('./types').MockCodecTryResult>(`/mock-servers/${id}/codec-try`, body).then((r) => r.data),
@@ -224,7 +226,8 @@ const protocolsApi = {
   update: (id: string, body: { name?: string; spec?: import('./types').ProtocolSpec }) => http.put<import('./types').ProtocolDetail>(`/protocols/${id}`, body).then((r) => r.data),
   remove: (id: string) => http.delete(`/protocols/${id}`).then(() => undefined),
   // 편집 중 spec 으로 조립 미리보기(저장 없음) — 검증 실패는 errors 로 온다
-  preview: (body: { spec: import('./types').ProtocolSpec; key: string; values: Record<string, string>; direction?: 'send' | 'recv'; frameDirection?: 'send' | 'recv'; environment?: string | null }) =>
+  validate: (spec: import('./types').ProtocolSpec) => http.post<import('./types').CompilationReport>('/protocols/validate', { spec, workspaceId }).then(r => r.data),
+  preview: (body: import('./types').ProtocolPreviewRequest) =>
     http.post<import('./types').ProtocolPreview>('/protocols/preview', body).then((r) => r.data),
 }
 
@@ -328,6 +331,7 @@ const assistantApi = {
     return `${base.replace(/\/+$/, '')}${path}`
   }
   const mockBaseUrl = (slug: string, _tenant?: string | null, basePath?: string) => resourceUrl(basePath ?? `/mock/ws/${encodeURIComponent(workspaceId)}/${encodeURIComponent(slug)}`)
-  return { flowsApi, triggersApi, secretsApi, suitesApi, transformsApi, pluginsApi, foldersApi, workspacesApi, adminApi, mocksApi, protocolsApi, codecsApi, environmentsApi, runInputApi, settingsApi, runsApi, assistantApi, mockBaseUrl, resourceUrl }
+  const runtimeApi = { capabilities: () => http.get<import('./types').RuntimeCapabilities>('/runtime/capabilities').then(r => r.data) }
+  return { flowsApi, triggersApi, secretsApi, suitesApi, transformsApi, pluginsApi, foldersApi, workspacesApi, adminApi, mocksApi, protocolsApi, codecsApi, environmentsApi, runInputApi, settingsApi, runsApi, assistantApi, mockBaseUrl, resourceUrl, runtimeApi }
 }
 export type WorkspaceApi = ReturnType<typeof createApi>

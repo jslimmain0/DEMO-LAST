@@ -113,7 +113,7 @@ class PresenceSession {
   sendSaved() { this.send({ t: 'saved' }) }
 
   /** 공동 편집 — 그래프 스냅샷 송신 + 원격 수신 핸들러 등록(collab 브리지가 사용). */
-  sendGraph(payload: { nodes: unknown[]; edges: unknown[] }) { this.send({ t: 'graph', ...payload }) }
+  sendGraph(payload: { nodes: unknown[]; edges: unknown[]; layoutDirection?: 'TB' | 'LR' }) { this.send({ t: 'graph', ...payload }) }
   onGraph(fn: ((m: Record<string, unknown>) => void) | null) { this.graphHandler = fn }
 
   close() {

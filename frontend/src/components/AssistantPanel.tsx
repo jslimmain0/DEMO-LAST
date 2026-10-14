@@ -156,9 +156,10 @@ export function AssistantPanel({ width, onClose }: { width: number; onClose: () 
         )}
         {canEdit && turns.length > 0 && <button onClick={newChat} aria-label="새 대화" title="새 대화 시작(현재 대화는 기록에 저장됨)" style={xBtn}>＋</button>}
         {canEdit && <button onClick={() => setSessionsOpen(true)} aria-label="대화 기록" title="저장된 대화 목록 · 이어하기" style={xBtn}><AppIcon name="clock" size={15} /></button>}
-        {canEdit && <button onClick={() => setSkillsOpen(true)} aria-label="프롬프트·지침" title="프롬프트 라이브러리 · 팀 지침" style={xBtn}><AppIcon name="list" size={15} /></button>}
+        {canEdit && <button onClick={() => setSkillsOpen(true)} aria-label="프롬프트·지침" title="이 PC의 프롬프트 라이브러리·지침" style={xBtn}><AppIcon name="list" size={15} /></button>}
         <button onClick={onClose} aria-label="닫기" style={xBtn}>×</button>
       </header>
+      <p style={{ margin: 0, padding: '6px 12px', fontSize: 11, color: 'var(--fl-text-muted)', borderBottom: '1px solid var(--fl-border)' }}>이 PC에서 실행 · 개인 Copilot 연결 사용</p>
 
       {/* 모델 선택 — 연결 시 표시. 포함(base)/프리미엄 구분. 프리미엄은 계정에 프리미엄 요청 쿼터가 있어야 동작(없으면 429). */}
       {connected && (

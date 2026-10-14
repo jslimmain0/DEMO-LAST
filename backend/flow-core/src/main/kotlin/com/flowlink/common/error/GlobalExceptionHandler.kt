@@ -16,6 +16,22 @@ import org.springframework.web.server.ResponseStatusException
 @RestControllerAdvice
 class GlobalExceptionHandler {
 
+    @ExceptionHandler(com.flowlink.mock.MockActivationException::class)
+    fun mockActivation(ex: com.flowlink.mock.MockActivationException, req: HttpServletRequest): ResponseEntity<Map<String, Any?>> =
+        ResponseEntity.badRequest().body(mapOf("timestamp" to java.time.Instant.now(), "status" to 400, "error" to "Bad Request", "message" to ex.message,
+            "path" to req.requestURI, "code" to ex.code, "previous" to ex.previous, "repairHint" to "현재 리스너를 유지한 상태에서 포트·지원 기능을 확인하고 명시적으로 다시 저장하세요."))
+
+    @ExceptionHandler(com.flowlink.protocol.ProtocolCompiler.CompileException::class)
+    fun protocolValidation(ex: com.flowlink.protocol.ProtocolCompiler.CompileException, req: HttpServletRequest): ResponseEntity<Map<String, Any?>> =
+        ResponseEntity.badRequest().body(mapOf("timestamp" to java.time.Instant.now(), "status" to 400, "error" to "Bad Request",
+            "message" to "전문 정의 검증에 실패했습니다.", "path" to req.requestURI, "code" to (ex.errors.firstOrNull()?.code ?: "INVALID_SCHEMA"),
+            "errors" to ex.errors))
+
+    @ExceptionHandler(com.flowlink.protocol.ProtocolCompiler.ProtocolFailure::class)
+    fun protocolFailure(ex: com.flowlink.protocol.ProtocolCompiler.ProtocolFailure, req: HttpServletRequest): ResponseEntity<Map<String, Any?>> =
+        ResponseEntity.badRequest().body(mapOf("timestamp" to java.time.Instant.now(), "status" to 400, "error" to "Bad Request", "message" to ex.message,
+            "path" to req.requestURI, "code" to ex.code, "fieldPath" to ex.path, "phase" to ex.phase, "expectedBytes" to ex.expectedBytes, "actualBytes" to ex.actualBytes, "repairHint" to ex.repairHint))
+
     @ExceptionHandler(ResponseStatusException::class)
     fun handleStatus(ex: ResponseStatusException, req: HttpServletRequest): ResponseEntity<ApiError> =
         ResponseEntity.status(ex.statusCode).headers(ex.headers).body(ApiError.of(ex.statusCode.value(),

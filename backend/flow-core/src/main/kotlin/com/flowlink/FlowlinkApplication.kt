@@ -7,6 +7,7 @@ import org.springframework.boot.context.TypeExcludeFilter
 import org.springframework.boot.context.properties.ConfigurationPropertiesScan
 import org.springframework.context.annotation.ComponentScan
 import org.springframework.context.annotation.FilterType
+import org.springframework.context.annotation.Import
 import java.security.SecureRandom
 import java.security.cert.X509Certificate
 import javax.net.ssl.HostnameVerifier
@@ -17,8 +18,9 @@ import javax.net.ssl.X509TrustManager
 
 /** 저장·관리 및 agent 구성만 등록한다. 중앙 서버/Windows 시작점은 각각 명시적으로 조립한다. */
 @SpringBootApplication
+@Import(com.flowlink.assistant.SchemaController::class)
 @ComponentScan(basePackages = [
-    "com.flowlink.agent", "com.flowlink.assistant", "com.flowlink.codec", "com.flowlink.common",
+    "com.flowlink.agent", "com.flowlink.codec", "com.flowlink.common",
     "com.flowlink.core", "com.flowlink.definition", "com.flowlink.environment", "com.flowlink.execution",
     "com.flowlink.folder", "com.flowlink.maintenance", "com.flowlink.mock", "com.flowlink.notify",
     "com.flowlink.plugin", "com.flowlink.protocol", "com.flowlink.secret", "com.flowlink.security",

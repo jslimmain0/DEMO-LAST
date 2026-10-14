@@ -315,7 +315,7 @@ class DesktopTray(
 
     private fun buildUpdateDialog(): JDialog {
         val updates = context.getBeanProvider(DesktopUpdateService::class.java).getIfAvailable()
-        val (dialog, content) = window("앱 업데이트", "개인 자료는 그대로 유지됩니다. 설치할 때 앱과 Mock 수신이 잠시 중단됩니다.", height = 600)
+        val (dialog, content) = window("앱 업데이트", "개인 자료는 유지됩니다. 설치 완료 후에는 회사 계정으로 다시 로그인합니다.", height = 600)
         fun describe(state: DesktopUpdateService.View) = listOfNotNull(state.availableVersion?.let { "배포 버전 $it" }, state.message,
             if (state.phase == "downloading") "${state.downloadedBytes / 1024} / ${state.totalBytes / 1024} KB" else null).joinToString("\n")
         val status = text(updates?.view()?.let(::describe) ?: "업데이트 서비스를 사용할 수 없습니다.")
@@ -325,7 +325,7 @@ class DesktopTray(
         val download = button("다운로드") { updates?.download() }
         val install = button("저장 확인 후 설치", true) {
             if (saved.isSelected && JOptionPane.showConfirmDialog(dialog,
-                "설치 중에는 PC 앱과 HTTP/TCP Mock 수신이 중단됩니다.\n진행 중인 실행과 대기 작업은 먼저 마쳐야 합니다.\n지금 설치할까요?", "업데이트 설치", JOptionPane.YES_NO_OPTION,
+                "설치 중에는 PC 앱과 HTTP/TCP Mock 수신이 중단됩니다.\n진행 중인 실행과 대기 작업은 먼저 마쳐야 합니다.\n설치 완료 후 회사 계정으로 다시 로그인해야 합니다.\n개인 자료와 개인 AI 연결은 유지합니다.\n지금 설치할까요?", "업데이트 설치", JOptionPane.YES_NO_OPTION,
                 JOptionPane.WARNING_MESSAGE) == JOptionPane.YES_OPTION) Thread {
                     runCatching { updates?.install() }.onFailure { error -> EventQueue.invokeLater { JOptionPane.showMessageDialog(dialog, error.message ?: "설치를 시작하지 못했습니다.", "업데이트", JOptionPane.ERROR_MESSAGE) } }
                 }.start()
@@ -334,7 +334,7 @@ class DesktopTray(
         download.isEnabled = updates?.view()?.phase == "available"
         install.isEnabled = false
         body(content, stack(card("현재 버전", updates?.view()?.currentVersion ?: com.flowlink.common.release.ReleaseVersion.version), status, notes,
-            text("새 버전은 자동으로 확인합니다. 다운로드와 설치는 직접 선택합니다.\n다운로드 중에는 작업을 계속할 수 있습니다. 설치하면 앱과 Mock 수신이 잠시 중단됩니다."), saved))
+            text("새 버전은 자동으로 확인합니다. 다운로드와 설치는 직접 선택합니다.\n다운로드 중에는 작업을 계속할 수 있습니다.\n설치 완료 후 회사 계정과 IDE 연결은 다시 로그인해 갱신합니다.\n취소·설치 실패 시에는 기존 로그인을 유지합니다."), saved))
         content.add(row(check, download, install), BorderLayout.SOUTH)
         val refresh = Timer(500) {
             val state = updates?.view() ?: DesktopUpdateService.View("error", com.flowlink.common.release.ReleaseVersion.version, message = "업데이트 서비스를 사용할 수 없습니다.")

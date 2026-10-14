@@ -108,6 +108,16 @@ class MockRuntimeStore {
         val level: String,
         /** 한 전문이 여러 번에 나뉘어 도착/전송됐다(Framer.Frame.partial · split 장애 주입). */
         val partial: Boolean = false,
+        val transactionKey: String? = null,
+        val phase: String? = null,
+        val role: String? = null,
+        val direction: String? = null,
+        val expectedBytes: Int? = null,
+        val actualBytes: Int? = null,
+        val validationMode: String? = null,
+        val errorCode: String? = null,
+        val durationMs: Long? = null,
+        val status: String? = null,
     )
 
     data class Snapshot(val state: Map<String, String>, val seq: Long, val hits: Map<String, Int>, val requestCount: Int)

@@ -53,7 +53,7 @@ export function DeletableEdge({ id, source, target, sourceHandleId, sourceX, sou
             style={{
               position: 'absolute',
               // 칩의 왼쪽 끝을 핸들 오른쪽(+10px)에 고정 — 중앙정렬이면 긴 트랙 이름의 앞 글자가 노드 밑에 가려진다
-              transform: `translate(0, -50%) translate(${sourceX + 10}px, ${sourceY}px)`,
+              transform: sourcePosition === 'bottom' ? `translate(-50%, 0) translate(${sourceX}px, ${sourceY + 10}px)` : `translate(0, -50%) translate(${sourceX + 10}px, ${sourceY}px)`,
               pointerEvents: 'all',
               minWidth: 18,
               maxWidth: 130,

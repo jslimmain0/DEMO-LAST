@@ -14,6 +14,7 @@ interface EditorState {
   flowName: string
   nodes: Node[]
   edges: Edge[]
+  layoutDirection?: 'TB' | 'LR'
   selectedId: string | null
   // 노드 바로가기 신호 — focusNode 로 증가. FlowCanvas 가 구독해 focusId 노드로 setCenter.
   focusTick: number
@@ -27,14 +28,14 @@ interface EditorState {
   // 실행 경과 표시(노드 상태·엣지 진행 애니메이션) — 폴링된 ExecutionDetail 로 계산. dirty 와 무관.
   runView: RunView | null
   // 실행취소/다시실행 스택(캔버스 스냅샷) — Ctrl+Z / Ctrl+Shift+Z
-  past: Array<{ nodes: Node[]; edges: Edge[] }>
-  future: Array<{ nodes: Node[]; edges: Edge[] }>
+  past: Array<{ nodes: Node[]; edges: Edge[]; layoutDirection?: 'TB' | 'LR'; flowName?: string; palette?: PaletteGroup[] }>
+  future: Array<{ nodes: Node[]; edges: Edge[]; layoutDirection?: 'TB' | 'LR'; flowName?: string; palette?: PaletteGroup[] }>
 
   setReadOnly: (v: boolean) => void
   loadGraph: (flowId: string, name: string, graph: FlowGraph) => void
   importGraph: (graph: FlowGraph) => void
   // 공동 편집 — 원격 참여자의 그래프 스냅샷을 적용(로컬 선택 하이라이트는 보존, 히스토리 미적재)
-  applyRemoteGraph: (nodes: Node[], edges: Edge[]) => void
+  applyRemoteGraph: (nodes: Node[], edges: Edge[], layoutDirection?: 'TB' | 'LR') => void
   getGraph: () => FlowGraph
   onNodesChange: (changes: NodeChange[]) => void
   onEdgesChange: (changes: EdgeChange[]) => void
@@ -105,7 +106,7 @@ export const useEditorStore = create<EditorState>()((set, get) => {
   const pushHistory = () => {
     lastDataEdit = null
     set({
-      past: [...get().past.slice(-(HISTORY_MAX - 1)), { nodes: get().nodes, edges: get().edges }],
+      past: [...get().past.slice(-(HISTORY_MAX - 1)), { nodes: get().nodes, edges: get().edges, layoutDirection: get().layoutDirection, flowName: get().flowName, palette: get().palette }],
       future: [],
     })
   }
@@ -136,7 +137,7 @@ export const useEditorStore = create<EditorState>()((set, get) => {
       const dn = makeNode('start', 60, 160)
       nodes.push({ id: dn.id, type: rfNodeType(dn.type), position: { x: 60, y: 160 }, data: dn as unknown as Record<string, unknown>, ...rfExtras(dn.type) })
     }
-    set({ flowId, flowName: name, nodes, edges, selectedId: null, dirty: seeded, palette: graph.palette ?? [], runView: null, past: [], future: [] })
+    set({ flowId, flowName: name, nodes, edges, layoutDirection: graph.layoutDirection === 'TB' ? 'TB' : undefined, selectedId: null, dirty: seeded, palette: graph.palette ?? [], runView: null, past: [], future: [] })
   },
 
   // 현재 플로우(flowId 유지)의 캔버스를 가져온 그래프로 교체. 저장 가능하도록 dirty=true.
@@ -149,6 +150,7 @@ export const useEditorStore = create<EditorState>()((set, get) => {
     set({
       nodes,
       edges: cleanEdges,
+      layoutDirection: graph.layoutDirection === 'TB' ? 'TB' : undefined,
       selectedId: null,
       dirty: true,
       flowName: graph.name && graph.name.trim() ? graph.name : get().flowName,
@@ -159,16 +161,17 @@ export const useEditorStore = create<EditorState>()((set, get) => {
 
   // 공동 편집 — 원격 스냅샷을 그대로 반영. 로컬 selectedId 하이라이트만 유지(내 선택은 안 뺏김),
   // dirty=true(받은 쪽도 저장 가능), 히스토리 미적재(내 undo 스택 오염 방지). 에코 방지는 collab 이 담당.
-  applyRemoteGraph: (nodes, edges) => {
+  applyRemoteGraph: (nodes, edges, layoutDirection) => {
     const sel = get().selectedId
     set({
       nodes: nodes.map((n) => ({ ...n, selected: n.id === sel })),
       edges,
+      layoutDirection: layoutDirection === 'TB' ? 'TB' : undefined,
       dirty: true,
     })
   },
 
-  getGraph: () => ({ ...fromRF(get().nodes, get().edges, get().flowName), palette: get().palette, resourceWorkspaceId: 'public' }),
+  getGraph: () => ({ ...fromRF(get().nodes, get().edges, get().flowName), ...(get().layoutDirection ? { layoutDirection: get().layoutDirection } : {}), palette: get().palette, resourceWorkspaceId: 'public' }),
 
   onNodesChange: (changes) => {
     // 드래그 시작 시 1회 스냅샷 · 삭제(Delete 키)도 스냅샷
@@ -495,6 +498,7 @@ export const useEditorStore = create<EditorState>()((set, get) => {
         const p = pos.get(n.id)
         return p ? { ...n, position: p, data: { ...n.data, x: p.x, y: p.y } } : n
       }),
+      layoutDirection: undefined,
       dirty: true,
     })
   },
@@ -579,7 +583,7 @@ export const useEditorStore = create<EditorState>()((set, get) => {
   undo: () => {
     const past = get().past
     if (past.length === 0) return
-    const cur = { nodes: get().nodes, edges: get().edges }
+    const cur = { nodes: get().nodes, edges: get().edges, layoutDirection: get().layoutDirection, flowName: get().flowName, palette: get().palette }
     const prev = past[past.length - 1]
     lastDataEdit = null
     dragInProgress = false
@@ -590,6 +594,9 @@ export const useEditorStore = create<EditorState>()((set, get) => {
       future: [...get().future.slice(-(HISTORY_MAX - 1)), cur],
       nodes: prev.nodes,
       edges: prev.edges,
+      layoutDirection: prev.layoutDirection,
+      flowName: prev.flowName ?? get().flowName,
+      palette: prev.palette ?? get().palette,
       selectedId: sel && ids.has(sel) ? sel : null,
       dirty: true,
     })
@@ -598,7 +605,7 @@ export const useEditorStore = create<EditorState>()((set, get) => {
   redo: () => {
     const future = get().future
     if (future.length === 0) return
-    const cur = { nodes: get().nodes, edges: get().edges }
+    const cur = { nodes: get().nodes, edges: get().edges, layoutDirection: get().layoutDirection, flowName: get().flowName, palette: get().palette }
     const next = future[future.length - 1]
     lastDataEdit = null
     dragInProgress = false
@@ -609,6 +616,9 @@ export const useEditorStore = create<EditorState>()((set, get) => {
       past: [...get().past.slice(-(HISTORY_MAX - 1)), cur],
       nodes: next.nodes,
       edges: next.edges,
+      layoutDirection: next.layoutDirection,
+      flowName: next.flowName ?? get().flowName,
+      palette: next.palette ?? get().palette,
       selectedId: sel && ids.has(sel) ? sel : null,
       dirty: true,
     })

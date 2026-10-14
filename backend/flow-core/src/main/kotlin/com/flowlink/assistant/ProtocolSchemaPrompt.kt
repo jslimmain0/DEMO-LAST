@@ -63,5 +63,5 @@ Message: {"key":"0210","label":"잔액조회 요청","fields":[Field...]}
   전문 본문 전체 = `messagePlugins:[{id,config}]`(전문 코덱, 헤더는 평문·길이 계산 전에 적용). id 는 승인된 플러그인만(plugin_list).
   쓸 게 없으면 만들어 승인 요청하고, 알고리즘·키 출처(시크릿 이름)·인코딩을 모르면 지어내지 말고 사용자에게 물어라.
   config 값에는 `{{ 이름@secret }}`·`{{ 키@env }}` 를 써라 — 서버가 실행 환경으로 푼다.
-""".trim()
+""".trim() + "\n\n" + TcpV2Guide.SYSTEM
 }

@@ -37,7 +37,7 @@ export function SkillsDialog({ onClose, onApplyPrompt }: { onClose: () => void; 
   })
   const saveInstr = useMutation({
     mutationFn: (instructions: string) => assistantApi.updateInstructions({ instructions }),
-    onSuccess: () => { toast('팀 지침을 저장했습니다.', 'ok'); setInstrEdit(null); invalidate() },
+    onSuccess: () => { toast('이 PC의 지침을 저장했습니다.', 'ok'); setInstrEdit(null); invalidate() },
     onError: (e: unknown) => toast(errMsg(e, '지침 저장 실패(admin 권한 필요)'), 'error'),
   })
 
@@ -80,7 +80,7 @@ export function SkillsDialog({ onClose, onApplyPrompt }: { onClose: () => void; 
 
       {/* 팀 지침 (admin) */}
       <div style={{ marginTop: 18, borderTop: '1px solid var(--fl-border)', paddingTop: 14 }}>
-        <label style={secLabel}>팀 지침 (AI 가 항상 준수 · admin){!canAdmin && <span style={{ fontWeight: 400, color: 'var(--fl-text-muted)' }}> — 읽기전용</span>}</label>
+        <label style={secLabel}>이 PC의 지침 (AI가 항상 준수){!canAdmin && <span style={{ fontWeight: 400, color: 'var(--fl-text-muted)' }}> — 읽기전용</span>}</label>
         <textarea value={instrValue} onChange={(e) => setInstrEdit(e.target.value)} disabled={!canAdmin}
           placeholder="예: 기본 API 는 https://api.acme.com. 인증 헤더는 Authorization: Bearer {{ TOKEN@secret }}. HTTP 는 서버 모드."
           style={{ ...mono, minHeight: 72, resize: 'vertical', width: '100%', opacity: canAdmin ? 1 : 0.6 }} />

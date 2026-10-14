@@ -12,6 +12,13 @@ if (!(Test-Path -LiteralPath $java)) { throw 'Java 21 JAVA_HOME을 지정하세�
 $lab = Join-Path $repo ('.run/mcp-resources-' + [Guid]::NewGuid().ToString('N'))
 $pcDir = Join-Path $lab 'pc'
 New-Item -ItemType Directory -Path $pcDir -Force | Out-Null
+# Keep a bootJar rebuild from replacing the running app's nested ZIP entries during this test.
+$serverBinary = Join-Path $lab 'flowlink-server.jar'
+$desktopBinary = Join-Path $lab 'flowlink-desktop.jar'
+Copy-Item -LiteralPath $serverJar -Destination $serverBinary
+Copy-Item -LiteralPath $desktopJar -Destination $desktopBinary
+$serverJar = $serverBinary
+$desktopJar = $desktopBinary
 $utf8 = [Text.UTF8Encoding]::new($false)
 $runs = [Collections.Generic.List[object]]::new()
 $checks = [Collections.Generic.List[string]]::new()
@@ -182,7 +189,7 @@ try {
     $script:protocolVersion = [string]$initialized.protocolVersion
     Initialized-Notification
     $catalog = Rpc 'tools/list'
-    Assert (@($catalog.tools).Count -eq 59) 'MCP 도구 목록은 59개여야 합니다.'
+    Assert (@($catalog.tools).Count -eq 60) 'MCP 도구 목록은 60개여야 합니다.'
     $previewTool = @($catalog.tools | Where-Object name -eq 'protocol_preview')
     $frameDirections = @($previewTool[0].inputSchema.properties.frameDirection.enum | Sort-Object)
     Assert ($previewTool.Count -eq 1 -and ($frameDirections -join ',') -eq 'recv,send' -and 'frameDirection' -notin $previewTool[0].inputSchema.required) 'MCP 전문 미리보기의 선택적 요청/응답 프레임 방향이 없습니다.'
@@ -193,10 +200,99 @@ try {
     Assert ($guide -match '연결 설정' -and $guide -match '연결 세션' -and $guide -match 'execution_get' -and $guide -match 'plugin_script_upsert') 'MCP 가이드에 화면별 기능과 저장·실행·승인 요청 동선이 없습니다.'
     Assert ($sessionTool[0].description -match '연결 세션') 'MCP 세션 도구 안내가 화면 메뉴와 일치하지 않습니다.'
     Checked 'authoring instructions + screen action mapping + saved-node and plugin test order'
-    Checked 'initialize + tools/list 59 + session extension schema + guide'
+    Checked 'initialize + tools/list 60 + session extension schema + guide'
     $protocolGuide = Tool flowlink_guide @{ topic = 'protocol' }
     Assert ($protocolGuide -match 'responseFraming' -and $protocolGuide -match 'idleTimeoutMs' -and $protocolGuide -match 'requestAckHex') 'MCP 프로토콜 가이드에 TCP 요청/응답 경계·연결 유지·ACK 계약이 없습니다.'
     Checked 'optional preview frameDirection enum + TCP protocol guide'
+
+    $status = Tool flowlink_status
+    foreach ($target in @('server', 'local')) {
+        $caps = $status.capabilities.$target
+        Assert ($caps.available -and 2 -in $caps.schemaVersions -and $caps.features.transactionFraming -eq 'supported' -and $caps.features.ackLengthOnly -eq 'supported' -and $caps.features.mockPreview -eq 'supported') "실제 $target 실행기의 v2 지원을 확인하지 못했습니다."
+        Assert ($caps.installedVersion -and $caps.installedVersion -ne 'unknown' -and $caps.limits.maxWireBytes -eq 1048576 -and $caps.limits.maxAckBytes -eq 1024) "실제 $target 설치 버전·한도가 없습니다."
+    }
+    $updateStatus = Tool flowlink_update_status
+    Assert ($updateStatus.local.installedVersion -eq $status.capabilities.local.installedVersion) '업데이트 상태가 실제 PC 보고 버전과 다릅니다.'
+    Checked 'actual server and connected PC capabilities + installed version separated from release'
+
+    $v2Fixture = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'fixtures/carrier-lgu-v2.json') -Raw | ConvertFrom-Json -AsHashtable -Depth 70
+    $v2ProtocolSpec = $v2Fixture.protocolSpec
+    $v2Before = @(Tool protocol_list)
+    $v2Checked = Tool protocol_upsert @{ name = 'mcp-v2-lgu'; spec = $v2ProtocolSpec; dryRun = $true }
+    Assert ($v2Checked.valid -and $v2Checked.schemaVersion -eq 2 -and $v2Checked.compiledSummary.transactions.Count -eq 9) 'v2 프로토콜 공통 컴파일 요약이 없습니다.'
+    $v2After = @(Tool protocol_list)
+    Assert ($v2Before.Count -eq $v2After.Count -and @($v2After | Where-Object name -eq 'mcp-v2-lgu').Count -eq 0) '프로토콜 dryRun이 정의를 생성했습니다.'
+    $v2Protocol = Tool protocol_upsert @{ name = 'mcp-v2-lgu'; spec = $v2ProtocolSpec }
+    $v2Stored = Tool protocol_get @{ id = $v2Protocol.id }
+    Assert ($v2Stored.spec.transactions.Count -eq 9 -and $v2Stored.spec.ackMessages[0].key -eq 'ack') 'v2 거래·ACK 레이아웃 round-trip이 손실됐습니다.'
+    $v2Request = Tool protocol_preview @{ protocolId = $v2Protocol.id; transactionKey = 'G1'; values = $v2Fixture.request.values }
+    Assert ($v2Request.total -eq 624 -and @($v2Request.errors).Count -eq 0 -and $v2Request.phase -eq 'request') 'v2 거래 요청 조립이 실패했습니다.'
+    $v2Parsed = Tool protocol_preview @{ protocolId = $v2Protocol.id; transactionKey = 'G1'; action = 'parse'; bytesB64 = $v2Request.bytesB64 }
+    Assert ($v2Parsed.hex -eq $v2Request.hex -and $v2Parsed.total -eq 624 -and @($v2Parsed.errors).Count -eq 0) 'v2 조립→파싱 byte round-trip이 실패했습니다.'
+    $v2Ack = Tool protocol_preview @{ protocolId = $v2Protocol.id; transactionKey = 'G1'; phase = 'responseAck'; requestFields = $v2Fixture.request.values }
+    $v2AckParsed = Tool protocol_preview @{ protocolId = $v2Protocol.id; transactionKey = 'G1'; phase = 'responseAck'; action = 'parse'; bytesB64 = $v2Ack.bytesB64; requestFields = $v2Fixture.request.values }
+    Assert ($v2Ack.total -eq 30 -and $v2AckParsed.total -eq 30 -and @($v2AckParsed.errors).Count -eq 0) 'v2 독립 ACK 30B 조립·수신 계약이 실패했습니다.'
+    $v2Invalid = $v2ProtocolSpec | ConvertTo-Json -Depth 70 -Compress | ConvertFrom-Json -AsHashtable -Depth 70
+    $v2Invalid.transactions[0].unsupportedFraming = $true
+    $v2Rejected = Rpc 'tools/call' @{ name = 'protocol_upsert'; arguments = @{ name = 'must-not-exist'; spec = $v2Invalid; dryRun = $true } }
+    $v2RejectionText = @($v2Rejected.content | Where-Object type -eq 'text' | ForEach-Object text) -join "`n"
+    Assert ($v2Rejected.isError -and $v2RejectionText.Contains('INVALID_SCHEMA') -and $v2RejectionText.Contains('transactions[0].unsupportedFraming') -and $v2RejectionText.Contains('repairHint')) '지원하지 않는 v2 필드가 구조화 오류 없이 버려졌습니다.'
+    $v2Malformed = Tool protocol_preview @{ protocolId = $v2Protocol.id; transactionKey = 'G1'; action = 'parse'; bytesB64 = '%%%invalid%%%' }
+    Assert (@($v2Malformed.errors).Count -gt 0 -and $v2Malformed.total -eq 0) '잘못된 Base64가 정상 프레임으로 처리됐습니다.'
+    Checked 'v2 protocol dryRun no write + nine transactions round-trip + request parse + 30B ACK + structured repair errors'
+
+    $v2Port = Free-Port
+    $v2Spec = $v2Fixture.mockSpec
+    $v2Spec.tcp.port = $v2Port; $v2Spec.tcp.protocolId = [string]$v2Protocol.id
+    $v2MocksBefore = @(Rest pc GET "/api/v1/mock-servers?workspaceId=$pcSpace").data
+    $v2MockCheck = Tool mock_upsert @{ target = 'local'; name = 'MCP v2 LGU'; slug = 'mcp-v2-lgu'; type = 'TCP'; spec = $v2Spec; enabled = $true; dryRun = $true }
+    Assert ($v2MockCheck.valid -and $v2MockCheck.schemaVersion -eq 2) 'TCP Mock dryRun 검증이 실패했습니다.'
+    $v2MocksAfter = @(Rest pc GET "/api/v1/mock-servers?workspaceId=$pcSpace").data
+    Assert (@($v2MocksBefore | Where-Object { $null -ne $_ }).Count -eq @($v2MocksAfter | Where-Object { $null -ne $_ }).Count -and @($v2MocksAfter | Where-Object slug -eq 'mcp-v2-lgu').Count -eq 0) 'TCP Mock dryRun이 정의를 저장했습니다.'
+    $probe = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, $v2Port)
+    try { $probe.Start() } finally { $probe.Stop() }
+    $v2Mock = Tool mock_upsert @{ target = 'local'; name = 'MCP v2 LGU'; slug = 'mcp-v2-lgu'; type = 'TCP'; spec = $v2Spec; enabled = $true }
+    $v2StateBefore = Tool mock_state @{ target = 'local'; slug = $v2Mock.slug }
+    $v2LogsBefore = @(Tool mock_log @{ target = 'local'; slug = $v2Mock.slug; limit = 100 })
+    $v2Preview = Tool mock_preview @{ target = 'local'; slug = $v2Mock.slug; type = 'TCP'; request = @{ key = 'G1:request'; values = $v2Fixture.request.values } }
+    $v2StateAfter = Tool mock_state @{ target = 'local'; slug = $v2Mock.slug }
+    $v2LogsAfter = @(Tool mock_log @{ target = 'local'; slug = $v2Mock.slug; limit = 100 })
+    $v2SessionsAfter = @(Tool mock_tcp_sessions @{ target = 'local'; slug = $v2Mock.slug })
+    Assert (!$v2Preview.sideEffects -and $v2Preview.transactionKey -eq 'G1' -and $v2Preview.request.wireLength -eq 624 -and $v2Preview.response.wireLength -eq 266) 'TCP Mock 미리보기의 거래·길이 계획이 잘못됐습니다.'
+    Assert (($v2StateBefore | ConvertTo-Json -Depth 20 -Compress) -eq ($v2StateAfter | ConvertTo-Json -Depth 20 -Compress) -and $v2LogsBefore.Count -eq $v2LogsAfter.Count -and $v2SessionsAfter.Count -eq 0) 'TCP Mock 미리보기가 state/seq/log/연결을 변경했습니다.'
+    $v2Sent = Tool mock_send @{ target = 'local'; slug = $v2Mock.slug; transactionKey = 'G1'; values = $v2Fixture.request.values }
+    Assert ($v2Sent.transportStatus -eq 'SUCCEEDED' -and $v2Sent.executionId -and $v2Sent.response.bytes -eq 266 -and $v2Sent.response.body.echoTid -eq $v2Fixture.request.values.tid -and $v2Sent.response.hex -eq $v2Preview.response.hex) 'v2 실제 전송과 미리보기 응답이 다릅니다.'
+    Assert ($v2Sent.steps[-1].phase -eq 'COMPLETE' -and @($v2Sent.steps | Where-Object { $_.phase -eq 'RESPONSE_ACK' -and $_.status -eq 'SUCCEEDED' -and $_.actualBytes -eq 30 }).Count -eq 1) 'v2 마지막 ACK 완료 단계가 없습니다.'
+    $v2Execution = Tool execution_get @{ target = 'local'; id = $v2Sent.executionId; full = $true }
+    Assert ($v2Execution.execution.id -eq $v2Sent.executionId -and $v2Execution.execution.status -eq 'SUCCEEDED' -and $v2Execution.execution.protocolFingerprint -and $v2Execution.execution.definitionVersion -eq $v2Mock.currentVersion -and $v2Execution.execution.retention -match '32MB') 'v2 시험 실행의 원본 버전·fingerprint·보존 제한을 조회하지 못했습니다.'
+    Checked 'v2 Mock dryRun no definition/listener + preview no state/log/wire + actual 624B/266B/30B ACK + execution snapshot'
+
+    # A server-owned execution is deliberately not registered in the new PC dispatcher. Only the synthetic claim below can receive it.
+    $claimNode = @{ id = 'claim'; type = 'tcp'; executionAgent = 'local'; protocolId = $v2Protocol.id; tcpHost = '127.0.0.1'; tcpPort = $v2Port; tcpTimeoutMs = 1000
+        tcpMessage = 'G1:request'; tcpResponseMessage = 'G1:response'; tcpValues = $v2Fixture.request.values; agentOutputs = @('result', 'echoTid') }
+    $claimFlow = Tool flow_upsert @{ target = 'server'; name = 'MCP simulated old PC claim guard'; graph = @{ nodes = @(@{ id = 'start'; type = 'start' }, $claimNode, @{ id = 'end'; type = 'end' }); edges = @(@{ from = 'start'; to = 'claim' }, @{ from = 'claim'; to = 'end' }) } }
+    $claimLogsBefore = @(Tool mock_log @{ target = 'local'; slug = $v2Mock.slug; limit = 100 })
+    foreach ($case in @(@{ code = 'CAPABILITY_UNKNOWN'; report = $null }, @{ code = 'UNSUPPORTED_CAPABILITY'; report = @{ schemaVersions = @(1); features = @{} } })) {
+        $syntheticDevice = 'old-pc-' + [Guid]::NewGuid().ToString('N')
+        $claimRun = Rest server POST "/api/v1/flows/$($claimFlow.flowId)/runs?workspaceId=public" @{ agentDeviceId = $syntheticDevice; resourceWorkspaceId = 'public'; envSource = 'server'; env = @{} }
+        Assert ($claimRun.code -eq 200 -and $claimRun.data.pendingAgent.taskId) '구형 PC claim 시험 작업을 만들지 못했습니다.'
+        $claimBody = @{ deviceId = $syntheticDevice }
+        if ($null -ne $case.report) { $claimBody.runtimeCapabilities = $case.report }
+        $claimResult = Rest server POST "/api/v1/agent/tasks/$($claimRun.data.pendingAgent.taskId)/claim" $claimBody
+        Assert ($claimResult.code -eq 200 -and $claimResult.data.status -eq 'FAILED' -and $claimResult.data.error.StartsWith($case.code) -and !$claimResult.data.request -and !$claimResult.data.claimToken) '구형·미지원 PC가 v2 전송 패킷을 받았습니다.'
+        $claimAgain = Rest server POST "/api/v1/agent/tasks/$($claimRun.data.pendingAgent.taskId)/claim" $claimBody
+        Assert ($claimAgain.data.status -in @('FAILED', 'ACKED') -and !$claimAgain.data.request) '구형 PC 반복 claim이 새 전송 패킷을 받았습니다.'
+        $claimDeadline = [DateTime]::UtcNow.AddSeconds(5)
+        do {
+            $claimExecution = Rest server GET "/api/v1/executions/$($claimRun.data.id)"
+            if ($claimExecution.data.status -eq 'FAILED') { break }
+            Start-Sleep -Milliseconds 100
+        } while ([DateTime]::UtcNow -lt $claimDeadline)
+        Assert ($claimExecution.data.status -eq 'FAILED') 'PC 기능 거부가 원본 실행에 반영되지 않고 대기에 남습니다.'
+    }
+    $claimLogsAfter = @(Tool mock_log @{ target = 'local'; slug = $v2Mock.slug; limit = 100 })
+    Assert ($claimLogsBefore.Count -eq $claimLogsAfter.Count) '거부한 PC claim에서 실제 TCP 요청이 발생했습니다.'
+    Checked 'REST old or explicitly unsupported PC claim fails before packet/token/socket + repeats stay terminal'
 
     $envName = 'mcp-shared-env'
     $null = Tool env_put @{ target = 'local'; name = $envName; vars = @{ ORIGIN = 'pc-marker' } }
@@ -256,6 +352,13 @@ try {
     $tcpNodes = @(@{ id = 'start'; type = 'start' }, $tcpFirst, @{ id = 'hold1'; type = 'input'; waitFields = @(@{ key = 'go'; type = 'string' }) }, $tcpSecond, @{ id = 'hold2'; type = 'input'; waitFields = @(@{ key = 'go'; type = 'string' }) }, @{ id = 'end'; type = 'end' })
     $tcpEdges = @(); for ($i = 1; $i -lt $tcpNodes.Count; $i++) { $tcpEdges += @{ from = $tcpNodes[$i - 1].id; to = $tcpNodes[$i].id } }
     $tcpFlow = Tool flow_upsert @{ target = 'local'; name = 'MCP retained TCP'; graph = @{ nodes = $tcpNodes; edges = $tcpEdges } }
+    $tcpFlowSaved = Tool flow_get @{ target = 'local'; id = $tcpFlow.flowId }
+    Assert ($tcpFlowSaved.graph.layoutDirection -eq 'TB' -and @($tcpFlowSaved.graph.nodes | Where-Object type -eq 'assert').Count -eq 0 -and $tcpFlowSaved.graph.nodes.Count -eq $tcpNodes.Count) 'MCP 저장이 한눈에 보는 TB 배치 또는 요청하지 않은 검증 노드 금지를 지키지 않습니다.'
+    $tcpFlowStart = @($tcpFlowSaved.graph.nodes | Where-Object id -eq 'start')[0]
+    $tcpFlowFirst = @($tcpFlowSaved.graph.nodes | Where-Object id -eq 'first')[0]
+    $tcpFlowEnd = @($tcpFlowSaved.graph.nodes | Where-Object id -eq 'end')[0]
+    Assert ($tcpFlowStart.y -lt $tcpFlowFirst.y -and $tcpFlowFirst.y -lt $tcpFlowEnd.y -and [Math]::Abs($tcpFlowStart.x - $tcpFlowEnd.x) -lt 1) 'MCP START→TCP→END의 진행 순서·중심 배치가 잘못됐습니다.'
+    Checked 'MCP workflow TB layout preserves requested nodes and adds no gratuitous ASSERT'
     $tcpRun = Tool flow_run @{ target = 'local'; id = $tcpFlow.flowId; timeoutSec = 45 }
     Assert ($tcpRun.execution.pendingInput.nodeId -eq 'hold1') 'MCP 첫 TCP 노드 이후 입력 대기에 도달하지 못했습니다.'
     $tcpFirstPorts = @(Get-NetTCPConnection -OwningProcess $pc.process.Id -RemotePort $tcpPort -State Established -ErrorAction SilentlyContinue | Select-Object -ExpandProperty LocalPort)
@@ -364,7 +467,7 @@ try {
             $cleanupPassed = $false
         } finally { $run.process.Dispose() }
     }
-    $result = @{ passed = $passed -and $cleanupPassed; mcpProtocolTested = $true; expectedToolCount = 59; negotiatedProtocolVersion = $script:protocolVersion; checks = @($checks); failurePhase = if ($passed) { $null } else { $stage }; failureReason = $failureReason; cleanupPassed = $cleanupPassed; serverPort = $serverPort; pcPort = $pcPort; isolatedDirectory = $lab; userDataTouched = $false; ideAutoConfigure = $false }
+    $result = @{ passed = $passed -and $cleanupPassed; mcpProtocolTested = $true; expectedToolCount = 60; negotiatedProtocolVersion = $script:protocolVersion; checks = @($checks); failurePhase = if ($passed) { $null } else { $stage }; failureReason = $failureReason; cleanupPassed = $cleanupPassed; serverPort = $serverPort; pcPort = $pcPort; isolatedDirectory = $lab; userDataTouched = $false; ideAutoConfigure = $false }
     [IO.File]::WriteAllText((Join-Path $lab 'results.json'), ($result | ConvertTo-Json -Depth 8), $utf8)
 }
 Assert ($passed -and $cleanupPassed) "MCP resource smoke 실패. 비밀값을 지운 results/log를 확인하세요: $lab"

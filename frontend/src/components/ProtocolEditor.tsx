@@ -23,6 +23,8 @@ import { ResourceScopeNote } from './ResourceScopeNote'
 import { useUnsavedNavigation } from './UnsavedNavigation'
 import { ui } from '../design/ui'
 import { relTime } from '../lib/format'
+import { ProtocolTransactionsEditor } from './ProtocolTransactionsEditor'
+import { ProtocolPlanPreview, ProtocolValidationPanel } from './ProtocolPlanPreview'
 
 const ENCODINGS = ['EUC-KR', 'MS949', 'UTF-8', 'US-ASCII']
 
@@ -46,9 +48,9 @@ export function ProtocolEditor({ detail, canEdit, onSaved }: { detail: ProtocolD
   const [aiOpen, setAiOpen] = useState(false)
   const [messageSearch, setMessageSearch] = useState('')
   const previewSelect = useRef<HTMLSelectElement>(null)
-  const { isGuest } = useAuth()
-  const aiMe = useQuery({ queryKey: ['admin', 'me', 'central', scope.remoteKey], queryFn: adminApi.me, enabled: scope.connected, staleTime: 30_000 })
-  const aiPending = aiMe.data?.myStatus === 'PENDING'
+  const { isGuest, desktop } = useAuth()
+  const aiMe = useQuery({ queryKey: ['admin', 'me', 'central', scope.remoteKey], queryFn: adminApi.me, enabled: !desktop && scope.connected, staleTime: 30_000 })
+  const aiPending = !desktop && aiMe.data?.myStatus === 'PENDING'
   const ro = !canEdit
 
   const setSpec = (s: ProtocolSpec) => { setSpecRaw(s); setDirty(true) }
@@ -126,8 +128,8 @@ export function ProtocolEditor({ detail, canEdit, onSaved }: { detail: ProtocolD
   const bodyLen = msg ? tableLen(msg.fields) : 0
   const nums = lengthNumbers(spec, tab)
   const lengthFields = spec.header.filter((f) => f.type === 'length')
-  const usesLength = [framingOf(spec), framingOf(spec, true)].some(frame => tcpOption(frame.mode, 'length') === 'length')
-  const oddKeys = !spec.discriminator && spec.messages.some((m) => m.key !== 'request' && m.key !== 'response')
+  const usesLength = (spec.schemaVersion === 2 ? (spec.transactions ?? []).flatMap(transaction => [transaction.framing ?? framingOf(spec), transaction.responseFraming ?? framingOf(spec, true)]) : [framingOf(spec), framingOf(spec, true)]).some(frame => tcpOption(frame.mode, 'length') === 'length')
+  const oddKeys = spec.schemaVersion !== 2 && !spec.discriminator && spec.messages.some((m) => m.key !== 'request' && m.key !== 'response')
 
   return (
     <div style={{ height: '100%', overflowY: 'auto', minWidth: 0, width: '100%', boxSizing: 'border-box' }}>
@@ -174,6 +176,7 @@ export function ProtocolEditor({ detail, canEdit, onSaved }: { detail: ProtocolD
           <div style={secTitle}>TCP 송수신</div>
           <TransportEditor spec={spec} patch={patch} readOnly={ro} />
         </section>
+        <ProtocolTransactionsEditor spec={spec} patch={patch} readOnly={ro} codecs={codecList} frameEditor={(label, frame, onChange) => <FrameControls label={label} frame={frame} readOnly={ro} onChange={onChange} />} />
         <section style={section}>
           <div style={secTitle}>{usesLength ? '길이 필드와 전문 구분' : '전문 구분'}</div>
           {usesLength && <>
@@ -217,9 +220,9 @@ export function ProtocolEditor({ detail, canEdit, onSaved }: { detail: ProtocolD
           </div>
           </>}
           <label style={row}>
-            <span style={lbl}>분기 필드</span>
+            <span style={lbl}>{spec.schemaVersion === 2 ? 'v1 분기 필드' : '분기 필드'}</span>
             <select aria-label="분기 필드" value={spec.discriminator} disabled={ro} onChange={(e) => patch({ discriminator: e.target.value })} style={sel}>
-              <option value="">(없음 — request/response)</option>
+              <option value="">{spec.schemaVersion === 2 ? '(없음 — 거래의 요청·응답 전문 사용)' : '(없음 — request/response)'}</option>
               {!!spec.discriminator && !spec.header.some((f) => f.name === spec.discriminator) && <option value={spec.discriminator}>{spec.discriminator} (헤더에 없음)</option>}
               {spec.header.map((f) => <option key={f.name} value={f.name}>{f.name}</option>)}
             </select>
@@ -297,7 +300,8 @@ export function ProtocolEditor({ detail, canEdit, onSaved }: { detail: ProtocolD
         {pluginsAllowed ? <MessagePlugins spec={spec} patch={patch} codecs={codecList} readOnly={ro} /> : (spec.messagePlugins?.length ?? 0) > 0 && <section style={section}><p>플러그인은 공용·팀 공간에서만 사용할 수 있습니다.</p><button disabled={ro} onClick={() => patch({ messagePlugins: [] })}>기존 메시지 플러그인 제거</button></section>}
 
         {/* ⑥ 미리보기 */}
-        <PreviewSection spec={spec} tab={tab} selectionRef={previewSelect} />
+        <ProtocolValidationPanel spec={spec} />
+        {spec.schemaVersion === 2 ? <ProtocolPlanPreview spec={spec} selectionRef={previewSelect} /> : <PreviewSection spec={spec} tab={tab} selectionRef={previewSelect} />}
       </div>
 
       {pasting && msg && (
@@ -316,13 +320,18 @@ export function TransportEditor({ spec, patch, readOnly }: { spec: ProtocolSpec;
   const connection = tcpOption(transport.connection, 'once')
   const invalid = validateTcpSettings(spec)
   return <div style={{ display: 'grid', gap: 14 }}>
-    <p style={{ ...hint, margin: 0 }}>한 전문의 끝을 어디서 판단할지 정하세요. 요청과 응답의 길이 방식이 다르면 응답을 따로 설정할 수 있습니다.</p>
+    <p style={{ ...hint, margin: 0 }}>{spec.schemaVersion === 2 ? '거래별 경계와 ACK가 우선합니다. 아래 공통 경계는 해당 거래에서 공통 경계를 선택한 경우에만 사용합니다.' : '한 전문의 끝을 어디서 판단할지 정하세요. 요청과 응답의 길이 방식이 다르면 응답을 따로 설정할 수 있습니다.'}</p>
+    <details open={spec.schemaVersion !== 2 || !!spec.framing || !!spec.responseFraming}>
+      <summary style={{ fontSize: 13, cursor: 'pointer' }}>공통 기본 경계</summary>
+      <div style={{ display: 'grid', gap: 10, marginTop: 8 }}>
     <FrameControls label="요청" frame={framingOf(spec)} readOnly={readOnly} onChange={value => setFrame(false, value)} />
     <label style={radioRow}>
       <input type="checkbox" checked={!spec.responseFraming} disabled={readOnly} onChange={e => patch({ responseFraming: e.target.checked ? undefined : { ...framingOf(spec) } })} />
       응답 경계는 요청과 동일
     </label>
     {spec.responseFraming && <FrameControls label="응답" frame={spec.responseFraming} readOnly={readOnly} onChange={value => setFrame(true, value)} />}
+      </div>
+    </details>
     <label style={row}>
       <span style={lbl}>연결 방식</span>
       <select aria-label="TCP 연결 방식" style={sel} value={connection} disabled={readOnly} onChange={e => patch({ transport: { ...transport, connection: e.target.value as 'once' | 'execution' } })}>
@@ -336,14 +345,15 @@ export function TransportEditor({ spec, patch, readOnly }: { spec: ProtocolSpec;
       <input aria-label="유휴 연결 제한 초" style={{ ...input, width: 145 }} type="number" min={1} max={3600} step={0.001} value={transport.idleTimeoutMs === 0 ? '' : (transport.idleTimeoutMs ?? 30_000) / 1000} readOnly={readOnly} onChange={e => patch({ transport: { ...transport, idleTimeoutMs: Math.round(Number(e.target.value) * 1000) } })} />
       <span style={hint}>1~3,600초 · Mock과 연결을 유지하는 TCP 노드에 적용합니다. 다음 요청 없이 이 시간이 지나면 연결을 종료합니다.</span>
     </label>
-    <details open={!!transport.requestAckHex || !!transport.responseAckHex}>
+    {(spec.schemaVersion !== 2 || !!transport.requestAckHex || !!transport.responseAckHex) && <details open={!!transport.requestAckHex || !!transport.responseAckHex}>
       <summary style={{ cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>고정 ACK · 4-way 통신</summary>
       <div style={{ display: 'grid', gap: 8, marginTop: 8 }}>
+        {spec.schemaVersion === 2 && <p role="alert" style={{ ...hint, color: 'var(--fl-fail)' }}>거래별 ACK와 충돌합니다. 기존 고정 ACK를 비운 뒤 거래별 ACK에서 설정하세요.</p>}
         <p style={{ ...hint, margin: 0 }}>요청 전송 → 요청 ACK 수신 → 응답 수신 → 응답 ACK 전송 순서입니다. 규격에 없는 ACK는 비워 두세요.</p>
         <label style={row}><span style={lbl}>요청 ACK</span><input aria-label="요청 ACK 기대값 HEX" style={{ ...input, width: 220, fontFamily: 'var(--fl-font-mono)' }} value={transport.requestAckHex ?? ''} placeholder="예: 06" readOnly={readOnly} onChange={e => patch({ transport: { ...transport, requestAckHex: e.target.value || undefined } })} /><span style={hint}>서버에서 받을 정확한 바이트 · HEX · 최대 1,024 B</span></label>
         <label style={row}><span style={lbl}>응답 ACK</span><input aria-label="응답 ACK 송신값 HEX" style={{ ...input, width: 220, fontFamily: 'var(--fl-font-mono)' }} value={transport.responseAckHex ?? ''} placeholder="예: 06" readOnly={readOnly} onChange={e => patch({ transport: { ...transport, responseAckHex: e.target.value || undefined } })} /><span style={hint}>응답을 받은 뒤 보낼 바이트 · HEX · 최대 1,024 B</span></label>
       </div>
-    </details>
+    </details>}
     {invalid.length > 0 && <div role="alert" style={{ fontSize: 12, color: 'var(--fl-fail)', lineHeight: 1.7 }}>{invalid.map(message => <div key={message}>{message}</div>)}</div>}
   </div>
 }
@@ -415,7 +425,7 @@ function MessagePlugins({ spec, patch, codecs, readOnly }: { spec: ProtocolSpec;
 
 /** ⑥ 백엔드 조립 미리보기 — 저장 없이 현재 편집 중 spec 으로. */
 function PreviewSection({ spec, tab, selectionRef }: { spec: ProtocolSpec; tab: string; selectionRef?: RefObject<HTMLSelectElement | null> }) {
-  const { activeEnvName, prepareForRun } = useEnvironment('server')
+  const { activeEnvName, ensureEnvLoaded } = useEnvironment('server')
   const envStore = useEnvStore('server')
   const { scopeKey } = useWorkspace()
 
@@ -425,12 +435,14 @@ function PreviewSection({ spec, tab, selectionRef }: { spec: ProtocolSpec; tab: 
   const [frameDirection, setFrameDirection] = useState<'send' | 'recv'>(() => previewDirection(tab))
   const [values, setValues] = useState<Record<string, string>>({})
   const [fieldSearch, setFieldSearch] = useState('')
+  const [action, setAction] = useState<'assemble' | 'parse'>('assemble')
+  const [bytesB64, setBytesB64] = useState('')
   useEffect(() => { setKey(tab); setFrameDirection(previewDirection(tab)) }, [tab])
   // 전문이 바뀌면 값은 비운다 — 이름이 같아도 다른 전문의 값이 따라오면 안 된다
   useEffect(() => { setValues({}); setFieldSearch('') }, [key])
   const fields = fieldsOf(spec, key)
   // 현재 전문에 있는(길이 자동 제외) 필드만 보낸다 — 전문을 바꾸면 남아 있던 값이 따라가지 않게
-  const signature = JSON.stringify([scopeKey, spec, key, frameDirection, values, envStore.active, envStore.envs[envStore.active ?? '']])
+  const signature = JSON.stringify([scopeKey, spec, key, frameDirection, values, action, bytesB64, envStore.active, envStore.envs[envStore.active ?? '']])
   const target = useRef(signature)
   target.current = signature
   const mounted = useRef(false)
@@ -440,9 +452,9 @@ function PreviewSection({ spec, tab, selectionRef }: { spec: ProtocolSpec; tab: 
       const snapshot = attempt
       const current = () => mounted.current && target.current === snapshot
       try {
-        await prepareForRun()
+        await ensureEnvLoaded()
         if (!current()) return undefined
-        const result = await protocolsApi.preview({ spec, key, frameDirection, environment: activeEnvName(), values: Object.fromEntries(fields.filter((f) => f.type !== 'length').map((f) => [f.name, values[f.name] ?? ''])) })
+        const result = await protocolsApi.preview({ spec, key, frameDirection, action, environment: activeEnvName(), ...(action === 'parse' ? { bytesB64 } : { values: Object.fromEntries(fields.filter((f) => f.type !== 'length').map((f) => [f.name, values[f.name] ?? ''])) }) })
         return current() ? { signature: snapshot, result } : undefined
       } catch (error) { if (current()) throw error; return undefined }
     },
@@ -454,7 +466,7 @@ function PreviewSection({ spec, tab, selectionRef }: { spec: ProtocolSpec; tab: 
   return (
     <section style={section}>
       <div style={secTitle}>미리보기</div>
-      <form onSubmit={e => { e.preventDefault(); if (key && !preview.isPending) preview.mutate(signature) }}>
+      <form onSubmit={e => { e.preventDefault(); if (key && !preview.isPending && (action !== 'parse' || bytesB64.trim())) preview.mutate(signature) }}>
       <div style={{ ...row, marginBottom: 10 }}>
         <select ref={selectionRef} aria-label="미리보기 전문" value={key} onChange={(e) => { setKey(e.target.value); setFrameDirection(previewDirection(e.target.value)) }} style={sel}>
           {spec.messages.map((m) => <option key={m.key} value={m.key}>{m.key}{m.label ? ` · ${m.label}` : ''}</option>)}
@@ -462,10 +474,13 @@ function PreviewSection({ spec, tab, selectionRef }: { spec: ProtocolSpec; tab: 
         <label style={row}><span style={lbl}>미리보기 방향</span><select aria-label="미리보기 방향" style={sel} value={frameDirection} onChange={e => setFrameDirection(e.target.value as 'send' | 'recv')}>
           <option value="send">요청 전문</option><option value="recv">응답 전문</option>
         </select></label>
-        <button type="submit" disabled={!key || preview.isPending} title={!key ? '조립할 전문을 먼저 선택하세요.' : '저장·전송 없이 현재 입력으로 조립합니다. 입력 후 Enter로도 조립할 수 있습니다.'} style={primaryBtn}>{preview.isPending ? '조립 중…' : '조립'}</button>
+        <select aria-label="미리보기 동작" style={sel} value={action} onChange={e => setAction(e.target.value as 'assemble' | 'parse')}><option value="assemble">필드로 조립</option><option value="parse">바이트 해석·검증</option></select>
+        <button type="submit" disabled={!key || preview.isPending || (action === 'parse' && !bytesB64.trim())} title={!key ? '조립할 전문을 먼저 선택하세요.' : '저장·전송 없이 현재 입력을 확인합니다. 입력 후 Enter로도 확인할 수 있습니다.'} style={primaryBtn}>{preview.isPending ? '확인 중…' : action === 'parse' ? '해석·검증' : '조립'}</button>
         {preview.isError && preview.variables === signature && <span role="alert" style={{ fontSize: 12, color: 'var(--fl-fail)' }}>⚠ {apiErrorMessage(preview.error)}</span>}
       </div>
-      <p style={{ ...hint, margin: '0 0 10px' }}>저장·전송 없이 현재 입력으로 조립합니다. 값 입력 후 Enter를 누르세요. 선택한 방향의 경계 설정을 사용하며, 전문 키가 response 또는 :response로 끝나면 응답을 먼저 선택합니다.</p>
+      <p style={{ ...hint, margin: '0 0 10px' }}>저장·전송 없이 현재 입력을 확인합니다. 선택한 방향의 경계와 저장된 서버 환경을 사용하며 환경 값도 저장하지 않습니다. 값 입력 후 Enter를 누르세요.</p>
+      {action === 'parse' && <textarea aria-label="해석할 전문 Base64" value={bytesB64} onChange={e => setBytesB64(e.target.value)} rows={4} placeholder="수신한 완전한 프레임 · Base64" style={{ ...input, width: '100%', fontFamily: 'var(--fl-font-mono)', marginBottom: 12 }} />}
+      {action === 'assemble' && <>
       {(fields.length > 5 || fieldSearch) && <input type="search" aria-label="미리보기 필드 검색" value={fieldSearch} onChange={e => setFieldSearch(e.target.value)} placeholder={`필드 이름 검색 · ${fields.length}개`} style={{ ...input, width: 'min(420px, 100%)', marginBottom: 8, boxSizing: 'border-box' }} />}
       <div style={{ display: 'grid', gap: 5, maxWidth: 880, maxHeight: 320, overflowY: 'auto', padding: 2 }}>
         {fields.filter(f => f.name.toLocaleLowerCase().includes(fieldSearch.trim().toLocaleLowerCase())).map((f) => {
@@ -482,6 +497,7 @@ function PreviewSection({ spec, tab, selectionRef }: { spec: ProtocolSpec; tab: 
         })}
         {fieldSearch && !fields.some(f => f.name.toLocaleLowerCase().includes(fieldSearch.trim().toLocaleLowerCase())) && <p role="status" style={hint}>일치하는 필드가 없습니다.</p>}
       </div>
+      </>}
       </form>
       {preview.data && !result && <p role="status" style={hint}>입력이나 전문 설정이 바뀌었습니다. 다시 조립해 최신 결과를 확인하세요.</p>}
       {result && (

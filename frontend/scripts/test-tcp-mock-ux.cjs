@@ -20,6 +20,15 @@ function fixture() {
   const jsx = (type, props) => typeof type === 'function' ? type(props) : ({ type, props })
   const exported = {}, helpers = {}
   vm.runInNewContext(compile(source('lib/protocolSpec.ts')), { exports: helpers, TextEncoder })
+  const transfer = {}, nodePanel = {}
+  vm.runInNewContext(compile(source('components/TcpTransferSteps.tsx')), { exports: transfer, require: name => name === 'react/jsx-runtime' ? { jsx, jsxs: jsx } : {} })
+  vm.runInNewContext(compile(source('panels/TcpNodePanel.tsx')), { exports: nodePanel, require: name => ({
+    '../design/ui': { ui: {} }, '../lib/protocolSpec': helpers, 'react/jsx-runtime': { jsx, jsxs: jsx }, 'react-router-dom': { Link: 'link' },
+    '../binding/TokenInput': { TokenInput: 'token-input' },
+    '../components/AgentSettings': { useNodeResources: () => ({ available: true, key: ['public'], api: { protocolsApi: { list() {} } } }) },
+    '../app/WorkspaceContext': { useWorkspace: () => ({ current: { origin: 'local', id: 'local' } }) },
+    '@tanstack/react-query': { useQuery: options => options.queryKey.includes('protocol') ? { data: { spec }, isSuccess: true } : { data: [{ id: 'protocol', name: 'test' }], isSuccess: true } },
+  })[name] ?? {} })
   const api = { tcpSend: (id, body) => { requests.push({ id, body: plain(body) }); return result.promise } }
   vm.runInNewContext(compile(source('components/TcpMockEditor.tsx')), {
     exports: exported,
@@ -37,12 +46,12 @@ function fixture() {
         return { isPending: pending, mutate: () => { pending = true; return options.mutationFn() } }
       }, useQueryClient: () => ({ invalidateQueries: options => invalidations.push(plain(options.queryKey)) }) },
       '../lib/protocolSpec': helpers, '../lib/mockSources': { tcpMockSources: () => [] },
-      '../binding/TokenInput': { TokenInput: 'token-input' }, '../panels/TcpNodePanel': { FieldRow: 'field-row', PreviewBox: 'preview' },
-      '../lib/apiError': { apiErrorMessage: error => error.message }, '../design/ui': { ui: {} }, './toast': {}, '../lib/format': {},
+      '../binding/TokenInput': { TokenInput: 'token-input' }, '../panels/TcpNodePanel': { FieldRow: 'field-row', PreviewBox: 'preview', integerValueError: nodePanel.integerValueError }, './TcpTransferSteps': transfer,
+      '../lib/apiError': { apiErrorMessage: error => error.message }, '../design/ui': { ui: {} }, './toast': {}, '../lib/format': { relTime: () => '방금' },
     })[name] ?? {},
   })
   const spec = { encoding: 'US-ASCII', header: [], discriminator: '', messages: [{ key: 'request', fields: [{ name: 'value', len: 4, type: 'ascii' }] }, { key: 'response', fields: [{ name: 'value', len: 4, type: 'ascii' }] }], framing: { mode: 'fixed', fixedLength: 4 }, transport: { idleTimeoutMs: 60000 } }
-  return { ...exported, requests, invalidations, result, saved, spec, query,
+  return { ...exported, ...nodePanel, ...transfer, requests, invalidations, result, saved, spec, query,
     render: component => { index = 0; return component() },
     send: () => { index = 0; return exported.TcpSendPanel({ mockId: 'mock', spec, ensureSaved: () => saved.promise }) },
     get mutation() { return mutation },
@@ -120,6 +129,88 @@ test('TCP send navigation while saving skips transmission and ignores late resul
   f.mutation.onSuccess({ response: {} })
   f.mutation.onError(new Error('late error'))
   assert.equal(f.invalidations.length, 0)
+})
+
+function v2Spec(spec) {
+  Object.assign(spec, { schemaVersion: 2, header: [{ name: 'code', len: 2, type: 'ascii' }, { name: 'tid', len: 9, type: 'ascii' }],
+    messages: [{ key: 'bill:request', fields: [{ name: 'amount', len: 8, type: 'integer', endian: 'big', signed: false }] }, { key: 'bill:response', fields: [{ name: 'result', len: 2, type: 'ascii' }] }, { key: 'cancel:request', fields: [{ name: 'reason', len: 5, type: 'ascii' }] }, { key: 'cancel:response', fields: [{ name: 'cancelResult', len: 2, type: 'ascii' }] }],
+    transactions: [{ key: 'bill', when: [{ field: 'code', op: 'eq', value: 'G1' }], requestMessage: 'bill:request', responseMessage: 'bill:response', requestAck: null, responseAck: { send: { kind: 'hex', hex: '00'.repeat(30) }, receive: { kind: 'length-only', lengthBytes: 30 }, timeoutMs: 1000 } }, { key: 'cancel', when: [{ field: 'code', op: 'eq', value: 'H1' }], requestMessage: 'cancel:request', responseMessage: 'cancel:response', requestAck: null, responseAck: null }] })
+}
+
+test('v2 TCP rule transaction selection preserves business conditions and uses its exact response layout', () => {
+  const f = fixture(), updates = []; v2Spec(f.spec)
+  const rule = { id: 'rule', when: [{ field: 'code', op: 'eq', value: 'G1' }, { field: 'amount', op: 'ne', value: '0' }], then: { mode: 'mock', fields: { result: '00' } } }
+  const render = readOnly => f.render(() => f.TcpRuleDetail({ rule, index: 0, total: 1, spec: f.spec, secrets: [], readOnly, onChange: patch => updates.push(plain(patch)) }))
+  let tree = render(false)
+  assert.equal(control(tree, '규칙 대상 거래').props.value, 'bill')
+  assert.equal(f.responseMessageOf(rule, f.spec).key, 'bill:response')
+  assert.match(text(tree), /응답 ACK.*30 B 수신/)
+  control(tree, '규칙 대상 거래').props.onChange({ target: { value: 'cancel' } })
+  assert.deepEqual(updates[0], { when: [{ field: 'code', op: 'eq', value: 'H1' }, { field: 'amount', op: 'ne', value: '0' }] })
+  tree = render(true)
+  assert.equal(control(tree, '규칙 대상 거래').props.disabled, true)
+  control(tree, '규칙 대상 거래').props.onChange({ target: { value: 'cancel' } })
+  assert.equal(updates.length, 1, 'read-only also guards the transaction handler')
+  rule.then.fields.code = 'G1'; tree = render(false)
+  control(tree, 'code 값').props.onChange('')
+  assert.deepEqual(updates[1].then.fields, { result: '00' }, 'clearing response header restores request echo instead of sending an empty header')
+})
+
+test('v2 send chooses transaction, preserves decimal strings and shows failed ACK after the business response', async () => {
+  const f = fixture(); v2Spec(f.spec)
+  let tree = f.send()
+  assert.match(text(tree), /선택 거래 bill.*code=G1.*자동/)
+  const integerInput = walk(tree, node => node.type === 'field-row' && node.props.f.name === 'amount')[0]
+  integerInput.props.onChange('18446744073709551615')
+  tree = f.send()
+  const pending = f.mutation.mutationFn(); f.saved.resolve(true)
+  await new Promise(resolve => setImmediate(resolve))
+  assert.deepEqual(f.requests[0], { id: 'mock', body: { key: 'bill:request', transactionKey: 'bill', values: { tid: '', amount: '18446744073709551615' } } })
+  const response = { request: {}, elapsedMs: 15, transactionKey: 'bill', executionId: 'execution-12345', transportStatus: 'FAILED', warnings: ['재시작하면 이력이 사라집니다.'],
+    error: { code: 'ACK_EOF', phase: 'RESPONSE_ACK', expectedBytes: 30, actualBytes: 1, repairHint: '기존 실행을 조회하세요.' },
+    steps: [{ phase: 'REQUEST_ACK', status: 'SKIPPED', actualBytes: 0, role: 'client', durationMs: 0 }, { phase: 'RESPONSE', status: 'SUCCEEDED', actualBytes: 266, role: 'client', durationMs: 1 }, { phase: 'RESPONSE_ACK', status: 'FAILED', expectedBytes: 30, actualBytes: 1, role: 'client', durationMs: 2, errorCode: 'ACK_EOF' }],
+    response: { key: 'bill:response', bytes: 266, partial: false, chunks: [], warnings: [], header: {}, body: { result: '00' }, text: 'BUSINESS OK', hex: '' } }
+  f.result.resolve(response); await pending
+  f.mutation.onSuccess(response); f.finish()
+  tree = f.send()
+  assert.match(text(tree), /전송 미완료.*응답 ACK.*ACK_EOF.*1 \/ 30 B/)
+  assert.match(text(tree), /BUSINESS OK/)
+  assert.match(text(tree), /재시작하면 이력이 사라집니다/)
+  assert.match(text(tree), /실행 ID execution-12345/)
+  const steps = control(tree, 'TCP 전송 단계')
+  assert.match(text(steps), /요청 ACK생략.*응답완료.*응답 ACK실패/)
+})
+
+test('integer input counts fixed wire bytes and checks unsigned 8-byte bounds without Number conversion', () => {
+  const f = fixture(), field = { name: 'amount', type: 'integer', len: 8, endian: 'big', signed: false }
+  assert.equal(f.integerValueError(field, '18446744073709551615'), null)
+  assert.match(f.integerValueError(field, '18446744073709551616'), /범위/)
+  assert.match(f.integerValueError(field, '1.5'), /10진/)
+  assert.match(f.integerValueError(field, '-1'), /범위/)
+  assert.equal(f.integerValueError(field, '{{amount@start}}'), null)
+})
+
+test('v2 node message selection fills visible blanks, fixes header conditions and selects matching response outputs', () => {
+  const f = fixture(), changes = []; v2Spec(f.spec)
+  const node = { protocolId: 'protocol', tcpMessage: '', tcpValues: {}, tcpHost: '127.0.0.1', tcpPort: 19000 }
+  const tree = f.render(() => f.TcpRequestPanel({ node, update: patch => changes.push(plain(patch)), sources: [], canEdit: true, preview: null, previewErr: null, onPreview() {} }))
+  control(tree, '송신 전문').props.onChange({ target: { value: 'bill:request' } })
+  assert.deepEqual(changes[0], { tcpMessage: 'bill:request', tcpValues: { code: 'G1', tid: '', amount: '' }, tcpResponseMessage: 'bill:response', outputs: [{ key: 'code', type: 'string' }, { key: 'tid', type: 'string' }, { key: 'result', type: 'string' }] })
+  const selected = { ...node, ...changes[0] }
+  const response = f.render(() => f.TcpResponsePanel({ node: selected, update() {}, canEdit: true }))
+  assert.match(text(control(response, '거래 응답 전문')), /bill:response/)
+  assert.equal(control(response, '응답 전문'), undefined, 'the declared transaction fixes the response layout')
+})
+
+test('ACK traffic exposes phase and partial bytes without offering a business rule draft', () => {
+  const f = fixture()
+  f.query.data = [{ at: '2026-10-14T00:00:00Z', dir: 'in', source: 'mock', key: 'bill', transactionKey: 'bill', phase: 'RESPONSE_ACK', status: 'FAILED', actualBytes: 1, expectedBytes: 30, errorCode: 'ACK_EOF', validationMode: 'length-only', durationMs: 12, fields: {}, text: 'partial', hex: '00', bytes: 1, chunks: null, ruleId: 'rule', note: null, level: 'error' }]
+  let tree = f.render(() => f.TcpLogPanel({ mockId: 'mock', onMakeRule() {} }))
+  assert.match(text(tree), /응답 ACK · 실패.*ACK_EOF.*1 \/ 30 B/)
+  walk(tree, node => node.type === 'button' && node.props['aria-expanded'] === false)[0].props.onClick()
+  tree = f.render(() => f.TcpLogPanel({ mockId: 'mock', onMakeRule() {} }))
+  assert.match(text(tree), /길이만 수신/)
+  assert.doesNotMatch(text(tree), /규칙 초안/)
 })
 
 const editorTree = ts.createSourceFile('MockServerEditor.tsx', source('routes/MockServerEditor.tsx'), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)

@@ -20,6 +20,7 @@ class McpResourceRoutingTest {
     private var serverError: RuntimeException? = null
     private var sessionError: RuntimeException? = null
     private var environments = true
+    private var v2Protocol = false
     private val server = McpInvocation("http://127.0.0.1:18080", "Bearer synthetic", "server", "team")
     private val local = server.copy(target = "local", workspaceId = "pc")
     private val rest = mock(McpRestClient::class.java) { call ->
@@ -29,9 +30,11 @@ class McpResourceRoutingTest {
             if (request.context.target == "local") pcError?.let { throw it } else serverError?.let { throw it }
             if (request.path.contains("/tcp-sessions")) sessionError?.let { throw it }
             when {
+                request.path.endsWith("/validate") -> json("""{"valid":true,"schemaVersion":2,"requiredCapabilities":["transactionFraming"]}""")
+                request.path == "/mock-servers/upsert" -> json("""{"id":"mock"}""")
                 request.path == "/workspaces" -> json(if (request.context.target == "local") """[{"id":"pc","kind":"PERSONAL"}]""" else """[{"id":"public","kind":"PUBLIC"},{"id":"team","kind":"TEAM"}]""")
                 request.path == "/environments" -> json(if (!environments) "[]" else if (request.context.target == "local") """[{"name":"same","vars":{"ORIGIN":"PC","PC_ONLY":"yes"}}]""" else """[{"name":"same","vars":{"ORIGIN":"SERVER","SERVER_ONLY":"yes"}}]""")
-                request.path == "/protocols" -> json("""[{"id":"public-protocol","name":"shared"}]""")
+                request.path == "/protocols" -> json(if (v2Protocol) """[{"id":"v2","name":"shared","schemaVersion":2,"requiredCapabilities":["transactionFraming"]}]""" else """[{"id":"public-protocol","name":"shared"}]""")
                 request.path == "/flows" && request.method == "POST" -> json("""{"id":"flow"}""")
                 request.path == "/flows/flow" -> mapper.createObjectNode().apply { put("id", "flow"); set<JsonNode>("graph", graph) }
                 request.path == "/flows/flow/versions" && request.method == "GET" -> json("""[{"id":"original-version","versionNo":1}]""")
@@ -63,6 +66,21 @@ class McpResourceRoutingTest {
             assertEquals("/schemas", requests.single().path)
             assertEquals("server", requests.single().context.target)
         }
+    }
+
+    @Test fun `omitted TCP execution agent checks owning PC while explicit server checks server before transmission`() {
+        v2Protocol = true
+        graph = json("""{"resourceWorkspaceId":"public","nodes":[{"id":"tcp","type":"tcp","protocolId":"v2"}],"edges":[]}""")
+        val error = assertThrows(IllegalArgumentException::class.java) { tools.invoke("flow_run", args("""{"id":"flow"}"""), local) }
+        assertTrue(error.message!!.contains("CAPABILITY_UNKNOWN"))
+        assertEquals("local", requests.single { it.path == "/runtime/capabilities" }.context.target)
+        assertFalse(requests.any { it.method == "POST" })
+        requests.clear()
+        (graph.path("nodes").path(0) as ObjectNode).put("executionAgent", "server")
+        val serverError = assertThrows(IllegalArgumentException::class.java) { tools.invoke("flow_run", args("""{"id":"flow"}"""), local) }
+        assertTrue(serverError.message!!.contains("CAPABILITY_UNKNOWN"))
+        assertEquals("server", requests.single { it.path == "/runtime/capabilities" }.context.target)
+        assertFalse(requests.any { it.method == "POST" })
     }
 
     @Test fun `central tool scopes ignore legacy PC team selectors without a PC lookup`() {
@@ -219,14 +237,14 @@ class McpResourceRoutingTest {
 
     @Test fun `Mock editing preserves legacy private spec while new and explicit source use public`() {
         tools.invoke("mock_upsert", args("""{"slug":"same","spec":{"tcp":{"protocolId":"private-old"}}}"""), local)
-        var saved = requests.last { it.path.endsWith("/spec") }.body!!.path("spec")
+        var saved = requests.last { it.path == "/mock-servers/upsert" }.body!!.path("spec")
         assertFalse(saved.has("resourceWorkspaceId")); assertFalse(saved.has("envSource")); assertEquals("private-old", saved.path("tcp").path("protocolId").asText())
         savedSpec = json("""{"resourceWorkspaceId":"public","envSource":"server","resourceIdentity":{"serverUrl":"https://actual.example","login":"alice"},"routes":[]}""")
         requests.clear(); tools.invoke("mock_upsert", args("""{"slug":"same","spec":{"routes":[]}}"""), local)
-        saved = requests.last { it.path.endsWith("/spec") }.body!!.path("spec")
+        saved = requests.last { it.path == "/mock-servers/upsert" }.body!!.path("spec")
         assertEquals("server", saved.path("envSource").asText()); assertEquals("public", saved.path("resourceWorkspaceId").asText()); assertFalse(saved.has("resourceIdentity"))
         exists = false; requests.clear(); tools.invoke("mock_upsert", args("""{"slug":"new","spec":{"routes":[]}}"""), local)
-        saved = requests.last { it.path.endsWith("/spec") }.body!!.path("spec")
+        saved = requests.last { it.path == "/mock-servers/upsert" }.body!!.path("spec")
         assertEquals("public", saved.path("resourceWorkspaceId").asText()); assertEquals("local", saved.path("envSource").asText())
         requests.clear(); assertThrows(IllegalArgumentException::class.java) { tools.invoke("mock_upsert", args("""{"slug":"invalid","spec":{"envSource":"local","routes":[]}}"""), server) }
         assertFalse(requests.any { it.method in setOf("POST", "PUT") })

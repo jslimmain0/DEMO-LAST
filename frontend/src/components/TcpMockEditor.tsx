@@ -12,16 +12,18 @@ import type { BindableSource } from '../binding/upstream'
 import { apiErrorMessage } from '../lib/apiError'
 import { toast } from './toast'
 import { relTime } from '../lib/format'
-import { byteLen, framingSummary, lintTcpRules, requestKeys, transportSummary, withOffsets } from '../lib/protocolSpec'
+import { byteLen, framingSummary, lintTcpRules, requestKeys, transactionForRule, transportSummary, withOffsets } from '../lib/protocolSpec'
 import { tcpMockSources } from '../lib/mockSources'
-import { FieldRow, PreviewBox } from '../panels/TcpNodePanel'
+import { FieldRow, PreviewBox, integerValueError } from '../panels/TcpNodePanel'
 import { ui } from '../design/ui'
+import { TcpTransferSteps, tcpPhaseLabel } from './TcpTransferSteps'
 
 const COND_OPS: NonNullable<MockTcpCond['op']>[] = ['eq', 'ne', 'contains', 'startswith', 'endswith', 'regex', 'exists']
 const OP_LABEL: Record<string, string> = { eq: '=', ne: '≠', contains: '⊃', startswith: '^', endswith: '$', regex: '~', exists: '있음' }
 
 /** 규칙이 응답할 전문 키(분기 필드 값, 분기 없으면 'response'). */
 export function responseKeyOf(rule: MockTcpRuleSpec, spec: ProtocolSpec | undefined): string {
+  if (spec?.schemaVersion === 2) return transactionForRule(spec, rule)?.responseMessage ?? ''
   if (!spec?.discriminator) return 'response'
   return rule.then?.fields?.[spec.discriminator] ?? ''
 }
@@ -29,6 +31,7 @@ export function responseKeyOf(rule: MockTcpRuleSpec, spec: ProtocolSpec | undefi
 export function responseMessageOf(rule: MockTcpRuleSpec, spec: ProtocolSpec | undefined) {
   const key = responseKeyOf(rule, spec)
   if (!spec || !key) return undefined
+  if (spec.schemaVersion === 2) return spec.messages.find(message => message.key === key)
   return spec.messages.find((m) => m.key === `${key}:response`) ?? spec.messages.find((m) => m.key === key)
 }
 
@@ -132,16 +135,27 @@ export function TcpRuleDetail({ rule, index, total, spec, secrets, envKeys, read
   const mode = rule.then?.mode ?? 'mock'
   const fields = rule.then?.fields ?? {}
   const respKey = responseKeyOf(rule, spec)
+  const transaction = spec?.schemaVersion === 2 ? transactionForRule(spec, rule) : undefined
   const msg = responseMessageOf(rule, spec)
   const allNames = useMemo(() => (spec ? [...new Set([...spec.header, ...spec.messages.flatMap((m) => m.fields)].map((f) => f.name))] : []), [spec])
   const setCond = (i: number, patch: Partial<MockTcpCond>) => onChange({ when: conds.map((c, ci) => (ci === i ? { ...c, ...patch } : c)) })
-  const setField = (name: string, v: string) => onChange({ then: { ...(rule.then ?? { mode: 'mock' }), mode, fields: { ...fields, [name]: v } } })
+  const setField = (name: string, v: string) => {
+    const next = { ...fields, [name]: v }
+    if (v === '' && spec?.header.some(field => field.name === name)) delete next[name]
+    onChange({ then: { ...(rule.then ?? { mode: 'mock' }), mode, fields: next } })
+  }
   const setMode = (m: 'mock' | 'proxy') => onChange({ then: { ...(rule.then ?? { mode: m }), mode: m } })
   const setRespKey = (key: string) => {
     if (!spec?.discriminator) return
     onChange({ then: { ...(rule.then ?? { mode: 'mock' }), mode: 'mock', fields: { ...fields, [spec.discriminator]: key } } })
   }
   const setFault = (patch: Partial<MockTcpFault>) => onChange({ fault: { ...(rule.fault ?? {}), ...patch } })
+  const setTransaction = (key: string) => {
+    const selected = spec?.transactions?.find(item => item.key === key)
+    if (!selected || readOnly) return
+    const selectionNames = new Set(spec?.transactions?.flatMap(item => item.when.map(condition => condition.field)))
+    onChange({ when: [...selected.when.map(condition => ({ ...condition })), ...conds.filter(condition => !selectionNames.has(condition.field ?? ''))] })
+  }
   // lintTcpRules 는 필드를 항상 `'이름'` 으로 인용한다 — 인용 없이 매칭하면 '금액' 이 '총금액' 경고를 가져온다
   const warnFor = (name: string) => lints.find((l) => l.includes(`'${name}'`))
   // 표에 그릴 행 — 헤더(length 제외) + 응답 본문 필드 + 정의에 없는데 값이 남아 있는 필드
@@ -163,6 +177,15 @@ export function TcpRuleDetail({ rule, index, total, spec, secrets, envKeys, read
       {/* 조건 */}
       <div style={{ ...box, marginTop: 10 }}>
         <div style={boxTitle}>⬇ 조건 (AND)</div>
+        {spec?.schemaVersion === 2 && <div style={{ display: 'grid', gap: 6, margin: '8px 0 12px' }}>
+          <label style={{ ...lbl, display: 'grid', gap: 5 }}>대상 거래
+            <select style={{ ...input, width: '100%', minWidth: 0 }} aria-label="규칙 대상 거래" value={transaction?.key ?? ''} disabled={readOnly} onChange={event => setTransaction(event.target.value)}>
+              <option value="" disabled>거래를 고르면 헤더 선택 조건이 채워집니다</option>
+              {spec.transactions?.map(item => <option key={item.key} value={item.key}>{item.key} · {item.requestMessage} → {item.responseMessage}</option>)}
+            </select>
+          </label>
+          <span style={hint}>거래의 프레임 길이·ACK는 프로토콜을 따릅니다. 아래에서 추가 업무 조건과 응답 값을 편집하세요.</span>
+        </div>}
         <datalist id="tcp-fields">{allNames.map((n) => <option key={n} value={n} />)}</datalist>
         {conds.length === 0 && <div style={{ ...meta, marginTop: 6 }}>조건 없음 — 모든 전문에 매칭됩니다.</div>}
         {conds.map((c, i) => (
@@ -201,7 +224,10 @@ export function TcpRuleDetail({ rule, index, total, spec, secrets, envKeys, read
           </p>
         ) : (
           <div style={{ marginTop: 8 }}>
-            {spec?.discriminator ? (
+            {spec?.schemaVersion === 2 ? <div style={{ display: 'grid', gap: 4 }}>
+              <span style={meta}>{transaction ? <>응답 전문 <code style={code}>{transaction.responseMessage}</code></> : '대상 거래를 먼저 고르면 응답 필드가 표시됩니다.'}</span>
+              {transaction && <span style={meta}>요청 ACK · {transaction.requestAck ? transaction.requestAck.send.kind === 'message' ? '필드 조립 송신' : '고정 HEX 송신' : '없음'} / 응답 ACK · {transaction.responseAck ? transaction.responseAck.receive.kind === 'length-only' ? `${transaction.responseAck.receive.lengthBytes} B 수신` : transaction.responseAck.receive.kind === 'fields' ? '필드 비교' : 'HEX 일치' : '없음'}</span>}
+            </div> : spec?.discriminator ? (
               <div style={row}>
                 <span style={{ ...lbl, minWidth: 70 }}>응답 전문</span>
                 <select style={{ ...input, width: 220, flex: '1 1 160px', minWidth: 0, maxWidth: '100%' }} value={respKey} disabled={readOnly || !spec} aria-label="응답 전문" onChange={(e) => setRespKey(e.target.value)}>
@@ -215,7 +241,7 @@ export function TcpRuleDetail({ rule, index, total, spec, secrets, envKeys, read
             )}
             {spec && (msg || headerRows.length > 0) && (
               <div style={{ display: 'grid', gap: 4, marginTop: 8 }}>
-                {headerRows.map((f) => <FieldValueRow key={`h-${f.name}`} f={f} kind="header" spec={spec} value={fields[f.name] ?? ''} disc={f.name === spec.discriminator} readOnly={readOnly} sources={sources} warn={warnFor(f.name)} onChange={(v) => setField(f.name, v)} />)}
+                {headerRows.map((f) => <FieldValueRow key={`h-${f.name}`} f={f} kind="header" spec={spec} value={fields[f.name] ?? ''} disc={spec.schemaVersion !== 2 && f.name === spec.discriminator} readOnly={readOnly} sources={sources} warn={warnFor(f.name)} onChange={(v) => setField(f.name, v)} />)}
                 {(msg?.fields ?? []).map((f) => <FieldValueRow key={f.name} f={f} kind="body" spec={spec} value={fields[f.name] ?? ''} readOnly={readOnly} sources={sources} warn={warnFor(f.name)} onChange={(v) => setField(f.name, v)} />)}
                 {orphans.map((k) => (
                   <div key={k} style={{ ...row, border: '1px solid var(--fl-fail)', borderRadius: 'var(--fl-radius-sm)', padding: '4px 8px' }}>
@@ -269,19 +295,21 @@ function FieldValueRow({ f, kind, spec, value, disc, readOnly, sources, warn, on
   f: ProtocolField; kind: 'header' | 'body'; spec: ProtocolSpec; value: string; disc?: boolean; readOnly?: boolean
   sources: ReturnType<typeof tcpMockSources>; warn?: string; onChange: (v: string) => void
 }) {
-  const bytes = value.includes('{{') ? null : byteLen(value, spec.encoding)
+  const binary = value.replace(/[\s:]/g, '')
+  const bytes = value.includes('{{') || f.type === 'integer' ? null : f.type === 'binary' ? /^(?:[a-fA-F0-9]{2})*$/.test(binary) ? binary.length / 2 : null : byteLen(value, spec.encoding)
+  const fieldWarning = warn ?? (f.type === 'integer' && (kind === 'body' || value !== '') ? integerValueError(f, value) : null)
   return (
-    <div style={{ ...row, border: `1px solid ${warn ? 'var(--fl-fail)' : 'var(--fl-border)'}`, borderRadius: 'var(--fl-radius-sm)', padding: '5px 8px', alignItems: 'center' }}>
+    <div style={{ ...row, border: `1px solid ${fieldWarning ? 'var(--fl-fail)' : 'var(--fl-border)'}`, borderRadius: 'var(--fl-radius-sm)', padding: '5px 8px', alignItems: 'center' }}>
       <span style={{ fontSize: 12, fontWeight: 600, width: 130, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={f.name}>{f.name}</span>
-      <span style={{ ...meta, width: 92, fontVariantNumeric: 'tabular-nums' }}>{f.type} {bytes == null ? '?' : bytes}/{f.len} B</span>
+      <span style={{ ...meta, minWidth: 92, fontVariantNumeric: 'tabular-nums' }} title={f.type === 'integer' ? '10진 문자열 입력 · 정수 wire 길이는 고정입니다.' : undefined}>{f.type} {f.type === 'integer' ? `${f.len} B 고정` : `${bytes ?? '?'}/${f.len} B`}</span>
       {disc ? (
         <code style={{ ...code, flex: 1 }}>{value || '(응답 전문 미선택)'}</code>
       ) : (
         <div style={{ flex: '1 1 160px', minWidth: 0 }}>
-          <TokenInput readOnly={readOnly} ariaLabel={`${f.name} 값`} value={value} sources={sources} placeholder={kind === 'header' ? '비우면 요청 에코' : '비우면 빈 값(패딩)'} onChange={onChange} />
+          <TokenInput readOnly={readOnly} ariaLabel={`${f.name} 값`} value={value} sources={sources} placeholder={kind === 'header' ? '비우면 요청 에코' : f.type === 'integer' ? '10진 정수 문자열 · 예: 130' : '값 또는 { } 데이터 삽입'} onChange={onChange} />
         </div>
       )}
-      {warn && <span style={{ fontSize: 11, color: 'var(--fl-fail)', maxWidth: 220 }}>{warn}</span>}
+      {fieldWarning && <span role="alert" style={{ fontSize: 11, color: 'var(--fl-fail)', maxWidth: 220 }}>{fieldWarning}</span>}
     </div>
   )
 }
@@ -289,7 +317,7 @@ function FieldValueRow({ f, kind, spec, value, disc, readOnly, sources, warn, on
 // ---------- 전문 로그 ----------
 
 /** 폴링으로 목록이 갈리므로 펼침 상태는 인덱스가 아니라 행 내용으로 식별한다(같은 키가 행 key 이기도 하다). */
-const rowKey = (e: TcpLogEntry): string => `${e.at}|${e.dir}|${e.bytes}|${e.hex || e.text}`
+const rowKey = (e: TcpLogEntry): string => `${e.at}|${e.dir}|${e.phase ?? ''}|${e.transactionKey ?? ''}|${e.bytes}|${e.hex || e.text}`
 /** 완전히 같은 전문이 같은 ms 에 두 번 찍혔을 때만 인덱스를 덧붙인다(최후 수단). */
 const rowKeys = (rows: TcpLogEntry[]): string[] => {
   const seen = new Set<string>()
@@ -344,23 +372,26 @@ function LogRow({ e, open, protocolId, onToggle, onMakeRule }: { e: TcpLogEntry;
   const undefinedMsg = e.dir === 'in' && !!e.note?.includes('본문 스키마 없음')
   return (
     <div style={{ border: '1px solid var(--fl-border)', borderRadius: 6, overflow: 'hidden', background: bg }}>
-      <button type="button" aria-expanded={open} onClick={onToggle} style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '5px 10px', background: 'transparent', border: 'none', cursor: 'pointer', textAlign: 'left', color: 'var(--fl-text)' }}>
+      <button type="button" aria-expanded={open} onClick={onToggle} style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8, width: '100%', padding: '5px 10px', background: 'transparent', border: 'none', cursor: 'pointer', textAlign: 'left', color: 'var(--fl-text)' }}>
         <span style={{ ...meta, minWidth: 74 }}>{hhmmss(e.at)}</span>
-        <span style={{ fontSize: 13, fontWeight: 800, color: e.dir === 'in' ? 'var(--fl-text)' : 'var(--fl-text-muted)' }} title={e.dir === 'in' ? '수신' : '송신'}>{e.dir === 'in' ? '→' : '←'}</span>
+        <span style={{ fontSize: 13, fontWeight: 800, color: e.dir === 'in' ? 'var(--fl-text)' : 'var(--fl-text-muted)' }} title={e.dir === 'in' ? '수신' : '송신'}>{e.status === 'SKIPPED' || e.phase === 'COMPLETE' ? '·' : e.dir === 'in' ? '→' : '←'}</span>
         <span style={{ ...tag, color: srcColor, borderColor: srcColor }}>[{e.source}]</span>
         <b style={{ fontFamily: 'var(--fl-font-mono)', fontSize: 12, minWidth: 44 }}>{e.key ?? '—'}</b>
+        {e.phase && <span style={tag}>{tcpPhaseLabel(e.phase)}{e.status === 'SKIPPED' ? ' · 생략' : e.status === 'FAILED' ? ' · 실패' : ''}</span>}
+        {e.errorCode && <code style={{ fontSize: 11, color: 'var(--fl-fail)', overflowWrap: 'anywhere' }}>{e.errorCode}</code>}
         <span style={{ ...meta, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={summary}>{summary}</span>
         {e.partial && <span style={{ ...tag, color: 'var(--fl-put, #f5a623)', borderColor: 'var(--fl-put, #f5a623)' }} title="한 전문이 여러 번에 나눠 도착">부분 수신{parts.length ? ` ${parts.join('+')}` : ''}</span>}
-        <span style={meta}>{e.bytes} B</span>
+        <span style={meta}>{e.actualBytes ?? e.bytes}{e.expectedBytes != null ? ` / ${e.expectedBytes}` : ''} B</span>
         <span style={meta}>{relTime(e.at)}</span>
       </button>
       {e.note && <div style={{ padding: '0 10px 5px 92px', fontSize: 11, color: e.level === 'error' ? 'var(--fl-fail)' : e.level === 'warn' ? 'var(--fl-put, #f5a623)' : 'var(--fl-text-muted)' }}>{e.note}</div>}
       {open && (
         <div style={{ padding: '0 10px 8px', display: 'grid', gap: 5 }}>
+          {e.phase && <TcpTransferSteps steps={[{ phase: e.phase, status: e.status ?? 'SUCCEEDED', actualBytes: e.actualBytes ?? e.bytes, expectedBytes: e.expectedBytes, durationMs: e.durationMs ?? 0, transactionKey: e.transactionKey, role: 'mock', direction: e.dir === 'in' ? 'RECEIVE' : 'SEND', validationMode: e.validationMode, errorCode: e.errorCode }]} />}
           <pre style={pre}>{e.text}</pre>
           <details><summary style={{ fontSize: 11, fontWeight: 600, color: 'var(--fl-text-muted)', cursor: 'pointer' }}>HEX</summary><pre style={pre}>{e.hex}</pre></details>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-            {e.dir === 'in' && onMakeRule && <button style={{ ...miniBtn, padding: '3px 8px' }} onClick={() => onMakeRule(e)} title="이 전문에 맞는 규칙 초안(전문 코드 eq 조건)">규칙 초안</button>}
+            {e.dir === 'in' && (!e.phase || e.phase === 'REQUEST') && onMakeRule && <button style={{ ...miniBtn, padding: '3px 8px' }} onClick={() => onMakeRule(e)} title="이 전문에 맞는 규칙 초안(전문 코드 eq 조건)">규칙 초안</button>}
             {undefinedMsg && protocolId && <Link to={`/protocols/${protocolId}?add=${encodeURIComponent(e.key ?? '')}`} style={linkStyle}>→ 이 코드로 본문 정의 만들기</Link>}
           </div>
         </div>
@@ -381,6 +412,7 @@ export function TcpSendPanel({ mockId, spec, ensureSaved }: { mockId: string; sp
 
   const qc = useQueryClient()
   const keys = spec ? requestKeys(spec) : []
+  const transactions = spec?.schemaVersion === 2 ? spec.transactions ?? [] : []
   const [key, setKey] = useState('')
   const [values, setValues] = useState<Record<string, string>>({})
   const [result, setResult] = useState<TcpSendResult | null>(null)
@@ -388,17 +420,20 @@ export function TcpSendPanel({ mockId, spec, ensureSaved }: { mockId: string; sp
   const active = useRef(true)
   const busy = useRef(false)
   useEffect(() => { active.current = true; return () => { active.current = false } }, [])
-  const sel = key || keys[0]?.key || ''
+  const selectedTransaction = spec?.schemaVersion === 2 ? transactions.find(transaction => transaction.key === key) ?? transactions[0] : undefined
+  const sel = selectedTransaction?.requestMessage ?? (keys.some(candidate => candidate.key === key) ? key : keys[0]?.key ?? '')
   const msg = spec?.messages.find((m) => m.key === sel)
   const offsets = spec && msg ? withOffsets(spec.header, msg.fields) : []
-  const headerRows = spec ? withOffsets([], spec.header).map((off, i) => ({ f: spec.header[i], off })).filter(({ f }) => f.type !== 'length' && f.name !== spec.discriminator) : []
+  const autoHeaders = new Set(selectedTransaction?.when.map(condition => condition.field) ?? [])
+  const headerRows = spec ? withOffsets([], spec.header).map((off, i) => ({ f: spec.header[i], off })).filter(({ f }) => f.type !== 'length' && f.name !== spec.discriminator && !autoHeaders.has(f.name)) : []
   const send = useMutation({
     mutationFn: async () => {
       busy.current = true
       setErr(null)
       if (!(await ensureSaved())) throw new Error('미저장 편집이 있습니다 — 먼저 저장하세요.')
       if (!active.current) throw new Error('선택한 Mock이 변경되었습니다.')
-      return mocksApi.tcpSend(mockId, { key: sel, values })
+      const requestValues = spec?.schemaVersion === 2 ? Object.fromEntries([...headerRows.map(({ f }) => f), ...(msg?.fields ?? [])].map(field => [field.name, values[field.name] ?? ''])) : values
+      return mocksApi.tcpSend(mockId, { key: sel, ...(selectedTransaction ? { transactionKey: selectedTransaction.key } : {}), values: requestValues })
     },
     onSuccess: (r) => { if (active.current) { setResult(r); setErr(null); void qc.invalidateQueries({ queryKey: ['mock-tcp-log', mockId] }) } },
     onError: (e) => { if (active.current) setErr(apiErrorMessage(e, '전송 실패')) },
@@ -409,14 +444,15 @@ export function TcpSendPanel({ mockId, spec, ensureSaved }: { mockId: string; sp
     <div className="fl-mock-sendbox" style={{ flex: 1, overflowY: 'auto', padding: '6px 12px 10px', display: 'grid', gap: 10, gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', alignItems: 'start' }}>
       <div style={{ display: 'grid', gap: 6 }}>
         <div style={row}>
-          <select style={{ ...input, flex: 1, minWidth: 0 }} value={sel} disabled={send.isPending} aria-label="보낼 전문" onChange={(e) => { setKey(e.target.value); setValues({}); setResult(null); setErr(null) }}>
-            {keys.map((m) => <option key={m.key} value={m.key}>{m.label}</option>)}
+          <select style={{ ...input, flex: 1, minWidth: 0 }} value={selectedTransaction?.key ?? sel} disabled={send.isPending} aria-label="보낼 전문" onChange={(e) => { setKey(e.target.value); setValues({}); setResult(null); setErr(null) }}>
+            {spec.schemaVersion === 2 ? transactions.map(transaction => <option key={transaction.key} value={transaction.key}>{transaction.key} · {transaction.requestMessage}</option>) : keys.map((m) => <option key={m.key} value={m.key}>{m.label}</option>)}
           </select>
           <button type="button" style={{ ...primaryBtn, flexShrink: 0 }} disabled={!sel || send.isPending} onClick={() => { if (!busy.current) { busy.current = true; send.mutate() } }}>{send.isPending ? '전송 중…' : '▶ 보내기'}</button>
         </div>
         {err && <div role="alert" style={{ fontSize: 12, color: 'var(--fl-fail)', overflowWrap: 'anywhere' }}>{err} 입력한 값은 유지됩니다. 확인 후 다시 보내세요.</div>}
         {send.isPending && <div role="status" style={hint}>설정을 저장한 뒤 전문을 전송하고 있습니다. 응답을 기다리는 동안 입력은 잠깁니다.</div>}
         <div style={meta}>값은 템플릿 없이 그대로 전송됩니다.</div>
+        {selectedTransaction && <div style={{ ...hint, margin: 0 }}>선택 거래 <b>{selectedTransaction.key}</b> → 응답 <code>{selectedTransaction.responseMessage}</code><br />헤더 조건 {selectedTransaction.when.map(condition => `${condition.field}=${condition.value}`).join(' · ')} 자동</div>}
         {headerRows.map(({ f, off }) => (
           <FieldRow key={`h-${f.name}`} f={f} offset={off} value={values[f.name] ?? ''} encoding={spec.encoding} sources={[]} canEdit={!send.isPending} hint="헤더" onChange={(v) => setValues({ ...values, [f.name]: v })} />
         ))}
@@ -432,6 +468,11 @@ export function TcpSendPanel({ mockId, spec, ensureSaved }: { mockId: string; sp
         </div>
         {!result ? <div style={{ ...meta, border: '1px dashed var(--fl-border)', borderRadius: 6, padding: 12 }}>전문을 보내면 요청 조립 결과와 응답이 여기에 표시됩니다.</div> : (
           <>
+            {result.warnings?.map((warning, index) => <p key={index} role="note" style={{ ...hint, margin: 0 }}>{warning}</p>)}
+            {result.transportStatus && <div role="status" style={{ fontSize: 12, color: result.transportStatus === 'FAILED' ? 'var(--fl-fail)' : 'var(--fl-ok)' }}>{result.transactionKey && `${result.transactionKey} · `}{result.transportStatus === 'FAILED' ? '전송 미완료 · 아래 실패 단계를 확인하세요.' : '전송 완료'}</div>}
+            {result.error && <div role="alert" style={{ ...hint, margin: 0, color: 'var(--fl-fail)' }}>{result.error.phase && `${tcpPhaseLabel(result.error.phase)} · `}{result.error.code}{result.error.expectedBytes != null && ` · ${result.error.actualBytes ?? 0} / ${result.error.expectedBytes} B`}{result.error.repairHint && <p style={{ margin: '4px 0' }}>{result.error.repairHint}</p>}</div>}
+            {!!result.steps?.length && <TcpTransferSteps steps={result.steps} />}
+            {result.executionId && <div style={{ ...hint, margin: 0, overflowWrap: 'anywhere' }}>실행 ID <code>{result.executionId}</code></div>}
             {result.response.warnings.map((w, i) => <div key={i} style={{ fontSize: 12, color: 'var(--fl-put, #f5a623)' }}>⚠ {w}</div>)}
             <FieldTableView title="헤더" rows={result.response.header} />
             {result.response.body ? <FieldTableView title="본문" rows={result.response.body} /> : <div style={meta}>본문 스키마 없음 — 아래 원문으로 확인하세요.</div>}

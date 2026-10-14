@@ -164,3 +164,34 @@ test('detail scopes queries, preserves TCP bodies, and distinguishes comparison 
   const count = notices.length, oldCancel = mutations.at(-1)
   render.unmount(); oldCancel.onError({ message: '이전 창 응답' }); assert.equal(notices.length, count)
 })
+
+test('UNKNOWN shows preserved masked response and TCP phases without rerunning or resuming the request', () => {
+  let requests = 0, retries = 0
+  const transfer = load('components/TcpTransferSteps.tsx', basics)
+  const { RunPanel } = load('panels/RunPanel.tsx', { ...basics,
+    '../components/TcpTransferSteps': transfer,
+    '../components/NodeExecutionLog': { LogBlock: 'log', outputText: node => JSON.stringify(node.output) },
+  }, { fetch() { requests++; throw new Error('display must not send a request') } })
+  const steps = [{ phase: 'RESPONSE', role: 'client', direction: 'RECEIVE', status: 'SUCCEEDED', actualBytes: 8, expectedBytes: 8, durationMs: 2 },
+    { phase: 'RESPONSE_ACK', role: 'client', direction: 'RECEIVE', status: 'FAILED', actualBytes: null, expectedBytes: 1, durationMs: null, validationMode: 'exact', errorCode: 'ACK_TIMEOUT' }]
+  const current = { id: 'uncertain', status: 'WAITING', nodes: [], pendingAgent: { nodeId: 'tcp', nodeName: '결제', agent: 'local', status: 'UNKNOWN', diagnostics: { responseFields: { resultCode: '00', token: '***' }, _tcpTransport: { transportStatus: 'UNKNOWN', steps, protocolFingerprint: 'safe-plan-hash' } } } }
+  const render = renderer(() => RunPanel({ execution: current, running: false, onClose() {}, onRetry() { retries++ } }))
+  let tree = render()
+  assert.match(text(tree), /자동으로 재실행하지 않습니다/)
+  assert.match(text(tree), /전체 처리가 완료됐다고 판단할 수 없습니다/)
+  const phaseView = walk(tree, node => node.type === transfer.TcpTransferSteps)[0]
+  const phaseTree = transfer.TcpTransferSteps(phaseView.props)
+  assert.match(text(phaseTree), /응답 ACK실패/)
+  assert.match(text(phaseTree), /ACK_TIMEOUT/)
+  const response = walk(tree, node => node.type === 'log' && node.props.title === '이미 받은 응답')[0]
+  assert.deepEqual(JSON.parse(response.props.text), { resultCode: '00', token: '***' })
+  render(); render.strictReplay(); render()
+  assert.equal(requests, 0); assert.equal(retries, 0, 'rendering and effect replay cannot retry an uncertain payment')
+  assert.equal(current.pendingAgent.status, 'UNKNOWN')
+  current.pendingAgent = null
+  current.nodes = [{ id: 'tcp-result', nodeId: 'tcp', nodeName: '결제', status: 'SUCCEEDED', outputJson: JSON.stringify({ _tcpTransport: { steps } }) }]
+  tree = render()
+  walk(tree, node => node.type === 'button' && node.props['aria-expanded'] === false)[0].props.onClick()
+  tree = render()
+  assert.equal(walk(tree, node => node.type === transfer.TcpTransferSteps)[0].props.steps.length, 2, 'saved transport metadata has the same phase view')
+})

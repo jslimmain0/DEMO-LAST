@@ -109,7 +109,7 @@ async function protocolPreview() {
   const signatureNode = find(previewTree, node => ts.isVariableDeclaration(node) && node.name.getText(previewTree) === 'signature')
   function signature(key, frameDirection) {
     const exported = {}
-    vm.runInNewContext(`exports.value = ${signatureNode.initializer.getText(previewTree)}`, { exports: exported, scopeKey: 'server:public', spec, key, frameDirection, values: {}, envStore: { active: 'dev', envs: { dev: {} } } })
+    vm.runInNewContext(`exports.value = ${signatureNode.initializer.getText(previewTree)}`, { exports: exported, scopeKey: 'server:public', spec, key, frameDirection, action: 'assemble', bytesB64: '', values: {}, envStore: { active: 'dev', envs: { dev: {} } } })
     return exported.value
   }
   assert.notEqual(signature('custom-reply', 'send'), signature('custom-reply', 'recv'), 'changing preview direction invalidates the prior result signature')
@@ -117,19 +117,19 @@ async function protocolPreview() {
     const frameDirection = override ?? protocolHelpers.previewDirection(key)
     const token = signature(key, frameDirection), calls = [], events = []
     const preview = options('components/ProtocolEditor.tsx', {
-      signature: token, mounted: { current: true }, target: { current: token }, spec, key, frameDirection,
+      signature: token, mounted: { current: true }, target: { current: token }, spec, key, frameDirection, action: 'assemble', bytesB64: '',
       fields: [{ name: 'code', type: 'ascii' }, { name: 'value', type: 'ascii' }, { name: 'length', type: 'length' }], values: { code: 'REQ1', value: 'PING', length: 'ignored', stale: 'ignored' },
-      prepareForRun: async () => { events.push('prepare') }, activeEnvName: () => 'dev', protocolsApi: { preview: async body => { events.push('request'); calls.push(body); return { total: 8, errors: [] } } },
+      ensureEnvLoaded: async () => { events.push('load') }, activeEnvName: () => 'dev', protocolsApi: { preview: async body => { events.push('request'); calls.push(body); return { total: 8, errors: [] } } },
     }, 'preview')
     const result = await preview.mutationFn()
     assert.equal(calls[0].frameDirection, expected)
     assert.equal(Object.hasOwn(calls[0], 'direction'), false, 'wire framing selection preserves the existing SEND codec contract')
     assert.deepEqual(JSON.parse(JSON.stringify(calls[0].values)), { code: 'REQ1', value: 'PING' }, 'only fields in the current message are sent')
-    assert.deepEqual(events, ['prepare', 'request'])
+    assert.deepEqual(events, ['load', 'request'], 'preview reads saved environment without saving it')
     assert.equal(result.signature, token)
   }
   const preparation = deferred(), staleCalls = [], target = { current: signature('REQ1', 'send') }
-  const stale = options('components/ProtocolEditor.tsx', { signature: target.current, mounted: { current: true }, target, spec, key: 'REQ1', frameDirection: 'send', fields: [], values: {}, prepareForRun: () => preparation.promise, activeEnvName: () => 'dev', protocolsApi: { preview: async body => { staleCalls.push(body) } } }, 'preview')
+  const stale = options('components/ProtocolEditor.tsx', { signature: target.current, mounted: { current: true }, target, spec, key: 'REQ1', frameDirection: 'send', action: 'assemble', bytesB64: '', fields: [], values: {}, ensureEnvLoaded: () => preparation.promise, activeEnvName: () => 'dev', protocolsApi: { preview: async body => { staleCalls.push(body) } } }, 'preview')
   const pending = stale.mutationFn()
   target.current = signature('REQ1', 'recv'); preparation.resolve()
   assert.equal(await pending, undefined)

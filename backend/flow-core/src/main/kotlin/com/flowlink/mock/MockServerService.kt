@@ -5,6 +5,7 @@ import com.flowlink.common.error.BadRequestException
 import com.flowlink.common.error.NotFoundException
 import com.flowlink.common.json.JsonService
 import com.flowlink.common.tcp.TcpBytes
+import com.flowlink.execution.engine.SecretMasker
 import com.flowlink.common.tenant.TenantContext
 import com.flowlink.core.domain.MockServer
 import com.flowlink.core.repository.MockServerRepository
@@ -14,6 +15,8 @@ import com.flowlink.mock.MockDtos.MockServerSummary
 import com.flowlink.mock.MockDtos.UpdateMockServerRequest
 import com.flowlink.protocol.Direction
 import com.flowlink.protocol.ProtocolCodec
+import com.flowlink.protocol.ProtocolCompiler
+import com.flowlink.protocol.ProtocolSpec
 import com.flowlink.protocol.ProtocolDtos
 import com.flowlink.protocol.TcpClient
 import org.springframework.stereotype.Service
@@ -42,7 +45,182 @@ class MockServerService(
     private val env: org.springframework.core.env.Environment,
     private val resourceWorkspace: com.flowlink.workspace.ResourceWorkspace,
     private val connection: org.springframework.beans.factory.ObjectProvider<com.flowlink.common.host.LocalServerConnection>? = null,
+    private val trials: MockTrialStore? = null,
 ) {
+
+    /** 검증과 미리보기는 정의·리스너·상태 저장소에 쓰지 않는다. */
+    fun validate(req: MockDtos.PlanRequest): ProtocolDtos.CompilationReport = try {
+        val wsId = workspace.resolveId(req.workspaceId)
+        workspace.requireRead(workspace.currentUsername(), wsId)
+        val raw = req.spec ?: throw BadRequestException("검증할 전체 spec이 필요합니다.")
+        if (raw.hasNonNull("resourceIdentity")) throw BadRequestException("resourceIdentity는 서버 소유 metadata입니다.")
+        val spec = parseSpec(normalizeResourceSpec(raw).toString())
+        if (raw.has("transactions") || raw.has("ackMessages") || raw.path("tcp").has("transactions") || raw.path("tcp").has("ackMessages"))
+            throw BadRequestException("transactions/ackMessages는 Mock이 아닌 ProtocolSpec에 저장하세요.")
+        if (req.type == "HTTP" && spec.tcp != null || req.type == "TCP" && spec.tcp == null) throw BadRequestException("type과 spec의 HTTP/TCP 종류가 다릅니다.")
+        val tcpDefinition = spec.tcp
+        if (req.enabled == true && tcpDefinition != null && tcpDefinition.protocolId.isNullOrBlank()) throw BadRequestException("TCP 활성화에는 프로토콜이 필요합니다.")
+        validateTcp(spec, wsId)
+        val scope = secretProvider.scope(tenant(), req.environment ?: spec.environment, cached = false, workspaceId = wsId, spec = spec)
+        val proto = previewProtocol(spec, scope, wsId, req.protocolSpec)
+        val compiled = proto?.let(ProtocolCompiler::compile)
+        val transformsUsed = (listOf(spec.codec) + spec.routesOrEmpty().map { it.codec }).flatMap { it?.request.orEmpty() + it?.response.orEmpty() }.mapNotNull { it.id }.filter { it.isNotBlank() }.distinct()
+        for (id in transformsUsed) if ((scope.transformLookup?.invoke(id) ?: transforms.get(id, resourceScope(spec, wsId)).orElse(null)) == null)
+            throw ProtocolCompiler.CompileException(listOf(ProtocolCompiler.ValidationError("PLUGIN_NOT_APPROVED", "codec", "필요한 승인 변환 플러그인이 없습니다.", "plugin_list에서 승인본 id를 확인하세요.")))
+        for (plugin in proto?.let(ProtocolCompiler::pluginRefs).orEmpty()) {
+            if ((scope.codecLookup ?: protocolService.plugins(resourceScope(spec, wsId), resourceIdentity(spec))).find(plugin.id.orEmpty()) == null)
+                throw ProtocolCompiler.CompileException(listOf(ProtocolCompiler.ValidationError("PLUGIN_NOT_APPROVED", "protocol.plugins", "필요한 승인 전문 코덱이 없습니다.")))
+        }
+        val secrets = Regex("\\{\\{\\s*([^{}]+?)@secret\\s*}}").findAll(raw.toString() + (req.protocolSpec?.toString() ?: "")).map { it.groupValues[1].trim() }.distinct().toList()
+        for (name in secrets) if (!scope.secrets.containsKey(name)) throw ProtocolCompiler.CompileException(listOf(ProtocolCompiler.ValidationError("SECRET_NOT_FOUND", "dependencies.secrets", "필요한 시크릿이 없습니다.", "선택 환경의 시크릿 이름과 등록을 확인하세요.")))
+        ProtocolDtos.CompilationReport(true, compiled?.schemaVersion ?: 1, compiled?.requiredCapabilities.orEmpty(),
+            compiled?.summary.orEmpty() + mapOf("routeCount" to spec.routesOrEmpty().size, "tcpRuleCount" to spec.tcp?.rulesOrEmpty()?.size,
+                "requiredTransforms" to transformsUsed, "secretNames" to secrets, "environment" to (req.environment ?: spec.environment), "envSource" to spec.envSource))
+    } catch (e: ProtocolCompiler.CompileException) {
+        ProtocolDtos.CompilationReport(false, errors = e.errors.map { ProtocolDtos.PreviewError(null, it.message, it.code, it.path, it.repairHint) })
+    } catch (e: Exception) {
+        val code = when { e is NotFoundException -> "RESOURCE_NOT_FOUND"; e.message?.contains("환경") == true -> "ENVIRONMENT_NOT_FOUND"; else -> "INVALID_SCHEMA" }
+        ProtocolDtos.CompilationReport(false, errors = listOf(ProtocolDtos.PreviewError(null, "Mock 정의·환경·의존성을 확인하세요.", code, "spec", "참조한 프로토콜·환경·승인 코덱·포트 범위를 확인하세요.")))
+    }
+
+    /** MCP 전체 교체도 한 트랜잭션으로 처리하여 실패한 생성 초안을 남기지 않는다. */
+    @Transactional
+    fun upsert(req: MockDtos.PlanRequest): MockServerDetail {
+        val report = validate(req)
+        if (!report.valid) throw ProtocolCompiler.CompileException(report.errors.map { ProtocolCompiler.ValidationError(it.code, it.path ?: "spec", it.message, it.repairHint ?: "규격을 확인하세요.") })
+        val wsId = workspace.resolveId(req.workspaceId)
+        val slug = req.slug ?: throw BadRequestException("slug가 필요합니다.")
+        val previous = repository.findByTenantIdAndWorkspaceKeyAndSlug(tenant(), resourceWorkspace.key(wsId), slug).orElse(null)
+        val current = previous?.let { toDetail(it) } ?: create(CreateMockServerRequest(req.name ?: slug, slug, req.type, req.workspaceId))
+        if (req.type != null && req.type != current.kind) throw BadRequestException("저장된 Mock 종류와 type이 다릅니다.")
+        if (req.enabled == false) repository.findById(current.id).orElseThrow().isEnabled = false
+        updateSpec(current.id, req.spec, "mcp")
+        if (req.name != null || req.enabled != null) updateMeta(current.id, UpdateMockServerRequest(req.name, req.enabled))
+        return get(current.id)
+    }
+
+    private fun previewProtocol(spec: MockSpec, scope: MockSecretProvider.Scope, wsId: UUID?, override: JsonNode?): ProtocolSpec? {
+        if (override != null) {
+            if (spec.tcp == null) throw BadRequestException("HTTP 미리보기에는 protocolSpec을 지정할 수 없습니다.")
+            return protocolService.parse(override.toString())
+        }
+        val id = spec.tcp?.protocolId?.takeIf { it.isNotBlank() } ?: return null
+        return scope.protocol ?: protocolService.spec(id, resourceScope(spec, wsId), resourceIdentity(spec))
+    }
+
+    fun preview(req: MockDtos.PlanRequest): Map<String, Any?> {
+        val wsId = workspace.resolveId(req.workspaceId)
+        workspace.requireRead(workspace.currentUsername(), wsId)
+        val saved = req.slug?.let { repository.findByTenantIdAndWorkspaceKeyAndSlug(tenant(), resourceWorkspace.key(wsId), it).orElseThrow { NotFoundException("Mock이 없습니다.") } }
+        if (saved != null && req.type != null && req.type != saved.kind.name) throw BadRequestException("저장된 Mock 종류와 type이 다릅니다.")
+        val raw = req.spec ?: saved?.specJson?.let(json::readTree) ?: throw BadRequestException("미저장 미리보기에는 전체 spec이 필요합니다.")
+        val spec = parseSpec((if (req.spec == null) raw else normalizeResourceSpec(raw)).toString()).let { if (req.environment == null) it else it.copy(environment = req.environment) }
+        val scope = secretProvider.scope(tenant(), spec.environment, cached = false, workspaceId = wsId, spec = spec)
+        val request = req.request ?: throw BadRequestException("합성 request가 필요합니다.")
+        val snapshot = saved?.let { store.snapshot(it.id) } ?: MockRuntimeStore.Snapshot(emptyMap(), 1000, emptyMap(), 0)
+        val result = try {
+            if (spec.tcp != null) previewTcp(spec, scope, wsId, req.protocolSpec, request, snapshot.seq + 1) else previewHttp(spec, scope, wsId, request, snapshot)
+        } catch (e: Exception) {
+            val codecInput = scope.secrets.isNotEmpty() && if (spec.tcp != null) runCatching {
+                previewProtocol(spec, scope, wsId, req.protocolSpec)?.let { ProtocolCompiler.pluginRefs(it).isNotEmpty() } == true
+            }.getOrDefault(false) else (listOf(spec.codec) + spec.routesOrEmpty().map { it.codec }).any { !it?.request.isNullOrEmpty() || !it?.response.isNullOrEmpty() }
+            if (codecInput || SecretMasker.usesSecrets(scope.secrets.values, spec, scope.protocol, req.protocolSpec, request)) throw BadRequestException(SecretMasker.DERIVED_ERROR)
+            throw e
+        }
+        return mapOf("unsaved" to (req.spec != null), "definition" to saved?.let { mapOf("id" to it.id, "version" to it.currentVersionOrZero()) },
+            "snapshot" to mapOf("state" to snapshot.state.mapValues { scope.mask(it.value) }, "seq" to snapshot.seq, "virtualSeq" to snapshot.seq + 1, "hits" to snapshot.hits),
+            "sideEffects" to false) + result
+    }
+
+    private fun previewHttp(spec: MockSpec, scope: MockSecretProvider.Scope, wsId: UUID?, request: JsonNode, snapshot: MockRuntimeStore.Snapshot): Map<String, Any?> {
+        if (request.has("url")) throw BadRequestException("미리보기는 URL을 호출하지 않습니다. method/path를 사용하세요.")
+        val mapper = json.mapper()
+        fun values(node: JsonNode) = if (node.isObject) node.fields().asSequence().associate { it.key to it.value.asText() } else emptyMap()
+        val headers = values(request.path("headers")).mapKeys { it.key.lowercase(Locale.ROOT) }
+        val body = request.get("body")?.let { if (it.isTextual) it.asText() else it.toString() }.orEmpty()
+        val path = request.path("path").asText("/")
+        if (!path.startsWith("/") || path.startsWith("//")) throw BadRequestException("path는 Mock 내부 경로여야 합니다.")
+        val ct = headers["content-type"] ?: "application/json"
+        val input = MockHttp.MockRequest(request.path("method").asText("GET").uppercase(Locale.ROOT), path, values(request.path("query")), headers, body,
+            MockHttp.parseBodyFields(body, ct, MockHttp.charsetFromContentType(ct), mapper))
+        val runtime = MockRuntime()
+        val lookup: (String) -> com.flowlink.transform.FlowTransform? = scope.transformLookup ?: { transforms.get(it, resourceScope(spec, wsId)).orElse(null) }
+        var route: MockSpec.MockRoute? = null
+        val match = runtime.match(spec.routesOrEmpty(), input, snapshot.state, snapshot.hits, scope.secrets, scope.env) { r, incoming ->
+            route = r
+            MockCodec.applyRequest(MockCodec.effective(spec.codec, r.codec)?.request, incoming,
+                MockContext(pathParams = MockRuntime.matchPath(r.path, path).orEmpty(), state = snapshot.state, secrets = scope.secrets, json = mapper, env = scope.env), lookup, mapper)
+        }.orElseThrow { BadRequestException("UNKNOWN_RULE: 매칭되는 HTTP 라우트·규칙이 없습니다.") }
+        val responseSteps = MockCodec.effective(spec.codec, route?.codec)?.response
+        val codec = if (responseSteps.isNullOrEmpty()) null else MockRuntime.ResponseCodec { text, outHeaders, contentType ->
+            MockCodec.applyResponse(responseSteps, text, outHeaders, contentType, MockContext(req = match.req, pathParams = match.pathParams, seq = snapshot.seq + 1,
+                state = snapshot.state, secrets = scope.secrets, json = mapper, env = scope.env), lookup, mapper)
+        }
+        val out = runtime.render(match.rule, match.req, match.pathParams, snapshot.seq + 1, snapshot.state, codec, scope.secrets, mapper, scope.env)
+        val sensitive = SecretMasker.usesSecrets(scope.secrets.values, spec, request, match.req.bodyFields)
+        fun shown(value: String) = if (sensitive) "***" else scope.mask(value)
+        return mapOf("route" to mapOf("id" to route?.id, "method" to route?.method, "path" to route?.path), "ruleId" to match.rule.id,
+            "request" to mapOf("body" to shown(match.req.bodyText), "fields" to match.req.bodyFields.mapValues { shown(it.value) }),
+            "response" to mapOf("status" to out.status, "headers" to out.headers.mapValues { shown(it.value) }, "body" to shown(String(out.body, MockHttp.charsetFromContentType(out.contentType))), "wireLength" to out.body.size),
+            "callbackPlanned" to (out.callback != null), "pendingState" to out.setState.mapValues { shown(it.value) }, "warnings" to emptyList<String>(), "validations" to listOf(mapOf("valid" to true)))
+    }
+
+    private fun previewTcp(spec: MockSpec, scope: MockSecretProvider.Scope, wsId: UUID?, override: JsonNode?, request: JsonNode, virtualSeq: Long): Map<String, Any?> {
+        val protocol = previewProtocol(spec, scope, wsId, override) ?: throw BadRequestException("프로토콜을 먼저 고르세요.")
+        val plan = ProtocolCompiler.compile(protocol)
+        val lookup = scope.codecLookup ?: protocolService.plugins(resourceScope(spec, wsId), resourceIdentity(spec))
+        if (request.hasNonNull("bytesB64") && (request.has("key") || request.has("values"))) throw BadRequestException("bytesB64 또는 key/values 중 하나만 사용하세요.")
+        val input = if (request.hasNonNull("bytesB64")) {
+            val b64 = request.path("bytesB64").asText()
+            if (b64.length > ((ProtocolSpec.MAX_MESSAGE + 2) / 3) * 4) throw BadRequestException("bytesB64는 1MB 이하여야 합니다.")
+            val bytes = try { java.util.Base64.getDecoder().decode(b64) } catch (_: IllegalArgumentException) { throw BadRequestException("올바른 Base64가 필요합니다.") }
+            ProtocolCompiler.parse(protocol, bytes, plugins = lookup, resolve = scope.resolver())
+        } else {
+            val key = request.path("key").asText().takeIf { it.isNotBlank() } ?: throw BadRequestException("key/values 또는 bytesB64가 필요합니다.")
+            val values = request.path("values").fields().asSequence().associate { it.key to it.value.asText() }
+            ProtocolCompiler.assemble(protocol, key, values, plugins = lookup, resolve = scope.resolver())
+        }
+        val transaction = input.transactionKey?.let(plan::transaction)
+        val rule = TcpMockRules.match(spec.tcp!!.rulesOrEmpty(), input.values, scope.resolver()) ?: throw BadRequestException("UNKNOWN_RULE: 매칭 TCP 응답 규칙이 없습니다.")
+        if (rule.isProxy()) throw BadRequestException("미리보기에서 upstream에 전송하지 않습니다. mock 응답 규칙을 사용하세요.")
+        val headerNames = protocol.headerOrEmpty().map { it.nameOrEmpty() }.toSet()
+        val fields = TcpMockRules.responseFields(input.values.filterKeys { it in headerNames }, rule.thenFields(),
+            MockContext(seq = virtualSeq, secrets = scope.secrets, tcpFields = input.values, env = scope.env), protocol.schemaVersion == 2)
+        val responseKey = transaction?.responseMessage ?: protocol.lookup(if (protocol.hasDiscriminator()) fields[protocol.discriminator] else null, Direction.RECV)?.key
+            ?: throw BadRequestException("응답 전문 정의가 없습니다.")
+        val response = ProtocolCompiler.assemble(protocol, responseKey, fields, transaction?.key, "response", input.values, plugins = lookup, resolve = scope.resolver())
+        val secretUsed = SecretMasker.usesSecrets(scope.secrets.values, protocol, spec, request, fields, input.values, response.values)
+        fun view(p: ProtocolCompiler.Preview): Map<String, Any?> {
+            val safe = if (secretUsed) ByteArray(p.bytes.size) { '*'.code.toByte() } else scope.maskBytes(p.bytes)
+            return mapOf("phase" to p.phase, "fields" to p.values.mapValues { if (secretUsed) "***" else scope.mask(it.value) },
+                "fieldOffsets" to p.fields.map { it.copy(value = if (secretUsed) "***" else scope.mask(it.value), warn = it.warn?.let { if (secretUsed) SecretMasker.DERIVED_ERROR else scope.mask(it) }) },
+                "wireLength" to p.bytes.size, "declaredLength" to p.declaredLength, "lengthAdjustment" to p.lengthAdjustment,
+                "text" to TcpBytes.printable(safe, protocol.charset()), "hex" to TcpBytes.hexDump(safe), "bytesB64" to java.util.Base64.getEncoder().encodeToString(safe))
+        }
+        val phases = mutableListOf<Map<String, Any?>>(mapOf("phase" to "REQUEST", "role" to "mock", "direction" to "RECEIVE", "actualBytes" to input.bytes.size, "status" to "PLANNED"))
+        fun ack(phase: String, definition: ProtocolSpec.Ack?) {
+            if (definition == null) {
+                val legacyHex = if (phase == "requestAck") protocol.transport?.requestAckHex else protocol.transport?.responseAckHex
+                val legacy = if (protocol.schemaVersion != 2) legacyHex?.takeIf { it.isNotBlank() }?.let(TcpBytes::hexToBytes) else null
+                phases += mapOf("phase" to if (phase == "requestAck") "REQUEST_ACK" else "RESPONSE_ACK",
+                    "role" to "mock", "direction" to if (phase == "requestAck") "SEND" else "RECEIVE", "expectedBytes" to legacy?.size,
+                    "validationMode" to if (legacy == null) null else "exact", "status" to if (legacy == null) "SKIPPED" else "PLANNED")
+            }
+            else {
+                val generated = ProtocolCompiler.assemble(protocol, transactionKey = transaction!!.key, phase = phase, requestFields = input.values,
+                    responseFields = response.values, plugins = lookup, resolve = scope.resolver())
+                phases += mapOf("phase" to if (phase == "requestAck") "REQUEST_ACK" else "RESPONSE_ACK", "role" to "mock",
+                    "direction" to if (phase == "requestAck") "SEND" else "RECEIVE", "expectedBytes" to generated.bytes.size,
+                    "validationMode" to definition.receive?.kind, "status" to "PLANNED", "preview" to view(generated))
+            }
+        }
+        ack("requestAck", transaction?.requestAck)
+        phases += mapOf("phase" to "RESPONSE", "role" to "mock", "direction" to "SEND", "actualBytes" to response.bytes.size, "status" to "PLANNED")
+        ack("responseAck", transaction?.responseAck)
+        return mapOf("transactionKey" to transaction?.key, "ruleId" to rule.id, "conditions" to rule.whenOrEmpty().map { mapOf("field" to it.field, "op" to it.op, "matched" to true) },
+            "request" to view(input), "response" to view(response), "steps" to phases, "requiredCapabilities" to plan.requiredCapabilities,
+            "compiledSummary" to plan.summary, "warnings" to if (secretUsed) emptyList<String>() else (input.warnings + response.warnings).map(scope::mask), "validations" to listOf(mapOf("valid" to true)))
+    }
 
     @Transactional(readOnly = true)
     fun list(workspaceIdRaw: String? = null): List<MockServerSummary> {
@@ -186,6 +364,7 @@ class MockServerService(
     @Transactional
     fun updateMeta(id: UUID, req: UpdateMockServerRequest): MockServerDetail {
         val m = find(id)
+        val before = toDetail(m)
         if (req.name != null && req.name.isNotBlank()) {
             m.name = req.name
         }
@@ -205,13 +384,14 @@ class MockServerService(
             }
         }
         val saved = repository.save(m)
-        tcpRegistry.sync(saved) // enabled 토글에 맞춰 TCP 리스너 열기/닫기
+        activate(saved, before)
         return toDetail(saved)
     }
 
     @Transactional
     fun updateSpec(id: UUID, spec: JsonNode?, note: String? = null, pinned: Boolean = false): MockServerDetail {
         val m = find(id)
+        val before = toDetail(m)
         if (spec == null || spec.isNull) {
             throw BadRequestException("spec 이 없습니다.")
         }
@@ -225,9 +405,18 @@ class MockServerService(
         val saved = repository.save(m)
         // 내용이 바뀌었거나 📌 보존 요청이면 스냅샷(같은 내용 재저장은 버전 낭비 방지)
         if (changed || pinned || !note.isNullOrBlank()) snapshot(saved, note?.trim()?.takeIf { it.isNotEmpty() }, pinned)
-        tcpRegistry.sync(saved) // 포트 바인딩 실패/충돌은 BadRequest → 저장 롤백
+        activate(saved, before)
         digestCache.remove(m.id)
         return toDetail(saved)
+    }
+
+    private fun activate(saved: MockServer, before: MockServerDetail) {
+        try { tcpRegistry.sync(saved) } catch (e: BadRequestException) {
+            throw MockActivationException(if (e.message?.contains("포트") == true) "PORT_IN_USE" else "ACTIVATION_FAILED",
+                mapOf("id" to before.id, "currentVersion" to before.currentVersion, "enabled" to before.enabled,
+                    "listener" to before.listener, "actualListeningPort" to tcpRegistry.listeningPort(before.id),
+                    "definitionPreserved" to true, "listenerPreserved" to (tcpRegistry.listeningPort(before.id) != null)))
+        }
     }
 
     @Transactional
@@ -600,29 +789,63 @@ class MockServerService(
         val resolve = scope.resolver()
         val port = tcpRegistry.listeningPort(id) ?: throw BadRequestException("리스너가 열려 있지 않습니다(Mock 켜짐·프로토콜 선택 확인).")
         val pid = tcp.protocolId?.trim()?.takeIf { it.isNotEmpty() } ?: throw BadRequestException("프로토콜을 먼저 고르세요.")
-        val spec = scope.protocol ?: if (mockSpec.resourceWorkspaceId == "public") protocolService.spec(pid, null, resourceIdentity(mockSpec)) else protocolService.specOf(UUID.fromString(pid), m.tenantId, m.workspaceId)
-        val plugins = scope.codecLookup ?: protocolService.plugins(resourceScope(mockSpec, m.workspaceId), resourceIdentity(mockSpec))
-        val key = req.key?.trim()?.takeIf { it.isNotEmpty() } ?: throw BadRequestException("전문(key)을 고르세요.")
+        val captured = if (scope.protocol == null) protocolService.snapshot(pid, resourceScope(mockSpec, m.workspaceId), resourceIdentity(mockSpec)) else null
+        val spec = scope.protocol ?: captured!!.spec
+        val plugins = scope.codecLookup ?: captured!!.plugins
+        var secretUsed = SecretMasker.usesSecrets(scope.secrets.values, spec, mockSpec, req.values)
+        val hideCodecErrors = secretUsed || (scope.secrets.isNotEmpty() && ProtocolCompiler.pluginRefs(spec).isNotEmpty())
         val enc = try {
-            ProtocolCodec.encode(spec, key, req.values ?: emptyMap(), Direction.SEND, plugins, resolve = resolve)
-        } catch (e: ProtocolCodec.ProtocolException) { throw BadRequestException(scope.mask(e.message ?: "조립 실패")) }
+            ProtocolCompiler.assemble(spec, req.key, req.values.orEmpty(), req.transactionKey, plugins = plugins, resolve = resolve)
+        } catch (e: Exception) {
+            if (hideCodecErrors) throw BadRequestException(SecretMasker.DERIVED_ERROR)
+            if (e is ProtocolCodec.ProtocolException) throw BadRequestException(scope.mask(e.message ?: "조립 실패"))
+            throw e
+        }
+        val executionId = if (spec.schemaVersion == 2) req.executionId ?: UUID.randomUUID() else null
+        if (executionId != null) trials?.start(executionId, m.workspaceId, m.id, m.currentVersionOrZero(),
+            scope.protocolFingerprint ?: captured?.fingerprint)
+        val started = System.nanoTime()
+        var failure: TcpClient.ExchangeException? = null
         val x = try {
-            TcpClient.exchange("127.0.0.1", port, tcp.timeoutMs?.takeIf { it > 0 } ?: 5000, enc.bytes, spec)
-        } catch (e: Exception) { throw BadRequestException("전송 실패: ${e.message}") }
-        val d = try {
-            ProtocolCodec.decode(spec, x.response.bytes, Direction.RECV, plugins, resolve = resolve)
-        } catch (e: ProtocolCodec.ProtocolException) { throw BadRequestException(scope.mask(e.message ?: "응답 해석 실패")) }
+            TcpClient.exchange("127.0.0.1", port, tcp.timeoutMs?.takeIf { it > 0 } ?: 5000, enc.bytes, spec, plugins = plugins, resolve = resolve)
+        } catch (e: TcpClient.ExchangeException) {
+            failure = e
+            TcpClient.Exchange(e.response ?: com.flowlink.protocol.Framer.Frame(ByteArray(0), emptyList(), false), (System.nanoTime() - started) / 1_000_000,
+                transactionKey = enc.transactionKey, steps = e.steps)
+        } catch (e: Exception) {
+            if (executionId == null) throw BadRequestException(if (hideCodecErrors) SecretMasker.DERIVED_ERROR else "전송 실패: ${scope.mask(e.message.orEmpty())}")
+            val error = TcpClient.ExchangeException("TRANSPORT_FAILED", "REQUEST", enc.bytes.size, 0, emptyList(), null, e)
+            failure = error
+            TcpClient.Exchange(com.flowlink.protocol.Framer.Frame(ByteArray(0), emptyList(), false), (System.nanoTime() - started) / 1_000_000,
+                transactionKey = enc.transactionKey, steps = error.steps)
+        }
+        val d = if (x.response.bytes.isEmpty()) null else try {
+            ProtocolCompiler.parse(spec, x.response.bytes, transactionKey = x.transactionKey, phase = "response", requestFields = enc.values, plugins = plugins, resolve = resolve)
+        } catch (e: Exception) {
+            if (executionId == null) throw BadRequestException(if (hideCodecErrors) SecretMasker.DERIVED_ERROR else scope.mask(e.message ?: "응답 해석 실패"))
+            failure = TcpClient.ExchangeException("RESPONSE_INVALID", "RESPONSE", null, x.response.bytes.size, x.steps, x.response, e)
+            null
+        }
         val cs = spec.charset()
-        val requestBytes = scope.maskBytes(enc.bytes)
-        val responseBytes = scope.maskBytes(x.response.bytes)
-        return MockDtos.TcpSendResult(
-            ProtocolDtos.PreviewResult(enc.bytes.size, TcpBytes.hexDump(requestBytes), TcpBytes.printable(requestBytes, cs), enc.fields.map { it.copy(value = scope.mask(it.value)) }, emptyList(), enc.warnings.map(scope::mask)),
+        secretUsed = secretUsed || SecretMasker.usesSecrets(scope.secrets.values, d?.values)
+        val requestBytes = if (secretUsed) ByteArray(enc.bytes.size) { '*'.code.toByte() } else scope.maskBytes(enc.bytes)
+        val responseBytes = if (secretUsed) ByteArray(x.response.bytes.size) { '*'.code.toByte() } else scope.maskBytes(x.response.bytes)
+        fun safe(value: String) = if (secretUsed) "***" else scope.mask(value)
+        val headerNames = spec.headerOrEmpty().map { it.nameOrEmpty() }.toSet()
+        val result = MockDtos.TcpSendResult(
+            ProtocolDtos.PreviewResult(enc.bytes.size, TcpBytes.hexDump(requestBytes), TcpBytes.printable(requestBytes, cs), enc.fields.map { it.copy(value = safe(it.value), warn = it.warn?.let { safe(it) }) }, emptyList(), if (secretUsed) emptyList() else enc.warnings.map(scope::mask)),
             MockDtos.DecodedView(
-                d.messageKey, d.disc, d.header.mapValues { scope.mask(it.value) }, d.body?.mapValues { scope.mask(it.value) }, TcpBytes.decodeEscaped(responseBytes, cs),
-                TcpBytes.hexDump(responseBytes), x.response.bytes.size, x.response.chunks, x.response.partial, d.warnings.map(scope::mask),
+                d?.transactionKey?.let { ProtocolCompiler.compile(spec).transaction(it).responseMessage } ?: spec.lookup(d?.values?.get(spec.discriminator), Direction.RECV)?.key, d?.values?.get(spec.discriminator),
+                d?.values.orEmpty().filterKeys { it in headerNames }.mapValues { safe(it.value) }, d?.values?.filterKeys { it !in headerNames }?.mapValues { safe(it.value) }, TcpBytes.decodeEscaped(responseBytes, cs),
+                TcpBytes.hexDump(responseBytes), x.response.bytes.size, x.response.chunks, x.response.partial, if (secretUsed) emptyList() else d?.warnings.orEmpty().map(scope::mask),
             ),
-            x.elapsedMs,
+            x.elapsedMs, x.transactionKey, x.steps, executionId, if (failure == null) "SUCCEEDED" else "FAILED",
+            failure?.let { mapOf("code" to it.code, "phase" to it.phase, "expectedBytes" to it.expectedBytes, "actualBytes" to it.actualBytes,
+                "repairHint" to "execution_get으로 이미 전송된 단계부터 확인하세요. 자동 재전송하지 않습니다.") },
+            if (executionId == null) emptyList() else listOf("시험 이력은 재시작 전 최근 1000건·JSON 합계 32MB만 보존합니다. DB 워크플로 이력과 별도이며 UNKNOWN은 조회로 확인하세요."),
         )
+        if (executionId != null) trials?.complete(executionId, result)
+        return result
     }
 
     /**
@@ -642,12 +865,39 @@ class MockServerService(
             if (spec.resourceWorkspaceId == "public") protocolService.spec(pid, null, resourceIdentity(spec)) else protocolService.specOf(UUID.fromString(pid), workspaceId = workspaceId)
         } catch (e: Exception) { throw BadRequestException("TCP Mock 의 프로토콜을 찾을 수 없습니다: $pid") }
         for ((i, r) in tcp.rulesOrEmpty().withIndex()) {
+            if (proto?.schemaVersion == 2) {
+                ProtocolCompiler.compile(proto)
+                val responseMode = r.then?.mode
+                if (responseMode != null && responseMode !in setOf("mock", "proxy")) throw ProtocolCompiler.CompileException(listOf(ProtocolCompiler.ValidationError("INVALID_SCHEMA", "tcp.rules[$i].then.mode", "mock 또는 proxy를 사용하세요.")))
+                val requestNames = (proto.headerOrEmpty() + proto.transactions.orEmpty().flatMap { proto.message(it.requestMessage.orEmpty())?.fieldsOrEmpty().orEmpty() }).map { it.nameOrEmpty() }.toSet()
+                r.whenOrEmpty().forEachIndexed { ci, condition ->
+                    if (condition.op != null && condition.op !in setOf("eq", "ne", "contains", "startswith", "endswith", "regex", "exists")) throw ProtocolCompiler.CompileException(listOf(ProtocolCompiler.ValidationError("INVALID_SCHEMA", "tcp.rules[$i].when[$ci].op", "지원하지 않는 조건 연산자입니다.")))
+                    if (condition.field !in requestNames) throw ProtocolCompiler.CompileException(listOf(ProtocolCompiler.ValidationError("INVALID_SCHEMA", "tcp.rules[$i].when[$ci].field", "요청 전문에 없는 필드입니다.")))
+                    if (condition.op != "exists" && condition.value == null) throw ProtocolCompiler.CompileException(listOf(ProtocolCompiler.ValidationError("INVALID_SCHEMA", "tcp.rules[$i].when[$ci].value", "조건 비교값이 필요합니다.")))
+                }
+            }
             if (r.isProxy()) {
                 if (tcp.upstream.isNullOrBlank()) throw BadRequestException("규칙 ${i + 1}: proxy 인데 upstream(실서버 host:port)이 없습니다.")
                 continue
             }
             if (proto == null) continue
             val f = r.thenFields()
+            if (proto.schemaVersion == 2) {
+                val candidates = proto.transactions.orEmpty().filter { tx -> tx.`when`.orEmpty().all { selection ->
+                    r.whenOrEmpty().none { it.field == selection.field && (it.op == null || it.op == "eq") && it.value != selection.value }
+                } }
+                for (transaction in candidates) {
+                    val allowed = (proto.headerOrEmpty() + proto.message(transaction.responseMessage.orEmpty())?.fieldsOrEmpty().orEmpty()).map { it.nameOrEmpty() }.toSet()
+                    val required = proto.message(transaction.responseMessage.orEmpty())?.fieldsOrEmpty().orEmpty().map { it.nameOrEmpty() }.toSet()
+                    val reqFields = (proto.headerOrEmpty() + proto.message(transaction.requestMessage.orEmpty())?.fieldsOrEmpty().orEmpty()).map { it.nameOrEmpty() }.toSet()
+                    f.keys.firstOrNull { it !in allowed }?.let { throw ProtocolCompiler.CompileException(listOf(ProtocolCompiler.ValidationError("INVALID_SCHEMA", "tcp.rules[$i].then.fields.$it", "선택 거래 응답에 없는 필드입니다."))) }
+                    required.firstOrNull { it !in f }?.let { throw ProtocolCompiler.CompileException(listOf(ProtocolCompiler.ValidationError("MISSING_CONTEXT_FIELD", "tcp.rules[$i].then.fields.$it", "v2 응답 업무 필드를 명시하세요."))) }
+                    f.forEach { (name, template) -> Regex("\\{\\{\\s*req\\.([^{}\\s]+)\\s*}}").findAll(template).forEach { token ->
+                        if (token.groupValues[1] !in reqFields) throw ProtocolCompiler.CompileException(listOf(ProtocolCompiler.ValidationError("MISSING_CONTEXT_FIELD", "tcp.rules[$i].then.fields.$name", "선택 거래 요청에 없는 필드 참조입니다.")))
+                    } }
+                }
+                continue
+            }
             val disc = if (proto.hasDiscriminator()) f[proto.discriminator!!.trim()]?.trim()?.takeIf { it.isNotEmpty() } else null
             if (proto.hasDiscriminator() && disc == null) {
                 // 응답 표는 요청 헤더 에코가 고른다(런타임) — 여기선 어느 전문에도 없는 필드명(오타)만 잡는다
@@ -675,3 +925,5 @@ class MockServerService(
 
     private fun tenant(): String = TenantContext.getTenantId()
 }
+
+class MockActivationException(val code: String, val previous: Map<String, Any?>) : RuntimeException("Mock 활성화에 실패했습니다. 기존 정의와 실제 리스너 상태를 확인하세요.")

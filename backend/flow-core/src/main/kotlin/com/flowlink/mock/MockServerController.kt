@@ -24,6 +24,15 @@ import java.util.UUID
 @RequestMapping("/api/v1/mock-servers")
 class MockServerController(private val service: MockServerService) {
 
+    @PostMapping("/validate")
+    fun validate(@RequestBody req: MockDtos.PlanRequest) = service.validate(req)
+
+    @PostMapping("/preview")
+    fun preview(@RequestBody req: MockDtos.PlanRequest) = service.preview(req)
+
+    @PostMapping("/upsert")
+    fun upsert(@RequestBody req: MockDtos.PlanRequest) = service.upsert(req)
+
     @GetMapping
     fun list(@org.springframework.web.bind.annotation.RequestParam(required = false) workspaceId: String?): List<MockServerSummary> =
         service.list(workspaceId)

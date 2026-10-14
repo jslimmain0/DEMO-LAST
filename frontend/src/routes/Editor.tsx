@@ -194,9 +194,8 @@ export function Editor() {
 
   const flowQuery = useQuery({ queryKey: ['flow', flowId], queryFn: () => flowsApi.get(flowId), enabled: !!flowId })
   const returnToList = useCatalogReturn('flows', flowQuery.data?.folderId)
-  // 가입 승인 대기(PENDING) — AI 패널을 게이트(Copilot 연결까지 시킨 뒤 첫 채팅 403 나던 헛수고 방지)
-  const aiMe = useQuery({ queryKey: ['admin', 'me'], queryFn: adminApi.me, staleTime: 30_000 })
-  const aiPending = aiMe.data?.myStatus === 'PENDING'
+  const aiMe = useQuery({ queryKey: ['admin', 'me'], queryFn: adminApi.me, enabled: !desktop, staleTime: 30_000 })
+  const aiPending = !desktop && aiMe.data?.myStatus === 'PENDING'
   // 워크스페이스 롤 합성 — 팀 flow 의 VIEWER 는 에디터도 읽기전용(전역 롤만 보던 갭: 백엔드 403 을 UI 로 선반영)
   const wsViewer = flowQuery.data?.myRole === 'VIEWER'
   const canEdit = canEditGlobal && !wsViewer

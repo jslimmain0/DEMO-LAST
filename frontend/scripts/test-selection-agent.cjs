@@ -16,6 +16,33 @@ function load(file) {
 const { useEditorStore: store } = load(path.join(__dirname, '../src/store/editorStore.ts'))
 const { executionAgentPatch } = load(path.join(__dirname, '../src/lib/executionAgentSelection.ts'))
 
+test('MCP vertical layout survives load, import, undo, redo, save and collaboration', () => {
+  const legacy = { nodes: [{id:'s',type:'start',x:0,y:0},{id:'a',type:'set',x:264,y:0},{id:'e',type:'end',x:528,y:0}], edges:[{id:'sa',from:'s',to:'a'},{id:'ae',from:'a',to:'e'}] }
+  store.setState({readOnly:false})
+  store.getState().loadGraph('layout', 'layout', legacy)
+  assert.equal(Object.hasOwn(store.getState().getGraph(),'layoutDirection'),false,'legacy graphs retain their existing handles')
+  const vertical = {...legacy, name:'new layout', palette:[{id:'new',name:'new',items:[]}], layoutDirection:'TB', nodes:legacy.nodes.map((n,i)=>({...n,x:85,y:i*178}))}
+  store.getState().importGraph(vertical)
+  assert.equal(store.getState().getGraph().layoutDirection,'TB')
+  assert.deepEqual(store.getState().getGraph().edges.map(e=>[e.from,e.to]),[['s','a'],['a','e']])
+  store.getState().undo()
+  assert.equal(store.getState().layoutDirection,undefined)
+  assert.equal(store.getState().flowName,'layout','undoing an import also restores its name')
+  assert.equal(store.getState().palette.length,0)
+  store.getState().redo()
+  assert.equal(store.getState().layoutDirection,'TB')
+  assert.equal(store.getState().flowName,'new layout')
+  assert.equal(store.getState().palette[0].id,'new')
+  store.getState().autoLayout()
+  assert.equal(store.getState().layoutDirection,undefined,'horizontal automatic placement also restores horizontal handles')
+  store.getState().undo()
+  assert.equal(store.getState().layoutDirection,'TB')
+  store.getState().applyRemoteGraph(store.getState().nodes,store.getState().edges,'LR')
+  assert.equal(store.getState().layoutDirection,undefined)
+  store.getState().applyRemoteGraph(store.getState().nodes,store.getState().edges,'TB')
+  assert.equal(store.getState().getGraph().layoutDirection,'TB')
+})
+
 test('authoring exports public resource intent while preserving imported node destinations and raw data', () => {
   const graph = { name: 'legacy', nodes: [{ id: 'tcp', type: 'tcp', protocolId: 'private-legacy-id', executionAgent: 'local', agentWorkspaceId: 'original-space', agentEnvironment: 'legacy-stage', tcpValues: { value: '{{ TOKEN@env }}' }, customPayload: { nested: ['원본', 4] } }], edges: [], palette: [{ id: 'group', name: 'imported', items: [] }] }
   store.getState().loadGraph('flow', 'legacy', graph)

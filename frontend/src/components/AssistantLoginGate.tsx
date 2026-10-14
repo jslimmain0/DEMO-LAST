@@ -5,7 +5,7 @@ import { ui } from '../design/ui'
 
 /**
  * 게스트용 AI 게이트 — github 모드에서 로그인 없이 AI 패널을 열면 채팅 대신 이 카드가 뜬다.
- * 로그인하면 서버가 GitHub 토큰을 Copilot 연결로도 재사용(한 번 로그인 = 앱 + AI).
+ * 데스크톱에서는 개인 Copilot 연결을 사용하며 회사 로그인과 분리한다.
  * variant: 'editor'=에디터 우측 도킹 패널, 'overlay'=Mock 편집기 우측 고정 오버레이(MockAssistantPanel 과 동일 셸).
  */
 export function AssistantLoginGate({ width, onClose, variant = 'editor', reason = 'guest' }: {
@@ -32,7 +32,7 @@ export function AssistantLoginGate({ width, onClose, variant = 'editor', reason 
         <p style={{ margin: 0, fontSize: 13, lineHeight: 1.6, color: 'var(--fl-text-muted)' }}>
           {reason === 'pending'
             ? '관리자가 가입 신청을 승인하면 AI 어시스턴트를 쓸 수 있습니다. 나머지 기능(공용 워크스페이스)은 지금도 쓸 수 있어요.'
-            : 'AI 어시스턴트는 GitHub Copilot 을 사용합니다. 로그인하면 Copilot 이 자동으로 연결되고, 나머지 기능은 로그인 없이도 계속 쓸 수 있습니다.'}
+            : 'AI 어시스턴트는 이 PC의 GitHub Copilot 연결을 사용합니다. 회사 로그인과 Copilot 연결은 별도로 관리합니다.'}
         </p>
         {reason === 'guest' && (
           <button onClick={requestLogin} style={loginBtn}>

@@ -83,7 +83,9 @@ mock_list는 mocks/sources로 내 PC와 서버를 함께 보여준다. source.av
    그 mock 의 base URL+경로를 호출해 응답을 보고, TCP=mock_send 로 전문을 보낸다. wait 콜백·웹훅도 http_request 로 쏜다.
    TCP 연결·길이 경계·고정 ACK는 protocol spec에 설정한다(flowlink_guide(protocol)). 연결 유지 검증은 같은 실행 위치·목적지·프로토콜의 TCP 노드 두 개를 한 흐름에 넣어 flow_run으로 하며 별도 node_run/mock_send 호출끼리는 연결을 공유하지 않는다.
    **curl·파이썬·셸로 직접 쏘지 말고 http_request/mock_send 를 써라**(그게 이 서버에 붙어 있는 경로다). 결과는 "돌아가는 초안 + 확인 목록(메모)".
-5. 워크플로에는 START 와 END 가 있어야 하고, 검증은 assert 노드(예: {{ 응답코드@노드 }} == '0000')로 남긴다.
+5. 워크플로에는 START와 END가 있어야 한다. assert는 사용자가 명시한 업무 성공 조건이나 독립된 인수 조건에만 최소한으로 둔다.
+   모든 HTTP 200·비어 있지 않음·각 단계마다 같은 응답을 중복 검사하는 assert를 만들지 않는다. 전송·프레임·ACK·스키마 검증은 런타임이 담당하므로 assert로 복제하지 않는다.
+   모르는 성공 규격은 note로 표시하고 확인을 요청한다. 기존 사용자가 명시한 assert는 보존하고 임의로 삭제·완화하지 않는다.
 6. 암복호화·해시·서명·마스킹은 **플러그인**으로 한다(직접 계산한 값을 전문에 박지 마라). 붙는 자리: 프로토콜 필드 하나=`Field.plugin`(fieldCodec) ·
    전문 본문 전체=`messagePlugins`(messageCodec) · Mock 코덱 단계=`codec.request/response`(transform) · 워크플로=TRANSFORM 노드 `transformId`(transform).
    plugin_list 로 사용 가능한 플러그인 id·파라미터를 먼저 확인한다.

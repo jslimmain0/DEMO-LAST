@@ -31,7 +31,7 @@ class DesktopUpdateService(
 ) {
     data class View(val phase: String, val currentVersion: String, val availableVersion: String? = null,
         val downloadedBytes: Long = 0, val totalBytes: Long = 0, val message: String,
-        val releaseNotes: String? = null)
+        val releaseNotes: String? = null, val loginRequired: Boolean = false)
     private val version = com.flowlink.common.release.ReleaseVersion.version
     @Volatile private var state = View("idle", version, message = "업데이트를 확인하세요.")
     private val worker = Executors.newSingleThreadScheduledExecutor { Thread(it, "desktop-update").apply { isDaemon = true } }
@@ -40,9 +40,10 @@ class DesktopUpdateService(
     private var installer: Path? = null
     private var source = ""
     private var recoveredNotice = false
+    // 회사 세션을 사용하는 다른 ready 작업보다 먼저 설치 결과를 처리한다.
+    init { recoverResult() }
     @EventListener(ApplicationReadyEvent::class)
     fun ready() {
-        recoverResult()
         worker.scheduleWithFixedDelay({
             if (recoveredNotice) { recoveredNotice = false; return@scheduleWithFixedDelay }
             if (connection.view().serverUrl.isBlank()) {
@@ -53,23 +54,40 @@ class DesktopUpdateService(
     private fun recoverResult() {
         val dir = session.directory.resolve("updates")
         if (!Files.isDirectory(dir)) return
-        runCatching {
+        val receipt = runCatching {
             Files.list(dir).use { paths ->
                 val latest = paths.filter { Files.isDirectory(it) && it.fileName.toString().startsWith("install-") }
                     .sorted(java.util.Comparator.reverseOrder()).findFirst().orElse(null) ?: return
+                if (Files.exists(latest.resolve("handled"))) return
                 val request = mapper.readTree(Files.readString(latest.resolve("request.json")))
                 val result = mapper.readTree(Files.readString(latest.resolve("result.json")).removePrefix("\uFEFF"))
                 val target = request.path("targetVersion").asText()
                 val phase = result.path("phase").asText()
-                val success = phase in listOf("installed", "reboot-required") && result.path("exitCode").asInt(-1) in listOf(0, 3010) && target == version
-                recoveredNotice = true
-                state = View(if (success) "current" else "error", version,
-                    message = if (success) { if (phase == "reboot-required") "업데이트를 설치했습니다. Windows 재시작이 필요합니다." else "업데이트 설치를 확인했습니다." }
-                    else "이전 업데이트를 완료하지 못했거나 설치 버전이 일치하지 않습니다. updates 폴더의 결과와 설치 로그를 확인하세요.")
+                val verifiedSuccess = Files.readString(latest.resolve("commit")) == "install" &&
+                    ((phase == "installed" && result.path("exitCode").asInt(-1) == 0) ||
+                        (phase == "reboot-required" && result.path("exitCode").asInt(-1) == 3010)) &&
+                    result.path("targetVersion").asText() == target
+                // 더 새 앱으로 이미 교체됐다면 과거 성공 기록은 알림·로그아웃 대상이 아니다.
+                if (verifiedSuccess && compareVersions(target, version) < 0) return
+                Triple(latest, verifiedSuccess && target == version, phase == "reboot-required")
             }
+        }.getOrElse {
+            state = View("error", version, message = "이전 업데이트 결과를 확인하지 못했습니다. updates 폴더의 결과와 설치 로그를 확인하세요.")
+            recoveredNotice = true
+            return
         }
+        recoveredNotice = true
+        if (receipt.second) {
+            // 실패하면 기동도 중단한다. 설치가 확인된 구 회사 세션을 다시 사용하지 않는다.
+            connection.logout()
+            Files.writeString(receipt.first.resolve("handled"), version)
+            state = View("current", version, message = "업데이트를 설치했습니다. 회사 계정으로 다시 로그인하세요." +
+                if (receipt.third) " Windows 재시작이 필요합니다." else "", loginRequired = true)
+        } else state = View("error", version,
+            message = "이전 업데이트를 완료하지 못했거나 설치 버전이 일치하지 않습니다. 기존 로그인은 유지했습니다. updates 폴더의 결과와 설치 로그를 확인하세요.")
     }
     @Synchronized fun view(): View {
+        if (state.loginRequired && connection.view().connected) state = state.copy(loginRequired = false, message = "업데이트 설치와 회사 계정 로그인을 확인했습니다.")
         if (source.isNotBlank() && connection.view().serverUrl.trimEnd('/') != source && state.phase in listOf("available", "ready", "current")) {
             release = null; installer = null; source = ""
             state = View("error", version, message = "서버가 변경되었습니다. 업데이트를 다시 확인하세요.")

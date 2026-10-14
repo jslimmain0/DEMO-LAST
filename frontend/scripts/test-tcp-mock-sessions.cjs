@@ -26,6 +26,8 @@ function fixture() {
     invalidateQueries: options => { invalidations.push(plain(options.queryKey)); return Promise.resolve() },
   }
   const jsx = (type, props) => ({ type, props })
+  const transfer = {}
+  vm.runInNewContext(ts.transpileModule(fs.readFileSync(path.join(__dirname, '../src/components/TcpTransferSteps.tsx'), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText, { exports: transfer, require: () => ({ jsx, jsxs: jsx }) })
   const react = {
     useRef: initial => { const i = index++; return hooks[i] ??= { current: initial } },
     useState: initial => { const i = index++; if (!(i in hooks)) hooks[i] = typeof initial === 'function' ? initial() : initial; return [hooks[i], value => { hooks[i] = typeof value === 'function' ? value(hooks[i]) : value }] },
@@ -38,7 +40,7 @@ function fixture() {
     require: name => ({
       react, 'react/jsx-runtime': { jsx, jsxs: jsx }, '../app/WorkspaceContext': { useWorkspace: () => scope, useApi: () => ({ mocksApi: { tcpSessions: () => query.data, extendTcpSession: (mockId, id, ms) => { writes.push({ mockId, id, ms }); return reply.promise } } }) },
       '@tanstack/react-query': { useQuery: options => { queryOptions = options; return query }, useMutation: options => { mutation = options; return { isPending: false, mutate: id => mutation.mutationFn(id) } }, useQueryClient: () => qc },
-      '../design/ui': { ui: { mini: {} } }, '../lib/apiError': { apiErrorMessage: error => error.message }, './toast': { toast: message => toasts.push(message) },
+      '../design/ui': { ui: { mini: {} } }, '../lib/apiError': { apiErrorMessage: error => error.message }, './toast': { toast: message => toasts.push(message) }, './TcpTransferSteps': transfer,
     })[name] ?? {},
   })
   return {
@@ -92,6 +94,16 @@ test('TCP Mock 세션: 독립 화면에서 연결 설정으로 이동하는 액�
   assert.equal(opened, 1)
   assert.equal(f.writes.length, 0)
   assert.equal(f.invalidations.length, 0)
+  f.unmount()
+})
+
+test('TCP Mock 세션: 거래와 현재 ACK 누적 바이트를 보이며 처리 중 연장을 허용하지 않는다', () => {
+  const f = fixture()
+  Object.assign(f.query.data[0], { state: 'processing', remainingMs: null, phase: 'RESPONSE_ACK', transactionKey: 'bill', accumulatedBytes: 1, expectedBytes: 30, validationMode: 'length-only', status: 'WAITING', durationMs: 40 })
+  const tree = f.render()
+  assert.match(text(tree), /거래 bill.*응답 ACK.*1 \/ 30 B.*length-only.*40ms/)
+  assert.equal(button(tree, '세션 waiting-1 1분 연장').props.disabled, true)
+  assert.match(text(tree), /다음 요청을 기다릴 때 연장/)
   f.unmount()
 })
 

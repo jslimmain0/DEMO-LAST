@@ -14,7 +14,7 @@ const THROTTLE = 100
 let applying = false          // 원격 적용 중 — 로컬 재전송(에코) 억제
 let unsub: (() => void) | null = null
 let timer: number | undefined
-let pending: { nodes: unknown[]; edges: unknown[] } | null = null
+let pending: { nodes: unknown[]; edges: unknown[]; layoutDirection: 'TB' | 'LR' } | null = null
 let lastSig = ''
 let lastSentAt = 0
 
@@ -31,7 +31,7 @@ function strip(nodes: Node[], edges: Edge[]) {
   }))
   return { n, e }
 }
-const sigOf = (n: unknown[], e: unknown[]) => JSON.stringify([n, e])
+const sigOf = (n: unknown[], e: unknown[], layoutDirection?: 'TB' | 'LR') => JSON.stringify([n, e, layoutDirection ?? 'LR'])
 
 export function startCollab() {
   presence.onGraph((m) => {
@@ -40,17 +40,18 @@ export function startCollab() {
     if (!Array.isArray(nodes) || !Array.isArray(edges)) return
     applying = true
     try {
-      lastSig = sigOf(nodes, edges) // 받은 상태를 기준선으로 → 곧바로 되쏘지 않음
-      useEditorStore.getState().applyRemoteGraph(nodes, edges)
+      const direction = m.layoutDirection === 'TB' ? 'TB' : 'LR'
+      lastSig = sigOf(nodes, edges, direction) // 받은 상태를 기준선으로 → 곧바로 되쏘지 않음
+      useEditorStore.getState().applyRemoteGraph(nodes, edges, direction)
     } finally { applying = false }
   })
   unsub = useEditorStore.subscribe((s, prev) => {
     if (applying) return
-    if (s.nodes === prev.nodes && s.edges === prev.edges) return
+    if (s.nodes === prev.nodes && s.edges === prev.edges && s.layoutDirection === prev.layoutDirection) return
     // 로드/초기화(dirty=false)는 공유하지 않는다 — 새로 접속한 사람의 "저장본 로드"가
     // 기존 참여자의 미저장 편집을 덮어쓰는 것을 막는다(실제 편집=dirty 만 중계).
     if (!s.dirty) return
-    schedule(s.nodes, s.edges)
+    schedule(s.nodes, s.edges, s.layoutDirection)
   })
 }
 
@@ -61,11 +62,11 @@ export function stopCollab() {
   pending = null; lastSig = ''; lastSentAt = 0
 }
 
-function schedule(nodes: Node[], edges: Edge[]) {
+function schedule(nodes: Node[], edges: Edge[], layoutDirection?: 'TB' | 'LR') {
   const { n, e } = strip(nodes, edges)
-  const sig = sigOf(n, e)
+  const sig = sigOf(n, e, layoutDirection)
   if (sig === lastSig) return // 구조/데이터 변화 없음(선택만 바뀜 등)은 안 보냄
-  pending = { nodes: n, edges: e }
+  pending = { nodes: n, edges: e, layoutDirection: layoutDirection ?? 'LR' }
   if (timer !== undefined) return // 이미 트레일링 대기 중 — pending 만 갱신
   const wait = Math.max(0, THROTTLE - (Date.now() - lastSentAt))
   timer = window.setTimeout(flush, wait)
@@ -74,7 +75,7 @@ function schedule(nodes: Node[], edges: Edge[]) {
 function flush() {
   timer = undefined
   if (!pending) return
-  lastSig = sigOf(pending.nodes, pending.edges)
+  lastSig = sigOf(pending.nodes, pending.edges, pending.layoutDirection)
   lastSentAt = Date.now()
   presence.sendGraph(pending)
   pending = null

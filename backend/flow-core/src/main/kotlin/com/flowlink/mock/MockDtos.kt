@@ -212,7 +212,11 @@ object MockDtos {
     // ---------- TCP 트래픽 로그 / 보내보기 ----------
 
     /** 보내보기 요청 — 이 Mock 의 프로토콜에서 전문(key)을 고르고 필드 값을 채워 실제 리스너 포트로 쏜다. */
-    data class TcpSendRequest(val key: String? = null, val values: Map<String, String>? = null)
+    data class TcpSendRequest(val key: String? = null, val values: Map<String, String>? = null, val transactionKey: String? = null, val executionId: UUID? = null)
+
+    data class PlanRequest(val slug: String? = null, val name: String? = null, val type: String? = null, val spec: JsonNode? = null,
+        val enabled: Boolean? = null, val workspaceId: String? = null, val protocolSpec: JsonNode? = null,
+        val environment: String? = null, val request: JsonNode? = null)
 
     data class TcpSessionExtendRequest(val extendMs: Int = 60_000)
 
@@ -234,6 +238,12 @@ object MockDtos {
         val request: com.flowlink.protocol.ProtocolDtos.PreviewResult,
         val response: DecodedView,
         val elapsedMs: Long,
+        val transactionKey: String? = null,
+        val steps: List<com.flowlink.protocol.TcpClient.Step> = emptyList(),
+        val executionId: UUID? = null,
+        val transportStatus: String = "SUCCEEDED",
+        val error: Map<String, Any?>? = null,
+        val warnings: List<String> = emptyList(),
     )
 
     /** 런타임 상태 스냅샷 — 상태 있는 목 디버깅용. */

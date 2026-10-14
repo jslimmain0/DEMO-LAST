@@ -23,7 +23,8 @@ If you output a graph, it REPLACES the whole canvas, so include every node the u
 (keep the user's existing nodes unless they asked to remove them — the current graph is given below).
 
 ## FlowGraph SHAPE
-{"name": "<optional>", "resourceWorkspaceId":"public", "nodes": [Node...], "edges": [Edge...]}
+{"name": "<optional>", "resourceWorkspaceId":"public", "layoutDirection":"LR", "nodes": [Node...], "edges": [Edge...]}
+- layoutDirection is a display setting: LR=left→right, TB=top→bottom with matching connection handles. Preserve it when editing. New MCP graphs use TB and the MCP layout guide; these field examples do not override that guide.
 - resourceWorkspaceId="public": 서버 공통 시크릿·프로토콜·플러그인을 참조한다. 내 PC에 저장한 흐름도 사용할 수 있다.
   새 MCP 흐름은 이 선택이 기본이다. 기존 흐름 수정은 현재 metadata를 유지하며, 기존에 없는 값을 자동 추가해 개인·팀 자원 참조를 바꾸지 않는다.
   기존 정의를 공통 카탈로그로 자동 복사하지 않는다. 전환할 때 protocol_list/plugin_list의 공통 id를 먼저 확인한다.
@@ -45,7 +46,7 @@ Node common keys: {"id","name","type","cat","x","y"}
 - id: unique, MUST match [A-Za-z0-9_-]+ (no spaces/brackets) so it is token-referenceable. Use short ids.
 - type: one of start end set if assert switch http form wait input transform tcp note group
 - cat: same as type EXCEPT http uses "generic". Include it.
-- x,y: canvas coords. Left→right, ~220px apart (x: 40,260,480,700,920,1140,1360...), baseline y≈180.
+- x,y: canvas coords. For LR, leave at least 264px horizontally between 230px cards, baseline y≈180.
   Branches fan vertically ±90 (true→y≈100, false→y≈280).
 
 ## RULES
@@ -95,6 +96,7 @@ group: {"id":"g1","type":"group","cat":"group","x":220,"y":140,"groupW":396,"gro
 
 ## STYLE
 - Keep flows minimal and correct. Prefer server-mode http. Always include START and END and wire them.
+- Do not add ASSERT after every call. Use the minimum ASSERT nodes only for the user's explicit business outcome or a distinct acceptance criterion. Do not duplicate HTTP status/existence checks or framing/ACK/schema checks already performed by the runtime. Unknown specifications belong in a note and a clarification, not an invented condition. Preserve assertions the user already authored.
 - Reuse the current graph's node ids when editing so the user's other references stay intact.
 - reply must be concise Korean.
 """.trim()

@@ -136,10 +136,15 @@ export function FieldTable({ fields, onChange, baseOffset, codecs, readOnly, len
                 <select aria-label={`필드 ${i + 1} 타입`} value={f.type} disabled={readOnly}
                   onChange={(e) => {
                     const t = e.target.value as FieldType
-                    patch(i, padTouched.has(i) ? { type: t } : { type: t, pad: defaultPad(t) })
+                    patch(i, { ...(padTouched.has(i) ? { type: t } : { type: t, pad: defaultPad(t) }), ...(t === 'integer' ? { endian: f.endian ?? 'big', signed: f.signed ?? false } : {}) })
                   }} style={{ ...sel, width: '100%' }}>
                   {FIELD_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
                 </select>
+                {f.type === 'integer' && <div style={{ display: 'grid', gap: 4, marginTop: 4 }}>
+                  <select aria-label={`필드 ${i + 1} 정수 바이트 순서`} value={f.endian ?? ''} disabled={readOnly} onChange={e => patch(i, { endian: e.target.value as 'big' | 'little' })} style={sel}><option value="" disabled>선택</option><option value="big">big endian</option><option value="little">little endian</option></select>
+                  <select aria-label={`필드 ${i + 1} 정수 부호`} value={f.signed === undefined ? '' : String(f.signed)} disabled={readOnly} onChange={e => patch(i, { signed: e.target.value === 'true' })} style={sel}><option value="" disabled>선택</option><option value="false">unsigned</option><option value="true">signed</option></select>
+                  <small style={{ fontSize: 11, color: 'var(--fl-text-muted)' }}>1·2·4·8 B · 10진 문자열</small>
+                </div>}
               </div>
               <div style={{ ...td, ...rowBg }}>
                 <select aria-label={`필드 ${i + 1} 패딩`} value={padOf(f)} disabled={readOnly}

@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { mockCapabilities, validateProtocol, protocolPreview, mockPlanPreview, mockTcpSendResult } from './mock-protocol-plans.mjs'
 
 const now = () => new Date().toISOString()
 export function createMockFeatures(state) {
@@ -75,6 +76,18 @@ export function createMockFeatures(state) {
   return (method, url, body, workspaceId) => {
     const path = decodeURIComponent(url.pathname.replace(/^\/api\/v1(?:\/remote)?/, ''))
     const [resource, id, action, no] = path.split('/').filter(Boolean)
+    if (path === '/runtime/capabilities' && method === 'GET') return mockCapabilities()
+    if (path === '/protocols/validate' && method === 'POST') return validateProtocol(body.spec)
+    if (path === '/protocols/preview' && method === 'POST' && (body.action === 'parse' || body.spec?.schemaVersion === 2)) return protocolPreview(body)
+    if (path === '/mock-servers/validate' && method === 'POST') {
+      const protocol = body.protocolSpec ?? protocols.find(protocol => protocol.id === body.spec?.tcp?.protocolId)?.spec
+      return body.spec?.tcp ? validateProtocol(protocol) : { valid: true, schemaVersion: 1, requiredCapabilities: [], compiledSummary: { routes: body.spec?.routes?.length ?? 0 }, warnings: ['프론트 Mock의 합성 검증입니다.'], errors: [] }
+    }
+    if (path === '/mock-servers/preview' && method === 'POST') {
+      const item = scoped(mocks, workspaceId).find(mock => mock.slug === body.slug), spec = body.spec ?? item?.spec
+      const protocol = body.protocolSpec ?? protocols.find(protocol => protocol.id === spec?.tcp?.protocolId)?.spec
+      return mockPlanPreview(body, item, protocol)
+    }
     if (path.startsWith('/relay/')) { const e = executions.find(e => e.id === id); if (!e?.pendingWait || e.pendingWait.nodeId !== no) fail(404, '대기 실행이 없습니다.'); advance(e, { nodeId: e.pendingWait.nodeId, callback: { method, body: JSON.stringify(body) } }); return { received: true } }
     if (path.startsWith('/mock/')) {
       const match = path.match(/^\/mock\/(?:remote\/)?ws\/([^/]+)\/([^/]+)(.*)$/)
@@ -122,6 +135,11 @@ export function createMockFeatures(state) {
             { id: `${origin}-waiting-demo`, remoteAddress: '127.0.0.1', remotePort: 53001, connectedAt: new Date(Date.now() - 90000).toISOString(), lastActivityAt: now(), idleTimeoutMs, state: 'waiting', expiresAt: new Date(Date.now() + idleTimeoutMs).toISOString(), receivedMessages: 20 },
             { id: `${origin}-processing-demo`, remoteAddress: '::1', remotePort: 53002, connectedAt: now(), lastActivityAt: now(), idleTimeoutMs, state: 'processing', expiresAt: null, receivedMessages: 1 },
           ])
+          const transaction = protocols.find(protocol => protocol.id === item.spec.tcp.protocolId)?.spec.transactions?.[0]
+          if (transaction) {
+            Object.assign(tcpSessions.get(id)[0], { phase: 'COMPLETE', transactionKey: transaction.key, accumulatedBytes: 0, actualBytes: 0 })
+            Object.assign(tcpSessions.get(id)[1], { phase: 'REQUEST_ACK', transactionKey: transaction.key, accumulatedBytes: 0, expectedBytes: 1, actualBytes: 0, validationMode: transaction.requestAck?.receive?.kind })
+          }
         }
         const list = tcpSessions.get(id).filter(session => !session.expiresAt || Date.parse(session.expiresAt) > Date.now())
         tcpSessions.set(id, list)
@@ -140,6 +158,17 @@ export function createMockFeatures(state) {
       if (['requests', 'tcp-log'].includes(action)) { if (method === 'GET') return logs.get(id) ?? []; if (method === 'DELETE') { logs.delete(id); return {} } }
       if (action === 'reset' && method === 'POST') { logs.delete(id); return {} }
       if (action === 'codec-try' && method === 'POST') return { result: body.message, headers: body.headers ?? {}, fields: {}, steps: [] }
+      if (action === 'tcp-send' && method === 'POST' && protocols.find(protocol => protocol.id === item.spec.tcp?.protocolId)?.spec.schemaVersion === 2) {
+        const protocol = protocols.find(protocol => protocol.id === item.spec.tcp.protocolId).spec
+        const result = mockTcpSendResult(body, item, protocol, randomUUID())
+        const journal = logs.get(id) ?? []
+        for (const step of result.steps.filter(step => step.phase !== 'COMPLETE')) {
+          const view = step.phase === 'REQUEST' ? result.request : step.phase === 'RESPONSE' ? result.response : { text: '', hex: '', fields: [] }
+          journal.unshift({ at: now(), dir: step.direction === 'SEND' ? 'in' : 'out', source: 'mock', key: step.phase === 'RESPONSE' ? result.response.key : body.key, fields: Array.isArray(view.fields) ? Object.fromEntries(view.fields.map(field => [field.name, field.value])) : {}, text: view.text, hex: view.hex, bytes: step.actualBytes, chunks: [step.actualBytes], partial: false, ruleId: null, note: '프론트 Mock 합성 전송 · 실제 소켓 없음', level: result.error ? 'error' : 'info', ...step })
+        }
+        logs.set(id, journal)
+        return result
+      }
       if (action === 'tcp-send' && method === 'POST') { const protocol = protocols.find(p => p.id === item.spec.tcp?.protocolId); const request = preview(protocol?.spec, body.key, body.values); const response = { key: body.key, disc: null, header: {}, body: body.values, text: request.text, hex: request.hex, bytes: request.total, chunks: [request.total], partial: false, warnings: ['Mock TCP 응답 · 실제 소켓 전송 없음'] }; const journal = logs.get(id) ?? []; journal.unshift({ at: now(), dir: 'in', key: body.key, fields: body.values, chunks: [request.total], partial: false, ruleId: null, note: '프론트 Mock 전문', level: 'info', text: request.text, hex: request.hex, bytes: request.total, source: 'mock' }); logs.set(id, journal); return { request, response, elapsedMs: 120 } }
     }
     if (path === '/transforms' && method === 'GET') return origin === 'server' ? scoped(plugins, workspaceId).filter(p => p.live && p.kind === 'transform').map(p => summary(p).meta) : []

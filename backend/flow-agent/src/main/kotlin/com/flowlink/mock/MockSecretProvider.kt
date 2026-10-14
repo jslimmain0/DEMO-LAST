@@ -16,7 +16,7 @@ class MockSecretProvider(private val loader: MockScopeLoader) {
                 val transformLookup: ((String) -> com.flowlink.transform.FlowTransform?)? = null,
                 val codecLookup: com.flowlink.protocol.ProtocolCodec.PluginLookup? = null,
                 val protocol: com.flowlink.protocol.ProtocolSpec? = null,
-                val verifyAccess: () -> Unit = {}) {
+                val verifyAccess: () -> Unit = {}, val protocolFingerprint: String? = null) {
         private val masks by lazy { com.flowlink.execution.engine.SecretMasker.variants(secrets.values) }
         fun mask(value: String): String = com.flowlink.execution.engine.SecretMasker.mask(value, masks) ?: value
 

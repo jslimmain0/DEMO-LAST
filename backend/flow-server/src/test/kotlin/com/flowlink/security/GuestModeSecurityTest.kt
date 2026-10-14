@@ -62,10 +62,12 @@ class ForceLoginSecurityTest {
     }
 
     @Test
-    fun `로그인 - assistant 허용, 무토큰은 401`() {
+    fun `개인 AI는 서버에 등록하지 않고 공유 스키마만 제공하며 인증 경계를 유지한다`() {
         mvc.perform(get("/api/v1/assistant/config")).andExpect(status().isUnauthorized)
         val token = appJwt.issue("alice")
-        mvc.perform(get("/api/v1/assistant/config").header("Authorization", "Bearer $token")).andExpect(status().isOk)
+        mvc.perform(get("/api/v1/assistant/config").header("Authorization", "Bearer $token")).andExpect(status().isNotFound)
+        mvc.perform(get("/api/v1/assistant/oauth/status").header("Authorization", "Bearer $token")).andExpect(status().isNotFound)
+        mvc.perform(get("/api/v1/schemas").header("Authorization", "Bearer $token")).andExpect(status().isOk)
     }
 
     @Test

@@ -34,6 +34,7 @@ data class AgentNodeResult(val result: NodeResult, val durationMs: Long)
 data class PendingAgent(
     val taskId: UUID, val nodeId: String, val nodeName: String?, val agent: String,
     val status: String = "PENDING", val error: String? = null, val deviceId: String? = null,
+    val diagnostics: Map<String, Any?>? = null,
 )
 data class AgentTaskView(
     val taskId: UUID, val executionId: UUID, val nodeId: String, val agent: String,
@@ -41,7 +42,8 @@ data class AgentTaskView(
     val request: AgentNodeRequest? = null, val claimToken: String? = null,
     val result: NodeResult? = null, val durationMs: Long = 0,
 )
-data class AgentClaim(val deviceId: String)
+data class AgentRuntimeCapabilities(val schemaVersions: List<Int> = emptyList(), val features: Map<String, String> = emptyMap())
+data class AgentClaim(val deviceId: String, val runtimeCapabilities: AgentRuntimeCapabilities? = null)
 data class AgentLease(val deviceId: String, val claimToken: String)
 data class AgentCompletion(val deviceId: String, val claimToken: String, val result: NodeResult, val durationMs: Long = 0)
 data class AgentUnknown(val deviceId: String, val claimToken: String, val error: String)

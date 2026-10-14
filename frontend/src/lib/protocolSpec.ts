@@ -1,10 +1,10 @@
 // frontend/src/lib/protocolSpec.ts — 프로토콜 순수 헬퍼(오프셋·바이트 근사·붙여넣기 파서·Mock 규칙 린트). 백엔드 ProtocolSpec/ProtocolCodec 미러.
 import type { FieldPad, FieldType, MockTcpSpec, ProtocolField, ProtocolFraming, ProtocolSpec } from '../api/types'
 
-export const FIELD_TYPES: FieldType[] = ['string', 'ascii', 'numeric', 'length', 'binary']
-export const FIELD_PADS: FieldPad[] = ['right/space', 'left/zero', 'left/space', 'none']
+export const FIELD_TYPES: FieldType[] = ['string', 'ascii', 'numeric', 'length', 'binary', 'integer']
+export const FIELD_PADS: FieldPad[] = ['right/space', 'left/zero', 'left/space', 'none', 'right/nul', 'left/nul']
 
-export const defaultPad = (t: FieldType): FieldPad => (t === 'numeric' || t === 'length' ? 'left/zero' : t === 'binary' ? 'none' : 'right/space')
+export const defaultPad = (t: FieldType): FieldPad => (t === 'numeric' || t === 'length' ? 'left/zero' : t === 'binary' || t === 'integer' ? 'none' : 'right/space')
 export const padOf = (f: ProtocolField): FieldPad => f.pad ?? defaultPad(f.type)
 
 export const tableLen = (fields: ProtocolField[]): number => fields.reduce((a, f) => a + (Number(f.len) || 0), 0)
@@ -40,8 +40,14 @@ export function framingOf(spec: ProtocolSpec, response = false): ProtocolFraming
 export const tcpOption = (value: string | undefined, fallback: string): string => value?.trim().toLowerCase() || fallback
 
 export const previewDirection = (key: string): 'send' | 'recv' => key.trim() === 'response' || key.trim().endsWith(':response') ? 'recv' : 'send'
+export function parseProtocolContext(text: string): Record<string, string> {
+  const value = JSON.parse(text)
+  if (!value || typeof value !== 'object' || Array.isArray(value) || Object.values(value).some(item => typeof item !== 'string')) throw new Error('컨텍스트는 값이 문자열인 JSON 객체로 입력하세요. 8 B 정수도 문자열로 입력합니다.')
+  return value
+}
 
 export function framingSummary(spec: ProtocolSpec, response = false): string {
+  if (spec.schemaVersion === 2) return `거래별 · ${(spec.transactions ?? []).map(transaction => `${transaction.key}: ${framingSummary({ ...spec, schemaVersion: 1, framing: transaction.framing ?? spec.framing, responseFraming: transaction.responseFraming ?? spec.responseFraming }, response)}`).join(' / ') || '거래 미지정'}`
   const frame = framingOf(spec, response)
   const mode = tcpOption(frame.mode, 'length')
   if (mode === 'fixed') return `고정 ${frame.fixedLength ?? '?'} B`
@@ -54,7 +60,7 @@ export function framingSummary(spec: ProtocolSpec, response = false): string {
 
 export function transportSummary(spec: ProtocolSpec): string {
   const connection = tcpOption(spec.transport?.connection, 'once') === 'execution' ? `이 실행에서 연결 재사용 · 유휴 ${(spec.transport?.idleTimeoutMs ?? 30_000) / 1000}초` : '요청마다 연결'
-  const ack = [spec.transport?.requestAckHex?.trim() && '요청 ACK 수신', spec.transport?.responseAckHex?.trim() && '응답 ACK 송신'].filter(Boolean).join(' · ')
+  const ack = spec.schemaVersion === 2 ? `거래별 ACK · ${(spec.transactions ?? []).filter(transaction => transaction.requestAck || transaction.responseAck).length}개 거래` : [spec.transport?.requestAckHex?.trim() && '요청 ACK 수신', spec.transport?.responseAckHex?.trim() && '응답 ACK 송신'].filter(Boolean).join(' · ')
   return `${connection}${ack ? ` · ${ack}` : ' · ACK 없음'}`
 }
 
@@ -141,7 +147,13 @@ export function messageKeys(spec: ProtocolSpec): { key: string; label: string }[
 }
 /** 송신 후보(응답 전용 키 제외). */
 export function requestKeys(spec: ProtocolSpec): { key: string; label: string }[] {
+  if (spec.schemaVersion === 2) return messageKeys(spec).filter(message => spec.transactions?.some(transaction => transaction.requestMessage === message.key))
   return messageKeys(spec).filter((m) => m.key !== 'response' && !m.key.endsWith(':response'))
+}
+/** 규칙이 특정 거래의 헤더 조건을 모두 명시했을 때만 편집 대상 거래를 선택한다. */
+export function transactionForRule(spec: ProtocolSpec, rule: import('../api/types').MockTcpRuleSpec) {
+  const matches = (spec.transactions ?? []).filter(transaction => transaction.when.length > 0 && transaction.when.every(condition => rule.when?.some(value => value.field === condition.field && (value.op ?? 'eq') === 'eq' && value.value === condition.value)))
+  return matches.length === 1 ? matches[0] : undefined
 }
 /** 전문 key 의 헤더+본문 필드. */
 export function fieldsOf(spec: ProtocolSpec, key: string | undefined): ProtocolField[] {
@@ -159,15 +171,17 @@ export function lintTcpRules(tcp: MockTcpSpec, spec: ProtocolSpec): string[] {
     const fields = r.then?.fields ?? {}
     const disc = spec.discriminator ? fields[spec.discriminator] : undefined
     const key = spec.discriminator ? disc : 'response'
-    const msg = key ? (spec.messages.find((m) => m.key === `${key}:response`) ?? spec.messages.find((m) => m.key === key)) : undefined
-    if (spec.discriminator && !disc) out.push(`${label}: 응답 전문(${spec.discriminator})을 정하세요.`)
+    const transaction = spec.schemaVersion === 2 ? transactionForRule(spec, r) : undefined
+    const msg = transaction ? spec.messages.find(message => message.key === transaction.responseMessage) : spec.schemaVersion === 2 ? undefined : key ? (spec.messages.find((m) => m.key === `${key}:response`) ?? spec.messages.find((m) => m.key === key)) : undefined
+    if (spec.schemaVersion === 2 && !transaction) { out.push(`${label}: 거래를 특정할 헤더 조건이 없습니다. 미리보기에서 선택 거래와 응답 필드를 확인하세요.`); continue }
+    if (spec.schemaVersion !== 2 && spec.discriminator && !disc) out.push(`${label}: 응답 전문(${spec.discriminator})을 정하세요.`)
     else if (!msg) out.push(`${label}: 응답 전문 '${key}' 정의가 없습니다.`)
     const table = new Map([...spec.header, ...(msg?.fields ?? [])].map((f) => [f.name, f] as const))
     for (const [k, v] of Object.entries(fields)) {
       const f = table.get(k)
       if (!f) { out.push(`${label}: '${k}' 는 응답 전문에 없는 필드입니다.`); continue }
       for (const m of v.matchAll(/\{\{\s*(?:req\.([^\s{}]+)|([^\s@{}]+)@req)\s*\}\}/g)) { const ref = m[1] ?? m[2]; if (!reqNames.has(ref)) out.push(`${label}: {{req.${ref}}} — 요청에 '${ref}' 필드가 없습니다.`) }
-      if (!v.includes('{{')) { const b = byteLen(v, spec.encoding); if (b > f.len) out.push(`${label}: ⚠ '${k}' 값 (${b}B) → ${f.len}B — 초과분 잘림`) }
+      if (!v.includes('{{') && f.type !== 'integer') { const b = byteLen(v, spec.encoding); if (b > f.len) out.push(`${label}: ⚠ '${k}' 값 (${b}B) → ${f.len}B — ${spec.schemaVersion === 2 ? '길이 초과 오류' : '초과분 잘림'}`) }
     }
   }
   return out

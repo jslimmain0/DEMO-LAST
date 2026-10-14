@@ -19,7 +19,7 @@ object DesktopCommandPolicy {
         val local = Regex("/api/v1/(flows|folders|environments|mock-servers|protocols|executions|plugins/scripts|transforms)(/[\\p{L}\\p{N}_ .:+-]+)*").matches(decoded)
         // Team mutations use the native proxy, which registers dispatcher execution IDs.
         val team = command.method == "POST" && (Regex("/api/v1/remote/flows/[0-9a-fA-F-]{36}/runs").matches(decoded) || Regex("/api/v1/remote/executions/[0-9a-fA-F-]{36}/rerun").matches(decoded))
-        val metadata = command.method == "GET" && decoded in setOf("/api/v1/secrets", "/api/v1/workspaces", "/api/v1/codecs", "/api/v1/schemas")
+        val metadata = command.method == "GET" && decoded in setOf("/api/v1/secrets", "/api/v1/workspaces", "/api/v1/codecs", "/api/v1/schemas", "/api/v1/runtime/capabilities")
         val workspaceTransfer = Regex("/api/v1/workspaces/[0-9a-fA-F-]{36}/(export|import)").matches(decoded) && command.method in setOf("GET", "POST")
         val http = command.method == "POST" && decoded == "/api/v1/agent/http-request"
         require(local || team || metadata || workspaceTransfer || http) { "개인 작업 채널에서 지원하지 않는 경로입니다." }

@@ -176,6 +176,7 @@ export interface PaletteGroup {
 }
 
 export interface FlowGraph {
+  layoutDirection?: 'TB' | 'LR'
   resourceWorkspaceId?: 'public'
   version?: number
   name?: string
@@ -432,7 +433,7 @@ export interface SingleNodeRunResult {
 }
 
 export interface ExecutionDetail {
-  pendingAgent?: { taskId: string; nodeId: string; nodeName?: string; agent: 'local' | 'server'; status: 'PENDING' | 'CLAIMED' | 'RUNNING' | 'SUCCEEDED' | 'FAILED' | 'UNKNOWN' | 'ACKED'; error?: string; deviceId?: string } | null
+  pendingAgent?: { taskId: string; nodeId: string; nodeName?: string; agent: 'local' | 'server'; status: 'PENDING' | 'CLAIMED' | 'RUNNING' | 'SUCCEEDED' | 'FAILED' | 'UNKNOWN' | 'ACKED'; error?: string; deviceId?: string; diagnostics?: { responseFields: Record<string, unknown>; _tcpTransport: TcpTransportDiagnostics } | null } | null
   id: string
   flowId: string
   flowVersionId: string
@@ -601,6 +602,7 @@ export interface MockServerDetail extends MockServerSummary {
 }
 
 export interface TcpMockSession {
+  phase?: string; transactionKey?: string; accumulatedBytes?: number; expectedBytes?: number; actualBytes?: number; validationMode?: string; errorCode?: string; status?: string; durationMs?: number
   id: string
   remoteAddress: string
   remotePort: number
@@ -620,10 +622,10 @@ export interface ProtocolAssistantChatRequest { messages: AssistantMessage[]; sp
 export interface ProtocolAssistantChatResponse { reply: string; spec: ProtocolSpec | null; stub: boolean; model: string }
 
 // --- 프로토콜(고정길이 전문 규격) ---
-export type FieldType = 'length' | 'string' | 'ascii' | 'numeric' | 'binary'
-export type FieldPad = 'left/zero' | 'right/space' | 'left/space' | 'none'
+export type FieldType = 'length' | 'string' | 'ascii' | 'numeric' | 'binary' | 'integer'
+export type FieldPad = 'left/zero' | 'right/space' | 'left/space' | 'none' | 'right/nul' | 'left/nul'
 export interface PluginRef { id: string; config?: Record<string, string> }
-export interface ProtocolField { name: string; len: number; type: FieldType; pad?: FieldPad; plugin?: PluginRef | null }
+export interface ProtocolField { name: string; len: number; type: FieldType; pad?: FieldPad; plugin?: PluginRef | null; endian?: 'big' | 'little'; signed?: boolean }
 export interface ProtocolMessage { key: string; label?: string; fields: ProtocolField[] }
 export interface ProtocolFraming {
   mode?: 'length' | 'fixed' | 'delimiter'
@@ -636,6 +638,30 @@ export interface ProtocolTransport {
   idleTimeoutMs?: number
   requestAckHex?: string
   responseAckHex?: string
+}
+export interface ProtocolAck {
+  send: { kind: 'hex' | 'message'; hex?: string; messageKey?: string; values?: Record<string, string> }
+  receive: { kind: 'exact' | 'length-only' | 'fields'; hex?: string; lengthBytes?: number; messageKey?: string; expected?: Record<string, string> }
+  timeoutMs?: number
+}
+export interface ProtocolTransaction {
+  key: string
+  when: { field: string; op: 'eq'; value: string }[]
+  requestMessage: string
+  responseMessage: string
+  framing?: ProtocolFraming
+  responseFraming?: ProtocolFraming
+  requestAck: ProtocolAck | null
+  responseAck: ProtocolAck | null
+}
+export interface ProtocolAckMessage { key: string; encoding?: string; fields: ProtocolField[] }
+export type ProtocolPhase = 'request' | 'requestAck' | 'response' | 'responseAck'
+export interface ProtocolValidation { code?: string; field?: string | null; path?: string; message: string; repairHint?: string }
+export interface CompilationReport { valid: boolean; schemaVersion?: number; requiredCapabilities: string[]; compiledSummary: Record<string, unknown>; warnings: string[]; errors: ProtocolValidation[] }
+export interface RuntimeCapabilities { available: boolean; installedVersion: string; schemaVersions: number[]; checkedAt: string; features: Record<string, 'supported' | 'unsupported' | 'unknown'>; limits: Record<string, number> }
+export interface ProtocolPreviewRequest {
+  spec: ProtocolSpec; key?: string; values?: Record<string, string>; direction?: 'send' | 'recv'; frameDirection?: 'send' | 'recv'; environment?: string | null
+  action?: 'assemble' | 'parse'; transactionKey?: string; phase?: ProtocolPhase; requestFields?: Record<string, string>; responseFields?: Record<string, string>; bytesB64?: string
 }
 export interface ProtocolSpec {
   encoding: string
@@ -650,11 +676,14 @@ export interface ProtocolSpec {
   framing?: ProtocolFraming
   responseFraming?: ProtocolFraming
   transport?: ProtocolTransport
+  schemaVersion?: 1 | 2
+  transactions?: ProtocolTransaction[]
+  ackMessages?: ProtocolAckMessage[]
 }
 export interface ProtocolSummary { id: string; name: string; encoding: string; messageCount: number; updatedAt: string | null }
 export interface ProtocolDetail { id: string; name: string; spec: ProtocolSpec; createdAt: string; updatedAt: string | null }
 export interface ProtocolPreviewField { name: string; offset: number; len: number; actualBytes: number; value: string; warn?: string | null }
-export interface ProtocolPreview { total: number; hex: string; text: string; fields: ProtocolPreviewField[]; errors: { field?: string | null; message: string }[]; warnings?: string[] }
+export interface ProtocolPreview { total: number; hex: string; text: string; fields: ProtocolPreviewField[]; errors: ProtocolValidation[]; warnings?: string[]; bytesB64?: string; phase?: ProtocolPhase; transactionKey?: string; declaredLength?: number; wireLength?: number; lengthAdjustment?: number; validations?: unknown[] }
 export interface CodecInfo { id: string; label: string; layer: 'field' | 'message'; params: TransformParam[] }
 
 // Mock TCP — 새 프로토콜 참조 기반(구 MockTcpSpec/MockTcpRuleSpec/… 대체)
@@ -666,6 +695,7 @@ export interface MockTcpSpec { port?: number; protocolId?: string | null; upstre
 
 // TCP 트래픽 로그 — 리스너가 주고받은 전문 1건(dir=in 수신 / out 송신). source=mock(규칙 응답)·proxy(실서버 통과)·none(응답 없음).
 export interface TcpLogEntry {
+  phase?: string; transactionKey?: string; accumulatedBytes?: number; expectedBytes?: number; actualBytes?: number; validationMode?: string; errorCode?: string; status?: string; durationMs?: number
   at: string
   dir: 'in' | 'out'
   source: 'mock' | 'proxy' | 'none'
@@ -686,7 +716,11 @@ export interface TcpDecodedView {
   header: Record<string, string>; body: Record<string, string> | null
   text: string; hex: string; bytes: number; chunks: number[]; partial: boolean; warnings: string[]
 }
-export interface TcpSendResult { request: ProtocolPreview; response: TcpDecodedView; elapsedMs: number }
+export interface TcpTransferStep { phase: string; role: string; direction?: string | null; expectedBytes?: number | null; actualBytes: number | null; transactionKey?: string | null; durationMs: number | null; status: string; validationMode?: string | null; errorCode?: string | null }
+export interface TcpTransportDiagnostics { transportStatus?: 'SUCCEEDED' | 'FAILED' | 'UNKNOWN' | null; steps: TcpTransferStep[]; protocolFingerprint?: string | null }
+export interface TcpSendResult { request: ProtocolPreview; response: TcpDecodedView; elapsedMs: number; transactionKey?: string; executionId?: string; transportStatus?: string; steps?: TcpTransferStep[]; warnings?: string[]; error?: ProtocolValidation & { phase?: string; expectedBytes?: number; actualBytes?: number } }
+export interface MockPreviewRequest { spec?: MockServerSpec; slug?: string; type?: 'HTTP' | 'TCP'; environment?: string | null; protocolSpec?: ProtocolSpec; request: Record<string, unknown> }
+export interface MockPreviewResult { unsaved: boolean; sideEffects: false; definition?: { id: string; version: number }; snapshot?: { state: Record<string, string>; seq: number; virtualSeq: number; hits: Record<string, number> }; request: Record<string, unknown>; response: Record<string, unknown>; steps: TcpTransferStep[]; transactionKey?: string; ruleId?: string; requiredCapabilities?: string[]; compiledSummary?: Record<string, unknown>; warnings?: string[]; validations?: ProtocolValidation[] }
 
 // ---- 스크립트 플러그인 (/api/v1/plugins/scripts) ----
 export type PluginScriptStatus = 'DRAFT' | 'PENDING' | 'APPROVED' | 'REJECTED'

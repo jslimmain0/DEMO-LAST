@@ -86,7 +86,7 @@ class DesktopConnection(private val session: DesktopSession, private val mapper:
         val request = builder.method(method, body?.let { HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(it)) }
                 ?: HttpRequest.BodyPublishers.noBody()).build()
         val response = send(request, HttpResponse.BodyHandlers.ofInputStream())
-        if (response.statusCode() == 401 && state.token == active.token) logout()
+        if (response.statusCode() == 401) expireIfCurrent(active)
         val bytes = response.body().use { it.readNBytes(64 * 1024 * 1024 + 1) }
         if (bytes.size > 64 * 1024 * 1024) throw BadRequestException("에이전트 응답 크기가 64MB를 초과했습니다.")
         if (response.statusCode() !in 200..299) throw DesktopRemoteException(response.statusCode())
@@ -140,6 +140,11 @@ class DesktopConnection(private val session: DesktopSession, private val mapper:
     }
 
     @Synchronized fun logout() { pending = null; save(state.copy(token = null, login = null)) }
+
+    /** 이전 요청의 늦은 401이 새 로그인·서버 설정을 해제하지 않도록 같은 monitor 안에서 확인한다. */
+    @Synchronized private fun expireIfCurrent(active: State) {
+        if (state === active) logout()
+    }
 
     private fun json(base: String, method: String, path: String, body: String? = null): com.fasterxml.jackson.databind.JsonNode {
         val request = HttpRequest.newBuilder(URI.create(base + path)).timeout(Duration.ofSeconds(25))
@@ -216,7 +221,7 @@ class DesktopConnection(private val session: DesktopSession, private val mapper:
             .header("Accept", req.getHeader("Accept") ?: "application/json")
             .method(req.method, if (bytes.isEmpty()) HttpRequest.BodyPublishers.noBody() else HttpRequest.BodyPublishers.ofByteArray(bytes)).build()
         val res = send(request, HttpResponse.BodyHandlers.ofInputStream())
-        if (res.statusCode() == 401 && state.token == jwt) logout()
+        if (res.statusCode() == 401) expireIfCurrent(active)
         val body = res.body().use { it.readNBytes(64 * 1024 * 1024 + 1) }
         if (body.size > 64 * 1024 * 1024) throw BadRequestException("원격 응답 크기가 64MB를 초과했습니다.")
         if (res.statusCode() in 400..499) trackedRuns.values.forEach { events.publishEvent(DesktopRemoteRunRejected(it)) }

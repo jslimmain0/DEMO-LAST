@@ -20,26 +20,25 @@ export interface DeviceStart { sessionId: string; userCode: string; verification
 export interface DevicePoll { status: 'pending' | 'ready' | 'error'; token?: string; login?: string; error?: string }
 
 const TOKEN_KEY = 'fl:token' // 앱 JWT(GitHub 로그인 후 발급) — localStorage 보관
-let accessToken: string | null = typeof localStorage !== 'undefined' ? localStorage.getItem(TOKEN_KEY) : null
 
-export function getAccessToken(): string | null { return accessToken }
+export function getAccessToken(): string | null { return typeof localStorage !== 'undefined' ? localStorage.getItem(TOKEN_KEY) : null }
 export function setToken(t: string | null) {
-  accessToken = t
   if (t) localStorage.setItem(TOKEN_KEY, t)
   else localStorage.removeItem(TOKEN_KEY)
 }
 
 export const authApi = {
   config: () => http.get<AuthConfig>('/auth/config').then((r) => r.data),
-  me: () => http.get<Me>('/auth/me').then((r) => r.data),
+  me: () => http.get<Me>('/auth/me', { timeout: 10_000 }).then((r) => r.data),
   deviceStart: () => http.post<DeviceStart>('/auth/github/device/start', {}).then((r) => r.data),
   devicePoll: (session: string) => http.get<DevicePoll>('/auth/github/device/poll', { params: { session } }).then((r) => r.data),
 }
 
 let interceptorsAttached = false
+let authCheck: { token: string; request: Promise<Me> } | null = null
 
 /**
- * axios 인터셉터 — Bearer(앱 JWT) 부착 + 401 시 토큰이 있었을 때만 폐기 후 재부트(게스트 무토큰 401 은 무시).
+ * axios 인터셉터 — Bearer(앱 JWT) 부착 + 현재 토큰의 인증 실패가 확인됐을 때만 폐기 후 재부트.
  * GitHub 로그인 모드에서만 부착(dev 모드는 무회귀).
  */
 export function attachAuthInterceptors() {
@@ -53,15 +52,23 @@ export function attachAuthInterceptors() {
     })
     inst.interceptors.response.use(
       (res) => res,
-      (error) => {
+      async (error) => {
         const status = error?.response?.status
         // /auth/** 자체(로그인 폴링 등)의 401 은 무시 — 무한 리로드 방지
         const url: string = error?.config?.url ?? ''
         if (status === 401 && !url.includes('/auth/')) {
-          // 게스트(무토큰)의 401 은 정상(AI 게이트) — 리로드 루프를 만들지 않는다. 토큰이 있었을 때만 폐기·재부트.
-          if (getAccessToken()) {
-            setToken(null)
-            if (typeof window !== 'undefined') window.location.reload() // 세션 만료 → 게스트/로그인 재부트
+          const token = getAccessToken()
+          // 기능별 인증 오류와 이전 로그인 요청의 지연 응답으로 현재 로그인을 지우지 않는다.
+          if (token && error?.config?.headers?.Authorization === `Bearer ${token}`) {
+            if (authCheck?.token !== token) authCheck = { token, request: authApi.me() }
+            const check = authCheck
+            try { await check.request }
+            catch (checkError) {
+              if ((checkError as { response?: { status?: number } })?.response?.status === 401 && getAccessToken() === token) {
+                setToken(null)
+                if (typeof window !== 'undefined') window.location.reload()
+              }
+            } finally { if (authCheck === check) authCheck = null }
           }
         }
         throw error

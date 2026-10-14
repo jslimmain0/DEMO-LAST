@@ -51,11 +51,13 @@ async function boot(): Promise<Boot> {
   }
   // 인증 모드(github) — 브라우저는 무조건 로그인(게스트 모드는 MCP 에이전트 전용, UI 는 로그인 강제).
   attachAuthInterceptors()
-  if (getAccessToken()) {
+  for (let token = getAccessToken(); token; token = getAccessToken()) {
     try {
       const me = await authApi.me()
+      if (getAccessToken() !== token) continue // 다른 탭에서 바뀐 계정은 현재 토큰으로 다시 확인한다.
       return { mode: cfg.mode, me, runtime: cfg.runtime }
     } catch (e) {
+      if (getAccessToken() !== token) continue
       const status = errStatus(e)
       if (status === 401 || status === 403) {
         setToken(null) // 무효/만료 토큰만 폐기 → 로그인 화면으로
